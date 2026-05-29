@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MURPY</title>
+<style>
+  html, body { background: #0a0a0a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { background: #0a0a0a; color: #fff; font-family: 'Apple SD Gothic Neo', 'Pretendard', sans-serif; max-width: 390px; margin: 0 auto; min-height: 100vh; position: relative; overflow-x: hidden; }
+
+  /* 페이지 전환 애니메이션 */
+  .page { display: none; padding: 16px 20px 100px; opacity: 0; transform: translateY(10px); background: #0a0a0a; min-height: 100vh; }
+  .page.active { display: block; animation: pageIn 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+  .page.exit { animation: pageOut 0.2s ease forwards; }
+  @keyframes pageIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes pageOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(-8px); } }
+
+  /* 카드 */
+  .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 16px; margin-bottom: 10px; backdrop-filter: blur(10px); transition: transform 0.15s ease, background 0.15s ease; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+  .card:active { transform: scale(0.985); background: rgba(255,255,255,0.055); }
+
+  /* 버튼들 */
+  .btn-white { background: #f0f0f0; color: #0a0a0a; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; font-family: inherit; transition: transform 0.12s ease, opacity 0.12s ease; letter-spacing: -0.2px; }
+  .btn-white:active { transform: scale(0.97); opacity: 0.88; }
+  .btn-glass { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; font-family: inherit; transition: transform 0.12s ease, background 0.12s ease; }
+  .btn-glass:active { transform: scale(0.96); background: rgba(255,255,255,0.1); }
+  .tag { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 3px 9px; font-size: 11px; display: inline-block; letter-spacing: -0.1px; font-weight: 500; }
+
+  /* Header */
+  .header { padding: 14px 20px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); position: sticky; top: 0; background: rgba(10,10,10,0.85); backdrop-filter: blur(20px); z-index: 50; }
+  .logo-circle { width: 30px; height: 30px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 900; color: #000; }
+  .header-icons { display: flex; gap: 16px; align-items: center; }
+  .notif-wrap { position: relative; cursor: pointer; font-size: 19px; }
+  .notif-badge { position: absolute; top: -4px; right: -4px; background: #ff4444; color: #fff; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+
+  /* Bottom Nav */
+  .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 390px; background: rgba(10,10,10,0.9); backdrop-filter: blur(24px); border-top: 1px solid rgba(255,255,255,0.06); padding: 10px 0 24px; display: flex; z-index: 50; }
+  .nav-btn { flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; padding: 4px 0; transition: transform 0.1s ease; }
+  .nav-btn:active { transform: scale(0.88); }
+  .nav-icon-wrap { display: flex; align-items: center; justify-content: center; width: 36px; height: 28px; color: rgba(255,255,255,0.28); transition: color 0.2s ease, transform 0.2s cubic-bezier(0.34,1.56,0.64,1); }
+  .nav-icon-wrap.active { color: #fff; transform: translateY(-1px); }
+  .nav-label { font-size: 10px; color: rgba(255,255,255,0.28); font-family: inherit; transition: color 0.2s ease; letter-spacing: -0.2px; }
+  .nav-label.active { color: #fff; font-weight: 700; }
+
+  /* Toast */
+  .toast { position: fixed; top: 72px; left: 50%; transform: translateX(-50%) translateY(-10px); background: #fff; color: #000; border-radius: 20px; padding: 11px 20px; font-size: 13px; font-weight: 700; z-index: 500; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none; opacity: 0; transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  .toast.show { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Modal overlay */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0); backdrop-filter: blur(0px); z-index: 200; display: none; align-items: flex-end; justify-content: center; transition: background 0.25s ease, backdrop-filter 0.25s ease; }
+  .modal-overlay.open { display: flex; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); }
+  .modal-sheet { background: #141418; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px 24px 0 0; padding: 32px 24px 48px; width: 100%; max-width: 390px; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1); }
+  .modal-overlay.open .modal-sheet { transform: translateY(0); }
+
+  /* Panel (full screen overlay) */
+  .panel { position: fixed; inset: 0; background: #0a0a0a; z-index: 100; display: flex; flex-direction: column; max-width: 390px; margin: 0 auto; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); pointer-events: none; }
+  .panel.open { transform: translateX(0); pointer-events: all; }
+  .panel-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 12px; }
+  .back-btn { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+  /* HOME */
+  .crew-scroll { display: flex; gap: 12px; overflow-x: auto; padding: 8px 20px 16px; scrollbar-width: none; }
+  .crew-scroll::-webkit-scrollbar { display: none; }
+  .crew-mini { min-width: 150px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; overflow: hidden; cursor: pointer; flex-shrink: 0; }
+  .crew-mini-img { height: 90px; position: relative; overflow: hidden; }
+  .crew-mini-img img { width: 100%; height: 100%; object-fit: cover; }
+  .crew-mini-img::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.7), transparent); }
+  .crew-mini-info { padding: 10px 12px; }
+  .feed-post { border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 16px; margin-bottom: 16px; }
+  .feed-avatar { display: flex; align-items: center; gap: 10px; padding: 0 20px 10px; }
+  .feed-img { width: 100%; height: 280px; object-fit: cover; }
+  .feed-actions { padding: 12px 20px 0; }
+
+  .match-card { border-radius: 16px; overflow: hidden; position: relative; height: 490px; transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 12px 40px rgba(0,0,0,0.5); animation: cardIn 0.4s cubic-bezier(0.34,1.2,0.64,1); }
+  @keyframes cardIn { from { opacity:0; transform:scale(0.95) translateY(12px); } to { opacity:1; transform:scale(1) translateY(0); } }
+  .match-card img { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.75); }
+  .match-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.08) 50%, transparent 100%); }
+  .match-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px; }
+  .verified-badge { position: absolute; top: 16px; right: 16px; background: rgba(0,0,0,0.45); backdrop-filter: blur(12px); border-radius: 6px; padding: 5px 10px; border: 1px solid rgba(255,255,255,0.15); }
+  .match-btns { display: flex; gap: 14px; margin-top: 20px; justify-content: center; align-items: center; }
+  .match-btn { border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.15s cubic-bezier(0.34,1.56,0.64,1); }
+  .match-btn:active { transform: scale(0.88); }
+
+  /* BAMBOO */
+  .bamboo-item { }
+  .comment-bubble { border-radius: 14px; padding: 8px 12px; font-size: 13px; color: #ddd; max-width: 80%; margin-bottom: 8px; }
+
+  /* CREW tabs */
+  .tab-bar { display: flex; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .tab-btn { flex: 1; padding: 11px 0; background: none; border: none; color: rgba(255,255,255,0.3); font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; transition: all 0.2s; letter-spacing: -0.2px; }
+  .tab-btn.active { color: #fff; font-weight: 700; border-bottom-color: #fff; }
+
+  /* PRO features list */
+  .pro-row { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+  /* Image upload */
+  .upload-zone { background: rgba(255,255,255,0.04); border: 2px dashed rgba(255,255,255,0.12); border-radius: 14px; padding: 24px; text-align: center; cursor: pointer; }
+  .photo-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .photo-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .photo-thumb { border-radius: 12px; overflow: hidden; aspect-ratio: 1; position: relative; }
+  .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-thumb .remove-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); border: none; color: #fff; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; display: none; align-items: center; justify-content: center; }
+  .photo-thumb:hover .remove-btn { display: flex; }
+
+  /* Chat */
+  .chat-bubble { border-radius: 16px; padding: 10px 14px; font-size: 14px; max-width: 70%; }
+  .chat-me { background: #fff; color: #000; border-radius: 16px 16px 4px 16px; align-self: flex-end; }
+  .chat-other { background: rgba(255,255,255,0.06); color: #fff; border-radius: 16px 16px 16px 4px; align-self: flex-start; }
+
+  /* Progress bar */
+  .progress-bar { background: #2a2a2a; border-radius: 10px; height: 6px; overflow: hidden; }
+  .progress-fill { background: #fff; border-radius: 10px; height: 100%; transition: width 0.3s; }
+
+  input, textarea { font-family: inherit; }
+  input::placeholder, textarea::placeholder { color: #555; }
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Header -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:10px">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="14" fill="#fff"/>
+      <text x="14" y="19" text-anchor="middle" font-size="13" font-weight="900" font-family="'Apple SD Gothic Neo',sans-serif" fill="#000">M</text>
+    </svg>
+    <span style="font-size:17px;font-weight:800;letter-spacing:-0.8px;color:#fff">Murpy</span>
+  </div>
+  <div class="header-icons">
+    <!-- Chat icon -->
+    <button onclick="openPanel('chat-panel')" style="background:none;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:background 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.06)'" onmouseleave="this.style.background='none'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.7">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    </button>
+    <!-- Bell icon -->
+    <div class="notif-wrap" onclick="openPanel('notif-panel')" style="display:flex;align-items:center;justify-content:center;padding:6px;border-radius:8px;cursor:pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.7">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+      <div class="notif-badge" id="notif-badge">3</div>
+    </div>
+    <!-- Login btn -->
+    <button id="login-btn" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:all 0.15s">로그인</button>
+    <!-- Profile icon (logged out) -->
+    <button id="mypage-icon-btn" onclick="openPanel('mypage-panel')" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+        <circle cx="14" cy="11" r="4" stroke="#fff" stroke-width="1.6" opacity="0.7"/>
+        <path d="M6 22c0-4 3.6-7 8-7s8 3 8 7" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
+      </svg>
+    </button>
+    <!-- Avatar (logged in) -->
+    <img id="user-avatar" src="" style="display:none;width:30px;height:30px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid rgba(255,255,255,0.2)" onclick="openPanel('mypage-panel')">
+  </div>
+</div>
+
+<!-- ===== PAGES ===== -->
+
+<!-- HOME -->
+<div class="page active" id="page-home" style="padding:0 0 100px">
+
+  <!-- 광고 슬롯 placeholder -->
+  <div id="ad-slot" style="display:none;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);padding:10px 20px">
+    <div style="font-size:10px;color:rgba(255,255,255,0.2);letter-spacing:1px;text-transform:uppercase;text-align:center">sponsored</div>
+  </div>
+
+  <!-- 글쓰기 트리거 (sticky) -->
+  <div style="position:sticky;top:57px;z-index:40;background:#0a0a0a;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="padding:11px 20px;display:flex;align-items:center;gap:12px">
+      <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+      </div>
+      <span style="font-size:14px;color:rgba(255,255,255,0.28);letter-spacing:-0.2px;flex:1;cursor:pointer" onclick="document.getElementById('feed-photo-input').click()">사진으로 운동 인증하기</span>
+      <label for="feed-photo-input" style="cursor:pointer;display:flex;align-items:center;padding:4px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      </label>
+      <input type="file" id="feed-photo-input" accept="image/*" style="display:none">
+    </div>
+  </div>
+
+  <!-- 크롭 모달 -->
+  <div id="crop-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:300;flex-direction:column">
+    <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08)">
+      <button onclick="closeCropModal()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit">취소</button>
+      <span style="font-size:14px;font-weight:700;letter-spacing:-0.2px">사진 조정</span>
+      <button onclick="confirmCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">다음</button>
+    </div>
+    <!-- 크롭 영역 -->
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">
+      <div id="crop-container" style="position:relative;width:100vw;height:100vw;overflow:hidden;background:#111">
+        <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none" draggable="false">
+      </div>
+      <!-- 크롭 오버레이 그리드 -->
+      <div style="position:absolute;top:0;left:0;width:100vw;height:100vw;pointer-events:none;border:2px solid rgba(255,255,255,0.4)">
+        <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
+        <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
+        <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
+        <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
+      </div>
+    </div>
+    <!-- 캡션 입력 -->
+    <div id="crop-caption-area" style="display:none;padding:14px 20px;border-top:1px solid rgba(255,255,255,0.08)">
+      <textarea id="feed-post-input" placeholder="운동 한마디 (선택)" style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.6;resize:none;outline:none;min-height:44px;font-family:inherit;letter-spacing:-0.2px"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button id="feed-upload-btn" style="background:#fff;color:#000;border:none;border-radius:8px;padding:8px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">올리기</button>
+      </div>
+    </div>
+    <!-- 크롭 다음 버튼 -->
+    <div id="crop-next-area" style="padding:14px 20px;border-top:1px solid rgba(255,255,255,0.08)">
+      <div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;letter-spacing:-0.1px">핀치로 크기 조정 · 드래그로 위치 이동</div>
+    </div>
+  </div>
+
+  <!-- 피드 -->
+  <div id="firebase-feed" style="padding-top:4px"></div>
+</div>
+
+<!-- MATCH -->
+<div class="page" id="page-match">
+  <div style="margin-bottom:14px">
+    <div style="font-size:12px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;text-transform:uppercase;font-weight:500">오늘의 매칭</div>
+  </div>
+  <div class="match-card" id="match-card">
+    <img id="match-img" src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80">
+    <div class="match-grad"></div>
+    <div class="verified-badge" style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:0.5px;font-weight:600">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      GBD VERIFIED
+    </div>
+    <div class="match-info">
+      <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:8px">
+        <span style="font-size:26px;font-weight:800;letter-spacing:-0.5px" id="match-name">지수</span>
+        <span style="font-size:16px;color:rgba(255,255,255,0.55);margin-bottom:2px" id="match-age">26</span>
+        <span style="font-size:12px;color:rgba(255,255,255,0.4);margin-left:auto;margin-bottom:2px;display:flex;align-items:center;gap:3px" id="match-loc">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          마포
+        </span>
+      </div>
+      <div style="display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap" id="match-tags"></div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.4);margin-bottom:8px;letter-spacing:-0.1px" id="match-gym"></div>
+      <div style="font-size:15px;color:rgba(255,255,255,0.9);line-height:1.55;font-weight:400;letter-spacing:-0.2px" id="match-bio"></div>
+      <!-- 카드 하단 추가 정보 -->
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" id="match-extra"></div>
+    </div>
+  </div>
+
+  <!-- 버튼 영역 -->
+  <div style="display:flex;gap:10px;margin-top:16px">
+    <button onclick="handlePass()" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;color:rgba(255,255,255,0.45);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:all 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.08)'" onmouseleave="this.style.background='rgba(255,255,255,0.05)'">패스</button>
+    <button onclick="handleLike()" style="flex:2;background:#fff;border:none;border-radius:12px;padding:16px;color:#000;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;box-shadow:0 6px 20px rgba(255,255,255,0.12);transition:all 0.15s" onmouseenter="this.style.opacity='0.88'" onmouseleave="this.style.opacity='1'">같이 운동해요</button>
+  </div>
+</div>
+
+<!-- BAMBOO -->
+<div class="page" id="page-bamboo">
+  <!-- 글쓰기 -->
+  <div class="card" style="margin-bottom:16px">
+    <textarea id="bamboo-input" placeholder="익명으로 전해드립니다. 헬스장, 크루, 운동 공간... 누군가에게 전하고 싶은 말을 남겨보세요." style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:70px"></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button class="btn-white" style="border-radius:20px;padding:8px 20px;font-size:13px" onclick="postBamboo()">익명 전송</button>
+    </div>
+  </div>
+  <!-- 탭 -->
+  <div class="tab-bar" id="bamboo-tab-bar" style="margin-bottom:16px">
+    <button class="tab-btn active" onclick="switchBambooTab('all', this)">전체</button>
+    <button class="tab-btn" onclick="switchBambooTab('mine', this)">내 글 <span id="my-post-count"></span></button>
+  </div>
+  <div id="bamboo-list"></div>
+</div>
+
+<!-- CREW -->
+<div class="page" id="page-crew">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding:4px 0 0">
+    <div style="font-size:20px;font-weight:800">크루</div>
+    <button class="btn-white" style="border-radius:20px;padding:7px 14px;font-size:12px" onclick="openPanel('create-crew-panel')">+ 크루 만들기</button>
+  </div>
+  <div class="tab-bar" id="crew-tab-bar">
+    <button class="tab-btn active" onclick="switchCrewTab('mine', this)">내 크루</button>
+    <button class="tab-btn" onclick="switchCrewTab('explore', this)">탐색하기</button>
+  </div>
+  <!-- 지역 필터 (탐색하기 탭에서만 표시) -->
+  <div id="region-filter" style="display:none;overflow-x:auto;padding:12px 0 4px;scrollbar-width:none">
+    <div style="display:flex;gap:8px;width:max-content">
+      <button onclick="filterRegion('전체', this)" class="region-btn active" style="background:#fff;color:#000;border:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all 0.2s">전체</button>
+      <button onclick="filterRegion('강남', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">강남</button>
+      <button onclick="filterRegion('마포', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">마포</button>
+      <button onclick="filterRegion('성수', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">성수</button>
+      <button onclick="filterRegion('용산', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">용산</button>
+      <button onclick="filterRegion('강북', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">강북</button>
+      <button onclick="filterRegion('서울 전체', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">서울 전체</button>
+    </div>
+  </div>
+  <div id="crew-mine" style="padding-top:16px"></div>
+  <div id="crew-explore" style="padding-top:16px;display:none"></div>
+</div>
+
+<!-- CENTER PAGE -->
+<div class="page" id="page-center" style="padding:0 0 100px">
+  <div style="padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="font-size:20px;font-weight:800">센터</div>
+    <button class="btn-white" style="border-radius:20px;padding:7px 14px;font-size:12px" onclick="openPanel('center-register-panel')">+ 센터 등록</button>
+  </div>
+  <!-- 검색 -->
+  <div style="padding:0 20px 16px">
+    <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:16px">🔍</span>
+      <input id="center-search" placeholder="헬스장, 클라이밍, 필라테스 검색" style="background:none;border:none;color:#fff;font-size:14px;outline:none;width:100%;font-family:inherit" oninput="filterCenters()">
+    </div>
+  </div>
+  <!-- 지역 필터 -->
+  <div style="overflow-x:auto;padding:0 20px 16px;scrollbar-width:none">
+    <div style="display:flex;gap:8px;width:max-content">
+      <button onclick="filterCenterRegion('전체', this)" class="center-region-btn active-region" style="background:#fff;color:#000;border:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all 0.2s">전체</button>
+      <button onclick="filterCenterRegion('강남', this)" class="center-region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">강남</button>
+      <button onclick="filterCenterRegion('마포', this)" class="center-region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">마포</button>
+      <button onclick="filterCenterRegion('성수', this)" class="center-region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">성수</button>
+      <button onclick="filterCenterRegion('용산', this)" class="center-region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">용산</button>
+    </div>
+  </div>
+  <!-- 카테고리 탭 -->
+  <div class="tab-bar" id="center-tab-bar" style="padding:0 20px;margin-bottom:0">
+    <button class="tab-btn active" onclick="switchCenterTab('all', this)">전체</button>
+    <button class="tab-btn" onclick="switchCenterTab('partner', this)">파트너 구하기</button>
+    <button class="tab-btn" onclick="switchCenterTab('review', this)">리뷰</button>
+  </div>
+  <div id="center-list" style="padding:16px 20px"></div>
+</div>
+
+<!-- ===== PANELS ===== -->
+
+<!-- MyPage Panel -->
+<div class="panel" id="mypage-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('mypage-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">내 프로필</span>
+    <button onclick="googleLogout()" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;margin-left:auto">로그아웃</button>
+  </div>
+  <div class="panel-body">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:32px;cursor:pointer;position:relative;overflow:hidden" onclick="document.getElementById('profile-pic-input').click()">
+        <img id="profile-pic-preview" src="" style="width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0">
+        <span id="profile-pic-icon">💪</span>
+      </div>
+      <input type="file" id="profile-pic-input" accept="image/*" style="display:none" onchange="handleProfilePic(this)">
+      <div style="font-size:18px;font-weight:800;margin-bottom:4px" id="info-name">나</div>
+      <div style="font-size:12px;color:#666">✓ GBD VERIFIED</div>
+    </div>
+    <div class="tab-bar" style="margin-bottom:16px">
+      <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
+      <button class="tab-btn" onclick="switchMyTab('photos', this)">사진</button>
+      <button class="tab-btn" onclick="switchMyTab('workout', this)">운동샷</button>
+    </div>
+    <div id="my-info">
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">운동 스타일</span><span style="font-size:13px;font-weight:600" id="info-workout">웨이트 · 러닝</span></div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">주 운동 장소</span><span style="font-size:13px;font-weight:600" id="info-gym">마포 헬스장</span></div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">운동 시간</span><span style="font-size:13px;font-weight:600" id="info-time">평일 새벽</span></div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">크루</span><span style="font-size:13px;font-weight:600">GBD CREW</span></div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">한 줄 소개</span><span style="font-size:13px;font-weight:600;text-align:right;max-width:60%" id="info-bio">운동 끝나고 같이 단백질 먹을 사람</span></div>
+      <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:4px" onclick="openPanel('edit-profile-panel')">프로필 수정</button>
+    </div>
+    <div id="my-photos" style="display:none">
+      <div class="upload-zone" onclick="document.getElementById('photos-input').click()">
+        <div style="font-size:28px;margin-bottom:8px">📷</div>
+        <div style="font-size:13px;color:#666">프로필 사진 추가</div>
+      </div>
+      <input type="file" id="photos-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'photos-grid')">
+      <div class="photo-grid-2" id="photos-grid"></div>
+    </div>
+    <div id="my-workout" style="display:none">
+      <div class="upload-zone" onclick="document.getElementById('workout-input').click()">
+        <div style="font-size:28px;margin-bottom:8px">💪</div>
+        <div style="font-size:13px;color:#666">운동 사진 추가</div>
+      </div>
+      <input type="file" id="workout-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'workout-grid')">
+      <div class="photo-grid-3" id="workout-grid"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== PANELS ===== -->
+
+<!-- Center Detail Panel -->
+<div class="panel" id="center-detail-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('center-detail-panel')">←</button>
+    <span style="font-weight:700;font-size:16px" id="center-detail-name"></span>
+  </div>
+  <div class="tab-bar" style="padding:0 20px">
+    <button class="tab-btn active" onclick="switchCenterDetailTab('info', this)">정보</button>
+    <button class="tab-btn" onclick="switchCenterDetailTab('partner', this)">파트너</button>
+    <button class="tab-btn" onclick="switchCenterDetailTab('bamboo', this)">대나무숲</button>
+    <button class="tab-btn" onclick="switchCenterDetailTab('review', this)">리뷰</button>
+  </div>
+  <div class="panel-body">
+    <div id="center-info-tab"></div>
+    <div id="center-partner-tab" style="display:none"></div>
+    <div id="center-bamboo-tab" style="display:none"></div>
+    <div id="center-review-tab" style="display:none"></div>
+  </div>
+</div>
+
+<!-- Center Register Panel -->
+<div class="panel" id="center-register-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('center-register-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">센터 등록하기</span>
+  </div>
+  <div class="panel-body">
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px;margin-bottom:20px">
+      <div style="font-size:13px;color:#aaa;line-height:1.7">내가 다니는 헬스장이나 센터를 등록하면 같은 센터 멤버를 찾고 파트너를 구할 수 있어요!</div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">센터 이름</div>
+      <input id="reg-center-name" placeholder="ex) 홍대 크로스핏 박스" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">종류</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="center-type-btns">
+        <button onclick="selectCenterType('헬스', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">헬스</button>
+        <button onclick="selectCenterType('크로스핏', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">크로스핏</button>
+        <button onclick="selectCenterType('클라이밍', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">클라이밍</button>
+        <button onclick="selectCenterType('필라테스', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">필라테스</button>
+        <button onclick="selectCenterType('요가', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">요가</button>
+        <button onclick="selectCenterType('복싱', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">복싱</button>
+        <button onclick="selectCenterType('수영', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">수영</button>
+        <button onclick="selectCenterType('기타', this)" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all 0.2s">기타</button>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">지역</div>
+      <input id="reg-center-loc" placeholder="ex) 마포구 홍대입구역 근처" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit">
+    </div>
+    <div style="margin-bottom:24px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">상세 주소 (선택)</div>
+      <input id="reg-center-addr" placeholder="ex) 마포구 와우산로 00" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit">
+    </div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px" onclick="registerCenter()">센터 등록하기</button>
+  </div>
+</div>
+
+<!-- User Profile Panel -->
+<div class="panel" id="user-profile-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('user-profile-panel')">←</button>
+    <span style="font-weight:700;font-size:16px;letter-spacing:-0.3px" id="user-profile-name"></span>
+  </div>
+  <div class="panel-body" id="user-profile-body"></div>
+</div>
+
+<!-- Comment Panel -->
+<div class="panel" id="comment-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('comment-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">댓글</span>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px 20px" id="comment-list"></div>
+  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px">
+    <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')submitComment()">
+    <button onclick="submitComment()" style="background:#fff;color:#000;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+  </div>
+</div>
+
+<!-- Notifications Panel -->
+<div class="panel" id="notif-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('notif-panel')">←</button>
+    <span style="font-weight:700;font-size:16px;flex:1">알림</span>
+    <button style="background:none;border:none;color:#555;font-size:12px;cursor:pointer" onclick="markAllRead()">모두 읽음</button>
+  </div>
+  <div class="panel-body" id="notif-list"></div>
+</div>
+
+<!-- Received Likes Panel -->
+<div class="panel" id="received-likes-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('received-likes-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">나한테 좋아요 누른 사람</span>
+  </div>
+  <div class="panel-body">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:12px;color:rgba(255,255,255,0.35);letter-spacing:0.3px">2명이 회원님의 프로필에 좋아요를 눌렀어요</div>
+    </div>
+    <div class="card" style="display:flex;gap:12px;align-items:center">
+      <img src="https://images.unsplash.com/photo-1518611012118-696072aa579a?w=80&q=80" style="width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0">
+      <div style="flex:1">
+        <div style="font-weight:700;margin-bottom:4px">하늘 · 24</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4)">필라테스 · 강남</div>
+      </div>
+      <button onclick="handleLike(); closePanel('received-likes-panel');" style="background:#fff;color:#000;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💪 매칭</button>
+    </div>
+    <div class="card" style="display:flex;gap:12px;align-items:center">
+      <img src="https://images.unsplash.com/photo-1594381898411-846e7d193883?w=80&q=80" style="width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0">
+      <div style="flex:1">
+        <div style="font-weight:700;margin-bottom:4px">서연 · 27</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4)">러닝 · 용산</div>
+      </div>
+      <button onclick="handleLike(); closePanel('received-likes-panel');" style="background:#fff;color:#000;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💪 매칭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Favorites Panel -->
+<div class="panel" id="fav-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('fav-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">즐겨찾기 ⭐</span>
+  </div>
+  <div class="panel-body" id="fav-list"></div>
+</div>
+
+<!-- Chat Panel -->
+<div class="panel" id="chat-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('chat-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">톡</span>
+  </div>
+  <div class="panel-body" id="chat-list"></div>
+</div>
+
+<!-- Chat Detail Panel -->
+<div class="panel" id="chat-detail-panel" style="flex-direction:column">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('chat-detail-panel')">←</button>
+    <img id="chat-detail-avatar" src="" style="width:36px;height:36px;border-radius:50%;object-fit:cover">
+    <span style="font-weight:700;margin-left:8px" id="chat-detail-name"></span>
+  </div>
+  <div id="chat-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px"></div>
+  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px">
+    <input id="chat-input" placeholder="메시지 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="btn-white" style="border-radius:50%;width:40px;height:40px;font-size:16px" onclick="sendChat()">↑</button>
+  </div>
+</div>
+
+<!-- Edit Profile Panel -->
+<div class="panel" id="edit-profile-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('edit-profile-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">프로필 수정</span>
+  </div>
+  <div class="panel-body">
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">운동 스타일</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="workout-tags-edit"></div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">주 운동 장소</div>
+      <input id="edit-gym" placeholder="ex) 마포 헬스장" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">운동 시간</div>
+      <input id="edit-time" placeholder="ex) 평일 새벽" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:24px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">한 줄 소개</div>
+      <input id="edit-bio" placeholder="ex) 운동 끝나고 같이 단백질 먹을 사람" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px" onclick="saveProfile()">저장</button>
+  </div>
+</div>
+
+<!-- Create Crew Panel -->
+<div class="panel" id="create-crew-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('create-crew-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">크루 만들기</span>
+  </div>
+  <div class="panel-body">
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">크루 이름</div>
+      <input id="new-crew-name" placeholder="ex) 서울 러닝 크루" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">한 줄 소개</div>
+      <input id="new-crew-desc" placeholder="ex) 토요일 새벽 한강 같이 뛰어요" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">활동 지역</div>
+      <input id="new-crew-loc" placeholder="ex) 용산 한강" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:8px">운동 카테고리</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="new-crew-workout-tags"></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <div style="font-size:12px;color:#666;margin-bottom:8px">입장료 설정 (선택)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="entry-fee-btns"></div>
+      <div style="font-size:12px;color:#666;margin-top:8px" id="entry-fee-preview"></div>
+    </div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px" onclick="createCrew()">크루 생성하기</button>
+  </div>
+</div>
+
+<!-- Crew Detail Panel -->
+<div class="panel" id="crew-detail-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('crew-detail-panel')">←</button>
+    <span style="font-weight:700;font-size:16px" id="crew-detail-name"></span>
+    <span id="crew-verified-badge" style="display:none;background:#fff;color:#000;font-size:8px;font-weight:800;padding:2px 6px;border-radius:6px;margin-left:6px">VERIFIED</span>
+  </div>
+  <div id="crew-manager-panel" style="display:none;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="font-size:11px;color:#666;margin-bottom:10px;letter-spacing:1px">크루장 관리</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-glass" style="flex:1;padding:10px;font-size:12px;font-weight:600" onclick="openBoostModal()">⚡ 부스트</button>
+      <button class="btn-glass" style="flex:1;padding:10px;font-size:12px;font-weight:600" onclick="openEntryFeeModal()">💰 입장료 설정</button>
+      <div id="crew-earnings-box" style="flex:1;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px;text-align:center;display:none">
+        <div style="font-size:10px;color:#666">누적 수익</div>
+        <div style="font-size:13px;font-weight:800;margin-top:2px" id="crew-earnings-num">0원</div>
+      </div>
+    </div>
+  </div>
+  <div class="tab-bar" style="padding:0 20px">
+    <button class="tab-btn active" onclick="switchCrewDetailTab('schedule', this)">모임 일정</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('members', this)">멤버</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('feed', this)">피드</button>
+  </div>
+  <div class="panel-body">
+    <div id="crew-schedule-tab"></div>
+    <div id="crew-members-tab" style="display:none"></div>
+    <div id="crew-feed-tab" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ===== MODALS ===== -->
+
+<!-- PRO Modal -->
+<div class="modal-overlay" id="pro-modal">
+  <div class="modal-sheet">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:36px;margin-bottom:12px">💪</div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:8px">MURPY PRO</div>
+      <div style="font-size:14px;color:#888;line-height:1.6" id="pro-reason-text"></div>
+    </div>
+    <div class="pro-row"><span style="font-size:13px;font-weight:600">✓ 좋아요 무제한</span><span style="font-size:12px;color:#666">하루 5번 → 무제한</span></div>
+    <div class="pro-row"><span style="font-size:13px;font-weight:600">✓ 댓글 무제한</span><span style="font-size:12px;color:#666">3개 → 무제한</span></div>
+    <div class="pro-row"><span style="font-size:13px;font-weight:600">✓ 먼저 말 걸기</span><span style="font-size:12px;color:#666">매칭 후 바로 톡</span></div>
+    <div class="pro-row"><span style="font-size:13px;font-weight:600">✓ 대숲 신청자 보기</span><span style="font-size:12px;color:#666">PRO만 확인 가능</span></div>
+    <div class="pro-row"><span style="font-size:13px;font-weight:600">✓ 나한테 좋아요 보기</span><span style="font-size:12px;color:#666">블러 해제</span></div>
+    <button class="btn-white" style="width:100%;padding:16px;font-size:16px;margin-top:24px;box-shadow:0 4px 16px rgba(255,255,255,0.12)" onclick="activatePro()">월 9,900원으로 시작하기</button>
+    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px;padding:8px" onclick="closeModal('pro-modal')">다음에 할게요</button>
+  </div>
+</div>
+
+<!-- Match Success Modal -->
+<div class="modal-overlay" id="match-modal">
+  <div class="modal-sheet" style="text-align:center;padding:40px 24px 48px">
+    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,255,255,0.35);margin-bottom:20px;text-transform:uppercase;font-weight:500">Connected</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px" id="match-success-name"></div>
+    <div style="font-size:14px;color:rgba(255,255,255,0.4);margin-bottom:28px;letter-spacing:-0.2px">같이 운동할 날을 잡아봐요</div>
+    <button style="background:#fff;color:#000;border:none;border-radius:10px;padding:14px 32px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px" onclick="startChat()">톡 시작하기</button>
+    <button style="display:block;width:100%;background:none;border:none;color:rgba(255,255,255,0.3);font-size:13px;cursor:pointer;margin-top:14px;font-family:inherit" onclick="closeModal('match-modal')">나중에</button>
+  </div>
+</div>
+
+<!-- Boost Modal -->
+<div class="modal-overlay" id="boost-modal">
+  <div class="modal-sheet">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:28px;margin-bottom:8px">⚡</div>
+      <div style="font-size:18px;font-weight:800;margin-bottom:4px">크루 부스트</div>
+      <div style="font-size:13px;color:#666">탐색 상단에 노출돼서 더 많은 멤버를 모아요</div>
+    </div>
+    <div id="boost-options"></div>
+    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:8px" onclick="closeModal('boost-modal')">취소</button>
+  </div>
+</div>
+
+<!-- Entry Fee Modal -->
+<div class="modal-overlay" id="entry-fee-modal">
+  <div class="modal-sheet">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:28px;margin-bottom:8px">💰</div>
+      <div style="font-size:18px;font-weight:800;margin-bottom:4px">입장료 설정</div>
+      <div style="font-size:13px;color:#666;line-height:1.6">크루장 80% · MURPY 20% 분배</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="entry-fee-modal-btns"></div>
+    <div style="font-size:12px;color:#666;padding:8px 0;min-height:24px" id="entry-fee-modal-preview"></div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px;margin-top:12px" onclick="saveEntryFee()">설정 완료</button>
+    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px" onclick="closeModal('entry-fee-modal')">취소</button>
+  </div>
+</div>
+
+<!-- Join Pay Modal -->
+<div class="modal-overlay" id="join-pay-modal">
+  <div class="modal-sheet" style="text-align:center">
+    <img id="join-pay-img" src="" style="width:64px;height:64px;border-radius:12px;object-fit:cover;margin:0 auto 12px;display:block">
+    <div style="font-size:18px;font-weight:800;margin-bottom:4px" id="join-pay-name"></div>
+    <div style="font-size:13px;color:#666;margin-bottom:16px" id="join-pay-desc"></div>
+    <div style="font-size:28px;font-weight:900" id="join-pay-fee"></div>
+    <div style="font-size:12px;color:#555;margin-top:4px;margin-bottom:20px">크루 입장료 · 1회 결제</div>
+    <button class="btn-white" style="width:100%;padding:16px;font-size:16px" id="join-pay-btn">결제하고 가입하기</button>
+    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px" onclick="closeModal('join-pay-modal')">취소</button>
+  </div>
+</div>
+
+<!-- Bottom Nav -->
+<div class="bottom-nav">
+  <button class="nav-btn" onclick="goPage('home')">
+    <div class="nav-icon-wrap active" id="nav-home">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+      </svg>
+    </div>
+    <span class="nav-label active" id="navl-home">홈</span>
+  </button>
+  <button class="nav-btn" onclick="goPage('match')">
+    <div class="nav-icon-wrap" id="nav-match">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      </svg>
+    </div>
+    <span class="nav-label" id="navl-match">매칭</span>
+  </button>
+  <button class="nav-btn" onclick="goPage('bamboo')">
+    <div class="nav-icon-wrap" id="nav-bamboo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="14" rx="2"/>
+        <polyline points="2,6 12,13 22,6"/>
+      </svg>
+    </div>
+    <span class="nav-label" id="navl-bamboo">대숲</span>
+  </button>
+  <button class="nav-btn" onclick="goPage('crew')">
+    <div class="nav-icon-wrap" id="nav-crew">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+    </div>
+    <span class="nav-label" id="navl-crew">크루</span>
+  </button>
+  <button class="nav-btn" onclick="goPage('center')">
+    <div class="nav-icon-wrap" id="nav-center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+    </div>
+    <span class="nav-label" id="navl-center">센터</span>
+  </button>
+</div>
+
+<script>
+// ===== DATA =====
+const PROFILES = [
+  { id:1, name:"지수", age:26, loc:"마포", workout:["크로스핏","러닝"], gym:"홍대 크박", time:"새벽 6시파", bio:"운동 끝나고 같이 커피 마실 사람 좋아요", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80", attendance:23, record:"3대 285kg", sameCenter:true },
+  { id:2, name:"민준", age:29, loc:"성수", workout:["클라이밍","웨이트"], gym:"성수 클라이밍", time:"저녁 7시파", bio:"3대보다 꾸준함 추구파. 볼더링 같이 하실 분", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&q=80", attendance:18, record:"V5 클리어", sameCenter:false },
+  { id:3, name:"하늘", age:24, loc:"강남", workout:["필라테스","요가"], gym:"강남 스튜디오", time:"아침 8시파", bio:"운동 얘기보다 루틴 공유하는 거 더 좋아함", img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&q=80", attendance:28, record:"개근 4주", sameCenter:false },
+  { id:4, name:"서연", age:27, loc:"용산", workout:["러닝","수영"], gym:"한강 러닝", time:"새벽 5시파", bio:"새벽 한강 뛰고 단백질 먹는 게 낙이에요", img:"https://images.unsplash.com/photo-1594381898411-846e7d193883?w=400&q=80", attendance:31, record:"하프마라톤 완주", sameCenter:false },
+];
+
+const CREWS = [
+  { id:1, name:"GBD CREW", desc:"근손실방지단 · 서울 스트릿 피트니스", members:247, loc:"서울 전체", workout:["웨이트","크로스핏","러닝"], mine:true, joined:true, boosted:true, fee:0, earnings:124000, verified:true, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" },
+  { id:2, name:"한강 러닝 크루", desc:"토/일 새벽 한강 같이 뛰어요", members:89, loc:"용산 한강", workout:["러닝"], mine:false, joined:false, boosted:true, fee:2000, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1594381898411-846e7d193883?w=200&q=80" },
+  { id:3, name:"강남 클라이밍", desc:"퇴근하고 클라이밍 한 판", members:34, loc:"강남", workout:["클라이밍"], mine:false, joined:true, boosted:false, fee:0, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=200&q=80" },
+  { id:4, name:"성수 크로스핏", desc:"WOD 같이 부수실 분", members:52, loc:"성동", workout:["크로스핏"], mine:false, joined:false, boosted:false, fee:5000, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=200&q=80" },
+  { id:5, name:"마포 새벽 운동", desc:"출근 전 6시 헬스 모임", members:18, loc:"마포", workout:["웨이트"], mine:false, joined:false, boosted:false, fee:0, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" },
+  { id:6, name:"서울 필라테스 클럽", desc:"필라 끝나고 브런치 가는 모임", members:41, loc:"강남", workout:["필라테스","요가"], mine:false, joined:false, boosted:true, fee:3000, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=200&q=80" },
+];
+
+const CENTERS = [
+  { id:1, name:"홍대 크로스핏 박스", type:"크로스핏", loc:"마포", addr:"마포구 홍대입구역 근처", rating:4.8, reviews:32, members:124, partner:true, img:"https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=80",
+    partnerPosts:[{ text:"월/수/금 새벽 6시 WOD 같이 하실 분!", time:"1시간 전", name:"지수" }],
+    reviewList:[{ name:"민준", rating:5, text:"분위기 진짜 좋고 코치님이 친절해요", time:"3일 전" }, { name:"서연", rating:4, text:"시설은 좋은데 주차가 좀 불편해요", time:"1주 전" }]
+  },
+  { id:2, name:"강남 클라이밍 센터", type:"클라이밍", loc:"강남", addr:"강남구 역삼역 근처", rating:4.6, reviews:28, members:89, partner:false, img:"https://images.unsplash.com/photo-1522898467493-49726bf28798?w=200&q=80",
+    partnerPosts:[{ text:"화요일 저녁 7시 볼더링 같이 할 분 구해요", time:"30분 전", name:"하늘" }],
+    reviewList:[{ name:"도현", rating:5, text:"루트 세팅이 자주 바뀌어서 좋아요", time:"2일 전" }]
+  },
+  { id:3, name:"성수 필라테스 스튜디오", type:"필라테스", loc:"성수", addr:"성동구 성수동", rating:4.9, reviews:45, members:67, partner:false, img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=200&q=80",
+    partnerPosts:[],
+    reviewList:[{ name:"지수", rating:5, text:"원장님이 꼼꼼하게 케어해줘요. 강추!", time:"1일 전" }]
+  },
+  { id:4, name:"마포 헬스보이짐", type:"헬스", loc:"마포", addr:"마포구 합정동", rating:4.5, reviews:19, members:203, partner:true, img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=200&q=80",
+    partnerPosts:[{ text:"평일 새벽 6시 스쿼트 파트너 구합니다 3대500 목표", time:"2시간 전", name:"민준" }],
+    reviewList:[{ name:"서연", rating:4, text:"기구 많고 넓어서 좋아요", time:"5일 전" }]
+  },
+  { id:5, name:"용산 복싱 클럽", type:"복싱", loc:"용산", addr:"용산구 이태원동", rating:4.7, reviews:22, members:55, partner:false, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80",
+    partnerPosts:[{ text:"주말 오후 스파링 파트너 구해요 초보 환영", time:"3시간 전", name:"도현" }],
+    reviewList:[{ name:"민준", rating:5, text:"트레이너분이 실력파예요!", time:"3일 전" }]
+  },
+];
+
+let bambooData = [
+  { id:1, text:"홍대 크박 월요일 7시 검정 후드 입으신 분 진짜 멋있으세요", time:"3분 전", likes:24, liked:false, comments:[], myPost:true, requesters:["익명1"] },
+  { id:2, text:"성수 클라이밍 화요일 저녁에 항상 오시는 장발 분 혹시 여기 계세요?", time:"12분 전", likes:41, liked:false, comments:[], myPost:false, requesters:[] },
+  { id:3, text:"강남 헬스장 6시 루틴 항상 같은 분 오늘도 봤는데 눈 마주쳐서 심장 터질뻔", time:"28분 전", likes:67, liked:false, comments:[], myPost:false, requesters:[] },
+  { id:4, text:"매일 같이 운동하다보니 이름도 모르는 사람이 생겼다 어떡하지", time:"1시간 전", likes:103, liked:false, comments:[], myPost:false, requesters:[] },
+];
+
+let notifications = [
+  { id:1, type:"match", text:"서연님과 매칭됐어요! 톡을 시작해보세요", time:"방금", read:false },
+  { id:2, type:"bamboo", text:"내 대나무숲 글에 '나 그 사람이에요' 신청이 왔어요", time:"5분 전", read:false },
+  { id:3, type:"like", text:"3명이 내 프로필에 좋아요를 눌렀어요", time:"12분 전", read:false },
+  { id:4, type:"crew", text:"GBD CREW 모임이 이번 토요일 오전 7시에 있어요", time:"1시간 전", read:true },
+];
+
+let favorites = [];
+let currentMatch = 0;
+let likesLeft = 5;
+let isPro = false;
+let selectedEntryFee = 0;
+let currentCrewId = null;
+let chatHistory = [
+  { from:"other", text:"안녕하세요! 같이 운동 언제 가요?" },
+  { from:"me", text:"저도 반가워요 ㅎㅎ 이번주 어떠세요?" },
+];
+
+const WORKOUT_OPTIONS = ["웨이트","크로스핏","러닝","클라이밍","필라테스","요가","수영","자전거","복싱","축구"];
+const FILTER_WORDS = ["@","인스타","카톡","카카오","010","DM","디엠","연락처","번호","instagram","kakao"];
+const BOOST_OPTIONS = [
+  { label:"3일 부스트", price:5900, desc:"탐색 상단 3일 노출" },
+  { label:"7일 부스트", price:9900, desc:"탐색 상단 7일 노출", popular:true },
+  { label:"30일 부스트", price:29900, desc:"탐색 상단 30일 노출" },
+];
+
+// ===== NAVIGATION =====
+function goPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  ['home','match','bamboo','crew','center'].forEach(n => {
+    document.getElementById('nav-' + n).classList.toggle('active', n === name);
+    document.getElementById('navl-' + n).classList.toggle('active', n === name);
+  });
+  if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); }
+  if (name === 'crew') renderCrews();
+  if (name === 'match') renderMatch();
+  if (name === 'center') renderCenters();
+  if (name === 'home') renderHomeCrews();
+}
+
+function openPanel(id) { document.getElementById(id).classList.add('open'); if (id==='notif-panel') renderNotifs(); if (id==='fav-panel') renderFavs(); if (id==='chat-panel') renderChatList(); if (id==='edit-profile-panel') initEditProfile(); if (id==='received-likes-panel') {} }
+function closePanel(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ===== TOAST =====
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.style.display = 'none', 250);
+  }, 2500);
+}
+
+// ===== PRO =====
+function requirePro(reason) {
+  document.getElementById('pro-reason-text').textContent = reason;
+  openModal('pro-modal');
+}
+function activatePro() {
+  isPro = true;
+  closeModal('pro-modal');
+  showToast('🎉 PRO 시작됐어요!');
+}
+
+// ===== MATCH =====
+function renderMatch() {
+  const p = PROFILES[currentMatch % PROFILES.length];
+  document.getElementById('match-img').src = p.img;
+  document.getElementById('match-name').textContent = p.name;
+  document.getElementById('match-age').textContent = p.age;
+  document.getElementById('match-gym').textContent = p.gym + ' · ' + p.time;
+  document.getElementById('match-bio').textContent = p.bio;
+
+  // 위치
+  const locEl = document.getElementById('match-loc');
+  locEl.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> ${p.loc}`;
+
+  // 운동 태그
+  document.getElementById('match-tags').innerHTML = p.workout.map(w => `<span class="tag">${w}</span>`).join('');
+
+  // 추가 정보 뱃지
+  const extra = document.getElementById('match-extra');
+  extra.innerHTML = `
+    <span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:4px 9px;font-size:11px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:4px">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      이번달 ${p.attendance}회
+    </span>
+    <span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:4px 9px;font-size:11px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:4px">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      ${p.record}
+    </span>
+    ${p.sameCenter ? `<span style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);border-radius:6px;padding:4px 9px;font-size:11px;color:#fff;font-weight:600">같은 센터</span>` : ''}
+  `;
+}
+
+function handleLike() {
+  const card = document.getElementById('match-card');
+  card.style.transform = 'scale(1.02) rotate(3deg)';
+  const p = PROFILES[currentMatch % PROFILES.length];
+  setTimeout(() => {
+    document.getElementById('match-success-name').textContent = p.name + '님과 연결됐어요';
+    card.style.transform = 'none';
+    openModal('match-modal');
+    currentMatch++;
+    renderMatch();
+  }, 400);
+}
+
+function handlePass() {
+  const card = document.getElementById('match-card');
+  card.style.transform = 'scale(0.95) rotate(-3deg)'; card.style.opacity = '0';
+  setTimeout(() => { card.style.transform = 'none'; card.style.opacity = '1'; currentMatch++; renderMatch(); }, 400);
+}
+
+function handleFavorite() {
+  const p = PROFILES[currentMatch % PROFILES.length];
+  const idx = favorites.findIndex(f => f.id === p.id);
+  if (idx >= 0) { favorites.splice(idx, 1); showToast('해제됐어요'); }
+  else { favorites.push(p); showToast('저장됐어요'); }
+  renderMatch();
+}
+
+function startChat() {
+  closeModal('match-modal');
+  openPanel('chat-detail-panel');
+  document.getElementById('chat-detail-name').textContent = PROFILES[currentMatch % PROFILES.length].name;
+  document.getElementById('chat-detail-avatar').src = PROFILES[currentMatch % PROFILES.length].img;
+  renderChatMessages();
+}
+
+// ===== FAVORITES =====
+function renderFavs() {
+  const el = document.getElementById('fav-list');
+  if (!favorites.length) { el.innerHTML = '<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,0.3)"><div style="font-size:14px">저장한 프로필이 없어요</div></div>'; return; }
+  el.innerHTML = favorites.map(p => `
+    <div class="card" style="display:flex;gap:12px;align-items:center">
+      <img src="${p.img}" style="width:52px;height:52px;border-radius:10px;object-fit:cover">
+      <div style="flex:1"><div style="font-weight:700;margin-bottom:4px">${p.name} · ${p.age}</div><div style="display:flex;gap:4px">${p.workout.map(w=>`<span class="tag">${w}</span>`).join('')}</div></div>
+      <button style="background:none;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;cursor:pointer;padding:6px 12px;font-family:inherit" onclick="removeFav(${p.id})">삭제</button>
+    </div>`).join('');
+}
+function removeFav(id) { favorites = favorites.filter(f => f.id !== id); renderFavs(); }
+
+// ===== BAMBOO =====
+let bambooTab = 'all';
+
+function switchBambooTab(tab, btn) {
+  bambooTab = tab;
+  document.querySelectorAll('#bamboo-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBamboo();
+}
+
+function renderBamboo() {
+  const myCount = bambooData.filter(p => p.myPost).length;
+  const countEl = document.getElementById('my-post-count');
+  if (countEl) countEl.textContent = myCount > 0 ? myCount : '';
+
+  const list = bambooTab === 'mine'
+    ? bambooData.filter(p => p.myPost)
+    : bambooData;
+
+  if (bambooTab === 'mine' && list.length === 0) {
+    document.getElementById('bamboo-list').innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:#444">
+        <div style="font-size:36px;margin-bottom:12px">🎋</div>
+        <div style="font-size:14px;margin-bottom:6px">아직 쓴 글이 없어요</div>
+        <div style="font-size:12px;color:#333">익명으로 마음을 전해보세요</div>
+      </div>`;
+    return;
+  }
+  document.getElementById('bamboo-list').innerHTML = list.map(renderBambooItem).join('');
+}
+
+function renderBambooItem(post) {
+  const commentsHtml = post.comments.map(c => `
+    <div style="display:flex;justify-content:${c.me?'flex-end':'flex-start'};margin-bottom:8px">
+      <div class="comment-bubble" style="background:${c.me?'rgba(255,255,255,0.1)':'rgba(255,255,255,0.04)'};border:${c.me?'none':'1px solid rgba(255,255,255,0.08)'};border-radius:${c.me?'14px 14px 4px 14px':'14px 14px 14px 4px'}">
+        ${c.text}<div style="font-size:10px;color:#444;margin-top:4px">${c.time}</div>
+      </div>
+    </div>`).join('');
+
+  const requesterCount = (post.requesters && post.requesters.length > 0) ? ` (${post.requesters.length})` : '';
+  const actionBtn = post.myPost
+    ? `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600" onclick="viewRequester(${post.id})">신청자 보기 👀${requesterCount}</button>`
+    : (post.requested
+        ? `<span style="font-size:11px;color:#555">신청완료</span>`
+        : `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600" onclick="sendMatchRequest(${post.id})">나 그 사람이에요</button>`);
+
+  return `
+    <div class="card bamboo-item" id="bamboo-${post.id}">
+      <div style="font-size:14px;line-height:1.7;color:#ddd;margin-bottom:12px">${post.text}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${post.showComments?'12px':'0'}">
+        <div style="display:flex;gap:12px">
+          <button style="background:none;border:none;cursor:pointer;font-size:12px;color:${post.liked?'#ff4444':'#666'};padding:0" onclick="toggleBambooLike(${post.id})">${post.liked?'❤️':'🤍'} ${post.likes}</button>
+          <button style="background:none;border:none;cursor:pointer;font-size:12px;color:#666;padding:0" onclick="toggleComments(${post.id})">💬 ${post.comments.length}</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:11px;color:#444">${post.time}</span>
+          ${actionBtn}
+        </div>
+      </div>
+      ${post.showComments ? `
+        <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:12px">
+          ${commentsHtml}
+          <div id="filter-warn-${post.id}" style="display:none;background:rgba(233,69,96,0.1);border:1px solid #e94560;border-radius:10px;padding:8px 12px;font-size:12px;color:#ff8888;margin-bottom:10px">⚠️ 외부 연락처는 입력할 수 없어요.</div>
+          ${post.comments.length === 0 ? '<div style="font-size:13px;color:#444;text-align:center;padding:12px 0">첫 댓글을 남겨보세요</div>' : ''}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <input id="comment-input-${post.id}" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:8px 14px;color:#fff;font-size:13px;outline:none" onkeydown="if(event.key==='Enter')sendComment(${post.id})">
+            <button class="btn-white" style="border-radius:50%;width:36px;height:36px;flex-shrink:0" onclick="sendComment(${post.id})">↑</button>
+          </div>
+        </div>` : ''}
+    </div>`;
+}
+
+function postBamboo() {
+  const text = document.getElementById('bamboo-input').value.trim();
+  if (!text) return;
+  bambooData.unshift({ id: Date.now(), text, time:"방금", likes:0, liked:false, comments:[], myPost:true, requesters:[], showComments:false });
+  document.getElementById('bamboo-input').value = '';
+  renderBamboo();
+}
+
+function toggleBambooLike(id) {
+  const post = bambooData.find(p => p.id === id);
+  if (!post) return;
+  post.liked = !post.liked;
+  post.likes += post.liked ? 1 : -1;
+  renderBamboo();
+}
+
+function toggleComments(id) {
+  const post = bambooData.find(p => p.id === id);
+  if (!post) return;
+  post.showComments = !post.showComments;
+  renderBamboo();
+}
+
+function sendComment(id) {
+  const input = document.getElementById('comment-input-' + id);
+  const text = input.value.trim();
+  if (!text) return;
+  if (FILTER_WORDS.some(w => text.toLowerCase().includes(w.toLowerCase()))) {
+    document.getElementById('filter-warn-' + id).style.display = 'block';
+    setTimeout(() => { const el = document.getElementById('filter-warn-' + id); if(el) el.style.display='none'; }, 3000);
+    return;
+  }
+  const post = bambooData.find(p => p.id === id);
+  post.comments.push({ text, time:"방금", me:true });
+  renderBamboo();
+}
+
+function sendMatchRequest(id) {
+  const post = bambooData.find(p => p.id === id);
+  post.requested = true;
+  showToast('🎋 매칭 신청 완료! 상대방이 수락하면 톡으로 연결돼요');
+  renderBamboo();
+}
+
+function viewRequester(id) {
+  const post = bambooData.find(p => p.id === id);
+  if (post.requesters && post.requesters.length > 0) showToast('💪 신청자와 연결됐어요! 톡에서 확인하세요');
+  else showToast('아직 신청자가 없어요');
+}
+
+// ===== CREWS =====
+function renderCrews() {
+  const mineEl = document.getElementById('crew-mine');
+  const exploreEl = document.getElementById('crew-explore');
+  const mine = CREWS.filter(c => c.joined);
+  const allExplore = CREWS.filter(c => !c.joined);
+  const filtered = currentRegion === '전체'
+    ? allExplore
+    : allExplore.filter(c => c.loc.includes(currentRegion));
+  const boosted = filtered.filter(c => c.boosted);
+  const normal = filtered.filter(c => !c.boosted);
+
+  mineEl.innerHTML = mine.map(c => `
+    <div class="card" style="cursor:pointer" onclick="openCrewDetail(${c.id})">
+      <div style="display:flex;gap:12px;align-items:center">
+        <img src="${c.img}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:15px;font-weight:700">${c.name}</span>
+            ${c.verified?'<span style="background:#fff;color:#000;font-size:8px;font-weight:800;padding:1px 5px;border-radius:6px">VERIFIED</span>':''}
+            ${c.boosted?'<span style="color:#888;font-size:11px">⚡</span>':''}
+          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc}</div>
+          <div style="display:flex;gap:10px">
+            <span style="font-size:11px;color:#444">멤버 ${c.members}명</span>
+            ${c.mine && c.earnings > 0 ? `<span style="font-size:11px;color:#aaa;font-weight:600">수익 ${c.earnings.toLocaleString()}원</span>` : ''}
+          </div>
+        </div>
+        <span style="color:#444;font-size:16px">›</span>
+      </div>
+    </div>`).join('');
+
+  let exploreHtml = '';
+  if (filtered.length === 0) {
+    exploreHtml = `<div style="text-align:center;padding:40px 20px;color:#444">
+      <div style="font-size:32px;margin-bottom:10px">🔍</div>
+      <div style="font-size:14px;margin-bottom:6px">${currentRegion} 크루가 없어요</div>
+      <div style="font-size:12px;color:#333">첫 번째 크루를 만들어보세요!</div>
+    </div>`;
+  } else {
+    if (boosted.length) {
+      exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">⚡ 추천 크루</div>';
+      exploreHtml += boosted.map(c => crewExploreCard(c)).join('');
+      exploreHtml += '<div style="height:1px;background:rgba(255,255,255,0.05);margin:16px 0"></div>';
+    }
+    if (normal.length) {
+      exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">전체 크루</div>';
+      exploreHtml += normal.map(c => crewExploreCard(c)).join('');
+    }
+  }
+  exploreEl.innerHTML = exploreHtml;
+}
+
+function crewExploreCard(c) {
+  return `
+    <div class="card" style="${c.boosted?'border:1px solid rgba(255,255,255,0.12)':''}">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
+        <img src="${c.img}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:14px;font-weight:700">${c.name}</span>
+            ${c.boosted?'<span style="color:#888;font-size:11px">⚡</span>':''}
+          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">${c.workout.map(w=>`<span style="background:rgba(255,255,255,0.07);border-radius:8px;padding:2px 8px;font-size:10px">${w}</span>`).join('')}</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-size:11px;color:#444">멤버 ${c.members}명 · ${c.loc}</span>
+          ${c.fee > 0 ? `<span style="font-size:11px;color:#999;margin-left:8px;font-weight:600">입장료 ${c.fee.toLocaleString()}원</span>` : ''}
+        </div>
+        <button class="btn-white" style="border-radius:20px;padding:7px 16px;font-size:12px" onclick="joinCrew(${c.id})">${c.fee > 0 ? c.fee.toLocaleString()+'원 · 가입' : '가입'}</button>
+      </div>
+    </div>`;
+}
+
+let currentRegion = '전체';
+
+function switchCrewTab(tab, btn) {
+  document.querySelectorAll('#crew-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('crew-mine').style.display = tab === 'mine' ? 'block' : 'none';
+  document.getElementById('crew-explore').style.display = tab === 'explore' ? 'block' : 'none';
+  document.getElementById('region-filter').style.display = tab === 'explore' ? 'block' : 'none';
+}
+
+function filterRegion(region, btn) {
+  currentRegion = region;
+  document.querySelectorAll('.region-btn').forEach(b => {
+    b.style.background = 'rgba(255,255,255,0.08)';
+    b.style.color = '#fff';
+    b.style.border = '1px solid rgba(255,255,255,0.15)';
+    b.style.fontWeight = '400';
+  });
+  btn.style.background = '#fff';
+  btn.style.color = '#000';
+  btn.style.border = 'none';
+  btn.style.fontWeight = '700';
+  renderCrews();
+}
+
+function joinCrew(id) {
+  const crew = CREWS.find(c => c.id === id);
+  if (crew.fee > 0) {
+    document.getElementById('join-pay-img').src = crew.img;
+    document.getElementById('join-pay-name').textContent = crew.name;
+    document.getElementById('join-pay-desc').textContent = crew.desc;
+    document.getElementById('join-pay-fee').textContent = crew.fee.toLocaleString() + '원';
+    document.getElementById('join-pay-btn').textContent = crew.fee.toLocaleString() + '원 결제하고 가입하기';
+    document.getElementById('join-pay-btn').onclick = () => { crew.joined = true; crew.members++; closeModal('join-pay-modal'); showToast(`✓ ${crew.fee.toLocaleString()}원 결제 완료! 가입됐어요`); renderCrews(); };
+    openModal('join-pay-modal');
+  } else {
+    crew.joined = true; crew.members++;
+    showToast('✓ 크루 가입 완료!');
+    renderCrews();
+  }
+}
+
+function openCrewDetail(id) {
+  const crew = CREWS.find(c => c.id === id);
+  currentCrewId = id;
+  document.getElementById('crew-detail-name').textContent = crew.name;
+  document.getElementById('crew-verified-badge').style.display = crew.verified ? 'inline' : 'none';
+  const mgr = document.getElementById('crew-manager-panel');
+  mgr.style.display = crew.mine ? 'block' : 'none';
+  if (crew.mine && crew.earnings > 0) {
+    document.getElementById('crew-earnings-box').style.display = 'block';
+    document.getElementById('crew-earnings-num').textContent = crew.earnings.toLocaleString() + '원';
+  }
+  renderCrewSchedule(); renderCrewMembers(); renderCrewFeed();
+  openPanel('crew-detail-panel');
+}
+
+function switchCrewDetailTab(tab, btn) {
+  document.querySelectorAll('#crew-detail-panel .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('crew-schedule-tab').style.display = tab==='schedule'?'block':'none';
+  document.getElementById('crew-members-tab').style.display = tab==='members'?'block':'none';
+  document.getElementById('crew-feed-tab').style.display = tab==='feed'?'block':'none';}
+
+const schedules = [
+  { date:"5.31 토", time:"07:00", place:"홍대 크박", type:"웨이트 모임", joined:true },
+  { date:"6.4 수", time:"19:00", place:"성수 클라이밍", type:"클라이밍 모임", joined:false },
+  { date:"6.7 토", time:"06:30", place:"한강 반포", type:"러닝 모임", joined:false },
+];
+
+function renderCrewSchedule() {
+  document.getElementById('crew-schedule-tab').innerHTML = schedules.map((s, i) => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">${s.type}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:2px">📅 ${s.date} ${s.time}</div>
+          <div style="font-size:12px;color:#666">📍 ${s.place}</div>
+        </div>
+        <button style="background:${s.joined?'#fff':'none'};color:${s.joined?'#000':'#fff'};border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:${s.joined?700:400};cursor:pointer" onclick="toggleSchedule(${i})">${s.joined?'참가중 ✓':'참가하기'}</button>
+      </div>
+    </div>`).join('');
+}
+function toggleSchedule(i) { schedules[i].joined = !schedules[i].joined; renderCrewSchedule(); }
+
+const crewMembers = [
+  { name:"지수", workout:"크로스핏", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=100&q=80" },
+  { name:"민준", workout:"클라이밍", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=100&q=80" },
+  { name:"하늘", workout:"필라테스", img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=100&q=80" },
+  { name:"서연", workout:"러닝", img:"https://images.unsplash.com/photo-1594381898411-846e7d193883?w=100&q=80" },
+  { name:"도현", workout:"웨이트", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=100&q=80" },
+  { name:"유진", workout:"수영", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=100&q=80" },
+];
+function renderCrewMembers() {
+  document.getElementById('crew-members-tab').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${crewMembers.map(m=>`<div style="text-align:center"><img src="${m.img}" style="width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;margin-bottom:6px"><div style="font-size:13px;font-weight:700">${m.name}</div><div style="font-size:11px;color:#666">${m.workout}</div></div>`).join('')}</div>`;
+}
+function renderCrewFeed() {
+  document.getElementById('crew-feed-tab').innerHTML = [
+    { text:"오늘 크박 운동 너무 좋았다 다음주도 봬요!", time:"1시간 전", likes:12 },
+    { text:"처음 참가했는데 분위기 진짜 좋네요 ㅎㅎ", time:"3시간 전", likes:8 },
+    { text:"이번 토요일 러닝 참가하실 분!", time:"어제", likes:24 },
+  ].map(p=>`<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text}</div><div style="font-size:11px;color:#444">${p.time} · 🤍 ${p.likes}</div></div>`).join('');
+}
+
+// Boost
+function openBoostModal() {
+  document.getElementById('boost-options').innerHTML = BOOST_OPTIONS.map(opt => `
+    <div class="card" style="cursor:pointer;${opt.popular?'border:1px solid rgba(255,255,255,0.4);':''}position:relative" onclick="activateBoost('${opt.label}', ${opt.price})">
+      ${opt.popular?'<div style="position:absolute;top:-10px;right:16px;background:#fff;color:#000;font-size:10px;font-weight:800;padding:2px 10px;border-radius:10px">인기</div>':''}
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:15px;font-weight:700;margin-bottom:4px">${opt.label}</div><div style="font-size:12px;color:#666">${opt.desc}</div></div>
+        <div style="font-size:16px;font-weight:800">${opt.price.toLocaleString()}원</div>
+      </div>
+    </div>`).join('');
+  openModal('boost-modal');
+}
+function activateBoost(label, price) {
+  const crew = CREWS.find(c => c.id === currentCrewId);
+  if (crew) crew.boosted = true;
+  closeModal('boost-modal');
+  showToast(`⚡ ${label} 시작! ${price.toLocaleString()}원 결제 완료`);
+  renderCrews();
+}
+
+// Entry fee
+function openEntryFeeModal() {
+  const crew = CREWS.find(c => c.id === currentCrewId);
+  selectedEntryFee = crew ? crew.fee : 0;
+  const fees = [0,1000,2000,3000,5000,9900];
+  document.getElementById('entry-fee-modal-btns').innerHTML = fees.map(f => `
+    <button class="${f===selectedEntryFee?'btn-white':'btn-glass'}" style="padding:8px 12px;font-size:11px;border-radius:20px" onclick="selectFee(${f})">${f===0?'무료':f.toLocaleString()}</button>`).join('');
+  updateFeePreview();
+  openModal('entry-fee-modal');
+}
+function selectFee(f) {
+  selectedEntryFee = f;
+  document.querySelectorAll('#entry-fee-modal-btns button').forEach((btn, i) => {
+    const fees = [0,1000,2000,3000,5000,9900];
+    btn.className = fees[i] === f ? 'btn-white' : 'btn-glass';
+    btn.style.padding = '8px 12px'; btn.style.fontSize = '11px'; btn.style.borderRadius = '20px';
+  });
+  updateFeePreview();
+}
+function updateFeePreview() {
+  const el = document.getElementById('entry-fee-modal-preview');
+  el.textContent = selectedEntryFee > 0 ? `멤버 10명 가입 시 → 크루장 수익 ${(selectedEntryFee * 10 * 0.8).toLocaleString()}원` : '';
+}
+function saveEntryFee() {
+  const crew = CREWS.find(c => c.id === currentCrewId);
+  if (crew) crew.fee = selectedEntryFee;
+  closeModal('entry-fee-modal');
+  showToast(`✓ 입장료 ${selectedEntryFee > 0 ? selectedEntryFee.toLocaleString()+'원' : '무료'}으로 설정됐어요`);
+  renderCrews();
+}
+
+// Create Crew
+let newCrewWorkout = [];
+let newCrewFee = 0;
+function initCreateCrew() {
+  document.getElementById('new-crew-workout-tags').innerHTML = WORKOUT_OPTIONS.map(w =>
+    `<button class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px" onclick="toggleNewCrewWorkout('${w}', this)">${w}</button>`).join('');
+  const fees = [0,1000,2000,3000,5000];
+  document.getElementById('entry-fee-btns').innerHTML = fees.map(f =>
+    `<button class="${f===0?'btn-white':'btn-glass'}" style="padding:6px 12px;font-size:12px;border-radius:20px" onclick="selectNewFee(${f}, this)">${f===0?'무료':f.toLocaleString()+'원'}</button>`).join('');
+}
+function toggleNewCrewWorkout(w, btn) {
+  if (newCrewWorkout.includes(w)) { newCrewWorkout = newCrewWorkout.filter(x=>x!==w); btn.className='btn-glass'; btn.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px'; }
+  else { newCrewWorkout.push(w); btn.className='btn-white'; btn.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px'; }
+}
+function selectNewFee(f, btn) {
+  newCrewFee = f;
+  document.querySelectorAll('#entry-fee-btns button').forEach(b => { b.className='btn-glass'; b.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px'; });
+  btn.className='btn-white'; btn.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px';
+  document.getElementById('entry-fee-preview').textContent = f > 0 ? `멤버 10명 가입 시 → 크루장 수익 ${(f*10*0.8).toLocaleString()}원` : '';
+}
+function createCrew() {
+  const name = document.getElementById('new-crew-name').value.trim();
+  if (!name) { showToast('크루 이름을 입력해주세요'); return; }
+  CREWS.unshift({ id: Date.now(), name, desc: document.getElementById('new-crew-desc').value, members:1, loc: document.getElementById('new-crew-loc').value, workout: newCrewWorkout, mine:true, joined:true, boosted:false, fee:newCrewFee, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" });
+  closePanel('create-crew-panel');
+  showToast('🎉 크루가 생성됐어요!');
+  newCrewWorkout = []; newCrewFee = 0;
+  document.getElementById('new-crew-name').value = '';
+  document.getElementById('new-crew-desc').value = '';
+  document.getElementById('new-crew-loc').value = '';
+  renderCrews();
+}
+
+// ===== NOTIFICATIONS =====
+function renderNotifs() {
+  const el = document.getElementById('notif-list');
+  el.innerHTML = notifications.map(n => `
+    <div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1};cursor:pointer" onclick="readNotif(${n.id})">
+      <span style="font-size:20px">${n.type==='match'?'💪':n.type==='bamboo'?'🎋':n.type==='like'?'🤍':'👥'}</span>
+      <div style="flex:1"><div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px">${n.text}</div><div style="font-size:11px;color:#444">${n.time}</div></div>
+      ${!n.read?'<div style="width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0;margin-top:4px"></div>':''}
+    </div>`).join('');
+}
+function readNotif(id) { notifications.find(n=>n.id===id).read = true; renderNotifs(); updateBadge(); }
+function markAllRead() { notifications.forEach(n=>n.read=true); renderNotifs(); updateBadge(); }
+function updateBadge() {
+  const count = notifications.filter(n=>!n.read).length;
+  const badge = document.getElementById('notif-badge');
+  badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none';
+}
+
+// ===== CHAT =====
+function renderChatList() {
+  document.getElementById('chat-list').innerHTML = [
+    { name:"지수", last:"같이 운동 언제 가요?", time:"방금", unread:2, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=100&q=80" },
+    { name:"민준", last:"클라이밍 같이 갈 사람!", time:"5분 전", unread:0, img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=100&q=80" },
+  ].map(c => `
+    <div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openChatDetail('${c.name}', '${c.img}')">
+      <img src="${c.img}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700;font-size:14px">${c.name}</span><span style="font-size:11px;color:#444">${c.time}</span></div>
+        <div style="font-size:13px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.last}</div>
+      </div>
+      ${c.unread>0?`<div style="background:#fff;color:#000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${c.unread}</div>`:''}
+    </div>`).join('');
+}
+
+function openChatDetail(name, img) {
+  document.getElementById('chat-detail-name').textContent = name;
+  document.getElementById('chat-detail-avatar').src = img;
+  renderChatMessages();
+  closePanel('chat-panel');
+  openPanel('chat-detail-panel');
+}
+
+function renderChatMessages() {
+  const messagesEl = document.getElementById('chat-messages');
+  const isNew = chatHistory.length <= 2;
+
+  messagesEl.innerHTML = `
+    ${isNew ? `
+    <div style="text-align:center;padding:16px 0 8px">
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:12px;letter-spacing:0.3px">운동 약속을 잡아봐요</div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:0 8px">
+        <button onclick="sendQuickMsg('이번주 같이 운동 어때요? 시간 맞춰봐요 😊')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 14px;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:inherit;text-align:left;transition:background 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.09)'" onmouseleave="this.style.background='rgba(255,255,255,0.05)'">이번주 같이 운동 어때요? 시간 맞춰봐요</button>
+        <button onclick="sendQuickMsg('주로 어느 시간대에 운동하세요?')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 14px;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:inherit;text-align:left;transition:background 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.09)'" onmouseleave="this.style.background='rgba(255,255,255,0.05)'">주로 어느 시간대에 운동하세요?</button>
+        <button onclick="sendQuickMsg('저 이번 주말에 운동 나가는데 같이 하실래요?')" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 14px;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:inherit;text-align:left;transition:background 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.09)'" onmouseleave="this.style.background='rgba(255,255,255,0.05)'">이번 주말에 운동 나가는데 같이 하실래요?</button>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.06);margin:16px 0"></div>
+    </div>` : ''}
+    ${chatHistory.map(m => `
+      <div style="display:flex;justify-content:${m.from==='me'?'flex-end':'flex-start'}">
+        <div class="chat-bubble ${m.from==='me'?'chat-me':'chat-other'}">${m.text}</div>
+      </div>`).join('')}`;
+
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function sendQuickMsg(text) {
+  chatHistory.push({ from:'me', text });
+  renderChatMessages();
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  chatHistory.push({ from:'me', text });
+  input.value = '';
+  renderChatMessages();
+}
+
+// ===== MYPAGE =====
+function switchMyTab(tab, btn) {
+  document.querySelectorAll('.tab-bar .tab-btn').forEach(b => { if(b.closest('#page-mypage')) b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('my-info').style.display = tab==='info'?'block':'none';
+  document.getElementById('my-photos').style.display = tab==='photos'?'block':'none';
+  document.getElementById('my-workout').style.display = tab==='workout'?'block':'none';
+}
+
+function handleProfilePic(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const preview = document.getElementById('profile-pic-preview');
+    preview.src = e.target.result;
+    preview.style.display = 'block';
+    document.getElementById('profile-pic-icon').style.display = 'none';
+    showToast('✓ 프로필 사진이 변경됐어요');
+  };
+  reader.readAsDataURL(file);
+}
+
+function handlePhotoUpload(input, gridId) {
+  const files = Array.from(input.files);
+  const grid = document.getElementById(gridId);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const div = document.createElement('div');
+      div.className = 'photo-thumb';
+      div.innerHTML = `<img src="${e.target.result}"><button class="remove-btn" onclick="this.parentElement.remove()">✕</button>`;
+      grid.appendChild(div);
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+  showToast(`✓ ${files.length}장 추가됐어요`);
+}
+
+let myWorkoutSelected = ["웨이트","러닝"];
+function initEditProfile() {
+  document.getElementById('edit-gym').value = document.getElementById('info-gym').textContent;
+  document.getElementById('edit-time').value = document.getElementById('info-time').textContent;
+  document.getElementById('edit-bio').value = document.getElementById('info-bio').textContent;
+  document.getElementById('workout-tags-edit').innerHTML = WORKOUT_OPTIONS.map(w =>
+    `<button class="${myWorkoutSelected.includes(w)?'btn-white':'btn-glass'}" style="padding:6px 12px;font-size:12px;border-radius:20px" onclick="toggleMyWorkout('${w}', this)">${w}</button>`).join('');
+}
+function toggleMyWorkout(w, btn) {
+  if (myWorkoutSelected.includes(w)) { myWorkoutSelected = myWorkoutSelected.filter(x=>x!==w); btn.className='btn-glass'; }
+  else { myWorkoutSelected.push(w); btn.className='btn-white'; }
+  btn.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px';
+}
+function saveProfile() {
+  document.getElementById('info-gym').textContent = document.getElementById('edit-gym').value;
+  document.getElementById('info-time').textContent = document.getElementById('edit-time').value;
+  document.getElementById('info-bio').textContent = document.getElementById('edit-bio').value;
+  document.getElementById('info-workout').textContent = myWorkoutSelected.join(' · ');
+  closePanel('edit-profile-panel');
+  showToast('✓ 프로필 저장됐어요');
+}
+
+// Feed like toggle
+function toggleFeedLike(btn, base) {
+  const liked = btn.textContent.includes('❤️');
+  btn.textContent = (liked ? '🤍 ' : '❤️ ') + (liked ? base : base + 1);
+}
+
+// ===== INIT =====
+// ===== 크롭 시스템 =====
+let cropData = { originalFile: null, croppedBlob: null };
+
+function closeCropModal() {
+  document.getElementById('crop-modal').style.display = 'none';
+  document.getElementById('crop-caption-area').style.display = 'none';
+  document.getElementById('crop-next-area').style.display = 'block';
+  document.getElementById('feed-photo-input').value = '';
+  cropData = { originalFile: null, croppedBlob: null };
+}
+
+function confirmCrop() {
+  // 원본 파일 그대로 사용 (imgBB가 서버에서 처리)
+  if (!cropData.originalFile) return;
+  cropData.croppedBlob = cropData.originalFile;
+  document.getElementById('crop-next-area').style.display = 'none';
+  document.getElementById('crop-caption-area').style.display = 'block';
+  document.getElementById('feed-post-input').focus();
+}
+
+// 드래그/핀치 이동
+function initCropDrag() {
+  const container = document.getElementById('crop-container');
+  let drag = { active: false, startX: 0, startY: 0, imgX: 0, imgY: 0, scale: 1, lastDist: 0 };
+
+  function setTransform() {
+    const img = document.getElementById('crop-image');
+    img.style.transform = `translate(${drag.imgX}px, ${drag.imgY}px) scale(${drag.scale})`;
+  }
+
+  container.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      drag.active = true;
+      drag.startX = e.touches[0].clientX - drag.imgX;
+      drag.startY = e.touches[0].clientY - drag.imgY;
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && drag.active) {
+      drag.imgX = e.touches[0].clientX - drag.startX;
+      drag.imgY = e.touches[0].clientY - drag.startY;
+      setTransform();
+    }
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (drag.lastDist) drag.scale = Math.max(0.5, Math.min(4, drag.scale * (dist / drag.lastDist)));
+      drag.lastDist = dist;
+      setTransform();
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchend', () => { drag.active = false; drag.lastDist = 0; });
+  container.addEventListener('mousedown', e => { drag.active = true; drag.startX = e.clientX - drag.imgX; drag.startY = e.clientY - drag.imgY; });
+  container.addEventListener('mousemove', e => { if (!drag.active) return; drag.imgX = e.clientX - drag.startX; drag.imgY = e.clientY - drag.startY; setTransform(); });
+  container.addEventListener('mouseup', () => drag.active = false);
+  container.addEventListener('wheel', e => { drag.scale = Math.max(0.5, Math.min(4, drag.scale - e.deltaY * 0.001)); setTransform(); }, { passive: true });
+}
+
+// 사진 선택 → 크롭 모달 열기
+document.getElementById('feed-photo-input').addEventListener('change', function() {
+  const file = this.files[0]; if (!file) return;
+  cropData.originalFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('crop-image');
+    const modal = document.getElementById('crop-modal');
+    img.src = e.target.result;
+    img.style.transform = 'translate(0,0) scale(1)';
+    img.onload = () => {
+      const size = window.innerWidth;
+      const fitScale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+      img.style.transform = `translate(0,0) scale(${fitScale})`;
+    };
+    modal.style.display = 'flex';
+    document.getElementById('crop-next-area').style.display = 'block';
+    document.getElementById('crop-caption-area').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+});
+
+initCropDrag();
+
+// ===== FEED COMPOSE =====
+function openFeedCompose() { document.getElementById('feed-photo-input').click(); }
+function closeFeedCompose() { closeCropModal(); }
+
+// ===== 프로필 잠금 해제 구조 =====
+function openUserProfile(userId, userName, userPhoto) {
+  document.getElementById('user-profile-name').textContent = userName;
+  const isUnlocked = false; // 나중에 실제 매칭 여부로 판단
+  document.getElementById('user-profile-body').innerHTML = `
+    <div style="text-align:center;padding:24px 0 20px">
+      <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);margin:0 auto 12px;border:1px solid rgba(255,255,255,0.1)">
+        <img src="${userPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+      </div>
+      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.35)">GBD CREW · 서울</div>
+    </div>
+    <!-- 스탯 -->
+    <div style="display:flex;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:20px">
+      <div style="flex:1;text-align:center;padding:14px 0">
+        <div style="font-size:18px;font-weight:800">23</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">이번달 인증</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0">
+        <div style="font-size:18px;font-weight:800">웨이트</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">주 운동</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0">
+        <div style="font-size:18px;font-weight:800">새벽</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">운동 시간</div>
+      </div>
+    </div>
+    <!-- 사진 그리드 (잠금) -->
+    <div style="padding:0 20px;margin-bottom:20px">
+      <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:10px;letter-spacing:0.3px;text-transform:uppercase">운동 인증</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;position:relative">
+        <div style="aspect-ratio:1;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden"><img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=80" style="width:100%;height:100%;object-fit:cover;filter:blur(8px)"></div>
+        <div style="aspect-ratio:1;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden"><img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" style="width:100%;height:100%;object-fit:cover;filter:blur(8px)"></div>
+        <div style="aspect-ratio:1;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden"><img src="https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=200&q=80" style="width:100%;height:100%;object-fit:cover;filter:blur(8px)"></div>
+        <!-- 잠금 오버레이 -->
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);border-radius:4px">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <div style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:8px;letter-spacing:-0.2px">같이 운동해요 후 잠금 해제</div>
+        </div>
+      </div>
+    </div>
+    <!-- CTA -->
+    <div style="padding:0 20px">
+      <button onclick="unlockProfile('${userId}','${userName}','${userPhoto}')" style="width:100%;background:#fff;color:#000;border:none;border-radius:10px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px">같이 운동해요</button>
+    </div>`;
+  openPanel('user-profile-panel');
+}
+
+function unlockProfile(userId, userName, userPhoto) {
+  // 잠금 해제 → 블러 제거 + 톡 연결
+  document.querySelectorAll('#user-profile-body img').forEach(img => img.style.filter = 'none');
+  document.querySelector('#user-profile-body [style*="position:absolute;inset:0"]')?.remove();
+  showToast('✓ 연결됐어요! 톡을 시작해봐요');
+  setTimeout(() => {
+    closePanel('user-profile-panel');
+    openPanel('chat-detail-panel');
+    document.getElementById('chat-detail-name').textContent = userName;
+    document.getElementById('chat-detail-avatar').src = userPhoto;
+    renderChatMessages();
+  }, 800);
+}
+
+// ===== 유저 프로필 패널 =====
+function openUserProfile(userId, userName, userPhoto) {
+  document.getElementById('user-profile-name').textContent = userName;
+  document.getElementById('user-profile-body').innerHTML = `
+    <div style="text-align:center;padding:24px 0 20px">
+      <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);margin:0 auto 12px;border:1px solid rgba(255,255,255,0.1)">
+        <img src="${userPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+      </div>
+      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.35)">GBD CREW · 서울</div>
+    </div>
+    <div style="display:flex;gap:0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:20px">
+      <div style="flex:1;text-align:center;padding:16px 0">
+        <div style="font-size:18px;font-weight:800">23</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">이번달 인증</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:16px 0">
+        <div style="font-size:18px;font-weight:800">웨이트</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">주 운동</div>
+      </div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:16px 0">
+        <div style="font-size:18px;font-weight:800">새벽</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">운동 시간</div>
+      </div>
+    </div>
+    <div style="padding:0 20px">
+      <button onclick="closePanel('user-profile-panel'); openPanel('chat-detail-panel'); document.getElementById('chat-detail-name').textContent='${userName}'; document.getElementById('chat-detail-avatar').src='${userPhoto}'; renderChatMessages();" style="width:100%;background:#fff;color:#000;border:none;border-radius:10px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px">같이 운동해요</button>
+    </div>`;
+  openPanel('user-profile-panel');
+}
+
+// ===== 댓글 패널 =====
+let currentPostId = null;
+let postComments = {};
+
+function openCommentPanel(postId) {
+  currentPostId = postId;
+  if (!postComments[postId]) postComments[postId] = [];
+  renderComments();
+  openPanel('comment-panel');
+}
+
+function renderComments() {
+  const el = document.getElementById('comment-list');
+  const comments = postComments[currentPostId] || [];
+  if (!comments.length) {
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.25);font-size:13px">첫 댓글을 남겨봐요</div>';
+    return;
+  }
+  el.innerHTML = comments.map(c => `
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)"></div>
+      <div style="flex:1">
+        <div style="font-size:13px;line-height:1.55;color:rgba(255,255,255,0.85)"><span style="font-weight:700;margin-right:6px">${c.name}</span>${c.text}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.25);margin-top:4px">${c.time}</div>
+      </div>
+    </div>`).join('');
+}
+
+function submitComment() {
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  if (FILTER_WORDS.some(w => text.toLowerCase().includes(w.toLowerCase()))) {
+    showToast('외부 연락처는 입력할 수 없어요');
+    return;
+  }
+  if (!postComments[currentPostId]) postComments[currentPostId] = [];
+  postComments[currentPostId].push({
+    name: currentUser ? currentUser.displayName : '나',
+    text, time: '방금'
+  });
+  input.value = '';
+  renderComments();
+}
+
+// ===== HOME CREW RENDER (더 이상 홈에 없으므로 빈 함수) =====
+function renderHomeCrews() {}
+
+// ===== 센터 등록 =====
+let selectedCenterType = '';
+
+function selectCenterType(type, btn) {
+  selectedCenterType = type;
+  document.querySelectorAll('#center-type-btns button').forEach(b => {
+    b.style.background = 'rgba(255,255,255,0.08)';
+    b.style.color = '#fff';
+    b.style.fontWeight = '400';
+  });
+  btn.style.background = '#fff';
+  btn.style.color = '#000';
+  btn.style.fontWeight = '700';
+}
+
+function registerCenter() {
+  const name = document.getElementById('reg-center-name').value.trim();
+  const loc = document.getElementById('reg-center-loc').value.trim();
+  const addr = document.getElementById('reg-center-addr').value.trim();
+  if (!name) { showToast('센터 이름을 입력해주세요'); return; }
+  if (!selectedCenterType) { showToast('센터 종류를 선택해주세요'); return; }
+  if (!loc) { showToast('지역을 입력해주세요'); return; }
+
+  const newCenter = {
+    id: Date.now(),
+    name, type: selectedCenterType, loc, addr: addr || loc,
+    rating: 0, reviews: 0, members: 1,
+    partner: false,
+    img: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=80',
+    partnerPosts: [], reviewList: []
+  };
+  CENTERS.unshift(newCenter);
+  closePanel('center-register-panel');
+  renderCenters();
+  showToast('✓ 센터가 등록됐어요!');
+
+  // 입력 초기화
+  document.getElementById('reg-center-name').value = '';
+  document.getElementById('reg-center-loc').value = '';
+  document.getElementById('reg-center-addr').value = '';
+  selectedCenterType = '';
+  document.querySelectorAll('#center-type-btns button').forEach(b => {
+    b.style.background = 'rgba(255,255,255,0.08)';
+    b.style.color = '#fff';
+    b.style.fontWeight = '400';
+  });
+}
+let centerRegion = '전체';
+let centerTab = 'all';
+
+function renderCenters() {
+  const search = (document.getElementById('center-search').value || '').toLowerCase();
+  let list = CENTERS.filter(c => {
+    const matchRegion = centerRegion === '전체' || c.loc.includes(centerRegion);
+    const matchSearch = !search || c.name.toLowerCase().includes(search) || c.type.toLowerCase().includes(search);
+    const matchTab = centerTab === 'all' || (centerTab === 'partner' && c.partnerPosts.length > 0) || centerTab === 'review';
+    return matchRegion && matchSearch && matchTab;
+  });
+
+  if (!list.length) {
+    document.getElementById('center-list').innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:32px;margin-bottom:10px">🏋️</div><div style="font-size:14px">해당 센터가 없어요</div></div>';
+    return;
+  }
+
+  if (centerTab === 'partner') {
+    document.getElementById('center-list').innerHTML = list.map(c => c.partnerPosts.map(p => `
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:11px;background:rgba(255,255,255,0.08);border-radius:10px;padding:3px 8px">${c.name}</span>
+          <span style="font-size:11px;color:#555">${c.loc}</span>
+        </div>
+        <div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#666">${p.name} · ${p.time}</span>
+          <button class="btn-glass" style="padding:5px 12px;font-size:11px;font-weight:600" onclick="showToast('💪 파트너 신청됐어요!')">같이 운동해요</button>
+        </div>
+      </div>`).join('')).join('');
+    return;
+  }
+
+  document.getElementById('center-list').innerHTML = list.map(c => `
+    <div class="card" onclick="openCenterDetail(${c.id})" style="cursor:pointer">
+      <div style="display:flex;gap:12px;align-items:center">
+        <img src="${c.img}" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:15px;font-weight:700">${c.name}</span>
+            ${c.partner ? '<span style="background:#fff;color:#000;font-size:8px;font-weight:800;padding:1px 6px;border-radius:6px">파트너</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.type} · ${c.loc}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:#FFD700">★ ${c.rating}</span>
+            <span style="font-size:11px;color:#555">리뷰 ${c.reviews}개</span>
+            <span style="font-size:11px;color:#555">멤버 ${c.members}명</span>
+          </div>
+        </div>
+        <span style="color:#444;font-size:16px">›</span>
+      </div>
+    </div>`).join('');
+}
+
+function switchCenterDetailTab(tab, btn) {
+  document.querySelectorAll('#center-detail-panel .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['info','partner','bamboo','review'].forEach(t => {
+    document.getElementById('center-'+t+'-tab').style.display = t===tab ? 'block' : 'none';
+  });
+}
+
+function openCenterDetail(id) {
+  const c = CENTERS.find(x => x.id === id);
+  if (!c) return;
+  currentCrewId = id;
+  document.getElementById('center-detail-name').textContent = c.name;
+
+  document.getElementById('center-info-tab').innerHTML = `
+    <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px">
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:20px;font-weight:800;color:#FFD700">★ ${c.rating}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">평점</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:20px;font-weight:800">${c.reviews}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">리뷰</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:20px;font-weight:800">${c.members}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">멤버</div></div>
+    </div>
+    <div class="card"><div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:4px">${c.type}</div><div style="font-size:14px;font-weight:600">📍 ${c.addr}</div></div>`;
+
+  document.getElementById('center-partner-tab').innerHTML = c.partnerPosts.length
+    ? c.partnerPosts.map(p => `<div class="card"><div style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.6;margin-bottom:8px">${p.text}</div><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;color:rgba(255,255,255,0.35)">${p.name} · ${p.time}</span><button class="btn-glass" style="padding:5px 12px;font-size:11px;font-weight:600" onclick="showToast('신청됐어요!')">신청하기</button></div></div>`).join('') + `<button class="btn-white" style="width:100%;padding:12px;font-size:13px;border-radius:10px;margin-top:8px" onclick="showToast('글이 올라갔어요!')">+ 파트너 구하기</button>`
+    : `<div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.25);font-size:13px">아직 파트너 구하기 글이 없어요</div><button class="btn-white" style="width:100%;padding:12px;font-size:13px;border-radius:10px" onclick="showToast('글이 올라갔어요!')">+ 파트너 구하기</button>`;
+
+  const centerBamboo = bambooData.filter(b => b.centerId === id);
+  document.getElementById('center-bamboo-tab').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <textarea placeholder="${c.name}의 대나무숲. 센터에서 눈에 띄었던 사람, 전하고 싶은 말을 익명으로 남겨봐요." style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:60px;font-family:inherit" id="center-bamboo-input-${id}"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn-white" style="border-radius:8px;padding:7px 16px;font-size:13px" onclick="postCenterBamboo(${id})">익명 전송</button>
+      </div>
+    </div>
+    ${centerBamboo.length ? centerBamboo.map(p => `<div class="card"><div style="font-size:14px;line-height:1.7;color:rgba(255,255,255,0.85);margin-bottom:8px">${p.text}</div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:rgba(255,255,255,0.3)">${p.time}</span><span style="font-size:11px;color:rgba(255,255,255,0.3)">🤍 ${p.likes}</span></div></div>`).join('') : '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.2);font-size:13px">아직 글이 없어요</div>'}`;
+
+  document.getElementById('center-review-tab').innerHTML = c.reviewList.map(r => `
+    <div class="card"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:700">${r.name}</span><span style="font-size:12px;color:#FFD700">${'★'.repeat(r.rating)}</span></div><div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.6;margin-bottom:4px">${r.text}</div><div style="font-size:11px;color:rgba(255,255,255,0.3)">${r.time}</div></div>`).join('')
+    + `<button class="btn-white" style="width:100%;padding:12px;font-size:13px;border-radius:10px;margin-top:8px" onclick="showToast('리뷰 작성 기능 준비 중이에요!')">리뷰 작성하기</button>`;
+
+  document.querySelectorAll('#center-detail-panel .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0));
+  ['info','partner','bamboo','review'].forEach((t,i) => {
+    document.getElementById('center-'+t+'-tab').style.display = i===0 ? 'block' : 'none';
+  });
+  openPanel('center-detail-panel');
+}
+
+function postCenterBamboo(centerId) {
+  const input = document.getElementById('center-bamboo-input-' + centerId);
+  const text = input.value.trim();
+  if (!text) return;
+  bambooData.unshift({ id: Date.now(), text, time:'방금', likes:0, liked:false, comments:[], myPost:true, requesters:[], showComments:false, centerId });
+  input.value = '';
+  openCenterDetail(centerId);
+  showToast('익명으로 전달됐어요');
+}
+
+function filterCenterRegion(region, btn) {
+  centerRegion = region;
+  document.querySelectorAll('.center-region-btn').forEach(b => {
+    b.style.background = 'rgba(255,255,255,0.08)';
+    b.style.color = '#fff'; b.style.border = '1px solid rgba(255,255,255,0.15)'; b.style.fontWeight = '400';
+  });
+  btn.style.background = '#fff'; btn.style.color = '#000'; btn.style.border = 'none'; btn.style.fontWeight = '700';
+  renderCenters();
+}
+
+function filterCenters() { renderCenters(); }
+
+function switchCenterTab(tab, btn) {
+  centerTab = tab;
+  document.querySelectorAll('#center-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCenters();
+}
+
+// ===== LOGOUT (전역 — Firebase 모듈에서도 호출) =====
+function googleLogout() {
+  const logoutEvent = new CustomEvent('murpy-logout');
+  document.dispatchEvent(logoutEvent);
+}
+
+renderMatch();
+renderBamboo();
+renderCrews();
+renderCenters();
+renderHomeCrews();
+initCreateCrew();
+document.getElementById('create-crew-panel').querySelector('.back-btn').addEventListener('click', () => { newCrewWorkout=[]; newCrewFee=0; });
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
+  authDomain: "murpyprototype.firebaseapp.com",
+  projectId: "murpyprototype",
+  storageBucket: "murpyprototype.firebasestorage.app",
+  messagingSenderId: "534058034338",
+  appId: "1:534058034338:web:6aee952dfb648a612b23fb"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+let currentUser = null;
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('user-avatar').src = user.photoURL || '';
+    document.getElementById('user-avatar').style.display = 'block';
+    document.getElementById('mypage-icon-btn').style.display = 'none';
+    document.getElementById('login-btn').style.display = 'none';
+    document.getElementById('info-name').textContent = user.displayName || '나';
+    loadFeed();
+  } else {
+    currentUser = null;
+    document.getElementById('user-avatar').style.display = 'none';
+    document.getElementById('mypage-icon-btn').style.display = 'block';
+    document.getElementById('login-btn').style.display = 'flex';
+    loadFeed();
+  }
+});
+
+// 로그아웃 이벤트 연결
+document.addEventListener('murpy-logout', async () => {
+  await signOut(auth);
+  showToast('로그아웃됐어요');
+});
+
+async function loadFeed() {
+  const feedEl = document.getElementById('firebase-feed');
+  if (!feedEl) return;
+  feedEl.innerHTML = '<div style="text-align:center;padding:40px;color:rgba(255,255,255,0.2);font-size:13px">불러오는 중...</div>';
+  try {
+    const q = query(collection(db, 'feed'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    if (snap.empty) {
+      feedEl.innerHTML = `
+        <div style="text-align:center;padding:60px 20px">
+          <div style="font-size:13px;color:rgba(255,255,255,0.25);margin-bottom:6px">아직 게시물이 없어요</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.12)">첫 번째 운동을 인증해봐요</div>
+        </div>`;
+      return;
+    }
+    feedEl.innerHTML = snap.docs.map(d => {
+      const data = d.data();
+      const time = data.createdAt
+        ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+        : '방금';
+      const isMe = currentUser && data.userId === currentUser.uid;
+      return `
+        <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
+          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${data.userId}','${data.userName||'익명'}','${data.userPhoto||''}')">
+            <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
+              <img src="${data.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            </div>
+            <div style="margin-left:10px;flex:1">
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${data.userName||'익명'}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.28);margin-top:1px">${time}</div>
+            </div>
+          </div>
+          ${data.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${data.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+          <div style="padding:10px 20px 6px;display:flex;gap:16px">
+            <button onclick="likePost('${d.id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              ${data.likes||0}
+            </button>
+            <button onclick="openCommentPanel('${d.id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              댓글
+            </button>
+          </div>
+          ${data.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.55;color:rgba(255,255,255,0.82);letter-spacing:-0.2px"><span style="font-weight:700;margin-right:6px">${data.userName||'익명'}</span>${data.text}</div>` : '<div style="padding-bottom:12px"></div>'}
+        </div>`;
+    }).join('');
+    }).join('');
+  } catch(e) {
+    feedEl.innerHTML = '<div style="text-align:center;padding:32px;color:rgba(255,255,255,0.2);font-size:13px">피드를 불러올 수 없어요</div>';
+  }
+}
+
+window.likePost = async (postId, btn) => {
+  if (!currentUser) { showToast('로그인 후 좋아요를 누를 수 있어요'); return; }
+  try {
+    await updateDoc(doc(db, 'feed', postId), { likes: increment(1) });
+    const count = parseInt(btn.textContent.trim().split(' ')[1] || '0') + 1;
+    btn.textContent = '❤️ ' + count;
+    btn.style.color = '#ff4444';
+  } catch(e) {}
+};
+
+// 리디렉션 결과 처리
+getRedirectResult(auth).then((result) => {
+  if (result && result.user) {
+    currentUser = result.user;
+    showToast('✓ 로그인됐어요!');
+  }
+}).catch((e) => {});
+
+document.getElementById('login-btn').addEventListener('click', async () => {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    currentUser = result.user;
+    showToast('✓ 로그인됐어요!');
+  } catch(e) {
+    // 팝업 차단되면 리디렉션으로 폴백
+    if (e.code === 'auth/popup-blocked') {
+      await signInWithRedirect(auth, provider);
+    } else {
+      showToast('로그인 실패: ' + e.message);
+    }
+  }
+});
+
+// 로그아웃은 mypage-panel 내부 버튼에서 처리
+
+document.getElementById('user-avatar').addEventListener('click', async () => {
+  await signOut(auth); showToast('로그아웃됐어요');
+});
+
+document.getElementById('feed-upload-btn').addEventListener('click', async () => {
+  const user = auth.currentUser;
+  if (!user) { showToast('먼저 로그인해주세요'); return; }
+  const text = document.getElementById('feed-post-input').value.trim();
+  const file = cropData.croppedBlob;
+  if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
+  const btn = document.getElementById('feed-upload-btn');
+  btn.textContent = '올리는 중...'; btn.disabled = true;
+  try {
+    let photoURL = '';
+    const formData = new FormData();
+    formData.append('image', file, 'photo.jpg');
+    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
+    const json = await res.json();
+    if (json.success) {
+      photoURL = json.data.url;
+    } else {
+      showToast('사진 업로드 실패'); btn.textContent='올리기'; btn.disabled=false; return;
+    }
+    await addDoc(collection(db, 'feed'), {
+      text, photoURL,
+      userName: user.displayName,
+      userPhoto: user.photoURL,
+      userId: user.uid,
+      likes: 0,
+      createdAt: serverTimestamp()
+    });
+    closeCropModal();
+    cropData.croppedBlob = null;
+    document.getElementById('feed-photo-input').value = '';
+    showToast('✓ 올라갔어요!');
+    loadFeed();
+  } catch(e) { showToast('실패: ' + e.message); }
+  btn.textContent = '올리기'; btn.disabled = false;
+});
+</script>
+</body>
+</html>
