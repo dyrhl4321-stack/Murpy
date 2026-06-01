@@ -193,11 +193,11 @@
     </div>
     <!-- 크롭 영역 -->
     <div id="crop-step-1">
-      <div style="display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;width:100vw;height:100vw">
-        <div id="crop-container" style="position:relative;width:100vw;height:100vw;overflow:hidden;background:#111">
-          <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none" draggable="false">
+      <div style="display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;width:100vw;height:100vw;max-height:70vh">
+        <div id="crop-container" style="position:relative;width:100vw;height:100vw;max-height:70vh;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center">
+          <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
         </div>
-        <div style="position:absolute;top:0;left:0;width:100vw;height:100vw;pointer-events:none;border:2px solid rgba(255,255,255,0.4)">
+        <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;border:2px solid rgba(255,255,255,0.4)">
           <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
           <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
           <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
@@ -363,6 +363,7 @@
       <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">크루</span><span style="font-size:13px;font-weight:600">GBD CREW</span></div>
       <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">한 줄 소개</span><span style="font-size:13px;font-weight:600;text-align:right;max-width:60%" id="info-bio">운동 끝나고 같이 단백질 먹을 사람</span></div>
       <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:4px" onclick="openPanel('edit-profile-panel')">프로필 수정</button>
+      <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:8px" onclick="document.getElementById('nickname-modal').style.display='flex';document.getElementById('nickname-input').value=document.getElementById('info-name').textContent">닉네임 변경</button>
     </div>
     <div id="my-photos" style="display:none">
       <div class="upload-zone" onclick="document.getElementById('photos-input').click()">
@@ -647,7 +648,16 @@
   </div>
 </div>
 
-<!-- Match Success Modal -->
+<!-- 닉네임 설정 모달 -->
+<div class="modal-overlay" id="nickname-modal" style="z-index:10000">
+  <div class="modal-sheet" style="padding:32px 24px 40px">
+    <div style="font-size:11px;letter-spacing:3px;color:rgba(255,255,255,0.35);margin-bottom:16px;text-transform:uppercase;font-weight:500;text-align:center">Welcome to Murpy</div>
+    <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;margin-bottom:6px;text-align:center">닉네임을 설정해요</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:24px;text-align:center">피드와 매칭에서 표시될 이름이에요</div>
+    <input id="nickname-input" placeholder="닉네임 입력 (2~10자)" maxlength="10" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:13px 16px;color:#fff;font-size:16px;outline:none;font-family:inherit;letter-spacing:-0.2px;margin-bottom:12px;box-sizing:border-box">
+    <button onclick="saveNickname()" style="width:100%;background:#fff;color:#000;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">시작하기</button>
+  </div>
+</div>
 <div class="modal-overlay" id="match-modal">
   <div class="modal-sheet" style="text-align:center;padding:40px 24px 48px">
     <div style="font-size:11px;letter-spacing:3px;color:rgba(255,255,255,0.35);margin-bottom:20px;text-transform:uppercase;font-weight:500">Connected</div>
@@ -1490,8 +1500,11 @@ function openCropModal(file) {
     img.src = e.target.result;
     img.style.transform = 'translate(0,0) scale(1)';
     img.onload = () => {
-      const size = window.innerWidth;
-      const fitScale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+      const container = document.getElementById('crop-container');
+      const size = container.offsetWidth || window.innerWidth;
+      const scaleW = size / img.naturalWidth;
+      const scaleH = size / img.naturalHeight;
+      const fitScale = Math.min(scaleW, scaleH);
       img.style.transform = `translate(0,0) scale(${fitScale})`;
     };
     modal.style.display = 'flex';
@@ -1910,8 +1923,8 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
@@ -1928,20 +1941,60 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentUser = null;
 
-onAuthStateChanged(auth, (user) => {
+function updateUI(user) {
   if (user) {
-    currentUser = user;
     document.getElementById('user-avatar').src = user.photoURL || '';
     document.getElementById('user-avatar').style.display = 'block';
     document.getElementById('mypage-icon-btn').style.display = 'none';
     document.getElementById('login-btn').style.display = 'none';
-    document.getElementById('info-name').textContent = user.displayName || '나';
-    loadFeed();
   } else {
-    currentUser = null;
     document.getElementById('user-avatar').style.display = 'none';
     document.getElementById('mypage-icon-btn').style.display = 'block';
     document.getElementById('login-btn').style.display = 'flex';
+  }
+}
+
+async function checkAndSetNickname(user) {
+  const userRef = doc(db, 'users', user.uid);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists() || !userSnap.data().nickname) {
+    // 닉네임 없으면 모달 열기
+    document.getElementById('nickname-modal').classList.add('open');
+    document.getElementById('nickname-modal').style.display = 'flex';
+    document.getElementById('nickname-input').value = user.displayName || '';
+  } else {
+    currentUser.nickname = userSnap.data().nickname;
+    document.getElementById('info-name').textContent = userSnap.data().nickname;
+  }
+}
+
+window.saveNickname = async () => {
+  const nickname = document.getElementById('nickname-input').value.trim();
+  if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
+  const user = auth.currentUser || currentUser;
+  if (!user) return;
+  try {
+    await setDoc(doc(db, 'users', user.uid), {
+      nickname, uid: user.uid, photoURL: user.photoURL || '', updatedAt: serverTimestamp()
+    }, { merge: true });
+    currentUser.nickname = nickname;
+    document.getElementById('info-name').textContent = nickname;
+    document.getElementById('nickname-modal').style.display = 'none';
+    document.getElementById('nickname-modal').classList.remove('open');
+    showToast('✓ 닉네임이 설정됐어요!');
+    loadFeed();
+  } catch(e) { showToast('저장 실패: ' + e.message); }
+};
+
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentUser = user;
+    updateUI(user);
+    await checkAndSetNickname(user);
+    loadFeed();
+  } else {
+    currentUser = null;
+    updateUI(null);
     loadFeed();
   }
 });
@@ -2013,10 +2066,11 @@ window.likePost = async (postId, btn) => {
   } catch(e) {}
 };
 
-// 리디렉션 결과 처리
-getRedirectResult(auth).then((result) => {
+getRedirectResult(auth).then(async (result) => {
   if (result && result.user) {
     currentUser = result.user;
+    updateUI(result.user);
+    await checkAndSetNickname(result.user);
     showToast('✓ 로그인됐어요!');
   }
 }).catch((e) => {});
@@ -2036,7 +2090,7 @@ document.getElementById('user-avatar').addEventListener('click', async () => {
 });
 
 document.getElementById('feed-upload-btn').addEventListener('click', async () => {
-  const user = auth.currentUser;
+  const user = auth.currentUser || currentUser;
   if (!user) { showToast('먼저 로그인해주세요'); return; }
   const text = document.getElementById('feed-post-input').value.trim();
   const file = window.cropData.croppedBlob;
@@ -2044,6 +2098,13 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
   const btn = document.getElementById('feed-upload-btn');
   btn.textContent = '올리는 중...'; btn.disabled = true;
   try {
+    // 닉네임 Firestore에서 가져오기
+    let nickname = user.displayName || '익명';
+    try {
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      if (userSnap.exists() && userSnap.data().nickname) nickname = userSnap.data().nickname;
+    } catch(e) {}
+
     let photoURL = '';
     const formData = new FormData();
     formData.append('image', file, 'photo.jpg');
@@ -2057,8 +2118,8 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
     }
     await addDoc(collection(db, 'feed'), {
       text, photoURL,
-      userName: user.displayName,
-      userPhoto: user.photoURL,
+      userName: nickname,
+      userPhoto: user.photoURL || '',
       userId: user.uid,
       likes: 0,
       createdAt: serverTimestamp()
