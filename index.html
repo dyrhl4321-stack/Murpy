@@ -363,7 +363,7 @@
       <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">크루</span><span style="font-size:13px;font-weight:600">GBD CREW</span></div>
       <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:#666">한 줄 소개</span><span style="font-size:13px;font-weight:600;text-align:right;max-width:60%" id="info-bio">운동 끝나고 같이 단백질 먹을 사람</span></div>
       <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:4px" onclick="openPanel('edit-profile-panel')">프로필 수정</button>
-      <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:8px" onclick="document.getElementById('nickname-modal').style.display='flex';document.getElementById('nickname-input').value=document.getElementById('info-name').textContent">닉네임 변경</button>
+      <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:8px" onclick="openNicknameModal(document.getElementById('info-name').textContent)">닉네임 변경</button>
     </div>
     <div id="my-photos" style="display:none">
       <div class="upload-zone" onclick="document.getElementById('photos-input').click()">
@@ -1923,7 +1923,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -1941,6 +1941,9 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 let currentUser = null;
 
+// 자동 로그인 유지 설정
+setPersistence(auth, browserLocalPersistence).catch(() => {});
+
 function updateUI(user) {
   if (user) {
     document.getElementById('user-avatar').src = user.photoURL || '';
@@ -1954,18 +1957,31 @@ function updateUI(user) {
   }
 }
 
+window.openNicknameModal = function(defaultName = '') {
+  const modal = document.getElementById('nickname-modal');
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'flex-end';
+  modal.style.background = 'rgba(0,0,0,0.7)';
+  document.getElementById('nickname-input').value = defaultName;
+  setTimeout(() => document.getElementById('nickname-input').focus(), 100);
+}
+
+function closeNicknameModal() {
+  document.getElementById('nickname-modal').style.display = 'none';
+}
+
 async function checkAndSetNickname(user) {
-  const userRef = doc(db, 'users', user.uid);
-  const userSnap = await getDoc(userRef);
-  if (!userSnap.exists() || !userSnap.data().nickname) {
-    // 닉네임 없으면 모달 열기
-    document.getElementById('nickname-modal').classList.add('open');
-    document.getElementById('nickname-modal').style.display = 'flex';
-    document.getElementById('nickname-input').value = user.displayName || '';
-  } else {
-    currentUser.nickname = userSnap.data().nickname;
-    document.getElementById('info-name').textContent = userSnap.data().nickname;
-  }
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists() || !userSnap.data().nickname) {
+      openNicknameModal(user.displayName || '');
+    } else {
+      const nickname = userSnap.data().nickname;
+      currentUser.nickname = nickname;
+      document.getElementById('info-name').textContent = nickname;
+    }
+  } catch(e) {}
 }
 
 window.saveNickname = async () => {
@@ -1977,12 +1993,10 @@ window.saveNickname = async () => {
     await setDoc(doc(db, 'users', user.uid), {
       nickname, uid: user.uid, photoURL: user.photoURL || '', updatedAt: serverTimestamp()
     }, { merge: true });
-    currentUser.nickname = nickname;
+    if (currentUser) currentUser.nickname = nickname;
     document.getElementById('info-name').textContent = nickname;
-    document.getElementById('nickname-modal').style.display = 'none';
-    document.getElementById('nickname-modal').classList.remove('open');
+    closeNicknameModal();
     showToast('✓ 닉네임이 설정됐어요!');
-    loadFeed();
   } catch(e) { showToast('저장 실패: ' + e.message); }
 };
 
