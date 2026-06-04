@@ -336,6 +336,23 @@
 <!-- ===== PANELS ===== -->
 
 <!-- MyPage Panel -->
+<!-- 프로필 사진 크롭 모달 -->
+<div id="profile-crop-modal" style="display:none;position:fixed;inset:0;z-index:10001;flex-direction:column;background:#000">
+  <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
+    <button onclick="closeProfileCrop()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
+    <span style="font-size:14px;font-weight:700">프로필 사진</span>
+    <button onclick="confirmProfileCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px">완료</button>
+  </div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#111;position:relative">
+    <div id="profile-crop-container" style="position:relative;width:280px;height:280px;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,0.6)">
+      <img id="profile-crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none" draggable="false">
+    </div>
+  </div>
+  <div style="padding:12px 20px;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0">
+    <div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center">드래그로 위치 · 핀치로 크기 조정</div>
+  </div>
+</div>
+
 <div class="panel" id="mypage-panel">
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('mypage-panel')">←</button>
@@ -1582,7 +1599,89 @@ document.getElementById('feed-photo-input').addEventListener('change', function(
 
 initCropDrag();
 
-// ===== FEED COMPOSE =====
+// ===== 프로필 사진 크롭 =====
+let profileCropDrag = { active:false, startX:0, startY:0, imgX:0, imgY:0, scale:1, lastDist:0, file:null };
+
+function openProfileCrop(file) {
+  profileCropDrag.file = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const modal = document.getElementById('profile-crop-modal');
+    modal.style.display = 'flex';
+    modal.style.flexDirection = 'column';
+    const img = document.getElementById('profile-crop-image');
+    img.src = e.target.result;
+    profileCropDrag = { active:false, startX:0, startY:0, imgX:0, imgY:0, scale:1, lastDist:0, file };
+    img.style.transform = 'translate(0,0) scale(1)';
+    img.onload = () => {
+      const size = 280;
+      const fitScale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+      profileCropDrag.scale = fitScale;
+      img.style.transform = `translate(0,0) scale(${fitScale})`;
+    };
+  };
+  reader.readAsDataURL(file);
+}
+
+function closeProfileCrop() {
+  document.getElementById('profile-crop-modal').style.display = 'none';
+  document.getElementById('profile-pic-input').value = '';
+}
+
+window.confirmProfileCrop = async function() {
+  const user = window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return; }
+  const file = profileCropDrag.file;
+  if (!file) return;
+  showToast('업로드 중...');
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
+    const json = await res.json();
+    if (!json.success) { showToast('업로드 실패'); return; }
+    const photoURL = json.data.url;
+    closeProfileCrop();
+    const preview = document.getElementById('profile-pic-preview');
+    const icon = document.getElementById('profile-pic-icon');
+    if (preview) { preview.src = photoURL; preview.style.display = 'block'; }
+    if (icon) icon.style.display = 'none';
+    document.getElementById('user-avatar').src = photoURL;
+    showToast('✓ 프로필 사진이 변경됐어요!');
+    // Firestore 저장은 모듈에서 처리
+    window._pendingProfilePhoto = photoURL;
+    window.dispatchEvent(new CustomEvent('save-profile-photo'));
+  } catch(e) { showToast('실패: ' + e.message); }
+}
+
+// 드래그/핀치
+;(function() {
+  const container = document.getElementById('profile-crop-container');
+  if (!container) return;
+  function setT() {
+    const img = document.getElementById('profile-crop-image');
+    img.style.transform = `translate(${profileCropDrag.imgX}px,${profileCropDrag.imgY}px) scale(${profileCropDrag.scale})`;
+  }
+  container.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) { profileCropDrag.active=true; profileCropDrag.startX=e.touches[0].clientX-profileCropDrag.imgX; profileCropDrag.startY=e.touches[0].clientY-profileCropDrag.imgY; }
+  }, {passive:true});
+  container.addEventListener('touchmove', e => {
+    if (e.touches.length===1 && profileCropDrag.active) { profileCropDrag.imgX=e.touches[0].clientX-profileCropDrag.startX; profileCropDrag.imgY=e.touches[0].clientY-profileCropDrag.startY; setT(); }
+    if (e.touches.length===2) { const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY); if(profileCropDrag.lastDist) profileCropDrag.scale=Math.max(0.5,Math.min(5,profileCropDrag.scale*(d/profileCropDrag.lastDist))); profileCropDrag.lastDist=d; setT(); }
+  }, {passive:true});
+  container.addEventListener('touchend', () => { profileCropDrag.active=false; profileCropDrag.lastDist=0; });
+  container.addEventListener('mousedown', e => { profileCropDrag.active=true; profileCropDrag.startX=e.clientX-profileCropDrag.imgX; profileCropDrag.startY=e.clientY-profileCropDrag.imgY; });
+  container.addEventListener('mousemove', e => { if(!profileCropDrag.active) return; profileCropDrag.imgX=e.clientX-profileCropDrag.startX; profileCropDrag.imgY=e.clientY-profileCropDrag.startY; setT(); });
+  container.addEventListener('mouseup', () => profileCropDrag.active=false);
+  container.addEventListener('wheel', e => { profileCropDrag.scale=Math.max(0.5,Math.min(5,profileCropDrag.scale-e.deltaY*0.001)); setT(); }, {passive:true});
+})();
+
+function handleProfilePic(input) {
+  const file = input.files[0];
+  if (!file) return;
+  openProfileCrop(file);
+}
 function openFeedCompose() { document.getElementById('feed-photo-input').click(); }
 function closeFeedCompose() { closeCropModal(); }
 
@@ -2126,6 +2225,16 @@ window.likePost = async (postId, btn) => {
     btn.style.color = '#ff4444';
   } catch(e) {}
 };
+
+// 프로필 사진 Firestore 저장
+window.addEventListener('save-profile-photo', async () => {
+  const user = auth.currentUser || window.currentUser;
+  const photoURL = window._pendingProfilePhoto;
+  if (!user || !photoURL) return;
+  try {
+    await setDoc(doc(db, 'users', user.uid), { photoURL, updatedAt: serverTimestamp() }, { merge: true });
+  } catch(e) { console.error('프로필 사진 저장 실패:', e); }
+});
 
 // 리디렉션 결과 처리 (폴백용 — 팝업 실패 시 리디렉션됐을 경우 대비)
 getRedirectResult(auth).then(async (result) => {
