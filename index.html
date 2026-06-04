@@ -1820,43 +1820,24 @@ let postComments = {};
 
 function openCommentPanel(postId) {
   currentPostId = postId;
-  if (!postComments[postId]) postComments[postId] = [];
-  renderComments();
   openPanel('comment-panel');
+  // Firestore에서 댓글 불러오기
+  window.loadComments(postId);
 }
 
 function renderComments() {
-  const el = document.getElementById('comment-list');
-  const comments = postComments[currentPostId] || [];
-  if (!comments.length) {
-    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.25);font-size:13px">첫 댓글을 남겨봐요</div>';
-    return;
-  }
-  el.innerHTML = comments.map(c => `
-    <div style="display:flex;gap:10px;margin-bottom:16px">
-      <div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)"></div>
-      <div style="flex:1">
-        <div style="font-size:13px;line-height:1.55;color:rgba(255,255,255,0.85)"><span style="font-weight:700;margin-right:6px">${c.name}</span>${c.text}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.25);margin-top:4px">${c.time}</div>
-      </div>
-    </div>`).join('');
+  // Firestore 버전에서는 loadComments가 처리
 }
 
 function submitComment() {
   const input = document.getElementById('comment-input');
-  const text = input.value.trim();
+  const text = input?.value?.trim();
   if (!text) return;
   if (FILTER_WORDS.some(w => text.toLowerCase().includes(w.toLowerCase()))) {
     showToast('외부 연락처는 입력할 수 없어요');
     return;
   }
-  if (!postComments[currentPostId]) postComments[currentPostId] = [];
-  postComments[currentPostId].push({
-    name: window.currentUser ? window.currentUser.displayName : '나',
-    text, time: '방금'
-  });
-  input.value = '';
-  renderComments();
+  window.submitComment(currentPostId);
 }
 
 // ===== HOME CREW RENDER (더 이상 홈에 없으므로 빈 함수) =====
@@ -2217,7 +2198,9 @@ async function loadFeed() {
       const time = data.createdAt
         ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
         : '방금';
-      const isMe = window.currentUser && data.userId === window.currentUser.uid;
+      const liked = window.currentUser && (data.likedBy || []).includes(window.currentUser.uid);
+      const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
+      const heartFill = liked ? '#ff4444' : 'none';
       return `
         <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
           <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${data.userId}','${data.userName||'익명'}','${data.userPhoto||''}')">
@@ -2231,13 +2214,13 @@ async function loadFeed() {
           </div>
           ${data.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${data.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
           <div style="padding:10px 20px 6px;display:flex;gap:16px">
-            <button onclick="likePost('${d.id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <button onclick="likePost('${d.id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
               ${data.likes||0}
             </button>
             <button onclick="openCommentPanel('${d.id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              댓글
+              ${data.commentCount||0}
             </button>
           </div>
           ${data.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.55;color:rgba(255,255,255,0.82);letter-spacing:-0.2px"><span style="font-weight:700;margin-right:6px">${data.userName||'익명'}</span>${data.text}</div>` : '<div style="padding-bottom:12px"></div>'}
@@ -2251,11 +2234,27 @@ async function loadFeed() {
 window.likePost = async (postId, btn) => {
   if (!window.currentUser) { showToast('로그인 후 좋아요를 누를 수 있어요'); return; }
   try {
-    await updateDoc(doc(db, 'feed', postId), { likes: increment(1) });
-    const count = parseInt(btn.textContent.trim().split(' ')[1] || '0') + 1;
-    btn.textContent = '❤️ ' + count;
-    btn.style.color = '#ff4444';
-  } catch(e) {}
+    const postRef = doc(db, 'feed', postId);
+    const postSnap = await getDoc(postRef);
+    const likedBy = postSnap.data()?.likedBy || [];
+    const uid = window.currentUser.uid;
+    if (likedBy.includes(uid)) {
+      // 좋아요 취소
+      await updateDoc(postRef, { likes: increment(-1), likedBy: likedBy.filter(id => id !== uid) });
+      btn.querySelector ? btn.innerHTML = btn.innerHTML : null;
+      btn.style.color = 'rgba(255,255,255,0.45)';
+      const countEl = btn.querySelector ? btn : btn;
+      const newCount = (postSnap.data()?.likes || 1) - 1;
+      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> ${newCount}`;
+      btn.style.color = 'rgba(255,255,255,0.45)';
+    } else {
+      // 좋아요 추가
+      await updateDoc(postRef, { likes: increment(1), likedBy: [...likedBy, uid] });
+      const newCount = (postSnap.data()?.likes || 0) + 1;
+      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#ff4444" stroke="#ff4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> ${newCount}`;
+      btn.style.color = '#ff4444';
+    }
+  } catch(e) { console.error(e); }
 };
 
 // 프로필 사진 Firestore 저장
@@ -2311,11 +2310,15 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
   const btn = document.getElementById('feed-upload-btn');
   btn.textContent = '올리는 중...'; btn.disabled = true;
   try {
-    // 닉네임 Firestore에서 가져오기
+    // users 컬렉션에서 최신 닉네임 + 프로필 사진 가져오기
     let nickname = user.displayName || '익명';
+    let userPhoto = user.photoURL || '';
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid));
-      if (userSnap.exists() && userSnap.data().nickname) nickname = userSnap.data().nickname;
+      if (userSnap.exists()) {
+        if (userSnap.data().nickname) nickname = userSnap.data().nickname;
+        if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL;
+      }
     } catch(e) {}
 
     let photoURL = '';
@@ -2332,9 +2335,11 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
     await addDoc(collection(db, 'feed'), {
       text, photoURL,
       userName: nickname,
-      userPhoto: user.photoURL || '',
+      userPhoto: userPhoto,
       userId: user.uid,
       likes: 0,
+      likedBy: [],
+      commentCount: 0,
       createdAt: serverTimestamp()
     });
     closeCropModal();
@@ -2345,6 +2350,57 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
   } catch(e) { showToast('실패: ' + e.message); }
   btn.textContent = '올리기'; btn.disabled = false;
 });
+
+// 댓글 저장 (Firestore)
+window.submitComment = async (postId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 댓글을 달 수 있어요'); return; }
+  const input = document.getElementById('comment-input');
+  const text = input?.value?.trim();
+  if (!text) return;
+
+  let nickname = user.displayName || '익명';
+  let userPhoto = user.photoURL || '';
+  try {
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    if (userSnap.exists()) {
+      if (userSnap.data().nickname) nickname = userSnap.data().nickname;
+      if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL;
+    }
+  } catch(e) {}
+
+  try {
+    await addDoc(collection(db, 'feed', postId, 'comments'), {
+      text, userName: nickname, userPhoto, userId: user.uid,
+      createdAt: serverTimestamp()
+    });
+    await updateDoc(doc(db, 'feed', postId), { commentCount: increment(1) });
+    if (input) input.value = '';
+    loadComments(postId);
+  } catch(e) { showToast('댓글 저장 실패'); }
+};
+
+// 댓글 불러오기
+window.loadComments = async (postId) => {
+  const list = document.getElementById('comment-list');
+  if (!list) return;
+  try {
+    const q = query(collection(db, 'feed', postId, 'comments'), orderBy('createdAt', 'asc'));
+    const snap = await getDocs(q);
+    list.innerHTML = snap.docs.map(d => {
+      const c = d.data();
+      return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
+        <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0">
+          <img src="${c.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+        </div>
+        <div>
+          <span style="font-size:12px;font-weight:700;margin-right:6px">${c.userName||'익명'}</span>
+          <span style="font-size:13px;color:rgba(255,255,255,0.8)">${c.text}</span>
+        </div>
+      </div>`;
+    }).join('') || '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>';
+  } catch(e) {}
+};
 </script>
 </body>
 </html>
