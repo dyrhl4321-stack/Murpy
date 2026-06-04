@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260604022657 -->
+<!-- cache-bust: v20260605001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -481,8 +481,8 @@
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px 20px" id="comment-list"></div>
   <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px">
-    <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')submitComment()">
-    <button onclick="submitComment()" style="background:#fff;color:#000;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+    <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')handleCommentSubmit()">
+    <button onclick="handleCommentSubmit()" style="background:#fff;color:#000;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
   </div>
 </div>
 
@@ -1829,7 +1829,7 @@ function renderComments() {
   // Firestore 버전에서는 loadComments가 처리
 }
 
-function submitComment() {
+function handleCommentSubmit() {
   const input = document.getElementById('comment-input');
   const text = input?.value?.trim();
   if (!text) return;
@@ -2040,7 +2040,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
@@ -2131,9 +2131,13 @@ window.saveNickname = async () => {
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   try {
-    await setDoc(doc(db, 'users', user.uid), {
-      nickname, uid: user.uid, photoURL: user.photoURL || '', updatedAt: serverTimestamp()
-    }, { merge: true });
+    const userRef = doc(db, 'users', user.uid);
+    const existingSnap = await getDoc(userRef);
+    // 커스텀 업로드 사진이 없을 때만 Google 기본 사진 저장 (덮어쓰기 방지)
+    const existingPhoto = existingSnap.exists() ? existingSnap.data().photoURL : null;
+    const saveData = { nickname, uid: user.uid, updatedAt: serverTimestamp() };
+    if (!existingPhoto) saveData.photoURL = user.photoURL || '';
+    await setDoc(userRef, saveData, { merge: true });
     if (window.currentUser) window.currentUser.nickname = nickname;
     document.getElementById('info-name').textContent = nickname;
     closeNicknameModal();
@@ -2237,24 +2241,22 @@ window.likePost = async (postId, btn) => {
     const postRef = doc(db, 'feed', postId);
     const postSnap = await getDoc(postRef);
     const likedBy = postSnap.data()?.likedBy || [];
+    const currentLikes = postSnap.data()?.likes || 0;
     const uid = window.currentUser.uid;
     if (likedBy.includes(uid)) {
       // 좋아요 취소
-      await updateDoc(postRef, { likes: increment(-1), likedBy: likedBy.filter(id => id !== uid) });
-      btn.querySelector ? btn.innerHTML = btn.innerHTML : null;
-      btn.style.color = 'rgba(255,255,255,0.45)';
-      const countEl = btn.querySelector ? btn : btn;
-      const newCount = (postSnap.data()?.likes || 1) - 1;
+      await updateDoc(postRef, { likes: increment(-1), likedBy: arrayRemove(uid) });
+      const newCount = Math.max(0, currentLikes - 1);
       btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> ${newCount}`;
       btn.style.color = 'rgba(255,255,255,0.45)';
     } else {
       // 좋아요 추가
-      await updateDoc(postRef, { likes: increment(1), likedBy: [...likedBy, uid] });
-      const newCount = (postSnap.data()?.likes || 0) + 1;
+      await updateDoc(postRef, { likes: increment(1), likedBy: arrayUnion(uid) });
+      const newCount = currentLikes + 1;
       btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="#ff4444" stroke="#ff4444" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> ${newCount}`;
       btn.style.color = '#ff4444';
     }
-  } catch(e) { console.error(e); }
+  } catch(e) { console.error(e); showToast('좋아요 처리 실패'); }
 };
 
 // 프로필 사진 Firestore 저장
