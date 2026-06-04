@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260605001 -->
+<!-- cache-bust: v20260605002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2107,19 +2107,19 @@ async function checkAndSetNickname(user) {
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
     if (userSnap.exists() && userSnap.data().nickname) {
-      // 닉네임 있으면 그냥 세팅
       const nickname = userSnap.data().nickname;
-      if (window.currentUser) window.currentUser.nickname = nickname;
+      if (window.currentUser) {
+        window.currentUser.nickname = nickname;
+        // 최신 Firestore 프로필 사진 저장 (피드 렌더링에 사용)
+        if (userSnap.data().photoURL) window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
+      }
       const infoName = document.getElementById('info-name');
       if (infoName) infoName.textContent = nickname;
-      // 모달 닫혀있게 보장
       document.getElementById('nickname-modal').style.display = 'none';
     } else {
-      // 닉네임 없을 때만 모달 열기
       window.openNicknameModal(user.displayName || '');
     }
   } catch(e) {
-    // Firestore 에러시 모달 열지 않음
     console.error('닉네임 체크 실패:', e);
     document.getElementById('nickname-modal').style.display = 'none';
   }
@@ -2155,9 +2155,12 @@ window.saveNickname = async () => {
     updateUI(user);
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid));
-      if (userSnap.exists() && userSnap.data().nickname) {
-        window.currentUser.nickname = userSnap.data().nickname;
-        document.getElementById('info-name').textContent = userSnap.data().nickname;
+      if (userSnap.exists()) {
+        if (userSnap.data().nickname) {
+          window.currentUser.nickname = userSnap.data().nickname;
+          document.getElementById('info-name').textContent = userSnap.data().nickname;
+        }
+        if (userSnap.data().photoURL) window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
       }
     } catch(e) {}
   }
@@ -2205,11 +2208,14 @@ async function loadFeed() {
       const liked = window.currentUser && (data.likedBy || []).includes(window.currentUser.uid);
       const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
       const heartFill = liked ? '#ff4444' : 'none';
+      // 내 포스트는 최신 Firestore 프로필 사진 우선 사용
+      const isMe = window.currentUser && data.userId === window.currentUser.uid;
+      const displayPhoto = isMe && window.currentUser.firestorePhotoURL ? window.currentUser.firestorePhotoURL : (data.userPhoto || '');
       return `
         <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
-          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${data.userId}','${data.userName||'익명'}','${data.userPhoto||''}')">
+          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${data.userId}','${data.userName||'익명'}','${displayPhoto}')">
             <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
-              <img src="${data.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+              <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
             </div>
             <div style="margin-left:10px;flex:1">
               <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${data.userName||'익명'}</div>
@@ -2222,9 +2228,9 @@ async function loadFeed() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
               ${data.likes||0}
             </button>
-            <button onclick="openCommentPanel('${d.id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
+            <button id="comment-btn-${d.id}" onclick="openCommentPanel('${d.id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              ${data.commentCount||0}
+              <span id="comment-count-${d.id}">${data.commentCount||0}</span>
             </button>
           </div>
           ${data.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.55;color:rgba(255,255,255,0.82);letter-spacing:-0.2px"><span style="font-weight:700;margin-right:6px">${data.userName||'익명'}</span>${data.text}</div>` : '<div style="padding-bottom:12px"></div>'}
@@ -2266,6 +2272,9 @@ window.addEventListener('save-profile-photo', async () => {
   if (!user || !photoURL) return;
   try {
     await setDoc(doc(db, 'users', user.uid), { photoURL, updatedAt: serverTimestamp() }, { merge: true });
+    // 세션 캐시 갱신 + 피드 즉시 반영
+    if (window.currentUser) window.currentUser.firestorePhotoURL = photoURL;
+    loadFeed();
   } catch(e) { console.error('프로필 사진 저장 실패:', e); }
 });
 
@@ -2378,8 +2387,14 @@ window.submitComment = async (postId) => {
     });
     await updateDoc(doc(db, 'feed', postId), { commentCount: increment(1) });
     if (input) input.value = '';
+    // 피드 댓글 수 즉시 반영 (리로드 없이)
+    const countEl = document.getElementById(`comment-count-${postId}`);
+    if (countEl) countEl.textContent = (parseInt(countEl.textContent) || 0) + 1;
     loadComments(postId);
-  } catch(e) { showToast('댓글 저장 실패'); }
+  } catch(e) {
+    console.error('댓글 저장 실패:', e.code, e.message);
+    showToast('댓글 저장 실패: ' + (e.code || e.message || ''));
+  }
 };
 
 // 댓글 불러오기
@@ -2401,7 +2416,10 @@ window.loadComments = async (postId) => {
         </div>
       </div>`;
     }).join('') || '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>';
-  } catch(e) {}
+  } catch(e) {
+    console.error('댓글 로드 실패:', e.code, e.message);
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">댓글을 불러올 수 없어요</div>';
+  }
 };
 </script>
 </body>
