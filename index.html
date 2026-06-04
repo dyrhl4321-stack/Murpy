@@ -1992,14 +1992,23 @@ async function checkAndSetNickname(user) {
   try {
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
-    if (!userSnap.exists() || !userSnap.data().nickname) {
-      openNicknameModal(user.displayName || '');
-    } else {
+    if (userSnap.exists() && userSnap.data().nickname) {
+      // 닉네임 있으면 그냥 세팅
       const nickname = userSnap.data().nickname;
-      window.currentUser.nickname = nickname;
-      document.getElementById('info-name').textContent = nickname;
+      if (window.currentUser) window.currentUser.nickname = nickname;
+      const infoName = document.getElementById('info-name');
+      if (infoName) infoName.textContent = nickname;
+      // 모달 닫혀있게 보장
+      document.getElementById('nickname-modal').style.display = 'none';
+    } else {
+      // 닉네임 없을 때만 모달 열기
+      window.openNicknameModal(user.displayName || '');
     }
-  } catch(e) {}
+  } catch(e) {
+    // Firestore 에러시 모달 열지 않음
+    console.error('닉네임 체크 실패:', e);
+    document.getElementById('nickname-modal').style.display = 'none';
+  }
 }
 
 window.saveNickname = async () => {
