@@ -1927,7 +1927,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -2106,6 +2106,7 @@ window.likePost = async (postId, btn) => {
   } catch(e) {}
 };
 
+// 리디렉션 결과 처리 (폴백용 — 팝업 실패 시 리디렉션됐을 경우 대비)
 getRedirectResult(auth).then(async (result) => {
   if (result && result.user) {
     window.currentUser = result.user;
@@ -2117,9 +2118,23 @@ getRedirectResult(auth).then(async (result) => {
 
 document.getElementById('login-btn').addEventListener('click', async () => {
   try {
-    await signInWithRedirect(auth, provider);
+    // 팝업 방식 — GitHub Pages에서 리디렉션보다 확실하게 작동
+    const result = await signInWithPopup(auth, provider);
+    window.currentUser = result.user;
+    updateUI(result.user);
+    await checkAndSetNickname(result.user);
+    showToast('✓ 로그인됐어요!');
   } catch(e) {
-    showToast('로그인 실패: ' + e.message);
+    console.error('로그인 실패:', e.code, e.message);
+    if (e.code === 'auth/popup-blocked') {
+      // 팝업 차단 시 리디렉션으로 폴백
+      showToast('팝업 차단됨 — 리디렉션으로 로그인해요');
+      await signInWithRedirect(auth, provider);
+    } else if (e.code === 'auth/cancelled-popup-request' || e.code === 'auth/popup-closed-by-user') {
+      // 사용자가 팝업 닫음 — 무시
+    } else {
+      showToast('로그인 실패: ' + e.message);
+    }
   }
 });
 
