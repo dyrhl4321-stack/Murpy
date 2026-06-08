@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260608001 -->
+<!-- cache-bust: v20260608002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -648,6 +648,29 @@
   </div>
 </div>
 
+<!-- 크루 정보 수정 패널 -->
+<div class="panel" id="crew-edit-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('crew-edit-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">크루 정보 수정</span>
+  </div>
+  <div class="panel-body">
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">크루 이름</div>
+      <input id="edit-crew-name" placeholder="크루 이름" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">한 줄 소개</div>
+      <input id="edit-crew-desc" placeholder="크루 소개" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:24px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">활동 지역</div>
+      <input id="edit-crew-loc" placeholder="ex) 서울 전체" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px" onclick="saveCrewEdit()">저장</button>
+  </div>
+</div>
+
 <!-- Crew Detail Panel -->
 <div class="panel" id="crew-detail-panel" style="overflow:hidden">
   <!-- 커버 이미지 -->
@@ -947,10 +970,14 @@
       <button onclick="closeModal('crew-leader-menu-modal');openTreasuryModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">💰<br>공금 관리</button>
       <button onclick="closeModal('crew-leader-menu-modal');openBoostModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">⚡<br>부스트</button>
       <button onclick="closeModal('crew-leader-menu-modal');openEntryFeeModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">💵<br>입장료 설정</button>
+      <button onclick="closeModal('crew-leader-menu-modal');document.getElementById('crew-cover-upload-input').click()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">📸<br>커버 변경</button>
+      <button onclick="closeModal('crew-leader-menu-modal');openCrewEdit()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">✏️<br>크루 수정</button>
     </div>
     <button onclick="closeModal('crew-leader-menu-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;padding:8px;font-family:inherit">닫기</button>
   </div>
 </div>
+<!-- 크루 커버사진 업로드 인풋 (전역) -->
+<input type="file" id="crew-cover-upload-input" accept="image/*" style="display:none" onchange="handleCrewCoverUpload(this)">
 
 <!-- 크루 게시글 작성 모달 -->
 <div class="modal-overlay" id="crew-post-write-modal" onclick="if(event.target===this)closeModal('crew-post-write-modal')">
@@ -1500,7 +1527,7 @@ function openCrewDetail(id) {
   currentCrewId = id;
   window._currentCrewId = String(id);
   const uid = window.currentUser ? window.currentUser.uid : null;
-  const isLeader = uid && crew.leaderId === uid;
+  const isLeader = uid && (crew.leaderId === uid || (!crew.leaderId && crew.mine === true));
   window._currentCrewIsLeader = isLeader;
 
   // 커버 이미지
@@ -1550,7 +1577,7 @@ function renderCrewHomeTab(crew) {
     (Array.isArray(crew.members) && crew.members.includes(uid)) ||
     crew.mine || crew.joined
   );
-  const isLeader = uid && (crew.leaderId === uid);
+  const isLeader = uid && (crew.leaderId === uid || (!crew.leaderId && crew.mine === true));
   const mc = crew.memberCount || (Array.isArray(crew.members) ? crew.members.length : 0);
 
   let actionHtml = '';
@@ -2081,26 +2108,47 @@ function closeProfileCrop() {
 window.confirmProfileCrop = async function() {
   const user = window.currentUser;
   if (!user) { showToast('로그인이 필요해요'); return; }
-  const file = profileCropState.file;
-  if (!file) return;
+  if (!profileCropState.file) return;
   showToast('업로드 중...');
   try {
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
-    const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
-    const json = await res.json();
-    if (!json.success) { showToast('업로드 실패'); return; }
-    const photoURL = json.data.url;
-    closeProfileCrop();
-    const preview = document.getElementById('profile-pic-preview');
-    const icon = document.getElementById('profile-pic-icon');
-    if (preview) { preview.src = photoURL; preview.style.display = 'block'; }
-    if (icon) icon.style.display = 'none';
-    document.getElementById('user-avatar').src = photoURL;
-    showToast('✓ 프로필 사진이 변경됐어요!');
-    window._pendingProfilePhoto = photoURL;
-    window.dispatchEvent(new CustomEvent('save-profile-photo'));
+    const imgEl = document.getElementById('profile-crop-image');
+    const s = profileCropState.scale;
+    const tx = profileCropState.tx;
+    const ty = profileCropState.ty;
+    const outSize = 600;
+    const containerSize = 280;
+    const ratio = outSize / containerSize;
+    const canvas = document.createElement('canvas');
+    canvas.width = outSize;
+    canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgEl,
+      (140 + tx - imgEl.naturalWidth * s / 2) * ratio,
+      (140 + ty - imgEl.naturalHeight * s / 2) * ratio,
+      imgEl.naturalWidth * s * ratio,
+      imgEl.naturalHeight * s * ratio
+    );
+    canvas.toBlob(async (blob) => {
+      if (!blob) { showToast('크롭 실패'); return; }
+      try {
+        const formData = new FormData();
+        formData.append('image', blob, 'profile.jpg');
+        formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+        const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
+        const json = await res.json();
+        if (!json.success) { showToast('업로드 실패'); return; }
+        const photoURL = json.data.url;
+        closeProfileCrop();
+        const preview = document.getElementById('profile-pic-preview');
+        const icon = document.getElementById('profile-pic-icon');
+        if (preview) { preview.src = photoURL; preview.style.display = 'block'; }
+        if (icon) icon.style.display = 'none';
+        document.getElementById('user-avatar').src = photoURL;
+        showToast('✓ 프로필 사진이 변경됐어요!');
+        window._pendingProfilePhoto = photoURL;
+        window.dispatchEvent(new CustomEvent('save-profile-photo'));
+      } catch(e) { showToast('실패: ' + e.message); }
+    }, 'image/jpeg', 0.88);
   } catch(e) { showToast('실패: ' + e.message); }
 }
 
@@ -2505,6 +2553,56 @@ function switchCenterTab(tab, btn) {
 function googleLogout() {
   const logoutEvent = new CustomEvent('murpy-logout');
   document.dispatchEvent(logoutEvent);
+}
+
+async function handleCrewCoverUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  showToast('업로드 중...');
+  try {
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
+    const json = await res.json();
+    if (!json.success) { showToast('업로드 실패'); return; }
+    const imgUrl = json.data.url;
+    document.getElementById('crew-cover-img').src = imgUrl;
+    const crewId = window._currentCrewId;
+    const crews = window.crewsData || CREWS;
+    const crew = crews.find(c => String(c.id) === String(crewId));
+    if (crew) crew.img = imgUrl;
+    if (window.updateCrewDoc && window.crewsData) window.updateCrewDoc(crewId, { img: imgUrl });
+    showToast('✓ 크루 커버가 변경됐어요!');
+  } catch(e) { showToast('실패: ' + e.message); }
+}
+
+function openCrewEdit() {
+  const crewId = window._currentCrewId;
+  const crews = window.crewsData || CREWS;
+  const crew = crews.find(c => String(c.id) === String(crewId));
+  if (!crew) return;
+  document.getElementById('edit-crew-name').value = crew.name || '';
+  document.getElementById('edit-crew-desc').value = crew.desc || '';
+  document.getElementById('edit-crew-loc').value = crew.loc || '';
+  openPanel('crew-edit-panel');
+}
+
+function saveCrewEdit() {
+  const name = document.getElementById('edit-crew-name').value.trim();
+  const desc = document.getElementById('edit-crew-desc').value.trim();
+  const loc = document.getElementById('edit-crew-loc').value.trim();
+  if (!name) { showToast('크루 이름을 입력해주세요'); return; }
+  const crewId = window._currentCrewId;
+  const crews = window.crewsData || CREWS;
+  const crew = crews.find(c => String(c.id) === String(crewId));
+  if (crew) { crew.name = name; crew.desc = desc; crew.loc = loc; }
+  const coverName = document.getElementById('crew-cover-name');
+  if (coverName) coverName.textContent = name;
+  if (window.updateCrewDoc && window.crewsData) window.updateCrewDoc(crewId, { name, desc, loc });
+  closePanel('crew-edit-panel');
+  showToast('✓ 크루 정보가 수정됐어요!');
 }
 
 renderMatch();
@@ -4087,6 +4185,13 @@ window.sendCrewChatFirestore = async () => {
   try {
     await addDoc(collection(db,'crews',crewId,'chat'), { text, userId:user.uid, userName:nickname, createdAt:serverTimestamp() });
   } catch(e) { console.error(e); showToast('전송 실패'); input.value=text; }
+};
+
+// ===== 크루 문서 업데이트 =====
+window.updateCrewDoc = async (crewId, data) => {
+  try {
+    await updateDoc(doc(db, 'crews', String(crewId)), data);
+  } catch(e) { console.error('updateCrewDoc error:', e); }
 };
 
 // ===== markFirebaseNotifRead =====
