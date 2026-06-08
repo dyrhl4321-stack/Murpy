@@ -862,7 +862,7 @@ function goPage(name) {
   if (name === 'home') renderHomeCrews();
 }
 
-function openPanel(id) { document.getElementById(id).classList.add('open'); if (id==='notif-panel') renderNotifs(); if (id==='fav-panel') renderFavs(); if (id==='chat-panel') renderChatList(); if (id==='edit-profile-panel') initEditProfile(); if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile(); if (id==='received-likes-panel') {} }
+function openPanel(id) { document.getElementById(id).classList.add('open'); if (id==='notif-panel') { if (window.loadNotificationsFirestore) window.loadNotificationsFirestore(); else renderNotifs(); } if (id==='fav-panel') renderFavs(); if (id==='chat-panel') renderChatList(); if (id==='edit-profile-panel') initEditProfile(); if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile(); if (id==='received-likes-panel') {} }
 function closePanel(id) { document.getElementById(id).classList.remove('open'); }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -2468,6 +2468,19 @@ window.loadBamboo = async (tab) => {
       const liked = user && (post.likedBy || []).includes(user.uid);
       const time = post.createdAt ? new Date(post.createdAt.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '방금';
       const isMyPost = user && post.userId === user.uid;
+      const requesters = post.requesters || [];
+      const hasRequested = user && !isMyPost && requesters.includes(user.uid);
+      const requesterCount = requesters.length > 0 ? ` (${requesters.length})` : '';
+      let actionBtn = '';
+      if (user && isMyPost) {
+        actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600" onclick="openPanel('notif-panel')">신청자 보기 👀${requesterCount}</button>`;
+      } else if (user && !isMyPost) {
+        if (hasRequested) {
+          actionBtn = `<button disabled style="padding:4px 12px;font-size:11px;font-weight:500;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#555;cursor:default">신청완료</button>`;
+        } else {
+          actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600" onclick="window.sendBambooRequest('${post.id}','${post.userId}')">저에요 🙋</button>`;
+        }
+      }
       return `<div class="card bamboo-item">
         <div style="font-size:14px;line-height:1.7;color:#ddd;margin-bottom:12px">${post.text}</div>
         <div style="display:flex;align-items:center;justify-content:space-between">
@@ -2477,6 +2490,7 @@ window.loadBamboo = async (tab) => {
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:11px;color:#444">${time}</span>
             ${isMyPost ? '<span style="font-size:10px;color:#444;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:8px">내 글</span>' : ''}
+            ${actionBtn}
           </div>
         </div>
       </div>`;
@@ -2514,6 +2528,92 @@ window.toggleBambooLikeFirestore = async (postId) => {
     else { await updateDoc(postRef, { likes: increment(1), likedBy: arrayUnion(user.uid) }); }
     window.loadBamboo(window.bambooTab || 'all');
   } catch(e) { console.error(e); showToast('처리 실패'); }
+};
+
+window.sendBambooRequest = async (postId, authorUid) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 신청할 수 있어요'); return; }
+  if (user.uid === authorUid) return;
+  try {
+    const postRef = doc(db, 'bamboo', postId);
+    const postSnap = await getDoc(postRef);
+    if (!postSnap.exists()) return;
+    const postText = (postSnap.data().text || '').substring(0, 30);
+    await updateDoc(postRef, { requesters: arrayUnion(user.uid) });
+    let nickname = '익명';
+    try {
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      if (userSnap.exists() && userSnap.data().nickname) nickname = userSnap.data().nickname;
+    } catch(e) {}
+    await addDoc(collection(db, 'notifications'), {
+      toUid: authorUid, fromUid: user.uid, fromNickname: nickname,
+      type: 'bamboo_request', postId, postText,
+      read: false, createdAt: serverTimestamp()
+    });
+    showToast('🙋 신청됐어요! 작성자가 알림을 받았어요');
+    window.loadBamboo(window.bambooTab || 'all');
+  } catch(e) { console.error(e); showToast('신청 실패'); }
+};
+
+window.loadNotificationsFirestore = async () => {
+  const user = auth.currentUser || window.currentUser;
+  const el = document.getElementById('notif-list');
+  if (!el) return;
+  if (!user) { renderNotifs(); return; }
+  try {
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    const fsNotifs = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(n => n.toUid === user.uid);
+    const unreadCount = fsNotifs.filter(n => !n.read).length;
+    const badge = document.getElementById('notif-badge');
+    if (badge) { badge.textContent = unreadCount; badge.style.display = unreadCount > 0 ? 'flex' : 'none'; }
+    const fsHtml = fsNotifs.map(n => {
+      const time = n.createdAt ? new Date(n.createdAt.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '방금';
+      const safeNickname = (n.fromNickname || '익명').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const safePostText = (n.postText || '').replace(/</g, '&lt;');
+      const safeFromUid = (n.fromUid || '').replace(/'/g, '');
+      const safeNicknameJs = (n.fromNickname || '익명').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const safePostId = (n.postId || '').replace(/'/g, '');
+      const safeId = (n._id || '').replace(/'/g, '');
+      return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}">
+        <span style="font-size:20px">🎋</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNickname}</b>님이 내 글에 "저에요 🙋"를 눌렀어요</div>
+          <div style="font-size:12px;color:#555;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${safePostText}"</div>
+          <div style="font-size:11px;color:#444">${time}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#fff"></div>' : ''}
+          <button class="btn-glass" style="padding:5px 12px;font-size:11px;font-weight:600;white-space:nowrap" onclick="window.openBambooChat('${safeFromUid}','${safeNicknameJs}','${safePostId}','${safeId}')">채팅하기</button>
+        </div>
+      </div>`;
+    }).join('');
+    const localHtml = notifications.map(n => `
+      <div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1};cursor:pointer" onclick="readNotif(${n.id})">
+        <span style="font-size:20px">${n.type==='match'?'💪':n.type==='bamboo'?'🎋':n.type==='like'?'🤍':'👥'}</span>
+        <div style="flex:1"><div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px">${n.text}</div><div style="font-size:11px;color:#444">${n.time}</div></div>
+        ${!n.read?'<div style="width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0;margin-top:4px"></div>':''}
+      </div>`).join('');
+    el.innerHTML = (fsHtml || '') + (localHtml || '') || '<div style="text-align:center;padding:40px 20px;color:#444;font-size:13px">알림이 없어요</div>';
+  } catch(e) { console.error('notif load error:', e); renderNotifs(); }
+};
+
+window.openBambooChat = async (fromUid, fromNickname, postId, notifId) => {
+  if (notifId) {
+    try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {}
+  }
+  const avatarEl = document.getElementById('chat-detail-avatar');
+  avatarEl.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='18' fill='%23333'/%3E%3Ctext x='18' y='24' text-anchor='middle' font-size='18'%3E%F0%9F%8E%8B%3C/text%3E%3C/svg%3E";
+  avatarEl.style.display = 'block';
+  document.getElementById('chat-detail-name').textContent = fromNickname + ' (익명)';
+  document.getElementById('chat-messages').innerHTML = `
+    <div style="text-align:center;padding:24px 20px">
+      <div style="font-size:36px;margin-bottom:10px">🎋</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.4);line-height:1.6">대나무숲 신청자와 연결됐어요<br>상대방 정보는 익명으로 유지돼요</div>
+    </div>`;
+  closePanel('notif-panel');
+  openPanel('chat-detail-panel');
+  window.loadNotificationsFirestore && window.loadNotificationsFirestore();
 };
 
 // ===== 크루 Firestore =====
