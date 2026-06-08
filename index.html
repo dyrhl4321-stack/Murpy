@@ -211,6 +211,12 @@
     </div>
   </div>
 
+  <!-- 피드 이미지 풀스크린 뷰어 -->
+  <div id="feed-image-viewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.97);z-index:9998;flex-direction:column;align-items:center;justify-content:center" onclick="document.getElementById('feed-image-viewer').style.display='none'">
+    <button style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.12);border:none;color:#fff;font-size:22px;cursor:pointer;width:40px;height:40px;border-radius:50%;line-height:1;z-index:1">✕</button>
+    <img id="feed-viewer-img" src="" style="max-width:100%;max-height:90vh;object-fit:contain;border-radius:4px" onclick="event.stopPropagation()">
+  </div>
+
   <!-- 크롭 모달 -->
   <div id="crop-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:9999;flex-direction:column">
     <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
@@ -1540,8 +1546,11 @@ function renderCrewHomeTab(crew) {
   const el = document.getElementById('crew-home-tab');
   if (!el) return;
   const uid = window.currentUser ? window.currentUser.uid : null;
-  const isMember = uid && Array.isArray(crew.members) && crew.members.includes(uid);
-  const isLeader = uid && crew.leaderId === uid;
+  const isMember = uid && (
+    (Array.isArray(crew.members) && crew.members.includes(uid)) ||
+    crew.mine || crew.joined
+  );
+  const isLeader = uid && (crew.leaderId === uid);
   const mc = crew.memberCount || (Array.isArray(crew.members) ? crew.members.length : 0);
 
   let actionHtml = '';
@@ -1940,10 +1949,32 @@ function closeCropModal() {
 
 function confirmCrop() {
   if (!window.cropData.originalFile) { showToast('사진을 먼저 선택해주세요'); return; }
-  document.getElementById('crop-step-1').style.display = 'none';
-  document.getElementById('crop-step-2').style.display = 'block';
-  document.getElementById('crop-title').textContent = '게시물 작성';
-  document.getElementById('feed-post-input').focus();
+  const img = document.getElementById('crop-image');
+  const container = document.getElementById('crop-container');
+  const cw = container.offsetWidth || window.innerWidth;
+  const ch = container.offsetHeight || cw;
+  const d = window._cropDrag || {};
+  const tx = d.imgX || 0;
+  const ty = d.imgY || 0;
+  const scale = d.scale || 1;
+  const outSize = Math.min(cw, ch, 1080);
+  const canvas = document.createElement('canvas');
+  canvas.width = outSize; canvas.height = outSize;
+  const ctx = canvas.getContext('2d');
+  const ratio = outSize / cw;
+  ctx.drawImage(img,
+    (cw / 2 + tx - img.naturalWidth * scale / 2) * ratio,
+    (ch / 2 + ty - img.naturalHeight * scale / 2) * ratio,
+    img.naturalWidth * scale * ratio,
+    img.naturalHeight * scale * ratio
+  );
+  canvas.toBlob(blob => {
+    if (blob) window.cropData.croppedBlob = blob;
+    document.getElementById('crop-step-1').style.display = 'none';
+    document.getElementById('crop-step-2').style.display = 'block';
+    document.getElementById('crop-title').textContent = '게시물 작성';
+    document.getElementById('feed-post-input').focus();
+  }, 'image/jpeg', 0.88);
 }
 
 // 드래그/핀치 이동
@@ -1951,9 +1982,11 @@ function initCropDrag() {
   const container = document.getElementById('crop-container');
   let drag = { active: false, startX: 0, startY: 0, imgX: 0, imgY: 0, scale: 1, lastDist: 0 };
   window.resetCropState = (fitScale) => {
+    drag.minScale = fitScale || 0.2;
     drag.active = false; drag.startX = 0; drag.startY = 0;
     drag.imgX = 0; drag.imgY = 0; drag.scale = fitScale || 1; drag.lastDist = 0;
   };
+  window._cropDrag = drag;
 
   function setTransform() {
     const img = document.getElementById('crop-image');
@@ -1976,7 +2009,7 @@ function initCropDrag() {
     }
     if (e.touches.length === 2) {
       const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      if (drag.lastDist) drag.scale = Math.max(0.5, Math.min(4, drag.scale * (dist / drag.lastDist)));
+      if (drag.lastDist) drag.scale = Math.max(drag.minScale||0.2, Math.min(4, drag.scale * (dist / drag.lastDist)));
       drag.lastDist = dist;
       setTransform();
     }
@@ -1986,7 +2019,7 @@ function initCropDrag() {
   container.addEventListener('mousedown', e => { drag.active = true; drag.startX = e.clientX - drag.imgX; drag.startY = e.clientY - drag.imgY; });
   container.addEventListener('mousemove', e => { if (!drag.active) return; drag.imgX = e.clientX - drag.startX; drag.imgY = e.clientY - drag.startY; setTransform(); });
   container.addEventListener('mouseup', () => drag.active = false);
-  container.addEventListener('wheel', e => { drag.scale = Math.max(0.5, Math.min(4, drag.scale - e.deltaY * 0.001)); setTransform(); }, { passive: true });
+  container.addEventListener('wheel', e => { drag.scale = Math.max(drag.minScale||0.2, Math.min(4, drag.scale - e.deltaY * 0.001)); setTransform(); }, { passive: true });
 }
 
 // 사진 선택 → 크롭 모달 열기
@@ -2694,7 +2727,7 @@ async function loadFeed() {
             </div>
             ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
           </div>
-          ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+          ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
           <div style="padding:10px 20px 6px;display:flex;gap:16px">
             <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -3489,7 +3522,8 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming') => {
     }).join('');
   } catch(e) {
     console.error('schedule load error:', e);
-    cardsEl.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요<br><button onclick="window.loadCrewSchedules('${safeId}','${tab}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:11px;padding:5px 12px;cursor:pointer;margin-top:8px">재시도</button></div>`;
+    const msg = e.code === 'permission-denied' ? '권한이 없어요. Firestore 규칙을 확인해주세요.' : '불러올 수 없어요';
+    cardsEl.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">${msg}<br><button onclick="window.loadCrewSchedules('${safeId}','${tab}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:11px;padding:5px 12px;cursor:pointer;margin-top:8px">재시도</button></div>`;
   }
 };
 
@@ -3827,8 +3861,12 @@ window.loadCrewBoard = async (crewId, cat = 'all') => {
       </div>`;
     }).join('');
   } catch(e) {
+    console.error('board load error:', e);
     const listEl = document.getElementById('crew-board-list');
-    if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+    if (listEl) {
+      const msg = e.code === 'permission-denied' ? 'Firestore 규칙 업데이트가 필요해요' : '불러올 수 없어요';
+      listEl.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">${msg}</div>`;
+    }
   }
 };
 
@@ -3852,7 +3890,10 @@ window.submitCrewPost = async () => {
     closeModal('crew-post-write-modal');
     showToast('✓ 게시글이 올라갔어요!');
     window.loadCrewBoard(crewId, 'all');
-  } catch(e) { console.error(e); showToast('작성 실패'); }
+  } catch(e) {
+    console.error(e);
+    showToast(e.code === 'permission-denied' ? 'Firestore 규칙을 업데이트해주세요' : '작성 실패: ' + (e.message||''));
+  }
 };
 
 window.openCrewPostDetail = async (crewId, postId) => {
@@ -3983,7 +4024,10 @@ window.uploadCrewPhoto = async (crewId, file) => {
     window.loadCrewPhotos(crewId);
     const inp = document.getElementById('crew-photo-input-hidden');
     if (inp) inp.value = '';
-  } catch(e) { console.error(e); showToast('업로드 실패'); }
+  } catch(e) {
+    console.error(e);
+    showToast(e.code==='permission-denied' ? 'Firestore 규칙 업데이트 필요' : '업로드 실패: ' + (e.message||''));
+  }
 };
 
 // ===== 크루 채팅 Firestore =====
@@ -4004,6 +4048,7 @@ window.loadCrewChatFirestore = (crewId) => {
     const uid = (auth.currentUser || window.currentUser)?.uid;
     if (snap.empty) {
       el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:13px">첫 메시지를 보내봐요 💪</div>';
+      el.scrollTop = el.scrollHeight;
       return;
     }
     el.innerHTML = snap.docs.map(d => {
@@ -4023,6 +4068,9 @@ window.loadCrewChatFirestore = (crewId) => {
       </div>`;
     }).join('');
     el.scrollTop = el.scrollHeight;
+  }, err => {
+    console.error('chat error:', err);
+    el.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">${err.code==='permission-denied'?'Firestore 규칙 업데이트 필요':'채팅을 불러올 수 없어요'}</div>`;
   });
 };
 
