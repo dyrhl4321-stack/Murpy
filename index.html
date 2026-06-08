@@ -2233,6 +2233,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 window.currentUser = null;
+const userPhotoCache = new Map(); // uid → photoURL, 로그아웃 시 clear
 
 // 자동 로그인 유지 설정
 setPersistence(auth, browserLocalPersistence).catch(() => {});
@@ -2361,6 +2362,10 @@ onAuthStateChanged(auth, async (user) => {
 
 // 로그아웃 이벤트 연결
 document.addEventListener('murpy-logout', async () => {
+  userPhotoCache.clear();
+  window.currentUser = null;
+  const avatar = document.getElementById('user-avatar');
+  if (avatar) { avatar.src = ''; avatar.style.display = 'none'; }
   await signOut(auth);
   showToast('로그아웃됐어요');
 });
@@ -2380,18 +2385,14 @@ async function loadFeed() {
         </div>`;
       return;
     }
-    // 고유 userId 수집 후 Firestore 최신 프사 일괄 조회 (한 번씩만)
+    // 고유 userId 수집 후 Firestore 최신 프사 일괄 조회 (캐시 미스만)
     const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     const uniqueIds = [...new Set(posts.map(p => p.userId).filter(Boolean))];
-    const photoCache = {};
-    await Promise.all(uniqueIds.map(async uid => {
-      if (window.currentUser && uid === window.currentUser.uid && window.currentUser.firestorePhotoURL) {
-        photoCache[uid] = window.currentUser.firestorePhotoURL; return;
-      }
+    await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
       try {
         const us = await getDoc(doc(db, 'users', uid));
-        photoCache[uid] = us.exists() ? (us.data().photoURL || '') : '';
-      } catch(e) { photoCache[uid] = ''; }
+        userPhotoCache.set(uid, us.exists() ? (us.data().photoURL || '') : '');
+      } catch(e) { userPhotoCache.set(uid, ''); }
     }));
     feedEl.innerHTML = posts.map(p => {
       const time = p.createdAt
@@ -2400,7 +2401,7 @@ async function loadFeed() {
       const liked = window.currentUser && (p.likedBy || []).includes(window.currentUser.uid);
       const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
       const heartFill = liked ? '#ff4444' : 'none';
-      const displayPhoto = photoCache[p.userId] || p.userPhoto || '';
+      const displayPhoto = userPhotoCache.get(p.userId) || p.userPhoto || '';
       return `
         <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
           <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
@@ -2594,18 +2595,28 @@ window.loadComments = async (postId) => {
   try {
     const q = query(collection(db, 'feed', postId, 'comments'), orderBy('createdAt', 'asc'));
     const snap = await getDocs(q);
-    list.innerHTML = snap.docs.map(d => {
-      const c = d.data();
+    if (snap.empty) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>'; return; }
+    const comments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    // 피드와 동일한 캐시 사용 — 캐시 미스 uid만 Firestore 조회
+    const uniqueIds = [...new Set(comments.map(c => c.userId).filter(Boolean))];
+    await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
+      try {
+        const us = await getDoc(doc(db, 'users', uid));
+        userPhotoCache.set(uid, us.exists() ? (us.data().photoURL || '') : '');
+      } catch(e) { userPhotoCache.set(uid, ''); }
+    }));
+    list.innerHTML = comments.map(c => {
+      const displayPhoto = userPhotoCache.get(c.userId) || c.userPhoto || '';
       return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
         <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0">
-          <img src="${c.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
         </div>
         <div>
           <span style="font-size:12px;font-weight:700;margin-right:6px">${c.userName||'익명'}</span>
           <span style="font-size:13px;color:rgba(255,255,255,0.8)">${c.text}</span>
         </div>
       </div>`;
-    }).join('') || '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>';
+    }).join('');
   } catch(e) {
     console.error('댓글 로드 실패:', e.code, e.message);
     list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">댓글을 불러올 수 없어요</div>';
