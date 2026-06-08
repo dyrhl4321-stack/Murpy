@@ -117,6 +117,21 @@
   input, textarea { font-family: inherit; }
   input::placeholder, textarea::placeholder { color: #555; }
 
+  /* Crew detail — cover + new tabs */
+  .crew-cover-back { position:absolute;top:16px;left:16px;background:rgba(0,0,0,0.45);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.18);border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;cursor:pointer;line-height:1;z-index:2 }
+  .crew-tag-pill { background:rgba(0,0,0,0.45);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.22);border-radius:20px;padding:3px 10px;font-size:11px;color:rgba(255,255,255,0.88);white-space:nowrap }
+  /* Board */
+  .board-cat-btn { flex:none;padding:11px 16px;background:none;border-top:none;border-left:none;border-right:none;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all 0.2s;color:rgba(255,255,255,0.35);border-bottom:2px solid transparent }
+  .board-cat-btn.active { color:#fff;font-weight:700;border-bottom-color:#fff }
+  /* Photo grid */
+  .photo-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px }
+  .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer }
+  .photo-thumb img { width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.2s }
+  .photo-thumb:active img { transform:scale(0.97) }
+  /* FAB */
+  .fab { position:absolute;bottom:24px;right:20px;width:50px;height:50px;border-radius:50%;background:#fff;color:#000;border:none;font-size:22px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.5);z-index:10;display:flex;align-items:center;justify-content:center;transition:transform 0.15s }
+  .fab:active { transform:scale(0.93) }
+
   /* Skeleton loader */
   @keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
   .skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%); background-size: 800px 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
@@ -628,34 +643,44 @@
 </div>
 
 <!-- Crew Detail Panel -->
-<div class="panel" id="crew-detail-panel">
-  <div class="panel-header">
-    <button class="back-btn" onclick="closePanel('crew-detail-panel')">←</button>
-    <span style="font-weight:700;font-size:16px" id="crew-detail-name"></span>
-    <span id="crew-verified-badge" style="display:none;background:#fff;color:#000;font-size:8px;font-weight:800;padding:2px 6px;border-radius:6px;margin-left:6px">VERIFIED</span>
-  </div>
-  <div id="crew-manager-panel" style="display:none;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
-    <div style="font-size:11px;color:#666;margin-bottom:10px;letter-spacing:1px;text-transform:uppercase">크루장 관리</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button class="btn-glass" style="padding:10px;font-size:12px;font-weight:600" onclick="openCreateScheduleModal()">📅 모임 만들기</button>
-      <button class="btn-glass" style="padding:10px;font-size:12px;font-weight:600" onclick="openTreasuryModal()">💰 공금 관리</button>
-      <button class="btn-glass" style="padding:10px;font-size:12px;font-weight:600" onclick="openBoostModal()">⚡ 부스트</button>
-      <button class="btn-glass" style="padding:10px;font-size:12px;font-weight:600" onclick="openEntryFeeModal()">💵 입장료 설정</button>
-    </div>
-    <div id="crew-earnings-box" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:10px;text-align:center;display:none;margin-top:8px">
-      <div style="font-size:10px;color:#666">누적 수익</div>
-      <div style="font-size:13px;font-weight:800;margin-top:2px" id="crew-earnings-num">0원</div>
+<div class="panel" id="crew-detail-panel" style="overflow:hidden">
+  <!-- 커버 이미지 -->
+  <div id="crew-cover-area" style="position:relative;height:200px;flex-shrink:0;background:#111">
+    <img id="crew-cover-img" src="" style="width:100%;height:100%;object-fit:cover;display:block">
+    <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.9) 0%,rgba(0,0,0,0.25) 55%,transparent 100%)"></div>
+    <button class="crew-cover-back" onclick="closePanel('crew-detail-panel')">←</button>
+    <button id="crew-leader-settings-btn" onclick="openModal('crew-leader-menu-modal')" style="position:absolute;top:16px;right:16px;background:rgba(0,0,0,0.45);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.18);border-radius:50%;width:38px;height:38px;display:none;align-items:center;justify-content:center;color:#fff;font-size:17px;cursor:pointer">⚙</button>
+    <div style="position:absolute;bottom:16px;left:20px;right:20px">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+        <span style="font-size:20px;font-weight:800;letter-spacing:-0.5px" id="crew-cover-name"></span>
+        <span id="crew-cover-verified" style="display:none;background:#fff;color:#000;font-size:8px;font-weight:800;padding:2px 6px;border-radius:6px">VERIFIED</span>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap" id="crew-cover-tags"></div>
     </div>
   </div>
-  <div class="tab-bar" style="padding:0 20px">
-    <button class="tab-btn active" onclick="switchCrewDetailTab('schedule', this)">모임 일정</button>
-    <button class="tab-btn" onclick="switchCrewDetailTab('members', this)">멤버</button>
-    <button class="tab-btn" onclick="switchCrewDetailTab('feed', this)">피드</button>
+  <!-- 탭 바 -->
+  <div class="tab-bar" style="padding:0 4px;flex-shrink:0">
+    <button class="tab-btn active" onclick="switchCrewDetailTab('home',this)">홈</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('board',this)">게시판</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('photos',this)">사진첩</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('chat',this)">채팅</button>
   </div>
-  <div class="panel-body">
-    <div id="crew-schedule-tab"></div>
-    <div id="crew-members-tab" style="display:none"></div>
-    <div id="crew-feed-tab" style="display:none"></div>
+  <!-- 탭 콘텐츠 래퍼 -->
+  <div id="crew-content-wrap" style="flex:1;overflow:hidden;position:relative">
+    <!-- 홈 탭 -->
+    <div id="crew-home-tab" style="position:absolute;inset:0;overflow-y:auto;padding:0 0 32px"></div>
+    <!-- 게시판 탭 -->
+    <div id="crew-board-tab" style="position:absolute;inset:0;overflow-y:auto;display:none"></div>
+    <!-- 사진첩 탭 -->
+    <div id="crew-photos-tab" style="position:absolute;inset:0;overflow-y:auto;padding:3px 3px 80px;display:none"></div>
+    <!-- 채팅 탭 -->
+    <div id="crew-chat-tab" style="position:absolute;inset:0;flex-direction:column;display:none">
+      <div id="crew-chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:6px"></div>
+      <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;flex-shrink:0;background:#0a0a0a">
+        <input id="crew-chat-input" placeholder="메시지 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendCrewChatFirestore&&window.sendCrewChatFirestore()}">
+        <button onclick="window.sendCrewChatFirestore&&window.sendCrewChatFirestore()" style="background:#fff;color:#000;border:none;border-radius:50%;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -904,6 +929,74 @@
   </div>
 </div>
 
+<!-- 크루장 메뉴 모달 -->
+<div class="modal-overlay" id="crew-leader-menu-modal" onclick="if(event.target===this)closeModal('crew-leader-menu-modal')">
+  <div class="modal-sheet">
+    <div style="font-size:11px;color:#555;letter-spacing:1px;text-transform:uppercase;margin-bottom:14px">크루장 메뉴</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <button onclick="closeModal('crew-leader-menu-modal');openCreateScheduleModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">📅<br>정모 만들기</button>
+      <button onclick="closeModal('crew-leader-menu-modal');openTreasuryModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">💰<br>공금 관리</button>
+      <button onclick="closeModal('crew-leader-menu-modal');openBoostModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">⚡<br>부스트</button>
+      <button onclick="closeModal('crew-leader-menu-modal');openEntryFeeModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.5">💵<br>입장료 설정</button>
+    </div>
+    <button onclick="closeModal('crew-leader-menu-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;padding:8px;font-family:inherit">닫기</button>
+  </div>
+</div>
+
+<!-- 크루 게시글 작성 모달 -->
+<div class="modal-overlay" id="crew-post-write-modal" onclick="if(event.target===this)closeModal('crew-post-write-modal')">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:17px;font-weight:800">게시글 작성</div>
+      <button onclick="closeModal('crew-post-write-modal')" style="background:none;border:none;color:#555;font-size:22px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#666;margin-bottom:8px">카테고리</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="post-category-btns">
+        <button onclick="selectPostCat('공지',this)" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">📌 공지</button>
+        <button onclick="selectPostCat('모임후기',this)" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">📝 모임후기</button>
+        <button onclick="selectPostCat('가입인사',this)" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">👋 가입인사</button>
+        <button onclick="selectPostCat('자유',this)" class="btn-white" style="padding:6px 12px;font-size:12px;border-radius:20px">💬 자유</button>
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <input id="crew-post-title" placeholder="제목" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <textarea id="crew-post-body" placeholder="내용을 입력해주세요" rows="5" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:11px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;resize:none;box-sizing:border-box;line-height:1.6"></textarea>
+    </div>
+    <button onclick="window.submitCrewPost&&window.submitCrewPost()" class="btn-white" style="width:100%;padding:14px;font-size:15px">올리기</button>
+    <button onclick="closeModal('crew-post-write-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">취소</button>
+  </div>
+</div>
+
+<!-- 게시글 상세 패널 -->
+<div class="panel" id="crew-post-detail-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('crew-post-detail-panel')">←</button>
+    <span style="font-weight:700;font-size:16px;flex:1" id="crew-post-detail-title"></span>
+  </div>
+  <div style="flex:1;overflow-y:auto" id="crew-post-detail-body"></div>
+  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;background:#0a0a0a">
+    <input id="crew-post-comment-input" placeholder="댓글 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')window.submitCrewComment&&window.submitCrewComment()">
+    <button onclick="window.submitCrewComment&&window.submitCrewComment()" style="background:#fff;color:#000;border:none;border-radius:50%;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+  </div>
+</div>
+
+<!-- 사진 뷰어 -->
+<div id="crew-photo-viewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.96);z-index:9999;flex-direction:column">
+  <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+    <button onclick="document.getElementById('crew-photo-viewer').style.display='none'" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;line-height:1">✕</button>
+    <div style="font-size:12px;color:#666" id="crew-photo-viewer-author"></div>
+  </div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 12px">
+    <img id="crew-photo-viewer-img" src="" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px">
+  </div>
+  <div style="padding:16px 20px 40px;flex-shrink:0;text-align:center">
+    <div style="font-size:14px;color:rgba(255,255,255,0.7)" id="crew-photo-viewer-caption"></div>
+  </div>
+</div>
+
 <!-- Bottom Nav -->
 <div class="bottom-nav">
   <button class="nav-btn" onclick="goPage('home')">
@@ -1050,9 +1143,12 @@ function openPanel(id) {
 function closePanel(id) {
   document.getElementById(id).classList.remove('open');
   if (id === 'chat-detail-panel' && window._chatUnsubscribe) {
-    window._chatUnsubscribe();
-    window._chatUnsubscribe = null;
-    window._currentChatId = null;
+    window._chatUnsubscribe(); window._chatUnsubscribe = null; window._currentChatId = null;
+  }
+  if (id === 'crew-detail-panel') {
+    if (window._crewChatUnsubscribe) { window._crewChatUnsubscribe(); window._crewChatUnsubscribe = null; }
+    const fab = document.getElementById('crew-photo-fab');
+    if (fab) fab.style.display = 'none';
   }
 }
 function requireLogin(reason) {
@@ -1397,24 +1493,114 @@ function openCrewDetail(id) {
   const uid = window.currentUser ? window.currentUser.uid : null;
   const isLeader = uid && crew.leaderId === uid;
   window._currentCrewIsLeader = isLeader;
-  document.getElementById('crew-detail-name').textContent = crew.name;
-  document.getElementById('crew-verified-badge').style.display = crew.verified ? 'inline' : 'none';
-  const mgr = document.getElementById('crew-manager-panel');
-  mgr.style.display = isLeader ? 'block' : 'none';
-  if (isLeader && (crew.earnings||0) > 0) {
-    document.getElementById('crew-earnings-box').style.display = 'block';
-    document.getElementById('crew-earnings-num').textContent = crew.earnings.toLocaleString() + '원';
+
+  // 커버 이미지
+  const coverImg = document.getElementById('crew-cover-img');
+  if (coverImg) coverImg.src = crew.img || 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80';
+
+  // 크루명, VERIFIED
+  const coverName = document.getElementById('crew-cover-name');
+  if (coverName) coverName.textContent = crew.name;
+  const coverVerified = document.getElementById('crew-cover-verified');
+  if (coverVerified) coverVerified.style.display = crew.verified ? 'inline' : 'none';
+
+  // 태그 필
+  const coverTags = document.getElementById('crew-cover-tags');
+  if (coverTags) {
+    const mc = crew.memberCount || (Array.isArray(crew.members) ? crew.members.length : 0);
+    const items = [crew.loc ? '📍 '+crew.loc : null, '👥 '+mc+'명', ...(crew.workout||[])].filter(Boolean);
+    coverTags.innerHTML = items.map(t => `<span class="crew-tag-pill">${t}</span>`).join('');
   }
-  renderCrewSchedule(crew); renderCrewMembers(crew); renderCrewFeed(id);
+
+  // 크루장 설정 버튼
+  const lsBtn = document.getElementById('crew-leader-settings-btn');
+  if (lsBtn) lsBtn.style.display = isLeader ? 'flex' : 'none';
+
+  // 탭 초기화 — 홈
+  document.querySelectorAll('#crew-detail-panel .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0));
+  ['home','board','photos','chat'].forEach(t => {
+    const el = document.getElementById('crew-'+t+'-tab');
+    if (el) el.style.display = 'none';
+  });
+  const homeEl = document.getElementById('crew-home-tab');
+  if (homeEl) homeEl.style.display = 'block';
+
+  renderCrewHomeTab(crew);
   openPanel('crew-detail-panel');
+
+  // crew-photo-fab cleanup
+  const fab = document.getElementById('crew-photo-fab');
+  if (fab) fab.style.display = 'none';
+}
+
+function renderCrewHomeTab(crew) {
+  const el = document.getElementById('crew-home-tab');
+  if (!el) return;
+  const uid = window.currentUser ? window.currentUser.uid : null;
+  const isMember = uid && Array.isArray(crew.members) && crew.members.includes(uid);
+  const isLeader = uid && crew.leaderId === uid;
+  const mc = crew.memberCount || (Array.isArray(crew.members) ? crew.members.length : 0);
+
+  let actionHtml = '';
+  if (isLeader) {
+    actionHtml = `<div style="display:flex;gap:8px">
+      <button onclick="openCreateScheduleModal()" class="btn-white" style="flex:1;padding:13px;font-size:14px;font-weight:700;border-radius:12px">+ 정모 만들기</button>
+      <button onclick="showToast('초대 링크가 복사됐어요')" class="btn-glass" style="padding:13px 16px;font-size:14px;border-radius:12px">🔗</button>
+    </div>`;
+  } else if (uid && isMember) {
+    actionHtml = `<button class="btn-glass" style="width:100%;padding:13px;font-size:14px;border-radius:12px;cursor:default">✓ 가입된 크루</button>`;
+  } else if (uid) {
+    const feeLabel = (crew.fee||0) > 0 ? crew.fee.toLocaleString()+'원 · 가입신청' : '가입신청';
+    actionHtml = `<button onclick="event.stopPropagation();joinCrew('${crew.id}')" class="btn-white" style="width:100%;padding:14px;font-size:15px;font-weight:700;border-radius:12px">${feeLabel}</button>`;
+  } else {
+    actionHtml = `<button onclick="requireLogin('크루에 가입하려면 로그인이 필요해요')" class="btn-white" style="width:100%;padding:14px;font-size:15px;font-weight:700;border-radius:12px">로그인 후 가입신청</button>`;
+  }
+
+  el.innerHTML = `
+    <div style="padding:18px 20px 0">
+      <p style="font-size:14px;color:rgba(255,255,255,0.65);line-height:1.75;margin-bottom:14px">${crew.desc||'크루 소개가 없어요'}</p>
+      ${(crew.workout||[]).length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px">${(crew.workout||[]).map(w=>`<span class="tag">${w}</span>`).join('')}</div>` : ''}
+    </div>
+    <div style="display:flex;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px">
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:22px;font-weight:800">${mc}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">멤버</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:13px;font-weight:700;margin-top:4px">${crew.loc||'서울'}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">지역</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:14px 0"><div style="font-size:22px;font-weight:800">${crew.verified?'✓':'—'}</div><div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:2px">인증</div></div>
+    </div>
+    <div style="padding:0 20px 16px">${actionHtml}</div>
+    <div style="border-top:1px solid rgba(255,255,255,0.06);padding:16px 20px 0">
+      <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;margin-bottom:12px">정모 일정</div>
+      <div id="crew-schedule-tab"></div>
+    </div>
+    <div style="border-top:1px solid rgba(255,255,255,0.06);padding:16px 20px 32px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">멤버</div>
+      <div id="crew-members-tab"></div>
+    </div>`;
+
+  renderCrewSchedule(crew);
+  renderCrewMembers(crew);
 }
 
 function switchCrewDetailTab(tab, btn) {
   document.querySelectorAll('#crew-detail-panel .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('crew-schedule-tab').style.display = tab==='schedule'?'block':'none';
-  document.getElementById('crew-members-tab').style.display = tab==='members'?'block':'none';
-  document.getElementById('crew-feed-tab').style.display = tab==='feed'?'block':'none';}
+  ['home','board','photos','chat'].forEach(t => {
+    const el = document.getElementById('crew-'+t+'-tab');
+    if (!el) return;
+    if (t === tab) {
+      el.style.display = t === 'chat' ? 'flex' : 'block';
+      if (t === 'board') window.loadCrewBoard && window.loadCrewBoard(window._currentCrewId, window._crewBoardCat||'all');
+      if (t === 'photos') window.loadCrewPhotos && window.loadCrewPhotos(window._currentCrewId);
+      if (t === 'chat') window.loadCrewChatFirestore && window.loadCrewChatFirestore(window._currentCrewId);
+    } else {
+      el.style.display = 'none';
+    }
+  });
+  // photo fab visibility
+  const fab = document.getElementById('crew-photo-fab');
+  if (fab) fab.style.display = (tab==='photos' && window.currentUser) ? 'flex' : 'none';
+}
 
 const schedules = [
   { date:"5.31 토", time:"07:00", place:"홍대 크박", type:"웨이트 모임", joined:true },
@@ -2060,6 +2246,41 @@ function handleCommentSubmit() {
     return;
   }
   window.submitComment(currentPostId);
+}
+
+// ===== CREW 게시판 헬퍼 =====
+let _crewPostCat = '자유';
+function selectPostCat(cat, btn) {
+  _crewPostCat = cat;
+  document.querySelectorAll('#post-category-btns button').forEach(b => {
+    b.className = 'btn-glass';
+    b.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
+  });
+  btn.className = 'btn-white';
+  btn.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
+  window._crewPostCat = cat;
+}
+function openCrewPostWrite() {
+  if (!window.currentUser) { requireLogin('게시글을 쓰려면 로그인이 필요해요'); return; }
+  _crewPostCat = '자유'; window._crewPostCat = '자유';
+  document.querySelectorAll('#post-category-btns button').forEach(b => {
+    b.className = 'btn-glass'; b.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
+  });
+  const lastBtn = document.querySelector('#post-category-btns button:last-child');
+  if (lastBtn) { lastBtn.className = 'btn-white'; lastBtn.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px'; }
+  const ti = document.getElementById('crew-post-title');
+  const bi = document.getElementById('crew-post-body');
+  if (ti) ti.value = '';
+  if (bi) bi.value = '';
+  openModal('crew-post-write-modal');
+}
+function openCrewPhotoViewer(url, caption, author) {
+  const v = document.getElementById('crew-photo-viewer');
+  if (!v) return;
+  document.getElementById('crew-photo-viewer-img').src = url;
+  document.getElementById('crew-photo-viewer-caption').textContent = caption || '';
+  document.getElementById('crew-photo-viewer-author').textContent = author || '';
+  v.style.display = 'flex';
 }
 
 // ===== HOME CREW RENDER (더 이상 홈에 없으므로 빈 함수) =====
@@ -3545,6 +3766,293 @@ window.addExpenseEntry = async () => {
     showToast('✓ 지출이 기록됐어요');
     window.loadTreasury(crewId);
   } catch(e) { console.error(e); showToast('실패'); }
+};
+
+// ===== 크루 게시판 =====
+window._crewBoardCat = 'all';
+
+window.loadCrewBoard = async (crewId, cat = 'all') => {
+  window._crewBoardCat = cat;
+  const el = document.getElementById('crew-board-tab');
+  if (!el) return;
+  const uid = (auth.currentUser || window.currentUser)?.uid;
+  const safeCid = crewId.replace(/'/g,'');
+  const cats = [{k:'all',l:'전체'},{k:'공지',l:'공지'},{k:'모임후기',l:'모임후기'},{k:'가입인사',l:'가입인사'},{k:'자유',l:'자유'}];
+
+  el.innerHTML = `
+    <div style="overflow-x:auto;scrollbar-width:none;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;position:sticky;top:0;background:#0a0a0a;z-index:5;display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex">
+        ${cats.map(c=>`<button class="board-cat-btn ${cat===c.k?'active':''}" onclick="window.loadCrewBoard('${safeCid}','${c.k}')">${c.l}</button>`).join('')}
+      </div>
+      ${uid ? `<button onclick="openCrewPostWrite()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:20px;color:#fff;font-size:12px;font-weight:600;padding:5px 14px;cursor:pointer;margin-right:16px;font-family:inherit;white-space:nowrap">+ 글쓰기</button>` : ''}
+    </div>
+    <div id="crew-board-list" style="padding:0 20px">
+      <div>${[1,2,3].map(()=>`<div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05)"><div class="skeleton" style="height:15px;width:60%;margin-bottom:8px"></div><div class="skeleton" style="height:12px;width:80%;margin-bottom:6px"></div><div class="skeleton" style="height:11px;width:40%"></div></div>`).join('')}</div>
+    </div>`;
+
+  try {
+    const q = query(collection(db,'crews',crewId,'posts'), orderBy('createdAt','desc'));
+    const snap = await getDocs(q);
+    let posts = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if (cat !== 'all') posts = posts.filter(p => p.category === cat);
+    const pinned = cat==='all' ? posts.filter(p=>p.category==='공지') : [];
+    const rest = cat==='all' ? posts.filter(p=>p.category!=='공지') : posts;
+    const ordered = [...pinned, ...rest];
+    const listEl = document.getElementById('crew-board-list');
+    if (!listEl) return;
+    if (!ordered.length) {
+      listEl.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:32px;margin-bottom:10px">📋</div><div style="font-size:14px">아직 게시글이 없어요</div></div>';
+      return;
+    }
+    listEl.innerHTML = ordered.map(p => {
+      const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : '방금';
+      const isPinned = p.category==='공지';
+      const catBadge = isPinned ? '<span style="background:#fff;color:#000;font-size:9px;font-weight:800;padding:1px 6px;border-radius:5px;margin-right:5px">📌 필독</span>' : (p.category&&p.category!=='자유') ? `<span style="background:rgba(255,255,255,0.08);color:#aaa;font-size:10px;padding:1px 6px;border-radius:5px;margin-right:5px">${p.category}</span>` : '';
+      const safeId = p.id.replace(/'/g,'');
+      const safeTitle = (p.title||'').replace(/</g,'&lt;');
+      const safeBody = (p.body||'').replace(/</g,'&lt;');
+      return `<div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer" onclick="window.openCrewPostDetail('${safeCid}','${safeId}')">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);overflow:hidden;flex-shrink:0">
+            <img src="${p.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="margin-bottom:4px">${catBadge}<span style="font-size:14px;font-weight:700">${safeTitle}</span></div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">${safeBody}</div>
+            <div style="font-size:11px;color:#444">${p.userName||'익명'} · ${time} · 💬 ${p.commentCount||0}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    const listEl = document.getElementById('crew-board-list');
+    if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+  }
+};
+
+window.submitCrewPost = async () => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return; }
+  const crewId = window._currentCrewId;
+  if (!crewId) return;
+  const title = document.getElementById('crew-post-title')?.value.trim();
+  const body = document.getElementById('crew-post-body')?.value.trim();
+  if (!title) { showToast('제목을 입력해주세요'); return; }
+  if (!body) { showToast('내용을 입력해주세요'); return; }
+  let nickname='익명', userPhoto='';
+  try { const us=await getDoc(doc(db,'users',user.uid)); if(us.exists()){nickname=us.data().nickname||'익명';userPhoto=us.data().photoURL||'';} } catch(e){}
+  try {
+    await addDoc(collection(db,'crews',crewId,'posts'), {
+      title, body, category: window._crewPostCat||'자유',
+      userId:user.uid, userName:nickname, userPhoto,
+      likes:0, likedBy:[], commentCount:0, createdAt:serverTimestamp()
+    });
+    closeModal('crew-post-write-modal');
+    showToast('✓ 게시글이 올라갔어요!');
+    window.loadCrewBoard(crewId, 'all');
+  } catch(e) { console.error(e); showToast('작성 실패'); }
+};
+
+window.openCrewPostDetail = async (crewId, postId) => {
+  const el = document.getElementById('crew-post-detail-body');
+  const titleEl = document.getElementById('crew-post-detail-title');
+  if (!el) return;
+  window._crewPostDetailCrewId = crewId;
+  window._crewPostDetailPostId = postId;
+  el.innerHTML = '<div style="padding:20px;text-align:center;color:#444">불러오는 중...</div>';
+  if (titleEl) titleEl.textContent = '';
+  openPanel('crew-post-detail-panel');
+  try {
+    const snap = await getDoc(doc(db,'crews',crewId,'posts',postId));
+    if (!snap.exists()) { el.innerHTML = '<div style="padding:20px;color:#444">게시글을 찾을 수 없어요</div>'; return; }
+    const p = snap.data();
+    const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    if (titleEl) titleEl.textContent = p.title||'';
+    const catBadge = p.category && p.category!=='자유' ? `<span style="background:rgba(255,255,255,0.08);color:#aaa;font-size:10px;padding:2px 8px;border-radius:6px;margin-right:8px">${p.category}</span>` : '';
+    el.innerHTML = `
+      <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06)">
+            <img src="${p.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:700">${p.userName||'익명'}</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+        </div>
+        <div style="margin-bottom:6px">${catBadge}</div>
+        <div style="font-size:15px;line-height:1.75;color:rgba(255,255,255,0.85)">${(p.body||'').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+      </div>
+      <div id="crew-post-comments" style="padding:0 20px"></div>`;
+    window.loadCrewPostComments(crewId, postId);
+  } catch(e) { el.innerHTML = '<div style="padding:20px;color:#444">불러올 수 없어요</div>'; }
+};
+
+window.loadCrewPostComments = async (crewId, postId) => {
+  const el = document.getElementById('crew-post-comments');
+  if (!el) return;
+  try {
+    const q = query(collection(db,'crews',crewId,'posts',postId,'comments'), orderBy('createdAt','asc'));
+    const snap = await getDocs(q);
+    if (snap.empty) { el.innerHTML = '<div style="padding:20px;text-align:center;color:#444;font-size:13px">첫 댓글을 남겨봐요</div>'; return; }
+    el.innerHTML = snap.docs.map(d => {
+      const c = d.data();
+      return `<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:10px">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);overflow:hidden;flex-shrink:0">
+          <img src="${c.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+        </div>
+        <div>
+          <span style="font-size:12px;font-weight:700;margin-right:6px">${c.userName||'익명'}</span>
+          <span style="font-size:13px;color:rgba(255,255,255,0.8)">${(c.text||'').replace(/</g,'&lt;')}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {}
+};
+
+window.submitCrewComment = async () => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return; }
+  const crewId = window._crewPostDetailCrewId;
+  const postId = window._crewPostDetailPostId;
+  if (!crewId || !postId) return;
+  const input = document.getElementById('crew-post-comment-input');
+  const text = input?.value?.trim();
+  if (!text) return;
+  input.value = '';
+  let nickname='익명', userPhoto='';
+  try { const us=await getDoc(doc(db,'users',user.uid)); if(us.exists()){nickname=us.data().nickname||'익명';userPhoto=us.data().photoURL||'';} } catch(e){}
+  try {
+    await addDoc(collection(db,'crews',crewId,'posts',postId,'comments'), { text, userId:user.uid, userName:nickname, userPhoto, createdAt:serverTimestamp() });
+    await updateDoc(doc(db,'crews',crewId,'posts',postId), { commentCount: increment(1) });
+    window.loadCrewPostComments(crewId, postId);
+  } catch(e) { showToast('댓글 실패'); }
+};
+
+// ===== 크루 사진첩 =====
+window.loadCrewPhotos = async (crewId) => {
+  const el = document.getElementById('crew-photos-tab');
+  if (!el) return;
+  const uid = (auth.currentUser || window.currentUser)?.uid;
+
+  // FAB (once)
+  if (!document.getElementById('crew-photo-fab')) {
+    const fab = document.createElement('button');
+    fab.id = 'crew-photo-fab'; fab.className = 'fab';
+    fab.innerHTML = '+'; fab.title = '사진 올리기';
+    fab.onclick = () => document.getElementById('crew-photo-input-hidden')?.click();
+    el.appendChild(fab);
+    const inp = document.createElement('input');
+    inp.type='file'; inp.id='crew-photo-input-hidden'; inp.accept='image/*'; inp.style.display='none';
+    inp.onchange = function() { if (this.files[0]) window.uploadCrewPhoto(crewId, this.files[0]); };
+    el.appendChild(inp);
+  }
+  const fab = document.getElementById('crew-photo-fab');
+  if (fab) fab.style.display = uid ? 'flex' : 'none';
+
+  const grid = document.createElement('div');
+  grid.className = 'photo-grid-3'; grid.id = 'crew-photo-grid';
+  grid.innerHTML = [1,2,3,4,5,6].map(()=>`<div class="skeleton" style="aspect-ratio:1"></div>`).join('');
+  // replace content but keep fab/input
+  Array.from(el.children).forEach(c => { if (c.id!=='crew-photo-fab' && c.id!=='crew-photo-input-hidden') c.remove(); });
+  el.prepend(grid);
+
+  try {
+    const snap = await getDocs(query(collection(db,'crews',crewId,'photos'), orderBy('createdAt','desc')));
+    const g = document.getElementById('crew-photo-grid');
+    if (!g) return;
+    if (snap.empty) { g.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:#444"><div style="font-size:32px;margin-bottom:10px">📷</div><div style="font-size:14px">아직 사진이 없어요</div></div>'; return; }
+    g.innerHTML = snap.docs.map(d => {
+      const p = d.data();
+      const su = (p.photoURL||'').replace(/'/g,'%27');
+      const sc = (p.caption||'').replace(/'/g,"\\'").replace(/\\/g,'\\\\');
+      const sa = (p.userName||'익명').replace(/'/g,"\\'");
+      return `<div class="photo-thumb" onclick="openCrewPhotoViewer('${su}','${sc}','${sa}')">
+        <img src="${p.photoURL||''}" loading="lazy">
+      </div>`;
+    }).join('');
+  } catch(e) {
+    const g = document.getElementById('crew-photo-grid');
+    if (g) g.innerHTML = '<div style="grid-column:1/-1;padding:20px;text-align:center;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+  }
+};
+
+window.uploadCrewPhoto = async (crewId, file) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { requireLogin('사진을 올리려면 로그인이 필요해요'); return; }
+  showToast('사진 업로드 중...');
+  try {
+    const fd = new FormData(); fd.append('image', file); fd.append('key','d12b915d2ed184170a0fd4aff714234d');
+    const res = await fetch('https://api.imgbb.com/1/upload',{method:'POST',body:fd});
+    const json = await res.json();
+    if (!json.success) { showToast('업로드 실패'); return; }
+    let nickname='익명', userPhoto='';
+    try { const us=await getDoc(doc(db,'users',user.uid)); if(us.exists()){nickname=us.data().nickname||'익명';userPhoto=us.data().photoURL||'';} } catch(e){}
+    await addDoc(collection(db,'crews',crewId,'photos'), { photoURL:json.data.url, userId:user.uid, userName:nickname, userPhoto, caption:'', createdAt:serverTimestamp() });
+    showToast('✓ 사진이 올라갔어요!');
+    window.loadCrewPhotos(crewId);
+    const inp = document.getElementById('crew-photo-input-hidden');
+    if (inp) inp.value = '';
+  } catch(e) { console.error(e); showToast('업로드 실패'); }
+};
+
+// ===== 크루 채팅 Firestore =====
+window.loadCrewChatFirestore = (crewId) => {
+  const user = auth.currentUser || window.currentUser;
+  const el = document.getElementById('crew-chat-messages');
+  if (!el) return;
+  if (!user) {
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:10px">💬</div><div style="font-size:14px">로그인하면 채팅에 참여할 수 있어요</div></div>';
+    return;
+  }
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
+  if (window._crewChatUnsubscribe) { window._crewChatUnsubscribe(); window._crewChatUnsubscribe = null; }
+  const q = query(collection(db,'crews',crewId,'chat'), orderBy('createdAt','asc'));
+  window._crewChatUnsubscribe = onSnapshot(q, snap => {
+    const uid = (auth.currentUser || window.currentUser)?.uid;
+    if (snap.empty) {
+      el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:13px">첫 메시지를 보내봐요 💪</div>';
+      return;
+    }
+    el.innerHTML = snap.docs.map(d => {
+      const m = d.data();
+      const isMe = m.userId === uid;
+      const isSystem = m.type === 'system';
+      const ts = m.createdAt ? new Date(m.createdAt.seconds*1000).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+      if (isSystem) return `<div style="text-align:center;padding:4px 0"><span style="background:rgba(255,255,255,0.07);border-radius:20px;padding:3px 12px;font-size:11px;color:#666">${(m.text||'').replace(/</g,'&lt;')}</span></div>`;
+      return `<div style="display:flex;${isMe?'justify-content:flex-end':'justify-content:flex-start'}">
+        <div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px;max-width:75%">
+          ${!isMe?`<span style="font-size:10px;color:#555;padding:0 4px">${(m.userName||'익명').replace(/</g,'&lt;')}</span>`:''}
+          <div style="display:flex;align-items:flex-end;gap:4px;flex-direction:${isMe?'row-reverse':'row'}">
+            <div class="chat-bubble ${isMe?'chat-me':'chat-other'}">${(m.text||'').replace(/</g,'&lt;')}</div>
+            <span style="font-size:10px;color:#444;flex-shrink:0">${ts}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+  });
+};
+
+window.sendCrewChatFirestore = async () => {
+  const crewId = window._currentCrewId;
+  const user = auth.currentUser || window.currentUser;
+  if (!crewId || !user) { showToast('로그인이 필요해요'); return; }
+  const input = document.getElementById('crew-chat-input');
+  const text = input?.value?.trim();
+  if (!text) return;
+  input.value = '';
+  let nickname='익명';
+  try { const us=await getDoc(doc(db,'users',user.uid)); if(us.exists()&&us.data().nickname) nickname=us.data().nickname; } catch(e){}
+  try {
+    await addDoc(collection(db,'crews',crewId,'chat'), { text, userId:user.uid, userName:nickname, createdAt:serverTimestamp() });
+  } catch(e) { console.error(e); showToast('전송 실패'); input.value=text; }
+};
+
+// ===== markFirebaseNotifRead =====
+window.markFirebaseNotifRead = async (notifId) => {
+  if (!notifId) return;
+  try { await updateDoc(doc(db,'notifications',notifId),{read:true}); window.loadNotificationsFirestore&&window.loadNotificationsFirestore(); } catch(e){}
 };
 </script>
 </body>
