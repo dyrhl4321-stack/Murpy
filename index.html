@@ -345,7 +345,7 @@
   </div>
   <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#111;position:relative">
     <div id="profile-crop-container" style="position:relative;width:280px;height:280px;overflow:hidden;border-radius:50%;border:3px solid rgba(255,255,255,0.6)">
-      <img id="profile-crop-image" style="position:absolute;top:0;left:0;width:280px;height:280px;object-fit:cover;cursor:move;transform-origin:center center" draggable="false">
+      <img id="profile-crop-image" style="position:absolute;cursor:move;transform-origin:center center;max-width:none;max-height:none" draggable="false">
     </div>
   </div>
   <div style="padding:12px 20px;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0">
@@ -862,7 +862,7 @@ function goPage(name) {
   if (name === 'home') renderHomeCrews();
 }
 
-function openPanel(id) { document.getElementById(id).classList.add('open'); if (id==='notif-panel') renderNotifs(); if (id==='fav-panel') renderFavs(); if (id==='chat-panel') renderChatList(); if (id==='edit-profile-panel') initEditProfile(); if (id==='received-likes-panel') {} }
+function openPanel(id) { document.getElementById(id).classList.add('open'); if (id==='notif-panel') renderNotifs(); if (id==='fav-panel') renderFavs(); if (id==='chat-panel') renderChatList(); if (id==='edit-profile-panel') initEditProfile(); if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile(); if (id==='received-likes-panel') {} }
 function closePanel(id) { document.getElementById(id).classList.remove('open'); }
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -981,24 +981,9 @@ function switchBambooTab(tab, btn) {
 }
 
 function renderBamboo() {
-  const myCount = bambooData.filter(p => p.myPost).length;
-  const countEl = document.getElementById('my-post-count');
-  if (countEl) countEl.textContent = myCount > 0 ? myCount : '';
-
-  const list = bambooTab === 'mine'
-    ? bambooData.filter(p => p.myPost)
-    : bambooData;
-
-  if (bambooTab === 'mine' && list.length === 0) {
-    document.getElementById('bamboo-list').innerHTML = `
-      <div style="text-align:center;padding:60px 20px;color:#444">
-        <div style="font-size:36px;margin-bottom:12px">🎋</div>
-        <div style="font-size:14px;margin-bottom:6px">아직 쓴 글이 없어요</div>
-        <div style="font-size:12px;color:#333">익명으로 마음을 전해보세요</div>
-      </div>`;
-    return;
-  }
-  document.getElementById('bamboo-list').innerHTML = list.map(renderBambooItem).join('');
+  window.bambooTab = bambooTab;
+  if (window.loadBamboo) { window.loadBamboo(bambooTab); return; }
+  document.getElementById('bamboo-list').innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
 }
 
 function renderBambooItem(post) {
@@ -1045,17 +1030,13 @@ function renderBambooItem(post) {
 function postBamboo() {
   const text = document.getElementById('bamboo-input').value.trim();
   if (!text) return;
-  bambooData.unshift({ id: Date.now(), text, time:"방금", likes:0, liked:false, comments:[], myPost:true, requesters:[], showComments:false });
-  document.getElementById('bamboo-input').value = '';
-  renderBamboo();
+  if (window.postBambooFirestore) {
+    window.postBambooFirestore(text).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; renderBamboo(); } });
+  } else { showToast('로그인이 필요해요'); }
 }
 
 function toggleBambooLike(id) {
-  const post = bambooData.find(p => p.id === id);
-  if (!post) return;
-  post.liked = !post.liked;
-  post.likes += post.liked ? 1 : -1;
-  renderBamboo();
+  if (window.toggleBambooLikeFirestore) window.toggleBambooLikeFirestore(id);
 }
 
 function toggleComments(id) {
@@ -1094,53 +1075,45 @@ function viewRequester(id) {
 
 // ===== CREWS =====
 function renderCrews() {
+  if (window.loadCrewsFirestore) { window.loadCrewsFirestore(currentRegion); return; }
+  // fallback: local CREWS data
+  _renderCrewsLocal();
+}
+
+function _renderCrewsLocal(data) {
+  const crews = data || CREWS;
+  const uid = window.currentUser ? window.currentUser.uid : null;
   const mineEl = document.getElementById('crew-mine');
   const exploreEl = document.getElementById('crew-explore');
-  const mine = CREWS.filter(c => c.joined);
-  const allExplore = CREWS.filter(c => !c.joined);
-  const filtered = currentRegion === '전체'
-    ? allExplore
-    : allExplore.filter(c => c.loc.includes(currentRegion));
+  const mine = crews.filter(c => uid ? (c.members||[]).includes(uid) : c.joined);
+  const allExplore = crews.filter(c => uid ? !(c.members||[]).includes(uid) : !c.joined);
+  const filtered = currentRegion === '전체' ? allExplore : allExplore.filter(c => (c.loc||'').includes(currentRegion));
   const boosted = filtered.filter(c => c.boosted);
   const normal = filtered.filter(c => !c.boosted);
 
-  mineEl.innerHTML = mine.map(c => `
-    <div class="card" style="cursor:pointer" onclick="openCrewDetail(${c.id})">
+  mineEl.innerHTML = mine.length ? mine.map(c => `
+    <div class="card" style="cursor:pointer" onclick="openCrewDetail('${c.id}')">
       <div style="display:flex;gap:12px;align-items:center">
-        <img src="${c.img}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <img src="${c.img||'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80'}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700">${c.name}</span>
             ${c.verified?'<span style="background:#fff;color:#000;font-size:8px;font-weight:800;padding:1px 5px;border-radius:6px">VERIFIED</span>':''}
             ${c.boosted?'<span style="color:#888;font-size:11px">⚡</span>':''}
           </div>
-          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc}</div>
-          <div style="display:flex;gap:10px">
-            <span style="font-size:11px;color:#444">멤버 ${c.members}명</span>
-            ${c.mine && c.earnings > 0 ? `<span style="font-size:11px;color:#aaa;font-weight:600">수익 ${c.earnings.toLocaleString()}원</span>` : ''}
-          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc||''}</div>
+          <span style="font-size:11px;color:#444">멤버 ${c.memberCount||c.members||0}명</span>
         </div>
         <span style="color:#444;font-size:16px">›</span>
       </div>
-    </div>`).join('');
+    </div>`).join('') : '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">가입한 크루가 없어요</div>';
 
   let exploreHtml = '';
   if (filtered.length === 0) {
-    exploreHtml = `<div style="text-align:center;padding:40px 20px;color:#444">
-      <div style="font-size:32px;margin-bottom:10px">🔍</div>
-      <div style="font-size:14px;margin-bottom:6px">${currentRegion} 크루가 없어요</div>
-      <div style="font-size:12px;color:#333">첫 번째 크루를 만들어보세요!</div>
-    </div>`;
+    exploreHtml = `<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:32px;margin-bottom:10px">🔍</div><div style="font-size:14px;margin-bottom:6px">${currentRegion} 크루가 없어요</div><div style="font-size:12px;color:#333">첫 번째 크루를 만들어보세요!</div></div>`;
   } else {
-    if (boosted.length) {
-      exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">⚡ 추천 크루</div>';
-      exploreHtml += boosted.map(c => crewExploreCard(c)).join('');
-      exploreHtml += '<div style="height:1px;background:rgba(255,255,255,0.05);margin:16px 0"></div>';
-    }
-    if (normal.length) {
-      exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">전체 크루</div>';
-      exploreHtml += normal.map(c => crewExploreCard(c)).join('');
-    }
+    if (boosted.length) { exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">⚡ 추천 크루</div>' + boosted.map(c => crewExploreCard(c)).join('') + '<div style="height:1px;background:rgba(255,255,255,0.05);margin:16px 0"></div>'; }
+    if (normal.length) { exploreHtml += '<div style="font-size:11px;color:#666;letter-spacing:1px;margin-bottom:10px">전체 크루</div>' + normal.map(c => crewExploreCard(c)).join(''); }
   }
   exploreEl.innerHTML = exploreHtml;
 }
@@ -1195,34 +1168,40 @@ function filterRegion(region, btn) {
 }
 
 function joinCrew(id) {
-  const crew = CREWS.find(c => c.id === id);
-  if (crew.fee > 0) {
-    document.getElementById('join-pay-img').src = crew.img;
+  const crews = window.crewsData || CREWS;
+  const crew = crews.find(c => c.id == id);
+  if (!crew) return;
+  const doJoin = () => {
+    if (window.joinCrewFirestore) { window.joinCrewFirestore(id).then(() => { showToast('✓ 크루 가입 완료!'); window.loadCrewsFirestore && window.loadCrewsFirestore(currentRegion); }); }
+    else { crew.joined = true; crew.members = (crew.members||0) + 1; renderCrews(); }
+  };
+  if ((crew.fee||0) > 0) {
+    document.getElementById('join-pay-img').src = crew.img||'';
     document.getElementById('join-pay-name').textContent = crew.name;
-    document.getElementById('join-pay-desc').textContent = crew.desc;
+    document.getElementById('join-pay-desc').textContent = crew.desc||'';
     document.getElementById('join-pay-fee').textContent = crew.fee.toLocaleString() + '원';
     document.getElementById('join-pay-btn').textContent = crew.fee.toLocaleString() + '원 결제하고 가입하기';
-    document.getElementById('join-pay-btn').onclick = () => { crew.joined = true; crew.members++; closeModal('join-pay-modal'); showToast(`✓ ${crew.fee.toLocaleString()}원 결제 완료! 가입됐어요`); renderCrews(); };
+    document.getElementById('join-pay-btn').onclick = () => { closeModal('join-pay-modal'); showToast(`✓ ${crew.fee.toLocaleString()}원 결제 완료! 가입됐어요`); doJoin(); };
     openModal('join-pay-modal');
-  } else {
-    crew.joined = true; crew.members++;
-    showToast('✓ 크루 가입 완료!');
-    renderCrews();
-  }
+  } else { doJoin(); }
 }
 
 function openCrewDetail(id) {
-  const crew = CREWS.find(c => c.id === id);
+  const crews = window.crewsData || CREWS;
+  const crew = crews.find(c => c.id == id);
+  if (!crew) return;
   currentCrewId = id;
+  const uid = window.currentUser ? window.currentUser.uid : null;
+  const isLeader = uid && crew.leaderId === uid;
   document.getElementById('crew-detail-name').textContent = crew.name;
   document.getElementById('crew-verified-badge').style.display = crew.verified ? 'inline' : 'none';
   const mgr = document.getElementById('crew-manager-panel');
-  mgr.style.display = crew.mine ? 'block' : 'none';
-  if (crew.mine && crew.earnings > 0) {
+  mgr.style.display = isLeader ? 'block' : 'none';
+  if (isLeader && (crew.earnings||0) > 0) {
     document.getElementById('crew-earnings-box').style.display = 'block';
     document.getElementById('crew-earnings-num').textContent = crew.earnings.toLocaleString() + '원';
   }
-  renderCrewSchedule(); renderCrewMembers(); renderCrewFeed();
+  renderCrewSchedule(crew); renderCrewMembers(crew); renderCrewFeed(id);
   openPanel('crew-detail-panel');
 }
 
@@ -1262,15 +1241,14 @@ const crewMembers = [
   { name:"도현", workout:"웨이트", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=100&q=80" },
   { name:"유진", workout:"수영", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=100&q=80" },
 ];
-function renderCrewMembers() {
-  document.getElementById('crew-members-tab').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${crewMembers.map(m=>`<div style="text-align:center"><img src="${m.img}" style="width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;margin-bottom:6px"><div style="font-size:13px;font-weight:700">${m.name}</div><div style="font-size:11px;color:#666">${m.workout}</div></div>`).join('')}</div>`;
+function renderCrewMembers(crew) {
+  if (window.loadCrewMembers && currentCrewId) { window.loadCrewMembers(currentCrewId); return; }
+  const members = (crew && crew.memberProfiles) || crewMembers;
+  document.getElementById('crew-members-tab').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${members.map(m=>`<div style="text-align:center"><img src="${m.img||m.photoURL||''}" onerror="this.style.display='none'" style="width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;margin-bottom:6px"><div style="font-size:13px;font-weight:700">${m.name||m.nickname||''}</div><div style="font-size:11px;color:#666">${m.workout||''}</div></div>`).join('')}</div>`;
 }
-function renderCrewFeed() {
-  document.getElementById('crew-feed-tab').innerHTML = [
-    { text:"오늘 크박 운동 너무 좋았다 다음주도 봬요!", time:"1시간 전", likes:12 },
-    { text:"처음 참가했는데 분위기 진짜 좋네요 ㅎㅎ", time:"3시간 전", likes:8 },
-    { text:"이번 토요일 러닝 참가하실 분!", time:"어제", likes:24 },
-  ].map(p=>`<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text}</div><div style="font-size:11px;color:#444">${p.time} · 🤍 ${p.likes}</div></div>`).join('');
+function renderCrewFeed(crewId) {
+  if (window.loadCrewFeed && crewId) { window.loadCrewFeed(crewId); return; }
+  document.getElementById('crew-feed-tab').innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">피드를 불러오는 중...</div>';
 }
 
 // Boost
@@ -1347,14 +1325,14 @@ function selectNewFee(f, btn) {
 function createCrew() {
   const name = document.getElementById('new-crew-name').value.trim();
   if (!name) { showToast('크루 이름을 입력해주세요'); return; }
-  CREWS.unshift({ id: Date.now(), name, desc: document.getElementById('new-crew-desc').value, members:1, loc: document.getElementById('new-crew-loc').value, workout: newCrewWorkout, mine:true, joined:true, boosted:false, fee:newCrewFee, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" });
-  closePanel('create-crew-panel');
-  showToast('🎉 크루가 생성됐어요!');
-  newCrewWorkout = []; newCrewFee = 0;
-  document.getElementById('new-crew-name').value = '';
-  document.getElementById('new-crew-desc').value = '';
-  document.getElementById('new-crew-loc').value = '';
-  renderCrews();
+  const data = { name, desc: document.getElementById('new-crew-desc').value.trim(), loc: document.getElementById('new-crew-loc').value.trim(), workout: newCrewWorkout, fee: newCrewFee };
+  const reset = () => { newCrewWorkout = []; newCrewFee = 0; document.getElementById('new-crew-name').value = ''; document.getElementById('new-crew-desc').value = ''; document.getElementById('new-crew-loc').value = ''; };
+  if (window.createCrewFirestore) {
+    window.createCrewFirestore(data).then(() => { closePanel('create-crew-panel'); showToast('🎉 크루가 생성됐어요!'); reset(); window.loadCrewsFirestore && window.loadCrewsFirestore(currentRegion); });
+  } else {
+    CREWS.unshift({ id: Date.now(), ...data, members:1, mine:true, joined:true, boosted:false, earnings:0, verified:false, img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80" });
+    closePanel('create-crew-panel'); showToast('🎉 크루가 생성됐어요!'); reset(); renderCrews();
+  }
 }
 
 // ===== NOTIFICATIONS =====
@@ -1599,21 +1577,45 @@ document.getElementById('feed-photo-input').addEventListener('change', function(
 
 initCropDrag();
 
-// ===== 프로필 사진 크롭 =====
-let profileCropDrag = { active:false, startX:0, startY:0, px:50, py:50, scale:1, lastDist:0, file:null };
+// ===== 프로필 사진 크롭 (transform translate/scale 방식) =====
+let profileCropState = { active:false, startX:0, startY:0, tx:0, ty:0, scale:1, minScale:1, lastDist:0, file:null, naturalW:0, naturalH:0 };
+
+function _applyProfileTransform() {
+  const img = document.getElementById('profile-crop-image');
+  if (!img) return;
+  const { tx, ty, scale, minScale, naturalW, naturalH } = profileCropState;
+  const s = Math.max(minScale, scale);
+  const halfW = naturalW * s / 2;
+  const halfH = naturalH * s / 2;
+  const clampX = Math.max(-(halfW - 140), Math.min(halfW - 140, tx));
+  const clampY = Math.max(-(halfH - 140), Math.min(halfH - 140, ty));
+  profileCropState.tx = clampX; profileCropState.ty = clampY; profileCropState.scale = s;
+  img.style.transform = `translate(${clampX}px, ${clampY}px) scale(${s})`;
+}
 
 function openProfileCrop(file) {
-  profileCropDrag.file = file;
-  profileCropDrag.px = 50; profileCropDrag.py = 50; profileCropDrag.scale = 1;
+  profileCropState.file = file;
+  profileCropState.tx = 0; profileCropState.ty = 0; profileCropState.scale = 1; profileCropState.minScale = 1;
   const reader = new FileReader();
   reader.onload = e => {
     const modal = document.getElementById('profile-crop-modal');
-    modal.style.display = 'flex';
-    modal.style.flexDirection = 'column';
+    modal.style.display = 'flex'; modal.style.flexDirection = 'column';
     const img = document.getElementById('profile-crop-image');
+    img.style.transform = 'none';
     img.src = e.target.result;
-    img.style.objectPosition = '50% 50%';
-    img.style.transform = 'scale(1)';
+    img.onload = () => {
+      profileCropState.naturalW = img.naturalWidth;
+      profileCropState.naturalH = img.naturalHeight;
+      const minScale = Math.max(280 / img.naturalWidth, 280 / img.naturalHeight);
+      profileCropState.minScale = minScale;
+      profileCropState.scale = minScale;
+      profileCropState.tx = 0; profileCropState.ty = 0;
+      img.style.width = img.naturalWidth + 'px';
+      img.style.height = img.naturalHeight + 'px';
+      img.style.top = (140 - img.naturalHeight / 2) + 'px';
+      img.style.left = (140 - img.naturalWidth / 2) + 'px';
+      _applyProfileTransform();
+    };
   };
   reader.readAsDataURL(file);
 }
@@ -1626,7 +1628,7 @@ function closeProfileCrop() {
 window.confirmProfileCrop = async function() {
   const user = window.currentUser;
   if (!user) { showToast('로그인이 필요해요'); return; }
-  const file = profileCropDrag.file;
+  const file = profileCropState.file;
   if (!file) return;
   showToast('업로드 중...');
   try {
@@ -1644,68 +1646,57 @@ window.confirmProfileCrop = async function() {
     if (icon) icon.style.display = 'none';
     document.getElementById('user-avatar').src = photoURL;
     showToast('✓ 프로필 사진이 변경됐어요!');
-    // Firestore 저장은 모듈에서 처리
     window._pendingProfilePhoto = photoURL;
     window.dispatchEvent(new CustomEvent('save-profile-photo'));
   } catch(e) { showToast('실패: ' + e.message); }
 }
 
-// 드래그/핀치
+// 프로필 크롭 드래그/핀치 이벤트
 ;(function() {
   const container = document.getElementById('profile-crop-container');
   if (!container) return;
 
-  function applyTransform() {
-    const img = document.getElementById('profile-crop-image');
-    img.style.objectPosition = `${profileCropDrag.px}% ${profileCropDrag.py}%`;
-    img.style.transform = `scale(${profileCropDrag.scale})`;
-    img.style.transformOrigin = 'center center';
-  }
-
   container.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
-      profileCropDrag.active = true;
-      profileCropDrag.startX = e.touches[0].clientX;
-      profileCropDrag.startY = e.touches[0].clientY;
-    }
+      profileCropState.active = true;
+      profileCropState.startX = e.touches[0].clientX;
+      profileCropState.startY = e.touches[0].clientY;
+    } else { profileCropState.active = false; }
   }, { passive: true });
 
   container.addEventListener('touchmove', e => {
-    if (e.touches.length === 1 && profileCropDrag.active) {
-      const dx = e.touches[0].clientX - profileCropDrag.startX;
-      const dy = e.touches[0].clientY - profileCropDrag.startY;
-      profileCropDrag.px = Math.max(0, Math.min(100, profileCropDrag.px - dx * 0.1));
-      profileCropDrag.py = Math.max(0, Math.min(100, profileCropDrag.py - dy * 0.1));
-      profileCropDrag.startX = e.touches[0].clientX;
-      profileCropDrag.startY = e.touches[0].clientY;
-      applyTransform();
+    if (e.touches.length === 1 && profileCropState.active) {
+      profileCropState.tx += e.touches[0].clientX - profileCropState.startX;
+      profileCropState.ty += e.touches[0].clientY - profileCropState.startY;
+      profileCropState.startX = e.touches[0].clientX;
+      profileCropState.startY = e.touches[0].clientY;
+      _applyProfileTransform();
     }
     if (e.touches.length === 2) {
       const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      if (profileCropDrag.lastDist) {
-        profileCropDrag.scale = Math.max(1, Math.min(5, profileCropDrag.scale * (dist / profileCropDrag.lastDist)));
-        applyTransform();
+      if (profileCropState.lastDist) {
+        profileCropState.scale = profileCropState.scale * (dist / profileCropState.lastDist);
+        _applyProfileTransform();
       }
-      profileCropDrag.lastDist = dist;
+      profileCropState.lastDist = dist;
     }
   }, { passive: true });
 
-  container.addEventListener('touchend', () => { profileCropDrag.active = false; profileCropDrag.lastDist = 0; });
-  container.addEventListener('mousedown', e => { profileCropDrag.active = true; profileCropDrag.startX = e.clientX; profileCropDrag.startY = e.clientY; });
+  container.addEventListener('touchend', () => { profileCropState.active = false; profileCropState.lastDist = 0; });
+  container.addEventListener('mousedown', e => { e.preventDefault(); profileCropState.active = true; profileCropState.startX = e.clientX; profileCropState.startY = e.clientY; });
   container.addEventListener('mousemove', e => {
-    if (!profileCropDrag.active) return;
-    const dx = e.clientX - profileCropDrag.startX;
-    const dy = e.clientY - profileCropDrag.startY;
-    profileCropDrag.px = Math.max(0, Math.min(100, profileCropDrag.px - dx * 0.1));
-    profileCropDrag.py = Math.max(0, Math.min(100, profileCropDrag.py - dy * 0.1));
-    profileCropDrag.startX = e.clientX;
-    profileCropDrag.startY = e.clientY;
-    applyTransform();
+    if (!profileCropState.active) return;
+    profileCropState.tx += e.clientX - profileCropState.startX;
+    profileCropState.ty += e.clientY - profileCropState.startY;
+    profileCropState.startX = e.clientX;
+    profileCropState.startY = e.clientY;
+    _applyProfileTransform();
   });
-  container.addEventListener('mouseup', () => profileCropDrag.active = false);
+  container.addEventListener('mouseup', () => profileCropState.active = false);
+  container.addEventListener('mouseleave', () => profileCropState.active = false);
   container.addEventListener('wheel', e => {
-    profileCropDrag.scale = Math.max(1, Math.min(5, profileCropDrag.scale - e.deltaY * 0.002));
-    applyTransform();
+    profileCropState.scale = profileCropState.scale * (1 - e.deltaY * 0.001);
+    _applyProfileTransform();
   }, { passive: true });
 })();
 
@@ -2067,7 +2058,7 @@ window.updateUI = function(user) {
     const mypageBtn = document.getElementById('mypage-icon-btn');
     const loginBtn = document.getElementById('login-btn');
     if (user) {
-      if (avatar) { avatar.src = user.photoURL || ''; avatar.style.display = 'block'; }
+      if (avatar) { avatar.src = (user.firestorePhotoURL || user.photoURL) || ''; avatar.style.display = 'block'; }
       if (mypageBtn) mypageBtn.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'none';
       // 혹시 열려있는 모든 오버레이 닫기
@@ -2110,8 +2101,11 @@ async function checkAndSetNickname(user) {
       const nickname = userSnap.data().nickname;
       if (window.currentUser) {
         window.currentUser.nickname = nickname;
-        // 최신 Firestore 프로필 사진 저장 (피드 렌더링에 사용)
-        if (userSnap.data().photoURL) window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
+        if (userSnap.data().photoURL) {
+            window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
+            const avatar = document.getElementById('user-avatar');
+            if (avatar && avatar.style.display !== 'none') avatar.src = userSnap.data().photoURL;
+          }
       }
       const infoName = document.getElementById('info-name');
       if (infoName) infoName.textContent = nickname;
@@ -2420,6 +2414,181 @@ window.loadComments = async (postId) => {
     console.error('댓글 로드 실패:', e.code, e.message);
     list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">댓글을 불러올 수 없어요</div>';
   }
+};
+
+// ===== 마이페이지 프로필 로드 =====
+window.loadMyPageProfile = async () => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  try {
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    if (userSnap.exists()) {
+      const data = userSnap.data();
+      if (data.nickname) {
+        document.getElementById('info-name').textContent = data.nickname;
+        if (window.currentUser) window.currentUser.nickname = data.nickname;
+      }
+      if (data.photoURL) {
+        const preview = document.getElementById('profile-pic-preview');
+        const icon = document.getElementById('profile-pic-icon');
+        if (preview) { preview.src = data.photoURL; preview.style.display = 'block'; }
+        if (icon) icon.style.display = 'none';
+        if (window.currentUser) window.currentUser.firestorePhotoURL = data.photoURL;
+        const avatar = document.getElementById('user-avatar');
+        if (avatar && avatar.style.display !== 'none') avatar.src = data.photoURL;
+      }
+    }
+  } catch(e) { console.error('마이페이지 로드 실패:', e); }
+};
+
+// ===== 대나무숲 Firestore =====
+window.loadBamboo = async (tab) => {
+  const user = auth.currentUser || window.currentUser;
+  const list = document.getElementById('bamboo-list');
+  if (!list) return;
+  list.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
+  try {
+    const q = query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const myCount = user ? posts.filter(p => p.userId === user.uid).length : 0;
+    const countEl = document.getElementById('my-post-count');
+    if (countEl) countEl.textContent = myCount > 0 ? myCount : '';
+    if (tab === 'mine') {
+      if (!user) { list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:12px">🎋</div><div style="font-size:14px">로그인 후 내 글을 볼 수 있어요</div></div>'; return; }
+      posts = posts.filter(p => p.userId === user.uid);
+    }
+    if (posts.length === 0) {
+      list.innerHTML = tab === 'mine'
+        ? '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:12px">🎋</div><div style="font-size:14px;margin-bottom:6px">아직 쓴 글이 없어요</div><div style="font-size:12px;color:#333">익명으로 마음을 전해보세요</div></div>'
+        : '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 글이 없어요</div>';
+      return;
+    }
+    list.innerHTML = posts.map(post => {
+      const liked = user && (post.likedBy || []).includes(user.uid);
+      const time = post.createdAt ? new Date(post.createdAt.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '방금';
+      const isMyPost = user && post.userId === user.uid;
+      return `<div class="card bamboo-item">
+        <div style="font-size:14px;line-height:1.7;color:#ddd;margin-bottom:12px">${post.text}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;gap:12px">
+            <button style="background:none;border:none;cursor:pointer;font-size:12px;color:${liked?'#ff4444':'#666'};padding:0" onclick="window.toggleBambooLikeFirestore('${post.id}')">${liked?'❤️':'🤍'} ${post.likes||0}</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:11px;color:#444">${time}</span>
+            ${isMyPost ? '<span style="font-size:10px;color:#444;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:8px">내 글</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error('bamboo load error:', e);
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+  }
+};
+
+window.postBambooFirestore = async (text) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 글을 쓸 수 있어요'); return false; }
+  try {
+    let nickname = '익명';
+    let userPhoto = '';
+    try {
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
+    } catch(e) {}
+    await addDoc(collection(db, 'bamboo'), { text, userId: user.uid, userName: nickname, userPhoto, likes: 0, likedBy: [], createdAt: serverTimestamp() });
+    return true;
+  } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
+};
+
+window.toggleBambooLikeFirestore = async (postId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 좋아요를 누를 수 있어요'); return; }
+  try {
+    const postRef = doc(db, 'bamboo', postId);
+    const postSnap = await getDoc(postRef);
+    if (!postSnap.exists()) return;
+    const likedBy = postSnap.data().likedBy || [];
+    if (likedBy.includes(user.uid)) { await updateDoc(postRef, { likes: increment(-1), likedBy: arrayRemove(user.uid) }); }
+    else { await updateDoc(postRef, { likes: increment(1), likedBy: arrayUnion(user.uid) }); }
+    window.loadBamboo(window.bambooTab || 'all');
+  } catch(e) { console.error(e); showToast('처리 실패'); }
+};
+
+// ===== 크루 Firestore =====
+window.crewsData = null;
+
+window.loadCrewsFirestore = async (region) => {
+  const user = auth.currentUser || window.currentUser;
+  const uid = user ? user.uid : null;
+  const mineEl = document.getElementById('crew-mine');
+  const exploreEl = document.getElementById('crew-explore');
+  if (mineEl) mineEl.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
+  try {
+    const snap = await getDocs(collection(db, 'crews'));
+    const crews = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    window.crewsData = crews;
+    window._renderCrewsLocal && window._renderCrewsLocal(crews);
+    if (typeof _renderCrewsLocal === 'function') _renderCrewsLocal(crews);
+  } catch(e) {
+    console.error('crews load error:', e);
+    if (mineEl) mineEl.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+  }
+};
+
+window.createCrewFirestore = async (data) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return false; }
+  try {
+    let nickname = user.displayName || '익명';
+    let userPhoto = '';
+    try {
+      const userSnap = await getDoc(doc(db, 'users', user.uid));
+      if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
+    } catch(e) {}
+    await addDoc(collection(db, 'crews'), {
+      ...data, leaderId: user.uid, leaderName: nickname, leaderPhoto: userPhoto,
+      members: [user.uid], memberCount: 1, boosted: false, verified: false,
+      earnings: 0, img: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80',
+      createdAt: serverTimestamp()
+    });
+    return true;
+  } catch(e) { console.error(e); showToast('크루 생성 실패'); return false; }
+};
+
+window.joinCrewFirestore = async (crewId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return false; }
+  try {
+    await updateDoc(doc(db, 'crews', String(crewId)), { members: arrayUnion(user.uid), memberCount: increment(1) });
+    return true;
+  } catch(e) { console.error(e); showToast('가입 실패'); return false; }
+};
+
+window.loadCrewMembers = async (crewId) => {
+  const crewSnap = await getDoc(doc(db, 'crews', String(crewId)));
+  if (!crewSnap.exists()) return;
+  const memberUids = crewSnap.data().members || [];
+  const profiles = await Promise.all(memberUids.map(async uid => {
+    try {
+      const us = await getDoc(doc(db, 'users', uid));
+      return us.exists() ? { nickname: us.data().nickname||'멤버', photoURL: us.data().photoURL||'' } : { nickname: '멤버', photoURL: '' };
+    } catch(e) { return { nickname: '멤버', photoURL: '' }; }
+  }));
+  const el = document.getElementById('crew-members-tab');
+  if (el) el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${profiles.map(m=>`<div style="text-align:center"><div style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.06);margin-bottom:6px">${m.photoURL?`<img src="${m.photoURL}" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="font-size:13px;font-weight:700">${m.nickname}</div></div>`).join('')}</div>`;
+};
+
+window.loadCrewFeed = async (crewId) => {
+  const el = document.getElementById('crew-feed-tab');
+  if (!el) return;
+  try {
+    const q = query(collection(db, 'crews', String(crewId), 'feed'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    if (snap.empty) { el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 피드가 없어요</div>'; return; }
+    el.innerHTML = snap.docs.map(d => { const p = d.data(); const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : ''; return `<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text||''}</div><div style="font-size:11px;color:#444">${p.userName||'익명'} · ${time}</div></div>`; }).join('');
+  } catch(e) { el.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">피드를 불러올 수 없어요</div>'; }
 };
 </script>
 </body>
