@@ -368,7 +368,7 @@
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('mypage-panel')">←</button>
     <span style="font-weight:700;font-size:16px">내 프로필</span>
-    <button onclick="googleLogout()" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;margin-left:auto">로그아웃</button>
+    <button id="mypage-logout-btn" onclick="googleLogout()" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;margin-left:auto;display:none">로그아웃</button>
   </div>
   <div class="panel-body">
     <div style="text-align:center;margin-bottom:20px">
@@ -760,6 +760,36 @@
     <div style="font-size:12px;color:#555;margin-top:4px;margin-bottom:20px">크루 입장료 · 1회 결제</div>
     <button class="btn-white" style="width:100%;padding:16px;font-size:16px" id="join-pay-btn">결제하고 가입하기</button>
     <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px" onclick="closeModal('join-pay-modal')">취소</button>
+  </div>
+</div>
+
+<!-- 게시물 옵션 모달 -->
+<div class="modal-overlay" id="post-options-modal" onclick="if(event.target===this)closeModal('post-options-modal')">
+  <div class="modal-sheet" style="padding:8px 0">
+    <button onclick="closeModal('post-options-modal');openModal('edit-post-modal')" style="width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,0.06);color:#fff;font-size:15px;cursor:pointer;padding:14px 20px;text-align:left;font-family:inherit">수정</button>
+    <button onclick="closeModal('post-options-modal');openModal('delete-post-confirm')" style="width:100%;background:none;border:none;color:#ff6b6b;font-size:15px;cursor:pointer;padding:14px 20px;text-align:left;font-family:inherit">삭제</button>
+    <button onclick="closeModal('post-options-modal')" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:14px;cursor:pointer;padding:12px 20px;text-align:center;font-family:inherit">취소</button>
+  </div>
+</div>
+
+<!-- 게시물 수정 모달 -->
+<div class="modal-overlay" id="edit-post-modal" onclick="if(event.target===this)closeModal('edit-post-modal')">
+  <div class="modal-sheet">
+    <div style="font-size:17px;font-weight:800;margin-bottom:16px">게시물 수정</div>
+    <textarea id="edit-post-textarea" rows="4" placeholder="내용을 입력해주세요" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px;color:#fff;font-size:14px;line-height:1.6;resize:none;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:16px"></textarea>
+    <button onclick="window.saveEditPost&&window.saveEditPost()" class="btn-white" style="width:100%;padding:14px;font-size:15px">저장</button>
+    <button onclick="closeModal('edit-post-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">취소</button>
+  </div>
+</div>
+
+<!-- 게시물 삭제 확인 모달 -->
+<div class="modal-overlay" id="delete-post-confirm" onclick="if(event.target===this)closeModal('delete-post-confirm')">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:12px">🗑️</div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:8px">게시물을 삭제할까요?</div>
+    <div style="font-size:13px;color:#666;margin-bottom:24px">삭제 후에는 되돌릴 수 없어요</div>
+    <button onclick="window.confirmDeletePost&&window.confirmDeletePost()" style="width:100%;background:#ff4444;border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;padding:14px;font-family:inherit;margin-bottom:8px">삭제</button>
+    <button onclick="closeModal('delete-post-confirm')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;padding:8px;font-family:inherit">취소</button>
   </div>
 </div>
 
@@ -1410,6 +1440,14 @@ function openCreateScheduleModal() {
 }
 function toggleSchedFee(cb) { const r = document.getElementById('sched-fee-row'); if (r) r.style.display = cb.checked ? 'block' : 'none'; }
 
+function openPostOptions(postId, text) {
+  window._editPostId = postId;
+  window._editPostText = text;
+  const ta = document.getElementById('edit-post-textarea');
+  if (ta) ta.value = text || '';
+  openModal('post-options-modal');
+}
+
 function openTreasuryModal() {
   if (!window._currentCrewId) return;
   window._treasuryCrewId = window._currentCrewId;
@@ -1696,6 +1734,7 @@ function openCropModal(file) {
       const scaleH = size / img.naturalHeight;
       const fitScale = Math.min(scaleW, scaleH);
       img.style.transform = `translate(0,0) scale(${fitScale})`;
+      if (window.resetCropState) window.resetCropState(fitScale);
     };
   };
   reader.readAsDataURL(file);
@@ -1720,6 +1759,10 @@ function confirmCrop() {
 function initCropDrag() {
   const container = document.getElementById('crop-container');
   let drag = { active: false, startX: 0, startY: 0, imgX: 0, imgY: 0, scale: 1, lastDist: 0 };
+  window.resetCropState = (fitScale) => {
+    drag.active = false; drag.startX = 0; drag.startY = 0;
+    drag.imgX = 0; drag.imgY = 0; drag.scale = fitScale || 1; drag.lastDist = 0;
+  };
 
   function setTransform() {
     const img = document.getElementById('crop-image');
@@ -2244,11 +2287,12 @@ window.updateUI = function(user) {
     const avatar = document.getElementById('user-avatar');
     const mypageBtn = document.getElementById('mypage-icon-btn');
     const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('mypage-logout-btn');
     if (user) {
       if (avatar) { avatar.src = (user.firestorePhotoURL || user.photoURL) || ''; avatar.style.display = 'block'; }
       if (mypageBtn) mypageBtn.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'none';
-      // 혹시 열려있는 모든 오버레이 닫기
+      if (logoutBtn) logoutBtn.style.display = 'block';
       document.querySelectorAll('.modal-overlay').forEach(el => {
         if (el.id !== 'nickname-modal') {
           el.classList.remove('open');
@@ -2259,6 +2303,7 @@ window.updateUI = function(user) {
       if (avatar) { avatar.src = ''; avatar.style.display = 'none'; }
       if (mypageBtn) mypageBtn.style.display = 'block';
       if (loginBtn) loginBtn.style.display = 'flex';
+      if (logoutBtn) logoutBtn.style.display = 'none';
     }
   } catch(e) { console.error('updateUI error:', e); }
 }
@@ -2348,6 +2393,7 @@ window.saveNickname = async () => {
 })();
 
 onAuthStateChanged(auth, async (user) => {
+  userPhotoCache.clear(); // 인증 상태 변경 시 항상 캐시 초기화
   if (user) {
     window.currentUser = user;
     updateUI(user);
@@ -2402,16 +2448,21 @@ async function loadFeed() {
       const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
       const heartFill = liked ? '#ff4444' : 'none';
       const displayPhoto = userPhotoCache.get(p.userId) || p.userPhoto || '';
+      const isOwnPost = window.currentUser && p.userId === window.currentUser.uid;
+      const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       return `
         <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
-          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
-            <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
-              <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          <div style="display:flex;align-items:center;padding:12px 20px 10px;">
+            <div style="display:flex;align-items:center;flex:1;min-width:0;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
+              <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
+                <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+              </div>
+              <div style="margin-left:10px;">
+                <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
+                <div style="font-size:11px;color:rgba(255,255,255,0.28);margin-top:1px">${time}</div>
+              </div>
             </div>
-            <div style="margin-left:10px;flex:1">
-              <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
-              <div style="font-size:11px;color:rgba(255,255,255,0.28);margin-top:1px">${time}</div>
-            </div>
+            ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
           </div>
           ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
           <div style="padding:10px 20px 6px;display:flex;gap:16px">
@@ -2431,6 +2482,29 @@ async function loadFeed() {
     feedEl.innerHTML = '<div style="text-align:center;padding:32px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.2);margin-bottom:12px">피드를 불러올 수 없어요</div><button onclick="loadFeed()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;padding:8px 16px;cursor:pointer;font-family:inherit">다시 시도</button></div>';
   }
 }
+
+window.saveEditPost = async () => {
+  const postId = window._editPostId;
+  if (!postId) return;
+  const text = (document.getElementById('edit-post-textarea')?.value || '').trim();
+  try {
+    await updateDoc(doc(db, 'feed', postId), { text });
+    closeModal('edit-post-modal');
+    showToast('✓ 수정됐어요');
+    loadFeed();
+  } catch(e) { console.error(e); showToast('수정 실패'); }
+};
+
+window.confirmDeletePost = async () => {
+  const postId = window._editPostId;
+  if (!postId) return;
+  try {
+    await deleteDoc(doc(db, 'feed', postId));
+    closeModal('delete-post-confirm');
+    showToast('삭제됐어요');
+    loadFeed();
+  } catch(e) { console.error(e); showToast('삭제 실패'); }
+};
 
 window.likePost = async (postId, btn) => {
   if (!window.currentUser) { showToast('로그인 후 좋아요를 누를 수 있어요'); return; }
