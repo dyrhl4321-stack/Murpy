@@ -672,15 +672,18 @@
     <!-- 게시판 탭 -->
     <div id="crew-board-tab" style="position:absolute;inset:0;overflow-y:auto;display:none"></div>
     <!-- 사진첩 탭 -->
-    <div id="crew-photos-tab" style="position:absolute;inset:0;overflow-y:auto;padding:3px 3px 80px;display:none"></div>
+    <div id="crew-photos-tab" style="position:absolute;inset:0;overflow-y:auto;padding:3px 3px 86px;display:none"></div>
     <!-- 채팅 탭 -->
     <div id="crew-chat-tab" style="position:absolute;inset:0;flex-direction:column;display:none">
       <div id="crew-chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:6px"></div>
-      <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;flex-shrink:0;background:#0a0a0a">
+      <div id="crew-chat-input-row" style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;flex-shrink:0;background:#0a0a0a">
         <input id="crew-chat-input" placeholder="메시지 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendCrewChatFirestore&&window.sendCrewChatFirestore()}">
         <button onclick="window.sendCrewChatFirestore&&window.sendCrewChatFirestore()" style="background:#fff;color:#000;border:none;border-radius:50%;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
       </div>
     </div>
+    <!-- 사진첩 FAB (position:relative인 wrap 기준으로 고정) -->
+    <button id="crew-photo-fab" class="fab" style="display:none" onclick="document.getElementById('crew-photo-input-hidden').click()">+</button>
+    <input type="file" id="crew-photo-input-hidden" accept="image/*" style="display:none" onchange="if(this.files[0]){window.uploadCrewPhoto&&window.uploadCrewPhoto(window._currentCrewId,this.files[0]);this.value=''}">
   </div>
 </div>
 
@@ -1517,6 +1520,7 @@ function openCrewDetail(id) {
   if (lsBtn) lsBtn.style.display = isLeader ? 'flex' : 'none';
 
   // 탭 초기화 — 홈
+  window._crewBoardCat = 'all';
   document.querySelectorAll('#crew-detail-panel .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0));
   ['home','board','photos','chat'].forEach(t => {
     const el = document.getElementById('crew-'+t+'-tab');
@@ -1525,12 +1529,11 @@ function openCrewDetail(id) {
   const homeEl = document.getElementById('crew-home-tab');
   if (homeEl) homeEl.style.display = 'block';
 
-  renderCrewHomeTab(crew);
-  openPanel('crew-detail-panel');
-
-  // crew-photo-fab cleanup
   const fab = document.getElementById('crew-photo-fab');
   if (fab) fab.style.display = 'none';
+
+  renderCrewHomeTab(crew);
+  openPanel('crew-detail-panel');
 }
 
 function renderCrewHomeTab(crew) {
@@ -3409,8 +3412,7 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming') => {
   const safeId = crewId.replace(/'/g, '');
   const skelHtml = [1,2].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:15px;width:50%;margin-bottom:8px"></div><div class="skeleton" style="height:12px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:40%"></div></div>`).join('');
   const tabBtns = ['upcoming','active','done'].map(t => `<button onclick="window.loadCrewSchedules('${safeId}','${t}')" style="${t===tab?'background:#fff;color:#000;font-weight:700;border:none;':'background:rgba(255,255,255,0.05);color:#888;border:1px solid rgba(255,255,255,0.08);font-weight:400;'}flex:1;padding:7px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit">${t==='upcoming'?'예정':t==='active'?'진행중':'완료'}</button>`).join('');
-  el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:14px">${tabBtns}</div>${isLeader?`<button onclick="openCreateScheduleModal()" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;margin-bottom:14px">+ 모임 추가</button>`:''}
-  <div id="schedule-cards">${skelHtml}</div>`;
+  el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:14px">${tabBtns}</div><div id="schedule-cards">${skelHtml}</div>`;
   const cardsEl = document.getElementById('schedule-cards');
   try {
     const snap = await getDocs(query(collection(db, 'crews', crewId, 'schedules'), orderBy('date', tab==='done'?'desc':'asc')));
@@ -3935,27 +3937,15 @@ window.loadCrewPhotos = async (crewId) => {
   if (!el) return;
   const uid = (auth.currentUser || window.currentUser)?.uid;
 
-  // FAB (once)
-  if (!document.getElementById('crew-photo-fab')) {
-    const fab = document.createElement('button');
-    fab.id = 'crew-photo-fab'; fab.className = 'fab';
-    fab.innerHTML = '+'; fab.title = '사진 올리기';
-    fab.onclick = () => document.getElementById('crew-photo-input-hidden')?.click();
-    el.appendChild(fab);
-    const inp = document.createElement('input');
-    inp.type='file'; inp.id='crew-photo-input-hidden'; inp.accept='image/*'; inp.style.display='none';
-    inp.onchange = function() { if (this.files[0]) window.uploadCrewPhoto(crewId, this.files[0]); };
-    el.appendChild(inp);
-  }
+  // FAB 가시성 (정적 HTML 요소)
   const fab = document.getElementById('crew-photo-fab');
   if (fab) fab.style.display = uid ? 'flex' : 'none';
 
   const grid = document.createElement('div');
   grid.className = 'photo-grid-3'; grid.id = 'crew-photo-grid';
   grid.innerHTML = [1,2,3,4,5,6].map(()=>`<div class="skeleton" style="aspect-ratio:1"></div>`).join('');
-  // replace content but keep fab/input
-  Array.from(el.children).forEach(c => { if (c.id!=='crew-photo-fab' && c.id!=='crew-photo-input-hidden') c.remove(); });
-  el.prepend(grid);
+  el.innerHTML = '';
+  el.appendChild(grid);
 
   try {
     const snap = await getDocs(query(collection(db,'crews',crewId,'photos'), orderBy('createdAt','desc')));
@@ -4000,9 +3990,11 @@ window.uploadCrewPhoto = async (crewId, file) => {
 window.loadCrewChatFirestore = (crewId) => {
   const user = auth.currentUser || window.currentUser;
   const el = document.getElementById('crew-chat-messages');
+  const inputRow = document.getElementById('crew-chat-input-row');
   if (!el) return;
+  if (inputRow) inputRow.style.display = user ? 'flex' : 'none';
   if (!user) {
-    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:10px">💬</div><div style="font-size:14px">로그인하면 채팅에 참여할 수 있어요</div></div>';
+    el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:10px">💬</div><div style="font-size:14px">로그인하면 채팅에 참여할 수 있어요</div><button onclick="requireLogin(\'채팅하려면 로그인이 필요해요\')" style="margin-top:14px;background:#fff;color:#000;border:none;border-radius:10px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">로그인하기</button></div>';
     return;
   }
   el.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';

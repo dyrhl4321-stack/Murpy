@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 유저 프로필
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 피드
+    match /feed/{postId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // 크루 및 모든 서브컬렉션
+    match /crews/{crewId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.leaderId;
+
+      // 정모 일정
+      match /schedules/{scheduleId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+
+        match /applicants/{applicantId} {
+          allow read: if request.auth != null;
+          allow write: if request.auth != null;
+        }
+      }
+
+      // 게시판
+      match /posts/{postId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null;
+
+        match /comments/{commentId} {
+          allow read: if true;
+          allow create: if request.auth != null;
+        }
+      }
+
+      // 사진첩
+      match /photos/{photoId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      }
+
+      // 채팅
+      match /chat/{messageId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+      }
+
+      // 공금
+      match /treasury/{entryId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+
+      // 크루 피드
+      match /feed/{postId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+      }
+    }
+
+    // 알림
+    match /notifications/{notifId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.toUid;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid == resource.data.toUid;
+    }
+
+    // 1:1 채팅방
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null;
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}
