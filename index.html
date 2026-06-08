@@ -2255,7 +2255,7 @@ window.updateUI = function(user) {
         }
       });
     } else {
-      if (avatar) avatar.style.display = 'none';
+      if (avatar) { avatar.src = ''; avatar.style.display = 'none'; }
       if (mypageBtn) mypageBtn.style.display = 'block';
       if (loginBtn) loginBtn.style.display = 'flex';
     }
@@ -2380,40 +2380,50 @@ async function loadFeed() {
         </div>`;
       return;
     }
-    feedEl.innerHTML = snap.docs.map(d => {
-      const data = d.data();
-      const time = data.createdAt
-        ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+    // 고유 userId 수집 후 Firestore 최신 프사 일괄 조회 (한 번씩만)
+    const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    const uniqueIds = [...new Set(posts.map(p => p.userId).filter(Boolean))];
+    const photoCache = {};
+    await Promise.all(uniqueIds.map(async uid => {
+      if (window.currentUser && uid === window.currentUser.uid && window.currentUser.firestorePhotoURL) {
+        photoCache[uid] = window.currentUser.firestorePhotoURL; return;
+      }
+      try {
+        const us = await getDoc(doc(db, 'users', uid));
+        photoCache[uid] = us.exists() ? (us.data().photoURL || '') : '';
+      } catch(e) { photoCache[uid] = ''; }
+    }));
+    feedEl.innerHTML = posts.map(p => {
+      const time = p.createdAt
+        ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
         : '방금';
-      const liked = window.currentUser && (data.likedBy || []).includes(window.currentUser.uid);
+      const liked = window.currentUser && (p.likedBy || []).includes(window.currentUser.uid);
       const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
       const heartFill = liked ? '#ff4444' : 'none';
-      // 내 포스트는 최신 Firestore 프로필 사진 우선 사용
-      const isMe = window.currentUser && data.userId === window.currentUser.uid;
-      const displayPhoto = isMe && window.currentUser.firestorePhotoURL ? window.currentUser.firestorePhotoURL : (data.userPhoto || '');
+      const displayPhoto = photoCache[p.userId] || p.userPhoto || '';
       return `
         <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
-          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${data.userId}','${data.userName||'익명'}','${displayPhoto}')">
+          <div style="display:flex;align-items:center;padding:12px 20px 10px;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
             <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
               <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
             </div>
             <div style="margin-left:10px;flex:1">
-              <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${data.userName||'익명'}</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
               <div style="font-size:11px;color:rgba(255,255,255,0.28);margin-top:1px">${time}</div>
             </div>
           </div>
-          ${data.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${data.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+          ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
           <div style="padding:10px 20px 6px;display:flex;gap:16px">
-            <button onclick="likePost('${d.id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
+            <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-              ${data.likes||0}
+              ${p.likes||0}
             </button>
-            <button id="comment-btn-${d.id}" onclick="openCommentPanel('${d.id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
+            <button id="comment-btn-${p._id}" onclick="openCommentPanel('${p._id}')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.45);font-size:13px;font-family:inherit">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              <span id="comment-count-${d.id}">${data.commentCount||0}</span>
+              <span id="comment-count-${p._id}">${p.commentCount||0}</span>
             </button>
           </div>
-          ${data.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.55;color:rgba(255,255,255,0.82);letter-spacing:-0.2px"><span style="font-weight:700;margin-right:6px">${data.userName||'익명'}</span>${data.text}</div>` : '<div style="padding-bottom:12px"></div>'}
+          ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.55;color:rgba(255,255,255,0.82);letter-spacing:-0.2px"><span style="font-weight:700;margin-right:6px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
         </div>`;
     }).join('');
   } catch(e) {
