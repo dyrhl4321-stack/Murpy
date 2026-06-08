@@ -3375,7 +3375,6 @@ window.submitAttendCode = async () => {
     const nickname = aSnap.data().nickname || '익명';
     await updateDoc(appRef, { checkedIn: true, checkinTime: serverTimestamp(), attendanceType: type });
     await updateDoc(schedRef, { [isLate?'lateCount':'attendCount']: increment(1) });
-    await setDoc(doc(db,'attendance',`${crewId}_${scheduleId}_${user.uid}`), { crewId, scheduleId, userId: user.uid, nickname, status: type, paidStatus: aSnap.data().paidStatus||false, timestamp: serverTimestamp() });
     closeModal('attend-code-entry-modal');
     showToast(isLate ? '⏰ 지각으로 출석됐어요' : '✅ 출석 완료!');
     window.loadCrewSchedules(crewId, 'active');
@@ -3393,7 +3392,6 @@ window.endAttendance = async (crewId, scheduleId) => {
       const a = d.data();
       if (a.attendStatus==='approved' && !a.checkedIn) {
         ops.push(updateDoc(d.ref, { attendanceType:'absent' }));
-        ops.push(setDoc(doc(db,'attendance',`${crewId}_${scheduleId}_${a.userId}`), { crewId, scheduleId, userId:a.userId, nickname:a.nickname||'익명', status:'absent', paidStatus:a.paidStatus||false, timestamp:serverTimestamp() }));
         if (feeAmount>0) ops.push(addDoc(collection(db,'crews',crewId,'treasury'), { type:'penalty', amount:feeAmount, reason:`${a.nickname||'익명'} 불참`, userId:a.userId, scheduleId, createdAt:serverTimestamp() }));
         absentCount++;
       }
