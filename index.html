@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260609009 -->
+<!-- cache-bust: v20260609010 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -199,7 +199,7 @@
     <!-- Login btn -->
     <button id="login-btn" onclick="openModal('login-method-modal')" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:all 0.15s">로그인</button>
     <!-- Profile icon (logged out) -->
-    <button id="mypage-icon-btn" onclick="openPanel('mypage-panel')" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center">
+    <button id="mypage-icon-btn" onclick="window.currentUser ? openPanel('mypage-panel') : openModal('login-guard-modal')" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center">
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
         <circle cx="14" cy="14" r="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
         <circle cx="14" cy="11" r="4" stroke="#fff" stroke-width="1.6" opacity="0.7"/>
@@ -3118,6 +3118,7 @@ window.kakaoLogin = async () => {
   try {
     const kakaoUser = await new Promise((resolve, reject) => {
       Kakao.Auth.login({
+        throughTalk: false,
         success: (authObj) => {
           Kakao.API.request({
             url: '/v2/user/me',
@@ -3125,7 +3126,21 @@ window.kakaoLogin = async () => {
             fail: (err) => { console.error('Kakao API fail:', err); reject(err); }
           });
         },
-        fail: (err) => { console.error('Kakao Auth fail:', err); reject(err); }
+        fail: (err) => {
+          console.error('Kakao Auth fail:', err);
+          // throughTalk:false 실패 시 throughTalk:true 재시도
+          Kakao.Auth.login({
+            throughTalk: true,
+            success: (authObj) => {
+              Kakao.API.request({
+                url: '/v2/user/me',
+                success: (res) => resolve(res),
+                fail: (e2) => reject(e2)
+              });
+            },
+            fail: (e2) => reject(e2)
+          });
+        }
       });
     });
     const kakaoId = String(kakaoUser.id);
