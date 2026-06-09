@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260609008 -->
+<!-- cache-bust: v20260609009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -72,7 +72,7 @@
   .nav-label.active { color: #fff; font-weight: 700; }
 
   /* Toast */
-  .toast { position: fixed; top: 72px; left: 50%; transform: translateX(-50%) translateY(-10px); background: #fff; color: #000; border-radius: 20px; padding: 11px 20px; font-size: 13px; font-weight: 700; z-index: 500; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none; opacity: 0; transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  .toast { position: fixed; top: 72px; left: 50%; transform: translateX(-50%) translateY(-10px); background: #fff; color: #000; border-radius: 20px; padding: 11px 20px; font-size: 13px; font-weight: 700; z-index: 999999; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none; opacity: 0; transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
   .toast.show { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
 
   /* Modal overlay */
@@ -3104,8 +3104,15 @@ getRedirectResult(auth).then(async (result) => {
 
 // ===== 카카오 로그인 =====
 window.kakaoLogin = async () => {
-  if (typeof Kakao === 'undefined' || !Kakao.isInitialized()) {
-    showToast('카카오 앱 키를 먼저 설정해주세요 (index.html → KAKAO_JS_KEY)');
+  if (typeof Kakao === 'undefined') {
+    showToast('카카오 SDK 로드 실패 — 새로고침 후 다시 시도해주세요');
+    return;
+  }
+  if (!Kakao.isInitialized()) {
+    try { Kakao.init(KAKAO_JS_KEY); } catch(e) {}
+  }
+  if (!Kakao.isInitialized()) {
+    showToast('카카오 초기화 실패 — 새로고침 후 다시 시도해주세요');
     return;
   }
   try {
@@ -3115,10 +3122,10 @@ window.kakaoLogin = async () => {
           Kakao.API.request({
             url: '/v2/user/me',
             success: (res) => resolve(res),
-            fail: reject
+            fail: (err) => { console.error('Kakao API fail:', err); reject(err); }
           });
         },
-        fail: reject
+        fail: (err) => { console.error('Kakao Auth fail:', err); reject(err); }
       });
     });
     const kakaoId = String(kakaoUser.id);
