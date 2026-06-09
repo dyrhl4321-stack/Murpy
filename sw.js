@@ -1,11 +1,27 @@
-// MURPY Service Worker — PWA 설치 지원
-const CACHE_NAME = 'murpy-v1';
+const CACHE_NAME = 'murpy-v3';
+const STATIC_CACHE = 'murpy-static-v3';
+const CDN_CACHE = 'murpy-cdn-v3';
+
+// 앱 시작 시 즉시 캐시할 로컬 파일
+const STATIC_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg',
+  './logo-nukki.png',
+];
+
+// CDN 스크립트 (버전 고정 → 영구 캐시)
+const CDN_HOSTS = [
+  'www.gstatic.com',
+  't1.kakaocdn.net',
+];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE_NAME).then(cache =>
-      cache.addAll(['./', './index.html']).catch(() => {})
+    caches.open(STATIC_CACHE).then(cache =>
+      cache.addAll(STATIC_ASSETS).catch(() => {})
     )
   );
 });
@@ -13,24 +29,54 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter(k => ![CACHE_NAME, STATIC_CACHE, CDN_CACHE].includes(k))
+          .map(k => caches.delete(k))
+      )
     ).then(() => clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
-  // GET 요청만 처리, 외부 리소스는 패스
   if (e.request.method !== 'GET') return;
-  if (!e.request.url.startsWith(self.location.origin)) return;
 
-  e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        // 성공하면 캐시에 저장 후 반환
-        const clone = res.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+  const url = new URL(e.request.url);
+
+  // Firestore / Firebase Auth API → 네트워크만 (실시간 데이터)
+  if (url.hostname.includes('firestore.googleapis.com') ||
+      url.hostname.includes('identitytoolkit.googleapis.com') ||
+      url.hostname.includes('securetoken.googleapis.com') ||
+      url.hostname.includes('firebase.googleapis.com') ||
+      url.pathname.includes('/v2/user/me')) {
+    return;
+  }
+
+  // CDN 스크립트 → 캐시 우선 (버전 고정 파일)
+  if (CDN_HOSTS.some(h => url.hostname.includes(h))) {
+    e.respondWith(
+      caches.open(CDN_CACHE).then(async cache => {
+        const cached = await cache.match(e.request);
+        if (cached) return cached;
+        const res = await fetch(e.request);
+        cache.put(e.request, res.clone());
         return res;
       })
-      .catch(() => caches.match(e.request))
-  );
+    );
+    return;
+  }
+
+  // 로컬 정적 파일 → stale-while-revalidate (캐시로 즉시 응답 + 백그라운드 갱신)
+  if (url.origin === self.location.origin) {
+    e.respondWith(
+      caches.open(STATIC_CACHE).then(async cache => {
+        const cached = await cache.match(e.request);
+        const fetchPromise = fetch(e.request).then(res => {
+          cache.put(e.request, res.clone());
+          return res;
+        }).catch(() => null);
+        return cached || fetchPromise;
+      })
+    );
+  }
 });
