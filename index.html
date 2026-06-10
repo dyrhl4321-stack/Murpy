@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260609013 -->
+<!-- cache-bust: v20260610001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -28,6 +28,7 @@
 
 <!-- 카카오 SDK -->
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
   const KAKAO_JS_KEY = '0558c9d9f24eb08a641a750f0ea682e3';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
@@ -1097,6 +1098,35 @@
 </div>
 <!-- 크루 커버사진 업로드 인풋 (전역) -->
 <input type="file" id="crew-cover-upload-input" accept="image/*" style="display:none" onchange="handleCrewCoverUpload(this)">
+
+<!-- QR 코드 모달 -->
+<div class="modal-overlay" id="qr-code-modal" onclick="if(event.target===this)closeModal('qr-code-modal')">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="font-size:18px;font-weight:800;margin-bottom:4px" id="qr-modal-title"></div>
+    <div style="font-size:13px;color:#666;margin-bottom:20px" id="qr-modal-date"></div>
+    <div style="background:#fff;padding:16px;border-radius:12px;display:inline-block;margin-bottom:16px"><div id="qr-code-container"></div></div>
+    <div style="font-size:12px;color:#555;line-height:1.7;margin-bottom:20px">멤버들이 QR을 스캔하면<br>바로 체크인 화면이 열려요</div>
+    <button class="btn-white" style="width:100%;padding:14px;font-size:15px" onclick="closeModal('qr-code-modal')">닫기</button>
+  </div>
+</div>
+
+<!-- QR 체크인 화면 (멤버용, QR 스캔 시 표시) -->
+<div id="qr-checkin-screen" style="display:none;position:fixed;inset:0;background:#0a0a0a;z-index:99999;overflow-y:auto">
+  <div style="max-width:390px;margin:0 auto;padding:28px 20px 60px">
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="font-size:11px;color:rgba(255,255,255,0.2);letter-spacing:3px;margin-bottom:12px;text-transform:uppercase">Murpy</div>
+      <div style="font-size:24px;font-weight:800;letter-spacing:-0.5px" id="checkin-title">출석 체크</div>
+      <div style="font-size:13px;color:#555;margin-top:6px" id="checkin-sub"></div>
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.25);text-align:center;margin-bottom:18px;letter-spacing:-0.1px">본인 이름을 탭하세요</div>
+    <div id="checkin-members-list"></div>
+    <div id="checkin-done" style="display:none;text-align:center;padding:60px 20px">
+      <div style="font-size:64px;margin-bottom:16px" id="checkin-done-icon">✓</div>
+      <div style="font-size:22px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px" id="checkin-done-text">출석 완료!</div>
+      <div style="font-size:15px;color:#666;font-weight:600" id="checkin-done-name"></div>
+    </div>
+  </div>
+</div>
 
 <!-- 크루 게시글 작성 모달 -->
 <div class="modal-overlay" id="crew-post-write-modal" onclick="if(event.target===this)closeModal('crew-post-write-modal')">
@@ -3830,14 +3860,15 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming') => {
       const sid = d.id.replace(/'/g,'');
       const titleJs = (s.title||'모임').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const full = s.maxMembers && (s.approvedCount||0) >= s.maxMembers;
+      const dtStr = ((s.date||'')+' '+(s.time||'')).trim();
       let btns = '';
       if (isLeader) {
         if (s.status === 'upcoming') {
           const pc = s.pendingCount || 0;
           btns = `<button onclick="window.openApplicantsPanel('${safeId}','${sid}','${titleJs}')" class="btn-glass" style="padding:6px 12px;font-size:11px;font-weight:600">신청자${pc>0?` (${pc})`:''}  👥</button>
-          <button onclick="window.startAttendance('${safeId}','${sid}')" style="background:#fff;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">출석 시작 ▶</button>`;
+          <button onclick="window.startAttendance('${safeId}','${sid}','${titleJs}','${dtStr}')" style="background:#fff;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">출석 시작 ▶</button>`;
         } else if (s.status === 'active') {
-          btns = `<button onclick="window.showAttendCode('${safeId}','${sid}')" style="background:#fff;color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:900;cursor:pointer;font-family:monospace;letter-spacing:3px">${s.attendCode||'------'}</button>
+          btns = `<button onclick="window.openQRModal('${safeId}','${sid}','${titleJs}','${dtStr}')" style="background:#fff;color:#000;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📱 QR 코드</button>
           <button onclick="window.endAttendance('${safeId}','${sid}')" class="btn-glass" style="padding:6px 12px;font-size:11px;font-weight:600">종료</button>`;
         }
       } else if (user) {
@@ -3987,7 +4018,11 @@ window.loadApplicants = async (crewId, scheduleId) => {
           actionHtml = `<button onclick="window.approveApplicant('${crewId}','${scheduleId}','${a.userId.replace(/'/g,'')}')" style="background:#fff;color:#000;border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>
           <button onclick="window.rejectApplicant('${crewId}','${scheduleId}','${a.userId.replace(/'/g,'')}')" class="btn-glass" style="padding:5px 10px;font-size:11px">거절</button>`;
         } else if (status==='approved') {
-          actionHtml = `<span style="font-size:11px;color:#aaa">✓ 승인${a.checkedIn?'·출석':''}</span>`;
+          const paid = !!a.paid;
+          actionHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+            <button onclick="window.togglePaid('${crewId}','${scheduleId}','${a.id.replace(/'/g,'')}',${paid})" style="background:${paid?'rgba(109,194,109,0.15)':'rgba(255,255,255,0.05)'};border:1px solid ${paid?'rgba(109,194,109,0.3)':'rgba(255,255,255,0.12)'};color:${paid?'#6dc26d':'#777'};border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${paid?'입금 ✓':'미입금'}</button>
+            <span style="font-size:11px;color:#555">승인${a.checkedIn?` · ${a.lateStatus?'지각':'출석'}`:''}</span>
+          </div>`;
         }
         return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
@@ -4036,14 +4071,14 @@ window.rejectApplicant = async (crewId, scheduleId, userId) => {
   } catch(e) { console.error(e); showToast('실패'); }
 };
 
-window.startAttendance = async (crewId, scheduleId) => {
+window.startAttendance = async (crewId, scheduleId, title, date) => {
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiry = Date.now() + 30 * 60 * 1000;
   try {
     await updateDoc(doc(db,'crews',crewId,'schedules',scheduleId), { status:'active', attendCode:code, attendCodeExpiry:expiry, activatedAt:serverTimestamp() });
     showToast('✓ 출석이 시작됐어요!');
     window.loadCrewSchedules(crewId, 'active');
-    window.showAttendCode(crewId, scheduleId, code, expiry);
+    window.openQRModal(crewId, scheduleId, title||'모임', date||'');
   } catch(e) { console.error(e); showToast('실패'); }
 };
 
@@ -4463,6 +4498,119 @@ window.markFirebaseNotifRead = async (notifId) => {
   if (!notifId) return;
   try { await updateDoc(doc(db,'notifications',notifId),{read:true}); window.loadNotificationsFirestore&&window.loadNotificationsFirestore(); } catch(e){}
 };
+
+// ===== QR 체크인 =====
+window.openQRModal = (crewId, scheduleId, title, date) => {
+  document.getElementById('qr-modal-title').textContent = title || '모임';
+  document.getElementById('qr-modal-date').textContent = date || '';
+  const container = document.getElementById('qr-code-container');
+  container.innerHTML = '';
+  const url = location.origin + location.pathname + '?attend=' + encodeURIComponent(crewId) + '&sched=' + encodeURIComponent(scheduleId);
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(container, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+  } else {
+    container.innerHTML = `<div style="font-size:12px;color:#888;padding:20px;word-break:break-all">${url}</div>`;
+  }
+  openModal('qr-code-modal');
+};
+
+window.showQRCheckin = async (crewId, scheduleId) => {
+  const screen = document.getElementById('qr-checkin-screen');
+  if (!screen) return;
+  screen.style.display = 'block';
+  document.getElementById('checkin-done').style.display = 'none';
+  const membersList = document.getElementById('checkin-members-list');
+  membersList.style.display = 'block';
+  membersList.innerHTML = '<div style="text-align:center;padding:40px;color:#444;font-size:14px">불러오는 중...</div>';
+  try {
+    const schedSnap = await getDoc(doc(db, 'crews', crewId, 'schedules', scheduleId));
+    if (!schedSnap.exists()) {
+      document.getElementById('checkin-title').textContent = '모임을 찾을 수 없어요';
+      membersList.innerHTML = '';
+      return;
+    }
+    const sched = schedSnap.data();
+    document.getElementById('checkin-title').textContent = sched.title || '출석 체크';
+    document.getElementById('checkin-sub').textContent = (sched.date||'') + (sched.time ? ' · ' + sched.time : '');
+    let isLate = false;
+    if (sched.date && sched.time) {
+      const startDt = new Date(sched.date + 'T' + sched.time);
+      isLate = !isNaN(startDt.getTime()) && (Date.now() - startDt.getTime()) > 5 * 60 * 1000;
+    }
+    window._checkinIsLate = isLate;
+    window._checkinCrewId = crewId;
+    window._checkinSchedId = scheduleId;
+    const appSnap = await getDocs(collection(db, 'crews', crewId, 'schedules', scheduleId, 'applicants'));
+    const approved = appSnap.docs.filter(d => d.data().attendStatus === 'approved');
+    if (!approved.length) {
+      membersList.innerHTML = '<div style="text-align:center;padding:40px;color:#444;font-size:14px">승인된 멤버가 없어요</div>';
+      return;
+    }
+    membersList.innerHTML = approved.map(d => {
+      const a = d.data();
+      const uid = d.id.replace(/'/g, '');
+      const checkedIn = a.checkedIn;
+      return `<div ${checkedIn?'':'onclick="window.qrCheckinMember(\''+uid+'\')"'} style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:${checkedIn?'rgba(109,194,109,0.08)':'rgba(255,255,255,0.04)'};border:1px solid ${checkedIn?'rgba(109,194,109,0.2)':'rgba(255,255,255,0.07)'};border-radius:14px;margin-bottom:10px;cursor:${checkedIn?'default':'pointer'};transition:all 0.15s" ${checkedIn?'':'onmousedown="this.style.transform=\'scale(0.985)\'" onmouseup="this.style.transform=\'scale(1)\'"'}>
+        <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.08);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">${a.photoURL?`<img src="${a.photoURL}" style="width:100%;height:100%;object-fit:cover">`:'<span style="font-size:22px">👤</span>'}</div>
+        <div style="flex:1">
+          <div style="font-size:17px;font-weight:700;letter-spacing:-0.3px">${(a.nickname||'익명').replace(/</g,'&lt;')}</div>
+          ${checkedIn?`<div style="font-size:12px;color:${a.lateStatus?'#f0a500':'#6dc26d'};font-weight:600;margin-top:3px">${a.lateStatus?'⏰ 지각':'✓ 출석완료'}</div>`:'<div style="font-size:12px;color:#444;margin-top:3px">탭해서 출석</div>'}
+        </div>
+        ${!checkedIn?'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>':''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error(e);
+    membersList.innerHTML = '<div style="text-align:center;padding:40px;color:#444;font-size:14px">불러올 수 없어요</div>';
+  }
+};
+
+window.qrCheckinMember = async (userId) => {
+  const crewId = window._checkinCrewId;
+  const scheduleId = window._checkinSchedId;
+  const isLate = window._checkinIsLate || false;
+  if (!crewId || !scheduleId) return;
+  try {
+    const appRef = doc(db, 'crews', crewId, 'schedules', scheduleId, 'applicants', userId);
+    const snap = await getDoc(appRef);
+    if (!snap.exists() || snap.data().checkedIn) return;
+    const nickname = snap.data().nickname || '';
+    await updateDoc(appRef, { checkedIn: true, lateStatus: isLate, checkedInAt: serverTimestamp() });
+    await updateDoc(doc(db, 'crews', crewId, 'schedules', scheduleId), isLate ? { lateCount: increment(1) } : { attendCount: increment(1) });
+    const membersList = document.getElementById('checkin-members-list');
+    const doneEl = document.getElementById('checkin-done');
+    membersList.style.display = 'none';
+    doneEl.style.display = 'block';
+    document.getElementById('checkin-done-icon').textContent = isLate ? '⏰' : '✓';
+    document.getElementById('checkin-done-text').textContent = isLate ? '지각으로 처리됐어요' : '출석 완료!';
+    document.getElementById('checkin-done-name').textContent = nickname;
+    setTimeout(() => window.showQRCheckin(crewId, scheduleId), 2000);
+  } catch(e) {
+    console.error(e);
+    alert('처리 실패. 다시 시도해주세요.');
+  }
+};
+
+window.togglePaid = async (crewId, scheduleId, userId, currentPaid) => {
+  try {
+    await updateDoc(doc(db, 'crews', crewId, 'schedules', scheduleId, 'applicants', userId), { paid: !currentPaid });
+    showToast(!currentPaid ? '✓ 입금 확인됐어요' : '미입금으로 변경됐어요');
+    window.loadApplicants(crewId, scheduleId);
+  } catch(e) { showToast('변경 실패'); }
+};
+
+// QR 스캔으로 접속 시 체크인 화면 자동 진입
+(async () => {
+  const p = new URLSearchParams(location.search);
+  const attendCrew = p.get('attend');
+  const attendSched = p.get('sched');
+  if (attendCrew && attendSched) {
+    const splash = document.getElementById('splash-screen');
+    if (splash) splash.style.display = 'none';
+    clearTimeout(window._splashAuthTimer);
+    await window.showQRCheckin(attendCrew, attendSched);
+  }
+})();
 </script>
 </body>
 </html>
