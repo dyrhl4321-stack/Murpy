@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260610001 -->
+<!-- cache-bust: v20260610002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -785,7 +785,8 @@
   </div>
   <!-- 탭 바 -->
   <div class="tab-bar" style="padding:0 4px;flex-shrink:0">
-    <button class="tab-btn active" onclick="switchCrewDetailTab('home',this)">홈</button>
+    <button class="tab-btn" onclick="switchCrewDetailTab('home',this)">홈</button>
+    <button id="crew-admin-tab-btn" class="tab-btn" onclick="switchCrewDetailTab('admin',this)" style="display:none;color:#fff">운영</button>
     <button class="tab-btn" onclick="switchCrewDetailTab('board',this)">게시판</button>
     <button class="tab-btn" onclick="switchCrewDetailTab('photos',this)">사진첩</button>
     <button class="tab-btn" onclick="switchCrewDetailTab('chat',this)">채팅</button>
@@ -793,7 +794,9 @@
   <!-- 탭 콘텐츠 래퍼 -->
   <div id="crew-content-wrap" style="flex:1;overflow:hidden;position:relative">
     <!-- 홈 탭 -->
-    <div id="crew-home-tab" style="position:absolute;inset:0;overflow-y:auto;padding:0 0 32px"></div>
+    <div id="crew-home-tab" style="position:absolute;inset:0;overflow-y:auto;padding:0 0 32px;display:none"></div>
+    <!-- 운영 탭 (크루장 전용) -->
+    <div id="crew-admin-tab" style="position:absolute;inset:0;overflow-y:auto;padding:0 0 32px;display:none"></div>
     <!-- 게시판 탭 -->
     <div id="crew-board-tab" style="position:absolute;inset:0;overflow-y:auto;display:none"></div>
     <!-- 사진첩 탭 -->
@@ -1701,20 +1704,31 @@ function openCrewDetail(id) {
   const lsBtn = document.getElementById('crew-leader-settings-btn');
   if (lsBtn) lsBtn.style.display = isLeader ? 'flex' : 'none';
 
-  // 탭 초기화 — 홈
+  // 탭 초기화
   window._crewBoardCat = 'all';
-  document.querySelectorAll('#crew-detail-panel .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0));
-  ['home','board','photos','chat'].forEach(t => {
+  const adminTabBtn = document.getElementById('crew-admin-tab-btn');
+  if (adminTabBtn) adminTabBtn.style.display = isLeader ? 'block' : 'none';
+  ['home','admin','board','photos','chat'].forEach(t => {
     const el = document.getElementById('crew-'+t+'-tab');
     if (el) el.style.display = 'none';
   });
-  const homeEl = document.getElementById('crew-home-tab');
-  if (homeEl) homeEl.style.display = 'block';
+  document.querySelectorAll('#crew-detail-panel .tab-btn').forEach(b => b.classList.remove('active'));
+  if (isLeader) {
+    if (adminTabBtn) adminTabBtn.classList.add('active');
+    const adminEl = document.getElementById('crew-admin-tab');
+    if (adminEl) adminEl.style.display = 'block';
+  } else {
+    const homeBtn = document.querySelector('#crew-detail-panel .tab-btn');
+    if (homeBtn) homeBtn.classList.add('active');
+    const homeEl = document.getElementById('crew-home-tab');
+    if (homeEl) homeEl.style.display = 'block';
+  }
 
   const fab = document.getElementById('crew-photo-fab');
   if (fab) fab.style.display = 'none';
 
   renderCrewHomeTab(crew);
+  if (isLeader) setTimeout(() => window.renderCrewAdminTab && window.renderCrewAdminTab(window._currentCrewId), 0);
   openPanel('crew-detail-panel');
 }
 
@@ -1731,10 +1745,7 @@ function renderCrewHomeTab(crew) {
 
   let actionHtml = '';
   if (isLeader) {
-    actionHtml = `<div style="display:flex;gap:8px">
-      <button onclick="openCreateScheduleModal()" class="btn-white" style="flex:1;padding:13px;font-size:14px;font-weight:700;border-radius:12px">+ 정모 만들기</button>
-      <button onclick="showToast('초대 링크가 복사됐어요')" class="btn-glass" style="padding:13px 16px;font-size:14px;border-radius:12px">🔗</button>
-    </div>`;
+    actionHtml = `<button onclick="switchCrewDetailTab('admin',document.getElementById('crew-admin-tab-btn'))" class="btn-glass" style="width:100%;padding:13px;font-size:13px;font-weight:700;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:6px">👑 운영 탭으로 관리하기</button>`;
   } else if (uid && isMember) {
     actionHtml = `<button class="btn-glass" style="width:100%;padding:13px;font-size:14px;border-radius:12px;cursor:default">✓ 가입된 크루</button>`;
   } else if (uid) {
@@ -1773,11 +1784,12 @@ function renderCrewHomeTab(crew) {
 function switchCrewDetailTab(tab, btn) {
   document.querySelectorAll('#crew-detail-panel .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  ['home','board','photos','chat'].forEach(t => {
+  ['home','admin','board','photos','chat'].forEach(t => {
     const el = document.getElementById('crew-'+t+'-tab');
     if (!el) return;
     if (t === tab) {
       el.style.display = t === 'chat' ? 'flex' : 'block';
+      if (t === 'admin') window.renderCrewAdminTab && window.renderCrewAdminTab(window._currentCrewId);
       if (t === 'board') window.loadCrewBoard && window.loadCrewBoard(window._currentCrewId, window._crewBoardCat||'all');
       if (t === 'photos') window.loadCrewPhotos && window.loadCrewPhotos(window._currentCrewId);
       if (t === 'chat') window.loadCrewChatFirestore && window.loadCrewChatFirestore(window._currentCrewId);
@@ -1785,7 +1797,6 @@ function switchCrewDetailTab(tab, btn) {
       el.style.display = 'none';
     }
   });
-  // photo fab visibility
   const fab = document.getElementById('crew-photo-fab');
   if (fab) fab.style.display = (tab==='photos' && window.currentUser) ? 'flex' : 'none';
 }
@@ -3829,16 +3840,17 @@ window.loadCrewFeed = async (crewId) => {
 
 // ===== 크루 일정 / 출석 / 공금 Firestore =====
 
-window.loadCrewSchedules = async (crewId, tab = 'upcoming') => {
+window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-schedule-tab') => {
   const user = auth.currentUser || window.currentUser;
-  const el = document.getElementById('crew-schedule-tab');
+  const el = document.getElementById(targetId);
   if (!el) return;
   const isLeader = window._currentCrewIsLeader;
   const safeId = crewId.replace(/'/g, '');
   const skelHtml = [1,2].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:15px;width:50%;margin-bottom:8px"></div><div class="skeleton" style="height:12px;width:70%;margin-bottom:6px"></div><div class="skeleton" style="height:12px;width:40%"></div></div>`).join('');
-  const tabBtns = ['upcoming','active','done'].map(t => `<button onclick="window.loadCrewSchedules('${safeId}','${t}')" style="${t===tab?'background:#fff;color:#000;font-weight:700;border:none;':'background:rgba(255,255,255,0.05);color:#888;border:1px solid rgba(255,255,255,0.08);font-weight:400;'}flex:1;padding:7px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit">${t==='upcoming'?'예정':t==='active'?'진행중':'완료'}</button>`).join('');
-  el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:14px">${tabBtns}</div><div id="schedule-cards">${skelHtml}</div>`;
-  const cardsEl = document.getElementById('schedule-cards');
+  const tabBtns = ['upcoming','active','done'].map(t => `<button onclick="window.loadCrewSchedules('${safeId}','${t}','${targetId}')" style="${t===tab?'background:#fff;color:#000;font-weight:700;border:none;':'background:rgba(255,255,255,0.05);color:#888;border:1px solid rgba(255,255,255,0.08);font-weight:400;'}flex:1;padding:7px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit">${t==='upcoming'?'예정':t==='active'?'진행중':'완료'}</button>`).join('');
+  const schedCardsId = 'schedule-cards-' + targetId;
+  el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:14px">${tabBtns}</div><div id="${schedCardsId}">${skelHtml}</div>`;
+  const cardsEl = document.getElementById(schedCardsId);
   try {
     const snap = await getDocs(query(collection(db, 'crews', crewId, 'schedules'), orderBy('date', tab==='done'?'desc':'asc')));
     let docs = snap.docs.filter(d => d.data().status === tab);
@@ -3916,7 +3928,7 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming') => {
   } catch(e) {
     console.error('schedule load error:', e);
     const msg = e.code === 'permission-denied' ? '권한이 없어요. Firestore 규칙을 확인해주세요.' : '불러올 수 없어요';
-    cardsEl.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">${msg}<br><button onclick="window.loadCrewSchedules('${safeId}','${tab}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:11px;padding:5px 12px;cursor:pointer;margin-top:8px">재시도</button></div>`;
+    cardsEl.innerHTML = `<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">${msg}<br><button onclick="window.loadCrewSchedules('${safeId}','${tab}','${targetId}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:11px;padding:5px 12px;cursor:pointer;margin-top:8px">재시도</button></div>`;
   }
 };
 
@@ -4497,6 +4509,31 @@ window.updateCrewDoc = async (crewId, data) => {
 window.markFirebaseNotifRead = async (notifId) => {
   if (!notifId) return;
   try { await updateDoc(doc(db,'notifications',notifId),{read:true}); window.loadNotificationsFirestore&&window.loadNotificationsFirestore(); } catch(e){}
+};
+
+// ===== 운영 탭 =====
+window.renderCrewAdminTab = (crewId) => {
+  const el = document.getElementById('crew-admin-tab');
+  if (!el || !crewId) return;
+  el.innerHTML = `
+    <div style="padding:16px 20px 0">
+      <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:15px">👑</span>
+        <span style="font-size:13px;font-weight:700;letter-spacing:-0.2px">운영자 모드</span>
+        <span style="font-size:11px;color:#444;margin-left:auto">멤버에게 보이지 않아요</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px">
+        <button onclick="openCreateScheduleModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">📅<br>정모 만들기</button>
+        <button onclick="openTreasuryModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">💰<br>공금 관리</button>
+        <button onclick="openBoostModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">⚡<br>부스트</button>
+        <button onclick="openEntryFeeModal()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">💵<br>입장료 설정</button>
+        <button onclick="document.getElementById('crew-cover-upload-input').click()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">📸<br>커버 변경</button>
+        <button onclick="openCrewEdit()" class="btn-glass" style="padding:14px 10px;font-size:13px;font-weight:600;border-radius:12px;text-align:left;line-height:1.7">✏️<br>크루 수정</button>
+      </div>
+      <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;margin-bottom:12px;border-top:1px solid rgba(255,255,255,0.06);padding-top:16px">정모 관리</div>
+      <div id="crew-admin-schedule-wrap"></div>
+    </div>`;
+  if (window.loadCrewSchedules) window.loadCrewSchedules(crewId, 'upcoming', 'crew-admin-schedule-wrap');
 };
 
 // ===== QR 체크인 =====
