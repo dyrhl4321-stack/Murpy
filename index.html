@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260610011 -->
+<!-- cache-bust: v20260610012 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -305,6 +305,32 @@
 
 <!-- HOME -->
 <div class="page active" id="page-home" style="padding:0 0 100px">
+
+  <!-- 내 활동 요약 (로그인 시 표시) -->
+  <div id="home-activity-summary" style="display:none;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="display:flex;gap:12px;align-items:stretch">
+      <div style="flex:1;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:12px;padding:14px">
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">이번 주 출석</div>
+        <div style="display:flex;align-items:baseline;gap:4px">
+          <span id="home-attend-count" style="font-size:28px;font-weight:800;letter-spacing:-1px">0</span>
+          <span style="font-size:13px;color:var(--text-tertiary)">회</span>
+        </div>
+      </div>
+      <div style="flex:1;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:12px;padding:14px">
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">내 크루</div>
+        <div style="display:flex;align-items:baseline;gap:4px">
+          <span id="home-crew-count" style="font-size:28px;font-weight:800;letter-spacing:-1px">0</span>
+          <span style="font-size:13px;color:var(--text-tertiary)">개</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예정된 정모 (로그인 시 표시) -->
+  <div id="home-upcoming-schedule" style="display:none;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">다가오는 정모</div>
+    <div id="home-upcoming-card"></div>
+  </div>
 
   <!-- 광고 슬롯 placeholder -->
   <div id="ad-slot" style="display:none;background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.06);padding:10px 20px">
@@ -2937,12 +2963,14 @@ onAuthStateChanged(auth, async (user) => {
     updateUI(user);
     await checkAndSetNickname(user);
     loadFeed();
+    if (window.loadHomeActivity) window.loadHomeActivity();
     // 로그인 상태: 로고 잠깐 보여주고 자동 dismiss
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 1800);
   } else {
     window.currentUser = null;
     updateUI(null);
     loadFeed();
+    if (window.loadHomeActivity) window.loadHomeActivity();
     // 비로그인: 로그인 버튼 표시
     if (typeof showLandingButtons === 'function') showLandingButtons();
   }
@@ -3845,6 +3873,70 @@ window.loadCrewFeed = async (crewId) => {
     if (snap.empty) { el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 피드가 없어요</div>'; return; }
     el.innerHTML = snap.docs.map(d => { const p = d.data(); const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : ''; return `<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text||''}</div><div style="font-size:11px;color:#444">${p.userName||'익명'} · ${time}</div></div>`; }).join('');
   } catch(e) { el.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">피드를 불러올 수 없어요</div>'; }
+};
+
+// ===== 홈 활동 요약 =====
+
+window.loadHomeActivity = async () => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) {
+    document.getElementById('home-activity-summary').style.display = 'none';
+    document.getElementById('home-upcoming-schedule').style.display = 'none';
+    return;
+  }
+
+  try {
+    const crewsSnap = await getDocs(collection(db, 'crews'));
+    const myCrews = crewsSnap.docs.filter(d => (d.data().members || []).includes(user.uid));
+
+    document.getElementById('home-crew-count').textContent = myCrews.length;
+    document.getElementById('home-activity-summary').style.display = 'block';
+
+    let totalAttend = 0;
+    let upcomingSched = null;
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    for (const crew of myCrews) {
+      const schedSnap = await getDocs(collection(db, 'crews', crew.id, 'schedules'));
+      for (const sched of schedSnap.docs) {
+        const s = sched.data();
+        const appSnap = await getDoc(doc(db, 'crews', crew.id, 'schedules', sched.id, 'applicants', user.uid));
+        if (appSnap.exists() && appSnap.data().checkedIn) {
+          const schedDate = s.date ? new Date(s.date) : null;
+          if (schedDate && schedDate >= weekAgo) totalAttend++;
+        }
+        if (s.status === 'upcoming' && s.date) {
+          const schedDate = new Date(s.date);
+          if (schedDate >= now && (!upcomingSched || schedDate < new Date(upcomingSched.date))) {
+            upcomingSched = { ...s, id: sched.id, crewId: crew.id, crewName: crew.data().name };
+          }
+        }
+      }
+    }
+
+    document.getElementById('home-attend-count').textContent = totalAttend;
+
+    const upcomingEl = document.getElementById('home-upcoming-schedule');
+    const cardEl = document.getElementById('home-upcoming-card');
+    if (upcomingSched) {
+      upcomingEl.style.display = 'block';
+      cardEl.innerHTML = `<div class="card" style="cursor:pointer" onclick="openCrewDetail('${upcomingSched.crewId}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px">${upcomingSched.title || '정모'}</div>
+            <div style="font-size:12px;color:var(--text-tertiary)">${upcomingSched.date || ''} ${upcomingSched.time || ''}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${upcomingSched.crewName || ''}</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>`;
+    } else {
+      upcomingEl.style.display = 'none';
+    }
+  } catch(e) {
+    console.error('home activity error:', e);
+  }
 };
 
 // ===== 크루 일정 / 출석 / 공금 Firestore =====
