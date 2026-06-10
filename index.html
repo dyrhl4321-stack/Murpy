@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260610019 -->
+<!-- cache-bust: v20260610020 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -428,8 +428,8 @@
   <!-- 글쓰기 -->
   <div class="card" style="margin-bottom:16px;position:relative">
     <div style="display:flex;align-items:flex-start;gap:10px">
-      <div style="width:28px;height:28px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:4px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round">
+      <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:4px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round">
           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
         </svg>
       </div>
@@ -440,8 +440,10 @@
     </div>
   </div>
   <!-- 탭 -->
-  <div id="bamboo-tab-bar" style="display:flex;gap:16px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:0">
+  <div id="bamboo-tab-bar" style="display:flex;gap:12px;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:0;overflow-x:auto;scrollbar-width:none">
     <button class="bamboo-tab-btn active" onclick="switchBambooTab('all', this)">전체</button>
+    <button class="bamboo-tab-btn" onclick="switchBambooTab('popular', this)">인기</button>
+    <button class="bamboo-tab-btn" onclick="switchBambooTab('center', this)">센터별</button>
     <button class="bamboo-tab-btn" onclick="switchBambooTab('mine', this)">내 글 <span id="my-post-count"></span></button>
   </div>
   <div id="bamboo-list"></div>
@@ -1554,7 +1556,10 @@ function renderBambooItem(post) {
       <div style="font-size:14px;line-height:1.7;color:#fff;margin-bottom:12px">${post.text}</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${post.showComments?'12px':'0'}">
         <div style="display:flex;gap:12px">
-          <button style="background:none;border:none;cursor:pointer;font-size:12px;color:${post.liked?'#ff4444':'#666'};padding:0" onclick="toggleBambooLike(${post.id})">${post.liked?'❤️':'🤍'} ${post.likes}</button>
+          <button style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;color:${post.liked?'var(--accent)':'#666'}" onclick="toggleBambooLike(${post.id})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="${post.liked?'var(--accent)':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+            <span style="font-size:12px">${post.likes}</span>
+          </button>
           <button style="background:none;border:none;cursor:pointer;font-size:12px;color:#666;padding:0" onclick="toggleComments(${post.id})">💬 ${post.comments.length}</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -3079,7 +3084,7 @@ function buildPostHTML(p) {
           <span id="comment-count-${p._id}">${p.commentCount||0}</span>
         </button>
       </div>
-      ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:13px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
+      ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
     </div>`;
 }
 
@@ -3487,9 +3492,14 @@ window.loadBamboo = async (tab) => {
     const myCount = user ? posts.filter(p => p.userId === user.uid).length : 0;
     const countEl = document.getElementById('my-post-count');
     if (countEl) countEl.textContent = myCount > 0 ? myCount : '';
+
     if (tab === 'mine') {
       if (!user) { list.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:12px">🎋</div><div style="font-size:14px">로그인 후 내 글을 볼 수 있어요</div></div>'; return; }
       posts = posts.filter(p => p.userId === user.uid);
+    } else if (tab === 'popular') {
+      posts = posts.sort((a, b) => ((b.likedBy || []).length) - ((a.likedBy || []).length));
+    } else if (tab === 'center') {
+      // 센터별 대숲 — 추후 구현 (지금은 전체 표시)
     }
     if (posts.length === 0) {
       list.innerHTML = tab === 'mine'
@@ -3518,7 +3528,10 @@ window.loadBamboo = async (tab) => {
         <div style="font-size:14px;line-height:1.7;color:#fff;margin-bottom:12px">${post.text}</div>
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;gap:12px">
-            <button style="background:none;border:none;cursor:pointer;font-size:12px;color:${liked?'#ff4444':'#666'};padding:0" onclick="window.toggleBambooLikeFirestore('${post.id}')">${liked?'❤️':'🤍'} ${post.likes||0}</button>
+            <button style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;color:${liked?'var(--accent)':'#666'}" onclick="window.toggleBambooLikeFirestore('${post.id}')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="${liked?'var(--accent)':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+              <span style="font-size:12px">${post.likes||0}</span>
+            </button>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <span style="font-size:11px;color:#444">${time}</span>
