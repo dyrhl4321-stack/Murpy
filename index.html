@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260610015 -->
+<!-- cache-bust: v20260610016 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -763,8 +763,12 @@
       <input id="new-crew-name" placeholder="ex) 서울 러닝 크루" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
     </div>
     <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:#666;margin-bottom:6px">한 줄 소개</div>
+      <div style="font-size:12px;color:#666;margin-bottom:6px">한 줄 소개 (크루 찾기에 표시)</div>
       <input id="new-crew-desc" placeholder="ex) 토요일 새벽 한강 같이 뛰어요" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">크루 소개 (홈 화면에 표시)</div>
+      <textarea id="new-crew-intro" placeholder="✅ 주 3회 이상 운동하시는 분&#10;✅ 운동 시간 지켜주실 수 있는 분&#10;✅ 헬스 초보자도 환영해요&#10;&#10;🔥 현재 멤버 12명&#10;📍 주요 활동 지역: 용산/한강&#10;⏰ 주로 저녁 8시 이후 활동" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;min-height:160px;line-height:1.7;resize:vertical"></textarea>
     </div>
     <div style="margin-bottom:16px">
       <div style="font-size:12px;color:#666;margin-bottom:6px">활동 지역</div>
@@ -1066,6 +1070,23 @@
     <div id="sched-fee-row" style="display:none;margin-bottom:12px">
       <div style="font-size:12px;color:#666;margin-bottom:6px">선입금 금액 (원)</div>
       <input id="sched-fee-amount" type="number" placeholder="0" min="0" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px;color:#fff;font-size:16px;font-weight:700;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">썸네일 (선택)</div>
+      <input type="file" id="sched-thumbnail-input" accept="image/*" style="display:none">
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="document.getElementById('sched-thumbnail-input').click()" class="btn-glass" style="padding:10px 16px;font-size:13px;border-radius:10px">이미지 업로드</button>
+        <span id="sched-thumbnail-name" style="font-size:12px;color:#666"></span>
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#666;margin-bottom:6px">태그 (선택)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="toggleSchedTag(this,'초보환영')" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">초보환영</button>
+        <button onclick="toggleSchedTag(this,'고강도')" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">고강도</button>
+        <button onclick="toggleSchedTag(this,'지각벌금')" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">지각벌금</button>
+        <button onclick="toggleSchedTag(this,'여성전용')" class="btn-glass" style="padding:6px 12px;font-size:12px;border-radius:20px">여성전용</button>
+      </div>
     </div>
     <div style="margin-bottom:20px">
       <div style="font-size:12px;color:#666;margin-bottom:6px">설명 (선택)</div>
@@ -1791,7 +1812,7 @@ function renderCrewHomeTab(crew) {
 
   el.innerHTML = `
     <div style="padding:18px 20px 0">
-      <p style="font-size:14px;color:rgba(255,255,255,0.5);line-height:1.8;margin-bottom:16px">${crew.desc||'크루 소개가 없어요'}</p>
+      ${crew.intro ? `<div style="font-size:14px;color:rgba(255,255,255,0.65);line-height:1.9;margin-bottom:16px;white-space:pre-wrap">${crew.intro}</div>` : `<p style="font-size:14px;color:rgba(255,255,255,0.5);line-height:1.8;margin-bottom:16px">${crew.desc||'크루 소개가 없어요'}</p>`}
     </div>
     ${actionHtml ? `<div style="padding:0 20px 16px">${actionHtml}</div>` : ''}
     <div style="border-top:1px solid rgba(255,255,255,0.06);padding:16px 20px 0">
@@ -1852,6 +1873,31 @@ function openCreateScheduleModal() {
   openModal('create-schedule-modal');
 }
 function toggleSchedFee(cb) { const r = document.getElementById('sched-fee-row'); if (r) r.style.display = cb.checked ? 'block' : 'none'; }
+
+let schedTags = [];
+function toggleSchedTag(btn, tag) {
+  if (schedTags.includes(tag)) {
+    schedTags = schedTags.filter(t => t !== tag);
+    btn.className = 'btn-glass';
+    btn.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
+  } else {
+    schedTags.push(tag);
+    btn.className = 'btn-white';
+    btn.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px;background:var(--accent);color:#fff;border:none';
+  }
+}
+
+let schedThumbnailFile = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('sched-thumbnail-input');
+  if (input) {
+    input.addEventListener('change', (e) => {
+      schedThumbnailFile = e.target.files[0];
+      const nameEl = document.getElementById('sched-thumbnail-name');
+      if (nameEl) nameEl.textContent = schedThumbnailFile ? schedThumbnailFile.name : '';
+    });
+  }
+});
 
 function openPostOptions(postId, text) {
   window._editPostId = postId;
@@ -1963,8 +2009,15 @@ function selectNewFee(f, btn) {
 function createCrew() {
   const name = document.getElementById('new-crew-name').value.trim();
   if (!name) { showToast('크루 이름을 입력해주세요'); return; }
-  const data = { name, desc: document.getElementById('new-crew-desc').value.trim(), loc: document.getElementById('new-crew-loc').value.trim(), workout: newCrewWorkout, fee: newCrewFee };
-  const reset = () => { newCrewWorkout = []; newCrewFee = 0; document.getElementById('new-crew-name').value = ''; document.getElementById('new-crew-desc').value = ''; document.getElementById('new-crew-loc').value = ''; };
+  const data = {
+    name,
+    desc: document.getElementById('new-crew-desc').value.trim(),
+    intro: document.getElementById('new-crew-intro').value.trim(),
+    loc: document.getElementById('new-crew-loc').value.trim(),
+    workout: newCrewWorkout,
+    fee: newCrewFee
+  };
+  const reset = () => { newCrewWorkout = []; newCrewFee = 0; document.getElementById('new-crew-name').value = ''; document.getElementById('new-crew-desc').value = ''; document.getElementById('new-crew-intro').value = ''; document.getElementById('new-crew-loc').value = ''; };
   if (window.createCrewFirestore) {
     window.createCrewFirestore(data).then(() => { closePanel('create-crew-panel'); showToast('🎉 크루가 생성됐어요!'); reset(); window.loadCrewsFirestore && window.loadCrewsFirestore(currentRegion); });
   } else {
@@ -3982,20 +4035,27 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-sch
         }
       }
       const doneRow = s.status==='done' ? `<div style="font-size:11px;color:#555;margin-top:4px">출석 ${s.attendCount||0} · 지각 ${s.lateCount||0} · 결석 ${s.absentCount||0}</div>` : '';
+      const thumbStyle = s.thumbnail
+        ? `background:url('${s.thumbnail}') center/cover`
+        : `background:linear-gradient(135deg, var(--accent) 0%, #1a4d8f 100%)`;
+      const tagsHtml = (s.tags && s.tags.length > 0) ? s.tags.map(t => `<span style="font-size:10px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;padding:2px 6px">${t}</span>`).join('') : '';
       return `<div class="card" style="margin-bottom:12px;${s.status==='active'?'border:1px solid var(--accent-border);':''}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div style="display:flex;gap:12px;margin-bottom:8px">
+          <div style="width:100px;height:100px;border-radius:12px;flex-shrink:0;${thumbStyle};${!s.thumbnail?'display:flex;align-items:center;justify-content:center':''}">
+            ${!s.thumbnail?`<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`:''}
+          </div>
           <div style="flex:1;min-width:0">
             ${s.status==='active'?'<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:5px;padding:2px 7px;display:inline-flex;align-items:center;gap:4px;margin-bottom:5px"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="12"/></svg>LIVE</div>':''}
             ${s.status==='done'?'<div style="font-size:9px;font-weight:700;letter-spacing:1px;color:#555;background:rgba(255,255,255,0.04);border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:5px">완료</div>':''}
-            <div style="font-size:15px;font-weight:700;letter-spacing:-0.3px">${s.title||'모임'}</div>
+            <div style="font-size:15px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px">${s.title||'모임'}</div>
+            <div style="font-size:12px;color:#555;margin-bottom:2px">${s.date||''} ${s.time||''}</div>
+            ${s.location?`<div style="font-size:12px;color:#555;margin-bottom:6px">${s.location}</div>`:''}
+            ${tagsHtml?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${tagsHtml}</div>`:''}
           </div>
-          ${(s.feeAmount||0)>0?`<span style="font-size:11px;color:#888;font-weight:600;flex-shrink:0;margin-left:8px">${(s.feeAmount).toLocaleString()}원</span>`:''}
         </div>
-        <div style="font-size:12px;color:#555;margin-bottom:2px">${s.date||''} ${s.time||''}</div>
-        ${s.location?`<div style="font-size:12px;color:#555;margin-bottom:6px">${s.location}</div>`:''}
         ${doneRow}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px">
-          <span style="font-size:11px;color:#555">👥 ${s.approvedCount||0}${s.maxMembers?'/'+s.maxMembers:''}명</span>
+          <span style="font-size:11px;color:#555">👥 ${s.approvedCount||0}${s.maxMembers?'/'+s.maxMembers:''}명${(s.feeAmount||0)>0?' · '+s.feeAmount.toLocaleString()+'원':''}</span>
           <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${btns}</div>
         </div>
       </div>`;
@@ -4022,13 +4082,35 @@ window.createScheduleFirestore = async () => {
   if (!title) { showToast('모임 제목을 입력해주세요'); return; }
   if (!date) { showToast('날짜를 선택해주세요'); return; }
   if (!time) { showToast('시간을 선택해주세요'); return; }
+
+  let thumbnailURL = '';
+  if (schedThumbnailFile) {
+    try {
+      const formData = new FormData();
+      formData.append('image', schedThumbnailFile);
+      const res = await fetch('https://api.imgbb.com/1/upload?key=4e4a0c44ae94f6388555aa6ff3e6f8a1', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) thumbnailURL = data.data.url;
+    } catch(e) { console.error('thumbnail upload error:', e); }
+  }
+
   try {
     await addDoc(collection(db, 'crews', crewId, 'schedules'), {
       title, date, time, location: location||'', description: description||'',
       maxMembers: maxVal||null, feeRequired: hasFee, feeAmount,
+      thumbnail: thumbnailURL, tags: schedTags,
       status: 'upcoming', approvedCount: 0, pendingCount: 0, waitlistCount: 0,
       attendCount: 0, lateCount: 0, absentCount: 0,
       createdBy: user.uid, createdAt: serverTimestamp()
+    });
+    schedTags = [];
+    schedThumbnailFile = null;
+    document.getElementById('sched-thumbnail-name').textContent = '';
+    document.querySelectorAll('#create-schedule-modal .btn-white').forEach(b => {
+      if (b.textContent !== '모임 만들기') {
+        b.className = 'btn-glass';
+        b.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
+      }
     });
     closeModal('create-schedule-modal');
     showToast('✓ 모임이 생성됐어요!');
