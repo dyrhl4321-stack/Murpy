@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260611002 -->
+<!-- cache-bust: v20260611003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1647,7 +1647,7 @@ function _renderCrewsLocal(data) {
   mineEl.innerHTML = mine.length ? mine.map(c => `
     <div class="card" style="cursor:pointer" onclick="openCrewDetail('${c.id}')">
       <div style="display:flex;gap:12px;align-items:center">
-        <img src="${c.img||'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80'}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <img src="${c.img||'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80'}" loading="lazy" decoding="async" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700">${c.name}</span>
@@ -1676,7 +1676,7 @@ function crewExploreCard(c) {
   return `
     <div class="card" style="cursor:pointer;${c.boosted?'border:1px solid rgba(255,255,255,0.12)':''}" onclick="openCrewDetail('${c.id}')">
       <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">
-        <img src="${c.img}" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <img src="${c.img}" loading="lazy" decoding="async" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="font-size:14px;font-weight:700">${c.name}</span>
@@ -2740,7 +2740,7 @@ function renderCenters() {
   document.getElementById('center-list').innerHTML = list.map(c => `
     <div class="card" onclick="openCenterDetail(${c.id})" style="cursor:pointer">
       <div style="display:flex;gap:12px;align-items:center">
-        <img src="${c.img}" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">
+        <img src="${c.img}" loading="lazy" decoding="async" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <span style="font-size:15px;font-weight:700">${c.name}</span>
@@ -3104,7 +3104,7 @@ function buildPostHTML(p) {
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
         <div style="display:flex;align-items:center;flex:1;min-width:0;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
-            <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            <img src="${displayPhoto}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
           <div style="margin-left:10px;">
             <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
@@ -3113,7 +3113,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${p.photoURL}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -3178,18 +3178,25 @@ async function loadMoreFeed() {
   }
 }
 
+let feedFirstPageCache = null;
 async function loadFeed() {
   feedLastDoc = null; feedLoading = false; feedAllLoaded = false;
   if (feedObserver) { feedObserver.disconnect(); feedObserver = null; }
   const feedEl = document.getElementById('firebase-feed');
   if (!feedEl) return;
-  feedEl.innerHTML = [1,2,3].map(() => `<div style="border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:16px;margin-bottom:16px"><div style="display:flex;gap:10px;padding:0 20px 10px;align-items:center"><div class="skeleton" style="width:32px;height:32px;border-radius:50%"></div><div class="skeleton" style="width:80px;height:14px;margin-left:4px"></div></div><div class="skeleton" style="width:100%;height:280px"></div><div style="padding:12px 20px 0;display:flex;gap:12px"><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div></div></div>`).join('');
   const sentinel = document.getElementById('feed-sentinel');
   if (sentinel) sentinel.innerHTML = '';
+  // 캐시-우선: 직전 첫 페이지가 있으면 즉시 그려서 빈 화면/스켈레톤 없이 시작
+  if (feedFirstPageCache && feedFirstPageCache.length) {
+    feedEl.innerHTML = feedFirstPageCache.map(buildPostHTML).join('');
+  } else {
+    feedEl.innerHTML = [1,2,3].map(() => `<div style="border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:16px;margin-bottom:16px"><div style="display:flex;gap:10px;padding:0 20px 10px;align-items:center"><div class="skeleton" style="width:32px;height:32px;border-radius:50%"></div><div class="skeleton" style="width:80px;height:14px;margin-left:4px"></div></div><div class="skeleton" style="width:100%;height:280px"></div><div style="padding:12px 20px 0;display:flex;gap:12px"><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div></div></div>`).join('');
+  }
   try {
     const q = query(collection(db, 'feed'), orderBy('createdAt', 'desc'), limit(FEED_PAGE));
     const snap = await getDocs(q);
     if (snap.empty) {
+      feedFirstPageCache = null;
       feedEl.innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.25);margin-bottom:6px">아직 게시물이 없어요</div><div style="font-size:12px;color:rgba(255,255,255,0.12)">첫 번째 운동을 인증해봐요</div></div>`;
       return;
     }
@@ -3197,10 +3204,11 @@ async function loadFeed() {
     feedAllLoaded = snap.docs.length < FEED_PAGE;
     const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
     await fetchUserPhotos(posts);
+    feedFirstPageCache = posts;
     feedEl.innerHTML = posts.map(buildPostHTML).join('');
     if (!feedAllLoaded) setupFeedObserver();
   } catch(e) {
-    feedEl.innerHTML = '<div style="text-align:center;padding:32px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.2);margin-bottom:12px">피드를 불러올 수 없어요</div><button onclick="loadFeed()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;padding:8px 16px;cursor:pointer;font-family:inherit">다시 시도</button></div>';
+    if (!feedFirstPageCache) feedEl.innerHTML = '<div style="text-align:center;padding:32px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.2);margin-bottom:12px">피드를 불러올 수 없어요</div><button onclick="loadFeed()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;padding:8px 16px;cursor:pointer;font-family:inherit">다시 시도</button></div>';
   }
 }
 
@@ -3906,20 +3914,23 @@ window.sendQuickMsgFirestore = (text) => {
 window.crewsData = null;
 
 window.loadCrewsFirestore = async (region) => {
-  const user = auth.currentUser || window.currentUser;
-  const uid = user ? user.uid : null;
   const mineEl = document.getElementById('crew-mine');
-  const exploreEl = document.getElementById('crew-explore');
-  if (mineEl) mineEl.innerHTML = '<div>' + [1,2].map(() => `<div class="skeleton-card" style="display:flex;gap:12px;align-items:center"><div class="skeleton" style="width:52px;height:52px;border-radius:12px;flex-shrink:0"></div><div style="flex:1"><div class="skeleton" style="height:16px;width:55%;margin-bottom:8px"></div><div class="skeleton" style="height:13px;width:70%"></div></div></div>`).join('') + '</div>';
+  // 캐시-우선: 이미 받아둔 크루가 있으면 즉시 표시 (스켈레톤 생략)
+  const hasCache = Array.isArray(window.crewsData) && window.crewsData.length > 0;
+  if (hasCache) {
+    if (typeof _renderCrewsLocal === 'function') _renderCrewsLocal(window.crewsData);
+  } else if (mineEl) {
+    mineEl.innerHTML = '<div>' + [1,2].map(() => `<div class="skeleton-card" style="display:flex;gap:12px;align-items:center"><div class="skeleton" style="width:52px;height:52px;border-radius:12px;flex-shrink:0"></div><div style="flex:1"><div class="skeleton" style="height:16px;width:55%;margin-bottom:8px"></div><div class="skeleton" style="height:13px;width:70%"></div></div></div>`).join('') + '</div>';
+  }
+  // 백그라운드 갱신
   try {
     const snap = await getDocs(collection(db, 'crews'));
     const crews = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.crewsData = crews;
-    window._renderCrewsLocal && window._renderCrewsLocal(crews);
     if (typeof _renderCrewsLocal === 'function') _renderCrewsLocal(crews);
   } catch(e) {
     console.error('crews load error:', e);
-    if (mineEl) mineEl.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
+    if (!hasCache && mineEl) mineEl.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
   }
 };
 
@@ -3963,7 +3974,7 @@ window.loadCrewMembers = async (crewId) => {
     } catch(e) { return { nickname: '멤버', photoURL: '' }; }
   }));
   const el = document.getElementById('crew-members-tab');
-  if (el) el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${profiles.map(m=>`<div style="text-align:center"><div style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.06);margin-bottom:6px">${m.photoURL?`<img src="${m.photoURL}" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="font-size:13px;font-weight:700">${m.nickname}</div></div>`).join('')}</div>`;
+  if (el) el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${profiles.map(m=>`<div style="text-align:center"><div style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.06);margin-bottom:6px">${m.photoURL?`<img src="${m.photoURL}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="font-size:13px;font-weight:700">${m.nickname}</div></div>`).join('')}</div>`;
 };
 
 window.loadCrewFeed = async (crewId) => {
@@ -3986,9 +3997,16 @@ window.loadHomeTrending = async () => {
   try {
     const cards = [];
 
+    // 크루는 캐시 재사용, 없으면 쿼리. 대숲은 항상 쿼리 → 둘을 병렬 실행
+    const [crewsResult, bambooSnap] = await Promise.all([
+      (Array.isArray(window.crewsData) && window.crewsData.length)
+        ? Promise.resolve(window.crewsData)
+        : getDocs(query(collection(db, 'crews'), limit(10))).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))),
+      getDocs(query(collection(db, 'bamboo'), limit(10)))
+    ]);
+
     // 1. 인기 크루 (멤버 수 많은 순)
-    const crewsSnap = await getDocs(query(collection(db, 'crews'), limit(3)));
-    const crews = crewsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0));
+    const crews = [...crewsResult].sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0));
     if (crews[0]) {
       const c = crews[0];
       cards.push(`<div onclick="openCrewDetail('${c.id}')" style="min-width:280px;background:var(--bg-raised);border:1px solid var(--border-subtle);border-radius:12px;padding:14px;cursor:pointer">
@@ -3998,8 +4016,7 @@ window.loadHomeTrending = async () => {
       </div>`);
     }
 
-    // 2. 인기 대숲 글 (좋아요 많은 순 - 더미 데이터라 임시)
-    const bambooSnap = await getDocs(query(collection(db, 'bamboo'), limit(5)));
+    // 2. 인기 대숲 글 (좋아요 많은 순)
     const bambooPosts = bambooSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.likedBy || []).length) - ((a.likedBy || []).length));
     if (bambooPosts[0]) {
       const p = bambooPosts[0];
