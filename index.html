@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260611004 -->
+<!-- cache-bust: v20260611005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -502,7 +502,7 @@
     </div>
   </div>
   <!-- 카테고리 탭 -->
-  <div class="tab-bar" id="center-tab-bar" style="padding:0 20px;margin-bottom:0">
+  <div class="tab-bar" id="center-tab-bar" style="margin:0 20px">
     <button class="tab-btn active" onclick="switchCenterTab('all', this)">전체</button>
     <button class="tab-btn" onclick="switchCenterTab('partner', this)">파트너 구하기</button>
     <button class="tab-btn" onclick="switchCenterTab('review', this)">리뷰</button>
@@ -1099,6 +1099,7 @@
       <textarea id="sched-desc" placeholder="모임에 대해 간단히 설명해주세요" rows="2" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px;color:#fff;font-size:14px;outline:none;font-family:inherit;resize:none;box-sizing:border-box"></textarea>
     </div>
     <button id="sched-submit-btn" onclick="window.createScheduleFirestore && window.createScheduleFirestore()" class="btn-white" style="width:100%;padding:14px;font-size:15px">모임 만들기</button>
+    <button id="sched-delete-btn" onclick="window.deleteSchedule && window.deleteSchedule()" style="display:none;width:100%;background:none;border:1px solid rgba(255,80,80,0.3);color:#ff6b6b;font-size:13px;font-weight:600;cursor:pointer;margin-top:10px;padding:12px;font-family:inherit;border-radius:10px">일정 삭제</button>
     <button onclick="closeModal('create-schedule-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">취소</button>
   </div>
 </div>
@@ -1886,6 +1887,7 @@ function openCreateScheduleModal() {
   document.querySelectorAll('#create-schedule-modal [onclick^="toggleSchedTag"]').forEach(b => { b.className='btn-glass'; b.style.cssText='padding:6px 12px;font-size:12px;border-radius:20px'; });
   document.getElementById('sched-modal-title').textContent = '모임 만들기';
   document.getElementById('sched-submit-btn').textContent = '모임 만들기';
+  const delBtn = document.getElementById('sched-delete-btn'); if (delBtn) delBtn.style.display = 'none';
   openModal('create-schedule-modal');
 }
 function toggleSchedFee(cb) { const r = document.getElementById('sched-fee-row'); if (r) r.style.display = cb.checked ? 'block' : 'none'; }
@@ -4145,8 +4147,24 @@ window.openEditScheduleModal = async (crewId, scheduleId) => {
     });
     document.getElementById('sched-modal-title').textContent = '일정 수정';
     document.getElementById('sched-submit-btn').textContent = '수정 완료';
+    const delBtn = document.getElementById('sched-delete-btn'); if (delBtn) delBtn.style.display = 'block';
     openModal('create-schedule-modal');
   } catch(e) { console.error(e); showToast('불러오기 실패'); }
+};
+
+window.deleteSchedule = async () => {
+  const crewId = window._createScheduleCrewId;
+  const schedId = window._editScheduleId;
+  if (!crewId || !schedId) return;
+  if (!confirm('이 일정을 삭제할까요? 되돌릴 수 없어요.')) return;
+  try {
+    await deleteDoc(doc(db, 'crews', crewId, 'schedules', schedId));
+    window._editScheduleId = null;
+    closeModal('create-schedule-modal');
+    showToast('✓ 일정이 삭제됐어요');
+    if (document.getElementById('crew-admin-schedule-wrap')) window.loadCrewSchedules(crewId, 'upcoming', 'crew-admin-schedule-wrap');
+    window.loadCrewSchedules(crewId, 'upcoming');
+  } catch(e) { console.error(e); showToast('삭제 실패'); }
 };
 
 window.createScheduleFirestore = async () => {
