@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260611006 -->
+<!-- cache-bust: v20260611007 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2655,16 +2655,19 @@ function registerCenter() {
   if (!loc) { showToast('지역을 입력해주세요'); return; }
 
   const newCenter = {
-    id: Date.now(),
     name, type: selectedCenterType, loc, addr: addr || loc,
     rating: 0, reviews: 0, members: 1,
     partner: false,
     img: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=80',
     partnerPosts: [], reviewList: []
   };
-  CENTERS.unshift(newCenter);
+  if (window.registerCenterToFirestore) {
+    window.registerCenterToFirestore(newCenter);
+  } else {
+    CENTERS.unshift({ id: Date.now(), ...newCenter });
+    renderCenters();
+  }
   closePanel('center-register-panel');
-  renderCenters();
   showToast('✓ 센터가 등록됐어요!');
 
   // 입력 초기화
@@ -2681,9 +2684,14 @@ function registerCenter() {
 let centerRegion = '전체';
 let centerTab = 'all';
 
+// Firestore 센터가 있으면 그걸, 없으면 더미(CENTERS) 사용
+function getCentersList() {
+  return (Array.isArray(window.centersData) && window.centersData.length) ? window.centersData : CENTERS;
+}
+
 function renderCenters() {
   const search = (document.getElementById('center-search').value || '').toLowerCase();
-  let list = CENTERS.filter(c => {
+  let list = getCentersList().filter(c => {
     const matchRegion = centerRegion === '전체' || c.loc.includes(centerRegion);
     const matchSearch = !search || c.name.toLowerCase().includes(search) || c.type.toLowerCase().includes(search);
     const matchTab = centerTab === 'all' || (centerTab === 'partner' && c.partnerPosts.length > 0) || centerTab === 'review';
@@ -2712,7 +2720,7 @@ function renderCenters() {
   }
 
   document.getElementById('center-list').innerHTML = list.map(c => `
-    <div class="card" onclick="openCenterDetail(${c.id})" style="cursor:pointer">
+    <div class="card" onclick="openCenterDetail('${c.id}')" style="cursor:pointer">
       <div style="display:flex;gap:12px;align-items:center">
         <img src="${c.img}" loading="lazy" decoding="async" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
@@ -2741,7 +2749,7 @@ function switchCenterDetailTab(tab, btn) {
 }
 
 function openCenterDetail(id) {
-  const c = CENTERS.find(x => x.id === id);
+  const c = getCentersList().find(x => String(x.id) === String(id));
   if (!c) return;
   currentCrewId = id;
   document.getElementById('center-detail-name').textContent = c.name;
@@ -3032,6 +3040,7 @@ onAuthStateChanged(auth, async (user) => {
     await checkAndSetNickname(user);
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
+    if (window.loadCentersFirestore) window.loadCentersFirestore();
     // 로그인 상태: 로고 잠깐 보여주고 자동 dismiss
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 1800);
   } else {
@@ -3039,6 +3048,7 @@ onAuthStateChanged(auth, async (user) => {
     updateUI(null);
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
+    if (window.loadCentersFirestore) window.loadCentersFirestore();
     // 비로그인: 로그인 버튼 표시
     if (typeof showLandingButtons === 'function') showLandingButtons();
   }
@@ -3924,6 +3934,55 @@ window.createCrewFirestore = async (data) => {
     });
     return true;
   } catch(e) { console.error(e); showToast('크루 생성 실패'); return false; }
+};
+
+// ===== 센터 Firestore =====
+window.centersData = null;
+
+window.loadCentersFirestore = async () => {
+  // 캐시-우선: 이미 받아둔 센터가 있으면 즉시 렌더
+  const hasCache = Array.isArray(window.centersData) && window.centersData.length > 0;
+  if (hasCache && typeof renderCenters === 'function') renderCenters();
+  try {
+    const snap = await getDocs(collection(db, 'centers'));
+    window.centersData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (typeof renderCenters === 'function') renderCenters();
+  } catch(e) { console.error('centers load error:', e); }
+};
+
+window.registerCenterToFirestore = async (center) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return; }
+  try {
+    await addDoc(collection(db, 'centers'), {
+      ...center, createdBy: user.uid, createdAt: serverTimestamp()
+    });
+    await window.loadCentersFirestore();
+  } catch(e) { console.error('center register error:', e); showToast('센터 등록 실패'); }
+};
+
+// 운영자 시딩용: 센터 배열을 일괄 업로드 (콘솔에서 window.seedCenters(목록) 호출)
+window.seedCenters = async (list) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { console.warn('로그인 필요'); return; }
+  if (!Array.isArray(list)) { console.warn('배열을 넘겨주세요'); return; }
+  let n = 0;
+  for (const c of list) {
+    try {
+      await addDoc(collection(db, 'centers'), {
+        name: c.name, type: c.type || '헬스', loc: c.loc || '', addr: c.addr || c.loc || '',
+        rating: c.rating || 0, reviews: c.reviews || 0, members: c.members || 0,
+        partner: !!c.partner,
+        img: c.img || 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=80',
+        partnerPosts: c.partnerPosts || [], reviewList: c.reviewList || [],
+        createdBy: user.uid, createdAt: serverTimestamp()
+      });
+      n++;
+    } catch(e) { console.error('seed error:', c.name, e); }
+  }
+  console.log(`✓ ${n}개 센터 시딩 완료`);
+  await window.loadCentersFirestore();
+  showToast(`✓ ${n}개 센터가 추가됐어요`);
 };
 
 window.joinCrewFirestore = async (crewId) => {
