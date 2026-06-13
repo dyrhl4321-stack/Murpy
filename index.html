@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260612001 -->
+<!-- cache-bust: v20260613001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -658,6 +658,25 @@
       </div>
     </div>
     <button onclick="saveCenterAdminEdit()" class="btn-white" style="width:100%;padding:14px;font-size:15px;font-weight:700">저장</button>
+  </div>
+</div>
+
+<!-- 리뷰 작성 모달 -->
+<div class="modal-overlay" id="review-write-modal" onclick="if(event.target===this)closeModal('review-write-modal')">
+  <div class="modal-sheet">
+    <div style="font-size:17px;font-weight:800;margin-bottom:4px" id="review-write-center-name"></div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:18px">별점과 리뷰를 남겨주세요</div>
+    <div style="display:flex;justify-content:center;gap:6px;margin-bottom:20px" id="review-star-row">
+      <button onclick="selectReviewStar(1)" class="review-star-btn" data-star="1" style="background:none;border:none;font-size:36px;cursor:pointer;padding:4px;line-height:1;transition:transform 0.15s">☆</button>
+      <button onclick="selectReviewStar(2)" class="review-star-btn" data-star="2" style="background:none;border:none;font-size:36px;cursor:pointer;padding:4px;line-height:1;transition:transform 0.15s">☆</button>
+      <button onclick="selectReviewStar(3)" class="review-star-btn" data-star="3" style="background:none;border:none;font-size:36px;cursor:pointer;padding:4px;line-height:1;transition:transform 0.15s">☆</button>
+      <button onclick="selectReviewStar(4)" class="review-star-btn" data-star="4" style="background:none;border:none;font-size:36px;cursor:pointer;padding:4px;line-height:1;transition:transform 0.15s">☆</button>
+      <button onclick="selectReviewStar(5)" class="review-star-btn" data-star="5" style="background:none;border:none;font-size:36px;cursor:pointer;padding:4px;line-height:1;transition:transform 0.15s">☆</button>
+    </div>
+    <div style="text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:-12px;margin-bottom:18px" id="review-star-label">별점을 선택해주세요</div>
+    <textarea id="review-write-text" placeholder="이 센터는 어떠셨나요? (선택)" maxlength="300" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;min-height:90px;line-height:1.6;resize:none;box-sizing:border-box;margin-bottom:16px"></textarea>
+    <button onclick="submitReview()" class="btn-white" style="width:100%;padding:14px;font-size:15px">등록하기</button>
+    <button onclick="closeModal('review-write-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">취소</button>
   </div>
 </div>
 
@@ -2867,12 +2886,16 @@ function switchCenterDetailTab(tab, btn) {
   ['info','partner','bamboo','review'].forEach(t => {
     document.getElementById('center-'+t+'-tab').style.display = t===tab ? 'block' : 'none';
   });
+  if (tab === 'review' && window.loadCenterRatings && window._currentCenterId) {
+    renderCenterReviewTab(window._currentCenterId);
+  }
 }
 
 function openCenterDetail(id) {
   const c = getCentersList().find(x => String(x.id) === String(id));
   if (!c) return;
   currentCrewId = id;
+  window._currentCenterId = id;
   document.getElementById('center-detail-name').textContent = c.name;
 
   const photos = Array.isArray(c.photos) ? c.photos : [];
@@ -2921,21 +2944,7 @@ function openCenterDetail(id) {
     </div>
     ${centerBamboo.length ? centerBamboo.map(p => `<div class="card"><div style="font-size:14px;line-height:1.7;color:rgba(255,255,255,0.85);margin-bottom:8px">${p.text}</div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:rgba(255,255,255,0.3)">${p.time}</span><span style="font-size:11px;color:rgba(255,255,255,0.3)">🤍 ${p.likes}</span></div></div>`).join('') : '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.2);font-size:13px">아직 글이 없어요</div>'}`;
 
-  document.getElementById('center-review-tab').innerHTML = c.reviewList.map((r, i) => `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-        <span style="font-size:13px;font-weight:700">${r.name}</span>
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:12px;color:var(--gold)">${'★'.repeat(r.rating)}</span>
-          <button onclick="openReviewReport('${id}',${i},'${(r.name||'').replace(/'/g,'')}')" style="background:none;border:none;cursor:pointer;padding:1px;color:rgba(255,255,255,0.28);display:flex" title="신고">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-          </button>
-        </div>
-      </div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.6;margin-bottom:4px">${r.text}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.3)">${r.time}</div>
-    </div>`).join('')
-    + `<button class="btn-white" style="width:100%;padding:12px;font-size:13px;border-radius:10px;margin-top:8px" onclick="showToast('리뷰 작성 기능 준비 중이에요!')">리뷰 작성하기</button>`;
+  document.getElementById('center-review-tab').innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--text-tertiary);font-size:13px">로딩 중...</div>`;
 
   document.querySelectorAll('#center-detail-panel .tab-btn').forEach((b,i) => b.classList.toggle('active', i===0));
   ['info','partner','bamboo','review'].forEach((t,i) => {
@@ -3006,6 +3015,94 @@ function submitCenterEditRequest() {
   }
   closeModal('center-edit-request-modal');
   showToast('✓ 요청이 접수되었습니다');
+}
+
+// ===== 센터 별점/리뷰 =====
+let _reviewStar = 0;
+const STAR_LABELS = ['', '별로예요', '그저 그래요', '괜찮아요', '좋아요', '최고예요!'];
+
+function openWriteReview(centerId) {
+  if (!requireLogin('리뷰 작성')) return;
+  window._reviewCenterId = centerId;
+  _reviewStar = 0;
+  const c = getCentersList().find(x => String(x.id) === String(centerId));
+  document.getElementById('review-write-center-name').textContent = c ? c.name : '';
+  document.getElementById('review-write-text').value = '';
+  document.getElementById('review-star-label').textContent = '별점을 선택해주세요';
+  document.querySelectorAll('.review-star-btn').forEach(b => { b.textContent = '☆'; b.style.color = '#555'; });
+  // 기존 내 별점 있으면 미리 채우기
+  const myRating = window._myRatings && window._myRatings[String(centerId)];
+  if (myRating) {
+    selectReviewStar(myRating.score);
+    document.getElementById('review-write-text').value = myRating.text || '';
+  }
+  openModal('review-write-modal');
+}
+
+function selectReviewStar(n) {
+  _reviewStar = n;
+  document.querySelectorAll('.review-star-btn').forEach(b => {
+    const s = parseInt(b.dataset.star);
+    b.textContent = s <= n ? '★' : '☆';
+    b.style.color = s <= n ? 'var(--gold)' : '#555';
+    if (s === n) { b.style.transform = 'scale(1.25)'; setTimeout(() => b.style.transform = 'scale(1)', 150); }
+  });
+  document.getElementById('review-star-label').textContent = STAR_LABELS[n] || '';
+}
+
+async function submitReview() {
+  if (!_reviewStar) { showToast('별점을 선택해주세요'); return; }
+  const centerId = window._reviewCenterId;
+  const text = document.getElementById('review-write-text').value.trim();
+  const btn = document.querySelector('#review-write-modal .btn-white');
+  btn.disabled = true; btn.textContent = '저장 중...';
+  try {
+    const ok = await window.saveRatingFirestore(centerId, _reviewStar, text);
+    if (ok) {
+      closeModal('review-write-modal');
+      showToast('✓ 리뷰가 등록됐어요');
+      renderCenterReviewTab(centerId);
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '등록하기';
+  }
+}
+
+async function renderCenterReviewTab(centerId) {
+  const el = document.getElementById('center-review-tab');
+  if (!el) return;
+  el.innerHTML = `<div style="text-align:center;padding:32px 20px;color:var(--text-tertiary);font-size:13px">로딩 중...</div>`;
+  const ratings = await (window.loadCenterRatings ? window.loadCenterRatings(centerId) : Promise.resolve([]));
+  const uid = window.currentUser ? window.currentUser.uid : null;
+  const myRating = ratings.find(r => r.userId === uid);
+  if (!window._myRatings) window._myRatings = {};
+  if (myRating) window._myRatings[String(centerId)] = myRating;
+
+  const writeBtn = `<button onclick="openWriteReview('${centerId}')" class="btn-white" style="width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:12px;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:6px">
+    ${myRating ? `★ 내 리뷰 수정 (${myRating.score}점)` : '+ 리뷰 작성하기'}
+  </button>`;
+
+  if (!ratings.length) {
+    el.innerHTML = writeBtn + `<div style="text-align:center;padding:32px 20px;color:var(--text-tertiary);font-size:13px">아직 리뷰가 없어요<br>첫 리뷰를 남겨보세요!</div>`;
+    return;
+  }
+
+  const list = ratings.map((r, i) => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div>
+          <span style="font-size:13px;font-weight:700;color:${r.userId===uid?'var(--accent)':'#fff'}">${r.userId===uid?'나':r.nickname||'익명'}${r.userId===uid?' (나)':''}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:13px;color:var(--gold);letter-spacing:1px">${'★'.repeat(r.score)}${'☆'.repeat(5-r.score)}</span>
+          ${r.userId!==uid?`<button onclick="openReviewReport('${centerId}',${i},'${(r.nickname||'').replace(/'/g,'')}')" style="background:none;border:none;cursor:pointer;padding:1px;color:rgba(255,255,255,0.28);display:flex" title="신고"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>`:''}
+        </div>
+      </div>
+      ${r.text?`<div style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:6px">${r.text}</div>`:''}
+      <div style="font-size:11px;color:rgba(255,255,255,0.3)">${r.createdAtStr||''}</div>
+    </div>`).join('');
+
+  el.innerHTML = writeBtn + list;
 }
 
 // ===== 센터 관리자 편집 =====
@@ -4318,6 +4415,55 @@ window.saveCenterEditRequest = async (data) => {
       ...data, requestedBy: user ? user.uid : null, createdAt: serverTimestamp()
     });
   } catch(e) { console.error('center edit request error:', e); }
+};
+
+// ===== 센터 별점 =====
+window.saveRatingFirestore = async (centerId, score, text) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인이 필요해요'); return false; }
+  try {
+    const ratingRef = doc(db, 'centers', String(centerId), 'ratings', user.uid);
+    const existing = await getDoc(ratingRef);
+    await setDoc(ratingRef, {
+      score, text: text || '',
+      userId: user.uid,
+      nickname: user.displayName || window.userNickname || '익명',
+      createdAt: serverTimestamp()
+    });
+    // 센터 평균 평점 + 리뷰 수 재계산
+    const allRatings = await getDocs(collection(db, 'centers', String(centerId), 'ratings'));
+    const scores = allRatings.docs.map(d => d.data().score).filter(Boolean);
+    const avg = scores.length ? Math.round((scores.reduce((a,b)=>a+b,0)/scores.length)*10)/10 : 0;
+    await updateDoc(doc(db, 'centers', String(centerId)), {
+      rating: avg,
+      reviews: scores.length
+    });
+    // 로컬 캐시 반영
+    if (Array.isArray(window.centersData)) {
+      const idx = window.centersData.findIndex(c => String(c.id) === String(centerId));
+      if (idx >= 0) { window.centersData[idx].rating = avg; window.centersData[idx].reviews = scores.length; }
+    }
+    return true;
+  } catch(e) { console.error('rating save error:', e); showToast('저장 실패'); return false; }
+};
+
+window.loadCenterRatings = async (centerId) => {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'centers', String(centerId), 'ratings'),
+      orderBy('createdAt', 'desc')
+    ));
+    return snap.docs.map(d => {
+      const data = d.data();
+      const ts = data.createdAt;
+      let createdAtStr = '';
+      if (ts && ts.toDate) {
+        const dt = ts.toDate();
+        createdAtStr = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,'0')}.${String(dt.getDate()).padStart(2,'0')}`;
+      }
+      return { ...data, id: d.id, createdAtStr };
+    });
+  } catch(e) { console.error('ratings load error:', e); return []; }
 };
 
 // 운영자 시딩용: 센터 배열을 일괄 업로드 (콘솔에서 window.seedCenters(목록) 호출)
