@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260615005 -->
+<!-- cache-bust: v20260615006 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -3490,11 +3490,19 @@ onAuthStateChanged(auth, async (user) => {
 
 // 모바일 카카오 리다이렉트 로그인 처리
 (async () => {
+  const code = sessionStorage.getItem('kakao_pending_code');
+  if (code) {
+    sessionStorage.removeItem('kakao_pending_code');
+    try { await _kakaoCodeToAuth(code); }
+    catch(e) { console.error('카카오 코드 교환 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+    return;
+  }
   const t = sessionStorage.getItem('kakao_pending_token');
-  if (!t) return;
-  sessionStorage.removeItem('kakao_pending_token');
-  try { await _kakaoFirebaseAuth(t); }
-  catch(e) { console.error('카카오 리다이렉트 로그인 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+  if (t) {
+    sessionStorage.removeItem('kakao_pending_token');
+    try { await _kakaoFirebaseAuth(t); }
+    catch(e) { console.error('카카오 토큰 로그인 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+  }
 })();
 
 // 로그아웃 이벤트 연결
@@ -3713,12 +3721,15 @@ getRedirectResult(auth).then(async (result) => {
 const _KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
 const _KAKAO_REDIRECT_URI = 'https://dyrhl4321-stack.github.io/Murpy';
 
-// Kakao SDK가 붙여주는 ka 파라미터를 직접 생성 — KOE202 방지용
-function _kakaoAuthUrl() {
-  const asyncId = (crypto?.randomUUID ? crypto.randomUUID().replace(/-/g,'').slice(0,8)
-    : Math.random().toString(36).slice(2,10));
-  const ka = encodeURIComponent(`sdk/2.4.0 javascript asyncId/${asyncId} os/web sdk_type/javascript app_key/${_KAKAO_JS_KEY}`);
-  return `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=token&ka=${ka}`;
+async function _kakaoCodeToAuth(code) {
+  const resp = await fetch('https://murpy-kakao.dyrhl2356.workers.dev', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  });
+  const data = await resp.json();
+  if (!data.access_token) throw new Error(data.error_description || '토큰 교환 실패');
+  await _kakaoFirebaseAuth(data.access_token);
 }
 
 async function _kakaoFirebaseAuth(accessToken) {
@@ -3756,14 +3767,16 @@ async function _kakaoFirebaseAuth(accessToken) {
 }
 
 window.kakaoLogin = async () => {
-  // 모바일: 현재 탭 리다이렉트 (카카오톡 앱 간편로그인)
+  // 모바일: Kakao SDK 공식 메서드로 리다이렉트 → 카카오톡 앱 간편로그인
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    window.location.href = _kakaoAuthUrl();
+    if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
+    Kakao.Auth.authorize({ redirectUri: _KAKAO_REDIRECT_URI, throughTalk: true });
     return;
   }
 
-  // PC: 팝업
-  const popup = window.open(_kakaoAuthUrl(), 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
+  // PC: 팝업 (implicit flow — 데스크탑에서는 여전히 동작)
+  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=token`;
+  const popup = window.open(authUrl, 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
   if (!popup) { showToast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해주세요'); return; }
 
   try {
