@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260615003 -->
+<!-- cache-bust: v20260615004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -32,18 +32,28 @@
 <script>
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
-  // 카카오 OAuth 콜백 감지 — 팝업이면 postMessage, 리다이렉트(모바일)면 sessionStorage에 저장
+  // 카카오 OAuth 콜백 감지
   (function(){
+    // 팝업 implicit flow: #access_token=xxx
     const h = new URLSearchParams(window.location.hash.replace(/^#/,''));
     const t = h.get('access_token');
-    if (!t) return;
-    if (window.opener) {
-      try { window.opener.postMessage({type:'kakao_token',accessToken:t}, window.location.origin); }
-      catch(e) { window.opener.postMessage({type:'kakao_token',accessToken:t},'*'); }
-      window.close();
-    } else {
-      sessionStorage.setItem('kakao_pending_token', t);
-      history.replaceState(null, '', window.location.pathname + window.location.search);
+    if (t) {
+      if (window.opener) {
+        try { window.opener.postMessage({type:'kakao_token',accessToken:t}, window.location.origin); }
+        catch(e) { window.opener.postMessage({type:'kakao_token',accessToken:t},'*'); }
+        window.close();
+      } else {
+        sessionStorage.setItem('kakao_pending_token', t);
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+    // 모바일 redirect flow: ?code=xxx
+    const q = new URLSearchParams(window.location.search);
+    const code = q.get('code');
+    if (code) {
+      sessionStorage.setItem('kakao_pending_code', code);
+      history.replaceState(null, '', window.location.pathname);
     }
   })();
 </script>
@@ -3480,11 +3490,19 @@ onAuthStateChanged(auth, async (user) => {
 
 // 모바일 카카오 리다이렉트 로그인 처리
 (async () => {
+  const code = sessionStorage.getItem('kakao_pending_code');
+  if (code) {
+    sessionStorage.removeItem('kakao_pending_code');
+    try { await _kakaoCodeToAuth(code); }
+    catch(e) { console.error('카카오 코드 교환 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+    return;
+  }
   const t = sessionStorage.getItem('kakao_pending_token');
-  if (!t) return;
-  sessionStorage.removeItem('kakao_pending_token');
-  try { await _kakaoFirebaseAuth(t); }
-  catch(e) { console.error('카카오 리다이렉트 로그인 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+  if (t) {
+    sessionStorage.removeItem('kakao_pending_token');
+    try { await _kakaoFirebaseAuth(t); }
+    catch(e) { console.error('카카오 토큰 로그인 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+  }
 })();
 
 // 로그아웃 이벤트 연결
@@ -3701,7 +3719,24 @@ getRedirectResult(auth).then(async (result) => {
 
 // ===== 카카오 로그인 =====
 const _KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
+const _KAKAO_REST_KEY = 'b8139169cdea7c1a61ab4242c91ece27';
 const _KAKAO_REDIRECT_URI = 'https://dyrhl4321-stack.github.io/Murpy';
+
+async function _kakaoCodeToAuth(code) {
+  const resp = await fetch('https://kauth.kakao.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: _KAKAO_REST_KEY,
+      redirect_uri: _KAKAO_REDIRECT_URI,
+      code
+    })
+  });
+  const data = await resp.json();
+  if (!data.access_token) throw new Error(data.error_description || '토큰 교환 실패');
+  await _kakaoFirebaseAuth(data.access_token);
+}
 
 async function _kakaoFirebaseAuth(accessToken) {
   if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
@@ -3740,9 +3775,10 @@ async function _kakaoFirebaseAuth(accessToken) {
 window.kakaoLogin = async () => {
   const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=token`;
 
-  // 모바일: 현재 탭을 Kakao OAuth로 리다이렉트 → 카카오톡 앱 간편로그인 지원
+  // 모바일: Kakao SDK 공식 메서드 → 카카오톡 앱 간편로그인 + 도메인 검증 정상 처리
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    window.location.href = authUrl;
+    if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
+    Kakao.Auth.authorize({ redirectUri: _KAKAO_REDIRECT_URI, throughTalk: true });
     return;
   }
 
