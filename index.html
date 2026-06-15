@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260615008 -->
+<!-- cache-bust: v20260615009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1095,7 +1095,8 @@
 <!-- ===== 온보딩 모달 ===== -->
 <div id="onboarding-modal" style="display:none;position:fixed;inset:0;z-index:20000;background:#0a0a0a;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch">
   <div style="padding:56px 24px 0;text-align:center;flex-shrink:0">
-    <div style="font-size:20px;font-weight:900;letter-spacing:1px;color:#fff">MURPY</div>
+    <div style="font-size:24px;font-weight:900;letter-spacing:1px;color:#fff">MURPY</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:6px;letter-spacing:0.3px">운동하는 사람들의 커뮤니티</div>
     <div style="display:flex;gap:6px;justify-content:center;margin:16px auto 0;width:fit-content">
       <div id="ob-dot-1" style="width:24px;height:4px;border-radius:2px;transition:all .3s;background:var(--accent)"></div>
       <div id="ob-dot-2" style="width:8px;height:4px;border-radius:2px;transition:all .3s;background:rgba(255,255,255,0.15)"></div>
@@ -2458,28 +2459,7 @@ function obNextStep() {
   _fillDistrictSelect('ob-district');
 }
 
-window.obComplete = async () => {
-  if (!window._obData.purpose) { showToast('운동 목적을 선택해주세요'); return; }
-  if (!window._obData.times.length) { showToast('운동 시간대를 선택해주세요'); return; }
-  const district = document.getElementById('ob-district').value;
-  if (!district) { showToast('활동 지역을 선택해주세요'); return; }
-  const user = auth.currentUser || window.currentUser;
-  if (!user) return;
-  const nickname = document.getElementById('ob-nickname').value.trim();
-  const age = parseInt(document.getElementById('ob-age').value);
-  const bio = document.getElementById('ob-bio').value.trim();
-  try {
-    await setDoc(doc(db, 'users', user.uid), {
-      nickname, age, gender: window._obData.gender,
-      purpose: window._obData.purpose, workoutTime: window._obData.times,
-      district, bio, onboardingComplete: true, updatedAt: serverTimestamp()
-    }, { merge: true });
-    if (window.currentUser) window.currentUser.nickname = nickname;
-    document.getElementById('onboarding-modal').style.display = 'none';
-    await loadUserProfile(user.uid);
-    showToast('🔥 머피에 오신 걸 환영해요!');
-  } catch(e) { console.error('온보딩 저장 실패:', e); showToast('저장 실패, 다시 시도해주세요'); }
-};
+// obComplete, loadUserProfile, saveProfile → 모듈 스크립트에서 window.xxx로 정의
 
 function showOnboarding(userData = {}) {
   window._obData = { gender: userData.gender||'', purpose: userData.purpose||'', times: [...(userData.workoutTime||[])] };
@@ -2494,28 +2474,7 @@ function showOnboarding(userData = {}) {
   modal.scrollTop = 0;
 }
 
-// ===== 프로필 로드 =====
-async function loadUserProfile(uid) {
-  try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    if (!snap.exists()) return;
-    const d = snap.data();
-    if (d.nickname) { document.getElementById('info-name').textContent = d.nickname; if(window.currentUser) window.currentUser.nickname = d.nickname; }
-    if (d.photoURL) {
-      const pic = document.getElementById('profile-pic-preview');
-      const icon = document.getElementById('profile-pic-icon');
-      if (pic) { pic.src = d.photoURL; pic.style.display = 'block'; if(icon) icon.style.display='none'; }
-      const av = document.getElementById('user-avatar');
-      if (av) { av.src = d.photoURL; av.style.display = 'block'; }
-    }
-    document.getElementById('info-gender-age').textContent = [d.gender, d.age ? d.age+'세' : ''].filter(Boolean).join(' · ') || '—';
-    document.getElementById('info-purpose').textContent = d.purpose || '—';
-    document.getElementById('info-wtime').textContent = (d.workoutTime||[]).join(' · ') || '—';
-    document.getElementById('info-district').textContent = d.district || '—';
-    document.getElementById('info-bio').textContent = d.bio || '—';
-    window._cachedProfile = d;
-  } catch(e) { console.error('프로필 로드 실패:', e); }
-}
+// loadUserProfile → 모듈 스크립트에서 정의
 
 // ===== 프로필 수정 열기 =====
 function openEditProfile() {
@@ -2541,8 +2500,10 @@ function openEditProfile() {
 function epSelect(btn, field) {
   document.querySelectorAll(`[data-ep="${field}"]`).forEach(b => {
     b.style.background='rgba(255,255,255,0.06)'; b.style.border='1px solid rgba(255,255,255,0.1)'; b.style.color='#fff'; b.style.fontWeight='';
+    b.classList.remove('ep-selected');
   });
   btn.style.background='#fff'; btn.style.border='1px solid #fff'; btn.style.color='#000'; btn.style.fontWeight='700';
+  btn.classList.add('ep-selected');
 }
 
 function epToggleTime(btn) {
@@ -2558,28 +2519,7 @@ function epToggleTime(btn) {
   }
 }
 
-async function saveProfile() {
-  const user = auth.currentUser || window.currentUser;
-  if (!user) return;
-  const nickname = document.getElementById('edit-nickname').value.trim();
-  if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
-  const age = parseInt(document.getElementById('edit-age').value) || null;
-  const gender = document.querySelector('[data-ep="gender"][style*="background: rgb(255"]')?.dataset?.val || window._cachedProfile?.gender || '';
-  const purpose = document.querySelector('[data-ep="purpose"][style*="background: rgb(255"]')?.dataset?.val || window._cachedProfile?.purpose || '';
-  const district = document.getElementById('edit-district').value;
-  const bio = document.getElementById('edit-bio').value.trim();
-  try {
-    await setDoc(doc(db, 'users', user.uid), {
-      nickname, age, gender, purpose,
-      workoutTime: window._epTimes || [],
-      district, bio, updatedAt: serverTimestamp()
-    }, { merge: true });
-    if (window.currentUser) window.currentUser.nickname = nickname;
-    await loadUserProfile(user.uid);
-    closePanel('edit-profile-panel');
-    showToast('✓ 프로필 저장됐어요');
-  } catch(e) { console.error('프로필 저장 실패:', e); showToast('저장 실패'); }
-}
+// saveProfile → 모듈 스크립트에서 정의
 
 // Feed like toggle
 function toggleFeedLike(btn, base) {
@@ -3675,7 +3615,7 @@ async function checkAndSetNickname(user) {
       if (!data.onboardingComplete) {
         showOnboarding(data);
       } else {
-        loadUserProfile(user.uid);
+        window.loadUserProfile(user.uid);
       }
     } else {
       // 신규 유저 — 온보딩으로 바로
@@ -4064,6 +4004,76 @@ window.kakaoLogin = async () => {
     console.error('카카오 로그인 실패:', e);
     showToast('카카오 로그인 실패: ' + (e?.error_description || e?.message || e?.code || ''));
   }
+};
+
+// ===== 온보딩 + 프로필 (Firebase 필요 → 모듈 스크립트에서 window 등록) =====
+window.loadUserProfile = async (uid) => {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) return;
+    const d = snap.data();
+    if (d.nickname) { document.getElementById('info-name').textContent = d.nickname; if(window.currentUser) window.currentUser.nickname = d.nickname; }
+    if (d.photoURL) {
+      const pic = document.getElementById('profile-pic-preview');
+      const icon = document.getElementById('profile-pic-icon');
+      if (pic) { pic.src = d.photoURL; pic.style.display='block'; if(icon) icon.style.display='none'; }
+      const av = document.getElementById('user-avatar');
+      if (av) { av.src = d.photoURL; av.style.display='block'; }
+      if (window.currentUser) window.currentUser.firestorePhotoURL = d.photoURL;
+    }
+    document.getElementById('info-gender-age').textContent = [d.gender, d.age?d.age+'세':''].filter(Boolean).join(' · ') || '—';
+    document.getElementById('info-purpose').textContent = d.purpose || '—';
+    document.getElementById('info-wtime').textContent = (d.workoutTime||[]).join(' · ') || '—';
+    document.getElementById('info-district').textContent = d.district || '—';
+    document.getElementById('info-bio').textContent = d.bio || '—';
+    window._cachedProfile = d;
+  } catch(e) { console.error('프로필 로드 실패:', e); }
+};
+
+window.obComplete = async () => {
+  if (!window._obData.purpose) { showToast('운동 목적을 선택해주세요'); return; }
+  if (!window._obData.times.length) { showToast('운동 시간대를 선택해주세요'); return; }
+  const district = document.getElementById('ob-district').value;
+  if (!district) { showToast('활동 지역을 선택해주세요'); return; }
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  const nickname = document.getElementById('ob-nickname').value.trim();
+  const age = parseInt(document.getElementById('ob-age').value);
+  const bio = document.getElementById('ob-bio').value.trim();
+  try {
+    await setDoc(doc(db, 'users', user.uid), {
+      nickname, age, gender: window._obData.gender,
+      purpose: window._obData.purpose, workoutTime: window._obData.times,
+      district, bio, onboardingComplete: true, updatedAt: serverTimestamp()
+    }, { merge: true });
+    if (window.currentUser) window.currentUser.nickname = nickname;
+    document.getElementById('onboarding-modal').style.display = 'none';
+    await window.loadUserProfile(user.uid);
+    showToast('🔥 머피에 오신 걸 환영해요!');
+  } catch(e) { console.error('온보딩 저장 실패:', e); showToast('저장 실패: ' + e.message); }
+};
+
+window.saveProfile = async () => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  const nickname = document.getElementById('edit-nickname').value.trim();
+  if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
+  const age = parseInt(document.getElementById('edit-age').value) || null;
+  const gender = document.querySelector('[data-ep="gender"].ep-selected')?.dataset?.val || window._cachedProfile?.gender || '';
+  const purpose = document.querySelector('[data-ep="purpose"].ep-selected')?.dataset?.val || window._cachedProfile?.purpose || '';
+  const district = document.getElementById('edit-district').value;
+  const bio = document.getElementById('edit-bio').value.trim();
+  try {
+    await setDoc(doc(db, 'users', user.uid), {
+      nickname, age, gender, purpose,
+      workoutTime: window._epTimes || [],
+      district, bio, updatedAt: serverTimestamp()
+    }, { merge: true });
+    if (window.currentUser) window.currentUser.nickname = nickname;
+    await window.loadUserProfile(user.uid);
+    closePanel('edit-profile-panel');
+    showToast('✓ 프로필 저장됐어요');
+  } catch(e) { console.error('프로필 저장 실패:', e); showToast('저장 실패'); }
 };
 
 // ===== 구글 로그인 (전역 함수로 분리) =====
