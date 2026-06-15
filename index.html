@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260613001 -->
+<!-- cache-bust: v20260615001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -30,8 +30,18 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-  const KAKAO_JS_KEY = '0558c9d9f24eb08a641a750f0ea682e3';
+  const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
+  // 카카오 OAuth 팝업 콜백 감지 — 팝업이면 토큰 넘기고 즉시 닫기
+  (function(){
+    if (!window.opener) return;
+    const h = new URLSearchParams(window.location.hash.replace(/^#/,''));
+    const t = h.get('access_token');
+    if (!t) return;
+    try { window.opener.postMessage({type:'kakao_token',accessToken:t}, window.location.origin); }
+    catch(e) { window.opener.postMessage({type:'kakao_token',accessToken:t},'*'); }
+    window.close();
+  })();
 </script>
 <style>
   :root {
@@ -3678,51 +3688,45 @@ getRedirectResult(auth).then(async (result) => {
 
 // ===== 카카오 로그인 =====
 window.kakaoLogin = async () => {
-  if (typeof Kakao === 'undefined') {
-    showToast('카카오 SDK 로드 실패 — 새로고침 후 다시 시도해주세요');
-    return;
-  }
-  if (!Kakao.isInitialized()) {
-    try { Kakao.init(KAKAO_JS_KEY); } catch(e) {}
-  }
-  if (!Kakao.isInitialized()) {
-    showToast('카카오 초기화 실패 — 새로고침 후 다시 시도해주세요');
-    return;
-  }
+  const JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
+  const REDIRECT_URI = 'https://dyrhl4321-stack.github.io/Murpy';
+  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${JS_KEY}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=profile_nickname,profile_image`;
+
+  const popup = window.open(authUrl, 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
+  if (!popup) { showToast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해주세요'); return; }
+
   try {
-    const kakaoUser = await new Promise((resolve, reject) => {
-      Kakao.Auth.login({
-        throughTalk: false,
-        success: (authObj) => {
-          Kakao.API.request({
-            url: '/v2/user/me',
-            success: (res) => resolve(res),
-            fail: (err) => { console.error('Kakao API fail:', err); reject(err); }
-          });
-        },
-        fail: (err) => {
-          console.error('Kakao Auth fail:', err);
-          // throughTalk:false 실패 시 throughTalk:true 재시도
-          Kakao.Auth.login({
-            throughTalk: true,
-            success: (authObj) => {
-              Kakao.API.request({
-                url: '/v2/user/me',
-                success: (res) => resolve(res),
-                fail: (e2) => reject(e2)
-              });
-            },
-            fail: (e2) => reject(e2)
-          });
-        }
-      });
+    const accessToken = await new Promise((resolve, reject) => {
+      let done = false;
+      const finish = (fn) => { if (done) return; done = true; cleanup(); fn(); };
+      const cleanup = () => {
+        clearInterval(poll);
+        clearTimeout(timer);
+        window.removeEventListener('message', onMsg);
+      };
+      const poll = setInterval(() => { if (popup.closed) finish(() => reject(new Error('cancelled'))); }, 500);
+      const timer = setTimeout(() => { popup.close(); finish(() => reject(new Error('timeout'))); }, 120000);
+      function onMsg(e) {
+        if (e.data?.type === 'kakao_token' && e.data.accessToken)
+          finish(() => resolve(e.data.accessToken));
+      }
+      window.addEventListener('message', onMsg);
     });
+
+    // 토큰으로 사용자 정보 조회
+    if (!Kakao.isInitialized()) Kakao.init(JS_KEY);
+    Kakao.Auth.setAccessToken(accessToken);
+    const kakaoUser = await new Promise((resolve, reject) =>
+      Kakao.API.request({ url: '/v2/user/me', success: resolve, fail: reject })
+    );
+
     const kakaoId = String(kakaoUser.id);
     const profile = kakaoUser.kakao_account?.profile || {};
     const nickname = profile.nickname || '카카오유저';
     const photoURL = profile.profile_image_url || '';
     const email = `kakao_${kakaoId}@kakao.murpy.app`;
-    const pw = `kp_${kakaoId}_${(typeof KAKAO_JS_KEY !== 'undefined' ? KAKAO_JS_KEY : '').substring(0, 8)}`;
+    const pw = `kp_${kakaoId}_mk`;
+
     let userCred;
     try {
       userCred = await signInWithEmailAndPassword(auth, email, pw);
@@ -3744,11 +3748,9 @@ window.kakaoLogin = async () => {
     dismissLanding();
     showToast(`✓ ${nickname}님, 환영해요!`);
   } catch(e) {
+    if (e.message === 'cancelled') return;
     console.error('카카오 로그인 실패:', e);
-    if (e.code !== 'auth/cancelled-popup-request') {
-      const errMsg = e?.error_description || e?.error || e?.message || e?.code || JSON.stringify(e);
-      showToast('카카오 오류: ' + errMsg);
-    }
+    showToast('카카오 로그인 실패: ' + (e?.error_description || e?.message || e?.code || ''));
   }
 };
 
