@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260615001 -->
+<!-- cache-bust: v20260615002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -32,15 +32,19 @@
 <script>
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
-  // 카카오 OAuth 팝업 콜백 감지 — 팝업이면 토큰 넘기고 즉시 닫기
+  // 카카오 OAuth 콜백 감지 — 팝업이면 postMessage, 리다이렉트(모바일)면 sessionStorage에 저장
   (function(){
-    if (!window.opener) return;
     const h = new URLSearchParams(window.location.hash.replace(/^#/,''));
     const t = h.get('access_token');
     if (!t) return;
-    try { window.opener.postMessage({type:'kakao_token',accessToken:t}, window.location.origin); }
-    catch(e) { window.opener.postMessage({type:'kakao_token',accessToken:t},'*'); }
-    window.close();
+    if (window.opener) {
+      try { window.opener.postMessage({type:'kakao_token',accessToken:t}, window.location.origin); }
+      catch(e) { window.opener.postMessage({type:'kakao_token',accessToken:t},'*'); }
+      window.close();
+    } else {
+      sessionStorage.setItem('kakao_pending_token', t);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
   })();
 </script>
 <style>
@@ -3474,6 +3478,15 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
+// 모바일 카카오 리다이렉트 로그인 처리
+(async () => {
+  const t = sessionStorage.getItem('kakao_pending_token');
+  if (!t) return;
+  sessionStorage.removeItem('kakao_pending_token');
+  try { await _kakaoFirebaseAuth(t); }
+  catch(e) { console.error('카카오 리다이렉트 로그인 실패:', e); showToast('카카오 로그인 실패: ' + (e?.message || '')); }
+})();
+
 // 로그아웃 이벤트 연결
 document.addEventListener('murpy-logout', async () => {
   userPhotoCache.clear();
@@ -3687,11 +3700,53 @@ getRedirectResult(auth).then(async (result) => {
 }).catch((e) => {});
 
 // ===== 카카오 로그인 =====
-window.kakaoLogin = async () => {
-  const JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
-  const REDIRECT_URI = 'https://dyrhl4321-stack.github.io/Murpy';
-  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${JS_KEY}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=profile_nickname,profile_image`;
+const _KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
+const _KAKAO_REDIRECT_URI = 'https://dyrhl4321-stack.github.io/Murpy';
 
+async function _kakaoFirebaseAuth(accessToken) {
+  if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
+  Kakao.Auth.setAccessToken(accessToken);
+  const kakaoUser = await new Promise((resolve, reject) =>
+    Kakao.API.request({ url: '/v2/user/me', success: resolve, fail: reject })
+  );
+  const kakaoId = String(kakaoUser.id);
+  const profile = kakaoUser.kakao_account?.profile || {};
+  const nickname = profile.nickname || '카카오유저';
+  const photoURL = profile.profile_image_url || '';
+  const email = `kakao_${kakaoId}@kakao.murpy.app`;
+  const pw = `kp_${kakaoId}_mk`;
+  let userCred;
+  try {
+    userCred = await signInWithEmailAndPassword(auth, email, pw);
+  } catch(e) {
+    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+      userCred = await createUserWithEmailAndPassword(auth, email, pw);
+    } else throw e;
+  }
+  const uid = userCred.user.uid;
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  if (!userSnap.exists() || !userSnap.data().nickname) {
+    await setDoc(userRef, { nickname, photoURL, kakaoId, provider: 'kakao', updatedAt: serverTimestamp() }, { merge: true });
+  }
+  window.currentUser = userCred.user;
+  window.currentUser.firestorePhotoURL = photoURL;
+  updateUI(userCred.user);
+  await checkAndSetNickname(userCred.user);
+  dismissLanding();
+  showToast(`✓ ${nickname}님, 환영해요!`);
+}
+
+window.kakaoLogin = async () => {
+  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=token&scope=profile_nickname,profile_image`;
+
+  // 모바일: 현재 탭을 Kakao OAuth로 리다이렉트 → 카카오톡 앱 간편로그인 지원
+  if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    window.location.href = authUrl;
+    return;
+  }
+
+  // PC: 팝업
   const popup = window.open(authUrl, 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
   if (!popup) { showToast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해주세요'); return; }
 
@@ -3712,41 +3767,7 @@ window.kakaoLogin = async () => {
       }
       window.addEventListener('message', onMsg);
     });
-
-    // 토큰으로 사용자 정보 조회
-    if (!Kakao.isInitialized()) Kakao.init(JS_KEY);
-    Kakao.Auth.setAccessToken(accessToken);
-    const kakaoUser = await new Promise((resolve, reject) =>
-      Kakao.API.request({ url: '/v2/user/me', success: resolve, fail: reject })
-    );
-
-    const kakaoId = String(kakaoUser.id);
-    const profile = kakaoUser.kakao_account?.profile || {};
-    const nickname = profile.nickname || '카카오유저';
-    const photoURL = profile.profile_image_url || '';
-    const email = `kakao_${kakaoId}@kakao.murpy.app`;
-    const pw = `kp_${kakaoId}_mk`;
-
-    let userCred;
-    try {
-      userCred = await signInWithEmailAndPassword(auth, email, pw);
-    } catch(e) {
-      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-        userCred = await createUserWithEmailAndPassword(auth, email, pw);
-      } else throw e;
-    }
-    const uid = userCred.user.uid;
-    const userRef = doc(db, 'users', uid);
-    const userSnap = await getDoc(userRef);
-    if (!userSnap.exists() || !userSnap.data().nickname) {
-      await setDoc(userRef, { nickname, photoURL, kakaoId, provider: 'kakao', updatedAt: serverTimestamp() }, { merge: true });
-    }
-    window.currentUser = userCred.user;
-    window.currentUser.firestorePhotoURL = photoURL;
-    updateUI(userCred.user);
-    await checkAndSetNickname(userCred.user);
-    dismissLanding();
-    showToast(`✓ ${nickname}님, 환영해요!`);
+    await _kakaoFirebaseAuth(accessToken);
   } catch(e) {
     if (e.message === 'cancelled') return;
     console.error('카카오 로그인 실패:', e);
