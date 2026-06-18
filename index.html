@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618006 -->
+<!-- cache-bust: v20260618007 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -687,7 +687,7 @@
     </div>
     <div style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.5">정면을 보고 셀카를 찍으면, AI가 프로필 사진과 자동으로 대조해요. (사진은 저장되지 않아요)</div>
     <div style="position:relative;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#000;margin-bottom:14px">
-      <video id="fv-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
+      <video id="fv-video" autoplay playsinline webkit-playsinline muted disablepictureinpicture controlslist="nodownload nofullscreen noremoteplayback" style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
       <div style="position:absolute;inset:14px;border:2px dashed rgba(255,255,255,0.35);border-radius:50%;pointer-events:none"></div>
     </div>
     <div id="fv-status" style="font-size:13px;color:rgba(255,255,255,0.7);text-align:center;min-height:20px;margin-bottom:14px;line-height:1.5">준비 중...</div>
@@ -2729,21 +2729,26 @@ function handleProfilePic(input) {
   reader.readAsDataURL(file);
 }
 
-function handlePhotoUpload(input, gridId) {
+async function handlePhotoUpload(input, gridId) {
   const files = Array.from(input.files);
+  input.value = '';
+  if (!files.length) return;
+  if (!window.currentUser) { requireLogin('사진을 올리려면 로그인이 필요해요'); return; }
   const grid = document.getElementById(gridId);
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = e => {
+  const field = gridId === 'photos-grid' ? 'photos' : 'workoutPhotos';
+  showToast(`업로드 중... (${files.length}장)`);
+  for (const file of files) {
+    try {
+      const url = await window.uploadImgbb(file);
+      if (!url) { showToast('한 장 업로드 실패'); continue; }
       const div = document.createElement('div');
       div.className = 'photo-thumb';
-      div.innerHTML = `<img src="${e.target.result}"><button class="remove-btn" onclick="this.parentElement.remove()">✕</button>`;
+      div.innerHTML = `<img src="${url}"><button class="remove-btn" onclick="window.removeUserPhoto('${field}','${url}', this)">✕</button>`;
       grid.appendChild(div);
-    };
-    reader.readAsDataURL(file);
-  });
-  input.value = '';
-  showToast(`✓ ${files.length}장 추가됐어요`);
+      await window.persistUserPhotos(url, field);
+    } catch(e) { showToast('업로드 실패'); }
+  }
+  showToast('✓ 사진이 저장됐어요');
 }
 
 // ===== 서울 구 목록 =====
@@ -4264,6 +4269,46 @@ async function _descriptorFrom(input) {
     .withFaceLandmarks().withFaceDescriptor();
   return det ? det.descriptor : null;
 }
+// URL 한 장에서 얼굴 벡터 추출: 직접 로드 → 실패/타인트 시 weserv 프록시 폴백
+async function _descFromUrl(url) {
+  const variants = [url, 'https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, ''))];
+  for (const v of variants) {
+    let img = null;
+    try { img = await _loadImg(v); } catch (e) { continue; }
+    try { const d = await _descriptorFrom(img); if (d) return d; } catch (e) {}
+  }
+  return null;
+}
+// 후보 사진들을 순회하며 얼굴 잡히는 첫 사진을 기준으로
+async function findRefDescriptor(urls) {
+  for (const u of urls) {
+    const d = await _descFromUrl(u);
+    if (d) return d;
+  }
+  return null;
+}
+// imgBB 업로드 (사진첩 영속화용)
+window.uploadImgbb = async (file) => {
+  const fd = new FormData();
+  fd.append('image', file, 'photo.jpg');
+  fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+  const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+  const j = await res.json();
+  return j.success ? j.data.url : '';
+};
+window.persistUserPhotos = async (url, field) => {
+  if (!window.currentUser) return;
+  await setDoc(doc(db, 'users', window.currentUser.uid), { [field]: arrayUnion(url) }, { merge: true });
+  if (window._cachedProfile) window._cachedProfile[field] = [...(window._cachedProfile[field] || []), url];
+};
+window.removeUserPhoto = async (field, url, btn) => {
+  if (btn && btn.parentElement) btn.parentElement.remove();
+  if (!window.currentUser) return;
+  try {
+    await setDoc(doc(db, 'users', window.currentUser.uid), { [field]: arrayRemove(url) }, { merge: true });
+    if (window._cachedProfile && window._cachedProfile[field]) window._cachedProfile[field] = window._cachedProfile[field].filter(u => u !== url);
+  } catch (e) {}
+};
 function setFvStatus(t) { const e = document.getElementById('fv-status'); if (e) e.textContent = t; }
 function _fvCaptureEnabled(on) {
   const b = document.getElementById('fv-capture');
@@ -4273,8 +4318,8 @@ function _fvCaptureEnabled(on) {
 window.startFaceVerify = async function() {
   if (!window.currentUser) { requireLogin('프로필 인증은 로그인이 필요해요'); return; }
   const prof = window._cachedProfile || {};
-  const photo = prof.photoURL || window.currentUser.photoURL;
-  if (!photo) { showToast('먼저 프로필 사진을 등록해주세요'); return; }
+  const candidates = [prof.photoURL || window.currentUser.photoURL, ...(prof.photos || []), ...(prof.workoutPhotos || [])].filter(Boolean);
+  if (!candidates.length) { showToast('먼저 사진을 한 장 등록해주세요'); return; }
   window._fvRefDesc = null;
   _fvCaptureEnabled(false);
   openModal('face-verify-modal');
@@ -4285,13 +4330,9 @@ window.startFaceVerify = async function() {
   } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
   setFvStatus('AI 모델 불러오는 중... (최초 1회)');
   try { await ensureFaceApi(); } catch (e) { setFvStatus('모델 로딩 실패. 잠시 후 다시 시도해주세요'); return; }
-  setFvStatus('프로필 사진 분석 중...');
-  try {
-    const proxied = 'https://images.weserv.nl/?url=' + encodeURIComponent(photo.replace(/^https?:\/\//, ''));
-    const refImg = await _loadImg(proxied);
-    window._fvRefDesc = await _descriptorFrom(refImg);
-  } catch (e) {}
-  if (!window._fvRefDesc) { setFvStatus('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진으로 바꿔주세요'); return; }
+  setFvStatus('내 사진들에서 얼굴 찾는 중...');
+  window._fvRefDesc = await findRefDescriptor(candidates);
+  if (!window._fvRefDesc) { setFvStatus('등록된 사진에서 얼굴을 찾지 못했어요. 얼굴이 보이는 사진을 한 장만 추가해주세요'); return; }
   setFvStatus('정면을 원 안에 맞추고 [촬영하고 인증]을 눌러요');
   _fvCaptureEnabled(true);
 };
@@ -4611,6 +4652,11 @@ window.loadUserProfile = async (uid) => {
     document.getElementById('info-district').textContent = d.district || '—';
     document.getElementById('info-bio').textContent = d.bio || '—';
     window._cachedProfile = d;
+    // 저장된 사진첩/운동샷 렌더 (얼굴인증 후보로도 쓰임)
+    const pg = document.getElementById('photos-grid');
+    if (pg) pg.innerHTML = (d.photos || []).map(u => `<div class="photo-thumb"><img src="${u}"><button class="remove-btn" onclick="window.removeUserPhoto('photos','${u}',this)">✕</button></div>`).join('');
+    const wg = document.getElementById('workout-grid');
+    if (wg) wg.innerHTML = (d.workoutPhotos || []).map(u => `<div class="photo-thumb"><img src="${u}"><button class="remove-btn" onclick="window.removeUserPhoto('workoutPhotos','${u}',this)">✕</button></div>`).join('');
     if (window.renderMyVerifyStatus) window.renderMyVerifyStatus();
   } catch(e) { console.error('프로필 로드 실패:', e); }
 };
