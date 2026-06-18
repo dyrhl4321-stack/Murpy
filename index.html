@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618004 -->
+<!-- cache-bust: v20260618005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -478,6 +478,9 @@
     </div>
   </div>
 
+  <!-- 오늘 운동 인증 라이브 바 -->
+  <div id="home-live-bar" style="display:none;margin:10px 16px 2px"></div>
+
   <!-- 피드 -->
   <div id="firebase-feed" style="padding-top:4px"></div>
   <div id="feed-sentinel"></div>
@@ -683,6 +686,7 @@
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('center-detail-panel')">←</button>
     <span style="font-weight:700;font-size:16px" id="center-detail-name"></span>
+    <span id="center-detail-partner"></span>
   </div>
   <div class="tab-bar" style="padding:0 20px">
     <button class="tab-btn active" onclick="switchCenterDetailTab('info', this)">정보</button>
@@ -3510,6 +3514,9 @@ function openCenterDetail(id) {
   currentCrewId = id;
   window._currentCenterId = id;
   document.getElementById('center-detail-name').textContent = c.name;
+  document.getElementById('center-detail-partner').innerHTML = c.partner
+    ? '<span style="background:var(--gold);color:#000;font-size:9px;font-weight:800;padding:2px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:3px;margin-left:7px"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>파트너 센터</span>'
+    : '';
 
   const photos = Array.isArray(c.photos) ? c.photos : [];
   const notices = Array.isArray(c.notices) ? c.notices : [];
@@ -3549,7 +3556,11 @@ function openCenterDetail(id) {
 
   const centerBamboo = bambooData.filter(b => b.centerId === id);
   document.getElementById('center-bamboo-tab').innerHTML = `
-    <div class="card" style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:700;color:rgba(74,222,128,0.9);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
+      이 센터 대나무숲 <span style="color:rgba(255,255,255,0.3);font-weight:600">· 센터 전용 익명공간</span>
+    </div>
+    <div class="card" style="margin-bottom:16px;border:1px solid rgba(74,222,128,0.18)">
       <textarea placeholder="${c.name}의 대나무숲. 센터에서 눈에 띄었던 사람, 전하고 싶은 말을 익명으로 남겨봐요." style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:60px;font-family:inherit" id="center-bamboo-input-${id}"></textarea>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">
         <button class="btn-white" style="border-radius:8px;padding:7px 16px;font-size:13px" onclick="postCenterBamboo(${id})">익명 전송</button>
@@ -4162,6 +4173,39 @@ function buildPostHTML(p) {
     </div>`;
 }
 
+// ===== 오늘 운동 인증 라이브 바 (고유 유저 집계) =====
+async function renderHomeLiveBar() {
+  const bar = document.getElementById('home-live-bar');
+  if (!bar) return;
+  try {
+    const start = new Date(); start.setHours(0, 0, 0, 0); // 오늘 0시(로컬/KST)
+    const q = query(collection(db, 'feed'), where('createdAt', '>=', start), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    if (snap.empty) { bar.style.display = 'none'; return; }
+    // 고유 유저 집계 + 최근 인증자 사진
+    const seen = new Set();
+    const recentPhotos = [];
+    snap.docs.forEach(d => {
+      const p = d.data();
+      if (!p.userId || seen.has(p.userId)) return;
+      seen.add(p.userId);
+      const photo = userPhotoCache.get(p.userId) || p.userPhoto || '';
+      if (recentPhotos.length < 3) recentPhotos.push(photo);
+    });
+    const n = seen.size;
+    if (n < 1) { bar.style.display = 'none'; return; }
+    const avatars = recentPhotos.map((ph, i) => ph
+      ? `<img src="${ph}" style="width:24px;height:24px;border-radius:50%;border:2px solid #0a0a0a;object-fit:cover;${i ? 'margin-left:-9px' : ''}">`
+      : `<div style="width:24px;height:24px;border-radius:50%;border:2px solid #0a0a0a;background:linear-gradient(135deg,#2563EB,#7C3AED);${i ? 'margin-left:-9px' : ''}"></div>`).join('');
+    bar.innerHTML = `
+      <div style="padding:9px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;display:flex;align-items:center;gap:9px">
+        <div style="display:flex;align-items:center;flex-shrink:0">${avatars}</div>
+        <span style="font-size:12px;color:rgba(255,255,255,0.7);font-weight:600">오늘 <span style="color:#fff;font-weight:800;font-size:13px">${n}명</span>이 운동 인증했어요<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-left:4px"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>
+      </div>`;
+    bar.style.display = 'block';
+  } catch(e) { bar.style.display = 'none'; }
+}
+
 async function fetchUserPhotos(posts) {
   const uniqueIds = [...new Set(posts.map(p => p.userId).filter(Boolean))];
   await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
@@ -4241,6 +4285,7 @@ async function loadFeed() {
     feedFirstPageCache = posts;
     feedEl.innerHTML = posts.map(buildPostHTML).join('');
     if (!feedAllLoaded) setupFeedObserver();
+    renderHomeLiveBar();
   } catch(e) {
     if (!feedFirstPageCache) feedEl.innerHTML = '<div style="text-align:center;padding:32px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.2);margin-bottom:12px">피드를 불러올 수 없어요</div><button onclick="loadFeed()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;padding:8px 16px;cursor:pointer;font-family:inherit">다시 시도</button></div>';
   }
