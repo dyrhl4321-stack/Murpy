@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618007 -->
+<!-- cache-bust: v20260618008 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4308,6 +4308,112 @@ window.removeUserPhoto = async (field, url, btn) => {
     await setDoc(doc(db, 'users', window.currentUser.uid), { [field]: arrayRemove(url) }, { merge: true });
     if (window._cachedProfile && window._cachedProfile[field]) window._cachedProfile[field] = window._cachedProfile[field].filter(u => u !== url);
   } catch (e) {}
+};
+
+// ===== 매칭 엔진 (좋아요 → 맞팔 시 매칭) =====
+function _pairKey(a, b) { return [a, b].sort().join('_'); }
+
+window.isMatched = async (otherUid) => {
+  const me = window.currentUser?.uid;
+  if (!me || !otherUid) return false;
+  try { const m = await getDoc(doc(db, 'matches', _pairKey(me, otherUid))); return m.exists(); } catch (e) { return false; }
+};
+
+window.sendLike = async (toUid, toName, toPhoto) => {
+  if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
+  const me = window.currentUser.uid;
+  if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
+  try {
+    await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() });
+    const rev = await getDoc(doc(db, 'likes', toUid + '_' + me));
+    if (rev.exists()) {
+      await setDoc(doc(db, 'matches', _pairKey(me, toUid)), { users: [me, toUid], createdAt: serverTimestamp() }, { merge: true });
+      showToast('🎉 ' + (toName || '상대') + '님과 매칭됐어요!');
+      window.openUserProfile(toUid, toName, toPhoto); // 잠금 해제 상태로 다시 그림
+    } else {
+      showToast('💙 같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
+    }
+  } catch (e) { showToast('전송 실패'); }
+};
+
+window.openChatWith = async (uid, name, photo) => {
+  if (!window.currentUser) { requireLogin('로그인이 필요해요'); return; }
+  const me = window.currentUser.uid;
+  const chatId = _pairKey(me, uid);
+  try { await setDoc(doc(db, 'chats', chatId), { participants: [me, uid], updatedAt: serverTimestamp() }, { merge: true }); } catch (e) {}
+  closePanel('user-profile-panel');
+  window.openChatFirestore(chatId, uid, name, photo);
+};
+
+// ===== 상대방 프로필 (소개팅 카드 + 인스타 피드, 매칭 잠금/해제) =====
+window.openUserProfile = async function(userId, userName, userPhoto) {
+  document.getElementById('user-profile-name').textContent = userName || '프로필';
+  const bodyEl = document.getElementById('user-profile-body');
+  bodyEl.style.padding = '0';
+  bodyEl.innerHTML = '<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,0.3);font-size:13px">불러오는 중...</div>';
+  openPanel('user-profile-panel');
+
+  let d = {};
+  try { const us = await getDoc(doc(db, 'users', userId)); if (us.exists()) d = us.data(); } catch (e) {}
+  const name = d.nickname || userName || '익명';
+  const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
+  const matched = await window.isMatched(userId);
+  let posts = [];
+  try {
+    const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', userId)));
+    posts = fsnap.docs.map(x => x.data()).filter(p => p.photoURL);
+    posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    posts = posts.slice(0, 9);
+  } catch (e) {}
+
+  const esc = s => String(s || '').replace(/'/g, "\\'");
+  const verifiedBadge = d.faceVerified
+    ? '<div style="position:absolute;top:12px;right:12px;z-index:2;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);border-radius:6px;padding:5px 9px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--gold)">' + _SHIELD_SVG + '인증완료</div>'
+    : '';
+  const cardsHTML = cards.length
+    ? cards.map(u => `<div style="flex:0 0 100%;scroll-snap-align:start;aspect-ratio:1;background:#111"><img src="${u}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`).join('')
+    : `<div style="flex:0 0 100%;aspect-ratio:1;background:linear-gradient(135deg,#1a1f2e,#0d1117);display:flex;align-items:center;justify-content:center;font-size:40px">🏋️</div>`;
+  const dotsHTML = cards.length > 1
+    ? `<div style="position:absolute;bottom:10px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:2">${cards.map((_, i) => `<div style="width:6px;height:6px;border-radius:50%;background:${i === 0 ? '#fff' : 'rgba(255,255,255,0.45)'}"></div>`).join('')}</div>`
+    : '';
+  const tags = [];
+  if (d.purpose) tags.push(d.purpose);
+  (d.workoutTime || []).forEach(t => tags.push(t));
+  const tagsHTML = tags.map(t => `<span style="background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.3);color:#60A5FA;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">${t}</span>`).join('');
+  const meta = [d.age ? d.age + '세' : '', d.gender, d.district].filter(Boolean).join(' · ');
+
+  const feedSection = matched
+    ? `<div style="padding:0 16px 16px">
+         <div style="font-size:13px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;gap:5px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>운동 인증 기록</div>
+         ${posts.length ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px">${posts.map(p => `<div style="aspect-ratio:1;background:#111;border-radius:4px;overflow:hidden"><img src="${p.photoURL}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></div>`).join('')}</div>` : '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.2);font-size:12px">아직 운동 인증 기록이 없어요</div>'}
+       </div>`
+    : `<div style="padding:0 16px 16px;position:relative">
+         <div style="filter:blur(8px);pointer-events:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px">${(posts.length ? posts : [0,0,0,0,0,0]).slice(0,6).map(p => `<div style="aspect-ratio:1;background:#1a1f2e;border-radius:4px;overflow:hidden">${p && p.photoURL ? `<img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover">` : ''}</div>`).join('')}</div>
+         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px">
+           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+           <div style="font-size:13px;font-weight:700;color:#fff;margin-top:10px">매칭되면 운동 인증 피드가 열려요</div>
+           <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px;line-height:1.5">서로 '같이 운동해요'를 누르면<br>운동 기록·센터가 공개돼요</div>
+         </div>
+       </div>`;
+
+  const actionHTML = matched
+    ? `<button onclick="window.openChatWith('${userId}','${esc(name)}','${esc(cards[0])}')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">채팅하기</button>`
+    : `<button onclick="window.sendLike('${userId}','${esc(name)}','${esc(cards[0])}')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">💪 같이 운동해요</button>`;
+
+  bodyEl.innerHTML = `
+    <div style="position:relative">
+      <div style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch">${cardsHTML}</div>
+      ${verifiedBadge}${dotsHTML}
+    </div>
+    <div style="padding:16px">
+      <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px">${name}</div>
+      ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:3px">${meta}</div>` : ''}
+      ${tagsHTML ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">${tagsHTML}</div>` : ''}
+      ${d.bio ? `<div style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.6;margin-top:12px">${d.bio}</div>` : ''}
+    </div>
+    <div style="height:1px;background:rgba(255,255,255,0.06);margin:0 16px 16px"></div>
+    ${feedSection}
+    <div style="padding:0 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
 };
 function setFvStatus(t) { const e = document.getElementById('fv-status'); if (e) e.textContent = t; }
 function _fvCaptureEnabled(on) {
