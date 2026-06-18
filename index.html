@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618008 -->
+<!-- cache-bust: v20260618009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -649,7 +649,7 @@
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
       <button class="tab-btn" onclick="switchMyTab('photos', this)">사진</button>
-      <button class="tab-btn" onclick="switchMyTab('workout', this)">운동샷</button>
+      <button class="tab-btn" onclick="switchMyTab('crews', this)">크루</button>
     </div>
     <div id="my-info">
       <div class="card" style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;color:rgba(255,255,255,0.4)">성별 · 나이</span><span style="font-size:13px;font-weight:600" id="info-gender-age">—</span></div>
@@ -660,20 +660,18 @@
       <button class="btn-glass" style="width:100%;padding:14px;font-size:14px;border-radius:12px;margin-top:4px" onclick="openEditProfile()">프로필 수정</button>
     </div>
     <div id="my-photos" style="display:none">
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 얼굴 인증에도 쓰여요.</div>
       <div class="upload-zone" onclick="document.getElementById('photos-input').click()">
         <div style="font-size:28px;margin-bottom:8px">📷</div>
-        <div style="font-size:13px;color:#666">프로필 사진 추가</div>
+        <div style="font-size:13px;color:#666">사진 추가</div>
       </div>
       <input type="file" id="photos-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'photos-grid')">
       <div class="photo-grid-2" id="photos-grid"></div>
+      <input type="file" id="workout-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'photos-grid')">
+      <div id="workout-grid" style="display:none"></div>
     </div>
-    <div id="my-workout" style="display:none">
-      <div class="upload-zone" onclick="document.getElementById('workout-input').click()">
-        <div style="font-size:28px;margin-bottom:8px">💪</div>
-        <div style="font-size:13px;color:#666">운동 사진 추가</div>
-      </div>
-      <input type="file" id="workout-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'workout-grid')">
-      <div class="photo-grid-3" id="workout-grid"></div>
+    <div id="my-crews" style="display:none">
+      <div id="my-crews-list"></div>
     </div>
   </div>
 </div>
@@ -2708,11 +2706,33 @@ function sendChat() {
 
 // ===== MYPAGE =====
 function switchMyTab(tab, btn) {
-  document.querySelectorAll('.tab-bar .tab-btn').forEach(b => { if(b.closest('#page-mypage')) b.classList.remove('active'); });
+  const panel = document.getElementById('mypage-panel');
+  if (panel) panel.querySelectorAll('.tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('my-info').style.display = tab==='info'?'block':'none';
   document.getElementById('my-photos').style.display = tab==='photos'?'block':'none';
-  document.getElementById('my-workout').style.display = tab==='workout'?'block':'none';
+  document.getElementById('my-crews').style.display = tab==='crews'?'block':'none';
+  if (tab==='crews') renderMyCrews();
+}
+
+function renderMyCrews() {
+  const el = document.getElementById('my-crews-list');
+  if (!el) return;
+  const all = (typeof CREWS !== 'undefined' ? CREWS : []);
+  const mine = all.filter(c => c.joined || c.mine);
+  if (!mine.length) {
+    el.innerHTML = '<div style="text-align:center;padding:44px 20px;color:rgba(255,255,255,0.25);font-size:13px"><div style="font-size:30px;margin-bottom:10px">👥</div>아직 가입한 크루가 없어요<div style="font-size:12px;color:rgba(255,255,255,0.15);margin-top:6px">크루 탭에서 마음에 드는 크루에 가입해보세요</div></div>';
+    return;
+  }
+  el.innerHTML = mine.map(c => `
+    <div class="card" onclick="openCrewDetail('${c.id}')" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+      <img src="${c.img}" loading="lazy" style="width:48px;height:48px;border-radius:12px;object-fit:cover;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:5px">${c.name} ${c.mine?'<span style="background:rgba(61,126,255,0.18);color:#60A5FA;font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px">운영</span>':''}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:2px">${c.loc} · 멤버 ${c.members}명</div>
+      </div>
+      <span style="color:#444;font-size:16px;flex-shrink:0">›</span>
+    </div>`).join('');
 }
 
 function handleProfilePic(input) {
