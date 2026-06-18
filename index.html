@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618005 -->
+<!-- cache-bust: v20260618006 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -494,7 +494,7 @@
   <div class="match-card" id="match-card">
     <img id="match-img" src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80">
     <div class="match-grad"></div>
-    <div class="verified-badge" style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:0.5px;font-weight:600;color:var(--gold)">
+    <div class="verified-badge" id="match-verified-badge" style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:0.5px;font-weight:600;color:var(--gold)">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       인증완료
     </div>
@@ -644,7 +644,7 @@
       </div>
       <input type="file" id="profile-pic-input" accept="image/*" style="display:none" onchange="handleProfilePic(this)">
       <div style="font-size:18px;font-weight:800;margin-bottom:4px" id="info-name">나</div>
-      <div style="font-size:12px;color:#666">✓ GBD VERIFIED</div>
+      <div id="my-verify-status" style="font-size:12px;min-height:18px"></div>
     </div>
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
@@ -678,6 +678,23 @@
   </div>
 </div>
 
+<!-- 얼굴 인증 모달 -->
+<div class="modal-overlay" id="face-verify-modal" onclick="if(event.target===this)window.stopFaceVerify()">
+  <div class="modal-sheet">
+    <div style="font-size:18px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      프로필 인증
+    </div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px;line-height:1.5">정면을 보고 셀카를 찍으면, AI가 프로필 사진과 자동으로 대조해요. (사진은 저장되지 않아요)</div>
+    <div style="position:relative;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#000;margin-bottom:14px">
+      <video id="fv-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
+      <div style="position:absolute;inset:14px;border:2px dashed rgba(255,255,255,0.35);border-radius:50%;pointer-events:none"></div>
+    </div>
+    <div id="fv-status" style="font-size:13px;color:rgba(255,255,255,0.7);text-align:center;min-height:20px;margin-bottom:14px;line-height:1.5">준비 중...</div>
+    <button id="fv-capture" onclick="window.captureFaceVerify()" disabled style="width:100%;background:#3D7EFF;border:none;color:#fff;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;opacity:0.5">촬영하고 인증</button>
+    <button onclick="window.stopFaceVerify()" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">닫기</button>
+  </div>
+</div>
 
 <!-- ===== PANELS ===== -->
 
@@ -1859,10 +1876,10 @@
 <script>
 // ===== DATA =====
 const PROFILES = [
-  { id:1, name:"지수", age:26, loc:"마포", workout:["크로스핏","러닝"], gym:"홍대 크박", time:"새벽 6시파", bio:"운동 끝나고 같이 커피 마실 사람 좋아요", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80", attendance:23, record:"3대 285kg", sameCenter:true },
-  { id:2, name:"민준", age:29, loc:"성수", workout:["클라이밍","웨이트"], gym:"성수 클라이밍", time:"저녁 7시파", bio:"3대보다 꾸준함 추구파. 볼더링 같이 하실 분", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&q=80", attendance:18, record:"V5 클리어", sameCenter:false },
-  { id:3, name:"하늘", age:24, loc:"강남", workout:["필라테스","요가"], gym:"강남 스튜디오", time:"아침 8시파", bio:"운동 얘기보다 루틴 공유하는 거 더 좋아함", img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&q=80", attendance:28, record:"개근 4주", sameCenter:false },
-  { id:4, name:"서연", age:27, loc:"용산", workout:["러닝","수영"], gym:"한강 러닝", time:"새벽 5시파", bio:"새벽 한강 뛰고 단백질 먹는 게 낙이에요", img:"https://images.unsplash.com/photo-1594381898411-846e7d193883?w=400&q=80", attendance:31, record:"하프마라톤 완주", sameCenter:false },
+  { id:1, name:"지수", age:26, loc:"마포", workout:["크로스핏","러닝"], gym:"홍대 크박", time:"새벽 6시파", bio:"운동 끝나고 같이 커피 마실 사람 좋아요", img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80", attendance:23, record:"3대 285kg", sameCenter:true, faceVerified:true },
+  { id:2, name:"민준", age:29, loc:"성수", workout:["클라이밍","웨이트"], gym:"성수 클라이밍", time:"저녁 7시파", bio:"3대보다 꾸준함 추구파. 볼더링 같이 하실 분", img:"https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=400&q=80", attendance:18, record:"V5 클리어", sameCenter:false, faceVerified:false },
+  { id:3, name:"하늘", age:24, loc:"강남", workout:["필라테스","요가"], gym:"강남 스튜디오", time:"아침 8시파", bio:"운동 얘기보다 루틴 공유하는 거 더 좋아함", img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=400&q=80", attendance:28, record:"개근 4주", sameCenter:false, faceVerified:true },
+  { id:4, name:"서연", age:27, loc:"용산", workout:["러닝","수영"], gym:"한강 러닝", time:"새벽 5시파", bio:"새벽 한강 뛰고 단백질 먹는 게 낙이에요", img:"https://images.unsplash.com/photo-1594381898411-846e7d193883?w=400&q=80", attendance:31, record:"하프마라톤 완주", sameCenter:false, faceVerified:false },
 ];
 
 const CREWS = [
@@ -2007,6 +2024,10 @@ function renderMatch() {
   document.getElementById('match-age').textContent = p.age;
   document.getElementById('match-gym').textContent = p.gym + ' · ' + p.time;
   document.getElementById('match-bio').textContent = p.bio;
+
+  // 얼굴 인증완료 뱃지 (faceVerified true일 때만)
+  const vb = document.getElementById('match-verified-badge');
+  if (vb) vb.style.display = p.faceVerified ? 'flex' : 'none';
 
   // 위치
   const locEl = document.getElementById('match-loc');
@@ -3209,7 +3230,7 @@ function openUserProfile(userId, userName, userPhoto) {
       <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);margin:0 auto 12px;border:1px solid rgba(255,255,255,0.1)">
         <img src="${userPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
       </div>
-      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName}</div>
+      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName} <span id="user-profile-verified"></span></div>
       <div style="font-size:12px;color:rgba(255,255,255,0.35)">GBD CREW · 서울</div>
     </div>
     <!-- 스탯 -->
@@ -3272,7 +3293,7 @@ function openUserProfile(userId, userName, userPhoto) {
       <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);margin:0 auto 12px;border:1px solid rgba(255,255,255,0.1)">
         <img src="${userPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
       </div>
-      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName}</div>
+      <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px">${userName} <span id="user-profile-verified"></span></div>
       <div style="font-size:12px;color:rgba(255,255,255,0.35)">GBD CREW · 서울</div>
     </div>
     <div style="display:flex;gap:0;border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:20px">
@@ -3294,6 +3315,7 @@ function openUserProfile(userId, userName, userPhoto) {
     <div style="padding:0 20px">
       <button onclick="closePanel('user-profile-panel'); openPanel('chat-detail-panel'); document.getElementById('chat-detail-name').textContent='${userName}'; document.getElementById('chat-detail-avatar').src='${userPhoto}'; renderChatMessages();" style="width:100%;background:#fff;color:#000;border:none;border-radius:10px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px">같이 운동해요</button>
     </div>`;
+  if (window.fillUserVerified) window.fillUserVerified(userId);
   openPanel('user-profile-panel');
 }
 
@@ -4206,6 +4228,128 @@ async function renderHomeLiveBar() {
   } catch(e) { bar.style.display = 'none'; }
 }
 
+// ===== AI 얼굴 인증 (face-api.js, 브라우저 내) =====
+const FACE_LIB = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
+const FACE_MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+let _faceApiReady = false;
+let _fvStream = null;
+
+function _loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('script load fail'));
+    document.head.appendChild(s);
+  });
+}
+async function ensureFaceApi() {
+  if (_faceApiReady) return;
+  if (!window.faceapi) await _loadScript(FACE_LIB);
+  await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS);
+  _faceApiReady = true;
+}
+function _loadImg(url) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error('img load fail'));
+    im.src = url;
+  });
+}
+async function _descriptorFrom(input) {
+  const det = await faceapi
+    .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
+    .withFaceLandmarks().withFaceDescriptor();
+  return det ? det.descriptor : null;
+}
+function setFvStatus(t) { const e = document.getElementById('fv-status'); if (e) e.textContent = t; }
+function _fvCaptureEnabled(on) {
+  const b = document.getElementById('fv-capture');
+  if (b) { b.disabled = !on; b.style.opacity = on ? '1' : '0.5'; }
+}
+
+window.startFaceVerify = async function() {
+  if (!window.currentUser) { requireLogin('프로필 인증은 로그인이 필요해요'); return; }
+  const prof = window._cachedProfile || {};
+  const photo = prof.photoURL || window.currentUser.photoURL;
+  if (!photo) { showToast('먼저 프로필 사진을 등록해주세요'); return; }
+  window._fvRefDesc = null;
+  _fvCaptureEnabled(false);
+  openModal('face-verify-modal');
+  setFvStatus('카메라 준비 중...');
+  try {
+    _fvStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    document.getElementById('fv-video').srcObject = _fvStream;
+  } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
+  setFvStatus('AI 모델 불러오는 중... (최초 1회)');
+  try { await ensureFaceApi(); } catch (e) { setFvStatus('모델 로딩 실패. 잠시 후 다시 시도해주세요'); return; }
+  setFvStatus('프로필 사진 분석 중...');
+  try {
+    const proxied = 'https://images.weserv.nl/?url=' + encodeURIComponent(photo.replace(/^https?:\/\//, ''));
+    const refImg = await _loadImg(proxied);
+    window._fvRefDesc = await _descriptorFrom(refImg);
+  } catch (e) {}
+  if (!window._fvRefDesc) { setFvStatus('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진으로 바꿔주세요'); return; }
+  setFvStatus('정면을 원 안에 맞추고 [촬영하고 인증]을 눌러요');
+  _fvCaptureEnabled(true);
+};
+
+window.captureFaceVerify = async function() {
+  const v = document.getElementById('fv-video');
+  if (!v || !v.videoWidth || !window._fvRefDesc) return;
+  _fvCaptureEnabled(false);
+  setFvStatus('얼굴 분석 중...');
+  let desc = null;
+  try { desc = await _descriptorFrom(v); } catch (e) {}
+  if (!desc) { setFvStatus('얼굴이 잘 안 보여요. 정면으로 다시 찍어주세요'); _fvCaptureEnabled(true); return; }
+  const dist = faceapi.euclideanDistance(desc, window._fvRefDesc);
+  const matchPct = Math.max(0, Math.round((1 - dist / 0.6) * 100));
+  if (dist < 0.55) {
+    try {
+      await setDoc(doc(db, 'users', window.currentUser.uid), { faceVerified: true, faceVerifiedAt: serverTimestamp() }, { merge: true });
+      if (window._cachedProfile) window._cachedProfile.faceVerified = true;
+      setFvStatus('✅ 인증 완료! 일치도 ' + matchPct + '%');
+      showToast('🛡️ 얼굴 인증이 완료됐어요!');
+      window.renderMyVerifyStatus();
+      setTimeout(() => window.stopFaceVerify(), 1500);
+    } catch (e) { setFvStatus('저장 실패. 다시 시도해주세요'); _fvCaptureEnabled(true); }
+  } else {
+    setFvStatus('프로필 사진과 일치하지 않아요 (일치도 ' + matchPct + '%). 정면으로 다시 시도해주세요');
+    _fvCaptureEnabled(true);
+  }
+};
+
+window.stopFaceVerify = function() {
+  if (_fvStream) { _fvStream.getTracks().forEach(t => t.stop()); _fvStream = null; }
+  const v = document.getElementById('fv-video'); if (v) v.srcObject = null;
+  closeModal('face-verify-modal');
+};
+
+const _SHIELD_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+
+window.renderMyVerifyStatus = function() {
+  const el = document.getElementById('my-verify-status');
+  if (!el) return;
+  const verified = !!(window._cachedProfile && window._cachedProfile.faceVerified);
+  el.innerHTML = verified
+    ? '<span style="display:inline-flex;align-items:center;gap:4px;color:var(--gold);font-weight:700">' + _SHIELD_SVG + '얼굴 인증완료</span>'
+    : '<button onclick="window.startFaceVerify()" style="background:rgba(245,194,75,0.12);border:1px solid rgba(245,194,75,0.35);color:var(--gold);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px">' + _SHIELD_SVG + '프로필 인증하기</button>';
+};
+
+window.fillUserVerified = async function(userId) {
+  const el = document.getElementById('user-profile-verified');
+  if (!el || !userId) return;
+  el.innerHTML = '';
+  try {
+    const us = await getDoc(doc(db, 'users', userId));
+    if (us.exists() && us.data().faceVerified) {
+      el.innerHTML = '<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(245,194,75,0.15);color:var(--gold);font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;vertical-align:2px">' + _SHIELD_SVG + '인증완료</span>';
+    }
+  } catch (e) {}
+};
+
 async function fetchUserPhotos(posts) {
   const uniqueIds = [...new Set(posts.map(p => p.userId).filter(Boolean))];
   await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
@@ -4467,6 +4611,7 @@ window.loadUserProfile = async (uid) => {
     document.getElementById('info-district').textContent = d.district || '—';
     document.getElementById('info-bio').textContent = d.bio || '—';
     window._cachedProfile = d;
+    if (window.renderMyVerifyStatus) window.renderMyVerifyStatus();
   } catch(e) { console.error('프로필 로드 실패:', e); }
 };
 
