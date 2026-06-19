@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619002 -->
+<!-- cache-bust: v20260619003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4035,7 +4035,7 @@ window.updateUI = function(user) {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('mypage-logout-btn');
     if (user) {
-      if (avatar) { avatar.src = (user.firestorePhotoURL || user.photoURL) || ''; avatar.style.display = 'block'; }
+      if (avatar) { avatar.src = window._cdnImg((user.firestorePhotoURL || user.photoURL) || '', 80); avatar.style.display = 'block'; }
       if (mypageBtn) mypageBtn.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'block';
@@ -4084,7 +4084,7 @@ async function checkAndSetNickname(user) {
         if (data.photoURL) {
           window.currentUser.firestorePhotoURL = data.photoURL;
           const avatar = document.getElementById('user-avatar');
-          if (avatar) { avatar.src = data.photoURL; avatar.style.display = 'block'; }
+          if (avatar) { avatar.src = window._cdnImg(data.photoURL, 80); avatar.style.display = 'block'; }
         }
       }
       const infoName = document.getElementById('info-name');
@@ -4159,8 +4159,8 @@ onAuthStateChanged(auth, async (user) => {
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
     if (window.loadCentersFirestore) window.loadCentersFirestore();
-    // 로그인 상태: 로고 잠깐 보여주고 자동 dismiss
-    setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 1800);
+    // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
+    setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
   } else {
     window.currentUser = null;
     updateUI(null);
@@ -4210,6 +4210,12 @@ let feedLoading = false;
 let feedAllLoaded = false;
 let feedObserver = null;
 
+// 이미지 CDN 리사이즈 (weserv): 원본 풀해상도 대신 화면 크기에 맞게 줄여 빠르게 + 엣지 캐시
+window._cdnImg = (url, w) => {
+  if (!url || /^(data:|blob:)/.test(url) || url.includes('images.weserv.nl')) return url || '';
+  return 'https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, '')) + '&w=' + (w || 600) + '&output=webp&q=80';
+};
+
 function buildPostHTML(p) {
   const time = p.createdAt
     ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
@@ -4225,7 +4231,7 @@ function buildPostHTML(p) {
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
         <div style="display:flex;align-items:center;flex:1;min-width:0;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
-            <img src="${displayPhoto}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            <img src="${window._cdnImg(displayPhoto,80)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
           <div style="margin-left:10px;">
             <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
@@ -4234,7 +4240,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${p.photoURL}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${window._cdnImg(p.photoURL,760)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -4265,7 +4271,7 @@ async function renderHomeLiveBar() {
       const p = d.data();
       if (!p.userId || seen.has(p.userId)) return;
       seen.add(p.userId);
-      const photo = userPhotoCache.get(p.userId) || p.userPhoto || '';
+      const photo = window._cdnImg(userPhotoCache.get(p.userId) || p.userPhoto || '', 60);
       if (recentPhotos.length < 3) recentPhotos.push(photo);
     });
     const n = seen.size;
@@ -4423,7 +4429,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     ? '<div style="position:absolute;top:12px;right:12px;z-index:3;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);border-radius:8px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--gold)">' + _SHIELD_SVG + '인증완료</div>'
     : '';
   const slidesHTML = cards.length
-    ? cards.map(u => `<div style="flex:0 0 100%;aspect-ratio:1;background:#111"><img src="${u}" draggable="false" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
+    ? cards.map(u => `<div style="flex:0 0 100%;aspect-ratio:1;background:#111"><img src="${window._cdnImg(u,720)}" draggable="false" decoding="async" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
     : `<div style="flex:0 0 100%;aspect-ratio:1;background:linear-gradient(135deg,#1a1f2e,#0d1117);display:flex;align-items:center;justify-content:center;font-size:40px">🏋️</div>`;
   const dotsHTML = cards.length > 1
     ? `<div style="position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:3">${cards.map((_, i) => `<div class="up-dot" style="height:6px;border-radius:${i === 0 ? '3px' : '50%'};transition:all .25s;width:${i === 0 ? '18px' : '6px'};background:${i === 0 ? '#fff' : 'rgba(255,255,255,0.4)'}"></div>`).join('')}</div>`
@@ -4453,10 +4459,10 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const feedSection = matched
     ? `<div style="padding:0 16px 16px">
          <div style="font-size:13px;font-weight:800;margin-bottom:11px;display:flex;align-items:center;gap:5px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>운동 인증 기록 <span style="color:rgba(255,255,255,0.35);font-weight:600">${totalCnt}</span></div>
-         ${posts.length ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${posts.map(p => `<div style="position:relative;aspect-ratio:1;background:#111;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.3)"><img src="${p.photoURL}" loading="lazy" style="width:100%;height:100%;object-fit:cover">${(p.likes || 0) > 0 ? `<div style="position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,0.65),transparent);display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#fff"><svg width="11" height="11" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>${p.likes}</div>` : ''}</div>`).join('')}</div>` : '<div style="text-align:center;padding:30px 24px;color:rgba(255,255,255,0.2);font-size:12px;background:rgba(255,255,255,0.03);border-radius:14px">아직 운동 인증 기록이 없어요</div>'}
+         ${posts.length ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${posts.map(p => `<div style="position:relative;aspect-ratio:1;background:#111;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.3)"><img src="${window._cdnImg(p.photoURL,300)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">${(p.likes || 0) > 0 ? `<div style="position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,0.65),transparent);display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#fff"><svg width="11" height="11" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>${p.likes}</div>` : ''}</div>`).join('')}</div>` : '<div style="text-align:center;padding:30px 24px;color:rgba(255,255,255,0.2);font-size:12px;background:rgba(255,255,255,0.03);border-radius:14px">아직 운동 인증 기록이 없어요</div>'}
        </div>`
     : `<div style="padding:0 16px 16px;position:relative">
-         <div style="filter:blur(8px);pointer-events:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${(posts.length ? posts : [0,0,0,0,0,0]).slice(0,6).map(p => `<div style="aspect-ratio:1;background:#1a1f2e;border-radius:12px;overflow:hidden">${p && p.photoURL ? `<img src="${p.photoURL}" style="width:100%;height:100%;object-fit:cover">` : ''}</div>`).join('')}</div>
+         <div style="filter:blur(8px);pointer-events:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${(posts.length ? posts : [0,0,0,0,0,0]).slice(0,6).map(p => `<div style="aspect-ratio:1;background:#1a1f2e;border-radius:12px;overflow:hidden">${p && p.photoURL ? `<img src="${window._cdnImg(p.photoURL,200)}" style="width:100%;height:100%;object-fit:cover">` : ''}</div>`).join('')}</div>
          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px">
            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
            <div style="font-size:13px;font-weight:700;color:#fff;margin-top:10px">매칭되면 운동 인증 피드가 열려요</div>
@@ -4853,9 +4859,9 @@ window.loadUserProfile = async (uid) => {
     if (d.photoURL) {
       const pic = document.getElementById('profile-pic-preview');
       const icon = document.getElementById('profile-pic-icon');
-      if (pic) { pic.src = d.photoURL; pic.style.display='block'; if(icon) icon.style.display='none'; }
+      if (pic) { pic.src = window._cdnImg(d.photoURL, 200); pic.style.display='block'; if(icon) icon.style.display='none'; }
       const av = document.getElementById('user-avatar');
-      if (av) { av.src = d.photoURL; av.style.display='block'; }
+      if (av) { av.src = window._cdnImg(d.photoURL, 80); av.style.display='block'; }
       if (window.currentUser) window.currentUser.firestorePhotoURL = d.photoURL;
     }
     document.getElementById('info-gender-age').textContent = [d.gender, d.age?d.age+'세':''].filter(Boolean).join(' · ') || '—';
