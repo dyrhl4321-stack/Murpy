@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619008 -->
+<!-- cache-bust: v20260619009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -177,9 +177,14 @@
   .photo-thumb:hover .remove-btn { display: flex; }
 
   /* Chat */
-  .chat-bubble { border-radius: 16px; padding: 10px 14px; font-size: 14px; max-width: 70%; }
-  .chat-me { background: #fff; color: #000; border-radius: 16px 16px 4px 16px; align-self: flex-end; }
-  .chat-other { background: rgba(255,255,255,0.06); color: #fff; border-radius: 16px 16px 16px 4px; align-self: flex-start; }
+  .chat-bubble { border-radius: 18px; padding: 9px 14px; font-size: 14px; line-height: 1.45; max-width: 100%; width: fit-content; word-break: break-word; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .chat-me { background: linear-gradient(135deg,#4A86FF,#3066E8); color: #fff; border-radius: 18px 18px 5px 18px; box-shadow: 0 2px 10px rgba(48,102,232,0.28); }
+  .chat-other { background: rgba(255,255,255,0.07); color: #f2f2f2; border-radius: 18px 18px 18px 5px; border: 1px solid rgba(255,255,255,0.05); }
+  #chat-input::placeholder { color: rgba(255,255,255,0.3); }
+  .chat-send-btn { border:none; border-radius:50%; width:42px; height:42px; flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer; background:linear-gradient(135deg,#4A86FF,#3066E8); box-shadow:0 3px 12px rgba(48,102,232,0.4); transition:transform .12s, opacity .12s; }
+  .chat-send-btn:active { transform: scale(0.9); }
+  .chat-send-btn:disabled { opacity: 0.35; box-shadow:none; cursor:default; }
+  .chat-date-sep { align-self:center; font-size:10.5px; color:rgba(255,255,255,0.3); background:rgba(255,255,255,0.05); padding:3px 12px; border-radius:20px; margin:6px 0; }
 
   /* Progress bar */
   .progress-bar { background: #2a2a2a; border-radius: 10px; height: 6px; overflow: hidden; }
@@ -951,13 +956,18 @@
 <div class="panel" id="chat-detail-panel" style="flex-direction:column">
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('chat-detail-panel')">←</button>
-    <img id="chat-detail-avatar" src="" style="width:36px;height:36px;border-radius:50%;object-fit:cover">
-    <span style="font-weight:700;margin-left:8px" id="chat-detail-name"></span>
+    <img id="chat-detail-avatar" src="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(255,255,255,0.12)">
+    <div style="margin-left:10px;display:flex;flex-direction:column;line-height:1.25">
+      <span style="font-weight:700;font-size:15px" id="chat-detail-name"></span>
+      <span style="font-size:11px;color:#4A86FF;font-weight:600">운동 파트너</span>
+    </div>
   </div>
-  <div id="chat-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px"></div>
-  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px">
-    <input id="chat-input" placeholder="메시지 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none" onkeydown="if(event.key==='Enter')sendChat()">
-    <button class="btn-white" style="border-radius:50%;width:40px;height:40px;font-size:16px" onclick="sendChat()">↑</button>
+  <div id="chat-messages" style="flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:3px"></div>
+  <div style="padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:9px;align-items:flex-end;background:rgba(12,12,14,0.7);backdrop-filter:blur(14px)">
+    <input id="chat-input" placeholder="메시지 입력" autocomplete="off" style="flex:1;min-width:0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:21px;padding:11px 16px;color:#fff;font-size:14px;line-height:1.3;outline:none" oninput="window._chatInputToggle&&window._chatInputToggle()" onkeydown="if(event.key==='Enter'){event.preventDefault();sendChat()}">
+    <button id="chat-send-btn" class="chat-send-btn" onclick="sendChat()" aria-label="전송">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+    </button>
   </div>
 </div>
 
@@ -4445,6 +4455,13 @@ window.startNotifListener = (uid) => {
           if (n.type === 'match') _showMatchPopup(n);
           else if (n.type === 'feed_like') showToast('❤️ ' + (n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast('💬 ' + (n.fromNickname || '누군가') + '님이 댓글을 남겼어요');
+          else if (n.type === 'chat') {
+            // 이미 그 대화창을 보고 있으면 토스트 생략
+            const detailOpen = document.getElementById('chat-detail-panel')?.classList.contains('open');
+            if (!(detailOpen && window._currentChatId === n.chatId)) {
+              showToast('💬 ' + (n.fromNickname || '상대') + ': ' + (n.text || '새 메시지'));
+            }
+          }
           else showToast('🔔 새 알림이 도착했어요');
         });
       }
@@ -5385,6 +5402,20 @@ window.loadNotificationsFirestore = async () => {
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;
       }
+      if (n.type === 'chat') {
+        const safeMsg = (n.text || '').replace(/</g,'&lt;');
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');window.openChatWith('${safeFromUid}','${safeNickJs}','')">
+          <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 메시지를 보냈어요</div>
+            ${safeMsg ? `<div style="font-size:12px;color:rgba(255,255,255,0.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px">${safeMsg}</div>` : ''}
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'bamboo_request') {
         return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(74,222,128,0.13);border:1px solid rgba(74,222,128,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg></div>
@@ -5550,8 +5581,12 @@ window.loadChatListFirestore = async () => {
 
 window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto) => {
   window._currentChatId = chatId;
+  window._currentChatPartner = partnerUid;
+  window._currentChatPartnerName = partnerName;
+  window._currentChatPartnerPhoto = partnerPhoto || '';
+  const _ph = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='18' fill='%23333'/%3E%3C/svg%3E";
   const avatarEl = document.getElementById('chat-detail-avatar');
-  avatarEl.src = partnerPhoto || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='18' fill='%23333'/%3E%3C/svg%3E";
+  avatarEl.src = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 76) : (partnerPhoto || _ph);
   avatarEl.style.display = 'block';
   document.getElementById('chat-detail-name').textContent = partnerName;
   const messagesEl = document.getElementById('chat-messages');
@@ -5574,21 +5609,48 @@ window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto) => {
       return;
     }
     const uid = (auth.currentUser || window.currentUser)?.uid;
-    messagesEl.innerHTML = snap.docs.map(d => {
+    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const pPhoto = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 56) : (partnerPhoto || _ph);
+    const docs = snap.docs;
+    let lastDay = '';
+    messagesEl.innerHTML = docs.map((d, i) => {
       const m = d.data();
       const isMe = m.senderId === uid;
-      const timeStr = m.createdAt ? new Date(m.createdAt.seconds*1000).toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
-      return `<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};margin-bottom:4px">
-        <div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:2px;max-width:70%">
-          <div class="chat-bubble ${isMe?'chat-me':'chat-other'}">${m.text}</div>
-          <span style="font-size:10px;color:#444;padding:0 4px">${timeStr}</span>
+      const dt = m.createdAt ? new Date(m.createdAt.seconds*1000) : null;
+      const timeStr = dt ? dt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
+      // 날짜 구분선
+      let sep = '';
+      if (dt) {
+        const dayKey = dt.toLocaleDateString('ko-KR', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
+        if (dayKey !== lastDay) { sep = `<div class="chat-date-sep">${dayKey}</div>`; lastDay = dayKey; }
+      }
+      // 그룹화: 같은 사람 연속 메시지면 마지막에만 시간/아바타
+      const next = docs[i+1]?.data();
+      const lastOfGroup = !next || next.senderId !== m.senderId;
+      const avatarHtml = isMe ? '' : (lastOfGroup
+        ? `<img src="${pPhoto}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;align-self:flex-end">`
+        : `<div style="width:28px;flex-shrink:0"></div>`);
+      return `${sep}<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};gap:8px;align-items:flex-end;margin-bottom:${lastOfGroup?'8px':'2px'}">
+        ${avatarHtml}
+        <div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:3px;max-width:72%">
+          <div class="chat-bubble ${isMe?'chat-me':'chat-other'}">${esc(m.text)}</div>
+          ${lastOfGroup && timeStr ? `<span style="font-size:10px;color:rgba(255,255,255,0.28);padding:0 5px">${timeStr}</span>` : ''}
         </div>
       </div>`;
     }).join('');
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
+  const inEl = document.getElementById('chat-input');
+  if (inEl) { inEl.value = ''; }
+  if (window._chatInputToggle) window._chatInputToggle();
   closePanel('chat-panel');
   openPanel('chat-detail-panel');
+};
+
+window._chatInputToggle = () => {
+  const input = document.getElementById('chat-input');
+  const btn = document.getElementById('chat-send-btn');
+  if (btn) btn.disabled = !(input && input.value.trim());
 };
 
 window.sendChatFirestore = async () => {
@@ -5599,6 +5661,7 @@ window.sendChatFirestore = async () => {
   const text = input?.value?.trim();
   if (!text) return;
   input.value = '';
+  window._chatInputToggle();
   let nickname = '익명';
   try {
     const us = await getDoc(doc(db, 'users', user.uid));
@@ -5609,6 +5672,10 @@ window.sendChatFirestore = async () => {
       text, senderId: user.uid, senderName: nickname, createdAt: serverTimestamp()
     });
     await updateDoc(doc(db, 'chats', chatId), { lastMessage: text, lastMessageTime: serverTimestamp() });
+    // 상대방에게 채팅 알림
+    if (window._currentChatPartner) {
+      _sendNotif(window._currentChatPartner, 'chat', { chatId, text: text.substring(0, 40) });
+    }
   } catch(e) { console.error('send error:', e); showToast('전송 실패'); }
 };
 

@@ -22,6 +22,15 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
   } else if (n.type === "bamboo_request") {
     title = "🎋 대나무숲";
     body = (n.fromNickname || "누군가") + "님이 내 글에 '저에요'를 눌렀어요";
+  } else if (n.type === "feed_like") {
+    title = "❤️ 좋아요";
+    body = (n.fromNickname || "누군가") + "님이 내 글에 좋아요를 눌렀어요";
+  } else if (n.type === "feed_comment") {
+    title = "💬 댓글";
+    body = (n.fromNickname || "누군가") + "님이 댓글을 남겼어요";
+  } else if (n.type === "chat") {
+    title = n.fromNickname || "새 메시지";
+    body = n.text || "메시지를 보냈어요";
   } else if (n.type === "crew_apply") {
     title = "크루 참가 신청";
     body = (n.fromNickname || "누군가") + "님이 참가 신청했어요";
