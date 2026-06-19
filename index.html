@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619005 -->
+<!-- cache-bust: v20260619006 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4018,6 +4018,7 @@ if ('serviceWorker' in navigator) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
@@ -4171,6 +4172,7 @@ onAuthStateChanged(auth, async (user) => {
     if (window.loadHomeTrending) window.loadHomeTrending();
     if (window.loadCentersFirestore) window.loadCentersFirestore();
     if (window.startNotifListener) window.startNotifListener(user.uid);
+    if (window.initPush) window.initPush(user.uid);
     // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
   } else {
@@ -4449,6 +4451,29 @@ window.startNotifListener = (uid) => {
   } catch (e) {}
 };
 window.stopNotifListener = () => { if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; } };
+
+// ===== FCM 시스템 푸시 (앱 꺼져 있어도) =====
+// ↓↓↓ Firebase 콘솔 > 프로젝트설정 > 클라우드 메시징 > "웹 푸시 인증서" 의 키 페어(공개키)를 붙여넣으세요
+const FCM_VAPID_KEY = "";
+let _messaging = null;
+window.initPush = async (uid) => {
+  if (!FCM_VAPID_KEY) return; // VAPID 키 없으면 비활성 (지금은 인앱 팝업만 동작)
+  try {
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+    if (!(await isSupported())) return;
+    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './firebase-cloud-messaging-push-scope' });
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return;
+    _messaging = getMessaging(app);
+    const token = await getToken(_messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    if (token && uid) await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+    onMessage(_messaging, payload => {
+      const n = (payload && (payload.data || payload.notification)) || {};
+      if (n.type === 'match') _showMatchPopup({ fromNickname: n.fromNickname, fromUid: n.fromUid, fromPhoto: n.fromPhoto });
+      else showToast('🔔 ' + (n.title || n.body || '새 알림이 도착했어요'));
+    });
+  } catch (e) {}
+};
 
 // ===== 상대방 프로필 (소개팅 카드 + 인스타 피드, 매칭 잠금/해제) =====
 window.openUserProfile = async function(userId, userName, userPhoto) {
