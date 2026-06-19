@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619017 -->
+<!-- cache-bust: v20260619018 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -5381,6 +5381,19 @@ window.sendBambooRequest = async (postId, authorUid) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 신청할 수 있어요'); return; }
   if (user.uid === authorUid) return;
+  // 이미 매칭된 사이면 바로 채팅으로
+  try {
+    const matchSnap = await getDoc(doc(db, 'matches', _pairKey(user.uid, authorUid)));
+    if (matchSnap.exists()) {
+      const chatId = _pairKey(user.uid, authorUid);
+      const d = matchSnap.data();
+      const partnerName = (d.participantNames || {})[authorUid] || d.names?.[authorUid] || '상대';
+      const partnerPhoto = (d.participantPhotos || {})[authorUid] || d.photos?.[authorUid] || '';
+      showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
+      window.openChatFirestore(chatId, authorUid, partnerName, partnerPhoto, false);
+      return;
+    }
+  } catch(e) {}
   try {
     const postRef = doc(db, 'bamboo', postId);
     const postSnap = await getDoc(postRef);
@@ -5720,10 +5733,39 @@ window.openBambooChat = async (fromUid, fromNickname, postId, notifId) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인이 필요해요'); return; }
   if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {} }
+  // 이미 매칭된 사이면 익명 처리 없이 바로 실명 채팅으로
+  try {
+    const matchSnap = await getDoc(doc(db, 'matches', _pairKey(user.uid, fromUid)));
+    if (matchSnap.exists()) {
+      const chatId = _pairKey(user.uid, fromUid);
+      // 채팅방에서 상대 이름/프사 가져오기
+      let partnerName = fromNickname || '상대', partnerPhoto = '';
+      try {
+        const us = await getDoc(doc(db, 'users', fromUid));
+        if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || ''; }
+      } catch(e) {}
+      showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
+      closePanel('notif-panel');
+      closeModal('requesters-modal');
+      window.openChatFirestore(chatId, fromUid, partnerName, partnerPhoto, false);
+      return;
+    }
+  } catch(e) {}
   const chatId = [user.uid, fromUid].sort().join('_');
   const chatRef = doc(db, 'chats', chatId);
   try {
     const chatSnap = await getDoc(chatRef);
+    // 이미 채팅방이 있고 bambooChat이 false면(매칭 완료 상태) 실명 모드로
+    if (chatSnap.exists() && chatSnap.data().bambooChat === false) {
+      const d = chatSnap.data();
+      const partnerName = (d.participantNames || {})[fromUid] || fromNickname || '상대';
+      const partnerPhoto = (d.participantPhotos || {})[fromUid] || '';
+      closePanel('notif-panel');
+      closeModal('requesters-modal');
+      window.openChatFirestore(chatId, fromUid, partnerName, partnerPhoto, false);
+      window.loadNotificationsFirestore && window.loadNotificationsFirestore();
+      return;
+    }
     if (!chatSnap.exists()) {
       let myNickname = '익명', myPhoto = '';
       try {
