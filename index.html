@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619010 -->
+<!-- cache-bust: v20260619011 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -340,7 +340,7 @@
       </svg>
     </button>
     <!-- Avatar (logged in) -->
-    <img id="user-avatar" src="" style="display:none;width:30px;height:30px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid rgba(255,255,255,0.2)" onclick="openPanel('mypage-panel')">
+    <img id="user-avatar" src="" style="display:none;width:30px;height:30px;border-radius:8px;object-fit:cover;cursor:pointer;border:1.5px solid rgba(255,255,255,0.2)" onclick="openPanel('mypage-panel')" onerror="this.onerror=null;this.src=window.currentUser&&(window.currentUser.firestorePhotoURL||window.currentUser.photoURL)||'';">
   </div>
 </div>
 
@@ -4054,7 +4054,12 @@ window.updateUI = function(user) {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('mypage-logout-btn');
     if (user) {
-      if (avatar) { avatar.src = window._cdnImg((user.firestorePhotoURL || user.photoURL) || '', 80); avatar.style.display = 'block'; }
+      if (avatar) {
+        const rawPhoto = (user.firestorePhotoURL || user.photoURL) || '';
+        avatar.src = window._cdnImg(rawPhoto, 80);
+        avatar.onerror = rawPhoto ? function() { this.onerror = null; this.src = rawPhoto; } : null;
+        avatar.style.display = rawPhoto ? 'block' : 'none';
+      }
       if (mypageBtn) mypageBtn.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'block';
@@ -4103,7 +4108,11 @@ async function checkAndSetNickname(user) {
         if (data.photoURL) {
           window.currentUser.firestorePhotoURL = data.photoURL;
           const avatar = document.getElementById('user-avatar');
-          if (avatar) { avatar.src = window._cdnImg(data.photoURL, 80); avatar.style.display = 'block'; }
+          if (avatar) {
+            avatar.src = window._cdnImg(data.photoURL, 80);
+            avatar.onerror = function() { this.onerror=null; this.src = data.photoURL; };
+            avatar.style.display = 'block';
+          }
         }
       }
       const infoName = document.getElementById('info-name');
@@ -4161,7 +4170,15 @@ window.saveNickname = async () => {
           window.currentUser.nickname = userSnap.data().nickname;
           document.getElementById('info-name').textContent = userSnap.data().nickname;
         }
-        if (userSnap.data().photoURL) window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
+        if (userSnap.data().photoURL) {
+          window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
+          const av = document.getElementById('user-avatar');
+          if (av) {
+            av.src = window._cdnImg(userSnap.data().photoURL, 80);
+            av.onerror = function() { this.onerror=null; this.src = userSnap.data().photoURL; };
+            av.style.display = 'block';
+          }
+        }
       }
     } catch(e) {}
   }
@@ -4235,6 +4252,9 @@ let feedObserver = null;
 // 이미지 CDN 리사이즈 (weserv): 원본 풀해상도 대신 화면 크기에 맞게 줄여 빠르게 + 엣지 캐시
 window._cdnImg = (url, w) => {
   if (!url || /^(data:|blob:)/.test(url) || url.includes('images.weserv.nl')) return url || '';
+  // 이미 CDN(Google/imgBB/Cloudflare)인 경우 weserv 중계 없이 직접 반환
+  // — weserv가 이 도메인들을 fetch할 때 차단당해 "?" 버그 발생
+  if (/googleusercontent\.com|lh[0-9]+\.google|i\.ibb\.co/.test(url)) return url;
   return 'https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, '')) + '&w=' + (w || 600) + '&output=webp&q=80';
 };
 
@@ -4262,7 +4282,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${window._cdnImg(p.photoURL,760)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden;cursor:pointer" onclick="(function(v,i){i.src='${p.photoURL}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${window._cdnImg(p.photoURL,760)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -4971,7 +4991,11 @@ window.loadUserProfile = async (uid) => {
       const icon = document.getElementById('profile-pic-icon');
       if (pic) { pic.src = window._cdnImg(d.photoURL, 200); pic.style.display='block'; if(icon) icon.style.display='none'; }
       const av = document.getElementById('user-avatar');
-      if (av) { av.src = window._cdnImg(d.photoURL, 80); av.style.display='block'; }
+      if (av) {
+        av.src = window._cdnImg(d.photoURL, 80);
+        av.onerror = function() { this.onerror=null; this.src = d.photoURL; };
+        av.style.display = 'block';
+      }
       if (window.currentUser) window.currentUser.firestorePhotoURL = d.photoURL;
     }
     document.getElementById('info-gender-age').textContent = [d.gender, d.age?d.age+'세':''].filter(Boolean).join(' · ') || '—';
