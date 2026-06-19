@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619012 -->
+<!-- cache-bust: v20260619013 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4476,14 +4476,15 @@ window.startNotifListener = (uid) => {
       if (badge) { badge.textContent = unread; badge.style.display = unread > 0 ? 'flex' : 'none'; }
       if (!_notifFirst) {
         snap.docChanges().forEach(ch => {
-          if (ch.type !== 'added') return;
+          // 채팅 알림은 setDoc으로 덮어쓰기 → 'modified'도 처리
+          const isChatUpdate = ch.type === 'modified' && ch.doc.data().type === 'chat';
+          if (ch.type !== 'added' && !isChatUpdate) return;
           const n = ch.doc.data();
           if (n.read) return;
           if (n.type === 'match') _showMatchPopup(n);
           else if (n.type === 'feed_like') showToast('❤️ ' + (n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast('💬 ' + (n.fromNickname || '누군가') + '님이 댓글을 남겼어요');
           else if (n.type === 'chat') {
-            // 이미 그 대화창을 보고 있으면 토스트 생략
             const detailOpen = document.getElementById('chat-detail-panel')?.classList.contains('open');
             if (!(detailOpen && window._currentChatId === n.chatId)) {
               showToast('💬 ' + (n.fromNickname || '상대') + ': ' + (n.text || '새 메시지'));
@@ -4845,11 +4846,17 @@ async function _sendNotif(toUid, type, extra = {}, overrideNick, overridePhoto) 
   if (!me || me.uid === toUid) return;
   const myNick = overrideNick || (window._cachedProfile && window._cachedProfile.nickname) || me.displayName || '익명';
   const myPhoto = overridePhoto !== undefined ? overridePhoto : ((window._cachedProfile && window._cachedProfile.photoURL) || me.photoURL || '');
+  const payload = {
+    toUid, fromUid: me.uid, fromNickname: myNick, fromPhoto: myPhoto,
+    type, read: false, createdAt: serverTimestamp(), ...extra
+  };
   try {
-    await addDoc(collection(db, 'notifications'), {
-      toUid, fromUid: me.uid, fromNickname: myNick, fromPhoto: myPhoto,
-      type, read: false, createdAt: serverTimestamp(), ...extra
-    });
+    if (type === 'chat') {
+      // 같은 발신자→수신자 채팅 알림은 문서 1개만 유지 (메시지마다 덮어씀 → 중복 방지)
+      await setDoc(doc(db, 'notifications', `chat_${me.uid}_${toUid}`), payload);
+    } else {
+      await addDoc(collection(db, 'notifications'), payload);
+    }
   } catch (e) {}
 }
 
@@ -5399,7 +5406,7 @@ window.loadNotificationsFirestore = async () => {
       const safePostId = (n.postId || '').replace(/'/g,'');
       const safeId = (n._id || '').replace(/'/g,'');
       if (n.type === 'match') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.6:1}" onclick="window.markFirebaseNotifRead('${safeId}');window.openChatWith('${safeFromUid}','${safeNickJs}','')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.6:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.openChatWith('${safeFromUid}','${safeNickJs}','')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님과 매칭됐어요! 같이 운동해봐요 💪</div>
@@ -5409,7 +5416,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'feed_like') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('home')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,90,110,0.13);border:1px solid rgba(255,90,110,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#ff5a6e" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
           </div>
@@ -5422,7 +5429,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'feed_comment') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('home')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </div>
@@ -5437,7 +5444,7 @@ window.loadNotificationsFirestore = async () => {
       if (n.type === 'chat') {
         const safeMsg = (n.text || '').replace(/</g,'&lt;');
         const safePhoto = (n.fromPhoto || '').replace(/'/g,'').replace(/"/g,'');
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');window.openChatWith('${safeFromUid}','${safeNickJs}','${safePhoto}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.openChatWith('${safeFromUid}','${safeNickJs}','${safePhoto}')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
           </div>
@@ -5464,7 +5471,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'crew_apply') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('crew')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님이 <b>${safeText}</b>에 참가 신청했어요</div>
@@ -5474,7 +5481,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'crew_approved') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('crew')">
           <div style="width:32px;height:32px;border-radius:50%;background:rgba(109,194,109,0.12);border:1px solid rgba(109,194,109,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6dc26d" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeText}</b> 참가 신청이 승인됐어요!</div>
@@ -5486,9 +5493,15 @@ window.loadNotificationsFirestore = async () => {
       const fb = n.type === 'like'
         ? { bg: 'rgba(255,90,110,0.13)', bd: 'rgba(255,90,110,0.25)', col: '#ff5a6e', fill: '#ff5a6e', svg: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>' }
         : { bg: 'rgba(61,126,255,0.14)', bd: 'rgba(61,126,255,0.25)', col: '#3D7EFF', fill: 'none', svg: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' };
-      return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1};cursor:pointer" onclick="window.markFirebaseNotifRead('${safeId}')">
+      const fbContent = n.text || n.postText || n.commentText || '';
+      const safeFbContent = fbContent.replace(/</g,'&lt;');
+      return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1};cursor:pointer" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel')">
         <div style="width:34px;height:34px;border-radius:50%;background:${fb.bg};border:1px solid ${fb.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="${fb.fill}" stroke="${fb.col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${fb.svg}</svg></div>
-        <div style="flex:1"><div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px">${safeNick}: ${safeText}</div><div style="font-size:11px;color:#444">${time}</div></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님의 알림</div>
+          ${safeFbContent ? `<div style="font-size:12px;color:rgba(255,255,255,0.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px">${safeFbContent}</div>` : ''}
+          <div style="font-size:11px;color:#444">${time}</div>
+        </div>
         ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0;margin-top:4px"></div>' : ''}
       </div>`;
     }).join('');
