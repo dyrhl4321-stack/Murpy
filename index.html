@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619003 -->
+<!-- cache-bust: v20260619004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1523,6 +1523,17 @@
     <button onclick="splashNext()" style="width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.13);color:#fff;border-radius:16px;padding:16px;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">다음</button>
   </div>
 
+</div>
+
+<!-- 매칭 성공 팝업 -->
+<div class="modal-overlay" id="match-popup" onclick="if(event.target===this)closeModal('match-popup')">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="font-size:44px;margin-bottom:6px">🎉</div>
+    <div style="font-size:21px;font-weight:800;margin-bottom:6px">매칭 성공!</div>
+    <div id="match-popup-name" style="font-size:14px;color:#888;margin-bottom:22px;line-height:1.5"></div>
+    <button id="match-popup-chat" style="width:100%;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">채팅하기</button>
+    <button onclick="closeModal('match-popup')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px;font-family:inherit">나중에</button>
+  </div>
 </div>
 
 <!-- 로그인 게이트 (전체화면, 비로그인 시 필수 — 둘러보기 불가) -->
@@ -4159,10 +4170,12 @@ onAuthStateChanged(auth, async (user) => {
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
     if (window.loadCentersFirestore) window.loadCentersFirestore();
+    if (window.startNotifListener) window.startNotifListener(user.uid);
     // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
   } else {
     window.currentUser = null;
+    if (window.stopNotifListener) window.stopNotifListener();
     updateUI(null);
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
@@ -4383,6 +4396,10 @@ window.sendLike = async (toUid, toName, toPhoto) => {
     const rev = await getDoc(doc(db, 'likes', toUid + '_' + me));
     if (rev.exists()) {
       await setDoc(doc(db, 'matches', _pairKey(me, toUid)), { users: [me, toUid], createdAt: serverTimestamp() }, { merge: true });
+      // 상대(먼저 좋아요 누른 사람)에게 매칭 알림
+      const myNick = (window._cachedProfile && window._cachedProfile.nickname) || window.currentUser.nickname || '운동 메이트';
+      const myPhoto = (window._cachedProfile && window._cachedProfile.photoURL) || window.currentUser.photoURL || '';
+      try { await addDoc(collection(db, 'notifications'), { toUid, fromUid: me, fromNickname: myNick, fromPhoto: myPhoto, type: 'match', read: false, createdAt: serverTimestamp() }); } catch (e) {}
       showToast('🎉 ' + (toName || '상대') + '님과 매칭됐어요!');
       window.openUserProfile(toUid, toName, toPhoto); // 잠금 해제 상태로 다시 그림
     } else {
@@ -4399,6 +4416,39 @@ window.openChatWith = async (uid, name, photo) => {
   closePanel('user-profile-panel');
   window.openChatFirestore(chatId, uid, name, photo);
 };
+
+// ===== 실시간 알림 (배지 + 매칭 팝업) =====
+let _notifUnsub = null, _notifFirst = true;
+function _showMatchPopup(n) {
+  const nameEl = document.getElementById('match-popup-name');
+  if (nameEl) nameEl.innerHTML = '<b style="color:#fff">' + ((n.fromNickname || '상대').replace(/</g, '&lt;')) + '</b>님과 연결됐어요!<br>이제 서로의 운동 기록을 볼 수 있어요';
+  const chatBtn = document.getElementById('match-popup-chat');
+  if (chatBtn) chatBtn.onclick = () => { closeModal('match-popup'); window.openChatWith(n.fromUid, n.fromNickname || '', n.fromPhoto || ''); };
+  openModal('match-popup');
+}
+window.startNotifListener = (uid) => {
+  if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
+  _notifFirst = true;
+  try {
+    const q = query(collection(db, 'notifications'), where('toUid', '==', uid));
+    _notifUnsub = onSnapshot(q, snap => {
+      const unread = snap.docs.filter(d => !d.data().read).length;
+      const badge = document.getElementById('notif-badge');
+      if (badge) { badge.textContent = unread; badge.style.display = unread > 0 ? 'flex' : 'none'; }
+      if (!_notifFirst) {
+        snap.docChanges().forEach(ch => {
+          if (ch.type !== 'added') return;
+          const n = ch.doc.data();
+          if (n.read) return;
+          if (n.type === 'match') _showMatchPopup(n);
+          else showToast('🔔 새 알림이 도착했어요');
+        });
+      }
+      _notifFirst = false;
+    }, err => {});
+  } catch (e) {}
+};
+window.stopNotifListener = () => { if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; } };
 
 // ===== 상대방 프로필 (소개팅 카드 + 인스타 피드, 매칭 잠금/해제) =====
 window.openUserProfile = async function(userId, userName, userPhoto) {
@@ -5245,6 +5295,16 @@ window.loadNotificationsFirestore = async () => {
       const safeNickJs = (n.fromNickname || '익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const safePostId = (n.postId || '').replace(/'/g,'');
       const safeId = (n._id || '').replace(/'/g,'');
+      if (n.type === 'match') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.6:1}" onclick="window.markFirebaseNotifRead('${safeId}');window.openChatWith('${safeFromUid}','${safeNickJs}','')">
+          <span style="font-size:22px">🎉</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님과 매칭됐어요! 같이 운동해봐요 💪</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'bamboo_request') {
         return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
           <span style="font-size:20px">🎋</span>
