@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260618012 -->
+<!-- cache-bust: v20260619001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4389,29 +4389,39 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
   const isSelf = userId === window.currentUser?.uid;
   const matched = isSelf || await window.isMatched(userId);
-  let posts = [];
+  let posts = [], totalCnt = 0, monthCnt = 0;
   try {
     const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', userId)));
-    posts = fsnap.docs.map(x => x.data()).filter(p => p.photoURL);
-    posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    posts = posts.slice(0, 9);
+    const all = fsnap.docs.map(x => x.data());
+    totalCnt = all.length;
+    const mStart = new Date(); mStart.setDate(1); mStart.setHours(0, 0, 0, 0);
+    monthCnt = all.filter(p => p.createdAt && p.createdAt.seconds * 1000 >= mStart.getTime()).length;
+    posts = all.filter(p => p.photoURL).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 9);
   } catch (e) {}
 
   const esc = s => String(s || '').replace(/'/g, "\\'");
   const verifiedBadge = d.faceVerified
-    ? '<div style="position:absolute;top:12px;right:12px;z-index:2;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);border-radius:6px;padding:5px 9px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--gold)">' + _SHIELD_SVG + '인증완료</div>'
+    ? '<div style="position:absolute;top:12px;right:12px;z-index:3;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);border-radius:8px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--gold)">' + _SHIELD_SVG + '인증완료</div>'
     : '';
-  const cardsHTML = cards.length
-    ? cards.map(u => `<div style="flex:0 0 100%;scroll-snap-align:center;scroll-snap-stop:always;aspect-ratio:1;background:#111"><img src="${u}" draggable="false" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
+  const slidesHTML = cards.length
+    ? cards.map(u => `<div style="flex:0 0 100%;aspect-ratio:1;background:#111"><img src="${u}" draggable="false" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
     : `<div style="flex:0 0 100%;aspect-ratio:1;background:linear-gradient(135deg,#1a1f2e,#0d1117);display:flex;align-items:center;justify-content:center;font-size:40px">🏋️</div>`;
   const dotsHTML = cards.length > 1
-    ? `<div style="position:absolute;bottom:10px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:2">${cards.map((_, i) => `<div class="up-dot" style="width:6px;height:6px;border-radius:50%;transition:background .2s;background:${i === 0 ? '#fff' : 'rgba(255,255,255,0.45)'}"></div>`).join('')}</div>`
+    ? `<div style="position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:3">${cards.map((_, i) => `<div class="up-dot" style="height:6px;border-radius:${i === 0 ? '3px' : '50%'};transition:all .25s;width:${i === 0 ? '18px' : '6px'};background:${i === 0 ? '#fff' : 'rgba(255,255,255,0.4)'}"></div>`).join('')}</div>`
     : '';
-  const tags = [];
-  if (d.purpose) tags.push(d.purpose);
-  (d.workoutTime || []).forEach(t => tags.push(t));
-  const tagsHTML = tags.map(t => `<span style="background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.3);color:#60A5FA;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">${t}</span>`).join('');
-  const meta = [d.age ? d.age + '세' : '', d.gender, d.district].filter(Boolean).join(' · ');
+  const counterHTML = cards.length > 1
+    ? `<div id="up-counter" style="position:absolute;top:12px;left:12px;z-index:3;background:rgba(0,0,0,0.5);backdrop-filter:blur(8px);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:700;color:#fff">1 / ${cards.length}</div>`
+    : '';
+
+  const I_DUMBBELL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M3.5 9v5M17.5 6.5v11M20.5 9v5M6.5 12h11"/></svg>';
+  const I_CLOCK = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  const I_PIN = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  const chip = (icon, label, accent) => `<span style="display:inline-flex;align-items:center;gap:5px;background:${accent ? 'rgba(61,126,255,0.15)' : 'rgba(255,255,255,0.06)'};border:1px solid ${accent ? 'rgba(61,126,255,0.3)' : 'rgba(255,255,255,0.1)'};color:${accent ? '#60A5FA' : 'rgba(255,255,255,0.72)'};font-size:12px;font-weight:600;padding:7px 12px;border-radius:11px">${icon}${label}</span>`;
+  let styleChips = '';
+  if (d.purpose) styleChips += chip(I_DUMBBELL, d.purpose, true);
+  (d.workoutTime || []).forEach(t => styleChips += chip(I_CLOCK, t, false));
+  if (d.district) styleChips += chip(I_PIN, d.district, false);
+  const meta = [d.age ? d.age + '세' : '', d.gender].filter(Boolean).join(' · ');
 
   const feedSection = matched
     ? `<div style="padding:0 16px 16px">
@@ -4434,20 +4444,62 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     : `<button onclick="window.sendLike('${userId}','${esc(name)}','${esc(cards[0])}')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">💪 같이 운동해요</button>`;
 
   bodyEl.innerHTML = `
-    <div style="position:relative">
-      <div onscroll="(function(c){var i=Math.round(c.scrollLeft/c.clientWidth);var ds=c.parentElement.querySelectorAll('.up-dot');ds.forEach(function(d,k){d.style.background=k===i?'#fff':'rgba(255,255,255,0.45)'})})(this)" style="display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;touch-action:pan-x;overscroll-behavior-x:contain">${cardsHTML}</div>
-      ${verifiedBadge}${dotsHTML}
+    <div id="up-swipe" style="position:relative;overflow:hidden;touch-action:pan-y">
+      <div id="up-track" style="display:flex;transition:transform .35s cubic-bezier(.22,1,.36,1);will-change:transform">${slidesHTML}</div>
+      ${verifiedBadge}${counterHTML}${dotsHTML}
     </div>
-    <div style="padding:16px">
-      <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px">${name}</div>
-      ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:3px">${meta}</div>` : ''}
-      ${tagsHTML ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">${tagsHTML}</div>` : ''}
-      ${d.bio ? `<div style="font-size:14px;color:rgba(255,255,255,0.85);line-height:1.6;margin-top:12px">${d.bio}</div>` : ''}
+    <div style="padding:18px 16px 4px">
+      <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:flex;align-items:center;gap:5px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}</div>
+      ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta}</div>` : ''}
     </div>
-    <div style="height:1px;background:rgba(255,255,255,0.06);margin:0 16px 16px"></div>
+    <div style="display:flex;margin:8px 16px 0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">
+      <div style="flex:1;text-align:center;padding:13px 0"><div style="font-size:19px;font-weight:800">${monthCnt}</div><div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px">이번달 인증</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:13px 0"><div style="font-size:19px;font-weight:800">${totalCnt}</div><div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px">총 운동 인증</div></div>
+      <div style="width:1px;background:rgba(255,255,255,0.06)"></div>
+      <div style="flex:1;text-align:center;padding:13px 0"><div style="font-size:19px;font-weight:800">${cards.length}</div><div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px">사진</div></div>
+    </div>
+    ${styleChips ? `<div style="padding:18px 16px 2px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:10px">운동 스타일</div><div style="display:flex;gap:6px;flex-wrap:wrap">${styleChips}</div></div>` : ''}
+    ${d.bio ? `<div style="padding:16px 16px 2px"><div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;font-size:14px;color:rgba(255,255,255,0.88);line-height:1.6">"${d.bio}"</div></div>` : ''}
+    <div style="height:1px;background:rgba(255,255,255,0.06);margin:18px 16px"></div>
     ${feedSection}
-    <div style="padding:0 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
+    <div style="padding:4px 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
+
+  _initProfileSwiper(cards.length);
 };
+
+function _initProfileSwiper(n) {
+  const wrap = document.getElementById('up-swipe');
+  const track = document.getElementById('up-track');
+  if (!wrap || !track || n <= 1) return;
+  let idx = 0, startX = 0, startY = 0, dx = 0, dragging = false, lock = null;
+  const dots = wrap.querySelectorAll('.up-dot');
+  const counter = document.getElementById('up-counter');
+  const update = () => {
+    dots.forEach((dt, k) => { dt.style.width = k === idx ? '18px' : '6px'; dt.style.borderRadius = k === idx ? '3px' : '50%'; dt.style.background = k === idx ? '#fff' : 'rgba(255,255,255,0.4)'; });
+    if (counter) counter.textContent = (idx + 1) + ' / ' + n;
+  };
+  const go = i => { idx = Math.max(0, Math.min(n - 1, i)); track.style.transition = 'transform .35s cubic-bezier(.22,1,.36,1)'; track.style.transform = 'translateX(' + (-idx * 100) + '%)'; update(); };
+  wrap.addEventListener('touchstart', e => { startX = e.touches[0].clientX; startY = e.touches[0].clientY; dragging = true; lock = null; track.style.transition = 'none'; }, { passive: true });
+  wrap.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const cx = e.touches[0].clientX, cy = e.touches[0].clientY;
+    if (lock === null) lock = Math.abs(cx - startX) > Math.abs(cy - startY) ? 'x' : 'y';
+    if (lock === 'y') return;
+    dx = cx - startX;
+    e.preventDefault();
+    const w = wrap.clientWidth || 1;
+    track.style.transform = 'translateX(' + (-idx * 100 + (dx / w) * 100) + '%)';
+  }, { passive: false });
+  wrap.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    const w = wrap.clientWidth || 1;
+    if (Math.abs(dx) > w * 0.18) go(idx + (dx < 0 ? 1 : -1)); else go(idx);
+    dx = 0;
+  });
+  update();
+}
 function setFvStatus(t) { const e = document.getElementById('fv-status'); if (e) e.textContent = t; }
 function _fvCaptureEnabled(on) {
   const b = document.getElementById('fv-capture');
