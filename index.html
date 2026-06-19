@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619018 -->
+<!-- cache-bust: v20260619019 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -5381,15 +5381,28 @@ window.sendBambooRequest = async (postId, authorUid) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 신청할 수 있어요'); return; }
   if (user.uid === authorUid) return;
-  // 이미 매칭된 사이면 바로 채팅으로
+  // 이미 매칭된 사이면 바로 채팅으로 (일반 매칭 or 대숲 매칭 둘 다 체크)
   try {
-    const matchSnap = await getDoc(doc(db, 'matches', _pairKey(user.uid, authorUid)));
-    if (matchSnap.exists()) {
-      const chatId = _pairKey(user.uid, authorUid);
-      const d = matchSnap.data();
-      const partnerName = (d.participantNames || {})[authorUid] || d.names?.[authorUid] || '상대';
-      const partnerPhoto = (d.participantPhotos || {})[authorUid] || d.photos?.[authorUid] || '';
-      showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
+    const chatId = _pairKey(user.uid, authorUid);
+    const [matchSnap, chatSnap] = await Promise.all([
+      getDoc(doc(db, 'matches', chatId)),
+      getDoc(doc(db, 'chats', chatId))
+    ]);
+    const alreadyMatched = matchSnap.exists() || (chatSnap.exists() && chatSnap.data().bambooChat === false);
+    if (alreadyMatched) {
+      let partnerName = '상대', partnerPhoto = '';
+      if (chatSnap.exists()) {
+        const d = chatSnap.data();
+        partnerName = (d.participantNames || {})[authorUid] || partnerName;
+        partnerPhoto = (d.participantPhotos || {})[authorUid] || '';
+      }
+      if (!partnerName || partnerName === '상대') {
+        try {
+          const us = await getDoc(doc(db, 'users', authorUid));
+          if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || ''; }
+        } catch(e) {}
+      }
+      showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
       window.openChatFirestore(chatId, authorUid, partnerName, partnerPhoto, false);
       return;
     }
@@ -5530,7 +5543,7 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:8px">수락하면 서로 프로필이 공개돼요</div>
             <div style="font-size:11px;color:#444;margin-bottom:10px">${time}</div>
             <div style="display:flex;gap:8px">
-              <button class="btn-glass" style="padding:6px 16px;font-size:12px;font-weight:700;background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.3);color:#4ADE80" onclick="window.markFirebaseNotifRead('${safeId}');window._acceptBambooMatch('${safeChatId}','${safeRequesterUid}','${safeId}')">수락하기</button>
+              <button class="btn-glass" style="padding:6px 16px;font-size:12px;font-weight:700;background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.3);color:#4ADE80" onclick="this.disabled=true;this.textContent='처리 중...';window.markFirebaseNotifRead('${safeId}');window._acceptBambooMatch('${safeChatId}','${safeRequesterUid}','${safeId}')">수락하기</button>
               <button class="btn-glass" style="padding:6px 14px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4)" onclick="window.markFirebaseNotifRead('${safeId}');this.closest('.card').style.opacity='0.3';showToast('거절했어요')">거절</button>
             </div>
           </div>
@@ -5733,18 +5746,28 @@ window.openBambooChat = async (fromUid, fromNickname, postId, notifId) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인이 필요해요'); return; }
   if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {} }
-  // 이미 매칭된 사이면 익명 처리 없이 바로 실명 채팅으로
+  // 이미 연결된 사이면(일반 매칭 or 대숲 매칭 모두) 익명 없이 실명 채팅
   try {
-    const matchSnap = await getDoc(doc(db, 'matches', _pairKey(user.uid, fromUid)));
-    if (matchSnap.exists()) {
-      const chatId = _pairKey(user.uid, fromUid);
-      // 채팅방에서 상대 이름/프사 가져오기
+    const chatId = _pairKey(user.uid, fromUid);
+    const [matchSnap, chatSnap] = await Promise.all([
+      getDoc(doc(db, 'matches', chatId)),
+      getDoc(doc(db, 'chats', chatId))
+    ]);
+    const alreadyConnected = matchSnap.exists() || (chatSnap.exists() && chatSnap.data().bambooChat === false);
+    if (alreadyConnected) {
       let partnerName = fromNickname || '상대', partnerPhoto = '';
-      try {
-        const us = await getDoc(doc(db, 'users', fromUid));
-        if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || ''; }
-      } catch(e) {}
-      showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
+      if (chatSnap.exists()) {
+        const d = chatSnap.data();
+        partnerName = (d.participantNames || {})[fromUid] || partnerName;
+        partnerPhoto = (d.participantPhotos || {})[fromUid] || '';
+      }
+      if (!partnerName || partnerName === '상대' || partnerName === '익명') {
+        try {
+          const us = await getDoc(doc(db, 'users', fromUid));
+          if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || partnerPhoto; }
+        } catch(e) {}
+      }
+      showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
       closePanel('notif-panel');
       closeModal('requesters-modal');
       window.openChatFirestore(chatId, fromUid, partnerName, partnerPhoto, false);
@@ -5814,6 +5837,20 @@ window._acceptBambooMatch = async (chatId, requesterUid, notifId) => {
   const user = auth.currentUser || window.currentUser;
   if (!user || !chatId) return;
   if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {} }
+  // 이미 수락된 매칭인지 체크
+  try {
+    const chatSnap = await getDoc(doc(db, 'chats', chatId));
+    if (chatSnap.exists() && chatSnap.data().bambooChat === false) {
+      // 이미 연결된 상태 → 그냥 채팅 열기
+      const d = chatSnap.data();
+      const partnerName = (d.participantNames || {})[requesterUid] || '상대';
+      const partnerPhoto = (d.participantPhotos || {})[requesterUid] || '';
+      showToast('이미 연결된 사이에요!');
+      closePanel('notif-panel');
+      window.openChatFirestore(chatId, requesterUid, partnerName, partnerPhoto, false);
+      return;
+    }
+  } catch(e) {}
   // 채팅방을 일반 채팅으로 전환
   try { await updateDoc(doc(db, 'chats', chatId), { bambooChat: false, matchedAt: serverTimestamp() }); } catch(e) {}
   // 내 실제 정보 가져오기
