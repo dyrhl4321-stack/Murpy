@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619014 -->
+<!-- cache-bust: v20260619015 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -497,8 +497,12 @@
 
 <!-- MATCH -->
 <div class="page" id="page-match">
-  <div style="margin-bottom:14px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
     <div style="font-size:12px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;text-transform:uppercase;font-weight:500">오늘의 매칭</div>
+    <button id="interest-btn" onclick="openPanel('interest-panel')" style="display:none;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:5px 12px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      <span id="interest-count-label">나를 좋아해요</span>
+    </button>
   </div>
   <div class="match-card" id="match-card">
     <img id="match-img" src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80">
@@ -941,6 +945,19 @@
     <span style="font-weight:700;font-size:16px">즐겨찾기 ⭐</span>
   </div>
   <div class="panel-body" id="fav-list"></div>
+</div>
+
+<!-- 나에게 관심 보낸 사람 패널 -->
+<div class="panel" id="interest-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('interest-panel')">←</button>
+    <span style="font-weight:700;font-size:16px">나를 좋아해요</span>
+  </div>
+  <div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.06)">
+    <button id="itab-like-btn" onclick="window._switchInterestTab('like')" style="flex:1;background:none;border:none;color:#fff;font-size:13px;font-weight:700;padding:11px 0;cursor:pointer;border-bottom:2px solid #3D7EFF;font-family:inherit">매칭 좋아요 <span id="itab-like-cnt" style="font-size:11px;color:#3D7EFF;margin-left:2px"></span></button>
+    <button id="itab-bamboo-btn" onclick="window._switchInterestTab('bamboo')" style="flex:1;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;font-weight:700;padding:11px 0;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit">대숲 저에요 <span id="itab-bamboo-cnt" style="font-size:11px;color:rgba(255,255,255,0.3);margin-left:2px"></span></button>
+  </div>
+  <div class="panel-body" id="interest-list"></div>
 </div>
 
 <!-- Chat Panel -->
@@ -2007,6 +2024,7 @@ function openPanel(id) {
   document.getElementById(id).classList.add('open');
   if (id==='notif-panel') { if (window.loadNotificationsFirestore) window.loadNotificationsFirestore(); else renderNotifs(); }
   if (id==='fav-panel') renderFavs();
+  if (id==='interest-panel') { window._loadInterestPanel && window._loadInterestPanel(); }
   if (id==='chat-panel') { if (window.loadChatListFirestore) window.loadChatListFirestore(); else renderChatList(); }
   if (id==='edit-profile-panel') initEditProfile();
   if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile();
@@ -5468,7 +5486,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'bamboo_request') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('bamboo')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(74,222,128,0.13);border:1px solid rgba(74,222,128,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg></div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님이 내 글에 "저에요 🙋"를 눌렀어요</div>
@@ -5517,6 +5535,136 @@ window.loadNotificationsFirestore = async () => {
       </div>`;
     }).join('');
   } catch(e) { console.error('notif load error:', e); el.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">알림을 불러올 수 없어요</div>'; }
+};
+
+// ===== 나에게 관심 보낸 사람 패널 =====
+let _interestTab = 'like'; // 'like' | 'bamboo'
+
+window._switchInterestTab = (tab) => {
+  _interestTab = tab;
+  const likeBtn = document.getElementById('itab-like-btn');
+  const bambooBtn = document.getElementById('itab-bamboo-btn');
+  if (likeBtn) { likeBtn.style.borderBottomColor = tab==='like'?'#3D7EFF':'transparent'; likeBtn.style.color = tab==='like'?'#fff':'rgba(255,255,255,0.4)'; }
+  if (bambooBtn) { bambooBtn.style.borderBottomColor = tab==='bamboo'?'#4ADE80':'transparent'; bambooBtn.style.color = tab==='bamboo'?'#fff':'rgba(255,255,255,0.4)'; }
+  window._renderInterestList();
+};
+
+window._loadInterestPanel = async () => {
+  const user = auth.currentUser || window.currentUser;
+  const el = document.getElementById('interest-list');
+  if (!el || !user) return;
+  el.innerHTML = '<div style="text-align:center;padding:30px;color:#444">불러오는 중...</div>';
+
+  // 1) 매칭 좋아요 받은 사람: likes 컬렉션에서 to==me 인 문서
+  const likeDocs = [], bambooDocs = [];
+  try {
+    const q = query(collection(db, 'likes'), where('to', '==', user.uid));
+    const snap = await getDocs(q);
+    // 이미 매칭된 사람은 제외
+    for (const d of snap.docs) {
+      const fromUid = d.data().from;
+      const matched = await getDoc(doc(db, 'matches', _pairKey(fromUid, user.uid)));
+      if (!matched.exists()) likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt });
+    }
+  } catch(e) {}
+
+  // 2) 대숲 저에요 누른 사람: bamboo_request 알림
+  try {
+    const q = query(collection(db, 'notifications'), where('toUid','==',user.uid), where('type','==','bamboo_request'));
+    const snap = await getDocs(q);
+    const seenUid = new Set();
+    snap.docs.forEach(d => {
+      const n = d.data();
+      if (!seenUid.has(n.fromUid)) { seenUid.add(n.fromUid); bambooDocs.push(n); }
+    });
+  } catch(e) {}
+
+  // 카운트 표시
+  const likeCnt = document.getElementById('itab-like-cnt');
+  const bambooCnt = document.getElementById('itab-bamboo-cnt');
+  if (likeCnt) likeCnt.textContent = likeDocs.length ? likeDocs.length : '';
+  if (bambooCnt) bambooCnt.textContent = bambooDocs.length ? bambooDocs.length : '';
+
+  // 버튼 카운트 표시 (매칭 탭)
+  const total = likeDocs.length + bambooDocs.length;
+  const interestBtn = document.getElementById('interest-btn');
+  if (interestBtn) {
+    interestBtn.style.display = total > 0 ? 'flex' : 'none';
+    const lbl = document.getElementById('interest-count-label');
+    if (lbl) lbl.textContent = `나를 좋아해요 ${total}`;
+  }
+
+  window._interestLikeDocs = likeDocs;
+  window._interestBambooDocs = bambooDocs;
+  window._renderInterestList();
+};
+
+window._renderInterestList = async () => {
+  const el = document.getElementById('interest-list');
+  const user = auth.currentUser || window.currentUser;
+  if (!el || !user) return;
+
+  if (_interestTab === 'like') {
+    const docs = window._interestLikeDocs || [];
+    if (!docs.length) {
+      el.innerHTML = '<div style="text-align:center;padding:44px 20px"><div style="font-size:13px;color:#444">아직 나에게 좋아요를 보낸 사람이 없어요</div><div style="font-size:12px;color:#333;margin-top:6px">매칭 탭에서 상대방도 나에게 좋아요를 보내면 여기 표시돼요</div></div>';
+      return;
+    }
+    // uid별 프로필 fetch
+    const profiles = await Promise.all(docs.map(async d => {
+      try {
+        const us = await getDoc(doc(db, 'users', d.uid));
+        return us.exists() ? { uid: d.uid, ...us.data() } : { uid: d.uid };
+      } catch(e) { return { uid: d.uid }; }
+    }));
+    el.innerHTML = profiles.map(p => {
+      const nick = (p.nickname||'익명').replace(/</g,'&lt;');
+      const nickJs = (p.nickname||'익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const photo = (p.photoURL||'').replace(/'/g,'');
+      const age = p.age ? p.age+'세' : '';
+      const district = p.district || '';
+      return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openUserProfile('${p.uid}','${nickJs}','${photo}')">
+        <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06)">
+          ${photo ? `<img src="${window._cdnImg(photo,104)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${photo}'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px">👤</div>'}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px;margin-bottom:2px">${nick}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.4)">${[age,district].filter(Boolean).join(' · ')}</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      </div>`;
+    }).join('');
+
+  } else {
+    const docs = window._interestBambooDocs || [];
+    if (!docs.length) {
+      el.innerHTML = '<div style="text-align:center;padding:44px 20px"><div style="font-size:13px;color:#444">아직 "저에요"를 누른 사람이 없어요</div><div style="font-size:12px;color:#333;margin-top:6px">대숲에 글을 올리면 관심 있는 사람들이 여기 모여요</div></div>';
+      return;
+    }
+    el.innerHTML = docs.map(n => {
+      const nick = (n.fromNickname||'익명').replace(/</g,'&lt;');
+      const nickJs = (n.fromNickname||'익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const photo = (n.fromPhoto||'').replace(/'/g,'');
+      const postText = (n.postText||'').replace(/</g,'&lt;');
+      return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openBambooChat('${(n.fromUid||'').replace(/'/g,'')}','${nickJs}','${(n.postId||'').replace(/'/g,'')}','')">
+        <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:22px">
+          👤
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px;margin-bottom:2px">익명</div>
+          ${postText ? `<div style="font-size:12px;color:rgba(255,255,255,0.4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${postText}"</div>` : ''}
+        </div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
+      </div>`;
+    }).join('');
+  }
+};
+
+// 매칭 탭 진입 시 관심 버튼 카운트 갱신
+const _origRenderMatch = window.renderMatch;
+window.renderMatch = function(...args) {
+  if (_origRenderMatch) _origRenderMatch.apply(this, args);
+  if (window.currentUser) setTimeout(() => window._loadInterestPanel && window._loadInterestPanel(), 500);
 };
 
 window.markAllFirestoreRead = async () => {
