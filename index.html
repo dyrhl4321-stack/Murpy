@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619013 -->
+<!-- cache-bust: v20260619014 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -5389,7 +5389,18 @@ window.loadNotificationsFirestore = async () => {
   try {
     const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(50));
     const snap = await getDocs(q);
-    const notifs = snap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(n => n.toUid === user.uid);
+    // chat 타입은 fromUid별 최신 1개만 표시 (이전 addDoc 중복 문서 걸러냄)
+    const seenChatFrom = new Set();
+    const notifs = snap.docs
+      .map(d => ({ _id: d.id, ...d.data() }))
+      .filter(n => {
+        if (n.toUid !== user.uid) return false;
+        if (n.type === 'chat') {
+          if (seenChatFrom.has(n.fromUid)) return false;
+          seenChatFrom.add(n.fromUid);
+        }
+        return true;
+      });
     const unreadCount = notifs.filter(n => !n.read).length;
     const badge = document.getElementById('notif-badge');
     if (badge) { badge.textContent = unreadCount; badge.style.display = unreadCount > 0 ? 'flex' : 'none'; }
