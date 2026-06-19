@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619011 -->
+<!-- cache-bust: v20260619012 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4440,8 +4440,18 @@ window.sendLike = async (toUid, toName, toPhoto) => {
 window.openChatWith = async (uid, name, photo) => {
   if (!window.currentUser) { requireLogin('로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
+  const myNick = window._cachedProfile?.nickname || window.currentUser.nickname || window.currentUser.displayName || '익명';
+  const myPhoto = window._cachedProfile?.photoURL || window.currentUser.firestorePhotoURL || window.currentUser.photoURL || '';
   const chatId = _pairKey(me, uid);
-  try { await setDoc(doc(db, 'chats', chatId), { participants: [me, uid], updatedAt: serverTimestamp() }, { merge: true }); } catch (e) {}
+  try {
+    // participantNames / participantPhotos 같이 저장 → 상대방 채팅목록에 이름·프사 표시됨
+    await setDoc(doc(db, 'chats', chatId), {
+      participants: [me, uid],
+      participantNames: { [me]: myNick, [uid]: name || '익명' },
+      participantPhotos: { [me]: myPhoto, [uid]: photo || '' },
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  } catch (e) {}
   closePanel('user-profile-panel');
   window.openChatFirestore(chatId, uid, name, photo);
 };
@@ -5580,18 +5590,30 @@ window.loadChatListFirestore = async () => {
       el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444"><div style="font-size:36px;margin-bottom:10px">💬</div><div style="font-size:14px">아직 대화가 없어요</div><div style="font-size:12px;color:#333;margin-top:6px">대숲 글에 "저에요"를 눌러 연결해봐요</div></div>';
       return;
     }
-    el.innerHTML = docs.map(d => {
-      const c = d.data();
+    const chatDocs = docs.map(d => ({ id: d.id, ...d.data() }));
+    // participantNames/Photos 없는 채팅방: Firestore users에서 이름·프사 직접 보완
+    const extraProfiles = {};
+    const pids = [...new Set(chatDocs.map(c => (c.participants||[]).find(u => u !== user.uid)).filter(Boolean))];
+    await Promise.all(pids.map(async pid => {
+      if (chatDocs.some(c => (c.participantNames||{})[pid])) return; // 이미 저장된 경우 skip
+      try {
+        const us = await getDoc(doc(db, 'users', pid));
+        extraProfiles[pid] = us.exists()
+          ? { name: us.data().nickname || '익명', photo: us.data().photoURL || '' }
+          : { name: '익명', photo: '' };
+      } catch(e) { extraProfiles[pid] = { name: '익명', photo: '' }; }
+    }));
+    el.innerHTML = chatDocs.map(c => {
       const pid = (c.participants || []).find(u => u !== user.uid) || '';
-      const pName = (c.participantNames || {})[pid] || '익명';
-      const pPhoto = (c.participantPhotos || {})[pid] || '';
+      const pName = (c.participantNames || {})[pid] || extraProfiles[pid]?.name || '익명';
+      const pPhoto = (c.participantPhotos || {})[pid] || extraProfiles[pid]?.photo || '';
       const lastMsg = c.lastMessage || '대화를 시작해봐요';
       const lastTime = c.lastMessageTime ? new Date(c.lastMessageTime.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric'}) : '';
       const snJs = pName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const spJs = pPhoto.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${d.id}','${pid}','${snJs}','${spJs}')">
+      return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${c.id}','${pid}','${snJs}','${spJs}')">
         <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.08);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
-          ${pPhoto ? `<img src="${pPhoto}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<span style=font-size:20px>👤</span>'">` : '<span style="font-size:20px">👤</span>'}
+          ${pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.parentElement.innerHTML='<span style=font-size:20px>👤</span>'}">` : '<span style="font-size:20px">👤</span>'}
         </div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700;font-size:14px">${pName}</span><span style="font-size:11px;color:#444">${lastTime}</span></div>
@@ -5609,9 +5631,26 @@ window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto) => {
   window._currentChatPartnerPhoto = partnerPhoto || '';
   const _ph = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='18' fill='%23333'/%3E%3C/svg%3E";
   const avatarEl = document.getElementById('chat-detail-avatar');
+  const nameEl = document.getElementById('chat-detail-name');
   avatarEl.src = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 76) : (partnerPhoto || _ph);
   avatarEl.style.display = 'block';
-  document.getElementById('chat-detail-name').textContent = partnerName;
+  nameEl.textContent = partnerName || '...';
+  // 이름·프사 없으면 Firestore users에서 직접 보완
+  if (partnerUid && (!partnerName || partnerName === '익명' || !partnerPhoto)) {
+    getDoc(doc(db, 'users', partnerUid)).then(us => {
+      if (!us.exists()) return;
+      const d = us.data();
+      if (!partnerName || partnerName === '익명') {
+        const n = d.nickname || partnerName || '익명';
+        nameEl.textContent = n;
+        window._currentChatPartnerName = n;
+      }
+      if (!partnerPhoto && d.photoURL) {
+        avatarEl.src = window._cdnImg ? window._cdnImg(d.photoURL, 76) : d.photoURL;
+        window._currentChatPartnerPhoto = d.photoURL;
+      }
+    }).catch(() => {});
+  }
   const messagesEl = document.getElementById('chat-messages');
   messagesEl.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
   if (window._chatUnsubscribe) { window._chatUnsubscribe(); window._chatUnsubscribe = null; }
