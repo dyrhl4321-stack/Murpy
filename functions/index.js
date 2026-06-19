@@ -31,6 +31,12 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
   } else if (n.type === "chat") {
     title = n.fromNickname || "새 메시지";
     body = n.text || "메시지를 보냈어요";
+  } else if (n.type === "bamboo_match_request") {
+    title = "💚 매칭 요청";
+    body = "대숲에서 만난 분이 매칭을 원해요! 수락하시겠어요?";
+  } else if (n.type === "bamboo_match_accept") {
+    title = "🎉 매칭 성공!";
+    body = (n.fromNickname || "상대") + "님이 매칭을 수락했어요. 프로필이 공개됐어요!";
   } else if (n.type === "crew_apply") {
     title = "크루 참가 신청";
     body = (n.fromNickname || "누군가") + "님이 참가 신청했어요";

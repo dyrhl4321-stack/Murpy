@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619015 -->
+<!-- cache-bust: v20260619016 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -499,7 +499,7 @@
 <div class="page" id="page-match">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
     <div style="font-size:12px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;text-transform:uppercase;font-weight:500">오늘의 매칭</div>
-    <button id="interest-btn" onclick="openPanel('interest-panel')" style="display:none;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:5px 12px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px">
+    <button id="interest-btn" onclick="openPanel('interest-panel')" style="display:none;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:5px 12px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;align-items:center;gap:5px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
       <span id="interest-count-label">나를 좋아해요</span>
     </button>
@@ -974,7 +974,8 @@
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('chat-detail-panel')">←</button>
     <img id="chat-detail-avatar" src="" onclick="window._openChatPartnerProfile()" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1.5px solid rgba(255,255,255,0.12);cursor:pointer">
-    <span style="font-weight:700;font-size:15px;margin-left:10px;cursor:pointer" id="chat-detail-name" onclick="window._openChatPartnerProfile()"></span>
+    <span style="font-weight:700;font-size:15px;margin-left:10px;cursor:pointer;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="chat-detail-name" onclick="window._openChatPartnerProfile()"></span>
+    <button id="bamboo-match-btn" onclick="window._sendBambooMatchRequest()" style="display:none;margin-left:8px;flex-shrink:0;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.3);border-radius:16px;padding:6px 11px;color:#4ADE80;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">우리 매칭할까요? 💚</button>
   </div>
   <div id="chat-messages" style="flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:3px"></div>
   <div style="padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:9px;align-items:flex-end;background:rgba(12,12,14,0.7);backdrop-filter:blur(14px)">
@@ -4505,8 +4506,15 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'chat') {
             const detailOpen = document.getElementById('chat-detail-panel')?.classList.contains('open');
             if (!(detailOpen && window._currentChatId === n.chatId)) {
-              showToast('💬 ' + (n.fromNickname || '상대') + ': ' + (n.text || '새 메시지'));
+              const senderName = window._isBambooChat ? '익명' : (n.fromNickname || '상대');
+              showToast('💬 ' + senderName + ': ' + (n.text || '새 메시지'));
             }
+          }
+          else if (n.type === 'bamboo_match_request') {
+            showToast('💚 대숲에서 만난 분이 매칭을 원해요! 알림을 확인해봐요');
+          }
+          else if (n.type === 'bamboo_match_accept') {
+            showToast('🎉 매칭됐어요! ' + (n.fromNickname || '상대') + '님과 프로필이 공개됐어요');
           }
           else showToast('🔔 새 알림이 도착했어요');
         });
@@ -5499,6 +5507,35 @@ window.loadNotificationsFirestore = async () => {
           </div>
         </div>`;
       }
+      if (n.type === 'bamboo_match_request') {
+        const safeChatId = (n.chatId || '').replace(/'/g,'');
+        const safeRequesterUid = safeFromUid;
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}">
+          <div style="width:34px;height:34px;border-radius:50%;background:rgba(74,222,128,0.13);border:1px solid rgba(74,222,128,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-size:16px">💚</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px">대숲에서 만난 분이 매칭을 원해요!</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:8px">수락하면 서로 프로필이 공개돼요</div>
+            <div style="font-size:11px;color:#444;margin-bottom:10px">${time}</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-glass" style="padding:6px 16px;font-size:12px;font-weight:700;background:rgba(74,222,128,0.15);border-color:rgba(74,222,128,0.3);color:#4ADE80" onclick="window.markFirebaseNotifRead('${safeId}');window._acceptBambooMatch('${safeChatId}','${safeRequesterUid}','${safeId}')">수락하기</button>
+              <button class="btn-glass" style="padding:6px 14px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.4)" onclick="window.markFirebaseNotifRead('${safeId}');this.closest('.card').style.opacity='0.3';showToast('거절했어요')">거절</button>
+            </div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#4ADE80;flex-shrink:0;margin-top:4px"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'bamboo_match_accept') {
+        const safeChatId = (n.chatId || '').replace(/'/g,'');
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.openChatFirestore('${safeChatId}','${safeFromUid}','${safeNickJs}','',false)">
+          <div style="width:34px;height:34px;border-radius:50%;background:rgba(74,222,128,0.13);border:1px solid rgba(74,222,128,0.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">🎉</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 매칭을 수락했어요!</div>
+            <div style="font-size:12px;color:rgba(74,222,128,0.7);margin-bottom:2px">이제 프로필을 볼 수 있어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#4ADE80;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'crew_apply') {
         return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('crew')">
           <div style="width:34px;height:34px;border-radius:50%;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.25);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
@@ -5698,14 +5735,65 @@ window.openBambooChat = async (fromUid, fromNickname, postId, notifId) => {
         participantNames: { [user.uid]: myNickname, [fromUid]: fromNickname },
         participantPhotos: { [user.uid]: myPhoto, [fromUid]: '' },
         lastMessage: '', lastMessageTime: serverTimestamp(), createdAt: serverTimestamp(),
-        bambooPostId: postId || ''
+        bambooPostId: postId || '',
+        bambooChat: true
       });
+    } else {
+      // 기존 채팅방이 있어도 bambooChat 플래그 확인 후 유지
+      const existData = chatSnap.data();
+      if (existData.bambooChat === undefined) {
+        await updateDoc(chatRef, { bambooChat: true });
+      }
     }
   } catch(e) { console.error('chat create error:', e); }
   closePanel('notif-panel');
   closeModal('requesters-modal');
-  window.openChatFirestore(chatId, fromUid, fromNickname + ' (익명)', '');
+  window.openChatFirestore(chatId, fromUid, '익명', '', true);
   window.loadNotificationsFirestore && window.loadNotificationsFirestore();
+};
+
+// ===== 대숲 매칭 요청 =====
+window._sendBambooMatchRequest = async () => {
+  const chatId = window._currentChatId;
+  const partnerUid = window._currentChatPartner;
+  const user = auth.currentUser || window.currentUser;
+  if (!chatId || !partnerUid || !user) return;
+  const btn = document.getElementById('bamboo-match-btn');
+  if (btn && btn.disabled) return;
+  try {
+    await updateDoc(doc(db, 'chats', chatId), { matchRequestedBy: user.uid });
+  } catch(e) {}
+  await _sendNotif(partnerUid, 'bamboo_match_request', { chatId }, '익명', '');
+  if (btn) { btn.textContent = '수락 대기 중 💚'; btn.disabled = true; btn.style.opacity = '0.6'; }
+  showToast('매칭 요청을 보냈어요! 상대가 수락하면 연결돼요 💚');
+};
+
+window._acceptBambooMatch = async (chatId, requesterUid, notifId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user || !chatId) return;
+  if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {} }
+  // 채팅방을 일반 채팅으로 전환
+  try { await updateDoc(doc(db, 'chats', chatId), { bambooChat: false, matchedAt: serverTimestamp() }); } catch(e) {}
+  // 내 실제 정보 가져오기
+  let myNick = '익명', myPhoto = '';
+  try {
+    const us = await getDoc(doc(db, 'users', user.uid));
+    if (us.exists()) { myNick = us.data().nickname || '익명'; myPhoto = us.data().photoURL || ''; }
+  } catch(e) {}
+  // 요청자에게 수락 알림
+  await _sendNotif(requesterUid, 'bamboo_match_accept', { chatId }, myNick, myPhoto);
+  showToast('매칭됐어요! 🎉 프로필이 공개됐어요');
+  // 채팅방을 실명으로 다시 열기
+  try {
+    const chatSnap = await getDoc(doc(db, 'chats', chatId));
+    if (chatSnap.exists()) {
+      const d = chatSnap.data();
+      const partnerName = (d.participantNames || {})[requesterUid] || '익명';
+      const partnerPhoto = (d.participantPhotos || {})[requesterUid] || '';
+      closePanel('notif-panel');
+      window.openChatFirestore(chatId, requesterUid, partnerName, partnerPhoto, false);
+    }
+  } catch(e) {}
 };
 
 // ===== 신청자 조회 =====
@@ -5777,15 +5865,19 @@ window.loadChatListFirestore = async () => {
     }));
     el.innerHTML = chatDocs.map(c => {
       const pid = (c.participants || []).find(u => u !== user.uid) || '';
-      const pName = (c.participantNames || {})[pid] || extraProfiles[pid]?.name || '익명';
-      const pPhoto = (c.participantPhotos || {})[pid] || extraProfiles[pid]?.photo || '';
+      const isBamboo = !!c.bambooChat;
+      const pName = isBamboo ? '익명 대화 🎋' : ((c.participantNames || {})[pid] || extraProfiles[pid]?.name || '익명');
+      const pPhoto = isBamboo ? '' : ((c.participantPhotos || {})[pid] || extraProfiles[pid]?.photo || '');
       const lastMsg = c.lastMessage || '대화를 시작해봐요';
       const lastTime = c.lastMessageTime ? new Date(c.lastMessageTime.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric'}) : '';
       const snJs = pName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       const spJs = pPhoto.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${c.id}','${pid}','${snJs}','${spJs}')">
-        <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.08);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
-          ${pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.parentElement.innerHTML='<span style=font-size:20px>👤</span>'}">` : '<span style="font-size:20px">👤</span>'}
+      const avatarInner = isBamboo
+        ? '<span style="font-size:22px">🎋</span>'
+        : (pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.parentElement.innerHTML='<span style=font-size:20px>👤</span>'}">` : '<span style="font-size:20px">👤</span>');
+      return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${c.id}','${pid}','${snJs}','${spJs}',${isBamboo})">
+        <div style="width:48px;height:48px;border-radius:50%;background:${isBamboo?'rgba(74,222,128,0.1)':'rgba(255,255,255,0.08)'};flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center${isBamboo?';border:1px solid rgba(74,222,128,0.2)':''}">
+          ${avatarInner}
         </div>
         <div style="flex:1;min-width:0">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700;font-size:14px">${pName}</span><span style="font-size:11px;color:#444">${lastTime}</span></div>
@@ -5796,32 +5888,60 @@ window.loadChatListFirestore = async () => {
   } catch(e) { console.error('chat list error:', e); el.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>'; }
 };
 
-window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto) => {
+window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto, isBambooAnon) => {
   window._currentChatId = chatId;
   window._currentChatPartner = partnerUid;
+  window._isBambooChat = !!isBambooAnon;
   window._currentChatPartnerName = partnerName;
   window._currentChatPartnerPhoto = partnerPhoto || '';
   const _ph = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Ccircle cx='18' cy='18' r='18' fill='%23333'/%3E%3C/svg%3E";
   const avatarEl = document.getElementById('chat-detail-avatar');
   const nameEl = document.getElementById('chat-detail-name');
-  avatarEl.src = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 76) : (partnerPhoto || _ph);
-  avatarEl.style.display = 'block';
-  nameEl.textContent = partnerName || '...';
-  // 이름·프사 없으면 Firestore users에서 직접 보완
-  if (partnerUid && (!partnerName || partnerName === '익명' || !partnerPhoto)) {
-    getDoc(doc(db, 'users', partnerUid)).then(us => {
-      if (!us.exists()) return;
-      const d = us.data();
-      if (!partnerName || partnerName === '익명') {
-        const n = d.nickname || partnerName || '익명';
-        nameEl.textContent = n;
-        window._currentChatPartnerName = n;
-      }
-      if (!partnerPhoto && d.photoURL) {
-        avatarEl.src = window._cdnImg ? window._cdnImg(d.photoURL, 76) : d.photoURL;
-        window._currentChatPartnerPhoto = d.photoURL;
-      }
-    }).catch(() => {});
+  const matchBtn = document.getElementById('bamboo-match-btn');
+
+  if (isBambooAnon) {
+    // 익명 대화 모드
+    avatarEl.style.display = 'none';
+    nameEl.textContent = '익명 대화 🎋';
+    if (matchBtn) { matchBtn.style.display = 'flex'; matchBtn.textContent = '우리 매칭할까요? 💚'; matchBtn.disabled = false; matchBtn.style.opacity = '1'; }
+    // 내가 이미 매칭 요청 보냈는지 Firestore에서 확인
+    const user = auth.currentUser || window.currentUser;
+    if (user) {
+      getDoc(doc(db, 'chats', chatId)).then(cs => {
+        if (!cs.exists()) return;
+        const d = cs.data();
+        if (d.matchRequestedBy === user.uid && matchBtn) {
+          matchBtn.textContent = '수락 대기 중 💚'; matchBtn.disabled = true; matchBtn.style.opacity = '0.6';
+        }
+        // 상대가 이미 요청 보냄 → 내가 수락해야 함
+        if (d.matchRequestedBy && d.matchRequestedBy !== user.uid && matchBtn) {
+          matchBtn.textContent = '매칭 수락하기 💚'; matchBtn.disabled = false; matchBtn.style.opacity = '1';
+          matchBtn.onclick = () => window._acceptBambooMatch(chatId, d.matchRequestedBy, null);
+        }
+      }).catch(() => {});
+    }
+  } else {
+    // 일반 채팅 모드
+    avatarEl.src = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 76) : (partnerPhoto || _ph);
+    avatarEl.style.display = 'block';
+    nameEl.textContent = partnerName || '...';
+    if (matchBtn) { matchBtn.style.display = 'none'; matchBtn.onclick = () => window._sendBambooMatchRequest(); }
+    // 이름·프사 없으면 Firestore users에서 보완
+    if (partnerUid && (!partnerName || partnerName === '익명' || !partnerPhoto)) {
+      getDoc(doc(db, 'users', partnerUid)).then(us => {
+        if (!us.exists()) return;
+        const d = us.data();
+        if (!partnerName || partnerName === '익명') {
+          const n = d.nickname || partnerName || '익명';
+          nameEl.textContent = n;
+          window._currentChatPartnerName = n;
+        }
+        if (!partnerPhoto && d.photoURL) {
+          avatarEl.src = window._cdnImg ? window._cdnImg(d.photoURL, 76) : d.photoURL;
+          window._currentChatPartnerPhoto = d.photoURL;
+        }
+      }).catch(() => {});
+    }
   }
   const messagesEl = document.getElementById('chat-messages');
   messagesEl.innerHTML = '<div style="text-align:center;padding:20px;color:#444;font-size:13px">불러오는 중...</div>';
@@ -5875,6 +5995,7 @@ window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto) => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
   window._openChatPartnerProfile = () => {
+    if (window._isBambooChat) { showToast('익명 대화 중이에요. 매칭 후 프로필을 볼 수 있어요 💚'); return; }
     if (partnerUid) window.openUserProfile(partnerUid);
   };
   const inEl = document.getElementById('chat-input');
