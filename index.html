@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260619023 -->
+<!-- cache-bust: v20260621001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -28,7 +28,7 @@
 
 <!-- 카카오 SDK -->
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
@@ -4043,7 +4043,7 @@ if ('serviceWorker' in navigator) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -4057,7 +4057,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// 오프라인 영구 캐시: 재방문 시 IndexedDB에서 즉시 로드 후 백그라운드 동기화
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (e) {
+  // 이미 초기화됐거나 미지원 브라우저 → 기본 인스턴스로 폴백
+  db = getFirestore(app);
+}
 const provider = new GoogleAuthProvider();
 window.currentUser = null;
 const userPhotoCache = new Map(); // uid → photoURL, 로그아웃 시 clear
@@ -4271,9 +4280,9 @@ let feedObserver = null;
 // 이미지 CDN 리사이즈 (weserv): 원본 풀해상도 대신 화면 크기에 맞게 줄여 빠르게 + 엣지 캐시
 window._cdnImg = (url, w) => {
   if (!url || /^(data:|blob:)/.test(url) || url.includes('images.weserv.nl')) return url || '';
-  // 이미 CDN(Google/imgBB/Cloudflare)인 경우 weserv 중계 없이 직접 반환
-  // — weserv가 이 도메인들을 fetch할 때 차단당해 "?" 버그 발생
-  if (/googleusercontent\.com|lh[0-9]+\.google|i\.ibb\.co/.test(url)) return url;
+  // googleusercontent(구글 프사)는 데이터센터 IP 차단 → weserv 우회 불가, 직접 반환
+  //  (작은 프로필 썸네일이라 영향 작음. imgBB는 weserv 정상 동작 → 리사이즈 적용)
+  if (/googleusercontent\.com|lh[0-9]+\.google/.test(url)) return url;
   return 'https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, '')) + '&w=' + (w || 600) + '&output=webp&q=80';
 };
 
@@ -4292,7 +4301,7 @@ function buildPostHTML(p) {
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
         <div style="display:flex;align-items:center;flex:1;min-width:0;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
-            <img src="${window._cdnImg(displayPhoto,80)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            <img data-av="${p.userId||''}" src="${window._cdnImg(displayPhoto,80)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
           <div style="margin-left:10px;">
             <div style="font-size:13px;font-weight:700;letter-spacing:-0.3px">${p.userName||'익명'}</div>
@@ -4767,6 +4776,18 @@ async function fetchUserPhotos(posts) {
   }));
 }
 
+// 백그라운드 프사 갱신 후, 캐시와 다른 아바타만 src 교체 (깜빡임 최소화)
+function refreshFeedAvatars() {
+  document.querySelectorAll('#firebase-feed img[data-av]').forEach(img => {
+    const uid = img.getAttribute('data-av');
+    if (!uid || !userPhotoCache.has(uid)) return;
+    const fresh = userPhotoCache.get(uid);
+    if (!fresh) return;
+    const want = window._cdnImg(fresh, 80);
+    if (img.src !== want) { img.onerror = function(){ this.style.display='none'; }; img.src = want; img.style.display='block'; }
+  });
+}
+
 function setupFeedObserver() {
   if (feedObserver) feedObserver.disconnect();
   const sentinel = document.getElementById('feed-sentinel');
@@ -4789,9 +4810,9 @@ async function loadMoreFeed() {
     if (!snap.empty) {
       feedLastDoc = snap.docs[snap.docs.length - 1];
       const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-      await fetchUserPhotos(posts);
       const feedEl = document.getElementById('firebase-feed');
       if (feedEl) feedEl.insertAdjacentHTML('beforeend', posts.map(buildPostHTML).join(''));
+      fetchUserPhotos(posts).then(() => refreshFeedAvatars());
     }
     if (snap.docs.length < FEED_PAGE) {
       feedAllLoaded = true;
@@ -4832,11 +4853,13 @@ async function loadFeed() {
     feedLastDoc = snap.docs[snap.docs.length - 1];
     feedAllLoaded = snap.docs.length < FEED_PAGE;
     const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-    await fetchUserPhotos(posts);
+    // 글에 저장된 userPhoto로 즉시 렌더 (N+1 프사 조회를 기다리지 않음)
     feedFirstPageCache = posts;
     feedEl.innerHTML = posts.map(buildPostHTML).join('');
     if (!feedAllLoaded) setupFeedObserver();
     renderHomeLiveBar();
+    // 최신 프로필 사진은 백그라운드로 갱신 → 바뀐 아바타만 교체
+    fetchUserPhotos(posts).then(() => refreshFeedAvatars());
   } catch(e) {
     if (!feedFirstPageCache) feedEl.innerHTML = '<div style="text-align:center;padding:32px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.2);margin-bottom:12px">피드를 불러올 수 없어요</div><button onclick="loadFeed()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:12px;padding:8px 16px;cursor:pointer;font-family:inherit">다시 시도</button></div>';
   }
@@ -5231,26 +5254,31 @@ window.loadComments = async (postId) => {
     const snap = await getDocs(q);
     if (snap.empty) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>'; return; }
     const comments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-    // 피드와 동일한 캐시 사용 — 캐시 미스 uid만 Firestore 조회
-    const uniqueIds = [...new Set(comments.map(c => c.userId).filter(Boolean))];
-    await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
-      try {
-        const us = await getDoc(doc(db, 'users', uid));
-        userPhotoCache.set(uid, us.exists() ? (us.data().photoURL || '') : '');
-      } catch(e) { /* 실패 시 캐시 미저장 — 재시도 가능하게 */ }
-    }));
-    list.innerHTML = comments.map(c => {
+    // 저장된 userPhoto로 즉시 렌더 (프사 조회 대기 안 함)
+    const renderComment = c => {
       const displayPhoto = userPhotoCache.get(c.userId) || c.userPhoto || '';
       return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
         <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0">
-          <img src="${displayPhoto}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          <img data-cav="${c.userId||''}" src="${displayPhoto ? window._cdnImg(displayPhoto,56) : ''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
         </div>
         <div>
           <span style="font-size:12px;font-weight:700;margin-right:6px">${c.userName||'익명'}</span>
           <span style="font-size:13px;color:#fff">${c.text}</span>
         </div>
       </div>`;
-    }).join('');
+    };
+    list.innerHTML = comments.map(renderComment).join('');
+    // 최신 프사 백그라운드 갱신
+    fetchUserPhotos(comments).then(() => {
+      list.querySelectorAll('img[data-cav]').forEach(img => {
+        const uid = img.getAttribute('data-cav');
+        if (!uid || !userPhotoCache.has(uid)) return;
+        const fresh = userPhotoCache.get(uid);
+        if (!fresh) return;
+        const want = window._cdnImg(fresh, 56);
+        if (img.src !== want) { img.onerror = function(){ this.style.display='none'; }; img.src = want; img.style.display='block'; }
+      });
+    });
   } catch(e) {
     console.error('댓글 로드 실패:', e.code, e.message);
     list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">댓글을 불러올 수 없어요</div>';
