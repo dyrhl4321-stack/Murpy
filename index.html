@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260622013 -->
+<!-- cache-bust: v20260622014 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -205,14 +205,14 @@
   .bamboo-tab-btn.active::after { content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);border-radius:1px }
   /* Photo grid */
   .photo-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px }
-  .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none }
+  .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer;touch-action:pan-y;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none }
   .photo-thumb img { width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.2s;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;pointer-events:none }
   .photo-thumb:active img { transform:scale(0.97) }
   /* 사진 순서변경 모드 */
   .reorder-toggle { display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.06);border:1px solid var(--border-subtle);color:var(--text-secondary);font-family:inherit;font-size:12px;font-weight:600;padding:7px 13px;border-radius:20px;cursor:pointer;transition:all .18s }
   .reorder-toggle.active { background:var(--accent);border-color:var(--accent);color:#fff }
   @keyframes photo-jiggle { 0%{transform:rotate(-1.1deg)} 50%{transform:rotate(1.1deg)} 100%{transform:rotate(-1.1deg)} }
-  .photo-grid-2.reorder-on .photo-thumb { animation:photo-jiggle .28s ease-in-out infinite;cursor:grab }
+  .photo-grid-2.reorder-on .photo-thumb { animation:photo-jiggle .28s ease-in-out infinite;cursor:grab;touch-action:none }
   .photo-grid-2.reorder-on .photo-thumb::after { content:'';position:absolute;inset:0;border:2px solid rgba(255,255,255,0.55);border-radius:12px;pointer-events:none }
   .photo-grid-2.reorder-on .photo-thumb:active { animation-play-state:paused }
   /* FAB */
@@ -4936,11 +4936,10 @@ window.togglePhotoReorder = function() {
 function _initPhotoSortable(grid, field) {
   // 순서변경 모드(reorder-on)에서만 드래그 정렬. FLIP 애니메이션으로 이웃이 부드럽게 밀림.
   const SPRING = 'cubic-bezier(.34,1.56,.64,1)'; // 살짝 튕기는 "오동통" 느낌
-  let dragEl = null, ptrId = null, moved = false;
+  let dragEl = null, ptrId = null, moved = false, scrolled = false;
   let startX = 0, startY = 0, originX = 0, originY = 0, lastX = 0, lastY = 0;
 
   grid.querySelectorAll('.photo-thumb').forEach(thumb => {
-    thumb.style.touchAction = 'none';
     thumb.addEventListener('pointerdown', e => onDown(e, thumb));
   });
 
@@ -4948,7 +4947,7 @@ function _initPhotoSortable(grid, field) {
 
   function onDown(e, thumb) {
     if (dragEl || (e.button != null && e.button !== 0)) return;
-    dragEl = thumb; ptrId = e.pointerId; moved = false;
+    dragEl = thumb; ptrId = e.pointerId; moved = false; scrolled = false;
     startX = lastX = originX = e.clientX;
     startY = lastY = originY = e.clientY;
     document.addEventListener('pointermove', onMove, { passive: false });
@@ -4958,8 +4957,11 @@ function _initPhotoSortable(grid, field) {
 
   function onMove(e) {
     if (!dragEl || e.pointerId !== ptrId) return;
-    // 순서변경 모드가 아니면 드래그 안 함(탭=확대만)
-    if (!reorderMode()) return;
+    // 순서변경 모드가 아니면 드래그 안 함 — 움직임이 크면 스크롤로 보고 확대 취소
+    if (!reorderMode()) {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 10) scrolled = true;
+      return;
+    }
     const dx = e.clientX - startX, dy = e.clientY - startY;
     if (!moved) {
       if (Math.hypot(dx, dy) < 6) return;
@@ -5033,8 +5035,10 @@ function _initPhotoSortable(grid, field) {
     if (!el) return;
     try { el.releasePointerCapture(ptrId); } catch (_) {}
     if (!moved) {
-      // 순서변경 모드가 아닐 때의 탭 → 확대 뷰어
-      if (!reorderMode()) window.openImgViewer(el.dataset.url, field);
+      // 깔끔한 탭(스크롤·취소 아님)일 때만 확대 뷰어
+      if (!reorderMode() && !scrolled && e.type !== 'pointercancel') {
+        window.openImgViewer(el.dataset.url, field);
+      }
       return;
     }
     // 제자리(빈 슬롯)로 살짝 튕기며 안착
