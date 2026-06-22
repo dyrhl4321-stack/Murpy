@@ -1,6 +1,6 @@
-const CACHE_NAME = 'murpy-v11';
-const STATIC_CACHE = 'murpy-static-v11';
-const CDN_CACHE = 'murpy-cdn-v11';
+const CACHE_NAME = 'murpy-v12';
+const STATIC_CACHE = 'murpy-static-v12';
+const CDN_CACHE = 'murpy-cdn-v12';
 
 // 앱 시작 시 즉시 캐시할 로컬 파일
 const STATIC_ASSETS = [
