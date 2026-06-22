@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260622011 -->
+<!-- cache-bust: v20260622012 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4903,7 +4903,8 @@ window.renderUserPhotoGrid = function(field) {
 function _initPhotoSortable(grid, field) {
   // iOS 홈화면 스타일 드래그 정렬 (FLIP 애니메이션으로 이웃이 부드럽게 밀림)
   const SPRING = 'cubic-bezier(.34,1.56,.64,1)'; // 살짝 튕기는 "오동통" 느낌
-  let dragEl = null, ptrId = null, moved = false;
+  const HOLD_MS = 220;   // 이 시간만큼 누르고 있어야 드래그가 걸림
+  let dragEl = null, ptrId = null, moved = false, armed = false, holdTimer = null;
   let startX = 0, startY = 0, originX = 0, originY = 0, lastX = 0, lastY = 0;
 
   grid.querySelectorAll('.photo-thumb').forEach(thumb => {
@@ -4911,11 +4912,24 @@ function _initPhotoSortable(grid, field) {
     thumb.addEventListener('pointerdown', e => onDown(e, thumb));
   });
 
+  function clearHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
+
   function onDown(e, thumb) {
     if (dragEl || (e.button != null && e.button !== 0)) return;
-    dragEl = thumb; ptrId = e.pointerId; moved = false;
+    dragEl = thumb; ptrId = e.pointerId; moved = false; armed = false;
     startX = lastX = originX = e.clientX;
     startY = lastY = originY = e.clientY;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      armed = true;
+      // 걸리는 순간 살짝 들리는 피드백
+      if (dragEl && !moved) {
+        try { dragEl.setPointerCapture(ptrId); } catch (_) {}
+        dragEl.style.transition = 'transform .14s ' + SPRING;
+        dragEl.style.transform = 'scale(1.07)';
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
+      }
+    }, HOLD_MS);
     document.addEventListener('pointermove', onMove, { passive: false });
     document.addEventListener('pointerup', onUp);
     document.addEventListener('pointercancel', onUp);
@@ -4923,17 +4937,19 @@ function _initPhotoSortable(grid, field) {
 
   function onMove(e) {
     if (!dragEl || e.pointerId !== ptrId) return;
-    lastX = e.clientX; lastY = e.clientY;
     const dx = e.clientX - startX, dy = e.clientY - startY;
+    // 아직 안 걸렸으면: 많이 움직이면 드래그 취소(스와이프/탭으로 처리)
+    if (!armed) {
+      if (Math.hypot(dx, dy) > 10) clearHold();
+      return;
+    }
+    lastX = e.clientX; lastY = e.clientY;
     if (!moved) {
-      if (Math.hypot(dx, dy) < 6) return;
       moved = true;
-      try { dragEl.setPointerCapture(ptrId); } catch (_) {}
       dragEl.style.zIndex = '30';
       dragEl.style.opacity = '0.96';
       dragEl.style.boxShadow = '0 14px 30px rgba(0,0,0,0.45)';
       dragEl.style.pointerEvents = 'none';       // hit-test에서 제외 → 밑의 이웃 감지
-      dragEl.style.transition = 'transform .16s ' + SPRING;
       requestAnimationFrame(() => { if (dragEl) dragEl.style.transition = 'transform 0s'; });
     }
     e.preventDefault();
@@ -4982,13 +4998,25 @@ function _initPhotoSortable(grid, field) {
   }
 
   function onUp(e) {
+    clearHold();
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onUp);
     const el = dragEl; dragEl = null;
+    const wasArmed = armed; armed = false;
     if (!el) return;
     try { el.releasePointerCapture(ptrId); } catch (_) {}
-    if (!moved) { window.openImgViewer(el.dataset.url, field); return; }
+    if (!moved) {
+      // 걸렸지만 안 움직였으면 들린 효과만 되돌리고, 짧은 탭이면 확대 뷰어
+      if (wasArmed) {
+        el.style.transition = 'transform .18s ' + SPRING;
+        el.style.transform = '';
+        setTimeout(() => { el.style.transition = ''; }, 190);
+      } else {
+        window.openImgViewer(el.dataset.url, field);
+      }
+      return;
+    }
     // 제자리(빈 슬롯)로 살짝 튕기며 안착
     el.style.transition = 'transform .26s ' + SPRING + ', box-shadow .26s, opacity .26s';
     el.style.transform = '';
