@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260622009 -->
+<!-- cache-bust: v20260622010 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4905,35 +4905,48 @@ function _initPhotoSortable(grid, field) {
     thumb.style.touchAction = 'none';
     let startX = 0, startY = 0, moved = false, dragging = false;
     thumb.addEventListener('pointerdown', e => {
+      if (e.button != null && e.button !== 0) return;
       startX = e.clientX; startY = e.clientY; moved = false; dragging = true;
       try { thumb.setPointerCapture(e.pointerId); } catch (_) {}
     });
     thumb.addEventListener('pointermove', e => {
       if (!dragging) return;
-      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 8) return;
-      moved = true;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 8) return;
+      if (!moved) {
+        moved = true;
+        thumb.style.zIndex = '10';
+        thumb.style.opacity = '0.92';
+        thumb.style.transition = 'none';
+        // 드래그 중인 썸네일은 hit-test에서 제외 → 아래 이웃 사진이 잡힘
+        thumb.style.pointerEvents = 'none';
+      }
       e.preventDefault();
-      thumb.style.opacity = '0.55';
-      thumb.style.transform = 'scale(1.06)';
-      thumb.style.zIndex = '5';
+      thumb.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(1.04)';
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const over = el && el.closest('.photo-thumb');
       if (over && over !== thumb && over.parentElement === grid) {
         const r = over.getBoundingClientRect();
-        const before = e.clientX < r.left + r.width / 2;
+        const before = e.clientY < r.top + r.height / 2 || (Math.abs(e.clientY - (r.top + r.height / 2)) < 6 && e.clientX < r.left + r.width / 2);
         grid.insertBefore(thumb, before ? over : over.nextSibling);
+        // 새 위치 기준으로 좌표 리셋 → 자연스럽게 이어서 드래그
+        startX = e.clientX; startY = e.clientY;
+        thumb.style.transform = 'translate(0px,0px) scale(1.04)';
       }
     });
     const end = e => {
       if (!dragging) return;
       dragging = false;
       try { thumb.releasePointerCapture(e.pointerId); } catch (_) {}
-      thumb.style.opacity = '';
-      thumb.style.transform = '';
       thumb.style.zIndex = '';
+      thumb.style.opacity = '';
+      thumb.style.transition = '';
+      thumb.style.transform = '';
+      thumb.style.pointerEvents = '';
       if (moved) {
         const urls = [...grid.querySelectorAll('.photo-thumb')].map(t => t.dataset.url);
         window.setUserPhotos(field, urls);
+        showToast('사진 순서를 저장했어요');
       } else {
         window.openImgViewer(thumb.dataset.url, field);
       }
