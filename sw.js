@@ -1,6 +1,8 @@
-const CACHE_NAME = 'murpy-v12';
-const STATIC_CACHE = 'murpy-static-v12';
-const CDN_CACHE = 'murpy-cdn-v12';
+const CACHE_NAME = 'murpy-v13';
+const STATIC_CACHE = 'murpy-static-v13';
+const CDN_CACHE = 'murpy-cdn-v13';
+// 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
+const IMG_CACHE = 'murpy-img';
 
 // 앱 시작 시 즉시 캐시할 로컬 파일
 const STATIC_ASSETS = [
@@ -31,7 +33,7 @@ self.addEventListener('activate', e => {
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => ![CACHE_NAME, STATIC_CACHE, CDN_CACHE].includes(k))
+          .filter(k => ![CACHE_NAME, STATIC_CACHE, CDN_CACHE, IMG_CACHE].includes(k))
           .map(k => caches.delete(k))
       )
     ).then(() => clients.claim())
@@ -49,6 +51,20 @@ self.addEventListener('fetch', e => {
       url.hostname.includes('securetoken.googleapis.com') ||
       url.hostname.includes('firebase.googleapis.com') ||
       url.pathname.includes('/v2/user/me')) {
+    return;
+  }
+
+  // 프로필/피드 이미지 (weserv 리사이즈, imgBB) → 캐시 우선 (URL이 곧 버전)
+  if (url.hostname.includes('images.weserv.nl') || url.hostname.includes('ibb.co')) {
+    e.respondWith(
+      caches.open(IMG_CACHE).then(async cache => {
+        const cached = await cache.match(e.request);
+        if (cached) return cached;
+        const res = await fetch(e.request);
+        if (res && res.ok) cache.put(e.request, res.clone());
+        return res;
+      }).catch(() => fetch(e.request))
+    );
     return;
   }
 
