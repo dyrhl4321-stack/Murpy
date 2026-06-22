@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260622012 -->
+<!-- cache-bust: v20260622013 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -205,9 +205,16 @@
   .bamboo-tab-btn.active::after { content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);border-radius:1px }
   /* Photo grid */
   .photo-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px }
-  .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer }
-  .photo-thumb img { width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.2s }
+  .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none }
+  .photo-thumb img { width:100%;height:100%;object-fit:cover;display:block;transition:transform 0.2s;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;pointer-events:none }
   .photo-thumb:active img { transform:scale(0.97) }
+  /* 사진 순서변경 모드 */
+  .reorder-toggle { display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.06);border:1px solid var(--border-subtle);color:var(--text-secondary);font-family:inherit;font-size:12px;font-weight:600;padding:7px 13px;border-radius:20px;cursor:pointer;transition:all .18s }
+  .reorder-toggle.active { background:var(--accent);border-color:var(--accent);color:#fff }
+  @keyframes photo-jiggle { 0%{transform:rotate(-1.1deg)} 50%{transform:rotate(1.1deg)} 100%{transform:rotate(-1.1deg)} }
+  .photo-grid-2.reorder-on .photo-thumb { animation:photo-jiggle .28s ease-in-out infinite;cursor:grab }
+  .photo-grid-2.reorder-on .photo-thumb::after { content:'';position:absolute;inset:0;border:2px solid rgba(255,255,255,0.55);border-radius:12px;pointer-events:none }
+  .photo-grid-2.reorder-on .photo-thumb:active { animation-play-state:paused }
   /* FAB */
   .fab { position:absolute;bottom:24px;right:20px;width:50px;height:50px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:22px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.5);z-index:10;display:flex;align-items:center;justify-content:center;transition:transform 0.15s }
   .fab:active { transform:scale(0.93) }
@@ -682,6 +689,12 @@
         <div style="font-size:13px;color:#666">사진 추가</div>
       </div>
       <input type="file" id="photos-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'photos-grid')">
+      <div id="photos-reorder-bar" style="display:none;justify-content:flex-end;margin:14px 2px 0">
+        <button id="photos-reorder-btn" class="reorder-toggle" onclick="window.togglePhotoReorder()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+          <span>순서 변경</span>
+        </button>
+      </div>
       <div class="photo-grid-2" id="photos-grid"></div>
       <input type="file" id="workout-input" accept="image/*" multiple style="display:none" onchange="handlePhotoUpload(this, 'photos-grid')">
       <div id="workout-grid" style="display:none"></div>
@@ -4897,14 +4910,33 @@ window.renderUserPhotoGrid = function(field) {
   grid.innerHTML = arr.map(u =>
     '<div class="photo-thumb" data-url="' + u + '"><img src="' + u + '" draggable="false"></div>'
   ).join('');
+  // 순서변경 모드 초기화 + 토글 버튼 노출(사진 2장 이상일 때만)
+  if (field === 'photos') {
+    grid.classList.remove('reorder-on');
+    const bar = document.getElementById('photos-reorder-bar');
+    const btn = document.getElementById('photos-reorder-btn');
+    if (bar) bar.style.display = arr.length >= 2 ? 'flex' : 'none';
+    if (btn) { btn.classList.remove('active'); const t = btn.querySelector('span'); if (t) t.textContent = '순서 변경'; }
+  }
   _initPhotoSortable(grid, field);
 };
 
+window.togglePhotoReorder = function() {
+  const grid = document.getElementById('photos-grid');
+  const btn = document.getElementById('photos-reorder-btn');
+  if (!grid) return;
+  const on = grid.classList.toggle('reorder-on');
+  if (btn) {
+    btn.classList.toggle('active', on);
+    const t = btn.querySelector('span'); if (t) t.textContent = on ? '완료' : '순서 변경';
+  }
+  if (on && navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
+};
+
 function _initPhotoSortable(grid, field) {
-  // iOS 홈화면 스타일 드래그 정렬 (FLIP 애니메이션으로 이웃이 부드럽게 밀림)
+  // 순서변경 모드(reorder-on)에서만 드래그 정렬. FLIP 애니메이션으로 이웃이 부드럽게 밀림.
   const SPRING = 'cubic-bezier(.34,1.56,.64,1)'; // 살짝 튕기는 "오동통" 느낌
-  const HOLD_MS = 220;   // 이 시간만큼 누르고 있어야 드래그가 걸림
-  let dragEl = null, ptrId = null, moved = false, armed = false, holdTimer = null;
+  let dragEl = null, ptrId = null, moved = false;
   let startX = 0, startY = 0, originX = 0, originY = 0, lastX = 0, lastY = 0;
 
   grid.querySelectorAll('.photo-thumb').forEach(thumb => {
@@ -4912,24 +4944,13 @@ function _initPhotoSortable(grid, field) {
     thumb.addEventListener('pointerdown', e => onDown(e, thumb));
   });
 
-  function clearHold() { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
+  function reorderMode() { return grid.classList.contains('reorder-on'); }
 
   function onDown(e, thumb) {
     if (dragEl || (e.button != null && e.button !== 0)) return;
-    dragEl = thumb; ptrId = e.pointerId; moved = false; armed = false;
+    dragEl = thumb; ptrId = e.pointerId; moved = false;
     startX = lastX = originX = e.clientX;
     startY = lastY = originY = e.clientY;
-    clearHold();
-    holdTimer = setTimeout(() => {
-      armed = true;
-      // 걸리는 순간 살짝 들리는 피드백
-      if (dragEl && !moved) {
-        try { dragEl.setPointerCapture(ptrId); } catch (_) {}
-        dragEl.style.transition = 'transform .14s ' + SPRING;
-        dragEl.style.transform = 'scale(1.07)';
-        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
-      }
-    }, HOLD_MS);
     document.addEventListener('pointermove', onMove, { passive: false });
     document.addEventListener('pointerup', onUp);
     document.addEventListener('pointercancel', onUp);
@@ -4937,21 +4958,22 @@ function _initPhotoSortable(grid, field) {
 
   function onMove(e) {
     if (!dragEl || e.pointerId !== ptrId) return;
+    // 순서변경 모드가 아니면 드래그 안 함(탭=확대만)
+    if (!reorderMode()) return;
     const dx = e.clientX - startX, dy = e.clientY - startY;
-    // 아직 안 걸렸으면: 많이 움직이면 드래그 취소(스와이프/탭으로 처리)
-    if (!armed) {
-      if (Math.hypot(dx, dy) > 10) clearHold();
-      return;
-    }
-    lastX = e.clientX; lastY = e.clientY;
     if (!moved) {
+      if (Math.hypot(dx, dy) < 6) return;
       moved = true;
+      try { dragEl.setPointerCapture(ptrId); } catch (_) {}
+      dragEl.style.animation = 'none';           // 흔들림 멈추고 들어올림
       dragEl.style.zIndex = '30';
       dragEl.style.opacity = '0.96';
       dragEl.style.boxShadow = '0 14px 30px rgba(0,0,0,0.45)';
       dragEl.style.pointerEvents = 'none';       // hit-test에서 제외 → 밑의 이웃 감지
-      requestAnimationFrame(() => { if (dragEl) dragEl.style.transition = 'transform 0s'; });
+      dragEl.style.transition = 'transform 0s';
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (_) {} }
     }
+    lastX = e.clientX; lastY = e.clientY;
     e.preventDefault();
     follow();
     detectReorder(e.clientX, e.clientY);
@@ -4984,37 +5006,35 @@ function _initPhotoSortable(grid, field) {
     originY += after.top - before.top;
     follow();
     // 이웃들을 옛 위치 → 새 위치로 부드럽게 미끄러뜨림 (밀려나는 느낌)
+    // 흔들림(animation)이 transform을 덮어쓰므로 슬라이드 동안 잠시 끔
     sibs.forEach(s => {
       const o = oldRects.get(s), n = s.getBoundingClientRect();
       const ddx = o.left - n.left, ddy = o.top - n.top;
       if (!ddx && !ddy) return;
+      s.style.animation = 'none';
       s.style.transition = 'none';
       s.style.transform = 'translate(' + ddx + 'px,' + ddy + 'px)';
       requestAnimationFrame(() => {
         s.style.transition = 'transform .34s ' + SPRING;
         s.style.transform = '';
       });
+      clearTimeout(s._jigT);
+      s._jigT = setTimeout(() => {
+        s.style.transition = ''; s.style.transform = ''; s.style.animation = '';
+      }, 370);
     });
   }
 
   function onUp(e) {
-    clearHold();
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     document.removeEventListener('pointercancel', onUp);
     const el = dragEl; dragEl = null;
-    const wasArmed = armed; armed = false;
     if (!el) return;
     try { el.releasePointerCapture(ptrId); } catch (_) {}
     if (!moved) {
-      // 걸렸지만 안 움직였으면 들린 효과만 되돌리고, 짧은 탭이면 확대 뷰어
-      if (wasArmed) {
-        el.style.transition = 'transform .18s ' + SPRING;
-        el.style.transform = '';
-        setTimeout(() => { el.style.transition = ''; }, 190);
-      } else {
-        window.openImgViewer(el.dataset.url, field);
-      }
+      // 순서변경 모드가 아닐 때의 탭 → 확대 뷰어
+      if (!reorderMode()) window.openImgViewer(el.dataset.url, field);
       return;
     }
     // 제자리(빈 슬롯)로 살짝 튕기며 안착
@@ -5023,10 +5043,13 @@ function _initPhotoSortable(grid, field) {
     el.style.boxShadow = '';
     el.style.opacity = '';
     el.style.zIndex = '';
-    setTimeout(() => { el.style.transition = ''; el.style.pointerEvents = ''; }, 270);
+    setTimeout(() => {
+      el.style.transition = '';
+      el.style.pointerEvents = '';
+      el.style.animation = '';   // 순서변경 모드면 다시 흔들림 재개
+    }, 270);
     const urls = [...grid.querySelectorAll('.photo-thumb')].map(t => t.dataset.url);
     window.setUserPhotos(field, urls);
-    showToast('사진 순서를 저장했어요');
   }
 }
 
