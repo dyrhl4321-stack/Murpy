@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260622004 -->
+<!-- cache-bust: v20260622005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1037,7 +1037,7 @@
     </div>
     <div style="margin-bottom:16px">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600">다니는 센터 <span style="color:#3D7EFF">*</span></div>
-      <input id="edit-gym" maxlength="20" autocomplete="off" placeholder="센터 검색 또는 직접 입력" oninput="gymAC('edit-gym','edit-gym-ac')" onfocus="gymAC('edit-gym','edit-gym-ac')" onblur="gymACHide('edit-gym-ac')" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+      <input id="edit-gym" maxlength="20" autocomplete="off" placeholder="센터 검색 또는 직접 입력" oninput="gymAC('edit-gym','edit-gym-ac')" onfocus="gymACFocus('edit-gym','edit-gym-ac')" onblur="gymACHide('edit-gym-ac')" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
       <div id="edit-gym-ac" style="display:none;margin-top:6px;background:#141414;border:1px solid rgba(255,255,255,0.12);border-radius:12px;max-height:240px;overflow-y:auto"></div>
       <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:7px">목록에 없으면 직접 입력해도 돼요.</div>
     </div>
@@ -1288,7 +1288,7 @@
     </div>
     <div style="margin-bottom:20px">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600;letter-spacing:0.3px">다니는 센터 <span style="color:#3D7EFF">*</span></div>
-      <input id="ob-gym" maxlength="20" autocomplete="off" placeholder="센터 검색 또는 직접 입력" oninput="gymAC('ob-gym','ob-gym-ac')" onfocus="gymAC('ob-gym','ob-gym-ac')" onblur="gymACHide('ob-gym-ac')" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 16px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
+      <input id="ob-gym" maxlength="20" autocomplete="off" placeholder="센터 검색 또는 직접 입력" oninput="gymAC('ob-gym','ob-gym-ac')" onfocus="gymACFocus('ob-gym','ob-gym-ac')" onblur="gymACHide('ob-gym-ac')" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 16px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
       <div id="ob-gym-ac" style="display:none;margin-top:6px;background:#141414;border:1px solid rgba(255,255,255,0.12);border-radius:12px;max-height:240px;overflow-y:auto"></div>
       <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:7px;line-height:1.5">같은 센터 멤버를 찾으려면 필요해요. 목록에 없으면 직접 입력해도 돼요.</div>
     </div>
@@ -3051,7 +3051,7 @@ function gymAC(inputId, acId) {
   ac.innerHTML = list.map((c, i) => {
     const region = c.loc || c.location || '';
     const nm = String(c.name).replace(/"/g, '&quot;');
-    return `<div onmousedown="gymACPick('${inputId}','${acId}',this)" data-name="${nm}" style="padding:11px 14px;cursor:pointer;font-size:13px;color:#fff;display:flex;align-items:center;gap:9px;${i < list.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.05)' : ''}">${pin}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>${region ? `<span style="color:rgba(255,255,255,0.35);font-size:11px;margin-left:auto;flex-shrink:0">${region}</span>` : ''}</div>`;
+    return `<div onpointerdown="gymACPick('${inputId}','${acId}',this)" data-name="${nm}" style="padding:11px 14px;cursor:pointer;font-size:13px;color:#fff;display:flex;align-items:center;gap:9px;${i < list.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,0.05)' : ''}">${pin}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</span>${region ? `<span style="color:rgba(255,255,255,0.35);font-size:11px;margin-left:auto;flex-shrink:0">${region}</span>` : ''}</div>`;
   }).join('');
   ac.style.display = 'block';
 }
@@ -3062,7 +3062,25 @@ function gymACPick(inputId, acId, el) {
   if (ac) ac.style.display = 'none';
 }
 function gymACHide(acId) {
-  setTimeout(() => { const ac = document.getElementById(acId); if (ac) ac.style.display = 'none'; }, 150);
+  setTimeout(() => { const ac = document.getElementById(acId); if (ac) ac.style.display = 'none'; }, 200);
+}
+// 모바일: 포커스 시 입력칸을 스크롤 컨테이너 상단 쪽으로 올려 드롭다운이 키보드에 가리지 않게
+function gymACFocus(inputId, acId) {
+  gymAC(inputId, acId);
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  setTimeout(() => {
+    let el = input.parentElement;
+    while (el && el !== document.body) {
+      const oy = getComputedStyle(el).overflowY;
+      if (oy === 'auto' || oy === 'scroll') break;
+      el = el.parentElement;
+    }
+    if (!el || el === document.body) { try { input.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} return; }
+    const cRect = el.getBoundingClientRect();
+    const iRect = input.getBoundingClientRect();
+    el.scrollTo({ top: el.scrollTop + (iRect.top - cRect.top) - 70, behavior: 'smooth' });
+  }, 320);
 }
 
 // Feed like toggle
