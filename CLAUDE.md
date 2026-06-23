@@ -181,7 +181,7 @@ centerEditRequests/            # 센터 정보 수정 요청
   - `<script type="module">` (모듈): Firebase 함수, Firestore 쿼리, Auth
   - 두 스코프 간 데이터 공유: `window.*` 브릿지 패턴 사용
 - **작업 후 반드시 git push** (`gh-pages`가 별도 배포 브랜치 없이 main 직접 배포)
-- **Firestore 보안 규칙 만료**: 2026년 6월 26일 만료 예정 → 갱신 필요
+- **Firestore 보안 규칙**: 2026-06-23 영구 규칙으로 갱신·게시 완료(만료 없음). `firestore.rules`가 소스. 전 컬렉션 커버(centers/ratings, matches, likes, reports, centerEditRequests 포함), 모든 쓰기 로그인 요구, 삭제는 작성자(userId)/관리자(dyrhl4321@gmail.com)만. CLI 토큰 만료 상태라 콘솔 직접 게시로 적용함(`firebase login --reauth` 후 CLI 배포 가능)
 - imgBB API 키가 코드에 하드코딩되어 있음 (`d12b915d2ed184170a0fd4aff714234d`)
 - `cache-bust` 주석 (`v20260612001`)을 수정할 때마다 버전 업데이트
 - **관리자 이메일**: `dyrhl4321@gmail.com` — 센터 편집, 시딩 버튼 표시
@@ -197,7 +197,7 @@ centerEditRequests/            # 센터 정보 수정 요청
 - [ ] **매칭 탭 Firestore 실연동** — 유저 프로필 카드 실데이터, matches 컬렉션
 - [ ] **크루 출석 체크** — 정모 일정에 출석확인 버튼 + attendees 서브컬렉션
 - [ ] **피드 페이지네이션** — 무한스크롤 (limit(10) + startAfter)
-- [ ] **Firestore 보안 규칙 갱신** — 2026-06-26 만료
+- [x] **Firestore 보안 규칙 갱신** — 2026-06-23 영구 규칙 게시 완료(만료 없음)
 
 ## 12. 실사용화 로드맵
 
