@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260623008 -->
+<!-- cache-bust: v20260623009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4634,6 +4634,17 @@ window.isMatched = async (otherUid) => {
   try { const m = await getDoc(doc(db, 'matches', _pairKey(me, otherUid))); return m.exists(); } catch (e) { return false; }
 };
 
+// 이미 연결된 사이 여부 (매칭 또는 채팅 개설) — 관심목록에서 제외용
+window._isConnected = async (otherUid) => {
+  const me = window.currentUser?.uid;
+  if (!me || !otherUid) return false;
+  const key = _pairKey(me, otherUid);
+  try {
+    const [m, c] = await Promise.all([getDoc(doc(db, 'matches', key)), getDoc(doc(db, 'chats', key))]);
+    return m.exists() || c.exists();
+  } catch (e) { return false; }
+};
+
 window.sendLike = async (toUid, toName, toPhoto) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
@@ -6130,23 +6141,26 @@ window._loadInterestPanel = async () => {
   try {
     const q = query(collection(db, 'likes'), where('to', '==', user.uid));
     const snap = await getDocs(q);
-    // 이미 매칭된 사람은 제외
+    // 이미 연결된 사이(매칭/채팅)는 제외
     for (const d of snap.docs) {
       const fromUid = d.data().from;
-      const matched = await getDoc(doc(db, 'matches', _pairKey(fromUid, user.uid)));
-      if (!matched.exists()) likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt });
+      if (await window._isConnected(fromUid)) continue;
+      likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt });
     }
   } catch(e) {}
 
-  // 2) 대숲 저에요 누른 사람: bamboo_request 알림
+  // 2) 대숲 저에요 누른 사람: bamboo_request 알림 (이미 연결된 사이는 제외)
   try {
     const q = query(collection(db, 'notifications'), where('toUid','==',user.uid), where('type','==','bamboo_request'));
     const snap = await getDocs(q);
     const seenUid = new Set();
-    snap.docs.forEach(d => {
+    for (const d of snap.docs) {
       const n = d.data();
-      if (!seenUid.has(n.fromUid)) { seenUid.add(n.fromUid); bambooDocs.push(n); }
-    });
+      if (seenUid.has(n.fromUid)) continue;
+      seenUid.add(n.fromUid);
+      if (await window._isConnected(n.fromUid)) continue;
+      bambooDocs.push(n);
+    }
   } catch(e) {}
 
   // 카운트 표시
