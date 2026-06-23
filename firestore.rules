@@ -2,96 +2,161 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 유저 프로필 (사진 등 공개 읽기 필요)
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+    // ===== 공통 헬퍼 =====
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'dyrhl4321@gmail.com';
+    }
+    // 문서에 저장된 작성자(userId) 본인 여부
+    function ownsDoc() {
+      return request.auth != null && resource.data.userId == request.auth.uid;
     }
 
-    // 피드
+    // ===== 유저 프로필 (사진/닉네임 공개 읽기 필요) =====
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // ===== 피드 =====
     match /feed/{postId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow create: if signedIn();
+      // 좋아요/댓글수 등은 비작성자도 업데이트 → 로그인만 요구
+      allow update: if signedIn();
+      // 삭제는 작성자 본인 또는 관리자만
+      allow delete: if ownsDoc() || isAdmin();
 
-      // 댓글 (피드 서브컬렉션)
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if request.auth != null;
-        allow delete: if request.auth != null;
+        allow create: if signedIn();
+        allow delete: if ownsDoc() || isAdmin();
       }
     }
 
-    // 대숲
+    // ===== 대숲 =====
     match /bamboo/{postId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow create: if signedIn();
+      allow update: if signedIn();        // 좋아요/저에요 신청
+      allow delete: if ownsDoc() || isAdmin();
     }
 
-    // 크루 및 모든 서브컬렉션
+    // ===== 좋아요(매칭 신청) =====
+    match /likes/{likeId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow delete: if signedIn() && resource.data.from == request.auth.uid;
+    }
+
+    // ===== 매칭 =====
+    match /matches/{matchId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    // ===== 크루 및 모든 서브컬렉션 =====
     match /crews/{crewId} {
       allow read: if true;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
-      allow delete: if request.auth != null;
+      allow create: if signedIn();
+      allow update: if signedIn();        // 가입/멤버 변경/정보 수정
+      allow delete: if signedIn();        // 크루 운영자 클라이언트 검증
 
       match /schedules/{scheduleId} {
         allow read: if true;
-        allow write: if request.auth != null;
+        allow write: if signedIn();
 
         match /applicants/{applicantId} {
-          allow read: if request.auth != null;
-          allow write: if request.auth != null;
+          allow read: if signedIn();
+          allow write: if signedIn();
         }
       }
 
       match /posts/{postId} {
         allow read: if true;
-        allow create: if request.auth != null;
-        allow update, delete: if request.auth != null;
+        allow create: if signedIn();
+        allow update: if signedIn();
+        allow delete: if ownsDoc() || isAdmin();
 
         match /comments/{commentId} {
           allow read: if true;
-          allow create: if request.auth != null;
+          allow create: if signedIn();
+          allow delete: if ownsDoc() || isAdmin();
         }
       }
 
       match /photos/{photoId} {
         allow read: if true;
-        allow create: if request.auth != null;
-        allow delete: if request.auth != null;
+        allow create: if signedIn();
+        allow delete: if ownsDoc() || isAdmin();
       }
 
       match /chat/{messageId} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null;
+        allow read: if signedIn();
+        allow create: if signedIn();
       }
 
       match /treasury/{entryId} {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null;
+        allow read: if signedIn();
+        allow write: if signedIn();
       }
 
       match /feed/{postId} {
         allow read: if true;
-        allow create: if request.auth != null;
+        allow create: if signedIn();
+        allow update: if signedIn();
+        allow delete: if ownsDoc() || isAdmin();
       }
     }
 
-    // 알림
-    match /notifications/{notifId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
+    // ===== 센터 (헬스장) =====
+    match /centers/{centerId} {
+      allow read: if true;
+      allow create: if signedIn();
+      // 관리자 편집 + 별점 재계산(rating/reviews) 비소유자 업데이트 허용
+      allow update: if signedIn();
+      allow delete: if isAdmin();
+
+      // 별점/리뷰 (문서 ID = 작성자 uid)
+      match /ratings/{userId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
     }
 
-    // 1:1 채팅
+    // ===== 리뷰 신고 (관리자만 열람) =====
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== 센터 정보 수정 요청 (관리자만 열람) =====
+    match /centerEditRequests/{reqId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== 알림 =====
+    match /notifications/{notifId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if signedIn();
+    }
+
+    // ===== 1:1 채팅 =====
     match /chats/{chatId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if signedIn();
 
       match /messages/{messageId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if signedIn();
       }
     }
   }
