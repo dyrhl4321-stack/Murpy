@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260623004 -->
+<!-- cache-bust: v20260623005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -334,6 +334,11 @@
     <span style="font-family:'Pretendard',sans-serif;font-size:19px;font-weight:600;color:#fff;letter-spacing:-0.3px;line-height:1.4;opacity:0.92;padding-right:2px">Murpy</span>
   </div>
   <div class="header-icons">
+    <!-- 나를 좋아해요 (받은 좋아요) -->
+    <div id="header-interest-btn" onclick="openPanel('interest-panel')" style="display:none;position:relative;align-items:center;justify-content:center;padding:6px;border-radius:8px;cursor:pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      <div class="notif-badge" id="interest-badge" style="display:none"></div>
+    </div>
     <!-- Chat icon -->
     <button onclick="openPanel('chat-panel')" style="background:none;border:none;cursor:pointer;padding:6px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:background 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.06)'" onmouseleave="this.style.background='none'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.7">
@@ -515,12 +520,8 @@
 
 <!-- MATCH -->
 <div class="page" id="page-match">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+  <div style="margin-bottom:14px">
     <div style="font-size:12px;color:rgba(255,255,255,0.35);letter-spacing:0.5px;text-transform:uppercase;font-weight:500">오늘의 매칭</div>
-    <button id="interest-btn" onclick="openPanel('interest-panel')" style="display:none;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:5px 12px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;align-items:center;gap:5px">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-      <span id="interest-count-label">나를 좋아해요</span>
-    </button>
   </div>
   <div class="match-card" id="match-card" onclick="openMatchDetail()">
     <img id="match-img" src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80" draggable="false">
@@ -2189,18 +2190,31 @@ function renderMatch() {
   document.getElementById('match-loc-text').textContent = p.district || '';
   if (locChip) locChip.style.display = p.district ? 'flex' : 'none';
 
-  // 태그: 운동 목적 + 시간대
-  const tags = [p.purpose, ...(p.workoutTime || [])].filter(Boolean);
-  document.getElementById('match-tags').innerHTML = tags.map(w => `<span class="tag">${_mEsc(w)}</span>`).join('');
+  // 태그: 운동 목적 + 시간대 (아이콘 칩)
+  const I_DB = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M3.5 9v5M17.5 6.5v11M20.5 9v5M6.5 12h11"/></svg>';
+  const I_CL = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  const _tagChip = (icon, label) => `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.34);color:#7aa8ff;font-size:11px;font-weight:600;padding:5px 11px;border-radius:20px">${icon}${_mEsc(label)}</span>`;
+  let tagHtml = '';
+  if (p.purpose) tagHtml += _tagChip(I_DB, p.purpose);
+  (p.workoutTime || []).forEach(t => tagHtml += _tagChip(I_CL, t));
+  document.getElementById('match-tags').innerHTML = tagHtml;
 
   document.getElementById('match-bio').textContent = p.bio || '';
 
-  // 정보 칩: 운동 경력 + 같은 센터
-  const _chipBase = 'border-radius:7px;padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:4px;letter-spacing:-0.1px';
-  let chips = '';
-  if (p.career) chips += `<span style="${_chipBase};background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.7)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>${_mEsc(p.career)}</span>`;
-  if (p._sameCenter) chips += `<span style="${_chipBase};background:rgba(61,126,255,0.16);border:1px solid rgba(61,126,255,0.34);color:#7aa8ff;font-weight:600"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>같은 센터</span>`;
-  document.getElementById('match-extra').innerHTML = chips;
+  // 정보 칩: (이번달 인증 비동기) + 운동 경력 + 같은 센터
+  const _chipBase = 'border-radius:7px;padding:4px 10px;font-size:11px;display:inline-flex;align-items:center;gap:4px;letter-spacing:-0.1px';
+  let baseChips = '';
+  if (p.career) baseChips += `<span style="${_chipBase};background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.7)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>${_mEsc(p.career)}</span>`;
+  if (p._sameCenter) baseChips += `<span style="${_chipBase};background:rgba(61,126,255,0.16);border:1px solid rgba(61,126,255,0.34);color:#7aa8ff;font-weight:600"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>같은 센터</span>`;
+  const extraEl = document.getElementById('match-extra');
+  extraEl.innerHTML = baseChips;
+  // 이번달 운동 인증 횟수 (히어로 카드만 비동기 조회)
+  const heroUid = p.uid;
+  if (window.fetchMonthCount) window.fetchMonthCount(heroUid).then(n => {
+    const cur = (window._matchList || [])[window._matchIdx || 0];
+    if (!cur || cur.uid !== heroUid || n <= 0) return;
+    extraEl.innerHTML = `<span style="${_chipBase};background:rgba(245,194,75,0.14);border:1px solid rgba(245,194,75,0.32);color:#F5C24B;font-weight:600"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18M8.5 15l2 2 4-4.2"/></svg>이번달 ${n}회 인증</span>` + baseChips;
+  });
 
   // 더 많은 추천 (다음 후보 썸네일)
   const rest = list.slice(idx + 1, idx + 11);
@@ -4652,6 +4666,17 @@ window.openChatWith = async (uid, name, photo) => {
   window.openChatFirestore(chatId, uid, name, photo);
 };
 
+// 이번달 운동 인증 횟수 (feed where userId == uid)
+window.fetchMonthCount = async function (uid) {
+  try {
+    const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', uid)));
+    const mStart = new Date(); mStart.setDate(1); mStart.setHours(0, 0, 0, 0);
+    let n = 0;
+    fsnap.forEach(d => { const c = d.data().createdAt; if (c && c.seconds * 1000 >= mStart.getTime()) n++; });
+    return n;
+  } catch (e) { return 0; }
+};
+
 // ===== 매칭 후보 로더 (users → 지역/센터 우선 정렬) =====
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
@@ -6130,14 +6155,12 @@ window._loadInterestPanel = async () => {
   if (likeCnt) likeCnt.textContent = likeDocs.length ? likeDocs.length : '';
   if (bambooCnt) bambooCnt.textContent = bambooDocs.length ? bambooDocs.length : '';
 
-  // 버튼 카운트 표시 (매칭 탭)
+  // 헤더 "나를 좋아해요" 버튼 + 배지
   const total = likeDocs.length + bambooDocs.length;
-  const interestBtn = document.getElementById('interest-btn');
-  if (interestBtn) {
-    interestBtn.style.display = total > 0 ? 'flex' : 'none';
-    const lbl = document.getElementById('interest-count-label');
-    if (lbl) lbl.textContent = `나를 좋아해요 ${total}`;
-  }
+  const headerBtn = document.getElementById('header-interest-btn');
+  const headerBadge = document.getElementById('interest-badge');
+  if (headerBtn) headerBtn.style.display = total > 0 ? 'flex' : 'none';
+  if (headerBadge) { headerBadge.textContent = total; headerBadge.style.display = total > 0 ? 'flex' : 'none'; }
 
   window._interestLikeDocs = likeDocs;
   window._interestBambooDocs = bambooDocs;
