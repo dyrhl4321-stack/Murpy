@@ -1,6 +1,6 @@
-const CACHE_NAME = 'murpy-v14';
-const STATIC_CACHE = 'murpy-static-v14';
-const CDN_CACHE = 'murpy-cdn-v14';
+const CACHE_NAME = 'murpy-v15';
+const STATIC_CACHE = 'murpy-static-v15';
+const CDN_CACHE = 'murpy-cdn-v15';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
