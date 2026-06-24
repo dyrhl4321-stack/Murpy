@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624001 -->
+<!-- cache-bust: v20260624003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -483,12 +483,12 @@
   <!-- 크롭 모달 -->
   <div id="crop-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:9999;flex-direction:column">
     <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
-      <button onclick="closeCropModal()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
+      <button id="crop-left-btn" onclick="closeCropModal()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
       <span id="crop-title" style="font-size:14px;font-weight:700;letter-spacing:-0.2px">사진 조정</span>
-      <button onclick="confirmCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px">다음</button>
+      <button id="crop-right-btn" onclick="confirmCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px">다음</button>
     </div>
     <!-- 크롭 영역 -->
-    <div id="crop-step-1">
+    <div id="crop-step-1" style="flex:1;flex-direction:column;justify-content:center;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;width:100vw;height:100vw;max-height:70vh">
         <div id="crop-container" style="position:relative;width:100vw;height:100vw;max-height:70vh;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center">
           <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
@@ -500,15 +500,20 @@
           <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
         </div>
       </div>
-      <div style="padding:14px 20px;border-top:1px solid rgba(255,255,255,0.08)">
+      <div style="padding:14px 20px">
         <div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;letter-spacing:-0.1px">핀치로 크기 조정 · 드래그로 위치 이동</div>
       </div>
     </div>
-    <!-- 캡션 입력 (2단계) -->
-    <div id="crop-step-2" style="display:none;flex:1;padding:16px 20px">
-      <textarea id="feed-post-input" placeholder="운동 한마디 (선택)" style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.6;resize:none;outline:none;min-height:80px;font-family:inherit;letter-spacing:-0.2px"></textarea>
-      <div style="margin-top:12px">
-        <button id="feed-upload-btn" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">올리기</button>
+    <!-- 캡션 작성 (2단계) — 사진 미리보기 위 + 캡션 + 하단 공유하기 -->
+    <div id="crop-step-2" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+      <div style="flex:1;overflow-y:auto;padding:18px 20px">
+        <div style="width:100%;max-width:280px;aspect-ratio:1;margin:0 auto 16px;border-radius:14px;overflow:hidden;background:#111">
+          <img id="compose-preview" style="width:100%;height:100%;object-fit:cover" draggable="false">
+        </div>
+        <textarea id="feed-post-input" placeholder="캡션 추가..." style="width:100%;background:none;border:none;color:#fff;font-size:15px;line-height:1.6;resize:none;outline:none;min-height:60px;font-family:inherit;letter-spacing:-0.2px"></textarea>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0">
+        <button id="feed-upload-btn" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">공유하기</button>
       </div>
     </div>
   </div>
@@ -3238,9 +3243,7 @@ function openCropModal(file) {
     // 모달 먼저 열기
     modal.style.display = 'flex';
     modal.style.flexDirection = 'column';
-    document.getElementById('crop-step-1').style.display = 'block';
-    document.getElementById('crop-step-2').style.display = 'none';
-    document.getElementById('crop-title').textContent = '사진 조정';
+    _setCropStep(1);
 
     const img = document.getElementById('crop-image');
     img.style.transform = 'translate(0,0) scale(1)';
@@ -3263,8 +3266,32 @@ function closeCropModal() {
   document.getElementById('crop-modal').style.display = 'none';
   document.getElementById('feed-photo-input').value = '';
   document.getElementById('feed-post-input').value = '';
+  if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
   window.cropData = { originalFile: null, croppedBlob: null };
 }
+
+// 크롭 모달 단계 전환 (1: 크롭 / 2: 캡션 작성) — 헤더 버튼·타이틀 함께 바꿈
+function _setCropStep(step) {
+  const left = document.getElementById('crop-left-btn');
+  const right = document.getElementById('crop-right-btn');
+  const title = document.getElementById('crop-title');
+  if (step === 2) {
+    document.getElementById('crop-step-1').style.display = 'none';
+    document.getElementById('crop-step-2').style.display = 'flex';
+    title.textContent = '새 게시물';
+    left.textContent = '뒤로'; left.onclick = backToCrop;
+    right.style.display = 'none';
+  } else {
+    document.getElementById('crop-step-1').style.display = 'flex';
+    document.getElementById('crop-step-2').style.display = 'none';
+    title.textContent = '사진 조정';
+    left.textContent = '취소'; left.onclick = closeCropModal;
+    right.style.display = ''; right.textContent = '다음'; right.onclick = confirmCrop;
+  }
+}
+
+// 2단계 → 1단계(크롭)로 복귀
+function backToCrop() { _setCropStep(1); }
 
 function confirmCrop() {
   if (!window.cropData.originalFile) { showToast('사진을 먼저 선택해주세요'); return; }
@@ -3292,11 +3319,14 @@ function confirmCrop() {
     img.naturalHeight * scale * ratio
   );
   canvas.toBlob(blob => {
-    if (blob) window.cropData.croppedBlob = blob;
-    document.getElementById('crop-step-1').style.display = 'none';
-    document.getElementById('crop-step-2').style.display = 'block';
-    document.getElementById('crop-title').textContent = '게시물 작성';
-    document.getElementById('feed-post-input').focus();
+    if (blob) {
+      window.cropData.croppedBlob = blob;
+      // 크롭한 사진을 미리보기로 표시
+      if (window._composePreviewUrl) URL.revokeObjectURL(window._composePreviewUrl);
+      window._composePreviewUrl = URL.createObjectURL(blob);
+      document.getElementById('compose-preview').src = window._composePreviewUrl;
+    }
+    _setCropStep(2);
   }, 'image/jpeg', 0.92);
 }
 
@@ -5665,7 +5695,7 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
   const file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
   const btn = document.getElementById('feed-upload-btn');
-  btn.textContent = '올리는 중...'; btn.disabled = true;
+  btn.textContent = '공유 중...'; btn.disabled = true;
   try {
     // users 컬렉션에서 최신 닉네임 + 프로필 사진 가져오기
     let nickname = user.displayName || '익명';
@@ -5687,7 +5717,7 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
     if (json.success) {
       photoURL = json.data.url;
     } else {
-      showToast('사진 업로드 실패'); btn.textContent='올리기'; btn.disabled=false; return;
+      showToast('사진 업로드 실패'); btn.textContent='공유하기'; btn.disabled=false; return;
     }
     await addDoc(collection(db, 'feed'), {
       text, photoURL,
@@ -5705,7 +5735,7 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
     showToast('✓ 올라갔어요!');
     loadFeed();
   } catch(e) { showToast('실패: ' + e.message); }
-  btn.textContent = '올리기'; btn.disabled = false;
+  btn.textContent = '공유하기'; btn.disabled = false;
 });
 
 // 댓글 저장 (Firestore)
