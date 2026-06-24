@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624015 -->
+<!-- cache-bust: v20260624016 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -3334,8 +3334,7 @@ const COMPOSE_TAGS = {
 };
 window._composeType = 'workout';
 window._composeTags = new Set();
-window._composeBadge = { monthCount: 1, streak: 1 };
-const _CHIP_ON = 'background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.55);color:#7aa8ff';
+const _CHIP_ON ='background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.55);color:#7aa8ff';
 const _CHIP_OFF = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.7)';
 const _CHIP_BASE = ';border-radius:20px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px';
 
@@ -3343,7 +3342,6 @@ function initCompose() {
   window._composeType = 'workout';
   window._composeTags = new Set();
   _renderComposeTypeUI();
-  if (window.computeComposeBadge) window.computeComposeBadge();
 }
 
 function setComposeType(type) {
@@ -4643,7 +4641,6 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${(()=>{const chips=(p.tags||[]).map(t=>`<span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.62);padding:3px 9px;border-radius:11px;font-weight:600">${t}</span>`).join('');const mb=window._milestoneBadge?window._milestoneBadge(p.totalCount||0):'';return (chips||mb)?`<div style="padding:0 20px 9px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;letter-spacing:-0.2px">${chips}${mb}</div>`:'';})()}
       ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
@@ -4655,7 +4652,7 @@ function buildPostHTML(p) {
           <span id="comment-count-${p._id}">${p.commentCount||0}</span>
         </button>
       </div>
-      ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
+      ${(p.text || (p.tags && p.tags.length)) ? `<div style="padding:2px 20px 14px">${p.text ? `<div style="font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : ''}${(p.tags && p.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:${p.text?'9px':'0'}">${(p.tags||[]).map(t=>`<span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.62);font-size:11px;padding:3px 9px;border-radius:11px;font-weight:600">${t}</span>`).join('')}</div>` : ''}</div>` : '<div style="padding-bottom:12px"></div>'}
     </div>`;
 }
 
@@ -5045,6 +5042,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     <div style="padding:18px 16px 4px">
       <div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:flex;align-items:center;gap:5px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}</div>
       ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta}</div>` : ''}
+      ${(window._milestoneBadge && window._milestoneBadge(totalCnt)) ? `<div style="margin-top:10px"><span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);padding:6px 13px;border-radius:20px;font-size:13px">${window._milestoneBadge(totalCnt)}</span></div>` : ''}
     </div>
     ${infoCard}
     ${styleChips ? `<div style="padding:18px 16px 2px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:10px">운동 스타일</div><div style="display:flex;gap:6px;flex-wrap:wrap">${styleChips}</div></div>` : ''}
@@ -5821,13 +5819,11 @@ window.submitFeedPost = async function() {
     const json = await res.json();
     if (!json.success) { showToast('사진 업로드 실패'); restore(); return; }
 
-    const badge = window._composeBadge || { monthCount: 1, totalCount: 1 };
     await addDoc(collection(db, 'feed'), {
       text, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
       tags: Array.from(window._composeTags || []),
-      monthCount: badge.monthCount, totalCount: badge.totalCount,
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
@@ -5838,24 +5834,6 @@ window.submitFeedPost = async function() {
     loadFeed();
   } catch(e) { showToast('실패: ' + e.message); }
   restore();
-};
-
-// 작성 시점의 인증 데이터 계산 (이번달 N회 + 누적 totalCount → 마일스톤 뱃지용)
-window.computeComposeBadge = async function() {
-  window._composeBadge = { monthCount: 1, totalCount: 1 };
-  const user = auth.currentUser || window.currentUser;
-  if (!user) return;
-  try {
-    const snap = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid)));
-    let monthCnt = 0;
-    const now = new Date();
-    const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    snap.forEach(d => {
-      const c = d.data().createdAt;
-      if (c && c.seconds && c.seconds * 1000 >= mStart) monthCnt++;
-    });
-    window._composeBadge = { monthCount: monthCnt + 1, totalCount: snap.size + 1 };
-  } catch (e) {}
 };
 
 // 댓글 저장 (Firestore)
