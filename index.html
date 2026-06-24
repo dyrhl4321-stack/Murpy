@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624019 -->
+<!-- cache-bust: v20260624020 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -5518,7 +5518,10 @@ async function loadFeed() {
   }
   try {
     const q = _buildFeedQuery(null);
-    const snap = await getDocs(q);
+    // 필터 쿼리가 인덱스 미생성 등으로 멈추는 경우 대비 타임아웃(영원히 로딩 방지)
+    const snap = filtered
+      ? await Promise.race([getDocs(q), new Promise((_, rej) => setTimeout(() => rej(new Error('index-or-timeout')), 8000))])
+      : await getDocs(q);
     if (snap.empty) {
       if (!filtered) feedFirstPageCache = null;
       feedEl.innerHTML = filtered
