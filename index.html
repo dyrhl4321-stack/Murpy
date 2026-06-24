@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624022 -->
+<!-- cache-bust: v20260624023 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -470,12 +470,25 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
       </div>
       <span style="font-size:14px;color:rgba(255,255,255,0.5);letter-spacing:-0.2px;flex:1;cursor:pointer" onclick="document.getElementById('feed-photo-input').click()">사진으로 운동 인증하기</span>
+      <button onclick="window.toggleFeedFilterSheet && window.toggleFeedFilterSheet()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;font-family:inherit" aria-label="필터">
+        <svg id="feed-filter-icon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+      </button>
       <label for="feed-photo-input" style="cursor:pointer;display:flex;align-items:center;padding:4px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
       </label>
       <input type="file" id="feed-photo-input" accept="image/*" style="display:none">
     </div>
-    <div id="feed-filter-bar" style="display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
+    <div id="feed-filter-active" style="display:none;padding:0 16px 10px"></div>
+  </div>
+
+  <!-- 운동 종목 필터 바텀 시트 -->
+  <div id="feed-filter-sheet" style="display:none;position:fixed;inset:0;z-index:9997">
+    <div onclick="window.closeFeedFilterSheet && window.closeFeedFilterSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.5)"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#141414;border-top-left-radius:20px;border-top-right-radius:20px;padding:14px 18px calc(22px + env(safe-area-inset-bottom));max-height:72vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <div style="width:36px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 16px"></div>
+      <div style="font-size:15px;font-weight:800;letter-spacing:-0.3px;margin-bottom:14px">운동 종목 필터</div>
+      <div id="feed-filter-chips" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>
   </div>
 
   <!-- 피드 이미지 풀스크린 뷰어 -->
@@ -5436,21 +5449,47 @@ function _buildFeedQuery(startDoc) {
   parts.push(limit(FEED_PAGE));
   return query(collection(db, 'feed'), ...parts);
 }
+// 시트 칩 + 깔때기 아이콘/활성 표시 갱신
 window.renderFeedFilterBar = function() {
-  const bar = document.getElementById('feed-filter-bar');
-  if (!bar) return;
-  const chip = (label, val) => {
-    const active = (window._feedFilter || null) === val;
-    const style = active
-      ? 'background:var(--accent);color:#fff;border:1px solid var(--accent)'
-      : 'background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1)';
-    const arg = val === null ? 'null' : "'" + val + "'";
-    return '<button type="button" onclick="window.setFeedFilter(' + arg + ')" style="' + style + ';flex:0 0 auto;border-radius:16px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">' + label + '</button>';
-  };
-  bar.innerHTML = chip('전체', null) + FILTER_TAGS.map(t => chip(t, t)).join('');
+  const wrap = document.getElementById('feed-filter-chips');
+  if (wrap) {
+    const chip = (label, val) => {
+      const active = (window._feedFilter || null) === val;
+      const style = active
+        ? 'background:var(--accent);color:#fff;border:1px solid var(--accent)'
+        : 'background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.12)';
+      const arg = val === null ? 'null' : "'" + val + "'";
+      return '<button type="button" onclick="window.setFeedFilter(' + arg + ')" style="' + style + ';border-radius:18px;padding:8px 15px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">' + label + '</button>';
+    };
+    wrap.innerHTML = chip('전체', null) + FILTER_TAGS.map(t => chip(t, t)).join('');
+  }
+  // 깔때기 아이콘: 필터 있으면 파랑
+  const icon = document.getElementById('feed-filter-icon');
+  if (icon) icon.setAttribute('stroke', window._feedFilter ? '#3D7EFF' : 'rgba(255,255,255,0.65)');
+  // 활성 필터 표시(러닝 ✕) — 필터 있을 때만
+  const active = document.getElementById('feed-filter-active');
+  if (active) {
+    if (window._feedFilter) {
+      active.style.display = 'block';
+      active.innerHTML = '<span onclick="window.setFeedFilter(null)" style="display:inline-flex;align-items:center;gap:6px;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.3);color:#7aa8ff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:16px;cursor:pointer">' + window._feedFilter + ' 필터<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>';
+    } else {
+      active.style.display = 'none';
+      active.innerHTML = '';
+    }
+  }
+};
+window.toggleFeedFilterSheet = function() {
+  window.renderFeedFilterBar();
+  const sheet = document.getElementById('feed-filter-sheet');
+  if (sheet) sheet.style.display = 'block';
+};
+window.closeFeedFilterSheet = function() {
+  const sheet = document.getElementById('feed-filter-sheet');
+  if (sheet) sheet.style.display = 'none';
 };
 window.setFeedFilter = function(tag) {
-  if (window._feedFilter === tag) return;
+  window.closeFeedFilterSheet();
+  if (window._feedFilter === tag) { window.renderFeedFilterBar(); return; }
   window._feedFilter = tag;
   window.renderFeedFilterBar();
   const feedEl = document.getElementById('firebase-feed');
