@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624007 -->
+<!-- cache-bust: v20260624008 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -505,21 +505,30 @@
         <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
       </div>
     </div>
-    <!-- 캡션 작성 (2단계) — 사진 미리보기 위 + 캡션 + 하단 공유하기 -->
+    <!-- 게시물 작성 (2단계): 타입 토글 + 4:5 미리보기 + 배지 + 태그 + 캡션 (공유는 헤더) -->
     <div id="crop-step-2" style="display:none;flex:1;min-height:0;flex-direction:column;overflow:hidden">
-      <div style="flex:1;min-height:0;overflow-y:auto;padding:20px">
-        <!-- 사진 미리보기 (테두리+그림자로 구분) -->
-        <div style="width:200px;height:200px;margin:0 auto;border-radius:14px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.12);box-shadow:0 6px 22px rgba(0,0,0,0.45)">
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 20px calc(24px + env(safe-area-inset-bottom))">
+        <!-- 타입 토글 -->
+        <div style="display:flex;gap:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:4px;margin-bottom:18px">
+          <button type="button" id="ctype-workout" onclick="setComposeType('workout')" style="flex:1;border:none;border-radius:9px;padding:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff">운동</button>
+          <button type="button" id="ctype-diet" onclick="setComposeType('diet')" style="flex:1;border:none;border-radius:9px;padding:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;background:none;color:rgba(255,255,255,0.5)">식단</button>
+        </div>
+        <!-- 4:5 미리보기 -->
+        <div style="width:100%;max-width:300px;aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
           <img id="compose-preview" style="width:100%;height:100%;object-fit:cover" draggable="false">
         </div>
-        <!-- 캡션 입력 (라벨+카드로 구분) -->
+        <!-- 자동 배지 (이번달 N회·연속 N일) -->
+        <div id="compose-badge" style="margin-top:14px;text-align:center;display:none"></div>
+        <!-- 태그 -->
+        <div style="margin-top:22px">
+          <div id="compose-tag-label" style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:11px;letter-spacing:-0.2px">운동 종목</div>
+          <div id="compose-tags" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+        <!-- 캡션 -->
         <div style="margin-top:22px">
           <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:9px;letter-spacing:-0.2px">캡션</div>
-          <textarea id="feed-post-input" placeholder="오늘 운동 한마디를 남겨보세요 (선택)" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#fff;font-size:15px;line-height:1.6;resize:none;outline:none;min-height:96px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
+          <textarea id="feed-post-input" placeholder="오늘 한마디를 남겨보세요 (선택)" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:#fff;font-size:15px;line-height:1.6;resize:none;outline:none;min-height:80px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
         </div>
-      </div>
-      <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,0.08);flex-shrink:0">
-        <button id="feed-upload-btn" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">공유하기</button>
       </div>
     </div>
   </div>
@@ -3287,18 +3296,70 @@ function _setCropStep(step) {
     document.getElementById('crop-step-2').style.display = 'flex';
     title.textContent = '새 게시물';
     left.textContent = '뒤로'; left.onclick = backToCrop;
-    right.style.display = 'none';
+    right.style.display = ''; right.textContent = '공유'; right.style.color = '#3D7EFF'; right.onclick = () => window.submitFeedPost && window.submitFeedPost();
   } else {
     document.getElementById('crop-step-1').style.display = 'block';
     document.getElementById('crop-step-2').style.display = 'none';
     title.textContent = '사진 조정';
     left.textContent = '취소'; left.onclick = closeCropModal;
-    right.style.display = ''; right.textContent = '다음'; right.onclick = confirmCrop;
+    right.style.display = ''; right.textContent = '다음'; right.style.color = '#fff'; right.onclick = confirmCrop;
   }
 }
 
 // 2단계 → 1단계(크롭)로 복귀
 function backToCrop() { _setCropStep(1); }
+
+// ===== 게시물 작성(컴포저) 상태 =====
+const COMPOSE_TAGS = {
+  workout: ['헬스','러닝','크로스핏','하이록스','복싱','등산','자전거','수영','요가','필라테스','클라이밍','기타'],
+  diet: ['아침','점심','저녁','간식','다이어트','벌크업','클린식','치팅']
+};
+window._composeType = 'workout';
+window._composeTags = new Set();
+window._composeBadge = { monthCount: 1, streak: 1 };
+const _CHIP_ON = 'background:rgba(61,126,255,0.18);border:1px solid rgba(61,126,255,0.55);color:#7aa8ff';
+const _CHIP_OFF = 'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.7)';
+const _CHIP_BASE = ';border-radius:20px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px';
+
+function initCompose() {
+  window._composeType = 'workout';
+  window._composeTags = new Set();
+  _renderComposeTypeUI();
+  if (window.computeComposeBadge) window.computeComposeBadge();
+}
+
+function setComposeType(type) {
+  if (type === window._composeType) return;
+  window._composeType = type;
+  window._composeTags = new Set();   // 타입 바뀌면 태그 초기화
+  _renderComposeTypeUI();
+}
+
+function _renderComposeTypeUI() {
+  const wBtn = document.getElementById('ctype-workout');
+  const dBtn = document.getElementById('ctype-diet');
+  const tabStyle = on => `flex:1;border:none;border-radius:9px;padding:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;${on ? 'background:var(--accent);color:#fff' : 'background:none;color:rgba(255,255,255,0.5)'}`;
+  if (wBtn) wBtn.style.cssText = tabStyle(window._composeType === 'workout');
+  if (dBtn) dBtn.style.cssText = tabStyle(window._composeType === 'diet');
+  const label = document.getElementById('compose-tag-label');
+  if (label) label.textContent = window._composeType === 'workout' ? '운동 종목' : '식단';
+  renderComposeTags();
+}
+
+function renderComposeTags() {
+  const wrap = document.getElementById('compose-tags');
+  if (!wrap) return;
+  const tags = COMPOSE_TAGS[window._composeType] || [];
+  wrap.innerHTML = tags.map(t =>
+    `<button type="button" onclick="toggleComposeTag('${t}',this)" style="${(window._composeTags.has(t) ? _CHIP_ON : _CHIP_OFF) + _CHIP_BASE}">${t}</button>`
+  ).join('');
+}
+
+function toggleComposeTag(tag, el) {
+  if (window._composeTags.has(tag)) window._composeTags.delete(tag);
+  else window._composeTags.add(tag);
+  el.style.cssText = (window._composeTags.has(tag) ? _CHIP_ON : _CHIP_OFF) + _CHIP_BASE;
+}
 
 function confirmCrop() {
   if (!window.cropData.originalFile) { showToast('사진을 먼저 선택해주세요'); return; }
@@ -3335,6 +3396,7 @@ function confirmCrop() {
       document.getElementById('compose-preview').src = window._composePreviewUrl;
     }
     _setCropStep(2);
+    if (window.initCompose) initCompose();   // 타입/태그 초기화 + 배지 계산
   }, 'image/jpeg', 0.92);
 }
 
@@ -4559,6 +4621,7 @@ function buildPostHTML(p) {
           <span id="comment-count-${p._id}">${p.commentCount||0}</span>
         </button>
       </div>
+      ${(p.monthCount || (p.tags && p.tags.length)) ? `<div style="padding:0 20px 8px;display:flex;flex-wrap:wrap;gap:6px">${p.monthCount ? `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,194,75,0.13);border:1px solid rgba(245,194,75,0.35);color:#F5C24B;font-size:11px;font-weight:700;padding:4px 10px;border-radius:14px">이번달 ${p.monthCount}회${p.streak>=2?' · 연속 '+p.streak+'일':''}</span>` : ''}${(p.tags||[]).map(t=>`<span style="display:inline-flex;align-items:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.65);font-size:11px;font-weight:600;padding:4px 10px;border-radius:14px">${t}</span>`).join('')}</div>` : ''}
       ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
     </div>`;
 }
@@ -5696,16 +5759,18 @@ window.googleLogin = async () => {
 
 // 로그아웃은 mypage-panel 내부 버튼에서 처리
 
-document.getElementById('feed-upload-btn').addEventListener('click', async () => {
+// 게시물 공유 (헤더 '공유' 버튼이 호출)
+window.submitFeedPost = async function() {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('먼저 로그인해주세요'); return; }
-  const text = document.getElementById('feed-post-input').value.trim();
   const file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
-  const btn = document.getElementById('feed-upload-btn');
-  btn.textContent = '공유 중...'; btn.disabled = true;
+  const text = (document.getElementById('feed-post-input').value || '').trim();
+  const shareBtn = document.getElementById('crop-right-btn');
+  const restore = () => { if (shareBtn) { shareBtn.textContent = '공유'; shareBtn.style.pointerEvents = ''; shareBtn.style.opacity = ''; } };
+  if (shareBtn) { shareBtn.textContent = '공유 중...'; shareBtn.style.pointerEvents = 'none'; shareBtn.style.opacity = '0.5'; }
   try {
-    // users 컬렉션에서 최신 닉네임 + 프로필 사진 가져오기
+    // users 컬렉션에서 최신 닉네임 + 프로필 사진
     let nickname = user.displayName || '익명';
     let userPhoto = user.photoURL || '';
     try {
@@ -5716,25 +5781,21 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
       }
     } catch(e) {}
 
-    let photoURL = '';
     const formData = new FormData();
     formData.append('image', file, 'photo.jpg');
     formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
     const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
     const json = await res.json();
-    if (json.success) {
-      photoURL = json.data.url;
-    } else {
-      showToast('사진 업로드 실패'); btn.textContent='공유하기'; btn.disabled=false; return;
-    }
+    if (!json.success) { showToast('사진 업로드 실패'); restore(); return; }
+
+    const badge = window._composeBadge || { monthCount: 1, streak: 1 };
     await addDoc(collection(db, 'feed'), {
-      text, photoURL,
-      userName: nickname,
-      userPhoto: userPhoto,
-      userId: user.uid,
-      likes: 0,
-      likedBy: [],
-      commentCount: 0,
+      text, photoURL: json.data.url,
+      userName: nickname, userPhoto, userId: user.uid,
+      type: window._composeType || 'workout',
+      tags: Array.from(window._composeTags || []),
+      monthCount: badge.monthCount, streak: badge.streak,
+      likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
     closeCropModal();
@@ -5743,8 +5804,47 @@ document.getElementById('feed-upload-btn').addEventListener('click', async () =>
     showToast('✓ 올라갔어요!');
     loadFeed();
   } catch(e) { showToast('실패: ' + e.message); }
-  btn.textContent = '공유하기'; btn.disabled = false;
-});
+  restore();
+};
+
+// 작성 화면 진입 시 '이번달 N회 인증 · 연속 N일' 배지 계산
+window.computeComposeBadge = async function() {
+  const badgeEl = document.getElementById('compose-badge');
+  window._composeBadge = { monthCount: 1, streak: 1 };
+  if (badgeEl) badgeEl.style.display = 'none';
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid)));
+    const dates = new Set();
+    let monthCnt = 0;
+    const now = new Date();
+    const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    snap.forEach(d => {
+      const c = d.data().createdAt;
+      if (!c || !c.seconds) return;
+      const t = c.seconds * 1000;
+      if (t >= mStart) monthCnt++;
+      const dt = new Date(t);
+      dates.add(dt.getFullYear() + '-' + dt.getMonth() + '-' + dt.getDate());
+    });
+    let streak = 1; // 오늘(이 글)
+    for (let i = 1; i < 400; i++) {
+      const prev = new Date(); prev.setDate(prev.getDate() - i);
+      if (dates.has(prev.getFullYear() + '-' + prev.getMonth() + '-' + prev.getDate())) streak++;
+      else break;
+    }
+    const monthCount = monthCnt + 1;
+    window._composeBadge = { monthCount, streak };
+    if (badgeEl) {
+      const cal = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18M8.5 15l2 2 4-4.2"/></svg>';
+      let txt = '이번달 ' + monthCount + '회 인증';
+      if (streak >= 2) txt += ' · 연속 ' + streak + '일';
+      badgeEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;background:rgba(245,194,75,0.15);border:1px solid rgba(245,194,75,0.4);color:#F5C24B;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:20px;letter-spacing:-0.2px">' + cal + txt + '</span>';
+      badgeEl.style.display = 'block';
+    }
+  } catch (e) {}
+};
 
 // 댓글 저장 (Firestore)
 window.submitComment = async (postId) => {
