@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624014 -->
+<!-- cache-bust: v20260624015 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -3379,6 +3379,21 @@ function toggleComposeTag(tag, el) {
   el.style.cssText = (window._composeTags.has(tag) ? _CHIP_ON : _CHIP_OFF) + _CHIP_BASE;
 }
 
+// 누적 인증 마일스톤 뱃지 (10/50/100/300/500회) — 머피 라인 SVG, 단계별 심볼·색
+window._milestoneBadge = function(total) {
+  total = total || 0;
+  const tiers = [
+    { min: 500, color: '#F5C24B', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 7H4V8a3 3 0 0 0 3 3M17 7h3V8a3 3 0 0 1-3 3"/></svg>' },   // 트로피
+    { min: 300, color: '#7aa8ff', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="5.5"/><path d="M9 13.5 7.2 22l4.8-3 4.8 3-1.8-8.5"/></svg>' },   // 메달
+    { min: 100, color: '#F5C24B', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>' },   // 방패+체크
+    { min: 50,  color: '#C9D1DC', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2c.5 3 2 4.9 3.8 6.5C17.6 10.1 19 12 19 14.2A7 7 0 1 1 5 14.2c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5A2.5 2.5 0 0 0 11 11.2c0-1.4-.5-2-1-3-.9-1.8-.4-3.6 2-6.2z"/></svg>' },   // 불꽃
+    { min: 10,  color: '#D6A06A', icon: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.7 6.1L20 9.8l-6.3 1.7L12 18l-1.7-6.5L4 9.8l6.3-1.7z"/></svg>' },   // 스파클
+  ];
+  const t = tiers.find(x => total >= x.min);
+  if (!t) return '';
+  return '<span style="display:inline-flex;align-items:center;gap:3px;color:' + t.color + ';font-weight:700">' + t.icon + t.min + '회 인증</span>';
+};
+
 function confirmCrop() {
   if (!window.cropData.originalFile) { showToast('사진을 먼저 선택해주세요'); return; }
   const img = document.getElementById('crop-image');
@@ -4628,7 +4643,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${(p.monthCount || (p.tags && p.tags.length)) ? `<div style="padding:0 20px 9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;letter-spacing:-0.2px">${(p.tags && p.tags.length) ? `<span style="color:rgba(255,255,255,0.42);font-weight:600">${(p.tags||[]).join(' · ')}</span>` : ''}${p.monthCount ? `<span style="display:inline-flex;align-items:center;gap:3px;color:#F5C24B;font-weight:700"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18M8.5 15l2 2 4-4.2"/></svg>이번달 ${p.monthCount}회${p.streak>=2?' · 연속 '+p.streak+'일':''}</span>` : ''}</div>` : ''}
+      ${(()=>{const chips=(p.tags||[]).map(t=>`<span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.62);padding:3px 9px;border-radius:11px;font-weight:600">${t}</span>`).join('');const mb=window._milestoneBadge?window._milestoneBadge(p.totalCount||0):'';return (chips||mb)?`<div style="padding:0 20px 9px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;letter-spacing:-0.2px">${chips}${mb}</div>`:'';})()}
       ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
@@ -5806,13 +5821,13 @@ window.submitFeedPost = async function() {
     const json = await res.json();
     if (!json.success) { showToast('사진 업로드 실패'); restore(); return; }
 
-    const badge = window._composeBadge || { monthCount: 1, streak: 1 };
+    const badge = window._composeBadge || { monthCount: 1, totalCount: 1 };
     await addDoc(collection(db, 'feed'), {
       text, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
       tags: Array.from(window._composeTags || []),
-      monthCount: badge.monthCount, streak: badge.streak,
+      monthCount: badge.monthCount, totalCount: badge.totalCount,
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
@@ -5825,43 +5840,21 @@ window.submitFeedPost = async function() {
   restore();
 };
 
-// 작성 화면 진입 시 '이번달 N회 인증 · 연속 N일' 배지 계산
+// 작성 시점의 인증 데이터 계산 (이번달 N회 + 누적 totalCount → 마일스톤 뱃지용)
 window.computeComposeBadge = async function() {
-  const badgeEl = document.getElementById('compose-badge');
-  window._composeBadge = { monthCount: 1, streak: 1 };
-  if (badgeEl) badgeEl.style.display = 'none';
+  window._composeBadge = { monthCount: 1, totalCount: 1 };
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   try {
     const snap = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid)));
-    const dates = new Set();
     let monthCnt = 0;
     const now = new Date();
     const mStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     snap.forEach(d => {
       const c = d.data().createdAt;
-      if (!c || !c.seconds) return;
-      const t = c.seconds * 1000;
-      if (t >= mStart) monthCnt++;
-      const dt = new Date(t);
-      dates.add(dt.getFullYear() + '-' + dt.getMonth() + '-' + dt.getDate());
+      if (c && c.seconds && c.seconds * 1000 >= mStart) monthCnt++;
     });
-    let streak = 1; // 오늘(이 글)
-    for (let i = 1; i < 400; i++) {
-      const prev = new Date(); prev.setDate(prev.getDate() - i);
-      if (dates.has(prev.getFullYear() + '-' + prev.getMonth() + '-' + prev.getDate())) streak++;
-      else break;
-    }
-    const monthCount = monthCnt + 1;
-    window._composeBadge = { monthCount, streak };
-    if (badgeEl) {
-      const cal = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18M8.5 15l2 2 4-4.2"/></svg>';
-      const flame = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="animation:flameFlicker 1.1s ease-in-out infinite"><path d="M12 2c.5 3 2 4.9 3.8 6.5C17.6 10.1 19 12 19 14.2A7 7 0 1 1 5 14.2c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5A2.5 2.5 0 0 0 11 11.2c0-1.4-.5-2-1-3-.9-1.8-.4-3.6 2-6.2z"/></svg>';
-      let inner = '<span style="display:inline-flex;align-items:center;gap:5px">' + cal + '이번달 ' + monthCount + '회</span>';
-      if (streak >= 2) inner += '<span style="width:1px;height:13px;background:rgba(245,194,75,0.45)"></span><span style="display:inline-flex;align-items:center;gap:4px">' + flame + '연속 ' + streak + '일</span>';
-      badgeEl.innerHTML = '<span style="display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,rgba(245,194,75,0.2),rgba(245,194,75,0.07));border:1px solid rgba(245,194,75,0.5);color:#F5C24B;font-size:13px;font-weight:800;padding:9px 16px;border-radius:22px;letter-spacing:-0.2px;animation:badgePop 0.4s ease-out, badgeGlow 2.6s ease-in-out infinite">' + inner + '</span>';
-      badgeEl.style.display = 'block';
-    }
+    window._composeBadge = { monthCount: monthCnt + 1, totalCount: snap.size + 1 };
   } catch (e) {}
 };
 
