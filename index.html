@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624017 -->
+<!-- cache-bust: v20260624018 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -534,6 +534,9 @@
 
   <!-- 오늘 운동 인증 라이브 바 -->
   <div id="home-live-bar" style="display:none;margin:10px 16px 2px"></div>
+
+  <!-- 운동 종목 필터 바 -->
+  <div id="feed-filter-bar" style="display:flex;gap:7px;overflow-x:auto;padding:6px 16px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch"></div>
 
   <!-- 피드 -->
   <div id="firebase-feed" style="padding-top:4px"></div>
@@ -2101,7 +2104,7 @@ function goPage(name) {
   if (name === 'crew') renderCrews();
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
-  if (name === 'home') renderHomeCrews();
+  if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); }
 }
 
 function openPanel(id) {
@@ -4652,7 +4655,7 @@ function buildPostHTML(p) {
           <span id="comment-count-${p._id}">${p.commentCount||0}</span>
         </button>
       </div>
-      ${(p.text || (p.tags && p.tags.length)) ? `<div style="padding:2px 20px 14px">${p.text ? `<div style="font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : ''}${(p.tags && p.tags.length) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:${p.text?'9px':'0'}">${(p.tags||[]).map(t=>`<span style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.62);font-size:11px;padding:3px 9px;border-radius:11px;font-weight:600">${t}</span>`).join('')}</div>` : ''}</div>` : '<div style="padding-bottom:12px"></div>'}
+      ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
     </div>`;
 }
 
@@ -5424,6 +5427,39 @@ function refreshFeedAvatars() {
   });
 }
 
+// ===== 피드 태그 필터 =====
+window._feedFilter = null;
+const FILTER_TAGS = ['헬스','러닝','크로스핏','하이록스','복싱','등산','자전거','수영','요가','필라테스','클라이밍','기타','아침','점심','저녁','간식','다이어트','벌크업','클린식','치팅'];
+function _buildFeedQuery(startDoc) {
+  const parts = [];
+  if (window._feedFilter) parts.push(where('tags', 'array-contains', window._feedFilter));
+  parts.push(orderBy('createdAt', 'desc'));
+  if (startDoc) parts.push(startAfter(startDoc));
+  parts.push(limit(FEED_PAGE));
+  return query(collection(db, 'feed'), ...parts);
+}
+window.renderFeedFilterBar = function() {
+  const bar = document.getElementById('feed-filter-bar');
+  if (!bar) return;
+  const chip = (label, val) => {
+    const active = (window._feedFilter || null) === val;
+    const style = active
+      ? 'background:var(--accent);color:#fff;border:1px solid var(--accent)'
+      : 'background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1)';
+    const arg = val === null ? 'null' : "'" + val + "'";
+    return '<button type="button" onclick="window.setFeedFilter(' + arg + ')" style="' + style + ';flex:0 0 auto;border-radius:18px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">' + label + '</button>';
+  };
+  bar.innerHTML = chip('전체', null) + FILTER_TAGS.map(t => chip(t, t)).join('');
+};
+window.setFeedFilter = function(tag) {
+  if (window._feedFilter === tag) return;
+  window._feedFilter = tag;
+  window.renderFeedFilterBar();
+  const feedEl = document.getElementById('firebase-feed');
+  if (feedEl) feedEl.scrollIntoView({ block: 'start' });
+  loadFeed();
+};
+
 function setupFeedObserver() {
   if (feedObserver) feedObserver.disconnect();
   const sentinel = document.getElementById('feed-sentinel');
@@ -5441,7 +5477,7 @@ async function loadMoreFeed() {
   const sentinel = document.getElementById('feed-sentinel');
   if (sentinel) sentinel.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:12px">불러오는 중...</div>';
   try {
-    const q = query(collection(db, 'feed'), orderBy('createdAt', 'desc'), startAfter(feedLastDoc), limit(FEED_PAGE));
+    const q = _buildFeedQuery(feedLastDoc);
     const snap = await getDocs(q);
     if (!snap.empty) {
       feedLastDoc = snap.docs[snap.docs.length - 1];
@@ -5472,25 +5508,29 @@ async function loadFeed() {
   if (!feedEl) return;
   const sentinel = document.getElementById('feed-sentinel');
   if (sentinel) sentinel.innerHTML = '';
-  // 캐시-우선: 직전 첫 페이지가 있으면 즉시 그려서 빈 화면/스켈레톤 없이 시작
-  if (feedFirstPageCache && feedFirstPageCache.length) {
+  if (window.renderFeedFilterBar) window.renderFeedFilterBar();
+  const filtered = !!window._feedFilter;
+  // 캐시-우선: 필터 없을 때만 직전 첫 페이지 캐시 사용
+  if (!filtered && feedFirstPageCache && feedFirstPageCache.length) {
     feedEl.innerHTML = feedFirstPageCache.map(buildPostHTML).join('');
   } else {
     feedEl.innerHTML = [1,2,3].map(() => `<div style="border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:16px;margin-bottom:16px"><div style="display:flex;gap:10px;padding:0 20px 10px;align-items:center"><div class="skeleton" style="width:32px;height:32px;border-radius:50%"></div><div class="skeleton" style="width:80px;height:14px;margin-left:4px"></div></div><div class="skeleton" style="width:100%;height:280px"></div><div style="padding:12px 20px 0;display:flex;gap:12px"><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div><div class="skeleton" style="width:40px;height:16px;border-radius:8px"></div></div></div>`).join('');
   }
   try {
-    const q = query(collection(db, 'feed'), orderBy('createdAt', 'desc'), limit(FEED_PAGE));
+    const q = _buildFeedQuery(null);
     const snap = await getDocs(q);
     if (snap.empty) {
-      feedFirstPageCache = null;
-      feedEl.innerHTML = `<div style="text-align:center;padding:60px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.25);margin-bottom:6px">아직 게시물이 없어요</div><div style="font-size:12px;color:rgba(255,255,255,0.12)">첫 번째 운동을 인증해봐요</div></div>`;
+      if (!filtered) feedFirstPageCache = null;
+      feedEl.innerHTML = filtered
+        ? `<div style="text-align:center;padding:56px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.3);margin-bottom:6px">'${window._feedFilter}' 인증이 아직 없어요</div><button onclick="window.setFeedFilter(null)" style="margin-top:12px;background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.32);color:#7aa8ff;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">전체 보기</button></div>`
+        : `<div style="text-align:center;padding:60px 20px"><div style="font-size:13px;color:rgba(255,255,255,0.25);margin-bottom:6px">아직 게시물이 없어요</div><div style="font-size:12px;color:rgba(255,255,255,0.12)">첫 번째 운동을 인증해봐요</div></div>`;
       return;
     }
     feedLastDoc = snap.docs[snap.docs.length - 1];
     feedAllLoaded = snap.docs.length < FEED_PAGE;
     const posts = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-    // 글에 저장된 userPhoto로 즉시 렌더 (N+1 프사 조회를 기다리지 않음)
-    feedFirstPageCache = posts;
+    // 글에 저장된 userPhoto로 즉시 렌더 (N+1 프사 조회를 기다리지 않음). 캐시는 필터 없을 때만 갱신
+    if (!filtered) feedFirstPageCache = posts;
     feedEl.innerHTML = posts.map(buildPostHTML).join('');
     if (!feedAllLoaded) setupFeedObserver();
     renderHomeLiveBar();
