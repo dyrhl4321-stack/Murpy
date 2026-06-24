@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624006 -->
+<!-- cache-bust: v20260624007 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -489,19 +489,20 @@
     </div>
     <!-- 크롭 영역 -->
     <div id="crop-step-1">
-      <div style="display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;width:100vw;height:100vw;max-height:70vh">
-        <div id="crop-container" style="position:relative;width:100vw;height:100vw;max-height:70vh;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;touch-action:none">
+      <!-- 세로형 4:5 크롭 영역 (화면 꽉 채움). width 100%로 우측 테두리 잘림 방지 -->
+      <div id="crop-area" style="position:relative;width:100%;aspect-ratio:4/5;max-width:calc((100dvh - 150px) * 4 / 5);max-height:calc(100dvh - 150px);margin:0 auto;background:#111;overflow:hidden">
+        <div id="crop-container" style="position:absolute;inset:0;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;touch-action:none">
           <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
         </div>
-        <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;border:2px solid rgba(255,255,255,0.4)">
-          <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
-          <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.2)"></div>
-          <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
-          <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.2)"></div>
+        <div style="position:absolute;inset:0;pointer-events:none;border:2px solid rgba(255,255,255,0.35);box-sizing:border-box">
+          <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
         </div>
       </div>
-      <div style="padding:14px 20px">
-        <div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;letter-spacing:-0.1px">핀치로 크기 조정 · 드래그로 위치 이동</div>
+      <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center">
+        <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
       </div>
     </div>
     <!-- 캡션 작성 (2단계) — 사진 미리보기 위 + 캡션 + 하단 공유하기 -->
@@ -3255,12 +3256,11 @@ function openCropModal(file) {
     img.style.transform = 'translate(0,0) scale(1)';
     img.src = e.target.result;
     img.onload = () => {
-      // 모달 열린 후에 컨테이너 크기 계산
+      // 모달 열린 후에 컨테이너 크기 계산 → 4:5 영역을 꽉 채우게(cover)
       const container = document.getElementById('crop-container');
-      const size = container.offsetWidth || window.innerWidth;
-      const scaleW = size / img.naturalWidth;
-      const scaleH = size / img.naturalHeight;
-      const fitScale = Math.min(scaleW, scaleH);
+      const cw = container.offsetWidth || window.innerWidth;
+      const ch = container.offsetHeight || cw;
+      const fitScale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
       img.style.transform = `translate(0,0) scale(${fitScale})`;
       if (window.resetCropState) window.resetCropState(fitScale);
     };
@@ -3312,13 +3312,14 @@ function confirmCrop() {
   const scale = d.scale || 1;
   // 출력 해상도는 화면폭(cw)이 아니라 "크롭 창이 담는 원본 픽셀 수(cw/scale)" 기준으로 잡아야
   // drawImage가 원본 고해상도에서 샘플링한다. (예전엔 cw≈390px로 묶여 저화질로 저장됐음)
-  const outSize = Math.max(720, Math.min(1080, Math.round(cw / scale)));
+  const outW = Math.max(720, Math.min(1080, Math.round(cw / scale)));
+  const outH = Math.round(outW * (ch / cw));   // 크롭 영역 비율(4:5) 그대로 출력
   const canvas = document.createElement('canvas');
-  canvas.width = outSize; canvas.height = outSize;
+  canvas.width = outW; canvas.height = outH;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  const ratio = outSize / cw;
+  const ratio = outW / cw;
   ctx.drawImage(img,
     (cw / 2 + tx - img.naturalWidth * scale / 2) * ratio,
     (ch / 2 + ty - img.naturalHeight * scale / 2) * ratio,
@@ -4547,7 +4548,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.25);font-size:20px;cursor:pointer;padding:0 2px 4px;line-height:1;flex-shrink:0;letter-spacing:2px">···</button>` : ''}
       </div>
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:1;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:10px 20px 6px;display:flex;gap:16px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px;color:${likeColor};font-size:13px;font-family:inherit">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
