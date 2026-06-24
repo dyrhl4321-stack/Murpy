@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260624012 -->
+<!-- cache-bust: v20260624013 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -3248,6 +3248,25 @@ function toggleFeedLike(btn, base) {
 // ===== 크롭 시스템 =====
 window.cropData = { originalFile: null, croppedBlob: null };
 
+// iOS 안전 배경 스크롤 잠금 (position:fixed 방식 — 모달 내부 스크롤 안 깨짐)
+let _cropSavedScrollY = 0;
+function lockBodyScroll() {
+  _cropSavedScrollY = window.scrollY || window.pageYOffset || 0;
+  document.body.style.position = 'fixed';
+  document.body.style.top = '-' + _cropSavedScrollY + 'px';
+  document.body.style.left = '0';
+  document.body.style.right = '0';
+  document.body.style.width = '100%';
+}
+function unlockBodyScroll() {
+  document.body.style.position = '';
+  document.body.style.top = '';
+  document.body.style.left = '';
+  document.body.style.right = '';
+  document.body.style.width = '';
+  window.scrollTo(0, _cropSavedScrollY);
+}
+
 function openCropModal(file) {
   window.cropData.originalFile = file;
   window.cropData.croppedBlob = file;
@@ -3257,6 +3276,7 @@ function openCropModal(file) {
     // 모달 먼저 열기
     modal.style.display = 'flex';
     modal.style.flexDirection = 'column';
+    lockBodyScroll();   // 배경(홈 피드) 스크롤 잠금
     _setCropStep(1);
 
     const img = document.getElementById('crop-image');
@@ -3277,6 +3297,7 @@ function openCropModal(file) {
 
 function closeCropModal() {
   document.getElementById('crop-modal').style.display = 'none';
+  unlockBodyScroll();   // 배경 스크롤 잠금 해제 + 위치 복원
   document.getElementById('feed-photo-input').value = '';
   document.getElementById('feed-post-input').value = '';
   if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
