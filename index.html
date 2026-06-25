@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260625014 -->
+<!-- cache-bust: v20260625015 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4898,6 +4898,64 @@ window._isConnected = async (otherUid) => {
   try {
     const [m, c] = await Promise.all([getDoc(doc(db, 'matches', key)), getDoc(doc(db, 'chats', key))]);
     return m.exists() || c.exists();
+  } catch (e) { return false; }
+};
+
+// ===== 운동 크레딧 (Proof of Workout) =====
+window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트). 사용자 충분히 모이면 'enforced'.
+const CREDIT_WELCOME = 10, CREDIT_DAILY = 1, COST_MATCH = 1, COST_BAMBOO = 1;
+window._creditState = { credits: 0, lastEarned: '', ready: false };
+
+function _creditToday() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
+window.ensureCreditsInit = async (uid) => {
+  if (!uid) return;
+  try {
+    const ref = doc(db, 'users', uid);
+    const snap = await getDoc(ref);
+    const d = snap.exists() ? snap.data() : {};
+    if (typeof d.credits !== 'number') {
+      await setDoc(ref, { credits: CREDIT_WELCOME, creditsLastEarned: '' }, { merge: true });
+      window._creditState.credits = CREDIT_WELCOME;
+      window._creditState.lastEarned = '';
+    } else {
+      window._creditState.credits = d.credits;
+      window._creditState.lastEarned = d.creditsLastEarned || '';
+    }
+    window._creditState.ready = true;
+    if (window.renderCreditUI) window.renderCreditUI();
+  } catch (e) {}
+};
+
+// 하루 첫 운동 인증 시 +CREDIT_DAILY (이미 오늘 받았으면 무시)
+window.grantDailyCreditOnVerify = async (uid) => {
+  if (!uid) return;
+  const today = _creditToday();
+  if (window._creditState.lastEarned === today) return;
+  try {
+    await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_DAILY), creditsLastEarned: today });
+    window._creditState.credits += CREDIT_DAILY;
+    window._creditState.lastEarned = today;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.showToast) showToast('+' + CREDIT_DAILY + ' 크레딧 · 오늘 운동 인증 완료!');
+  } catch (e) {}
+};
+
+window.getCredits = () => window._creditState.credits;
+
+// 소모: beta는 항상 통과(무제한), enforced는 잔액 차감/부족 시 false
+window.spendCredit = async (uid, cost) => {
+  if (window.CREDITS_MODE !== 'enforced') return true;
+  if (!uid || window._creditState.credits < cost) return false;
+  try {
+    await updateDoc(doc(db, 'users', uid), { credits: increment(-cost) });
+    window._creditState.credits -= cost;
+    if (window.renderCreditUI) window.renderCreditUI();
+    return true;
   } catch (e) { return false; }
 };
 
