@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260625018 -->
+<!-- cache-bust: v20260625019 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -699,7 +699,6 @@
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('mypage-panel')">←</button>
     <span style="font-weight:700;font-size:16px">내 프로필</span>
-    <span id="credit-chip" style="display:none;align-items:center;gap:5px;margin-left:10px;background:var(--gold-dim);border:1px solid var(--gold-border);border-radius:14px;padding:4px 10px"></span>
     <span id="mypage-admin-badge" style="display:none;font-size:11px;color:var(--gold);background:var(--gold-dim);border:1px solid var(--gold-border);border-radius:6px;padding:3px 9px;font-weight:700">관리자 모드</span>
     <button id="mypage-logout-btn" onclick="googleLogout()" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;margin-left:auto;display:none">로그아웃</button>
   </div>
@@ -712,6 +711,14 @@
       <input type="file" id="profile-pic-input" accept="image/*" style="display:none" onchange="handleProfilePic(this)">
       <div style="font-size:18px;font-weight:800;margin-bottom:6px" id="info-name">나</div>
       <div id="my-verify-status" style="min-height:18px"></div>
+      <div id="credit-card" style="display:none;justify-content:center;margin:12px 0 2px">
+        <div style="display:inline-flex;align-items:center;gap:7px;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.32);border-radius:20px;padding:8px 16px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>
+          <span style="font-size:15px;font-weight:800;color:#fff" id="credit-amount">0</span>
+          <span style="font-size:12px;color:#A78BFA;font-weight:700">크레딧</span>
+          <span id="credit-beta" style="font-size:11px;color:rgba(255,255,255,0.4);font-weight:600;margin-left:2px">· 베타 무제한</span>
+        </div>
+      </div>
     </div>
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
@@ -2322,8 +2329,8 @@ function handleLike() {
   // 비로그인: 안내만 띄우고 카드는 넘기지 않음(보낸 것처럼 사라지던 버그 방지)
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.sendLike) window.sendLike(p.uid, p.nickname || '익명', p.photoURL || '');
-  // 관리자는 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
-  if (typeof isAdmin === 'function' && isAdmin()) return;
+  // 관리자·테스트 계정은 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
+  if (window.isMatchTester && window.isMatchTester()) return;
   _matchAdvance('scale(0.96)');
 }
 
@@ -3920,6 +3927,14 @@ function isAdmin() {
   const u = window.currentUser;
   return !!(u && u.email && ADMIN_EMAILS.includes(u.email));
 }
+// [테스트] 김현수(카카오) 등 — 매칭 후보 전체 노출 + 크레딧 강제(확인 팝업 테스트). 정식 출시 전 제거.
+window.TEST_UIDS = ['h0I8ms36owTByTACh6gSw3sgCrf1'];
+window.isMatchTester = function () {
+  const u = window.currentUser;
+  if (!u) return false;
+  if (typeof isAdmin === 'function' && isAdmin()) return true;
+  return !!(u.uid && window.TEST_UIDS.includes(u.uid));
+};
 
 // 생활권(구) → 포함 동네 매핑. 동네명으로 저장돼도 권역 필터에 잡히게
 const REGION_MAP = {
@@ -4936,32 +4951,36 @@ window.ensureCreditsInit = async (uid) => {
 
 // 하루 첫 운동 인증 시 +CREDIT_DAILY (이미 오늘 받았으면 무시)
 window.grantDailyCreditOnVerify = async (uid) => {
-  if (!uid) return;
+  if (!uid) return false;
   const today = _creditToday();
-  if (window._creditState.lastEarned === today) return;
+  if (window._creditState.lastEarned === today) return false; // 오늘 이미 적립
   try {
     await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_DAILY), creditsLastEarned: today });
     window._creditState.credits += CREDIT_DAILY;
     window._creditState.lastEarned = today;
     if (window.renderCreditUI) window.renderCreditUI();
-    if (window.showToast) showToast('+' + CREDIT_DAILY + ' 크레딧 · 오늘 운동 인증 완료!');
-  } catch (e) {}
+    return true;
+  } catch (e) { return false; }
 };
 
 window.renderCreditUI = function () {
-  const chip = document.getElementById('credit-chip');
-  if (!chip) return;
-  if (!window.currentUser) { chip.style.display = 'none'; return; }
-  const beta = window.CREDITS_MODE === 'beta';
-  chip.style.display = 'inline-flex';
-  chip.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M5 8v8M8 6v12M16 6v12M19 8v8M8 12h8"/></svg><span style="font-size:13px;font-weight:800;color:#fff">${window._creditState.credits}</span>${beta ? `<span style="font-size:10px;color:rgba(255,255,255,0.45);font-weight:600;letter-spacing:-0.2px">베타·무제한</span>` : ''}`;
+  const card = document.getElementById('credit-card');
+  if (!card) return;
+  if (!window.currentUser) { card.style.display = 'none'; return; }
+  const amt = document.getElementById('credit-amount');
+  if (amt) amt.textContent = window._creditState.credits;
+  const betaEl = document.getElementById('credit-beta');
+  const unlimited = !(window.creditsEnforcedFor && window.creditsEnforcedFor(window.currentUser.uid));
+  if (betaEl) betaEl.style.display = unlimited ? 'inline' : 'none';
+  card.style.display = 'flex';
 };
 
 window.getCredits = () => window._creditState.credits;
 
 // 소모: beta는 항상 통과(무제한), enforced는 잔액 차감/부족 시 false
+window.creditsEnforcedFor = (uid) => window.CREDITS_MODE === 'enforced' || !!(uid && window.TEST_UIDS && window.TEST_UIDS.includes(uid));
 window.spendCredit = async (uid, cost) => {
-  if (window.CREDITS_MODE !== 'enforced') return true;
+  if (!window.creditsEnforcedFor(uid)) return true;
   if (!uid || window._creditState.credits < cost) return false;
   try {
     await updateDoc(doc(db, 'users', uid), { credits: increment(-cost) });
@@ -4975,6 +4994,9 @@ window.sendLike = async (toUid, toName, toPhoto) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
   if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
+  if (window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
+    if (!confirm('이 신청에 크레딧 ' + COST_MATCH + '개를 사용해요.\n보낼까요?')) return;
+  }
   if (!(await window.spendCredit(me, COST_MATCH))) { showToast('크레딧이 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
   try {
     await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() });
@@ -4991,8 +5013,8 @@ window.sendLike = async (toUid, toName, toPhoto) => {
       showToast('같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
     }
     // 좋아요 보낸 사람은 이번 세션 '더 많은 추천'에서 숨김(_matchPassed와 동일 패턴).
-    // 단, 관리자는 반복 실험을 위해 숨기지 않고 계속 노출.
-    if (!(typeof isAdmin === 'function' && isAdmin())) {
+    // 단, 관리자·테스트 계정은 반복 실험을 위해 숨기지 않고 계속 노출.
+    if (!(window.isMatchTester && window.isMatchTester())) {
       window._matchLiked = window._matchLiked || new Set();
       window._matchLiked.add(toUid);
     }
@@ -5051,7 +5073,7 @@ window.loadMatchCandidates = async function () {
     const arr = [];
     snap.forEach(d => {
       const u = d.id;
-      if (u === me || liked.has(u) || matchedSet.has(u) || passed.has(u)) return;
+      if (u === me || (!(window.isMatchTester && window.isMatchTester()) && (liked.has(u) || matchedSet.has(u) || passed.has(u)))) return;
       const data = d.data() || {};
       if (!data.nickname) return; // 프로필 미설정자 제외
       const sameDistrict = !!(myDistrict && data.district === myDistrict);
@@ -6098,11 +6120,11 @@ window.submitFeedPost = async function() {
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
-    if (window.grantDailyCreditOnVerify) await window.grantDailyCreditOnVerify(user.uid);
+    const _earned = window.grantDailyCreditOnVerify ? await window.grantDailyCreditOnVerify(user.uid) : false;
     closeCropModal();
     window.cropData = { originalFile: null, croppedBlob: null };
     document.getElementById('feed-photo-input').value = '';
-    showToast('✓ 올라갔어요!');
+    showToast(_earned ? '✓ 운동 인증 완료 · +' + CREDIT_DAILY + ' 크레딧!' : '✓ 올라갔어요!');
     loadFeed();
   } catch(e) { showToast('실패: ' + e.message); }
   restore();
