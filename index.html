@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260625005 -->
+<!-- cache-bust: v20260625006 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1275,7 +1275,7 @@
 </div>
 
 <!-- 로그인 유도 모달 -->
-<div class="modal-overlay" id="login-guard-modal" onclick="if(event.target===this)closeModal('login-guard-modal')">
+<div class="modal-overlay" id="login-guard-modal" onclick="if(event.target===this)dismissLoginGuard()">
   <div class="modal-sheet" style="text-align:center">
     <div style="margin-bottom:12px;display:flex;justify-content:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8v8M8 6v12M16 6v12M19 8v8M8 12h8"/></svg></div>
     <div style="font-size:20px;font-weight:800;margin-bottom:8px">로그인이 필요해요</div>
@@ -1288,7 +1288,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="#000"><path d="M12 3C6.48 3 2 6.48 2 10.8c0 2.7 1.55 5.08 3.9 6.5l-.97 3.6 4.18-2.77c.93.18 1.89.27 2.89.27 5.52 0 10-3.48 10-7.8S17.52 3 12 3z"/></svg>
       카카오로 로그인
     </button>
-    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px;padding:8px" onclick="closeModal('login-guard-modal')">나중에</button>
+    <button style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px;padding:8px" onclick="dismissLoginGuard()">나중에</button>
   </div>
 </div>
 
@@ -2145,9 +2145,15 @@ function closePanel(id) {
     if (fab) fab.style.display = 'none';
   }
 }
-function requireLogin(reason) {
+function requireLogin(reason, onAfterLogin) {
   document.getElementById('login-guard-text').textContent = reason || '이 기능은 로그인 후 사용할 수 있어요';
+  window._pendingIntent = (typeof onAfterLogin === 'function') ? onAfterLogin : null;
   openModal('login-guard-modal');
+}
+// 로그인 없이 가드 모달을 닫을 때는 보관된 의도를 폐기 (엉뚱한 시점 실행 방지)
+function dismissLoginGuard() {
+  window._pendingIntent = null;
+  closeModal('login-guard-modal');
 }
 
 // 오프라인 감지
@@ -4593,6 +4599,12 @@ onAuthStateChanged(auth, async (user) => {
     if (window.initPush) window.initPush(user.uid);
     // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
+    // 비로그인 상태에서 막혔던 의도가 있으면 로그인 직후 1회 재개
+    if (window._pendingIntent) {
+      const _fn = window._pendingIntent;
+      window._pendingIntent = null;
+      setTimeout(_fn, 400);
+    }
   } else {
     window.currentUser = null;
     if (window.stopNotifListener) window.stopNotifListener();
