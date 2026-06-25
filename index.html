@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260625004 -->
+<!-- cache-bust: v20260625005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2307,7 +2307,11 @@ function _matchAdvance(exitTransform) {
 function handleLike() {
   const list = window._matchList; if (!list) return;
   const p = list[window._matchIdx || 0]; if (!p) return;
+  // 비로그인: 안내만 띄우고 카드는 넘기지 않음(보낸 것처럼 사라지던 버그 방지)
+  if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.sendLike) window.sendLike(p.uid, p.nickname || '익명', p.photoURL || '');
+  // 관리자는 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
+  if (typeof isAdmin === 'function' && isAdmin()) return;
   _matchAdvance('scale(0.96)');
 }
 
@@ -4867,9 +4871,11 @@ window.sendLike = async (toUid, toName, toPhoto) => {
       showToast('같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
     }
     // 좋아요 보낸 사람은 이번 세션 '더 많은 추천'에서 숨김(_matchPassed와 동일 패턴).
-    // 인덱스를 건드리지 않아 카드 넘김 애니메이션과의 레이스 없음.
-    window._matchLiked = window._matchLiked || new Set();
-    window._matchLiked.add(toUid);
+    // 단, 관리자는 반복 실험을 위해 숨기지 않고 계속 노출.
+    if (!(typeof isAdmin === 'function' && isAdmin())) {
+      window._matchLiked = window._matchLiked || new Set();
+      window._matchLiked.add(toUid);
+    }
     if (typeof window.renderMatch === 'function') window.renderMatch();
   } catch (e) { console.error('sendLike error', e); showToast('전송 실패'); }
 };
