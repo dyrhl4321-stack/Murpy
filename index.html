@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260625012 -->
+<!-- cache-bust: v20260625013 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -4416,7 +4416,24 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('SW registered:', reg.scope))
+      .then(reg => {
+        // 새 버전(새 sw.js) 감지 시 자동 새로고침 — 최초 설치는 제외(기존 controller 있을 때만)
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              window.location.reload();
+            }
+          });
+        });
+        // 앱 켤 때 + 백그라운드에서 다시 돌아올 때 업데이트 확인
+        const checkUpdate = () => { reg.update().catch(() => {}); };
+        checkUpdate();
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') checkUpdate();
+        });
+      })
       .catch(err => console.warn('SW 등록 실패:', err));
   });
 }
