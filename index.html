@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626004 -->
+<!-- cache-bust: v20260626005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2062,6 +2062,20 @@
     <div class="mc-token" style="position:relative;z-index:1"></div>
     <div class="mc-amt" style="margin-top:26px;font-size:44px;font-weight:900;color:#fff;letter-spacing:-1.2px">+1 <span style="color:#F5C24B">머피</span></div>
     <div class="mc-title" style="margin-top:8px;font-size:16px;font-weight:700;color:rgba(255,255,255,0.55);letter-spacing:-0.2px">오늘도 운동 완료!</div>
+  </div>
+</div>
+
+<!-- 머피 첫 적립 안내 (평생 1회) -->
+<div id="murpy-first-guide" style="display:none;position:fixed;inset:0;z-index:10049;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.6);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
+  <div style="max-width:320px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:26px 24px;text-align:center">
+    <div class="mfg-token" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:8px">머피가 쌓이기 시작했어요</div>
+    <div style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">머피는 <b style="color:#fff">매칭 신청</b>과 <b style="color:#fff">대숲 글쓰기</b>에 써요.<br><span style="font-size:12px;color:rgba(255,255,255,0.38)">지금은 베타라 무제한으로 써볼 수 있어요</span></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="document.getElementById('murpy-first-guide').style.display='none';if(typeof closePanel==='function')closePanel('mypage-panel');goPage('match')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">매칭 보러가기</button>
+      <button onclick="document.getElementById('murpy-first-guide').style.display='none';if(typeof closePanel==='function')closePanel('mypage-panel');goPage('bamboo')" style="flex:1;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">대숲 가기</button>
+    </div>
+    <button onclick="document.getElementById('murpy-first-guide').style.display='none'" style="width:100%;background:none;border:none;color:#666;font-size:14px;cursor:pointer;margin-top:10px;padding:6px">닫기</button>
   </div>
 </div>
 
@@ -4887,6 +4901,15 @@ window.celebrateMurpy = function (balance) {
   el._t = setTimeout(close, 2400);
 };
 
+// 머피 첫 적립 안내 카드 (평생 1회)
+function murpyFirstGuide() {
+  const el = document.getElementById('murpy-first-guide');
+  if (!el) return;
+  const tw = el.querySelector('.mfg-token');
+  if (tw && window.murpyTokenSVG) tw.innerHTML = window.murpyTokenSVG(52);
+  el.style.display = 'flex';
+}
+
 function buildPostHTML(p) {
   const time = p.createdAt
     ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
@@ -6292,8 +6315,15 @@ window.submitFeedPost = async function() {
     closeCropModal();
     window.cropData = { originalFile: null, croppedBlob: null };
     document.getElementById('feed-photo-input').value = '';
-    showToast(_earned ? '✓ 운동 인증 완료 · +' + CREDIT_DAILY + ' 크레딧!' : '✓ 올라갔어요!');
-    if (_earned && !localStorage.getItem('murpy_credit_intro')) { localStorage.setItem('murpy_credit_intro', '1'); setTimeout(() => { if (window.openCreditInfo) window.openCreditInfo(true); }, 700); }
+    if (_earned) {
+      window.celebrateMurpy(window.getCredits ? window.getCredits() : undefined);
+      if (!localStorage.getItem('murpy_credit_intro')) {
+        localStorage.setItem('murpy_credit_intro', '1');
+        setTimeout(murpyFirstGuide, 2700); // 축하(2.4s) 닫힌 뒤 자연스럽게 이어짐
+      }
+    } else {
+      showToast('✓ 올라갔어요!');
+    }
     loadFeed();
   } catch(e) { showToast('실패: ' + e.message); }
   restore();
