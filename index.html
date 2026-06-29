@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626019 -->
+<!-- cache-bust: v20260626020 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -516,22 +516,20 @@
       <button id="crop-right-btn" onclick="confirmCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px">다음</button>
     </div>
     <!-- 크롭 영역 -->
-    <div id="crop-step-1" style="flex:1;min-height:0;display:flex;flex-direction:column;touch-action:none">
-      <!-- 세로형 4:5 크롭 영역: 남는 공간에 맞춰 contain(헤더/안내 항상 보이게) -->
-      <div style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:8px 0">
-        <div id="crop-area" style="position:relative;aspect-ratio:4/5;max-width:100%;max-height:100%;margin:0 auto;background:#111;overflow:hidden">
-          <div id="crop-container" style="position:absolute;inset:0;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;touch-action:none">
-            <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
-          </div>
-          <div style="position:absolute;inset:0;pointer-events:none;border:2px solid rgba(255,255,255,0.35);box-sizing:border-box">
-            <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
-            <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
-            <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
-            <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
-          </div>
+    <div id="crop-step-1" style="touch-action:none">
+      <!-- 세로형 4:5 크롭 영역 (dvh 기반으로 4:5 유지하며 화면에 맞춤) -->
+      <div id="crop-area" style="position:relative;width:100%;aspect-ratio:4/5;max-width:calc((100dvh - 150px) * 4 / 5);max-height:calc(100dvh - 150px);margin:0 auto;background:#111;overflow:hidden">
+        <div id="crop-container" style="position:absolute;inset:0;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;touch-action:none">
+          <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
+        </div>
+        <div style="position:absolute;inset:0;pointer-events:none;border:2px solid rgba(255,255,255,0.35);box-sizing:border-box">
+          <div style="position:absolute;top:33.3%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;top:66.6%;left:0;right:0;height:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
+          <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
         </div>
       </div>
-      <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center;flex-shrink:0">
+      <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center">
         <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
       </div>
     </div>
@@ -2400,12 +2398,14 @@ function renderMatch() {
     el.style.display = 'inline-flex';
   });
 
-  // 인증 스트릭 (활동검증 — 살아있고 2일+ 일 때만 노출)
+  // 인증 스트릭 (활동검증 — 살아있고 2일+ 일 때만 노출). 스코프 의존 없이 자체 계산.
   const streakBadge = document.getElementById('match-streak-badge');
   if (streakBadge) {
     const sNum = (typeof p.streak === 'number') ? p.streak : 0;
     const le = p.creditsLastEarned || '';
-    const alive = (le === _creditToday() || le === _creditYesterday());
+    const _ds = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+    const _t = new Date(); const _y = new Date(); _y.setDate(_y.getDate() - 1);
+    const alive = (le === _ds(_t) || le === _ds(_y));
     if (sNum >= 2 && alive) {
       const sEl = document.getElementById('match-streak-num');
       if (sEl) sEl.textContent = sNum;
@@ -3626,7 +3626,7 @@ function confirmCrop() {
     }
     _setCropStep(2);
     if (window.initCompose) initCompose();   // 타입/태그 초기화 + 배지 계산
-  }, 'image/jpeg', 0.92);
+  }, 'image/jpeg', 0.85);
 }
 
 // 드래그/핀치 이동
@@ -6358,7 +6358,7 @@ window.submitFeedPost = async function() {
     } catch(e) {}
 
     const formData = new FormData();
-    formData.append('image', await window._compressImg(file), 'photo.jpg');
+    formData.append('image', file, 'photo.jpg'); // 이미 크롭+JPEG 압축된 blob — 재압축 불필요(속도)
     formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
     const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
     const json = await res.json();
