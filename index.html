@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626031 -->
+<!-- cache-bust: v20260626032 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2240,6 +2240,8 @@ let chatHistory = [
 
 const WORKOUT_OPTIONS = ["웨이트","크로스핏","러닝","클라이밍","필라테스","요가","수영","자전거","복싱","축구"];
 const FILTER_WORDS = ["@","인스타","카톡","카카오","010","011","DM","디엠","연락처","번호","instagram","kakao","라인","line","텔레그램","telegram","위챗","wechat","snapchat","스냅챗","전화","휴대폰","핸드폰","문자","톡방","오픈채팅"];
+// 연락처/외부유입 자동 필터 (모듈·일반 스코프 공용)
+window._hasContact = (t) => FILTER_WORDS.some(w => (t || '').toLowerCase().includes(w.toLowerCase()));
 const BOOST_OPTIONS = [
   { label:"3일 부스트", price:5900, desc:"탐색 상단 3일 노출" },
   { label:"7일 부스트", price:9900, desc:"탐색 상단 7일 노출", popular:true },
@@ -2615,6 +2617,7 @@ function renderBambooItem(post) {
 function postBamboo() {
   const text = document.getElementById('bamboo-input').value.trim();
   if (!text) { showToast('내용을 입력해주세요'); return; }
+  if (window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
   if (!window.currentUser) { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
   if (window.postBambooFirestore) {
     window.postBambooFirestore(text).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; renderBamboo(); } });
@@ -6415,6 +6418,7 @@ window.submitFeedPost = async function() {
   const file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
   const text = (document.getElementById('feed-post-input').value || '').trim();
+  if (window._hasContact && window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
   const shareBtn = document.getElementById('crop-right-btn');
   const restore = () => { if (shareBtn) { shareBtn.textContent = '공유'; shareBtn.style.pointerEvents = ''; shareBtn.style.opacity = ''; } };
   if (shareBtn) { shareBtn.textContent = '공유 중...'; shareBtn.style.pointerEvents = 'none'; shareBtn.style.opacity = '0.5'; }
@@ -7485,6 +7489,7 @@ window.sendChatFirestore = async () => {
   const input = document.getElementById('chat-input');
   const text = input?.value?.trim();
   if (!text) return;
+  if (window._hasContact && window._hasContact(text)) { showToast('채팅에선 연락처를 주고받을 수 없어요'); return; }
   input.value = '';
   window._chatInputToggle();
   let nickname = '익명';
