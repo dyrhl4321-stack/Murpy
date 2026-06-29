@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626030 -->
+<!-- cache-bust: v20260626031 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1005,9 +1005,12 @@
     <span id="comment-panel-title" style="font-weight:700;font-size:16px">댓글</span>
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px 20px" id="comment-list"></div>
-  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px">
-    <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')handleCommentSubmit()">
-    <button onclick="handleCommentSubmit()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06)">
+    <input id="bamboo-anon-name" maxlength="12" placeholder="1회용 닉네임 (선택 · 비우면 익명)" style="display:none;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:8px 12px;color:#fff;font-size:12.5px;outline:none;font-family:inherit;margin-bottom:8px">
+    <div style="display:flex;gap:10px">
+      <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')handleCommentSubmit()">
+      <button onclick="handleCommentSubmit()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
+    </div>
   </div>
 </div>
 
@@ -4012,6 +4015,8 @@ function openCommentPanel(postId, type) {
   if (t) t.textContent = window._commentType === 'bamboo' ? '익명 댓글' : '댓글';
   const inp = document.getElementById('comment-input');
   if (inp) { inp.value = ''; inp.placeholder = window._commentType === 'bamboo' ? '익명으로 댓글 남기기... (연락처 불가)' : '댓글 입력... (연락처 불가)'; }
+  const an = document.getElementById('bamboo-anon-name');
+  if (an) { an.value = ''; an.style.display = window._commentType === 'bamboo' ? 'block' : 'none'; }
   openPanel('comment-panel');
   // Firestore에서 댓글 불러오기
   window.loadComments(postId);
@@ -6468,14 +6473,16 @@ window.submitComment = async (postId) => {
 
   // 대숲(익명) 댓글 — 닉네임/프사 저장 안 함, userId만(글쓴이/익명N 구분·모더레이션용)
   if ((window._commentType || 'feed') === 'bamboo') {
+    const anonName = (document.getElementById('bamboo-anon-name')?.value || '').trim().slice(0, 12);
     try {
-      await addDoc(collection(db, 'bamboo', postId, 'comments'), { text, userId: user.uid, createdAt: serverTimestamp() });
+      await addDoc(collection(db, 'bamboo', postId, 'comments'), { text, userId: user.uid, anonName, createdAt: serverTimestamp() });
       await updateDoc(doc(db, 'bamboo', postId), { commentCount: increment(1) });
       try {
         const ps = await getDoc(doc(db, 'bamboo', postId));
         if (ps.exists()) _sendNotif(ps.data().userId, 'bamboo_comment', { postId, commentText: text.substring(0, 30) }, '익명', '');
       } catch (e) {}
       if (input) input.value = '';
+      const anEl = document.getElementById('bamboo-anon-name'); if (anEl) anEl.value = '';
       const cEl = document.getElementById(`bamboo-comment-count-${postId}`);
       if (cEl) cEl.textContent = (parseInt(cEl.textContent) || 0) + 1;
       loadComments(postId);
@@ -6535,17 +6542,20 @@ window.loadComments = async (postId) => {
       let authorUid = null;
       try { const ps = await getDoc(doc(db, 'bamboo', postId)); if (ps.exists()) authorUid = ps.data().userId; } catch (e) {}
       const anonMap = {}; let anonIdx = 0;
-      const labelFor = (uid) => {
-        if (uid && uid === authorUid) return '글쓴이';
-        if (!anonMap[uid]) { anonIdx++; anonMap[uid] = '익명' + anonIdx; }
-        return anonMap[uid];
+      const _escA = s => (s || '').replace(/</g, '&lt;');
+      const labelFor = (c) => {
+        if (c.userId && c.userId === authorUid) return { name: '글쓴이', author: true, custom: false };
+        if (c.anonName) return { name: c.anonName, author: false, custom: true };
+        if (!anonMap[c.userId]) { anonIdx++; anonMap[c.userId] = '익명' + anonIdx; }
+        return { name: anonMap[c.userId], author: false, custom: false };
       };
       list.innerHTML = bsnap.docs.map(d => d.data()).map(c => {
-        const label = labelFor(c.userId);
-        const isAuthor = label === '글쓴이';
+        const lbl = labelFor(c);
+        const isAuthor = lbl.author;
+        const nameColor = isAuthor ? '#7aa8ff' : (lbl.custom ? '#cdd6e4' : '#fff');
         return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
           <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${isAuthor ? 'rgba(61,126,255,0.18)' : 'rgba(255,255,255,0.06)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${isAuthor ? '#7aa8ff' : 'rgba(255,255,255,0.4)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0 1 12 0v1"/></svg></div>
-          <div><span style="font-size:12px;font-weight:700;margin-right:6px;color:${isAuthor ? '#7aa8ff' : '#fff'}">${label}</span><span style="font-size:13px;color:#fff">${c.text}</span></div>
+          <div><span style="font-size:12px;font-weight:700;margin-right:6px;color:${nameColor}">${_escA(lbl.name)}</span><span style="font-size:13px;color:#fff">${c.text}</span></div>
         </div>`;
       }).join('');
     } catch (e) {
