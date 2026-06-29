@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626015 -->
+<!-- cache-bust: v20260626016 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -464,6 +464,9 @@
 
 <!-- HOME -->
 <div class="page active" id="page-home" style="padding:0 0 100px">
+
+  <!-- 인증 스트릭 바 -->
+  <div id="streak-bar" style="display:none;align-items:center;gap:7px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:13px;color:rgba(255,255,255,0.78);font-weight:600"></div>
 
   <!-- 요즘 뜨는 콘텐츠 (가로 스크롤) -->
   <div id="home-trending" style="padding:16px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
@@ -2185,7 +2188,7 @@ function goPage(name) {
   if (name === 'crew') renderCrews();
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
-  if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); }
+  if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
 }
 
 function openPanel(id) {
@@ -4622,6 +4625,7 @@ window.updateUI = function(user) {
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
     if (window.renderCreditUI) window.renderCreditUI();
+    if (window.renderStreakUI) window.renderStreakUI();
   } catch(e) { console.error('updateUI error:', e); }
 }
 
@@ -4848,6 +4852,9 @@ window.celebrateMurpy = function (balance) {
   clearTimeout(el._t);
   const tw = el.querySelector('.mc-token');
   if (tw && window.murpyTokenSVG) tw.innerHTML = window.murpyTokenSVG(120);
+  const _title = el.querySelector('.mc-title');
+  const _s = window._creditState ? (window._creditState.streak || 0) : 0;
+  if (_title) _title.textContent = (_s >= 2) ? (_s + '일 연속 인증!') : '오늘도 운동 완료!';
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const sparks = el.querySelector('.mc-sparks');
   if (sparks) {
@@ -5087,12 +5094,18 @@ window._isConnected = async (otherUid) => {
 // ===== 운동 크레딧 (Proof of Workout) =====
 window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트). 사용자 충분히 모이면 'enforced'.
 const CREDIT_WELCOME = 10, CREDIT_DAILY = 1, COST_MATCH = 1, COST_BAMBOO = 1;
-window._creditState = { credits: 0, lastEarned: '', ready: false };
+window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 
-function _creditToday() {
-  const d = new Date();
+function _creditDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+function _creditToday() { return _creditDateStr(new Date()); }
+function _creditYesterday() { const d = new Date(); d.setDate(d.getDate() - 1); return _creditDateStr(d); }
+// 스트릭 유지중? (오늘 또는 어제 인증했으면 살아있음)
+window._streakAlive = function () {
+  const le = window._creditState.lastEarned;
+  return le === _creditToday() || le === _creditYesterday();
+};
 
 // 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
 window.ensureCreditsInit = async (uid) => {
@@ -5105,12 +5118,15 @@ window.ensureCreditsInit = async (uid) => {
       await setDoc(ref, { credits: CREDIT_WELCOME, creditsLastEarned: '' }, { merge: true });
       window._creditState.credits = CREDIT_WELCOME;
       window._creditState.lastEarned = '';
+      window._creditState.streak = 0;
     } else {
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
+      window._creditState.streak = (typeof d.streak === 'number') ? d.streak : 0;
     }
     window._creditState.ready = true;
     if (window.renderCreditUI) window.renderCreditUI();
+    if (window.renderStreakUI) window.renderStreakUI();
   } catch (e) {}
 };
 
@@ -5119,11 +5135,17 @@ window.grantDailyCreditOnVerify = async (uid) => {
   if (!uid) return false;
   const today = _creditToday();
   if (window._creditState.lastEarned === today) return false; // 오늘 이미 적립
+  // 스트릭: 어제 인증했으면 +1, 아니면(비었거나 하루 이상 비면) 1로 시작/리셋
+  const newStreak = (window._creditState.lastEarned === _creditYesterday())
+    ? (window._creditState.streak || 0) + 1
+    : 1;
   try {
-    await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_DAILY), creditsLastEarned: today });
+    await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_DAILY), creditsLastEarned: today, streak: newStreak });
     window._creditState.credits += CREDIT_DAILY;
     window._creditState.lastEarned = today;
+    window._creditState.streak = newStreak;
     if (window.renderCreditUI) window.renderCreditUI();
+    if (window.renderStreakUI) window.renderStreakUI();
     return true;
   } catch (e) { return false; }
 };
@@ -5140,6 +5162,21 @@ window.renderCreditUI = function () {
   const _ci = document.getElementById('credit-card-icon');
   if (_ci && window.murpyTokenSVG) _ci.innerHTML = window.murpyTokenSVG(22);
   card.style.display = 'flex';
+};
+
+// 인증 스트릭 바 (홈 상단) — 불꽃 + N일 연속
+window.renderStreakUI = function () {
+  const el = document.getElementById('streak-bar');
+  if (!el) return;
+  const s = window._creditState.streak || 0;
+  const alive = window._streakAlive && window._streakAlive();
+  if (!window.currentUser || s < 1 || !alive) { el.style.display = 'none'; return; }
+  const doneToday = window._creditState.lastEarned === _creditToday();
+  el.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#FF7A45" stroke="none" style="flex-shrink:0"><path d="M12 2c.5 3 2 4.9 3.8 6.5C17.6 10.1 19 12 19 14.2A7 7 0 1 1 5 14.2c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5A2.5 2.5 0 0 0 11 11.2c0-1.4-.5-2-1-3-.9-1.8-.4-3.6 2-6.2z"/></svg>'
+    + '<span><b style="color:#FF7A45;font-weight:800">' + s + '일</b> 연속 인증 중'
+    + (doneToday ? '' : ' <span style="color:rgba(255,255,255,0.4);font-weight:500">· 오늘도 이어가요</span>')
+    + '</span>';
+  el.style.display = 'flex';
 };
 
 window.getCredits = () => window._creditState.credits;
