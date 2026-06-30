@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260626042 -->
+<!-- cache-bust: v20260626043 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -222,6 +222,17 @@
   .bamboo-tab-btn { flex:1;text-align:center;background:none;border:none;padding:11px 4px;font-size:14px;color:var(--text-tertiary);cursor:pointer;font-family:inherit;position:relative;transition:all 0.2s;font-weight:500 }
   .bamboo-tab-btn.active { color:#fff;font-weight:700 }
   .bamboo-tab-btn.active::after { content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:#fff;border-radius:1px }
+  /* 대숲 입장 이펙트 (대나무 커튼 슈슉 갈라짐) — 일러스트는 .bfx-half background-image로 교체 가능 */
+  #bamboo-enter-fx { position:fixed; inset:0; z-index:9000; pointer-events:none; display:none; overflow:hidden }
+  #bamboo-enter-fx .bfx-half { position:absolute; top:0; bottom:0; width:51%; will-change:transform; transform:translateX(0);
+    background:
+      repeating-linear-gradient(0deg, transparent 0 76px, rgba(0,0,0,0.18) 76px 82px, transparent 82px 84px),
+      repeating-linear-gradient(90deg, rgba(10,26,15,0.0) 0 18px, rgba(132,214,156,0.10) 18px 21px, rgba(10,26,15,0.0) 21px 25px, rgba(132,214,156,0.20) 25px 41px, rgba(58,140,84,0.0) 41px 45px),
+      linear-gradient(180deg, #15331d, #0a1d11); }
+  #bamboo-enter-fx .bfx-left { left:0; box-shadow: inset -26px 0 44px rgba(0,0,0,0.55) }
+  #bamboo-enter-fx .bfx-right { right:0; box-shadow: inset 26px 0 44px rgba(0,0,0,0.55) }
+  #bamboo-enter-fx.bfx-open .bfx-left { transform:translateX(-101%); transition: transform 0.72s cubic-bezier(.66,0,.24,1) }
+  #bamboo-enter-fx.bfx-open .bfx-right { transform:translateX(101%); transition: transform 0.72s cubic-bezier(.66,0,.24,1) }
   /* Photo grid */
   .photo-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px }
   .photo-thumb { aspect-ratio:1;overflow:hidden;position:relative;cursor:pointer;touch-action:pan-y;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none }
@@ -334,6 +345,8 @@
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
+<!-- 대숲 입장 이펙트 오버레이 (대나무 커튼) -->
+<div id="bamboo-enter-fx" aria-hidden="true"><div class="bfx-half bfx-left"></div><div class="bfx-half bfx-right"></div></div>
 
 <!-- Header -->
 <div class="header">
@@ -2251,6 +2264,18 @@ const WORKOUT_OPTIONS = ["웨이트","크로스핏","러닝","클라이밍","필
 const FILTER_WORDS = ["@","인스타","카톡","카카오","010","011","DM","디엠","연락처","번호","instagram","kakao","라인","line","텔레그램","telegram","위챗","wechat","snapchat","스냅챗","전화","휴대폰","핸드폰","문자","톡방","오픈채팅"];
 // 연락처/외부유입 자동 필터 (모듈·일반 스코프 공용)
 window._hasContact = (t) => FILTER_WORDS.some(w => (t || '').toLowerCase().includes(w.toLowerCase()));
+
+// 대숲 입장 이펙트 (대나무 커튼 슈슉 갈라짐)
+window.playBambooEnterFx = function () {
+  const fx = document.getElementById('bamboo-enter-fx');
+  if (!fx) return;
+  fx.classList.remove('bfx-open');
+  fx.style.display = 'block';
+  void fx.offsetWidth;                       // 리플로우 강제 → 트랜지션 재생
+  requestAnimationFrame(() => fx.classList.add('bfx-open'));
+  clearTimeout(window._bfxT);
+  window._bfxT = setTimeout(() => { fx.style.display = 'none'; fx.classList.remove('bfx-open'); }, 780);
+};
 const BOOST_OPTIONS = [
   { label:"3일 부스트", price:5900, desc:"탐색 상단 3일 노출" },
   { label:"7일 부스트", price:9900, desc:"탐색 상단 7일 노출", popular:true },
@@ -2265,7 +2290,7 @@ function goPage(name) {
     document.getElementById('nav-' + n).classList.toggle('active', n === name);
     document.getElementById('navl-' + n).classList.toggle('active', n === name);
   });
-  if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); }
+  if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); if (window.playBambooEnterFx) window.playBambooEnterFx(); }
   if (name === 'crew') renderCrews();
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
