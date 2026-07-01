@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701005 -->
+<!-- cache-bust: v20260701006 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -95,6 +95,8 @@
   .page-head .ph-title { font-size:20px; font-weight:800; letter-spacing:-0.3px; line-height:1.2; }
   .page-head .ph-sub { font-size:12px; color:var(--text-tertiary); margin-top:2px; line-height:1.3; }
   .page-head .ph-action { margin-left:auto; flex-shrink:0; }
+  /* 피드 종목/인증 태그 */
+  .feed-tag { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:600; color:rgba(255,255,255,0.6); background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); padding:3px 9px; border-radius:8px; letter-spacing:-0.2px; }
   .card:active { transform: scale(0.985); background: var(--bg-elevated); }
 
   /* 버튼들 */
@@ -5211,6 +5213,9 @@ function buildPostHTML(p) {
   const heartFill = liked ? '#ff4444' : 'none';
   const displayPhoto = userPhotoCache.get(p.userId) || p.userPhoto || '';
   const isOwnPost = window.currentUser && p.userId === window.currentUser.uid;
+  const _ftags = (p.tags && p.tags.length) ? p.tags.slice(0, 3) : (p.type ? [p.type === 'diet' ? '식단' : '운동'] : []);
+  const _fbadge = (window._milestoneBadge && p.totalCount) ? window._milestoneBadge(p.totalCount) : '';
+  const tagRow = (_ftags.length || _fbadge) ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:0 20px 10px">${_ftags.map(t => `<span class="feed-tag">${t}</span>`).join('')}${_fbadge ? `<span class="feed-tag" style="margin-left:auto">${_fbadge}</span>` : ''}</div>` : '';
   const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `
     <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
@@ -5226,6 +5231,7 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>` : ''}
       </div>
+      ${tagRow}
       ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:5px 9px 5px;display:flex;gap:4px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:9px 11px;display:flex;align-items:center;gap:6px;color:${likeColor};font-size:14px;font-weight:600;font-family:inherit;border-radius:10px;-webkit-tap-highlight-color:transparent">
@@ -6629,11 +6635,14 @@ window.submitFeedPost = async function() {
     const json = await res.json();
     if (!json.success) { showToast('사진 업로드 실패'); restore(); return; }
 
+    let _totalCount = 0;
+    try { const _fc = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid))); _totalCount = _fc.size + 1; } catch (e) {}
     await addDoc(collection(db, 'feed'), {
       text, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
       tags: Array.from(window._composeTags || []),
+      totalCount: _totalCount,
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
