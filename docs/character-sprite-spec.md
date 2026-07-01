@@ -63,6 +63,20 @@ skin #F0C9A0, short dark-brown hair, blue t-shirt, friendly, clean outline
 - 옆방향은 `transform:scaleX(-1)`로 좌우 재사용(현재 이동 코드에 이미 반전 있음).
 - L2로 갈 땐 헤어/상의를 별도 레이어 시트로 두고 z합성(현재 renderCharacter 레이어 개념과 동일).
 
+## 5b. 확정 방향 (2026-07-01)
+- **디폴트 = 귀여운 슬림(GPT룩)** — 넓은 유입·과금. **근육(헬창) = 성장/잠금해제 아이템**(운동 인증↑ 또는 머피로 버프 바디). 운동→캐릭터 성장 루프 + 추가 소비처.
+- **제작: GPT 귀여운 캐릭터를 "정답 룩"으로 확정 → Gemini에 첨부해 4방향+걷기 생산**(Gemini가 4방향 잘 뽑음).
+- 시안 위치: `Desktop/김현수 컴카드/머피브랜딩/머피월드 캐릭터/` (GPT=귀여운 단일 PNG, Gemini=헬창 4방향 jfif).
+
+### 프롬프트 — GPT룩 유지하며 4방향 (Gemini에 GPT 이미지 첨부)
+```
+Attached is my character (cute chibi pixel-art). Keep the EXACT same character — same face, hairstyle, body proportions, colors and cute style. Do NOT redesign it.
+Show THIS character standing idle in 3 poses in one row: 1) facing DOWN (front) 2) facing UP (back, no face) 3) facing RIGHT (side).
+Flat solid magenta #FF00FF background. True pixel art, hard pixels, NO anti-aliasing, no glow, no drop shadow. Same size/alignment for all three.
+```
+걷기 시트: 위와 동일 캐릭터로 "3 rows(down/up/right) × 4 frames(idle,left-step,idle,right-step), grid, magenta bg, hard pixels".
+근육 버전(나중): "same character/face/cute style, BODY more muscular, front view, magenta bg, hard pixels".
+
 ## 6. 다음 액션
 1. **L 레벨 결정**(L1 추천).
 2. 확보 경로 선택(외주 추천 / SD / 오픈에셋).
