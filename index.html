@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701010 -->
+<!-- cache-bust: v20260701011 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -738,6 +738,31 @@
   <div id="crew-explore" style="padding-top:16px;display:none"></div>
 </div>
 
+<!-- 머피월드 (캐릭터 공간) -->
+<div class="page" id="page-char" style="padding:0 0 100px">
+  <div style="padding:18px 20px 0">
+    <div class="page-head" style="justify-content:center;padding-bottom:10px">
+      <span class="ph-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10.5" r="3"/><path d="M6.4 18.5a6 6 0 0 1 11.2 0"/></svg></span>
+      <div><div class="ph-title">머피월드</div></div>
+    </div>
+    <div style="position:relative;height:280px;border-radius:24px;overflow:hidden;background:radial-gradient(120% 75% at 50% 12%, rgba(61,126,255,0.14), transparent 62%), linear-gradient(180deg,#12141b,#0a0a0a);border:1px solid var(--border-subtle);display:flex;align-items:flex-end;justify-content:center">
+      <div style="position:absolute;bottom:40px;left:50%;transform:translateX(-50%);width:150px;height:22px;border-radius:50%;background:radial-gradient(closest-side, rgba(61,126,255,0.4), transparent);filter:blur(3px)"></div>
+      <div id="charworld-avatar" style="position:relative;z-index:1;margin-bottom:44px"></div>
+    </div>
+  </div>
+  <div style="padding:16px 16px 0">
+    <div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">
+      <button class="tab-btn active" onclick="window.charSlot('hair',this)">헤어</button>
+      <button class="tab-btn" onclick="window.charSlot('top',this)">상의</button>
+      <button class="tab-btn" onclick="window.charSlot('color',this)">색상</button>
+      <button class="tab-btn" onclick="window.charSlot('mask',this)">가면</button>
+    </div>
+    <div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>
+    <button onclick="window.charSave()" style="width:100%;margin-top:16px;background:var(--accent);border:none;color:#fff;border-radius:14px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">저장</button>
+    <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-tertiary);line-height:1.6">곧 이 캐릭터로 <b style="color:rgba(255,255,255,0.55)">지도</b>에서 만나요 · 핫플 헬스장에 캐릭터가 모여요</div>
+  </div>
+</div>
+
 <!-- CENTER PAGE -->
 <div class="page" id="page-center" style="padding:0 0 100px">
   <div style="padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -818,13 +843,6 @@
         </div>
       </div>
       <div id="my-verify-status" style="min-height:16px"></div>
-      <div style="margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:10px">
-        <div id="mypage-character" style="width:120px;height:120px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:18px;display:flex;align-items:center;justify-content:center"></div>
-        <button onclick="window.openCharCustomize ? window.openCharCustomize() : (window.showToast&&showToast('캐릭터 꾸미기 준비 중이에요'))" style="display:inline-flex;align-items:center;gap:7px;background:rgba(61,126,255,0.12);border:1px solid rgba(61,126,255,0.3);color:#fff;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-          캐릭터 꾸미기
-        </button>
-      </div>
     </div>
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
@@ -1513,6 +1531,67 @@ window.renderCharacter = function (cfg, opts) {
 window.refreshMyCharacter = function () {
   const el = document.getElementById('mypage-character');
   if (el && window.renderCharacter) el.innerHTML = window.renderCharacter(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT, { size: 104 });
+};
+
+// ===== 머피월드 공간: 캐릭터 표시 + 러프 꾸미기(착용/구매/저장) =====
+window._charDraft = null;
+window._charSlot = 'hair';
+window._charRenderAvatar = function () {
+  const el = document.getElementById('charworld-avatar');
+  if (el && window.renderCharacter) el.innerHTML = window.renderCharacter(window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT), { size: 176 });
+};
+window.renderCharSpace = function () {
+  window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
+  window._charRenderAvatar();
+  window.charSlot('hair');
+};
+window.charSlot = function (slot, btn) {
+  window._charSlot = slot;
+  const tabs = document.querySelectorAll('#charworld-slot-tabs .tab-btn');
+  if (btn) tabs.forEach(b => b.classList.toggle('active', b === btn));
+  const grid = document.getElementById('charworld-items');
+  if (!grid || !window._charDraft) return;
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  if (slot === 'color') {
+    const sw = (kind, c) => `<button onclick="window.charPickColor('${kind}','${c}')" style="height:52px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:${c};cursor:pointer"></button>`;
+    grid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:var(--text-tertiary);font-weight:700">헤어 색</div>' + window.CHAR_COLORS.hair.map(c => sw('hairColor', c)).join('') + '<div style="grid-column:1/-1;font-size:11px;color:var(--text-tertiary);font-weight:700;margin-top:4px">상의 색</div>' + window.CHAR_COLORS.top.map(c => sw('topColor', c)).join('');
+    return;
+  }
+  const items = window.CHAR_ITEMS.filter(i => i.slot === slot);
+  grid.innerHTML = items.map(i => {
+    const has = i.price === 0 || owned.includes(i.id);
+    const equipped = window._charDraft[slot] === i.id;
+    const preview = window.renderCharacter({ ...window.CHAR_DEFAULT, [slot]: i.id, mask: slot === 'mask' ? i.id : null }, { size: 54, masked: slot === 'mask' });
+    const tag = has ? (equipped ? '<span style="color:var(--accent);font-weight:800">착용중</span>' : '보유') : (i.price + '머피');
+    return `<button onclick="window.charPick('${i.id}')" style="display:flex;flex-direction:column;align-items:center;gap:5px;background:rgba(255,255,255,0.04);border:1px solid ${equipped ? 'var(--accent)' : 'rgba(255,255,255,0.1)'};border-radius:14px;padding:10px 6px;cursor:pointer;font-family:inherit"><div style="width:54px;height:54px">${preview}</div><span style="font-size:11px;color:#fff;font-weight:600">${i.name}</span><span style="font-size:10px;color:var(--text-tertiary)">${tag}</span></button>`;
+  }).join('');
+};
+window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRenderAvatar(); };
+window.charPick = async function (id) {
+  const item = window.CHAR_ITEMS.find(x => x.id === id); if (!item || !window._charDraft) return;
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  const has = item.price === 0 || owned.includes(id);
+  if (!has) {
+    const uid = window.currentUser && window.currentUser.uid;
+    if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
+      const ok = await window.murpyConfirm({ title: "'" + item.name + "' 구매", desc: '<b style="color:#F5C24B">' + item.price + '머피</b>로 구매해요', cost: true, confirmText: '구매' });
+      if (!ok) return;
+    }
+    const paid = window.spendCredit ? await window.spendCredit(uid, item.price) : true;
+    if (!paid) { window.showToast && showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+    window._charState.wardrobe = [...owned, id];
+    if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+    window.showToast && showToast("'" + item.name + "' 획득!");
+  }
+  window._charDraft[item.slot] = id;
+  window._charRenderAvatar();
+  window.charSlot(item.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
+};
+window.charSave = function () {
+  if (!window.currentUser) { window.requireLogin && requireLogin('로그인 후 캐릭터를 저장할 수 있어요'); return; }
+  if (window._charPersistCharacter) window._charPersistCharacter(window._charDraft);
+  if (window._charState) window._charState.character = { ...window._charDraft };
+  window.showToast && showToast('캐릭터 저장됨');
 };
 </script>
 
@@ -2321,6 +2400,14 @@ window.refreshMyCharacter = function () {
     </div>
     <span class="nav-label" id="navl-crew">크루</span>
   </button>
+  <button class="nav-btn" onclick="goPage('char')">
+    <div class="nav-icon-wrap" id="nav-char">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="10.5" r="3"/><path d="M6.4 18.5a6 6 0 0 1 11.2 0"/>
+      </svg>
+    </div>
+    <span class="nav-label" id="navl-char">머피월드</span>
+  </button>
   <button class="nav-btn" onclick="goPage('center')" style="display:none">
     <div class="nav-icon-wrap" id="nav-center">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2480,7 +2567,7 @@ const BOOST_OPTIONS = [
 function goPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  ['home','match','bamboo','crew','center'].forEach(n => {
+  ['home','match','bamboo','crew','center','char'].forEach(n => {
     document.getElementById('nav-' + n).classList.toggle('active', n === name);
     document.getElementById('navl-' + n).classList.toggle('active', n === name);
   });
@@ -2489,6 +2576,7 @@ function goPage(name) {
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
   if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
+  if (name === 'char' && window.renderCharSpace) window.renderCharSpace();
 }
 
 function openPanel(id) {
@@ -5483,6 +5571,8 @@ const CREDIT_WELCOME = 10, CREDIT_DAILY = 1, COST_MATCH = 1, COST_BAMBOO = 1;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 window._charState = { character: null, wardrobe: [], ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
+window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); } catch (e) { console.error('char save', e); } };
+window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 
 function _creditDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -6902,7 +6992,6 @@ window.loadMyPageProfile = async () => {
         if (avatar && avatar.style.display !== 'none') avatar.src = data.photoURL;
       }
     }
-    if (window.refreshMyCharacter) window.refreshMyCharacter();
   } catch(e) { console.error('마이페이지 로드 실패:', e); }
 };
 
