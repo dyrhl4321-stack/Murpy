@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701008 -->
+<!-- cache-bust: v20260701009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -818,6 +818,13 @@
         </div>
       </div>
       <div id="my-verify-status" style="min-height:16px"></div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:10px">
+        <div id="mypage-character" style="width:120px;height:120px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:18px;display:flex;align-items:center;justify-content:center"></div>
+        <button onclick="window.openCharCustomize ? window.openCharCustomize() : (window.showToast&&showToast('캐릭터 꾸미기 준비 중이에요'))" style="display:inline-flex;align-items:center;gap:7px;background:rgba(61,126,255,0.12);border:1px solid rgba(61,126,255,0.3);color:#fff;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          캐릭터 꾸미기
+        </button>
+      </div>
     </div>
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn active" onclick="switchMyTab('info', this)">정보</button>
@@ -1502,6 +1509,10 @@ window.renderCharacter = function (cfg, opts) {
   if (cfg.hair && S[cfg.hair]) layers.push(S[cfg.hair](cfg.hairColor || window.CHAR_DEFAULT.hairColor));
   if (opts.masked) { const m = cfg.mask || 'mask_simple'; if (S[m]) layers.push(S[m]()); }
   return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" style="image-rendering:pixelated;display:block" aria-hidden="true">${layers.join('')}</svg>`;
+};
+window.refreshMyCharacter = function () {
+  const el = document.getElementById('mypage-character');
+  if (el && window.renderCharacter) el.innerHTML = window.renderCharacter(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT, { size: 104 });
 };
 </script>
 
@@ -5470,6 +5481,8 @@ window._isConnected = async (otherUid) => {
 window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트). 사용자 충분히 모이면 'enforced'.
 const CREDIT_WELCOME = 10, CREDIT_DAILY = 1, COST_MATCH = 1, COST_BAMBOO = 1;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
+window._charState = { character: null, wardrobe: [], ready: false };
+window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 
 function _creditDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -5490,16 +5503,22 @@ window.ensureCreditsInit = async (uid) => {
     const snap = await getDoc(ref);
     const d = snap.exists() ? snap.data() : {};
     if (typeof d.credits !== 'number') {
-      await setDoc(ref, { credits: CREDIT_WELCOME, creditsLastEarned: '' }, { merge: true });
+      await setDoc(ref, { credits: CREDIT_WELCOME, creditsLastEarned: '', character: { ...window.CHAR_DEFAULT }, wardrobe: [...window.CHAR_FREE] }, { merge: true });
       window._creditState.credits = CREDIT_WELCOME;
       window._creditState.lastEarned = '';
       window._creditState.streak = 0;
+      window._charState.character = { ...window.CHAR_DEFAULT };
+      window._charState.wardrobe = [...window.CHAR_FREE];
     } else {
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
       window._creditState.streak = (typeof d.streak === 'number') ? d.streak : 0;
+      window._charState.character = d.character || { ...window.CHAR_DEFAULT };
+      window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
+      if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
     }
     window._creditState.ready = true;
+    window._charState.ready = true;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.renderStreakUI) window.renderStreakUI();
   } catch (e) {}
@@ -6883,6 +6902,7 @@ window.loadMyPageProfile = async () => {
         if (avatar && avatar.style.display !== 'none') avatar.src = data.photoURL;
       }
     }
+    if (window.refreshMyCharacter) window.refreshMyCharacter();
   } catch(e) { console.error('마이페이지 로드 실패:', e); }
 };
 
