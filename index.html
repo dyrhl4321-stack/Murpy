@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701002 -->
+<!-- cache-bust: v20260701003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1406,6 +1406,40 @@
     <button onclick="closeModal('credit-info-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:12px;padding:8px">닫기</button>
   </div>
 </div>
+
+<!-- 공용 확인 모달 (네이티브 confirm 대체) -->
+<div class="modal-overlay" id="murpy-confirm-modal" onclick="if(event.target===this&&window._murpyConfirmResolve)window._murpyConfirmResolve(false)">
+  <div class="modal-sheet" style="text-align:center">
+    <div id="mc-confirm-icon" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div id="mc-confirm-title" style="font-size:18px;font-weight:800;margin-bottom:8px"></div>
+    <div id="mc-confirm-desc" style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.6;margin-bottom:20px"></div>
+    <div style="display:flex;gap:9px">
+      <button id="mc-confirm-cancel" onclick="window._murpyConfirmResolve&&window._murpyConfirmResolve(false)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">취소</button>
+      <button id="mc-confirm-ok" onclick="window._murpyConfirmResolve&&window._murpyConfirmResolve(true)" style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">확인</button>
+    </div>
+  </div>
+</div>
+<script>
+window._murpyConfirmResolve = null;
+window.murpyConfirm = function (opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const t = document.getElementById('mc-confirm-title');
+    const d = document.getElementById('mc-confirm-desc');
+    const ok = document.getElementById('mc-confirm-ok');
+    const cc = document.getElementById('mc-confirm-cancel');
+    const ic = document.getElementById('mc-confirm-icon');
+    if (t) t.textContent = opts.title || '확인할까요?';
+    if (d) d.innerHTML = opts.desc || '';
+    if (ok) { ok.textContent = opts.confirmText || '확인'; ok.style.background = opts.danger ? '#EF4444' : 'var(--accent)'; }
+    if (cc) cc.textContent = opts.cancelText || '취소';
+    if (ic) ic.innerHTML = (opts.cost && window.murpyTokenSVG) ? window.murpyTokenSVG(40) : '';
+    let done = false;
+    window._murpyConfirmResolve = (v) => { if (done) return; done = true; if (window.closeModal) closeModal('murpy-confirm-modal'); resolve(v); };
+    if (window.openModal) openModal('murpy-confirm-modal'); else resolve(true);
+  });
+};
+</script>
 
 <!-- 인증 스트릭 설명 모달 -->
 <div class="modal-overlay" id="streak-info-modal" onclick="if(event.target===this)closeModal('streak-info-modal')">
@@ -5470,7 +5504,7 @@ window.sendLike = async (toUid, toName, toPhoto) => {
   const me = window.currentUser.uid;
   if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
   if (window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
-    if (!confirm('이 신청에 ' + COST_MATCH + '머피를 사용해요.\n보낼까요?')) return;
+    if (!(await window.murpyConfirm({ title: '같이 운동해요 보내기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>를 사용해요', cost: true, confirmText: '보내기' }))) return;
   }
   if (!(await window.spendCredit(me, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
   try {
@@ -6950,7 +6984,7 @@ window.sendBambooRequest = async (postId, authorUid) => {
     const postSnap = await getDoc(postRef);
     if (!postSnap.exists()) return;
     // 저에요 신청 = 1머피
-    if (!confirm("'저에요'를 보내면 " + COST_MATCH + "머피가 들어요.\n보낼까요?")) return;
+    if (!(await window.murpyConfirm({ title: "'저에요' 보내기", desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>가 들어요', cost: true, confirmText: '보내기' }))) return;
     if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
     const postText = (postSnap.data().text || '').substring(0, 30);
     await updateDoc(postRef, { requesters: arrayUnion(user.uid) });
@@ -7410,7 +7444,7 @@ window._sendBambooMatchRequest = async () => {
   const btn = document.getElementById('bamboo-match-btn');
   if (btn && btn.disabled) return;
   // 매칭 요청 = 1머피 (상대 수락 시 상대도 1머피)
-  if (!confirm('매칭을 신청하면 ' + COST_MATCH + '머피가 들어요.\n상대가 수락하면 서로 공개돼요. 보낼까요?')) return;
+  if (!(await window.murpyConfirm({ title: '매칭 신청하기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>가 들어요 · 상대가 수락하면 서로 공개돼요', cost: true, confirmText: '신청' }))) return;
   if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
   try {
     await updateDoc(doc(db, 'chats', chatId), { matchRequestedBy: user.uid });
@@ -7439,7 +7473,7 @@ window._acceptBambooMatch = async (chatId, requesterUid, notifId) => {
     }
   } catch(e) {}
   // 수락 = 1머피 (요청자도 보낼 때 1머피 씀)
-  if (!confirm('매칭을 수락하면 ' + COST_MATCH + '머피가 들어요.\n서로 프로필이 공개돼요. 수락할까요?')) return;
+  if (!(await window.murpyConfirm({ title: '매칭 수락하기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>가 들어요 · 서로 프로필이 공개돼요', cost: true, confirmText: '수락' }))) return;
   if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
   // 채팅방을 일반 채팅으로 전환
   try { await updateDoc(doc(db, 'chats', chatId), { bambooChat: false, matchedAt: serverTimestamp() }); } catch(e) {}
@@ -8174,7 +8208,7 @@ window.deleteSchedule = async () => {
   const crewId = window._createScheduleCrewId;
   const schedId = window._editScheduleId;
   if (!crewId || !schedId) return;
-  if (!confirm('이 일정을 삭제할까요? 되돌릴 수 없어요.')) return;
+  if (!(await window.murpyConfirm({ title: '일정을 삭제할까요?', desc: '되돌릴 수 없어요', danger: true, confirmText: '삭제' }))) return;
   try {
     await deleteDoc(doc(db, 'crews', crewId, 'schedules', schedId));
     window._editScheduleId = null;
