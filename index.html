@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701012 -->
+<!-- cache-bust: v20260701013 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1554,7 +1554,9 @@ window._charSlot = 'hair';
 window._charPos = { x: 120, y: 150, dir: 1 };
 window._charRenderAvatar = function () {
   const el = document.getElementById('charworld-avatar');
-  if (el && window.renderCharacter) el.innerHTML = window.renderCharacter(window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT), { size: 72 });
+  if (!el || !window.renderCharacter) return;
+  const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
+  el.innerHTML = window.renderCharacter(cfg, { size: 72, masked: !!(cfg && cfg.mask) });
 };
 window._charApplyPos = function () {
   const el = document.getElementById('charworld-avatar'); const room = document.getElementById('charworld-room');
@@ -1615,7 +1617,12 @@ window.charSlot = function (slot, btn) {
     const tag = has ? (equipped ? '<span style="color:var(--accent);font-weight:800">착용중</span>' : '보유') : (i.price + '머피');
     return `<button onclick="window.charPick('${i.id}')" style="display:flex;flex-direction:column;align-items:center;gap:5px;background:rgba(255,255,255,0.04);border:1px solid ${equipped ? 'var(--accent)' : 'rgba(255,255,255,0.1)'};border-radius:14px;padding:10px 6px;cursor:pointer;font-family:inherit"><div style="width:54px;height:54px">${preview}</div><span style="font-size:11px;color:#fff;font-weight:600">${i.name}</span><span style="font-size:10px;color:var(--text-tertiary)">${tag}</span></button>`;
   }).join('');
+  if (slot === 'mask') {
+    const off = !window._charDraft.mask;
+    grid.insertAdjacentHTML('afterbegin', `<button onclick="window.charClearMask()" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:rgba(255,255,255,0.04);border:1px solid ${off ? 'var(--accent)' : 'rgba(255,255,255,0.1)'};border-radius:14px;padding:10px 6px;cursor:pointer;font-family:inherit;min-height:96px"><span style="font-size:11px;color:#fff;font-weight:600">안 씀</span><span style="font-size:10px;color:${off ? 'var(--accent)' : 'var(--text-tertiary)'};font-weight:${off ? 800 : 500}">${off ? '착용중' : '벗기'}</span></button>`);
+  }
 };
+window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
 window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRenderAvatar(); };
 window.charPick = async function (id) {
   const item = window.CHAR_ITEMS.find(x => x.id === id); if (!item || !window._charDraft) return;
