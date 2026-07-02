@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260701014 -->
+<!-- cache-bust: v20260702005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -748,8 +748,8 @@
       <span class="ph-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10.5" r="3"/><path d="M6.4 18.5a6 6 0 0 1 11.2 0"/></svg></span>
       <div><div class="ph-title">머피월드</div></div>
     </div>
-    <div id="charworld-room" style="position:relative;height:300px;border-radius:24px;overflow:hidden;border:1px solid var(--border-subtle);background-color:#12141b;background-image:linear-gradient(rgba(255,255,255,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.035) 1px,transparent 1px);background-size:30px 30px">
-      <div id="charworld-avatar" style="position:absolute;left:120px;top:150px;width:72px;height:72px;transition:left .12s ease, top .12s ease, transform .1s ease;z-index:1"></div>
+    <div id="charworld-room" style="position:relative;width:100%;aspect-ratio:1/1;border-radius:20px;overflow:hidden;border:1px solid var(--border-subtle);background:#0e0f14 center/100% 100% no-repeat;image-rendering:auto">
+      <div id="charworld-avatar" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .12s ease, top .12s ease, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;background-image:url('char/walk.png?v=5');background-repeat:no-repeat;background-size:156px 264px;background-position:0 0;image-rendering:auto;filter:drop-shadow(0 3px 2px rgba(0,0,0,0.35))"></div>
     </div>
     <div style="display:flex;justify-content:center;margin-top:14px">
       <div style="display:grid;grid-template-columns:repeat(3,46px);grid-template-rows:repeat(3,46px);gap:5px">
@@ -765,16 +765,13 @@
       </div>
     </div>
   </div>
-  <div style="padding:16px 16px 0">
-    <div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">
-      <button class="tab-btn active" onclick="window.charSlot('hair',this)">헤어</button>
-      <button class="tab-btn" onclick="window.charSlot('top',this)">상의</button>
-      <button class="tab-btn" onclick="window.charSlot('color',this)">색상</button>
-      <button class="tab-btn" onclick="window.charSlot('mask',this)">가면</button>
+  <div style="padding:14px 16px 0">
+    <div class="tab-bar" id="charworld-hub-tabs">
+      <button class="tab-btn active" onclick="window.charHubTab('me',this)">내 캐릭터</button>
+      <button class="tab-btn" onclick="window.charHubTab('dress',this)">꾸미기</button>
+      <button class="tab-btn" onclick="window.charHubTab('map',this)">지도</button>
     </div>
-    <div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>
-    <button onclick="window.charSave()" style="width:100%;margin-top:16px;background:var(--accent);border:none;color:#fff;border-radius:14px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">저장</button>
-    <div style="text-align:center;margin-top:16px;font-size:12px;color:var(--text-tertiary);line-height:1.6">곧 이 캐릭터로 <b style="color:rgba(255,255,255,0.55)">지도</b>에서 만나요 · 핫플 헬스장에 캐릭터가 모여요</div>
+    <div id="charworld-hub-panel" style="margin-top:16px"></div>
   </div>
 </div>
 
@@ -1511,7 +1508,13 @@ window.collapseBambooCompose = function () {
 
 // ===== 머피 캐릭터 (Phase 1): 카탈로그 · 도트 파츠 · 렌더 =====
 window.CHAR_COLORS = { skin: ['#F0C9A0', '#E0A878', '#C68642'], hair: ['#2B2B2B', '#6B4226', '#C9A227', '#7C3AED'], top: ['#3D7EFF', '#4ADE80', '#F5C24B', '#FF6B6B', '#E5E7EB'] };
-window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', mask: null };
+window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', mask: null, body: 'human' };
+// 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
+window._CHAR_DISPLAY_H = 88;
+window._CHAR_BODIES = {
+  human:   { name: '사람',   src: "char/walk.png?v=5",    cw: 135, ch: 224, code: null },
+  heltori: { name: '헬토리', src: "char/heltori.png?v=2", cw: 175, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' }
+};
 window.CHAR_ITEMS = [
   { id: 'hair_short', slot: 'hair', name: '숏컷', price: 0 },
   { id: 'hair_wave', slot: 'hair', name: '웨이브', price: 2 },
@@ -1551,43 +1554,140 @@ window.refreshMyCharacter = function () {
 // ===== 머피월드 공간: 캐릭터 표시 + 러프 꾸미기(착용/구매/저장) =====
 window._charDraft = null;
 window._charSlot = 'hair';
-window._charPos = { x: 120, y: 150, dir: 1 };
+// 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 3행[아래/위/옆]). 셀→표시 52×88, 옆모습은 왼쪽 향(오른쪽은 미러)
+window._SPR = { w: 52, h: 88, cols: 3, rows: 3 };
+window._charPos = { tc: 7, tr: 10, face: 'down', frame: 0 };
+window._charStepToggle = false;
+// 앞모습 SVG 프리뷰(꾸미기 반영) — 방 캐릭터는 공용 스프라이트라 여기서만 반영
 window._charRenderAvatar = function () {
-  const el = document.getElementById('charworld-avatar');
-  if (!el || !window.renderCharacter) return;
+  const el = document.getElementById('charworld-preview');
+  if (!el) return;
   const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
-  el.innerHTML = window.renderCharacter(cfg, { size: 72, masked: !!(cfg && cfg.mask) });
+  const body = (cfg && cfg.body) || 'human';
+  if (body !== 'human' && window._CHAR_BODIES[body]) {
+    // 고정 캐릭터(헬토리 등): 앞 정지 프레임(down c0) 미리보기
+    const b = window._CHAR_BODIES[body], H = 76, w = Math.round(H * b.cw / b.ch);
+    el.innerHTML = "<div style=\"width:" + w + "px;height:" + H + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 3) + "px;background-position:0 0;image-rendering:auto\"></div>";
+  } else if (window.renderCharacter) {
+    el.innerHTML = window.renderCharacter(cfg, { size: 76, masked: !!(cfg && cfg.mask) });
+  }
 };
+// ===== 필드(맵) + 타일 충돌: 한 칸씩 이동, 막힌 칸(#)엔 못 감(포켓몬/쯔꾸르식) =====
+window._FIELDS = {
+  home: {
+    name: '집', src: "char/fields/field_home.png?v=1", grid: 16,
+    map: [
+      "################",
+      "################",
+      "################",
+      "######......####",
+      "####........####",
+      "####.........#.#",
+      "####...........#",
+      "####...........#",
+      "##.............#",
+      "##.............#",
+      "##.............#",
+      "##.............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "################"
+    ],
+    start: { tc: 7, tr: 10 }
+  }
+};
+window._curField = 'home';
+window._charTileGeom = function () {
+  const room = document.getElementById('charworld-room');
+  const f = window._FIELDS[window._curField] || {};
+  const N = f.grid || 16;
+  const size = room ? (room.clientWidth || 320) : 320;
+  return { N: N, t: size / N };
+};
+window._charWalkable = function (tc, tr) {
+  const f = window._FIELDS[window._curField]; if (!f) return true;
+  if (tr < 0 || tc < 0 || tr >= f.map.length || tc >= f.map[0].length) return false;
+  return f.map[tr][tc] !== '#';
+};
+// 아바타 스프라이트 시트 이미지 교체(캐릭터 종류 바뀔 때만)
+window._charApplySprite = function (body) {
+  const el = document.getElementById('charworld-avatar'); if (!el) return;
+  const b = window._CHAR_BODIES[body] || window._CHAR_BODIES.human;
+  el.style.backgroundImage = "url('" + b.src + "')";
+};
+// 위치/크기/방향 프레임 적용 (타일좌표 → 픽셀, 발끝을 타일 바닥 중앙에 정렬)
 window._charApplyPos = function () {
-  const el = document.getElementById('charworld-avatar'); const room = document.getElementById('charworld-room');
-  if (!el || !room) return;
-  const w = room.clientWidth || 320, h = room.clientHeight || 300, s = 72;
-  window._charPos.x = Math.max(6, Math.min(w - s - 6, window._charPos.x));
-  window._charPos.y = Math.max(6, Math.min(h - s - 6, window._charPos.y));
-  el.style.left = window._charPos.x + 'px';
-  el.style.top = window._charPos.y + 'px';
-  el.style.transform = 'scaleX(' + (window._charPos.dir < 0 ? -1 : 1) + ')';
+  const el = document.getElementById('charworld-avatar'); if (!el) return;
+  const g = window._charTileGeom(), t = g.t;
+  const body = (window._charDraft && window._charDraft.body) || 'human';
+  const b = window._CHAR_BODIES[body] || window._CHAR_BODIES.human;
+  const DH = Math.round(t * 3.4), w = Math.round(DH * b.cw / b.ch);
+  window._SPR.w = w; window._SPR.h = DH;
+  el.style.width = w + 'px'; el.style.height = DH + 'px';
+  el.style.backgroundSize = (w * 3) + 'px ' + (DH * 3) + 'px';
+  const feetX = (window._charPos.tc + 0.5) * t, feetY = (window._charPos.tr + 1) * t;
+  el.style.left = (feetX - w / 2) + 'px';
+  el.style.top = (feetY - DH) + 'px';
+  const face = window._charPos.face || 'down';
+  const row = face === 'up' ? 1 : (face === 'down' ? 0 : 2); // 옆=2행, 시트 왼쪽 향 → 오른쪽만 미러
+  const col = window._charPos.frame || 0;
+  el.style.backgroundPosition = (-col * w) + 'px ' + (-row * DH) + 'px';
+  el.style.transform = 'scaleX(' + (face === 'right' ? -1 : 1) + ')';
 };
 window.charMove = function (dx, dy) {
-  const STEP = 30;
-  if (dx < 0) window._charPos.dir = -1; else if (dx > 0) window._charPos.dir = 1;
-  window._charPos.x += dx * STEP; window._charPos.y += dy * STEP;
+  const prev = window._charPos.face;
+  if (dx < 0) window._charPos.face = 'left'; else if (dx > 0) window._charPos.face = 'right';
+  else if (dy < 0) window._charPos.face = 'up'; else if (dy > 0) window._charPos.face = 'down';
+  const turned = prev && prev !== window._charPos.face;
+  const ntc = window._charPos.tc + dx, ntr = window._charPos.tr + dy;
+  const canMove = window._charWalkable(ntc, ntr);
+  if (canMove) { window._charPos.tc = ntc; window._charPos.tr = ntr; }
+  // 걸음 프레임(1↔2), 이동 끝나면 정지 프레임(0)
+  window._charStepToggle = !window._charStepToggle;
+  window._charPos.frame = window._charStepToggle ? 1 : 2;
   window._charApplyPos();
+  const el = document.getElementById('charworld-avatar');
+  if (el) {
+    el.style.translate = (canMove && window._charStepToggle) ? '0 -1px' : '0 0';
+    if (turned || !canMove) {
+      // 돌 때=가로 스쿼시 팝 / 막히면=세로로 눌림(부딪힘) — 통통거림 줄이려 폭 축소
+      el.style.scale = canMove ? '1.06 0.95' : '0.95 1.04';
+      clearTimeout(window._charSquashTimer);
+      window._charSquashTimer = setTimeout(function () { el.style.scale = '1 1'; }, 110);
+    }
+  }
+  clearTimeout(window._charStepTimer);
+  window._charStepTimer = setTimeout(function () {
+    window._charPos.frame = 0; window._charApplyPos();
+    const e2 = document.getElementById('charworld-avatar');
+    if (e2) e2.style.translate = '0 0';   // 멈추면 바닥으로 정착
+  }, 160);
 };
 window.renderCharSpace = function () {
   window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
+  if (!window._charDraft.body) window._charDraft.body = 'human';
   const room = document.getElementById('charworld-room');
-  const w = room ? (room.clientWidth || 320) : 320;
-  window._charPos = { x: Math.round(w / 2 - 36), y: 150, dir: 1 };
-  window._charRenderAvatar();
+  const f = window._FIELDS[window._curField];
+  if (room && f) room.style.backgroundImage = "url('" + f.src + "')";  // 필드 배경
+  const st = (f && f.start) || { tc: 7, tr: 10 };
+  window._charPos = { tc: st.tc, tr: st.tr, face: 'down', frame: 0 };
+  const el = document.getElementById('charworld-avatar');
+  if (el) { el.style.scale = '1 1'; el.style.translate = '0 0'; }  // 바운스/스쿼시 초기화
+  window._charApplySprite(window._charDraft.body);
   window._charApplyPos();
-  window.charSlot('hair');
+  window.charHubTab('me');   // 기본 진입 = 내 캐릭터 탭
+  if (room && room.animate) room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' }); // 게임 진입 연출
 };
 if (!window._charKeyBound) {
   window._charKeyBound = true;
   document.addEventListener('keydown', function (e) {
     const pc = document.getElementById('page-char');
     if (!pc || !pc.classList.contains('active')) return;
+    // 입력창 포커스/모달 열림 상태에선 이동 금지(코드 입력 중 WASD가 이동으로 먹히는 문제)
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    if (document.querySelector('.modal-overlay.open')) return;
     let dx = 0, dy = 0; const k = e.key;
     if (k === 'ArrowUp' || k === 'w' || k === 'W') dy = -1;
     else if (k === 'ArrowDown' || k === 's' || k === 'S') dy = 1;
@@ -1650,7 +1750,105 @@ window.charSave = function () {
   if (window._charState) window._charState.character = { ...window._charDraft };
   window.showToast && showToast('캐릭터 저장됨');
 };
+// ===== 캐릭터(body) 선택 + 근방단 한정 코드 해금 =====
+window.charPickBody = function (key) {
+  if (!window._charDraft || !window._CHAR_BODIES[key]) return;
+  window._charDraft.body = key;
+  window._charApplySprite(key);
+  window._charPos.face = 'down'; window._charPos.frame = 0;
+  window._charApplyPos();
+  window._charRenderAvatar();      // dress 탭이면 프리뷰 갱신(아니면 무시)
+  window.charRenderRoster();       // 로스터 '착용중' 갱신
+};
+window.openCharCodeModal = function (key) {
+  window._charCodeTarget = key;
+  const b = window._CHAR_BODIES[key] || {};
+  const t = document.getElementById('char-code-title'); if (t) t.textContent = (b.name || '캐릭터') + ' 잠금해제';
+  const inp = document.getElementById('char-code-input'); if (inp) inp.value = '';
+  if (window.openModal) openModal('char-code-modal');
+  if (inp) setTimeout(function () { inp.focus(); }, 120);
+};
+window.submitCharCode = function () {
+  const key = window._charCodeTarget; const b = window._CHAR_BODIES[key];
+  if (!b) return;
+  const inp = document.getElementById('char-code-input');
+  const val = (inp ? inp.value : '').trim().toUpperCase();
+  if (!b.code || val !== String(b.code).toUpperCase()) { window.showToast && showToast('코드가 올바르지 않아요'); return; }
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  if (!owned.includes(key)) {
+    window._charState.wardrobe = [...owned, key];
+    if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+  }
+  if (window.closeModal) closeModal('char-code-modal');
+  window.showToast && showToast("'" + b.name + "' 해금! 근방단 한정 캐릭터예요");
+  window.charPickBody(key);
+};
+// ===== 머피월드 허브 탭: 내 캐릭터 / 꾸미기 / 지도 =====
+window.charRenderRoster = function () {
+  const grid = document.getElementById('charworld-roster'); if (!grid || !window._charDraft) return;
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  const cur = window._charDraft.body || 'human';
+  const lockSvg = '<span style="position:absolute;top:6px;right:6px;display:inline-flex"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>';
+  grid.innerHTML = Object.keys(window._CHAR_BODIES).map(key => {
+    const b = window._CHAR_BODIES[key];
+    const unlocked = !b.code || owned.includes(key);
+    const equipped = cur === key;
+    const th = 64, tw = Math.round(th * b.cw / b.ch);
+    const thumb = "<div style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 3) + "px;background-position:0 0;image-rendering:auto;" + (unlocked ? "" : "filter:grayscale(1) brightness(.55);") + "\"></div>";
+    const tag = equipped ? '<span style="color:var(--accent);font-weight:800">착용중</span>'
+      : unlocked ? '<span style="color:var(--text-tertiary)">착용</span>'
+        : '<span style="color:#F5C24B;font-weight:700">' + (b.tag || '한정') + '</span>';
+    const action = unlocked ? ("window.charPickBody('" + key + "')") : ("window.openCharCodeModal('" + key + "')");
+    return "<button onclick=\"" + action + "\" style=\"position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(255,255,255,0.04);border:1px solid " + (equipped ? 'var(--accent)' : 'rgba(255,255,255,0.1)') + ";border-radius:14px;padding:12px 6px;cursor:pointer;font-family:inherit\">" + (unlocked ? "" : lockSvg) + "<div style=\"height:64px;display:flex;align-items:flex-end\">" + thumb + "</div><span style=\"font-size:12px;color:#fff;font-weight:700\">" + b.name + "</span><span style=\"font-size:10px\">" + tag + "</span></button>";
+  }).join('');
+};
+window.charHubTab = function (name, btn) {
+  window._charHub = name;
+  const tabs = document.querySelectorAll('#charworld-hub-tabs .tab-btn');
+  const order = ['me', 'dress', 'map'];
+  tabs.forEach((b, i) => b.classList.toggle('active', btn ? b === btn : order[i] === name));
+  const panel = document.getElementById('charworld-hub-panel'); if (!panel) return;
+  if (name === 'me') {
+    panel.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:12px">방에서 걸어다닐 캐릭터를 골라요</div><div id="charworld-roster" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>';
+    window.charRenderRoster();
+  } else if (name === 'dress') {
+    const body = (window._charDraft && window._charDraft.body) || 'human';
+    panel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:14px">'
+      + '<div id="charworld-preview" style="width:76px;height:76px;flex-shrink:0"></div>'
+      + '<div style="font-size:12px;color:var(--text-tertiary);line-height:1.5;max-width:180px">꾸민 모습은 <b style="color:rgba(255,255,255,0.6)">앞모습</b>에 반영돼요<br>방에선 도트로 걸어다녀요</div></div>'
+      + '<div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">'
+      + '<button class="tab-btn active" onclick="window.charSlot(\'hair\',this)">헤어</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'top\',this)">상의</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'color\',this)">색상</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'mask\',this)">가면</button></div>'
+      + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
+      + '<button onclick="window.charSave()" style="width:100%;margin-top:16px;background:var(--accent);border:none;color:#fff;border-radius:14px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">저장</button>';
+    if (body !== 'human') {
+      panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:var(--text-tertiary);line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:rgba(255,255,255,0.55)">고정 캐릭터</b>예요 · 꾸미기는 사람 캐릭터에서!</div>');
+    }
+    window._charRenderAvatar();
+    window.charSlot('hair');
+  } else {
+    panel.innerHTML = '<div style="text-align:center;padding:34px 18px;color:var(--text-tertiary)">'
+      + '<div style="display:flex;justify-content:center;margin-bottom:14px"><span style="width:52px;height:52px;border-radius:15px;background:rgba(61,126,255,0.12);display:inline-flex;align-items:center;justify-content:center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21"/><line x1="8" y1="3" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="21"/></svg></span></div>'
+      + '<div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:6px">지도 준비 중</div>'
+      + '<div style="font-size:13px;line-height:1.6">집 · 헬스장 · 한강 러닝존 · 테니스 · 골프…<br>근방단 핫플에 캐릭터가 모여요. 곧!</div></div>';
+  }
+};
 </script>
+
+<!-- 캐릭터 잠금해제 코드 모달 (근방단 한정) -->
+<div class="modal-overlay" id="char-code-modal" onclick="if(event.target===this)closeModal('char-code-modal')">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="display:flex;justify-content:center;margin-bottom:12px"><span style="display:inline-flex;width:52px;height:52px;border-radius:15px;background:rgba(245,194,75,0.16);align-items:center;justify-content:center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span></div>
+    <div id="char-code-title" style="font-size:19px;font-weight:800;margin-bottom:6px">캐릭터 잠금해제</div>
+    <div style="font-size:13px;color:#999;line-height:1.6;margin-bottom:18px">근방단에게 받은 <b style="color:#F5C24B">코드</b>를 입력하면<br>한정판 캐릭터가 열려요</div>
+    <input id="char-code-input" placeholder="코드 입력" autocomplete="off" onkeydown="if(event.key==='Enter')window.submitCharCode()" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:14px;font-size:15px;color:#fff;text-align:center;letter-spacing:1px;outline:none;font-family:inherit;text-transform:uppercase;margin-bottom:14px">
+    <button onclick="window.submitCharCode()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">잠금해제</button>
+    <button onclick="closeModal('char-code-modal')" style="width:100%;background:none;border:none;color:#555;font-size:14px;cursor:pointer;margin-top:10px;padding:8px">닫기</button>
+  </div>
+</div>
 
 <!-- 인증 스트릭 설명 모달 -->
 <div class="modal-overlay" id="streak-info-modal" onclick="if(event.target===this)closeModal('streak-info-modal')">
