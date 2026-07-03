@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260703022 -->
+<!-- cache-bust: v20260703023 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -820,8 +820,8 @@
 
 <!-- 머피월드 (캐릭터 공간) -->
 <div class="page" id="page-char" style="padding:0 0 100px">
-  <div style="padding:16px 16px 0">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+  <div style="padding:12px 16px 0">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div class="ph-title" style="font-size:16px;color:#fff">머피월드</div>
       <div class="mw-hud">
         <span class="mw-coin" title="머피"><img src="char/coin.png?v=1" alt="머피" style="width:17px;height:17px;image-rendering:pixelated;display:block"><b id="mw-coin-amt" class="mw-num">0</b></span>
@@ -833,27 +833,23 @@
         <div id="charworld-avatar" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .12s ease, top .12s ease, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;background-image:url('char/walk.png?v=6');background-repeat:no-repeat;background-size:156px 264px;background-position:0 0;image-rendering:auto;filter:drop-shadow(0 3px 2px rgba(0,0,0,0.35))"></div>
       </div>
     </div>
-    <div style="display:flex;justify-content:center;margin-top:14px">
-      <div style="display:grid;grid-template-columns:repeat(3,46px);grid-template-rows:repeat(3,46px);gap:5px">
-        <span></span>
-        <button class="dpad-btn" onclick="window.charMove(0,-1)" aria-label="위"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></button>
-        <span></span>
-        <button class="dpad-btn" onclick="window.charMove(-1,0)" aria-label="왼쪽"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
-        <span></span>
-        <button class="dpad-btn" onclick="window.charMove(1,0)" aria-label="오른쪽"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
-        <span></span>
-        <button class="dpad-btn" onclick="window.charMove(0,1)" aria-label="아래"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
-        <span></span>
+    <div style="display:flex;justify-content:center;margin-top:9px">
+      <div id="mw-dragpad" style="width:100%;max-width:340px;height:64px;position:relative;touch-action:none;-webkit-user-select:none;user-select:none;background:#1b2233;border:3px solid #05070c;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:grab">
+        <div id="mw-dragpad-hint" style="display:flex;align-items:center;gap:8px;font-family:'Galmuri11',sans-serif;font-size:12px;color:#8a93a8;pointer-events:none;transition:opacity .12s">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7aa4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M4 12h16M12 4 9.5 6.5M12 4l2.5 2.5M12 20l-2.5-2.5M12 20l2.5-2.5M4 12l2.5-2.5M4 12l2.5 2.5M20 12l-2.5-2.5M20 12l-2.5 2.5"/></svg>
+          여기를 드래그해서 이동
+        </div>
+        <div id="mw-dragpad-knob" style="position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(61,126,255,0.22);border:2px solid #3D7EFF;transform:translate(-50%,-50%);opacity:0;transition:opacity .1s;pointer-events:none"></div>
       </div>
     </div>
   </div>
-  <div style="padding:14px 16px 0">
+  <div style="padding:10px 16px 0">
     <div class="tab-bar" id="charworld-hub-tabs">
       <button class="tab-btn active" onclick="window.charHubTab('me',this)">내 캐릭터</button>
       <button class="tab-btn" onclick="window.charHubTab('dress',this)">꾸미기</button>
       <button class="tab-btn" onclick="window.charHubTab('map',this)">지도</button>
     </div>
-    <div id="charworld-hub-panel" style="margin-top:16px"></div>
+    <div id="charworld-hub-panel" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -1745,7 +1741,59 @@ window.charMove = function (dx, dy) {
     const e2 = document.getElementById('charworld-avatar');
     if (e2) e2.style.translate = '0 0';   // 멈추면 바닥으로 정착
   }, 160);
+  return canMove;   // 이동 성공(true)/장애물에 막힘(false) — 드래그패드 햅틱 판정용
 };
+
+// ===== 4방향 드래그(스와이프) 조작 패드 + 상황별 햅틱 =====
+(function () {
+  const STEP_MS = 165;   // 걸음/이동 주기
+  const DEADZONE = 15;   // 방향 판정 최소 드래그(px)
+  const DXY = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  let active = false, sx = 0, sy = 0, dir = null, loop = null;
+  function vibe(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+  window._hapticStep = function () { vibe(10); };              // 정상 이동: 짧고 가벼운 톡
+  window._hapticBlocked = function () { vibe([14, 26, 14]); }; // 막힘: 끊어지는 패턴(계속 반복)
+  function computeDir(dx, dy) {
+    if (Math.abs(dx) < DEADZONE && Math.abs(dy) < DEADZONE) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  }
+  function tick() {
+    if (!dir) return;
+    const d = DXY[dir];
+    const moved = window.charMove(d[0], d[1]);
+    if (moved) window._hapticStep(); else window._hapticBlocked();
+  }
+  function startLoop() { if (loop) return; tick(); loop = setInterval(tick, STEP_MS); }
+  function stopLoop() { if (loop) { clearInterval(loop); loop = null; } dir = null; }
+  function knob(show, cx, cy) {
+    const k = document.getElementById('mw-dragpad-knob'), h = document.getElementById('mw-dragpad-hint');
+    if (h) h.style.opacity = show ? '0' : '1';
+    if (!k) return;
+    k.style.opacity = show ? '1' : '0';
+    if (show && cx != null) {
+      const pad = document.getElementById('mw-dragpad'); const r = pad.getBoundingClientRect();
+      k.style.left = Math.max(0, Math.min(r.width, cx - r.left)) + 'px';
+      k.style.top = Math.max(0, Math.min(r.height, cy - r.top)) + 'px';
+    }
+  }
+  window._initDragpad = function () {
+    const pad = document.getElementById('mw-dragpad');
+    if (!pad || pad._bound) return; pad._bound = true;
+    const onStart = (e) => { const t = e.touches ? e.touches[0] : e; active = true; sx = t.clientX; sy = t.clientY; dir = null; knob(true, t.clientX, t.clientY); startLoop(); if (e.cancelable) e.preventDefault(); };
+    const onMove = (e) => { if (!active) return; const t = e.touches ? e.touches[0] : e; dir = computeDir(t.clientX - sx, t.clientY - sy); knob(true, t.clientX, t.clientY); if (e.cancelable) e.preventDefault(); };
+    const onEnd = (e) => { if (!active) return; active = false; stopLoop(); knob(false); if (e && e.cancelable) e.preventDefault(); };
+    pad.addEventListener('touchstart', onStart, { passive: false });
+    pad.addEventListener('touchmove', onMove, { passive: false });
+    pad.addEventListener('touchend', onEnd, { passive: false });
+    pad.addEventListener('touchcancel', onEnd, { passive: false });
+    // 데스크탑(테스트)용 마우스
+    pad.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', (e) => { if (active) onMove(e); });
+    window.addEventListener('mouseup', (e) => { if (active) onEnd(e); });
+  };
+  if (document.readyState !== 'loading') window._initDragpad();
+  else document.addEventListener('DOMContentLoaded', window._initDragpad);
+})();
 window.renderCharSpace = function () {
   window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
   if (!window._charDraft.body) window._charDraft.body = 'human';
@@ -1758,6 +1806,7 @@ window.renderCharSpace = function () {
   if (el) { el.style.scale = '1 1'; el.style.translate = '0 0'; }  // 바운스/스쿼시 초기화
   window._charApplySprite(window._charDraft.body);
   window._charApplyPos();
+  window._initDragpad && window._initDragpad();   // 드래그 조작 패드 바인딩(멱등)
   window.mwUpdateCoin();      // 머피 HUD 잔액
   window.charHubTab('me');   // 기본 진입 = 내 캐릭터 탭
   if (room && room.animate) room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' }); // 게임 진입 연출
