@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260703021 -->
+<!-- cache-bust: v20260703022 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -6381,6 +6381,10 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
   const isSelf = userId === window.currentUser?.uid;
   const matched = isSelf || await window.isMatched(userId);
+  // 상호 사진 잠금: 내가 올린 프로필 사진 수만큼만 상대 사진 열람 가능
+  const _myP = window._cachedProfile || {};
+  const myPhotoCount = [_myP.photoURL, ...(_myP.photos || []), ...(_myP.workoutPhotos || [])].filter(Boolean).length;
+  const visibleCount = isSelf ? cards.length : Math.max(1, myPhotoCount);
   let posts = [], totalCnt = 0, monthCnt = 0;
   try {
     const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', userId)));
@@ -6395,8 +6399,19 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const verifiedBadge = d.faceVerified
     ? '<div style="position:absolute;top:12px;right:12px;z-index:3;background:rgba(0,0,0,0.5);backdrop-filter:blur(10px);border-radius:8px;padding:5px 10px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:var(--gold)">' + _SHIELD_SVG + '인증완료</div>'
     : '';
+  const _lockSvg = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
   const slidesHTML = cards.length
-    ? cards.map(u => `<div style="flex:0 0 100%;aspect-ratio:1;background:#111"><img src="${window._cdnImg(u,720)}" draggable="false" decoding="async" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
+    ? cards.map((u, i) => (!isSelf && i >= visibleCount)
+        ? `<div style="flex:0 0 100%;aspect-ratio:1;background:#111;position:relative;overflow:hidden">
+            <img src="${window._cdnImg(u,50)}" draggable="false" style="width:100%;height:100%;object-fit:cover;filter:blur(24px) brightness(0.55);transform:scale(1.15);pointer-events:none">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px">
+              ${_lockSvg}
+              <div style="font-size:15px;font-weight:800;color:#fff;margin-top:13px;line-height:1.4">사진이 잠겨 있어요</div>
+              <div style="font-size:12.5px;color:rgba(255,255,255,0.72);margin-top:7px;line-height:1.55">내가 올린 프로필 사진 <b style="color:#fff">${myPhotoCount}장</b>만큼만<br>상대 사진을 볼 수 있어요</div>
+              <button onclick="closePanel('user-profile-panel');openPanel('mypage-panel')" style="margin-top:16px;background:#3D7EFF;color:#fff;border:none;border-radius:11px;padding:11px 20px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">내 사진 더 올리기</button>
+            </div>
+          </div>`
+        : `<div style="flex:0 0 100%;aspect-ratio:1;background:#111"><img src="${window._cdnImg(u,720)}" draggable="false" decoding="async" style="width:100%;height:100%;object-fit:cover;pointer-events:none" onerror="this.style.display='none'"></div>`).join('')
     : `<div style="flex:0 0 100%;aspect-ratio:1;background:linear-gradient(135deg,#1a1f2e,#0d1117);display:flex;align-items:center;justify-content:center"><img src="char/dumbbell_blue.png?v=2" style="width:72px;height:auto;opacity:0.95" alt="덤벨"></div>`;
   const dotsHTML = cards.length > 1
     ? `<div style="position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:center;gap:5px;z-index:3">${cards.map((_, i) => `<div class="up-dot" style="height:6px;border-radius:${i === 0 ? '3px' : '50%'};transition:all .25s;width:${i === 0 ? '18px' : '6px'};background:${i === 0 ? '#fff' : 'rgba(255,255,255,0.4)'}"></div>`).join('')}</div>`
