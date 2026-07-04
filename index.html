@@ -1776,9 +1776,16 @@ window.charMove = function (dx, dy) {
   const el = document.getElementById('charworld-avatar');
   if (el) {
     el.style.translate = (canMove && window._charStepToggle) ? '0 -1px' : '0 0';
-    if (turned || !canMove) {
-      // 돌 때=가로 스쿼시 팝 / 막히면=세로로 눌림(부딪힘) — 통통거림 줄이려 폭 축소
-      el.style.scale = canMove ? '1.06 0.95' : '0.95 1.04';
+    if (canMove) {
+      window._charWasBlocked = false;
+      if (turned) {   // 방향 전환 팝(가로 스쿼시) — 이동 성공 시에만
+        el.style.scale = '1.06 0.95';
+        clearTimeout(window._charSquashTimer);
+        window._charSquashTimer = setTimeout(function () { el.style.scale = '1 1'; }, 110);
+      }
+    } else if (!window._charWasBlocked) {   // 벽에 '첫' 부딪힘에만 눌림 — 계속 밀 땐 반복 안 함
+      window._charWasBlocked = true;
+      el.style.scale = '0.95 1.04';
       clearTimeout(window._charSquashTimer);
       window._charSquashTimer = setTimeout(function () { el.style.scale = '1 1'; }, 110);
     }
@@ -1817,6 +1824,7 @@ window.charMove = function (dx, dy) {
   window._mwStopDir = function (dir) {
     if (dir && dir !== curDir) return;
     curDir = null;
+    window._charWasBlocked = false;   // 멈추면 리셋 → 다시 벽 밀 때 첫 부딪힘 눌림 재생
     if (loop) { clearInterval(loop); loop = null; }
     if (window._charPos) {
       window._charPos.frame = 0; window._charApplyPos && window._charApplyPos();
