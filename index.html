@@ -1666,18 +1666,27 @@ window._charEquippedSheets = function (cfg) {
   return out;
 };
 window._charStepToggle = false;
-// 앞모습 SVG 프리뷰(꾸미기 반영) — 방 캐릭터는 공용 스프라이트라 여기서만 반영
+// 앞모습 프리뷰 = 오버월드와 동일 시트(down/정지 프레임) 겹 합성 → WYSIWYG.
+// 시트가 있는 슬롯은 시트로, 없으면(SVG전용) 아래 renderCharacter 폴백에 맡김.
 window._charRenderAvatar = function () {
   const el = document.getElementById('charworld-preview');
   if (!el) return;
   const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
-  const body = (cfg && cfg.body) || 'human';
-  if (body !== 'human' && window._CHAR_BODIES[body]) {
-    // 고정 캐릭터(헬토리 등): 앞 정지 프레임(down c0) 미리보기
-    const b = window._CHAR_BODIES[body], H = 76, w = Math.round(H * b.cw / b.ch);
-    el.innerHTML = "<div style=\"width:" + w + "px;height:" + H + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 3) + "px;background-position:0 0;image-rendering:auto\"></div>";
+  const b = window._CHAR_BODIES[(cfg && cfg.body) || 'human'] || window._CHAR_BODIES.human;
+  const H = window._CHAR_DISPLAY_H || 88, w = Math.round(H * b.cw / b.ch);
+  const sheets = window._charEquippedSheets(cfg);
+  const hasSheet = window._CHAR_LAYER_ORDER.some(function (s) { return s !== 'body' && sheets[s]; });
+  const isNonHuman = !!(cfg && cfg.body && cfg.body !== 'human');
+  if (b.src && (hasSheet || isNonHuman)) {
+    // 시트 합성(down=row0, col0). 겹을 절대배치로 쌓음.
+    const layer = function (url) {
+      return "<div style=\"position:absolute;left:0;top:0;width:" + w + "px;height:" + H + "px;background-image:url('" + url + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 3) + "px;background-position:0 0\"></div>";
+    };
+    let html = "<div style=\"position:relative;width:" + w + "px;height:" + H + "px;margin:0 auto\">";
+    window._CHAR_LAYER_ORDER.forEach(function (s) { if (sheets[s]) html += layer(sheets[s]); });
+    el.innerHTML = html + "</div>";
   } else if (window.renderCharacter) {
-    el.innerHTML = window.renderCharacter(cfg, { size: 76, masked: !!(cfg && cfg.mask) });
+    el.innerHTML = window.renderCharacter(cfg, { size: 76, masked: !!(cfg && cfg.mask) });   // SVG 폴백
   }
 };
 // ===== 필드(맵) + 타일 충돌: 한 칸씩 이동, 막힌 칸(#)엔 못 감(포켓몬/쯔꾸르식) =====
@@ -1998,7 +2007,7 @@ window.charHubTab = function (name, btn) {
     panel.innerHTML =
       '<div style="display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:14px">'
       + '<div id="charworld-preview" style="width:76px;height:76px;flex-shrink:0"></div>'
-      + '<div style="font-size:12px;color:var(--text-tertiary);line-height:1.5;max-width:180px">꾸민 모습은 <b style="color:rgba(255,255,255,0.6)">앞모습</b>에 반영돼요<br>방에선 도트로 걸어다녀요</div></div>'
+      + '<div style="font-size:12px;color:var(--text-tertiary);line-height:1.5;max-width:180px">고른 아이템이 <b style="color:rgba(255,255,255,0.6)">앞모습과 방 캐릭터</b>에<br>똑같이 반영돼요</div></div>'
       + '<div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">'
       + '<button class="tab-btn active" onclick="window.charSlot(\'hair\',this)">헤어</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'top\',this)">상의</button>'
