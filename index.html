@@ -1586,7 +1586,7 @@ window.collapseBambooCompose = function () {
 
 // ===== 머피 캐릭터 (Phase 1): 카탈로그 · 도트 파츠 · 렌더 =====
 window.CHAR_COLORS = { skin: ['#F0C9A0', '#E0A878', '#C68642'], hair: ['#2B2B2B', '#6B4226', '#C9A227', '#7C3AED'], top: ['#3D7EFF', '#4ADE80', '#F5C24B', '#FF6B6B', '#E5E7EB'] };
-window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', mask: null, body: 'human' };
+window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, hat: null, mask: null, body: 'human' };
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
@@ -1887,12 +1887,20 @@ window.charSlot = function (slot, btn) {
     const sub = has ? (equipped ? '<span class="mw-sub on">착용중</span>' : '<span class="mw-sub">보유</span>') : ('<span class="mw-sub gold">' + window._mwCoinImg + i.price + '</span>');
     return `<button class="mw-card${equipped ? ' equipped' : ''}" onclick="window.charPick('${i.id}')"><div style="width:54px;height:54px">${preview}</div><span class="mw-name">${i.name}</span>${sub}</button>`;
   }).join('');
-  if (slot === 'mask') {
-    const off = !window._charDraft.mask;
-    grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="window.charClearMask()" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
+  if (['hair', 'top', 'bottom', 'shoes', 'hat', 'mask'].includes(slot)) {
+    const isMask = slot === 'mask';
+    const off = isMask ? !window._charDraft.mask : !window._charDraft[slot];
+    const onclick = isMask ? 'window.charClearMask()' : "window.charClearSlot('" + slot + "')";
+    grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
 };
 window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
+window.charClearSlot = function (slot) {
+  if (!window._charDraft) return;
+  window._charDraft[slot] = null;
+  window._charRenderAvatar(); window._charApplyPos();   // 프리뷰 + 걷는 캐릭터 반영
+  window.charSlot(slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
+};
 window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRenderAvatar(); };
 window.charPick = async function (id) {
   const item = window.CHAR_ITEMS.find(x => x.id === id); if (!item || !window._charDraft) return;
@@ -1912,6 +1920,7 @@ window.charPick = async function (id) {
   }
   window._charDraft[item.slot] = id;
   window._charRenderAvatar();
+  window._charApplyPos();     // 걷는 캐릭터에 즉시 반영
   window.charSlot(item.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
 window.charSave = function () {
@@ -1993,6 +2002,9 @@ window.charHubTab = function (name, btn) {
       + '<div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">'
       + '<button class="tab-btn active" onclick="window.charSlot(\'hair\',this)">헤어</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'top\',this)">상의</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'bottom\',this)">하의</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'shoes\',this)">신발</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'hat\',this)">모자</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'color\',this)">색상</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'mask\',this)">가면</button></div>'
       + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
