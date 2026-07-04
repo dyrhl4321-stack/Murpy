@@ -6,7 +6,7 @@
 
 ## 1. 목표 (What & Why)
 
-머피월드에서 걷는 오버월드 캐릭터에 **머리·상의·하의·모자**를 **자유롭게 조합**해 입히고,
+머피월드에서 걷는 오버월드 캐릭터에 **머리·상의·하의·모자·신발**을 **자유롭게 조합**해 입히고,
 장착을 바꾸면 **걷는 애니메이션이 유지된 채 실시간으로 반영**되게 한다.
 목적은 "운동 → 머피 적립 → 캐릭터 꾸미기"라는 동적 보상 루프(리텐션)를 뚫는 것.
 
@@ -53,11 +53,11 @@
 ### 4.1 슬롯과 그리는 순서 (뒤→앞 z-index)
 
 ```
-body(몸통) → bottom(하의) → top(상의) → hair(머리) → hat(모자)
+body(몸통) → bottom(하의) → shoes(신발) → top(상의) → hair(머리) → hat(모자)
 ```
 
 - 각 슬롯은 독립된 `<div>` 겹. 안 입은 슬롯은 그 겹을 숨김(`display:none`).
-- `hair`가 `top`보다 위(머리가 어깨 위), `hat`이 `hair`보다 위. `bottom`은 `top`보다 아래(하의가 상의 밑단 아래).
+- `hair`가 `top`보다 위(머리가 어깨 위), `hat`이 `hair`보다 위. `bottom`은 `top`보다 아래(하의가 상의 밑단 아래). `shoes`는 `bottom` 위(신발이 바지 밑단을 덮음)이되 발쪽이라 `top`과는 겹치지 않음.
 
 ### 4.2 HTML 구조 변경
 
@@ -95,7 +95,7 @@ body(몸통) → bottom(하의) → top(상의) → hair(머리) → hat(모자)
 
 `character`에 슬롯 필드 확장(기존 `hair`,`top` 재활용 + `bottom`,`hat` 신설):
 ```
-character = { body, skin, hair, hairColor, top, topColor, bottom, hat, mask }
+character = { body, skin, hair, hairColor, top, topColor, bottom, hat, shoes, mask }
 ```
 - 값은 각 슬롯의 아이템 id(또는 null=안 입음). id → 시트 URL은 `CHAR_ITEMS`가 갖는다.
 - `CHAR_ITEMS` 항목에 `sheet` 필드 추가(오버월드 겹용). 정면 SVG(`CHAR_SHAPES`)는 프리뷰 폴백으로만.
