@@ -1635,6 +1635,31 @@ window._charSlot = 'hair';
 // 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 3행[아래/위/옆]). 셀→표시 52×88, 옆모습은 왼쪽 향(오른쪽은 미러)
 window._SPR = { w: 52, h: 88, cols: 3, rows: 3 };
 window._charPos = { tc: 7, tr: 10, face: 'down', frame: 0 };
+// ===== 다층 의상 레이어 =====
+window._CHAR_LAYER_ORDER = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat']; // 뒤→앞 z순서
+window._charBuildLayers = function () {
+  const host = document.getElementById('charworld-avatar'); if (!host) return;
+  if (host._layersBuilt) return;
+  host.style.backgroundImage = 'none';           // 컨테이너화: 자체 배경 제거
+  window._CHAR_LAYER_ORDER.forEach(function (slot, i) {
+    const d = document.createElement('div');
+    d.className = 'cw-layer'; d.dataset.slot = slot;
+    d.style.cssText = 'position:absolute;left:0;top:0;background-repeat:no-repeat;image-rendering:auto;pointer-events:none;z-index:' + i;
+    host.appendChild(d);
+  });
+  host._layersBuilt = true;
+};
+window._charEquippedSheets = function (cfg) {
+  cfg = cfg || {};
+  const b = window._CHAR_BODIES[cfg.body || 'human'] || window._CHAR_BODIES.human;
+  const out = { body: b.src, bottom: null, shoes: null, top: null, hair: null, hat: null };
+  ['bottom', 'shoes', 'top', 'hair', 'hat'].forEach(function (slot) {
+    const id = cfg[slot]; if (!id) return;
+    const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
+    out[slot] = (item && item.sheet) ? item.sheet : null;   // 시트 없는(SVG전용) 아이템은 겹 없음
+  });
+  return out;
+};
 window._charStepToggle = false;
 // 앞모습 SVG 프리뷰(꾸미기 반영) — 방 캐릭터는 공용 스프라이트라 여기서만 반영
 window._charRenderAvatar = function () {
@@ -1688,30 +1713,38 @@ window._charWalkable = function (tc, tr) {
   if (tr < 0 || tc < 0 || tr >= f.map.length || tc >= f.map[0].length) return false;
   return f.map[tr][tc] !== '#';
 };
-// 아바타 스프라이트 시트 이미지 교체(캐릭터 종류 바뀔 때만)
-window._charApplySprite = function (body) {
-  const el = document.getElementById('charworld-avatar'); if (!el) return;
-  const b = window._CHAR_BODIES[body] || window._CHAR_BODIES.human;
-  el.style.backgroundImage = "url('" + b.src + "')";
-};
-// 위치/크기/방향 프레임 적용 (타일좌표 → 픽셀, 발끝을 타일 바닥 중앙에 정렬)
+// 캐릭터 종류 변경 시 겹 다시 반영 (몸통 시트는 _charEquippedSheets가 cfg.body로 처리)
+window._charApplySprite = function (/* body */) { window._charApplyPos && window._charApplyPos(); };
+// 타일좌표 → 픽셀 + 방향/프레임을 모든 겹에 복사. 발끝을 타일 바닥 중앙에 정렬.
 window._charApplyPos = function () {
-  const el = document.getElementById('charworld-avatar'); if (!el) return;
+  const host = document.getElementById('charworld-avatar'); if (!host) return;
+  window._charBuildLayers();
   const g = window._charTileGeom(), t = g.t;
-  const body = (window._charDraft && window._charDraft.body) || 'human';
-  const b = window._CHAR_BODIES[body] || window._CHAR_BODIES.human;
+  const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) || {};
+  const b = window._CHAR_BODIES[cfg.body || 'human'] || window._CHAR_BODIES.human;
   const DH = Math.round(t * 3.4), w = Math.round(DH * b.cw / b.ch);
   window._SPR.w = w; window._SPR.h = DH;
-  el.style.width = w + 'px'; el.style.height = DH + 'px';
-  el.style.backgroundSize = (w * 3) + 'px ' + (DH * 3) + 'px';
+  // 컨테이너: 크기/위치/미러 (바운스=translate, 스쿼시=scale 는 charMove가 별도 적용)
+  host.style.width = w + 'px'; host.style.height = DH + 'px';
   const feetX = (window._charPos.tc + 0.5) * t, feetY = (window._charPos.tr + 1) * t;
-  el.style.left = (feetX - w / 2) + 'px';
-  el.style.top = (feetY - DH) + 'px';
+  host.style.left = (feetX - w / 2) + 'px';
+  host.style.top = (feetY - DH) + 'px';
   const face = window._charPos.face || 'down';
-  const row = face === 'up' ? 1 : (face === 'down' ? 0 : 2); // 옆=2행, 시트 왼쪽 향 → 오른쪽만 미러
+  host.style.transform = 'scaleX(' + (face === 'right' ? -1 : 1) + ')';
+  // 겹: 같은 좌표를 전부 복사 → 절대 안 어긋남
+  const row = face === 'up' ? 1 : (face === 'down' ? 0 : 2);
   const col = window._charPos.frame || 0;
-  el.style.backgroundPosition = (-col * w) + 'px ' + (-row * DH) + 'px';
-  el.style.transform = 'scaleX(' + (face === 'right' ? -1 : 1) + ')';
+  const posX = (-col * w), posY = (-row * DH);
+  const sheets = window._charEquippedSheets(cfg);
+  host.querySelectorAll('.cw-layer').forEach(function (el) {
+    const url = sheets[el.dataset.slot];
+    if (!url) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.style.backgroundImage = "url('" + url + "')";
+    el.style.width = w + 'px'; el.style.height = DH + 'px';
+    el.style.backgroundSize = (w * 3) + 'px ' + (DH * 3) + 'px';
+    el.style.backgroundPosition = posX + 'px ' + posY + 'px';
+  });
 };
 window.charMove = function (dx, dy) {
   const prev = window._charPos.face;
