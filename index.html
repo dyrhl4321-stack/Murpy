@@ -1590,8 +1590,8 @@ window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
-  human:   { name: '사람',   src: "char/walk.png?v=7",    cw: 137, ch: 224, code: null },
-  heltori: { name: '헬토리', src: "char/heltori.png?v=2", cw: 175, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' }
+  human:   { name: '사람',   src: "char/walk.png?v=8",    cw: 141, ch: 224, code: null },
+  heltori: { name: '헬토리', src: "char/heltori.png?v=3", cw: 175, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' }
 };
 window.CHAR_ITEMS = [
   { id: 'hair_short', slot: 'hair', name: '숏컷', price: 0 },
@@ -1637,8 +1637,8 @@ window.refreshMyCharacter = function () {
 // ===== 머피월드 공간: 캐릭터 표시 + 러프 꾸미기(착용/구매/저장) =====
 window._charDraft = null;
 window._charSlot = 'hair';
-// 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 3행[아래/위/옆]). 셀→표시 52×88, 옆모습은 왼쪽 향(오른쪽은 미러)
-window._SPR = { w: 52, h: 88, cols: 3, rows: 3 };
+// 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 4행[아래/위/좌/우]). 4방향 각각 그려 미러 없음.
+window._SPR = { w: 52, h: 88, cols: 3, rows: 4 };
 window._charPos = { tc: 7, tr: 10, face: 'down', frame: 0 };
 // ===== 다층 의상 레이어 =====
 window._CHAR_LAYER_ORDER = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat']; // 뒤→앞 z순서
@@ -1681,7 +1681,7 @@ window._charRenderAvatar = function () {
   if (b.src && (hasSheet || isNonHuman)) {
     // 시트 합성(down=row0, col0). 겹을 절대배치로 쌓음.
     const layer = function (url) {
-      return "<div style=\"position:absolute;left:0;top:0;width:" + w + "px;height:" + H + "px;background-image:url('" + url + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 3) + "px;background-position:0 0\"></div>";
+      return "<div style=\"position:absolute;left:0;top:0;width:" + w + "px;height:" + H + "px;background-image:url('" + url + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 4) + "px;background-position:0 0\"></div>";
     };
     let html = "<div style=\"position:relative;width:" + w + "px;height:" + H + "px;margin:0 auto\">";
     window._CHAR_LAYER_ORDER.forEach(function (s) { if (sheets[s]) html += layer(sheets[s]); });
@@ -1745,9 +1745,9 @@ window._charApplyPos = function () {
   host.style.left = (feetX - w / 2) + 'px';
   host.style.top = (feetY - DH) + 'px';
   const face = window._charPos.face || 'down';
-  host.style.transform = 'scaleX(' + (face === 'right' ? -1 : 1) + ')';
-  // 겹: 같은 좌표를 전부 복사 → 절대 안 어긋남
-  const row = face === 'up' ? 1 : (face === 'down' ? 0 : 2);
+  host.style.transform = 'none';   // 4방향 시트(좌·우 따로) → 미러 없음(꽁지머리 반전 버그 제거)
+  // 겹: 같은 좌표를 전부 복사 → 절대 안 어긋남. 시트=3열 × 4행[아래0/위1/좌2/우3]
+  const row = face === 'up' ? 1 : (face === 'left' ? 2 : (face === 'right' ? 3 : 0));
   const col = window._charPos.frame || 0;
   const posX = (-col * w), posY = (-row * DH);
   const sheets = window._charEquippedSheets(cfg);
@@ -1757,7 +1757,7 @@ window._charApplyPos = function () {
     el.style.display = '';
     el.style.backgroundImage = "url('" + url + "')";
     el.style.width = w + 'px'; el.style.height = DH + 'px';
-    el.style.backgroundSize = (w * 3) + 'px ' + (DH * 3) + 'px';
+    el.style.backgroundSize = (w * 3) + 'px ' + (DH * 4) + 'px';
     el.style.backgroundPosition = posX + 'px ' + posY + 'px';
   });
 };
@@ -1988,7 +1988,7 @@ window.charRenderRoster = function () {
     const unlocked = !b.code || owned.includes(key);
     const equipped = cur === key;
     const th = 66, tw = Math.round(th * b.cw / b.ch);
-    const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 3) + "px;background-position:0 0;" + (unlocked ? "" : "filter:grayscale(1) brightness(.5);") + "\"></div>";
+    const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + (unlocked ? "" : "filter:grayscale(1) brightness(.5);") + "\"></div>";
     const sub = equipped ? '<span class="mw-sub on">착용중</span>' : unlocked ? '<span class="mw-sub">착용</span>' : '<span class="mw-sub gold">' + (b.tag || '한정') + '</span>';
     const action = unlocked ? ("window.charPickBody('" + key + "')") : ("window.openCharCodeModal('" + key + "')");
     return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + b.name + "</span>" + sub + "</button>";
@@ -2040,12 +2040,12 @@ window.openMurpyCharge = function () { if (window.openModal) openModal('murpy-ch
 window._mwHeroBg = function (el, h) {
   if (!el) return;
   const body = (window._charDraft && window._charDraft.body) || 'human';
-  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=7', cw: 135, ch: 224 };
+  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=8', cw: 135, ch: 224 };
   const w = Math.round(h * b.cw / b.ch);
   el.style.width = w + 'px'; el.style.height = h + 'px';
   el.style.backgroundImage = "url('" + b.src + "')";
   el.style.backgroundRepeat = 'no-repeat';
-  el.style.backgroundSize = (w * 3) + 'px ' + (h * 3) + 'px';
+  el.style.backgroundSize = (w * 3) + 'px ' + (h * 4) + 'px';
   el.style.backgroundPosition = '0 0';   // 정면 정지(down c0)
 };
 // ⚠️ 개발용: 배포(뿌리기) 전엔 true → 인트로/연출 매번 표시(계속 확인 가능). 배포 시 false로!
@@ -2086,12 +2086,12 @@ window.mwPortal = function () {
   if (reduce) { clearTimeout(window._mwPortalT); window._mwPortalT = setTimeout(function () { p.style.display = 'none'; }, 320); return; }
   const ch = document.getElementById('mw-portal-char'), flash = document.getElementById('mw-portal-flash');
   const body = (window._charDraft && window._charDraft.body) || 'human';
-  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=7', cw: 135, ch: 224 };
+  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=8', cw: 135, ch: 224 };
   const SH = stage ? (stage.clientHeight || 360) : 360;
   const H0 = Math.round(SH * 0.20), w = Math.round(H0 * b.cw / b.ch), row = 1; // row1 = 위(뒤통수) 걷기
   ch.style.width = w + 'px'; ch.style.height = H0 + 'px';
   ch.style.backgroundImage = "url('" + b.src + "')";
-  ch.style.backgroundSize = (w * 3) + 'px ' + (H0 * 3) + 'px';
+  ch.style.backgroundSize = (w * 3) + 'px ' + (H0 * 4) + 'px';
   ch.style.top = '64%'; ch.style.opacity = '1'; ch.style.transform = 'translate(-50%,0) scale(1)';
   const setCharFrame = function (c) { ch.style.backgroundPosition = (-c * w) + 'px ' + (-row * H0) + 'px'; };
   setCharFrame(0);

@@ -7,8 +7,9 @@
 새 캐릭터 추가: _source.png 저장 후 아래 CONFIGS 에 항목 하나 추가(배경색·격자밴드).
 새 아트로 교체: 해당 _source.png 만 갈아끼우고 재실행 → index.html 의 ?v= 만 올리면 배포 반영.
 
-출력 규격: 3열[정지, 걸음A, 걸음B] × 3행[아래(정면), 위(뒤통수), 옆(왼쪽 향)]
-  - 옆모습은 왼쪽 향 한 벌만(오른쪽은 코드에서 미러). 모든 프레임 같은 키로 정규화.
+출력 규격: 3열[정지, 걸음A, 걸음B] × 4행[아래(정면), 위(뒤통수), 왼쪽, 오른쪽]
+  - 4방향 각각 따로 그린 시트(미러 없음). 걸음A/B도 따로 그려 꽁지머리 좌우반전 버그 없음.
+  - 행수는 cfg["rows"] 개수로 자동(3행 구형/4행 신형 모두 지원). 모든 프레임 같은 키로 정규화.
   - 배경 제거 = 테두리 flood-fill (내부 하이라이트/눈 흰자가 배경색과 비슷해도 보존).
 """
 from PIL import Image
@@ -21,12 +22,12 @@ PADX, PAD_TOP, PAD_BOTTOM = 6, 6, 4
 
 # 캐릭터별 설정 (격자밴드는 각 소스에서 측정한 값)
 CONFIGS = [
-    dict(name="walk",    alpha=True,     # 누끼 완료본(투명 PNG, 목/칼라 깨끗) → 알파로 바로 사용
-         cols=[(224, 341), (494, 610), (742, 857)],
-         rows=[(23, 239), (269, 487), (514, 709)]),      # 사람(디폴트)
-    dict(name="heltori", alpha=True,     # Photoroom 누끼 완료본(투명 PNG) → 알파로 바로 사용
-         cols=[(201, 329), (450, 579), (682, 810)],
-         rows=[(27, 224), (254, 454), (476, 661)]),       # 헬토리(근방단 한정)
+    dict(name="walk",    alpha=True,     # 사람 4방향 최종본(Photoroom 투명 PNG)
+         cols=[(201, 324), (453, 575), (683, 807)],
+         rows=[(19, 225), (247, 455), (476, 662), (697, 885)]),   # 사람(디폴트) 아래/위/좌/우
+    dict(name="heltori", alpha=True,     # 헬토리 4방향 최종본(Photoroom 투명 PNG)
+         cols=[(190, 340), (438, 587), (670, 820)],
+         rows=[(26, 224), (253, 454), (475, 661), (695, 883)]),   # 헬토리(근방단 한정) 아래/위/좌/우
 ]
 
 def build(cfg):
@@ -80,7 +81,7 @@ def build(cfg):
                     if len(comp) > len(best): best = comp
         return best
 
-    def cells(bands, tot, margin=30):
+    def cells(bands, tot, margin=10):
         return [(max(0, a-margin), min(tot, b+margin)) for (a, b) in bands]
 
     subs = []; maxw = 0
@@ -96,8 +97,9 @@ def build(cfg):
             s = s.resize((max(1, round(s.width*sc)), TARGET_H), Image.LANCZOS)
             subs.append(s); maxw = max(maxw, s.width)
 
+    nrows = len(cfg["rows"])
     cw = maxw + PADX*2; ch = TARGET_H + PAD_TOP + PAD_BOTTOM
-    sheet = Image.new("RGBA", (cw*3, ch*3), (0, 0, 0, 0))
+    sheet = Image.new("RGBA", (cw*3, ch*nrows), (0, 0, 0, 0))
     for i, s in enumerate(subs):
         r = i // 3; c = i % 3
         ox = c*cw + (cw - s.width)//2
