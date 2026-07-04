@@ -383,7 +383,8 @@ window._charRenderAvatar = function () {
   const H = window._CHAR_DISPLAY_H || 88, w = Math.round(H * b.cw / b.ch);
   const sheets = window._charEquippedSheets(cfg);
   const hasSheet = window._CHAR_LAYER_ORDER.some(function (s) { return s !== 'body' && sheets[s]; });
-  if (b.src && (b.body !== 'human' || hasSheet || (cfg && cfg.body !== 'human'))) {
+  const isNonHuman = !!(cfg && cfg.body && cfg.body !== 'human');
+  if (b.src && (hasSheet || isNonHuman)) {
     // 시트 합성(down=row0, col0). 겹을 절대배치로 쌓음.
     const layer = function (url) {
       return "<div style=\"position:absolute;left:0;top:0;width:" + w + "px;height:" + H + "px;background-image:url('" + url + "');background-repeat:no-repeat;background-size:" + (w * 3) + "px " + (H * 3) + "px;background-position:0 0\"></div>";
