@@ -149,6 +149,37 @@ def _dilate(item, r, ymin=0, solid=False):
                     if best is not None: op[x,y]=fill if solid else best
     return out
 
+_WALK=None
+def _walk():
+    global _WALK
+    if _WALK is None: _WALK=Image.open(os.path.join(HERE,"walk.png")).convert("RGBA")
+    return _WALK
+
+def _cover_tee(item, r, c):
+    """상의 전용: 기본 캐릭터(walk.png)의 파란 티셔츠 픽셀 중 상의가 안 덮은 곳을,
+    가장 가까운 상의 픽셀색으로 번져 채움 → 밑 티셔츠 삐짐 제거(음영 이어짐). base는 안 건드림."""
+    w=_walk().crop((c*CW, r*CH, c*CW+CW, r*CH+CH)); wp=w.load(); ip=item.load()
+    need=set()
+    for y in range(int(CH*0.30), int(CH*0.78)):
+        for x in range(CW):
+            pr,pg,pb,pa=wp[x,y]
+            if pa>60 and pb>90 and pb>pr+30 and pb>pg+16 and ip[x,y][3]<60: need.add((x,y))
+    for _ in range(12):
+        if not need: break
+        done=[]
+        for (x,y) in list(need):
+            best=None; bc=-1
+            for dx in(-1,0,1):
+                for dy in(-1,0,1):
+                    nx,ny=x+dx,y+dy
+                    if 0<=nx<CW and 0<=ny<CH and ip[nx,ny][3]>=60:
+                        pn=ip[nx,ny]; ch=max(pn[0],pn[1],pn[2])-min(pn[0],pn[1],pn[2])
+                        if ch>bc: bc=ch; best=pn
+            if best is not None: ip[x,y]=best; done.append((x,y))
+        if not done: break
+        for d in done: need.discard(d)
+    return item
+
 def build(cfg, judge=is_item_cap):
     im=Image.open(cfg["src"]).convert("RGBA"); px=im.load()
     rb, cb = cfg["rows"], cfg["cols"]
@@ -163,11 +194,13 @@ def build(cfg, judge=is_item_cap):
         if minc: it=_remove_small(it, minc)
         if dil:  it=_dilate(it, dil, dil_ymin, cfg.get("dilate_solid", False))
         return it
+    cover=cfg.get("cover_tee", False)   # 상의류: 밑 티셔츠 삐짐 메꿈
     for r in range(4):
         if per_frame:
             for c in range(3):
-                cell=norm_cell(px, cb, rb, r, c)
-                sheet.alpha_composite(extract(cell.load()), (c*CW, r*CH))
+                it=extract(norm_cell(px, cb, rb, r, c).load())
+                if cover: it=_cover_tee(it, r, c)
+                sheet.alpha_composite(it, (c*CW, r*CH))
         else:
             item=extract(norm_cell(px, cb, rb, r, cfg["frame_col"]).load())
             for c in range(3):   # 모자·악세: 걸음 중 안 움직임 → 동일 복제
