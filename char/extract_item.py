@@ -121,12 +121,12 @@ def _remove_small(item, minsz):
                     for (x,y) in comp: kp[x,y]=p[x,y]
     return keep
 
-def _dilate(item, r):
-    """아이템을 r px 팽창(주변색으로 채움) → 다른 캐릭터 옷을 우리캐릭터에 얹을 때 밑옷 삐짐 덮기."""
+def _dilate(item, r, ymin=0):
+    """아이템을 r px 팽창(주변색으로 채움) → 밑옷 삐짐 덮기. ymin 아래(가슴~)만 팽창=얼굴 안 건드림."""
     out=item.copy()
     for _ in range(r):
         cur=out.copy(); cp=cur.load(); op=out.load()
-        for y in range(CH):
+        for y in range(ymin, CH):
             for x in range(CW):
                 if cp[x,y][3]<40:
                     done=False
@@ -146,10 +146,11 @@ def build(cfg, judge=is_item_cap):
     per_frame=cfg.get("per_frame", False)   # 상의류: 팔 움직여서 프레임별 추출(복제X)
     sheet=Image.new("RGBA",(CW*3, CH*4),(0,0,0,0))
     dil=cfg.get("dilate",0); minc=cfg.get("min_component",0)
+    dil_ymin=int(CH*cfg.get("dilate_ymin",0))
     def extract(cp):
         it=_extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
         if minc: it=_remove_small(it, minc)
-        if dil:  it=_dilate(it, dil)
+        if dil:  it=_dilate(it, dil, dil_ymin)
         return it
     for r in range(4):
         if per_frame:
