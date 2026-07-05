@@ -92,6 +92,11 @@ def build(cfg, judge=is_item_cap):
             sheet.alpha_composite(item,(c*CW, r*CH))
     outp=os.path.join(HERE,"items",cfg["out"]+".png")
     sheet.save(outp); print("saved", outp, sheet.size)
+    # 꾸미기 목록용 썸네일: 정면 프레임에서 아이템 내용만 잘라냄
+    front=sheet.crop((0,0,CW,CH)); bb=front.getbbox()
+    if bb:
+        thumbp=os.path.join(HERE,"items",cfg["out"]+"_thumb.png")
+        front.crop(bb).save(thumbp); print("saved", thumbp)
 
 if __name__ == "__main__":
     build(CONFIG)
