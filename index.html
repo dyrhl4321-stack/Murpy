@@ -894,7 +894,7 @@
 
 <!-- MyPage Panel -->
 <!-- 프로필 사진 크롭 모달 -->
-<div id="profile-crop-modal" style="display:none;position:fixed;inset:0;z-index:10001;flex-direction:column;background:#000">
+<div id="profile-crop-modal" style="display:none;position:fixed;inset:0;z-index:20050;flex-direction:column;background:#000">
   <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
     <button onclick="closeProfileCrop()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
     <span style="font-size:14px;font-weight:700">프로필 사진</span>
@@ -2265,6 +2265,7 @@ window.mwPortal = function () {
     <div style="display:flex;gap:6px;justify-content:center;margin:16px auto 0;width:fit-content">
       <div id="ob-dot-1" style="width:24px;height:4px;border-radius:2px;transition:all .3s;background:var(--accent)"></div>
       <div id="ob-dot-2" style="width:8px;height:4px;border-radius:2px;transition:all .3s;background:rgba(255,255,255,0.15)"></div>
+      <div id="ob-dot-3" style="width:8px;height:4px;border-radius:2px;transition:all .3s;background:rgba(255,255,255,0.15)"></div>
     </div>
   </div>
   <!-- Step 1 -->
@@ -2337,6 +2338,18 @@ window.mwPortal = function () {
     <div style="margin-bottom:32px">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600;letter-spacing:0.3px">한줄 소개 <span style="font-weight:400;color:rgba(255,255,255,0.25)">(선택)</span></div>
       <input id="ob-bio" maxlength="50" placeholder="ex) 운동 끝나고 단백질 같이 먹어요" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 16px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
+    </div>
+    <button onclick="obNextStep2()" style="width:100%;padding:16px;font-size:15px;font-weight:700;border-radius:14px;border:none;background:#fff;color:#000;cursor:pointer;font-family:inherit">다음 →</button>
+  </div>
+  <!-- Step 3: 프로필 사진 (필수) -->
+  <div id="ob-step-3" style="display:none;padding:28px 24px 48px;flex:1">
+    <div style="font-size:22px;font-weight:800;margin-bottom:6px;color:#fff">프로필 사진을 등록해주세요</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:28px">얼굴이 보이는 사진일수록 매칭이 잘 돼요</div>
+    <div style="display:flex;justify-content:center;margin-bottom:32px">
+      <button onclick="document.getElementById('profile-pic-input').click()" style="width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px dashed rgba(255,255,255,0.25);cursor:pointer;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">
+        <img id="ob-photo-preview" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0">
+        <svg id="ob-photo-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </button>
     </div>
     <button onclick="obComplete()" style="width:100%;padding:16px;font-size:15px;font-weight:700;border-radius:14px;border:none;background:#fff;color:#000;cursor:pointer;font-family:inherit">머피 시작하기</button>
   </div>
@@ -4336,6 +4349,24 @@ function obNextStep() {
   _fillDistrictSelect('ob-district');
 }
 
+function obNextStep2() {
+  if (!window._obData.sports.length) { showToast('주로 하는 운동을 선택해주세요'); return; }
+  const district = document.getElementById('ob-district').value;
+  if (!district) { showToast('활동 지역을 선택해주세요'); return; }
+  document.getElementById('ob-step-2').style.display = 'none';
+  document.getElementById('ob-step-3').style.display = 'block';
+  document.getElementById('ob-dot-2').style.background = 'rgba(255,255,255,0.25)';
+  document.getElementById('ob-dot-2').style.width = '8px';
+  document.getElementById('ob-dot-3').style.background = 'var(--accent)';
+  document.getElementById('ob-dot-3').style.width = '24px';
+  document.getElementById('onboarding-modal').scrollTop = 0;
+}
+// 온보딩 중 사진 업로드되면 Step3 원형 프리뷰 갱신
+window.addEventListener('save-profile-photo', function () {
+  const p = document.getElementById('ob-photo-preview'), ic = document.getElementById('ob-photo-icon');
+  if (p && window._pendingProfilePhoto) { p.src = window._pendingProfilePhoto; p.style.display = 'block'; if (ic) ic.style.display = 'none'; }
+});
+
 // obComplete, loadUserProfile, saveProfile → 모듈 스크립트에서 window.xxx로 정의
 
 function showOnboarding(userData = {}) {
@@ -4344,8 +4375,10 @@ function showOnboarding(userData = {}) {
   document.getElementById('ob-age').value = userData.age || '';
   document.getElementById('ob-step-1').style.display = 'block';
   document.getElementById('ob-step-2').style.display = 'none';
+  document.getElementById('ob-step-3').style.display = 'none';
   document.getElementById('ob-dot-1').style.cssText += ';width:24px;background:var(--accent)';
   document.getElementById('ob-dot-2').style.cssText += ';width:8px;background:rgba(255,255,255,0.15)';
+  document.getElementById('ob-dot-3').style.cssText += ';width:8px;background:rgba(255,255,255,0.15)';
   const modal = document.getElementById('onboarding-modal');
   modal.style.display = 'flex';
   modal.scrollTop = 0;
