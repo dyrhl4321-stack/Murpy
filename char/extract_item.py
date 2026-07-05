@@ -103,6 +103,41 @@ def _extract_flood(cp, judge, y1f):
             if filled[y][x]: ip[x,y]=cp[x,y]
     return item
 
+def _remove_small(item, minsz):
+    """작은 연결덩어리(눈 하이라이트 등 잔여도트) 제거. 큰 파츠는 유지."""
+    p=item.load(); seen=[[False]*CW for _ in range(CH)]; keep=Image.new("RGBA",(CW,CH),(0,0,0,0)); kp=keep.load()
+    for sy in range(CH):
+        for sx in range(CW):
+            if p[sx,sy][3]>40 and not seen[sy][sx]:
+                comp=[]; q=deque([(sx,sy)]); seen[sy][sx]=True
+                while q:
+                    x,y=q.popleft(); comp.append((x,y))
+                    for dx in(-1,0,1):
+                        for dy in(-1,0,1):
+                            nx,ny=x+dx,y+dy
+                            if 0<=nx<CW and 0<=ny<CH and not seen[ny][nx] and p[nx,ny][3]>40:
+                                seen[ny][nx]=True; q.append((nx,ny))
+                if len(comp)>=minsz:
+                    for (x,y) in comp: kp[x,y]=p[x,y]
+    return keep
+
+def _dilate(item, r):
+    """아이템을 r px 팽창(주변색으로 채움) → 다른 캐릭터 옷을 우리캐릭터에 얹을 때 밑옷 삐짐 덮기."""
+    out=item.copy()
+    for _ in range(r):
+        cur=out.copy(); cp=cur.load(); op=out.load()
+        for y in range(CH):
+            for x in range(CW):
+                if cp[x,y][3]<40:
+                    done=False
+                    for dx in(-1,0,1):
+                        for dy in(-1,0,1):
+                            nx,ny=x+dx,y+dy
+                            if 0<=nx<CW and 0<=ny<CH and cp[nx,ny][3]>=40:
+                                op[x,y]=cp[nx,ny]; done=True; break
+                        if done: break
+    return out
+
 def build(cfg, judge=is_item_cap):
     im=Image.open(cfg["src"]).convert("RGBA"); px=im.load()
     rb, cb = cfg["rows"], cfg["cols"]
@@ -110,8 +145,12 @@ def build(cfg, judge=is_item_cap):
     mode=cfg.get("mode","region")   # 'region'=영역내 색추출 / 'flood'=상단연결덩어리(밑단 아치형)
     per_frame=cfg.get("per_frame", False)   # 상의류: 팔 움직여서 프레임별 추출(복제X)
     sheet=Image.new("RGBA",(CW*3, CH*4),(0,0,0,0))
+    dil=cfg.get("dilate",0); minc=cfg.get("min_component",0)
     def extract(cp):
-        return _extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
+        it=_extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
+        if minc: it=_remove_small(it, minc)
+        if dil:  it=_dilate(it, dil)
+        return it
     for r in range(4):
         if per_frame:
             for c in range(3):
