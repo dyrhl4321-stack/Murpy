@@ -1586,7 +1586,7 @@ window.collapseBambooCompose = function () {
 
 // ===== 머피 캐릭터 (Phase 1): 카탈로그 · 도트 파츠 · 렌더 =====
 window.CHAR_COLORS = { skin: ['#F0C9A0', '#E0A878', '#C68642'], hair: ['#2B2B2B', '#6B4226', '#C9A227', '#7C3AED'], top: ['#3D7EFF', '#4ADE80', '#F5C24B', '#FF6B6B', '#E5E7EB'] };
-window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, hat: null, mask: null, body: 'human' };
+window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, acc: null, hat: null, mask: null, body: 'human' };
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
@@ -1608,7 +1608,8 @@ window.CHAR_ITEMS = [
   { id: 'shoes_ph', slot: 'shoes', name: '신발(샘플)', price: 0, sheet: 'char/items/shoes_ph.png' },
   { id: 'hat_ph', slot: 'hat', name: '모자(샘플)', price: 0, sheet: 'char/items/hat_ph.png' },
   { id: 'hat_gbd', slot: 'hat', name: 'GBD 캡', price: 0, sheet: 'char/items/hat_gbd.png', thumb: 'char/items/hat_gbd_thumb.png' },
-  { id: 'hat_beanie', slot: 'hat', name: 'GBD 비니', price: 0, sheet: 'char/items/hat_beanie.png', thumb: 'char/items/hat_beanie_thumb.png' }
+  { id: 'hat_beanie', slot: 'hat', name: 'GBD 비니', price: 0, sheet: 'char/items/hat_beanie.png', thumb: 'char/items/hat_beanie_thumb.png' },
+  { id: 'acc_airpodsmax', slot: 'acc', name: '에어팟 맥스', price: 0, sheet: 'char/items/acc_airpodsmax.png', thumb: 'char/items/acc_airpodsmax_thumb.png' }
 ];
 window.CHAR_FREE = ['hair_short', 'top_tee', 'mask_simple'];
 window.CHAR_SHAPES = {
@@ -1643,7 +1644,7 @@ window._charSlot = 'hair';
 window._SPR = { w: 52, h: 88, cols: 3, rows: 4 };
 window._charPos = { tc: 7, tr: 10, face: 'down', frame: 0 };
 // ===== 다층 의상 레이어 =====
-window._CHAR_LAYER_ORDER = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat']; // 뒤→앞 z순서
+window._CHAR_LAYER_ORDER = ['body', 'bottom', 'shoes', 'top', 'hair', 'acc', 'hat']; // 뒤→앞 z순서(acc=악세사리: 머리 위, 모자 아래)
 window._charBuildLayers = function () {
   const host = document.getElementById('charworld-avatar'); if (!host) return;
   if (host._layersBuilt) return;
@@ -1659,9 +1660,9 @@ window._charBuildLayers = function () {
 window._charEquippedSheets = function (cfg) {
   cfg = cfg || {};
   const b = window._CHAR_BODIES[cfg.body || 'human'] || window._CHAR_BODIES.human;
-  const out = { body: b.src, bottom: null, shoes: null, top: null, hair: null, hat: null };
+  const out = { body: b.src, bottom: null, shoes: null, top: null, hair: null, acc: null, hat: null };
   if ((cfg.body || 'human') !== 'human') return out;   // 헬토리 등 비-사람 몸통은 통짜 유지(사람용 옷 금지)
-  ['bottom', 'shoes', 'top', 'hair', 'hat'].forEach(function (slot) {
+  ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
     const id = cfg[slot]; if (!id) return;
     const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
     out[slot] = (item && item.sheet) ? item.sheet : null;   // 시트 없는(SVG전용) 아이템은 겹 없음
@@ -1934,7 +1935,7 @@ window.charSlot = function (slot, btn) {
     const sub = has ? (equipped ? '<span class="mw-sub on">착용중</span>' : '<span class="mw-sub">보유</span>') : ('<span class="mw-sub gold">' + window._mwCoinImg + i.price + '</span>');
     return `<button class="mw-card${equipped ? ' equipped' : ''}" onclick="window.charPick('${i.id}')"><div style="width:54px;height:54px">${preview}</div><span class="mw-name">${i.name}</span>${sub}</button>`;
   }).join('');
-  if (['hair', 'top', 'bottom', 'shoes', 'hat', 'mask'].includes(slot)) {
+  if (['hair', 'top', 'bottom', 'shoes', 'acc', 'hat', 'mask'].includes(slot)) {
     const isMask = slot === 'mask';
     const off = isMask ? !window._charDraft.mask : !window._charDraft[slot];
     const onclick = isMask ? 'window.charClearMask()' : "window.charClearSlot('" + slot + "')";
@@ -2049,8 +2050,8 @@ window.charHubTab = function (name, btn) {
       + '<button class="tab-btn" onclick="window.charSlot(\'bottom\',this)">하의</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'shoes\',this)">신발</button>'
       + '<button class="tab-btn" onclick="window.charSlot(\'hat\',this)">모자</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'color\',this)">색상</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'mask\',this)">가면</button></div>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'acc\',this)">악세사리</button>'
+      + '<button class="tab-btn" onclick="window.charSlot(\'color\',this)">색상</button></div>'
       + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
       + '<button class="mw-btn" style="width:100%;margin-top:18px" onclick="window.charSave()">저장</button>';
     if (body !== 'human') {

@@ -76,19 +76,44 @@ def is_item_cap(px):
     if mn>148: return True                  # 흰/크림
     return False
 
+def _extract_region(cp, judge, y0f, y1f):
+    item=Image.new("RGBA",(CW,CH),(0,0,0,0)); ip=item.load()
+    for y in range(int(CH*y0f), int(CH*y1f)):
+        for x in range(CW):
+            if judge(cp[x,y]): ip[x,y]=cp[x,y]
+    return item
+
+def _extract_flood(cp, judge, y1f):
+    """상단에서부터 judge 조건으로 연결된 덩어리만 채움 → 밑단이 실제 모양(아치)을 따라감.
+    갈색머리·피부는 judge에서 걸러지고, 아래로 연결 안 된 외곽선 조각도 제외됨."""
+    ycut=int(CH*y1f); filled=[[False]*CW for _ in range(CH)]; dq=deque()
+    for y in range(0,8):
+        for x in range(CW):
+            if judge(cp[x,y]) and not filled[y][x]: filled[y][x]=True; dq.append((x,y))
+    while dq:
+        x,y=dq.popleft()
+        for dx in(-1,0,1):
+            for dy in(-1,0,1):
+                nx,ny=x+dx,y+dy
+                if 0<=nx<CW and 0<=ny<ycut and not filled[ny][nx] and judge(cp[nx,ny]):
+                    filled[ny][nx]=True; dq.append((nx,ny))
+    item=Image.new("RGBA",(CW,CH),(0,0,0,0)); ip=item.load()
+    for y in range(ycut):
+        for x in range(CW):
+            if filled[y][x]: ip[x,y]=cp[x,y]
+    return item
+
 def build(cfg, judge=is_item_cap):
     im=Image.open(cfg["src"]).convert("RGBA"); px=im.load()
     rb, cb = cfg["rows"], cfg["cols"]
     y0f,y1f=cfg["region"]
+    mode=cfg.get("mode","region")   # 'region'=영역내 색추출 / 'flood'=상단연결덩어리(밑단 아치형)
     sheet=Image.new("RGBA",(CW*3, CH*4),(0,0,0,0))
     for r in range(4):
         cell=norm_cell(px, cb, rb, r, cfg["frame_col"])
         cp=cell.load()
-        item=Image.new("RGBA",(CW,CH),(0,0,0,0)); ip=item.load()
-        for y in range(int(CH*y0f), int(CH*y1f)):
-            for x in range(CW):
-                if judge(cp[x,y]): ip[x,y]=cp[x,y]
-        for c in range(3):   # 3프레임에 동일 복제(모자는 걸음 중 안 움직임)
+        item=_extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
+        for c in range(3):   # 3프레임에 동일 복제(모자·악세는 걸음 중 안 움직임)
             sheet.alpha_composite(item,(c*CW, r*CH))
     outp=os.path.join(HERE,"items",cfg["out"]+".png")
     sheet.save(outp); print("saved", outp, sheet.size)
