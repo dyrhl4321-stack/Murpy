@@ -121,21 +121,32 @@ def _remove_small(item, minsz):
                     for (x,y) in comp: kp[x,y]=p[x,y]
     return keep
 
-def _dilate(item, r, ymin=0):
-    """아이템을 r px 팽창(주변색으로 채움) → 밑옷 삐짐 덮기. ymin 아래(가슴~)만 팽창=얼굴 안 건드림."""
+def _dominant(item):
+    """아이템의 최빈색(대표색) RGBA."""
+    p=item.load(); from collections import Counter; c=Counter()
+    for y in range(CH):
+        for x in range(CW):
+            if p[x,y][3]>=40: c[p[x,y]]+=1
+    return c.most_common(1)[0][0] if c else (0,0,0,255)
+
+def _dilate(item, r, ymin=0, solid=False):
+    """아이템을 r px 팽창해 밑옷 삐짐 덮기. ymin 아래만(얼굴 안 건드림).
+    solid=True면 가장자리 회색 대신 대표색으로 채움(깔끔)."""
+    fill=_dominant(item) if solid else None
     out=item.copy()
     for _ in range(r):
         cur=out.copy(); cp=cur.load(); op=out.load()
         for y in range(ymin, CH):
             for x in range(CW):
                 if cp[x,y][3]<40:
-                    done=False
+                    best=None; bestchroma=-1
                     for dx in(-1,0,1):
                         for dy in(-1,0,1):
                             nx,ny=x+dx,y+dy
                             if 0<=nx<CW and 0<=ny<CH and cp[nx,ny][3]>=40:
-                                op[x,y]=cp[nx,ny]; done=True; break
-                        if done: break
+                                pn=cp[nx,ny]; ch=max(pn[0],pn[1],pn[2])-min(pn[0],pn[1],pn[2])
+                                if ch>bestchroma: bestchroma=ch; best=pn   # 채도 높은(진짜 옷색) 이웃 우선 → 회색외곽선 안 퍼짐
+                    if best is not None: op[x,y]=fill if solid else best
     return out
 
 def build(cfg, judge=is_item_cap):
@@ -150,7 +161,7 @@ def build(cfg, judge=is_item_cap):
     def extract(cp):
         it=_extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
         if minc: it=_remove_small(it, minc)
-        if dil:  it=_dilate(it, dil, dil_ymin)
+        if dil:  it=_dilate(it, dil, dil_ymin, cfg.get("dilate_solid", False))
         return it
     for r in range(4):
         if per_frame:
