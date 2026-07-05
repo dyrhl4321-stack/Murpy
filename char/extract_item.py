@@ -108,13 +108,19 @@ def build(cfg, judge=is_item_cap):
     rb, cb = cfg["rows"], cfg["cols"]
     y0f,y1f=cfg["region"]
     mode=cfg.get("mode","region")   # 'region'=영역내 색추출 / 'flood'=상단연결덩어리(밑단 아치형)
+    per_frame=cfg.get("per_frame", False)   # 상의류: 팔 움직여서 프레임별 추출(복제X)
     sheet=Image.new("RGBA",(CW*3, CH*4),(0,0,0,0))
+    def extract(cp):
+        return _extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
     for r in range(4):
-        cell=norm_cell(px, cb, rb, r, cfg["frame_col"])
-        cp=cell.load()
-        item=_extract_flood(cp, judge, y1f) if mode=="flood" else _extract_region(cp, judge, y0f, y1f)
-        for c in range(3):   # 3프레임에 동일 복제(모자·악세는 걸음 중 안 움직임)
-            sheet.alpha_composite(item,(c*CW, r*CH))
+        if per_frame:
+            for c in range(3):
+                cell=norm_cell(px, cb, rb, r, c)
+                sheet.alpha_composite(extract(cell.load()), (c*CW, r*CH))
+        else:
+            item=extract(norm_cell(px, cb, rb, r, cfg["frame_col"]).load())
+            for c in range(3):   # 모자·악세: 걸음 중 안 움직임 → 동일 복제
+                sheet.alpha_composite(item, (c*CW, r*CH))
     outp=os.path.join(HERE,"items",cfg["out"]+".png")
     sheet.save(outp); print("saved", outp, sheet.size)
     # 꾸미기 목록용 썸네일: 정면 프레임에서 아이템 내용만 잘라냄
