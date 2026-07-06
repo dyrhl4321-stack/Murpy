@@ -6168,11 +6168,21 @@ window._COACH_MARKS = {
 window.showCoach = function (cfg) {
   cfg = cfg || {};
   if (!cfg.force && cfg.key) { try { if (localStorage.getItem('coach_' + cfg.key)) return; } catch (e) {} }
+  const t = cfg.spotlightSel ? document.querySelector(cfg.spotlightSel) : null;
+  // 타겟이 화면 밖(예: 매칭 버튼은 카드 맨 아래)일 수 있어 먼저 화면 중앙으로 스크롤 → 정착 후 측정
+  if (t && t.getBoundingClientRect().width > 0) {
+    try { t.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch (e) { try { t.scrollIntoView(); } catch (e2) {} }
+    setTimeout(function () { _drawCoach(cfg, t); }, 260);
+  } else {
+    _drawCoach(cfg, null);
+  }
+};
+function _drawCoach(cfg, t) {
   const ov = document.getElementById('coach-overlay'); if (!ov) return;
   const hole = document.getElementById('coach-hole');
   const card = document.getElementById('coach-card');
   let rect = null;
-  if (cfg.spotlightSel) { const t = document.querySelector(cfg.spotlightSel); if (t) { const r = t.getBoundingClientRect(); if (r.width > 0 && r.bottom > 0 && r.top < window.innerHeight) rect = r; } }
+  if (t) { const r = t.getBoundingClientRect(); if (r.width > 0 && r.height > 0) rect = r; }
   // 네온 색(대숲=초록, 그 외 블루)
   if (cfg.color === 'green') { hole.style.setProperty('--coach-c', '#4ADE80'); hole.style.setProperty('--coach-c2', '#DAFBE7'); hole.style.setProperty('--coach-glow', 'rgba(74,222,128,0.18)'); }
   else { hole.style.removeProperty('--coach-c'); hole.style.removeProperty('--coach-c2'); hole.style.removeProperty('--coach-glow'); }
@@ -6197,7 +6207,7 @@ window.showCoach = function (cfg) {
   card.innerHTML = '<div class="coach-bubble ' + tail + '" style="font-weight:700">' + (cfg.text || '') + '</div>';
   ov.style.display = 'block';
   ov._key = cfg.key || null;
-};
+}
 window.dismissCoach = function () {
   const ov = document.getElementById('coach-overlay'); if (!ov) return;
   ov.style.display = 'none';
