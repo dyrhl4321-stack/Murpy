@@ -3393,39 +3393,13 @@ function renderMatch() {
   const mImg = document.getElementById('match-img');
   const info = card.querySelector('.match-info');
 
-  // 비로그인: 샘플 프로필로 전체 UI를 채우고 '약한 블러 + 잠금' 미리보기
-  if (!window.currentUser) {
-    card.style.display = '';
-    const _gc = 'display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.13);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:9px';
-    if (mImg) mImg.style.filter = 'blur(4px)';
-    if (info) { info.style.visibility = ''; info.style.filter = 'blur(3px)'; }
-    document.getElementById('match-name').textContent = '지민';
-    document.getElementById('match-age').textContent = '27';
-    const _mb = document.getElementById('match-month-badge'); const _mn = document.getElementById('match-month-num'); if (_mn) _mn.textContent = '14'; if (_mb) _mb.style.display = 'inline-flex';
-    const _loc = document.getElementById('match-loc'); if (_loc) { _loc.style.display = 'flex'; _loc.style.filter = 'blur(2px)'; document.getElementById('match-loc-text').textContent = '내 동네'; }
-    const _vb = document.getElementById('match-verified-badge'); if (_vb) _vb.style.display = 'none';
-    document.getElementById('match-tags').innerHTML = `<span style="${_gc}">근력 향상</span><span style="${_gc}">저녁</span><span style="${_gc}">3년 이상</span>`;
-    const _bio = document.getElementById('match-bio'); _bio.textContent = '퇴근하고 같이 운동하실 분 찾아요'; _bio.style.display = '-webkit-box';
-    const _det = document.getElementById('match-detail'); if (_det) { _det.style.display = 'block'; _det.style.filter = 'blur(3px)'; }
-    if (actions) { actions.style.display = 'flex'; actions.style.filter = 'blur(3px)'; actions.style.pointerEvents = 'none'; }
-    if (moreWrap) moreWrap.style.display = 'none';
-    if (empty) empty.style.display = 'none';
-    if (guest) guest.style.display = 'flex';
-    return;
-  }
-  // 로그인 상태: 블러/잠금 전부 해제
-  if (mImg) mImg.style.filter = '';
-  if (info) { info.style.visibility = ''; info.style.filter = ''; }
-  const _loc0 = document.getElementById('match-loc'); if (_loc0) _loc0.style.filter = '';
-  const _det0b = document.getElementById('match-detail'); if (_det0b) _det0b.style.filter = '';
-  if (actions) { actions.style.filter = ''; actions.style.pointerEvents = ''; }
-  if (guest) guest.style.display = 'none';
+  // 게스트도 실제 후보를 블러로 미리보기(유입 유도). 블러/잠금은 렌더 끝에서 _applyMatchGuestLock으로 일괄 처리.
+  const isGuest = !window.currentUser;
 
   const list = window._matchList;
-
-  // 아직 로드 전 → 로그인 상태면 후보 로드
+  // 아직 로드 전 → 후보 로드(게스트 포함, users 읽기는 공개)
   if (!list) {
-    if (window.currentUser && window.loadMatchCandidates) window.loadMatchCandidates();
+    if (window.loadMatchCandidates) window.loadMatchCandidates();
     return;
   }
 
@@ -3535,6 +3509,36 @@ function renderMatch() {
     }).join('');
   } else if (moreWrap) {
     moreWrap.style.display = 'none';
+  }
+
+  _applyMatchGuestLock(isGuest);
+}
+
+// 게스트: 실제 프로필을 살짝 강하게 블러 + 잠금 오버레이(유입 유도·프라이버시). 로그인이면 전부 해제.
+function _applyMatchGuestLock(isGuest) {
+  const card = document.getElementById('match-card');
+  const mImg = document.getElementById('match-img');
+  const info = card && card.querySelector('.match-info');
+  const loc = document.getElementById('match-loc');
+  const det = document.getElementById('match-detail');
+  const actions = document.getElementById('match-actions');
+  const guest = document.getElementById('match-guest');
+  const moreWrap = document.getElementById('match-more-wrap');
+  if (isGuest) {
+    if (mImg) mImg.style.filter = 'blur(6px)';        // 실데이터라 더미보다 살짝 강하게(프라이버시)
+    if (info) info.style.filter = 'blur(4.5px)';
+    if (loc) loc.style.filter = 'blur(4px)';
+    if (det) det.style.filter = 'blur(4.5px)';
+    if (actions) { actions.style.filter = 'blur(3px)'; actions.style.pointerEvents = 'none'; }
+    if (moreWrap) moreWrap.style.display = 'none';     // 추천 썸네일은 실사진이라 게스트엔 숨김
+    if (guest) guest.style.display = 'flex';
+  } else {
+    if (mImg) mImg.style.filter = '';
+    if (info) info.style.filter = '';
+    if (loc) loc.style.filter = '';
+    if (det) det.style.filter = '';
+    if (actions) { actions.style.filter = ''; actions.style.pointerEvents = ''; }
+    if (guest) guest.style.display = 'none';
   }
 }
 
@@ -6575,6 +6579,12 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
   if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
+  // 이미 연결된 사이면 새로 보내지 말고(전송실패 방지) 기존 채팅으로 연결
+  if (window._isConnected && await window._isConnected(toUid)) {
+    showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
+    if (window.openChatFirestore) window.openChatFirestore(_pairKey(me, toUid), toUid, toName, toPhoto, false);
+    return;
+  }
   if (!skipConfirm && window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
     if (!(await window.murpyConfirm({ title: '같이 운동해요 보내기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>를 사용해요', cost: true, confirmText: '보내기' }))) return;
   }
@@ -6607,6 +6617,12 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm) => {
 window.feedInvite = async (uid, name, photo) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.currentUser.uid === uid) { showToast('내 글이에요'); return; }
+  // 이미 연결된 사이면 새로 보내지 말고(전송실패 방지) 기존 채팅으로 연결
+  if (window._isConnected && await window._isConnected(uid)) {
+    showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
+    if (window.openChatFirestore) window.openChatFirestore(_pairKey(window.currentUser.uid, uid), uid, name, photo, false);
+    return;
+  }
   const enforced = !!(window.creditsEnforcedFor && window.creditsEnforcedFor(window.currentUser.uid));
   const ok = await window.murpyConfirm({
     icon: '<img src="char/dumbbell_blue.png?v=2" style="width:52px;height:auto" alt="덤벨">',
@@ -6651,18 +6667,20 @@ window.fetchMonthCount = async function (uid) {
 // ===== 매칭 후보 로더 (users → 지역/센터 우선 정렬) =====
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
-  if (!me || window._matchLoading) return;
+  if (window._matchLoading) return;   // me 없어도(게스트) 실데이터 미리보기 로드
   window._matchLoading = true;
   try {
     const myProf = window._cachedProfile || {};
     const myDistrict = myProf.district || '';
     const myGym = myProf.gym || '';
 
-    // 제외: 내가 좋아요 보낸 사람 + 매칭된 사람 + 이번 세션 패스
+    // 제외: 내가 좋아요 보낸 사람 + 매칭된 사람 + 이번 세션 패스 (게스트는 제외 없음)
     const liked = new Set();
-    try { const ls = await getDocs(query(collection(db, 'likes'), where('from', '==', me))); ls.forEach(d => liked.add(d.data().to)); } catch (e) {}
     const matchedSet = new Set();
-    try { const ms = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me))); ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matchedSet.add(u); })); } catch (e) {}
+    if (me) {
+      try { const ls = await getDocs(query(collection(db, 'likes'), where('from', '==', me))); ls.forEach(d => liked.add(d.data().to)); } catch (e) {}
+      try { const ms = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me))); ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matchedSet.add(u); })); } catch (e) {}
+    }
     const passed = window._matchPassed || new Set();
 
     const snap = await getDocs(collection(db, 'users'));
@@ -8860,7 +8878,14 @@ window.sendChatFirestore = async () => {
     await addDoc(collection(db, 'chats', chatId, 'messages'), {
       text, senderId: user.uid, senderName: nickname, createdAt: serverTimestamp()
     });
-    await updateDoc(doc(db, 'chats', chatId), { lastMessage: text, lastMessageTime: serverTimestamp() });
+    // setDoc+merge: 채팅 부모문서가 아직 없어도(첫 메시지) 실패 없이 생성·갱신 + 목록 노출용 참가자 정보 보강
+    const _partner = window._currentChatPartner;
+    await setDoc(doc(db, 'chats', chatId), Object.assign({
+      participants: [user.uid, _partner].filter(Boolean),
+      participantNames: Object.assign({ [user.uid]: nickname }, _partner ? { [_partner]: window._currentChatPartnerName || '상대' } : {}),
+      participantPhotos: Object.assign({ [user.uid]: myPhoto }, _partner ? { [_partner]: window._currentChatPartnerPhoto || '' } : {}),
+      lastMessage: text, lastMessageTime: serverTimestamp()
+    }), { merge: true });
     // 상대방에게 채팅 알림 (닉네임/프사를 직접 지정해서 익명 방지)
     if (window._currentChatPartner) {
       _sendNotif(window._currentChatPartner, 'chat', { chatId, text: text.substring(0, 40) }, nickname, myPhoto);
