@@ -2997,8 +2997,8 @@ window.mwPortal = function () {
 <div id="murpy-first-guide" style="display:none;position:fixed;inset:0;z-index:10049;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.6);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
   <div style="max-width:320px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:26px 24px;text-align:center">
     <div class="mfg-token" style="display:flex;justify-content:center;margin-bottom:14px"></div>
-    <div style="font-size:18px;font-weight:800;margin-bottom:8px">머피가 쌓이기 시작했어요</div>
-    <div style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">머피는 <b style="color:#fff">매칭 신청</b>과 <b style="color:#fff">대숲 글쓰기</b>에 써요.<br><span style="font-size:12px;color:rgba(255,255,255,0.38)">지금은 베타라 무제한으로 써볼 수 있어요</span></div>
+    <div style="font-size:18px;font-weight:800;margin-bottom:8px">머피 10개를 받았어요 🎁</div>
+    <div style="font-size:13.5px;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:20px">머피는 운동하면 쌓이는 코인이에요.<br><b style="color:#fff">매칭 신청</b>과 <b style="color:#fff">대숲 글쓰기</b>에 써요.<br><span style="font-size:12px;color:rgba(255,255,255,0.38)">꾸민 캐릭터로 노는 머피월드에서도 써요</span></div>
     <div style="display:flex;gap:8px">
       <button onclick="document.getElementById('murpy-first-guide').style.display='none';if(typeof closePanel==='function')closePanel('mypage-panel');goPage('match')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">매칭 보러가기</button>
       <button onclick="document.getElementById('murpy-first-guide').style.display='none';if(typeof closePanel==='function')closePanel('mypage-panel');goPage('bamboo')" style="flex:1;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">대숲 가기</button>
@@ -7392,9 +7392,11 @@ window.loadUserProfile = async (uid) => {
 };
 
 window.obComplete = async () => {
-  if (!window._obData.sports.length) { showToast('주로 하는 운동을 선택해주세요'); return; }
+  // 종목·지역은 obNextStep2에서 검증됨. 여기선 프로필 사진 필수 게이트.
+  if (!window._pendingProfilePhoto && !(window.currentUser && window.currentUser.firestorePhotoURL)) {
+    showToast('프로필 사진을 등록해주세요'); return;
+  }
   const district = document.getElementById('ob-district').value;
-  if (!district) { showToast('활동 지역을 선택해주세요'); return; }
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   const nickname = document.getElementById('ob-nickname').value.trim();
@@ -7410,7 +7412,10 @@ window.obComplete = async () => {
     if (window.currentUser) window.currentUser.nickname = nickname;
     document.getElementById('onboarding-modal').style.display = 'none';
     await window.loadUserProfile(user.uid);
-    showToast('머피에 오신 걸 환영해요!');
+    // 가입 선물: 머피 축하 연출 + 설명 가이드(핵심 기능으로 유도). 1회.
+    if (window.celebrateMurpy) window.celebrateMurpy(window.getCredits ? window.getCredits() : 10);
+    try { localStorage.setItem('murpy_credit_intro', '1'); } catch (e) {}
+    setTimeout(function () { if (window.murpyFirstGuide) window.murpyFirstGuide(); }, 2700);
   } catch(e) { console.error('온보딩 저장 실패:', e); showToast('저장 실패: ' + e.message); }
 };
 
