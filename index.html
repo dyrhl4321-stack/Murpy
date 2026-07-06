@@ -4370,6 +4370,10 @@ window.addEventListener('save-profile-photo', function () {
 // obComplete, loadUserProfile, saveProfile → 모듈 스크립트에서 window.xxx로 정의
 
 function showOnboarding(userData = {}) {
+  window._pendingProfilePhoto = null;
+  var _obp = document.getElementById('ob-photo-preview'), _obi = document.getElementById('ob-photo-icon');
+  if (_obp) { _obp.src = ''; _obp.style.display = 'none'; }
+  if (_obi) _obi.style.display = '';
   window._obData = { gender: userData.gender||'', purpose: userData.purpose||'', times: [...(userData.workoutTime||[])], sports: [...(userData.sports||[])] };
   document.getElementById('ob-nickname').value = userData.nickname || '';
   document.getElementById('ob-age').value = userData.age || '';
@@ -5966,15 +5970,18 @@ window.mStars = function (score, size) {
 };
 
 // 머피 적립 중앙 축하 연출
-window.celebrateMurpy = function (balance) {
+window.celebrateMurpy = function (balance, opts) {
+  opts = opts || {};
   const el = document.getElementById('murpy-celebrate');
   if (!el) return;
   clearTimeout(el._t);
   const tw = el.querySelector('.mc-token');
   if (tw && window.murpyTokenSVG) tw.innerHTML = window.murpyTokenSVG(120);
+  const _amt = el.querySelector('.mc-amt');
+  if (_amt) _amt.innerHTML = '+' + (opts.amount != null ? opts.amount : 1) + ' <span style="color:#F5C24B">머피</span>';
   const _title = el.querySelector('.mc-title');
   const _s = window._creditState ? (window._creditState.streak || 0) : 0;
-  if (_title) _title.textContent = (_s >= 2) ? (_s + '일 연속 인증!') : '오늘도 운동 완료!';
+  if (_title) _title.textContent = opts.title || ((_s >= 2) ? (_s + '일 연속 인증!') : '오늘도 운동 완료!');
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const sparks = el.querySelector('.mc-sparks');
   if (sparks) {
@@ -7413,7 +7420,7 @@ window.obComplete = async () => {
     document.getElementById('onboarding-modal').style.display = 'none';
     await window.loadUserProfile(user.uid);
     // 가입 선물: 머피 축하 연출 + 설명 가이드(핵심 기능으로 유도). 1회.
-    if (window.celebrateMurpy) window.celebrateMurpy(window.getCredits ? window.getCredits() : 10);
+    if (window.celebrateMurpy) window.celebrateMurpy(10, { amount: 10, title: '가입 축하 선물!' });
     try { localStorage.setItem('murpy_credit_intro', '1'); } catch (e) {}
     setTimeout(function () { if (window.murpyFirstGuide) window.murpyFirstGuide(); }, 2700);
   } catch(e) { console.error('온보딩 저장 실패:', e); showToast('저장 실패: ' + e.message); }
