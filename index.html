@@ -2122,6 +2122,8 @@ window.mwPortal = function () {
   }
   p.style.display = 'flex';
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // 입장 연출이 끝나 머피월드가 온전히 보일 때 캐릭터 코치(콜드유저) 예약
+  try { clearTimeout(window._mwCoachT); window._mwCoachT = setTimeout(function () { if (window._maybeCoachChar) window._maybeCoachChar(); }, reduce ? 700 : 2600); } catch (e) {}
   if (reduce) { clearTimeout(window._mwPortalT); window._mwPortalT = setTimeout(function () { p.style.display = 'none'; }, 320); return; }
   const ch = document.getElementById('mw-portal-char'), flash = document.getElementById('mw-portal-flash');
   const body = (window._charDraft && window._charDraft.body) || 'human';
@@ -6167,7 +6169,7 @@ window._COACH_MARKS = {
   home:   { spotlightSel: '#feed-verify-btn', text: '여기서 <b>오늘 운동을 인증</b>하고<br>머피를 받아요!' },
   match:  { spotlightSel: '#match-like-btn', text: '마음에 드는 사람에게<br><b>같이 운동해요</b>로 먼저 다가가요' },
   bamboo: { spotlightSel: '#bamboo-compose-trigger', color: 'green', text: '여기에 <b style="color:#22B266">익명으로</b><br>운동 고민·자랑을 남겨요' },
-  char:   { spotlightSel: '#char-dress-tab', text: '머피로 <b>내 캐릭터를 꾸며요</b><br>곧 지도에도 등장해요!' }
+  char:   { spotlightSel: '#charworld-avatar', color: 'gold', text: '특정 동작을 해내면 <b style="color:#C9902A">히든 캐릭터</b>가 해금돼요<br>내 캐릭터로 <b style="color:#C9902A">지도에 발자국</b>을 남겨봐요!' }
 };
 window.showCoach = function (cfg) {
   cfg = cfg || {};
@@ -6185,10 +6187,13 @@ function _drawCoach(cfg, t) {
   const ov = document.getElementById('coach-overlay'); if (!ov) return;
   const hole = document.getElementById('coach-hole');
   const card = document.getElementById('coach-card');
+  // 스크롤 잠금(측정 전에 걸어야 스크롤바 사라짐에 따른 밀림까지 반영돼 네온이 정확히 고정됨). 닫을 때 해제.
+  try { document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden'; } catch (e) {}
   let rect = null;
   if (t) { const r = t.getBoundingClientRect(); if (r.width > 0 && r.height > 0) rect = r; }
-  // 네온 색(대숲=초록, 그 외 블루)
+  // 네온 색(대숲=초록, 머피월드=골드, 그 외 블루)
   if (cfg.color === 'green') { hole.style.setProperty('--coach-c', '#4ADE80'); hole.style.setProperty('--coach-c2', '#DAFBE7'); hole.style.setProperty('--coach-glow', 'rgba(74,222,128,0.18)'); }
+  else if (cfg.color === 'gold') { hole.style.setProperty('--coach-c', '#F5C24B'); hole.style.setProperty('--coach-c2', '#FCE9B8'); hole.style.setProperty('--coach-glow', 'rgba(245,194,75,0.2)'); }
   else { hole.style.removeProperty('--coach-c'); hole.style.removeProperty('--coach-c2'); hole.style.removeProperty('--coach-glow'); }
   let tail = 'tail-up';
   if (rect) {
@@ -6215,6 +6220,7 @@ function _drawCoach(cfg, t) {
 window.dismissCoach = function () {
   const ov = document.getElementById('coach-overlay'); if (!ov) return;
   ov.style.display = 'none';
+  try { document.documentElement.style.overflow = ''; document.body.style.overflow = ''; } catch (e) {}
   const hole = document.getElementById('coach-hole'); if (hole) hole.classList.remove('coach-neon');
   if (ov._key) { try { localStorage.setItem('coach_' + ov._key, '1'); } catch (e) {} }
   ov._key = null;
@@ -6222,6 +6228,7 @@ window.dismissCoach = function () {
 // 콜드유저면 탭 첫 진입 때 자동 안내(탭별 1회). 관리자 리셋 버튼으로 재확인 가능.
 window._maybeCoach = function (name) {
   try {
+    if (name === 'char') return;   // 머피월드는 입장 연출(포탈) 끝난 뒤 _maybeCoachChar로 처리
     if (!localStorage.getItem('coach_on')) return;
     const cm = window._COACH_MARKS[name];
     if (!cm || localStorage.getItem('coach_' + name)) return;
@@ -6231,6 +6238,17 @@ window._maybeCoach = function (name) {
         window.showCoach(Object.assign({ key: name }, cm));
       }
     }, 480);
+  } catch (e) {}
+};
+// 머피월드: 입장 연출이 끝나고 캐릭터가 보일 때 캐릭터에 골드 코치(콜드유저·1회)
+window._maybeCoachChar = function () {
+  try {
+    if (!localStorage.getItem('coach_on')) return;
+    if (localStorage.getItem('coach_char')) return;
+    const pg = document.getElementById('page-char');
+    if (!pg || !pg.classList.contains('active')) return;
+    if (document.getElementById('coach-overlay').style.display === 'block') return;
+    window.showCoach(Object.assign({ key: 'char' }, window._COACH_MARKS.char));
   } catch (e) {}
 };
 // 관리자 테스트: 모든 코치마크 초기화 + 콜드유저로 표시
