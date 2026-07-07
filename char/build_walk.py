@@ -17,17 +17,15 @@ from collections import deque
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TARGET_H = 428             # 2배 고화질(꾸미기 큰 화면 대응). extract_item.py와 동일 규격.
-PADX, PAD_TOP, PAD_BOTTOM = 12, 12, 8
+TARGET_H = 214
+PADX, PAD_TOP, PAD_BOTTOM = 6, 6, 4
 
 # 캐릭터별 설정 (격자밴드는 각 소스에서 측정한 값)
-# ⚠️ walk_source.png = 고화질 신규 베이스(1133×2400). 결과 cw는 _CHAR_BODIES.human(282)과 맞아야 함.
-# ⚠️ 헬토리는 아직 저해상 1x 소스라 여기서 재빌드하면 업스케일됨. 고화질 헬토리 소스 나오면 밴드 갱신 후 사용.
 CONFIGS = [
-    dict(name="walk",    alpha=True,     # 사람 4방향 고화질 베이스(Photoroom 투명 PNG, 1133×2400)
-         cols=[(14, 363), (396, 736), (773, 1115)],
-         rows=[(15, 590), (614, 1190), (1218, 1790), (1815, 2391)]),   # 사람(디폴트) 아래/위/좌/우
-    dict(name="heltori", alpha=True,     # 헬토리(구 1x 소스 — 고화질 나오면 갱신)
+    dict(name="walk",    alpha=True,     # 사람 4방향 최종본(Photoroom 투명 PNG)
+         cols=[(201, 324), (453, 575), (683, 807)],
+         rows=[(19, 225), (247, 455), (476, 662), (697, 885)]),   # 사람(디폴트) 아래/위/좌/우
+    dict(name="heltori", alpha=True,     # 헬토리 4방향 최종본(Photoroom 투명 PNG)
          cols=[(190, 340), (438, 587), (670, 820)],
          rows=[(26, 224), (253, 454), (475, 661), (695, 883)]),   # 헬토리(근방단 한정) 아래/위/좌/우
 ]

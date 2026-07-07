@@ -13,8 +13,8 @@ from collections import deque
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CW, CH = 282, 448          # 우리 격자 셀(사람 기준, 2배 고화질). walk.png와 동일해야 함. _CHAR_BODIES.human cw/ch와 일치.
-TARGET_H, PAD_BOTTOM = 428, 8
+CW, CH = 141, 224          # 우리 격자 셀(사람 기준). walk.png와 동일해야 함.
+TARGET_H, PAD_BOTTOM = 214, 4
 
 # ===== 아이템별 설정 =====
 CONFIG = dict(
@@ -87,7 +87,7 @@ def _extract_flood(cp, judge, y1f):
     """상단에서부터 judge 조건으로 연결된 덩어리만 채움 → 밑단이 실제 모양(아치)을 따라감.
     갈색머리·피부는 judge에서 걸러지고, 아래로 연결 안 된 외곽선 조각도 제외됨."""
     ycut=int(CH*y1f); filled=[[False]*CW for _ in range(CH)]; dq=deque()
-    for y in range(0, max(8, int(CH*0.06))):   # 시드 높이를 셀크기 비례로(2배 시트에서도 모자 상단 포착)
+    for y in range(0,8):
         for x in range(CW):
             if judge(cp[x,y]) and not filled[y][x]: filled[y][x]=True; dq.append((x,y))
     while dq:
