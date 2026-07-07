@@ -9,7 +9,9 @@
   ⚠️ **아이소메트릭/3-4 시점 금지 → 마름모(다이아몬드) 바닥 나옴.** 캐릭터가 정투상이라 필드도 정투상.
 - **바닥**: **직사각형 바닥이 화면 전체를 꽉 채움**(edge-to-edge, 마름모 판 아님). 걸어다닐 **빈 바닥을
   가운데에 넓게** 두고, 가구·소품·벽·풍경은 **가장자리(테두리)** 로 배치(캐릭터 이동 공간 확보).
-- **스케일**: 타일/디테일 크기 일정(≈32~48px 타일감). 캐릭터(치비)가 화면 높이의 약 1/6로 보이게.
+- **스케일(2026-07-07 갱신 — 캐릭터 확대 반영)**: 캐릭터를 ~1.5배 키우면서 화면 대비 **약 1/4 높이**가 됨.
+  → 필드도 **더 줌인된 느낌**으로: 타일/가구 디테일을 **크게**(≈64px 타일감), 소품 개수는 줄이고 큼직하게.
+  (구 스펙은 1/6·32~48px였음 — 이제 캐릭터가 커져서 배경도 같이 커져야 이질감 없음.)
 - **스타일**: 진짜 픽셀아트, 하드 픽셀, **안티에일리어싱 없음**, 제한 팔레트(전 필드 공유),
   밝고 따뜻한 낮 조명(어둡지 않게 → 검은 스프라이트도 잘 읽힘), 아늑/노스탤직(미니홈피 감성).
 - **금지**: 사람/캐릭터, 글자·텍스트, UI, 워터마크. 배경은 깔끔·플랫.
@@ -20,15 +22,17 @@
    → 캐릭터 4방향 때 쓴 것과 같은 방식(레퍼런스 고정)이라 톤·크기 안 튐.
 3. 전부 1024×768로 저장. 파일명: field_home.png / field_gym.png / field_hangang.png / field_tennis.png / field_golf.png
 
-## 베이스 프롬프트 (영문, 모델용)
+## 베이스 프롬프트 (영문, 모델용 — 2026-07-07 갱신, 큰 캐릭터 스케일)
 ```
 Top-down orthographic RPG map background, Pokemon GameBoy-Advance overworld style,
 straight bird's-eye view, cozy nostalgic personal-space vibe.
 IMPORTANT: NOT isometric, NO diamond/rhombus shape, no 3D perspective, no vanishing point.
 The ground/floor is grid-aligned and FILLS THE ENTIRE RECTANGULAR FRAME edge to edge.
 SCENE: <장소>.
-Keep the center of the floor open and walkable (absolutely no characters, no people),
-furniture / props / scenery arranged around the EDGES.
+Zoomed-in scale: chunky LARGE tiles (~64px feel), big readable furniture/props, few objects
+(not a busy cluttered scene) — sized so a chibi character standing on it would be about
+ONE QUARTER of the frame height. Keep a WIDE open walkable floor in the center
+(absolutely no characters, no people); place the big props / furniture / scenery around the EDGES.
 True pixel art, hard pixels, NO anti-aliasing, limited cohesive palette, bright warm daytime light.
 No text, no letters, no UI, no watermark, clean. 1024x1024 square.
 ```
