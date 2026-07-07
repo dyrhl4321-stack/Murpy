@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260706002 -->
+<!-- cache-bust: v20260707001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -850,6 +850,37 @@
       <button class="tab-btn" onclick="window.charHubTab('map',this)">지도</button>
     </div>
     <div id="charworld-hub-panel" style="margin-top:12px"></div>
+  </div>
+  <!-- 꾸미기 전용 화면 (1단계): page-char 위 전체 오버레이 -->
+  <div id="mw-dress" style="display:none;position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:390px;z-index:1500;background:#0b0e16;flex-direction:column;font-family:'Galmuri11','Pretendard Variable',sans-serif;image-rendering:pixelated">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px">
+      <button class="mw-btn mw-btn-sm" onclick="window.mwCloseDress()">← 뒤로</button>
+      <div class="mw-hud"><span class="mw-coin" title="머피"><img src="char/coin.png?v=1" alt="머피" style="width:17px;height:17px;image-rendering:pixelated;display:block"><b class="mw-num" id="mw-dress-coin">0</b></span></div>
+    </div>
+    <div id="mw-dress-stage" style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:6px 0 2px;position:relative">
+      <div id="mw-dress-hero"></div>
+      <div style="width:56%;max-width:200px;height:12px;margin-top:4px;background:radial-gradient(ellipse at center, rgba(0,0,0,0.45), transparent 70%)"></div>
+      <div class="tab-bar" id="mw-dress-rotate" style="margin-top:10px;width:90%;max-width:280px">
+        <button class="tab-btn active" onclick="window.mwHeroFace('down',this)">앞</button>
+        <button class="tab-btn" onclick="window.mwHeroFace('left',this)">좌</button>
+        <button class="tab-btn" onclick="window.mwHeroFace('up',this)">뒤</button>
+        <button class="tab-btn" onclick="window.mwHeroFace('right',this)">우</button>
+      </div>
+    </div>
+    <div style="flex:0 0 auto;padding:12px 16px calc(14px + env(safe-area-inset-bottom));background:#0e1320;box-shadow:0 -3px 0 #05070c;max-height:46vh;overflow-y:auto">
+      <div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:12px;flex-wrap:nowrap;overflow-x:auto">
+        <button class="tab-btn active" onclick="window.charSlot('hair',this)">헤어</button>
+        <button class="tab-btn" onclick="window.charSlot('top',this)">상의</button>
+        <button class="tab-btn" onclick="window.charSlot('bottom',this)">하의</button>
+        <button class="tab-btn" onclick="window.charSlot('shoes',this)">신발</button>
+        <button class="tab-btn" onclick="window.charSlot('hat',this)">모자</button>
+        <button class="tab-btn" onclick="window.charSlot('acc',this)">악세사리</button>
+        <button class="tab-btn" onclick="window.charSlot('color',this)">색상</button>
+      </div>
+      <div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>
+      <div id="mw-dress-lock" style="display:none;text-align:center;margin-top:12px;font-size:12px;color:#8a93a8;line-height:1.6"></div>
+      <button class="mw-btn" style="width:100%;margin-top:16px" onclick="window.charSave()">저장</button>
+    </div>
   </div>
 </div>
 
@@ -1950,14 +1981,14 @@ window.charSlot = function (slot, btn) {
     grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
 };
-window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
+window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRefreshPreview(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
 window.charClearSlot = function (slot) {
   if (!window._charDraft) return;
   window._charDraft[slot] = null;
-  window._charRenderAvatar(); window._charApplyPos();   // 프리뷰 + 걷는 캐릭터 반영
+  window._charRefreshPreview(); window._charApplyPos();   // 프리뷰(작은/큰) + 걷는 캐릭터 반영
   window.charSlot(slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
-window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRenderAvatar(); };
+window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRefreshPreview(); };
 window.charPick = async function (id) {
   const item = window.CHAR_ITEMS.find(x => x.id === id); if (!item || !window._charDraft) return;
   const owned = (window._charState && window._charState.wardrobe) || [];
@@ -1975,7 +2006,7 @@ window.charPick = async function (id) {
     window.showToast && showToast("'" + item.name + "' 획득!");
   }
   window._charDraft[item.slot] = id;
-  window._charRenderAvatar();
+  window._charRefreshPreview();
   window._charApplyPos();     // 걷는 캐릭터에 즉시 반영
   window.charSlot(item.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
@@ -2040,6 +2071,85 @@ window.charRenderRoster = function () {
     return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + b.name + "</span>" + sub + "</button>";
   }).join('');
 };
+// ===== 꾸미기 전용 화면 (1단계) =====
+window._charHeroFace = 'down';
+// 큰 정면/방향 캐릭터: 기존 레이어 합성을 face(행) + 큰 크기로. #mw-dress-hero에 그림.
+window._charRenderHero = function (face) {
+  face = face || window._charHeroFace || 'down';
+  window._charHeroFace = face;
+  const el = document.getElementById('mw-dress-hero'); if (!el) return;
+  const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) || {};
+  const b = window._CHAR_BODIES[(cfg && cfg.body) || 'human'] || window._CHAR_BODIES.human;
+  const stage = document.getElementById('mw-dress-stage');
+  const availH = (stage && stage.clientHeight) ? stage.clientHeight : Math.round(window.innerHeight * 0.5);
+  const availW = (stage && stage.clientWidth) ? stage.clientWidth : window.innerWidth;
+  let H = Math.round(availH * 0.72);                 // 회전탭·받침대 여백 감안
+  let w = Math.round(H * b.cw / b.ch);
+  const maxW = Math.round(availW * 0.8);
+  if (w > maxW) { w = maxW; H = Math.round(w * b.ch / b.cw); }   // 폭이 넘치면 폭 기준
+  const row = face === 'up' ? 1 : (face === 'left' ? 2 : (face === 'right' ? 3 : 0)); // 시트 4행[아래0/위1/좌2/우3]
+  const sheets = window._charEquippedSheets(cfg);
+  const layer = function (url) {
+    return "<div style=\"position:absolute;left:0;top:0;width:" + w + "px;height:" + H + "px;"
+      + "background-image:url('" + url + "');background-repeat:no-repeat;"
+      + "background-size:" + (w * 3) + "px " + (H * 4) + "px;background-position:0 " + (-row * H) + "px;"
+      + "image-rendering:pixelated\"></div>";
+  };
+  let html = "<div style=\"position:relative;width:" + w + "px;height:" + H + "px;margin:0 auto;"
+    + "filter:drop-shadow(0 4px 3px rgba(0,0,0,0.4))\">";
+  window._CHAR_LAYER_ORDER.forEach(function (s) { if (sheets[s]) html += layer(sheets[s]); });
+  el.innerHTML = html + "</div>";
+  el.style.width = w + 'px'; el.style.height = H + 'px';
+};
+window.mwHeroFace = function (face, btn) {
+  if (btn) document.querySelectorAll('#mw-dress-rotate .tab-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
+  window._charRenderHero(face);
+};
+// 앞모습(작은) + 큰 프리뷰 동시 갱신 — 옷 바꿀 때 호출
+window._charRefreshPreview = function () {
+  window._charRenderAvatar && window._charRenderAvatar();
+  const dress = document.getElementById('mw-dress');
+  if (dress && dress.style.display !== 'none') window._charRenderHero(window._charHeroFace);
+};
+window.mwOpenDress = function () {
+  const src = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
+  window._charDraft = Object.assign({}, src || {});
+  if (!window._charDraft.body) window._charDraft.body = 'human';
+  const dress = document.getElementById('mw-dress'); if (!dress) return;
+  const amt = document.getElementById('mw-dress-coin');
+  if (amt) amt.textContent = (window.getCredits ? window.getCredits() : 0);
+  const isHuman = ((window._charDraft.body || 'human') === 'human');
+  const lock = document.getElementById('mw-dress-lock');
+  const tabs = document.getElementById('charworld-slot-tabs');
+  const items = document.getElementById('charworld-items');
+  if (isHuman) {
+    if (lock) lock.style.display = 'none';
+    if (tabs) tabs.style.display = '';
+    if (items) items.style.display = '';
+  } else {
+    const nm = ((window._CHAR_BODIES[window._charDraft.body] || {}).name || '이 캐릭터');
+    if (lock) { lock.innerHTML = nm + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 사람 캐릭터에서!'; lock.style.display = ''; }
+    if (tabs) tabs.style.display = 'none';
+    if (items) items.style.display = 'none';
+  }
+  window._charHeroFace = 'down';
+  document.querySelectorAll('#mw-dress-rotate .tab-btn').forEach(function (b, i) { b.classList.toggle('active', i === 0); });
+  dress.style.display = 'flex';
+  requestAnimationFrame(function () {
+    window._charRenderHero('down');
+    if (isHuman) window.charSlot('hair', document.querySelector('#charworld-slot-tabs .tab-btn'));
+  });
+};
+window.mwCloseDress = function () {
+  const dress = document.getElementById('mw-dress'); if (dress) dress.style.display = 'none';
+  window.charHubTab && window.charHubTab('me');
+  window._charApplyPos && window._charApplyPos();
+};
+// 오리엔테이션/리사이즈 시 큰 프리뷰 재계산
+window.addEventListener('resize', function () {
+  const dress = document.getElementById('mw-dress');
+  if (dress && dress.style.display !== 'none') window._charRenderHero(window._charHeroFace);
+});
 window.charHubTab = function (name, btn) {
   window._charHub = name;
   const tabs = document.querySelectorAll('#charworld-hub-tabs .tab-btn');
@@ -2050,23 +2160,8 @@ window.charHubTab = function (name, btn) {
     panel.innerHTML = '<div style="font-size:13px;color:var(--text-tertiary);margin-bottom:12px">방에서 걸어다닐 캐릭터를 골라요</div><div id="charworld-roster" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>';
     window.charRenderRoster();
   } else if (name === 'dress') {
-    const body = (window._charDraft && window._charDraft.body) || 'human';
-    panel.innerHTML =
-      '<div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">'
-      + '<button class="tab-btn active" onclick="window.charSlot(\'hair\',this)">헤어</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'top\',this)">상의</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'bottom\',this)">하의</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'shoes\',this)">신발</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'hat\',this)">모자</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'acc\',this)">악세사리</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'color\',this)">색상</button></div>'
-      + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
-      + '<button class="mw-btn" style="width:100%;margin-top:18px" onclick="window.charSave()">저장</button>';
-    if (body !== 'human') {
-      panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:#8a93a8;line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 사람 캐릭터에서!</div>');
-    }
-    window._charRenderAvatar();
-    window.charSlot('hair');
+    window.mwOpenDress();
+    return;
   } else {
     panel.innerHTML = '<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">'
       + '<div style="width:66px;height:66px;margin:0 auto 16px;position:relative;background:#0e1320;box-shadow:0 0 0 3px #2b3350">'
