@@ -21,6 +21,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+if hasattr(sys.stdout, "reconfigure"):       # 콘솔이 cp949 여도 한글/기호 출력
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 SHEET = (1408, 3008)
 COLS, ROWS = 3, 4
 
@@ -93,11 +96,13 @@ def remove(src: Path, out_dir: Path) -> Path | None:
 
     print(f"  도너 {name}  이동({dx:+d},{dy:+d})  띠MAE {ring_mae:.2f}  안쪽MAE {inner_mae:.2f}  비율 {ratio:.2f}")
 
-    if not (ratio > PRESENT_RATIO and inner_mae > PRESENT_INNER):
-        print("  워터마크 없음 — 원본 유지")
-        return None
+    # 도너가 안 맞으면 워터마크 유무 자체를 판정할 수 없다. 이 검사가 먼저다.
     if ring_mae > DONOR_MAX_RING:
-        print(f"  중단 — 띠MAE {ring_mae:.2f} > {DONOR_MAX_RING}. 믿을 만한 도너 없음. 사람이 봐야 함")
+        print(f"  중단 - 띠MAE {ring_mae:.2f} > {DONOR_MAX_RING}. 도너가 대상 프레임과 안 맞음")
+        print("         (프레임끼리 그림이 다를 수 있음. 워터마크 유무는 판정 불가. 사람이 볼 것)")
+        return None
+    if not (ratio > PRESENT_RATIO and inner_mae > PRESENT_INNER):
+        print("  워터마크 없음 - 원본 유지")
         return None
 
     fixed = target.copy()
