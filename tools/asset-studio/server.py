@@ -137,7 +137,7 @@ def _slot_of(item_id: str) -> str:
 
 
 # 렌더 z순서 (index.html 의 _CHAR_LAYER_ORDER 와 같아야 한다)
-Z_ORDER = ["body", "shoes", "bottom", "top", "hair", "hat", "acc"]
+Z_ORDER = ["body", "bottom", "shoes", "top", "hair", "hat", "acc"]
 
 
 def _interior_holes(alpha: np.ndarray, fw: int, fh: int) -> np.ndarray:
