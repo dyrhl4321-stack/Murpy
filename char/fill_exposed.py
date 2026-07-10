@@ -112,16 +112,58 @@ def fill_holes(item_id: str, out: Path | None = None) -> Path:
     return dst
 
 
+def fill_seams(item_id: str, out: Path | None = None, max_width: int = 3) -> Path:
+    """옷을 가로지르는 좁은 세로 틈(솔기)을 메운다.
+
+    한 행에서 좌우 양쪽이 옷이고 그 사이 빈칸이 max_width 이하일 때만 채운다.
+    다리 사이 틈(보통 5px 이상)은 정상이므로 건드리지 않는다.
+    """
+    im = Image.open(ITEMS / f"{item_id}.png").convert("RGBA")
+    arr = np.asarray(im).copy()
+    on = arr[..., 3] > 128
+
+    seam = np.zeros_like(on)
+    for y in range(on.shape[0]):
+        row = on[y]
+        x = 0
+        while x < on.shape[1]:
+            if row[x]:
+                x += 1
+                continue
+            run = x
+            while x < on.shape[1] and not row[x]:
+                x += 1
+            width = x - run
+            # 프레임 경계를 넘지 않고, 좌우 양쪽이 옷이며, 충분히 좁을 때
+            same_frame = (run - 1) // FW == x // FW if x < on.shape[1] else False
+            if width <= max_width and run > 0 and x < on.shape[1] and row[run - 1] and row[x] and same_frame:
+                seam[y, run:x] = True
+
+    if seam.any():
+        _, (iy, ix) = ndimage.distance_transform_edt(~on, return_indices=True)
+        ys, xs = np.nonzero(seam)
+        arr[ys, xs] = arr[iy[ys, xs], ix[ys, xs]]
+        arr[ys, xs, 3] = 255
+
+    dst = out or (ITEMS / f"{item_id}.png")
+    Image.fromarray(arr, mode="RGBA").save(dst)
+    print(f"{item_id}: 세로 솔기 {int(seam.sum()):,}px 메움 (폭 ≤{max_width}) → {dst.name}")
+    return dst
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("item")
     ap.add_argument("--shoes", nargs="*", default=[])
     ap.add_argument("--reach", type=int, default=REACH)
     ap.add_argument("--holes", action="store_true", help="내부 구멍도 메운다 (하의·신발 전용)")
+    ap.add_argument("--seams", type=int, metavar="W", help="폭 W 이하의 세로 솔기를 메운다")
     ap.add_argument("-o", "--out", type=Path)
     a = ap.parse_args()
     if a.holes:
         fill_holes(a.item, a.out)
+    if a.seams:
+        fill_seams(a.item, a.out, a.seams)
     if a.shoes:
         fill(a.item, a.shoes, a.out, a.reach)
     return 0
