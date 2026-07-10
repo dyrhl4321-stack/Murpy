@@ -128,22 +128,125 @@ def _preview_4dir(base: Image.Image, item: Image.Image) -> Image.Image:
 
 # ---------------------------------------------------------------- api
 
+def _slot_of(item_id: str) -> str:
+    for p in ("hat", "top", "bottom", "shoes", "hair"):
+        if item_id.startswith(p):
+            return p
+    return "accessory"
+
+
+# 렌더 z순서 (index.html 의 _CHAR_LAYER_ORDER 와 같아야 한다)
+Z_ORDER = ["body", "shoes", "bottom", "top", "hair", "hat", "acc"]
+
+
+def _interior_holes(alpha: np.ndarray, fw: int, fh: int) -> np.ndarray:
+    """프레임마다, 가장자리에서 도달 불가능한 투명 픽셀. 옷에 뚫린 구멍이다."""
+    from scipy import ndimage
+    solid = alpha > 128
+    out = np.zeros_like(solid)
+    for r in range(alpha.shape[0] // fh):
+        for c in range(alpha.shape[1] // fw):
+            sl = (slice(r * fh, (r + 1) * fh), slice(c * fw, (c + 1) * fw))
+            m = solid[sl]
+            if not m.any():
+                continue
+            lab, n = ndimage.label(~m)
+            if n == 0:
+                continue
+            border = np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))
+            border = border[border > 0]
+            out[sl] = (~np.isin(lab, border)) & (~m)
+    return out
+
+
+def _lower_layer_union(slot: str, exclude: str) -> np.ndarray | None:
+    """이 슬롯보다 아래에 그려지는 아이템들의 합집합 마스크."""
+    if slot not in Z_ORDER:
+        return None
+    below = set(Z_ORDER[:Z_ORDER.index(slot)])
+    acc = None
+    for p in sorted((ROOT / "char" / "items").glob("*.png")):
+        if p.stem.endswith("_thumb") or p.stem == exclude:
+            continue
+        if _slot_of(p.stem) not in below:
+            continue
+        a = np.asarray(Image.open(p).convert("RGBA"))[..., 3] > 128
+        acc = a if acc is None else (acc | a)
+    return acc
+
+
+def _shipped_problem(item_id: str) -> dict | None:
+    """배포본 char/items/<id>.png 을 검사해 사람이 봐야 할 이유를 찾는다.
+
+    반투명/halo 는 알파를 굳히면 사라지는 축소 사고이고, 사람 손이 필요한 건
+    '구멍'과 '빈 프레임'이다. 그 둘을 분리해서 보고한다.
+    """
+    p = ROOT / "char" / "items" / f"{item_id}.png"
+    if not p.exists():
+        return None
+    a = np.asarray(Image.open(p).convert("RGBA"))[..., 3]
+    h, w = a.shape
+    fw, fh = w // T.COLS, h // T.ROWS
+    visible = int((a > 40).sum())
+    if visible == 0:
+        return {"severity": 3, "reasons": ["빈 파일"], "holes": 0}
+
+    hole_mask = _interior_holes(a, fw, fh)
+    holes = int(hole_mask.sum())
+
+    # 구멍 자체는 정상일 수 있다 (모자 챙 밑으로 머리가 보여야 한다).
+    # 진짜 버그는 그 구멍 아래에 다른 아이템이 깔려 비치는 것이다.
+    lower = _lower_layer_union(_slot_of(item_id), exclude=item_id)
+    leak = int((hole_mask & lower).sum()) if lower is not None else 0
+
+    semi = int(((a > 0) & (a < 255)).sum())
+    opaque = int((a == 255).sum())
+    semi_ratio = semi / max(opaque + semi, 1)
+
+    reasons = []
+    severity = 0
+    # 시트 2×2 블록 = 앱 1픽셀. 16px 미만이면 앱에서 4픽셀도 안 되니 사람을 부르지 않는다.
+    if leak >= 16:
+        reasons.append(f"구멍으로 아래 옷이 비침 {leak:,}px")
+        severity = 2
+    elif holes:
+        reasons.append(f"구멍 {holes:,}px (아래 옷 안 비침, 정상)")
+    if semi_ratio > 0.02:
+        reasons.append(f"반투명 {semi_ratio * 100:.0f}% (알파 굳힘으로 자동 해결)")
+        severity = max(severity, 1)
+    return {"severity": severity, "reasons": reasons, "holes": holes, "leak": leak}
+
+
 def api_queue() -> dict:
-    """편의: 기존 review_queue 에서 worn 시트가 있는 폴더 목록."""
-    items = []
+    """worn 시트 목록. 아이템별로 최신 것 하나만 남기고, 문제 있는 것을 위로 올린다."""
+    newest: dict[str, tuple[str, Path]] = {}
     if LEGACY_QUEUE.exists():
-        for d in sorted(LEGACY_QUEUE.iterdir(), reverse=True):
+        for d in sorted(LEGACY_QUEUE.iterdir()):
             src = d / "source_normalized_v2.png"
-            if src.exists():
-                item_id = d.name.rsplit("_", 1)[0]
-                slot = ("hat" if item_id.startswith("hat") else
-                        "top" if item_id.startswith("top") else
-                        "bottom" if item_id.startswith("bottom") else
-                        "shoes" if item_id.startswith("shoes") else
-                        "hair" if item_id.startswith("hair") else "accessory")
-                items.append({"itemId": item_id, "slot": slot,
-                              "worn": str(src.relative_to(ROOT)).replace("\\", "/"),
-                              "dir": d.name})
+            if not src.exists():
+                continue
+            item_id = d.name.rsplit("_", 1)[0]
+            stamp = d.name.rsplit("_", 1)[-1]
+            if item_id not in newest or stamp > newest[item_id][0]:
+                newest[item_id] = (stamp, src)
+
+    items = []
+    for item_id, (stamp, src) in newest.items():
+        prob = _shipped_problem(item_id)
+        items.append({
+            "itemId": item_id,
+            "slot": _slot_of(item_id),
+            "worn": str(src.relative_to(ROOT)).replace("\\", "/"),
+            "stamp": f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]} {stamp[9:11]}:{stamp[11:13]}",
+            "shipped": prob is not None,
+            "severity": prob["severity"] if prob else 0,
+            "holes": prob["holes"] if prob else 0,
+            "leak": prob.get("leak", 0) if prob else 0,
+            "reasons": prob["reasons"] if prob else ["앱에 없음"],
+        })
+
+    # 심각도 높은 것 먼저, 같으면 구멍 큰 것 먼저, 그다음 최근 것 먼저
+    items.sort(key=lambda i: (-i["severity"], -i["leak"], i["stamp"]))
     return {"base": str(DEFAULT_BASE.relative_to(ROOT)).replace("\\", "/"), "items": items}
 
 
