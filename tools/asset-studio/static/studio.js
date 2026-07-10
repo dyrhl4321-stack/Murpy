@@ -395,7 +395,7 @@ const CHECK_LABEL = {
   no_empty_frame: "빈 프레임 없음",
   semi_alpha_ok: "반투명 ≤ 2%",
   no_alpha_halo: "알파 유령 없음",
-  no_body_overpaint: "몸 위 덧칠 없음",
+  no_fabricated_pixels: "없는 픽셀 안 지어냄",
   frame_area_stable: "프레임 면적 안정",
   components_ok: "연결성분 정상",
 };
@@ -407,7 +407,8 @@ function showReport(rep) {
   const mets = [
     ["반투명 비율", (m.semiAlphaRatio * 100).toFixed(2) + "%"],
     ["알파 유령", m.haloPixels],
-    ["몸 위 덧칠", m.bodyOverpaintPx],
+    ["지어낸 픽셀", m.fabricatedPx],
+    ["구멍 메운 살색", m.bodyMaskPx],
     ["UNK 픽셀", m.unkPixels],
     ["프레임 면적 CV", m.frameAreaCV],
     ["보이는 픽셀", m.visiblePixels.toLocaleString()],

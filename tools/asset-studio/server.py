@@ -21,6 +21,7 @@ import datetime
 import io
 import json
 import mimetypes
+import re
 import shutil
 import sys
 import traceback
@@ -159,18 +160,35 @@ def _interior_holes(alpha: np.ndarray, fw: int, fh: int) -> np.ndarray:
     return out
 
 
-def _lower_layer_union(slot: str, exclude: str) -> np.ndarray | None:
-    """이 슬롯보다 아래에 그려지는 아이템들의 합집합 마스크."""
+def _registered_items() -> set[str]:
+    """index.html 의 CHAR_ITEMS 에 실제로 등록된 아이템 id.
+
+    char/items/ 에는 실험 중간본도 굴러다닌다. 앱이 겹쳐 그리지 않는 파일을
+    '아래 깔린 옷'으로 세면 유령 비침이 잡힌다.
+    """
+    src = (ROOT / "index.html").read_text(encoding="utf-8", errors="replace")
+    start = src.find("window.CHAR_ITEMS")
+    if start < 0:
+        return set()
+    end = src.find("];", start)
+    return set(re.findall(r"id:\s*'([^']+)'", src[start:end]))
+
+
+def _lower_layer_union(slot: str, exclude: str, shape: tuple[int, int]) -> np.ndarray | None:
+    """이 슬롯보다 아래에 그려지는, 앱에 등록된 아이템들의 합집합 마스크."""
     if slot not in Z_ORDER:
         return None
     below = set(Z_ORDER[:Z_ORDER.index(slot)])
     acc = None
-    for p in sorted((ROOT / "char" / "items").glob("*.png")):
-        if p.stem.endswith("_thumb") or p.stem == exclude:
+    for item_id in sorted(_registered_items()):
+        if item_id == exclude or _slot_of(item_id) not in below:
             continue
-        if _slot_of(p.stem) not in below:
+        p = ROOT / "char" / "items" / f"{item_id}.png"
+        if not p.exists():
             continue
         a = np.asarray(Image.open(p).convert("RGBA"))[..., 3] > 128
+        if a.shape != shape:
+            continue
         acc = a if acc is None else (acc | a)
     return acc
 
@@ -196,7 +214,7 @@ def _shipped_problem(item_id: str) -> dict | None:
 
     # 구멍 자체는 정상일 수 있다 (모자 챙 밑으로 머리가 보여야 한다).
     # 진짜 버그는 그 구멍 아래에 다른 아이템이 깔려 비치는 것이다.
-    lower = _lower_layer_union(_slot_of(item_id), exclude=item_id)
+    lower = _lower_layer_union(_slot_of(item_id), exclude=item_id, shape=a.shape)
     leak = int((hole_mask & lower).sum()) if lower is not None else 0
 
     semi = int(((a > 0) & (a < 255)).sum())
@@ -307,6 +325,21 @@ def _mask_from_payload(payload: str) -> np.ndarray:
     return _image_to_mask(Image.open(io.BytesIO(raw)))
 
 
+def _human_stats(meta: dict, mask: np.ndarray, worn: Image.Image, still_body: np.ndarray) -> dict:
+    """사람이 손댄 마스크의 지표.
+
+    fabricatedPx 가 진짜 위험이다 — worn 이 투명한 자리에 마스크를 켜면
+    아이템에 없는 픽셀을 지어내는 것이 된다. 게이트로 잡는다.
+    bodyMaskPx 는 정보 지표일 뿐이다. 구멍을 채우면 살색이 마스크에 들어가는데
+    그건 올바른 수정이다 (아래 옷이 비치지 않게 막는다).
+    """
+    wa = np.asarray(worn)[..., 3]
+    stats = dict(meta["stats"])
+    stats["fabricatedPx"] = int((mask & (wa <= 60)).sum())
+    stats["bodyOverpaintPx"] = int((mask & still_body).sum())
+    return stats
+
+
 def api_validate(body: dict) -> dict:
     sdir, meta = _load_session(body["id"])
     worn = Image.open(sdir / "worn.png").convert("RGBA")
@@ -316,8 +349,7 @@ def api_validate(body: dict) -> dict:
     # 사람이 손댄 뒤에는 몸 페인팅 여부를 다시 계산한다.
     base = Image.open(sdir / "base.png").convert("RGBA")
     still_body = T.is_skin(np.asarray(base, dtype=np.int16)) & T.is_skin(np.asarray(worn, dtype=np.int16))
-    stats = dict(meta["stats"])
-    stats["bodyOverpaintPx"] = int((mask & still_body).sum())
+    stats = _human_stats(meta, mask, worn, still_body)
     return V.validate(item, stats)
 
 
@@ -329,8 +361,7 @@ def api_export(body: dict) -> dict:
     item = _item_from_mask(worn, mask)
 
     still_body = T.is_skin(np.asarray(base, dtype=np.int16)) & T.is_skin(np.asarray(worn, dtype=np.int16))
-    stats = dict(meta["stats"])
-    stats["bodyOverpaintPx"] = int((mask & still_body).sum())
+    stats = _human_stats(meta, mask, worn, still_body)
     report = V.validate(item, stats)
 
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
