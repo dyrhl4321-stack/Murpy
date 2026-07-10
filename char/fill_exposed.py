@@ -43,15 +43,24 @@ def fill(item_id: str, shoe_ids: list[str], out: Path | None = None, reach: int 
 
     shoes = [_opaque(ITEMS / f"{s}.png") for s in shoe_ids]
 
-    # 조건 2: 같은 열에서 바지 밑단 아래
+    # 조건 2: 바지 밑단 아래.
+    # 바지가 아예 없는 열(발 바깥쪽 등)은 이웃 열의 밑단 높이를 물려받는다.
+    # 그러지 않으면 신발 목 옆에 남는 살 픽셀을 놓친다.
     below = np.zeros_like(pants)
     for r in range(ROWS):
         for c in range(COLS):
-            for x in range(c * FW, (c + 1) * FW):
+            hem = np.full(FW, -1, dtype=int)
+            for i, x in enumerate(range(c * FW, (c + 1) * FW)):
                 pc = np.nonzero(pants[r * FH:(r + 1) * FH, x])[0]
-                if not len(pc):
-                    continue
-                below[r * FH + int(pc.max()) + 1: (r + 1) * FH, x] = True
+                if len(pc):
+                    hem[i] = int(pc.max())
+            if (hem < 0).all():
+                continue
+            idx = np.nonzero(hem >= 0)[0]                      # 가장 가까운 열의 밑단으로 채움
+            nearest = idx[np.abs(np.arange(FW)[:, None] - idx[None, :]).argmin(axis=1)]
+            hem = hem[nearest]
+            for i, x in enumerate(range(c * FW, (c + 1) * FW)):
+                below[r * FH + hem[i] + 1: (r + 1) * FH, x] = True
 
     target = np.zeros_like(pants)
     for s in shoes:

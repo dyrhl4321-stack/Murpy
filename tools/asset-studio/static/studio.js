@@ -13,6 +13,8 @@ const S = {
   W: 0, H: 0,
   base: null, worn: null, trimap: null, diff: null,   // ImageData
   mask: null, maskAuto: null,                          // Uint8Array (0/1)
+  paint: null,                                         // Uint8ClampedArray RGBA — 직접 찍은 도트
+  color: [40, 42, 52],                                 // 연필 색
   frame: 0,                                            // 0..11
   tool: "brush", brush: 2, zoom: 2,                    // brush 단위 = 블록
   tol: 24,                                             // 마술봉 색 허용오차 (|Δrgb| 합)
@@ -87,6 +89,15 @@ function renderFrame(f, mask, opts = {}) {
         out.data[li + 1] = src.data[gi + 1];
         out.data[li + 2] = src.data[gi + 2];
         out.data[li + 3] = alpha;
+      }
+
+      // 직접 찍은 도트는 worn 을 덮어쓴다 (item / composite 보기에서만)
+      const pi = ((oy + y) * S.W + (ox + x)) * 4;
+      if (S.paint && S.paint[pi + 3] > 0 && on && (view === "item" || view === "composite")) {
+        out.data[li] = S.paint[pi];
+        out.data[li + 1] = S.paint[pi + 1];
+        out.data[li + 2] = S.paint[pi + 2];
+        out.data[li + 3] = 255;
       }
 
       if (view === "diff" && S.diff.data[gi + 3] > 0) {
@@ -209,14 +220,39 @@ function put(lx, ly, add) {
   if (lx < 0 || ly < 0 || lx >= FRAME.w || ly >= FRAME.h) return;
   const { x: ox, y: oy } = frameOrigin(S.frame);
   const i = (oy + ly) * S.W + (ox + lx);
-  // 채우기는 worn 이 불투명한 곳에서만 복원한다 (없는 픽셀을 만들지 않는다)
+
+  if (S.tool === "pencil" && add) {          // 직접 도트 찍기: worn 이 없어도 그린다
+    S.paint[i * 4] = S.color[0];
+    S.paint[i * 4 + 1] = S.color[1];
+    S.paint[i * 4 + 2] = S.color[2];
+    S.paint[i * 4 + 3] = 255;
+    setPixel(i, 1);
+    return;
+  }
+  if (!add) S.paint[i * 4 + 3] = 0;          // 지우면 찍은 도트도 지운다
+
+  // 그 외 채우기는 worn 이 불투명한 곳에서만 복원한다 (없는 픽셀을 만들지 않는다)
   if (add && S.worn.data[i * 4 + 3] <= 60) return;
   setPixel(i, add ? 1 : 0);
 }
 
+/** 현재 프레임의 합성 결과에서 색을 집는다 (스포이드). */
+function pickColor(p) {
+  const { x: ox, y: oy } = frameOrigin(S.frame);
+  const i = ((oy + p.ly) * S.W + (ox + p.lx)) * 4;
+  let src = S.base;
+  if (S.paint[i + 3] > 0) src = { data: S.paint };
+  else if (S.mask[(oy + p.ly) * S.W + (ox + p.lx)]) src = S.worn;
+  else if (S.base.data[i + 3] <= 20) src = S.worn;
+  S.color = [src.data[i], src.data[i + 1], src.data[i + 2]];
+  const hex = "#" + S.color.map((v) => v.toString(16).padStart(2, "0")).join("");
+  $("#color").value = hex;
+  toast(`색 집음 ${hex}`);
+}
+
 /** 격자에 스냅한 정사각 브러시. 크기 단위는 블록(1블록 = 2×2 px). */
 function paint(p) {
-  const add = S.tool === "brush";
+  const add = S.tool === "brush" || S.tool === "pencil";
   const side = Math.max(1, S.brush) * BLOCK;
   const x0 = snap(p.lx - Math.floor(side / 2));
   const y0 = snap(p.ly - Math.floor(side / 2));
@@ -330,6 +366,8 @@ canvas.addEventListener("pointerdown", (ev) => {
     return;
   }
 
+  if (S.tool === "picker") { pickColor(p); return; }
+
   beginStroke();
   if (S.tool === "component") { removeComponent(p); endStroke("component"); draw(); return; }
   if (S.tool === "wandFill" || S.tool === "wandErase") {
@@ -437,6 +475,17 @@ function maskToPngDataUrl() {
   return c.toDataURL("image/png");
 }
 
+/** 직접 찍은 도트만 담은 PNG. 서버가 worn 위에 덮어씌운다. */
+function paintToPngDataUrl() {
+  const c = document.createElement("canvas");
+  c.width = S.W; c.height = S.H;
+  const cx = c.getContext("2d");
+  const img = cx.createImageData(S.W, S.H);
+  img.data.set(S.paint);
+  cx.putImageData(img, 0, 0);
+  return c.toDataURL("image/png");
+}
+
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const j = await r.json();
@@ -465,6 +514,7 @@ async function doExtract(gotoFrame) {
     S.mask = new Uint8Array(S.W * S.H);
     for (let i = 0; i < S.mask.length; i++) S.mask[i] = maskImg.data[i * 4] > 127 ? 1 : 0;
     S.maskAuto = S.mask.slice();
+    S.paint = new Uint8ClampedArray(S.W * S.H * 4);   // 직접 찍은 도트 (전부 투명으로 시작)
 
     $("#stage").classList.add("loaded");
     S.frame = Number.isInteger(gotoFrame) ? gotoFrame : 0;
@@ -479,7 +529,7 @@ async function doExtract(gotoFrame) {
 
 async function doValidate() {
   if (!S.id) return;
-  try { showReport(await post("/api/validate", { id: S.id, mask: maskToPngDataUrl() })); toast("검증 완료"); }
+  try { showReport(await post("/api/validate", { id: S.id, mask: maskToPngDataUrl(), paint: paintToPngDataUrl() })); toast("검증 완료"); }
   catch (e) { toast(e.message, true); }
 }
 
@@ -488,7 +538,7 @@ async function doExport() {
   try {
     const secs = S.startedAt ? Math.round((Date.now() - S.startedAt) / 1000) : 0;
     const res = await post("/api/export", {
-      id: S.id, mask: maskToPngDataUrl(), tHumanSeconds: secs,
+      id: S.id, mask: maskToPngDataUrl(), paint: paintToPngDataUrl(), tHumanSeconds: secs,
       editCount: S.edits.length, edits: S.edits,
     });
     showReport(res.validate);
@@ -512,6 +562,10 @@ $("#brushSize").oninput = (e) => {
   $("#brushSizeV").textContent = `${S.brush}블록 (${S.brush * BLOCK}px)`;
 };
 $("#tol").oninput = (e) => { S.tol = +e.target.value; $("#tolV").textContent = S.tol; };
+$("#color").oninput = (e) => {
+  const h = e.target.value;
+  S.color = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+};
 $("#fillHoles").onclick = () => {
   if (!S.mask) return;
   beginStroke();
@@ -540,7 +594,7 @@ $("#export").onclick = doExport;
 addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
-  const map = { b: "brush", e: "eraser", c: "component", r: "rectFill", t: "rectErase", w: "wandFill", q: "wandErase" };
+  const map = { b: "brush", e: "eraser", c: "component", r: "rectFill", t: "rectErase", w: "wandFill", q: "wandErase", p: "pencil", i: "picker" };
   const t = map[e.key.toLowerCase()];
   if (t) document.querySelector(`.tool[data-tool="${t}"]`).click();
   if (e.key.toLowerCase() === "h") $("#fillHoles").click();

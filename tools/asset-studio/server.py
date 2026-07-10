@@ -89,13 +89,31 @@ def _diff_overlay(base: Image.Image, worn: Image.Image, slot: str, threshold: in
     return Image.fromarray(out, mode="RGBA")
 
 
-def _item_from_mask(worn: Image.Image, mask: np.ndarray) -> Image.Image:
-    """마스크가 켜진 곳에 worn 의 원본 픽셀을 복사한다. RGB 를 만들어내지 않는다."""
+def _item_from_mask(worn: Image.Image, mask: np.ndarray, paint: Image.Image | None = None) -> Image.Image:
+    """마스크가 켜진 곳에 worn 의 원본 픽셀을 복사한다.
+
+    paint 는 사람이 직접 찍은 도트다. worn 에 없는 픽셀을 그릴 수 있는 유일한 통로이며,
+    찍은 자리는 worn 대신 그 색을 쓴다. 시트끼리 경계가 안 맞아 worn 에 아예 옷이
+    없는 경우(발목 틈 등)를 사람이 손으로 메우기 위한 것이다.
+    """
     w = np.asarray(worn.convert("RGBA"))
     item = np.zeros_like(w)
     item[mask] = w[mask]
     item[mask, 3] = 255
+    if paint is not None:
+        p = np.asarray(paint.convert("RGBA"))
+        drawn = (p[..., 3] > 0) & mask
+        item[drawn] = p[drawn]
+        item[drawn, 3] = 255
     return Image.fromarray(item, mode="RGBA")
+
+
+def _paint_from_payload(body: dict) -> Image.Image | None:
+    data = body.get("paint")
+    if not data:
+        return None
+    raw = base64.b64decode(data.split(",", 1)[1])
+    return Image.open(io.BytesIO(raw)).convert("RGBA")
 
 
 def _thumb(item: Image.Image) -> Image.Image:
@@ -342,7 +360,8 @@ def _mask_from_payload(payload: str) -> np.ndarray:
     return _image_to_mask(Image.open(io.BytesIO(raw)))
 
 
-def _human_stats(meta: dict, mask: np.ndarray, worn: Image.Image, still_body: np.ndarray) -> dict:
+def _human_stats(meta: dict, mask: np.ndarray, worn: Image.Image, still_body: np.ndarray,
+                 painted: Image.Image | None = None) -> dict:
     """사람이 손댄 마스크의 지표.
 
     fabricatedPx 가 진짜 위험이다 — worn 이 투명한 자리에 마스크를 켜면
@@ -352,7 +371,11 @@ def _human_stats(meta: dict, mask: np.ndarray, worn: Image.Image, still_body: np
     """
     wa = np.asarray(worn)[..., 3]
     stats = dict(meta["stats"])
-    stats["fabricatedPx"] = int((mask & (wa <= 60)).sum())
+    # 직접 찍은 도트는 "지어낸 픽셀"로 세지 않는다. 사람이 의도해 그린 것이다.
+    drawn = np.zeros_like(mask)
+    if painted is not None:
+        drawn = np.asarray(painted)[..., 3] > 0
+    stats["fabricatedPx"] = int((mask & (wa <= 60) & ~drawn).sum())
     stats["bodyOverpaintPx"] = int((mask & still_body).sum())
     return stats
 
@@ -361,12 +384,12 @@ def api_validate(body: dict) -> dict:
     sdir, meta = _load_session(body["id"])
     worn = Image.open(sdir / "worn.png").convert("RGBA")
     mask = _mask_from_payload(body["mask"])
-    item = _item_from_mask(worn, mask)
+    item = _item_from_mask(worn, mask, _paint_from_payload(body))
 
     # 사람이 손댄 뒤에는 몸 페인팅 여부를 다시 계산한다.
     base = Image.open(sdir / "base.png").convert("RGBA")
     still_body = T.is_skin(np.asarray(base, dtype=np.int16)) & T.is_skin(np.asarray(worn, dtype=np.int16))
-    stats = _human_stats(meta, mask, worn, still_body)
+    stats = _human_stats(meta, mask, worn, still_body, _paint_from_payload(body))
     return V.validate(item, stats)
 
 
@@ -375,10 +398,11 @@ def api_export(body: dict) -> dict:
     worn = Image.open(sdir / "worn.png").convert("RGBA")
     base = Image.open(sdir / "base.png").convert("RGBA")
     mask = _mask_from_payload(body["mask"])
-    item = _item_from_mask(worn, mask)
+    paint = _paint_from_payload(body)
+    item = _item_from_mask(worn, mask, paint)
 
     still_body = T.is_skin(np.asarray(base, dtype=np.int16)) & T.is_skin(np.asarray(worn, dtype=np.int16))
-    stats = _human_stats(meta, mask, worn, still_body)
+    stats = _human_stats(meta, mask, worn, still_body, paint)
     report = V.validate(item, stats)
 
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
