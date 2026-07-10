@@ -136,6 +136,9 @@ def _slot_of(item_id: str) -> str:
     return "accessory"
 
 
+FRAME_DIRS = ["아래", "위", "왼쪽", "오른쪽"]
+FRAME_NAMES = ["정지", "걸음A", "걸음B"]
+
 # 렌더 z순서 (index.html 의 _CHAR_LAYER_ORDER 와 같아야 한다)
 Z_ORDER = ["body", "bottom", "shoes", "top", "hair", "hat", "acc"]
 
@@ -207,7 +210,7 @@ def _shipped_problem(item_id: str) -> dict | None:
     fw, fh = w // T.COLS, h // T.ROWS
     visible = int((a > 40).sum())
     if visible == 0:
-        return {"severity": 3, "reasons": ["빈 파일"], "holes": 0}
+        return {"severity": 3, "reasons": ["빈 파일"], "holes": 0, "leak": 0, "frames": []}
 
     hole_mask = _interior_holes(a, fw, fh)
     holes = int(hole_mask.sum())
@@ -215,7 +218,18 @@ def _shipped_problem(item_id: str) -> dict | None:
     # 구멍 자체는 정상일 수 있다 (모자 챙 밑으로 머리가 보여야 한다).
     # 진짜 버그는 그 구멍 아래에 다른 아이템이 깔려 비치는 것이다.
     lower = _lower_layer_union(_slot_of(item_id), exclude=item_id, shape=a.shape)
-    leak = int((hole_mask & lower).sum()) if lower is not None else 0
+    leak_mask = (hole_mask & lower) if lower is not None else np.zeros_like(hole_mask)
+    leak = int(leak_mask.sum())
+
+    # 사람이 어느 프레임을 열어야 하는지 짚어준다
+    frames = []
+    for r in range(T.ROWS):
+        for c in range(T.COLS):
+            n = int(leak_mask[r * fh:(r + 1) * fh, c * fw:(c + 1) * fw].sum())
+            if n >= 4:
+                frames.append({"frame": r * T.COLS + c,
+                               "name": f"{FRAME_DIRS[r]}·{FRAME_NAMES[c]}", "leak": n})
+    frames.sort(key=lambda f: -f["leak"])
 
     semi = int(((a > 0) & (a < 255)).sum())
     opaque = int((a == 255).sum())
@@ -232,7 +246,8 @@ def _shipped_problem(item_id: str) -> dict | None:
     if semi_ratio > 0.02:
         reasons.append(f"반투명 {semi_ratio * 100:.0f}% (알파 굳힘으로 자동 해결)")
         severity = max(severity, 1)
-    return {"severity": severity, "reasons": reasons, "holes": holes, "leak": leak}
+    return {"severity": severity, "reasons": reasons, "holes": holes,
+            "leak": leak, "frames": frames}
 
 
 def api_queue() -> dict:
@@ -260,6 +275,8 @@ def api_queue() -> dict:
             "severity": prob["severity"] if prob else 0,
             "holes": prob["holes"] if prob else 0,
             "leak": prob.get("leak", 0) if prob else 0,
+            "frames": prob.get("frames", []) if prob else [],
+            "thumb": f"/api/thumb/{item_id}.png",
             "reasons": prob["reasons"] if prob else ["앱에 없음"],
         })
 
@@ -447,6 +464,16 @@ class Handler(BaseHTTPRequestHandler):
                 ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
                 self._send(200, f.read_bytes(), ctype)
                 return
+            if path.startswith("/api/thumb/"):
+                item_id = path.rsplit("/", 1)[-1][:-4]
+                for cand in (f"{item_id}_thumb.png", f"{item_id}.png"):
+                    f = ROOT / "char" / "items" / cand
+                    if f.exists():
+                        self._send(200, f.read_bytes(), "image/png")
+                        return
+                self._send(404, b"no thumb", "text/plain")
+                return
+
             if path.startswith("/api/session/"):
                 _, _, _, sid, name = path.split("/", 4)
                 f = SESSIONS / sid / name

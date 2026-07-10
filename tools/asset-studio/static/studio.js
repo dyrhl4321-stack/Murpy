@@ -444,14 +444,13 @@ async function post(url, body) {
   return j;
 }
 
-async function doExtract() {
-  const opt = $("#queue").selectedOptions[0];
-  if (!opt?.dataset.worn) return;
+async function doExtract(gotoFrame) {
+  if (!S.sel?.worn) { toast("먼저 아이템을 고르세요", true); return; }
   $("#extract").disabled = true;
   try {
     const res = await post("/api/extract", {
-      worn: opt.dataset.worn, slot: $("#slot").value,
-      itemId: opt.dataset.itemId, threshold: +$("#threshold").value,
+      worn: S.sel.worn, slot: $("#slot").value,
+      itemId: S.sel.itemId, threshold: +$("#threshold").value,
     });
     S.id = res.id; S.slot = res.slot; S.itemId = res.itemId;
     S.undo = []; S.redo = []; S.edits = []; S.startedAt = null;
@@ -468,7 +467,7 @@ async function doExtract() {
     S.maskAuto = S.mask.slice();
 
     $("#stage").classList.add("loaded");
-    S.frame = 0;
+    S.frame = Number.isInteger(gotoFrame) ? gotoFrame : 0;
     draw(); drawThumbs(); showReport(res.validate);
     if (res.ingest.mode === "legacy_lanczos") toast("경고: worn 이 정수배가 아니라 LANCZOS 로 리사이즈됨. 알파가 뭉갤 수 있음.", true);
   } catch (e) {
@@ -534,7 +533,7 @@ $("#reset").onclick = () => {
   for (let i = 0; i < S.mask.length; i++) setPixel(i, S.maskAuto[i]);
   endStroke("reset"); draw();
 };
-$("#extract").onclick = doExtract;
+$("#extract").onclick = () => doExtract();
 $("#validate").onclick = doValidate;
 $("#export").onclick = doExport;
 
@@ -551,26 +550,68 @@ addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft") { S.frame = (S.frame + 11) % 12; draw(); drawThumbs(); }
 });
 
-const SEV_MARK = { 3: "■ 재추출", 2: "● 손봐야 함", 1: "· 기계가 고침", 0: "  정상" };
+const SEV_LABEL = { 3: "재추출 필요", 2: "손봐야 함", 1: "기계가 고침", 0: "정상" };
+
+/** 아이템을 고른다. frame 을 주면 추출 후 그 프레임으로 바로 들어간다. */
+function pick(it, frame) {
+  S.sel = it;
+  $("#slot").value = it.slot;
+  $("#current").textContent = `${it.itemId} · ${it.slot} · ${it.stamp}`;
+  $("#picker").classList.remove("open");
+  return doExtract(frame);
+}
+
+function renderCards(items) {
+  const host = $("#cards");
+  host.innerHTML = "";
+  for (const it of items) {
+    const card = document.createElement("button");
+    card.className = "card" + (it.severity >= 2 ? ` sev${it.severity}` : "");
+    card.onclick = () => pick(it);
+
+    const img = document.createElement("img");
+    img.src = it.thumb; img.alt = "";
+    img.onerror = () => { img.style.visibility = "hidden"; };
+
+    const body = document.createElement("div");
+    body.className = "body";
+    body.innerHTML =
+      `<span class="badge sev${it.severity}">${SEV_LABEL[it.severity]}</span>` +
+      `<div class="name">${it.itemId}</div>` +
+      `<div class="why">${it.reasons.join("<br>")}</div>`;
+
+    if (it.frames?.length) {
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      for (const f of it.frames) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = `${f.name} ${f.leak}px`;
+        chip.title = "이 프레임으로 바로 열기";
+        chip.onclick = (e) => { e.stopPropagation(); pick(it, f.frame); };
+        chips.appendChild(chip);
+      }
+      body.appendChild(chips);
+    }
+    card.append(img, body);
+    host.appendChild(card);
+  }
+}
+
+$("#showPicker").onclick = () => $("#picker").classList.add("open");
+$("#closePicker").onclick = () => $("#picker").classList.remove("open");
 
 (async function init() {
   const q = await (await fetch("/api/queue")).json();
-  const sel = $("#queue");
-  sel.innerHTML = "";
-  q.items.forEach((it) => {
-    const o = document.createElement("option");
-    o.textContent = `${SEV_MARK[it.severity]}  ${it.itemId}  —  ${it.reasons.join(", ")}  (${it.stamp})`;
-    o.dataset.worn = it.worn; o.dataset.itemId = it.itemId; o.dataset.slot = it.slot;
-    o.dataset.severity = it.severity;
-    sel.appendChild(o);
-  });
-  sel.onchange = () => { const o = sel.selectedOptions[0]; if (o?.dataset.slot) $("#slot").value = o.dataset.slot; };
-  sel.onchange();
+  renderCards(q.items);
 
-  // 사람 손이 필요한 첫 아이템(구멍 있음)을 자동으로 열어준다. 찾아 헤맬 일이 없다.
-  const first = q.items.find((i) => i.severity === 2);
-  if (first) {
-    toast(`손봐야 할 아이템 ${q.items.filter(i => i.severity === 2).length}개. ${first.itemId} 부터 엽니다.`);
-    await doExtract();
+  const bad = q.items.filter((i) => i.severity === 2);
+  if (bad.length) {
+    toast(`손봐야 할 아이템 ${bad.length}개. ${bad[0].itemId} 부터 엽니다.`);
+    await pick(bad[0], bad[0].frames?.[0]?.frame);
+  } else {
+    S.sel = q.items[0];
+    if (S.sel) $("#slot").value = S.sel.slot;
+    $("#picker").classList.add("open");
   }
 })();
