@@ -69,6 +69,18 @@ service cloud.firestore {
       allow write: if signedIn();
     }
 
+    // ===== 센터 체크인 (도감·스탬프) =====
+    // 문서 ID = {uid}_{centerId}_{yyyymmdd} → 하루 1회가 ID로 자연 강제됨
+    match /checkins/{checkinId} {
+      allow read: if signedIn();                       // "우리센터 머피들" 표시용 공개 읽기(로그인)
+      allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && checkinId.matches(request.auth.uid + '_.*');
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;   // 스탬프 사진 추가용
+      allow delete: if false;                          // 인증 기록은 삭제 불가(경제의 기반)
+    }
+
     // ===== 크루 및 모든 서브컬렉션 =====
     match /crews/{crewId} {
       allow read: if true;
