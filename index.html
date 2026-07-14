@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260714006 -->
+<!-- cache-bust: v20260714007 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2387,7 +2387,7 @@ window.mwPortal = function () {
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   // 입장 연출이 끝나 머피월드가 온전히 보일 때 캐릭터 코치(콜드유저) 예약
   try { clearTimeout(window._mwCoachT); window._mwCoachT = setTimeout(function () { if (window._maybeCoachChar) window._maybeCoachChar(); }, reduce ? 700 : 2600); } catch (e) {}
-  if (reduce) { clearTimeout(window._mwPortalT); window._mwPortalT = setTimeout(function () { p.style.display = 'none'; }, 320); return; }
+  if (reduce) { clearTimeout(window._mwPortalT); window._mwPortalT = setTimeout(function () { p.style.display = 'none'; if (window._mwWorldReveal) window._mwWorldReveal(); }, 320); return; }
   const ch = document.getElementById('mw-portal-char'), flash = document.getElementById('mw-portal-flash');
   const body = (window._charDraft && window._charDraft.body) || 'human';
   const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=22', cw: 135, ch: 224 };
@@ -2425,9 +2425,10 @@ window.mwPortal = function () {
       inA.onfinish = function () {
         p.style.display = 'none';
         const outA = F.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-out', fill: 'forwards' });
-        outA.onfinish = function () { F.style.display = 'none'; F.style.opacity = ''; };
+        outA.onfinish = function () { F.style.display = 'none'; F.style.opacity = '';
+          if (window._mwWorldReveal) window._mwWorldReveal(); };   // 포털 완전히 걷힌 뒤 월드바 밀어내기
       };
-    } else { p.style.display = 'none'; }
+    } else { p.style.display = 'none'; if (window._mwWorldReveal) window._mwWorldReveal(); }
   };
 };
 </script>
@@ -3559,15 +3560,16 @@ function goPage(name) {
   if (name === 'center') renderCenters();
   if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
   if (name === 'char' && window.renderCharSpace) { window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx(); }
-  // 머피월드 = 몰입 모드: 앱 헤더가 왼쪽으로 밀려나고 월드바가 오른쪽에서 들어옴(세계관 전환)
+  // 머피월드 = 몰입 모드: 포털 연출이 '끝난 뒤' 앱 헤더가 밀려나고 월드바 등장(세계관 전환)
   if (name === 'char') {
-    if (!document.body.classList.contains('mw-full')) {
-      document.body.classList.add('mw-entering');
-      try { if (navigator.vibrate) navigator.vibrate(16); } catch(e){}
-      setTimeout(() => { document.body.classList.add('mw-full'); document.body.classList.remove('mw-entering'); }, 330);
+    if (!document.body.classList.contains('mw-full') && !window._mwRevealT) {
+      window._mwRevealT = setTimeout(function(){ if (window._mwWorldReveal) window._mwWorldReveal(); }, 4200);  // 포털 미작동 대비 폴백
     }
     if (window._initRoomJoy) window._initRoomJoy();
-  } else { document.body.classList.remove('mw-full', 'mw-entering'); }
+  } else {
+    document.body.classList.remove('mw-full', 'mw-entering');
+    if (window._mwRevealT) { clearTimeout(window._mwRevealT); window._mwRevealT = null; }
+  }
   // 머피월드 홍보 팝업: 머피월드 방문하면 이미 발견 → 중단 / 그 외 탭 이동은 카운트해서 판정
   try {
     if (name === 'char') { if (localStorage.getItem('mw_promo') === 'armed') localStorage.setItem('mw_promo', 'seen'); }
@@ -3575,6 +3577,16 @@ function goPage(name) {
   } catch (e) {}
   if (window._maybeCoach) window._maybeCoach(name);
 }
+
+// 월드바 밀어내기 등장 — 포털 연출이 끝난 시점에 호출됨(중복 호출 안전)
+window._mwWorldReveal = function () {
+  if (window._mwRevealT) { clearTimeout(window._mwRevealT); window._mwRevealT = null; }
+  if (!document.getElementById('page-char').classList.contains('active')) return;   // 이미 다른 탭이면 스킵
+  if (document.body.classList.contains('mw-full') || document.body.classList.contains('mw-entering')) return;
+  document.body.classList.add('mw-entering');
+  try { if (navigator.vibrate) navigator.vibrate(16); } catch (e) {}
+  setTimeout(function () { document.body.classList.add('mw-full'); document.body.classList.remove('mw-entering'); }, 340);
+};
 
 function openPanel(id) {
   document.getElementById(id).classList.add('open');
