@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260714001 -->
+<!-- cache-bust: v20260714002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -461,6 +461,8 @@
   .mw-ck-overlay { position:fixed; inset:0; background:rgba(3,4,8,.78); z-index:900; display:flex;
     align-items:center; justify-content:center; padding:26px }
   .mw-ck-box { width:100%; max-width:320px; padding:26px 20px; text-align:center; font-family:'Galmuri11',sans-serif }
+  .mw-ck-box.stamp { max-width:370px; width:96%; padding:14px 12px 18px; max-height:92dvh; overflow-y:auto }
+  .mw-ck-box.stamp .mw-polaroid img { max-height:64dvh; object-fit:contain }
   .mw-radar { width:74px; height:74px; margin:0 auto; position:relative; background:#0e1320; box-shadow:0 0 0 3px #2b3350 }
   .mw-radar i { position:absolute; left:50%; top:50%; width:10px; height:10px; margin:-5px 0 0 -5px; background:#3D7EFF;
     animation:mwPing 1.5s steps(6) infinite }
@@ -9504,13 +9506,24 @@ window.mwShowStampResult = function () {
   window._mwOverlay(`
     <div class="mw-polaroid"><img src="${window._mwStampData}" style="width:100%;display:block"></div>
     <button class="mw-btn" style="width:100%;margin-top:16px" onclick="window.mwSealCheckin(this)">도장 찍기</button>
-    <div style="display:flex;gap:14px;justify-content:center;margin-top:12px">
-      <button onclick="window.mwOpenCam()" style="background:none;border:none;color:#8a93a8;font-size:12px;cursor:pointer;font-family:inherit">다시 찍기</button>
-      <button onclick="window.mwSaveStamp()" style="background:none;border:none;color:#8a93a8;font-size:12px;cursor:pointer;font-family:inherit">사진 저장</button>
+    <div style="display:flex;gap:18px;justify-content:center;margin-top:12px">
+      <button onclick="window.mwOpenCam()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">다시 찍기</button>
+      <button onclick="window.mwSaveStamp()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">사진 저장</button>
     </div>`);
+  const box=document.querySelector('#mw-ck-overlay .mw-ck-box'); if (box) box.classList.add('stamp');   // 결과 화면은 크게
 };
-window.mwSaveStamp = function () {
-  const a=document.createElement('a'); a.href=window._mwStampData; a.download=`murpy_${mwTodayKey()}.jpg`; a.click();
+window.mwSaveStamp = async function () {
+  // 모바일: dataURL 링크는 '문서 열기'로 새는 브라우저가 많음 → 공유시트(사진 저장 포함) 우선, blob 다운로드 폴백
+  try {
+    const blob = await (await fetch(window._mwStampData)).blob();
+    const file = new File([blob], `murpy_${mwTodayKey()}.jpg`, { type:'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) { await navigator.share({ files:[file] }); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+    showToast('사진을 저장했어요');
+  } catch(e) { if (e && e.name==='AbortError') return; showToast('저장이 안 되면 사진을 길게 눌러 저장해 주세요'); }
 };
 window.mwSealCheckin = async function (btn) {
   const user = auth.currentUser || window.currentUser; if (!user) return;
@@ -9527,7 +9540,12 @@ window.mwSealCheckin = async function (btn) {
       uid:user.uid, centerId:String(t.center.id), centerName:t.center.name,
       at:serverTimestamp(), lat:t.lat||0, lng:t.lng||0, dist:t.dist||0, photo:photoUrl
     });
-  } catch(e){ console.error(e); showToast('체크인 저장 실패'); if(btn){btn.disabled=false;btn.textContent='도장 찍기';} return; }
+  } catch(e){
+    console.error(e);
+    showToast(e && e.code==='permission-denied'
+      ? '보안규칙이 아직 게시 안 됐어요 — Firebase 콘솔에서 규칙 게시 후 다시!'
+      : '체크인 저장 실패: ' + ((e&&(e.code||e.message))||'알 수 없는 오류'));
+    if(btn){btn.disabled=false;btn.textContent='도장 찍기';} return; }
   window._mwOverlayClose();
   if (navigator.vibrate) navigator.vibrate([15,40,35]);
   // 도장 쾅 연출
