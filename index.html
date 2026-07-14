@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260714016 -->
+<!-- cache-bust: v20260714017 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -530,10 +530,17 @@
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; white-space:nowrap;
     animation:mwCoachBob 1.6s ease-in-out infinite }
   @keyframes mwCoachBob { 50% { transform:translateX(-50%) translateY(-4px) } }
-  .mw-fieldchip { position:absolute; right:9px; top:9px; z-index:5; display:flex; align-items:center; gap:6px;
+  .mw-fieldchip { position:absolute; right:9px; top:9px; z-index:200; display:flex; align-items:center; gap:6px;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; cursor:pointer; padding:8px 11px;
     background:rgba(13,19,34,.78); border:2px solid rgba(255,255,255,.2); -webkit-tap-highlight-color:transparent }
   .mw-fieldchip:active { background:rgba(61,126,255,.6) }
+  .mw-fieldchip.edit { top:52px }
+  .mw-redit-cat { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:12px }
+  .mw-redit-cat button { background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; border-radius:12px;
+    padding:10px 6px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:6px; font-family:inherit }
+  .mw-redit-cat img { height:44px; width:auto; max-width:80%; object-fit:contain }
+  .mw-redit-cat span { font-size:10.5px; color:#cfd6e6 }
+  #mw-redit-room img.sel { outline:3px solid #F5C24B; outline-offset:1px }
   .mw-wpanel { position:fixed; inset:0; z-index:880; background:rgba(5,7,12,.92); max-width:390px; margin:0 auto;
     display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }
   .mw-wpanel-head { display:flex; align-items:center; gap:10px; padding:16px 18px 12px;
@@ -1007,7 +1014,11 @@
     <div id="mw-field-bar" style="display:none"></div>
     <div class="mw-stage" style="max-width:min(100%,54vh);margin:0 auto">
       <div id="charworld-room" style="position:relative;width:100%;aspect-ratio:1/1;overflow:hidden;background:#0e0f14 center/100% 100% no-repeat;image-rendering:auto;touch-action:none">
+        <div id="mw-furn" style="position:absolute;inset:0;pointer-events:none"></div>
         <div id="charworld-avatar" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;image-rendering:auto"></div>
+        <button id="mw-redit-chip" class="mw-fieldchip edit" onclick="window.mwRoomEdit&&window.mwRoomEdit()" oncontextmenu="return false">
+          <svg width="13" height="13" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 13l1-4 8-8 3 3-8 8z"/><path fill="#F5C24B" d="M11 1l3 3-1.5 1.5-3-3z"/></svg>꾸미기
+        </button>
         <button class="mw-fieldchip" onclick="window.mwWorldPanel('field')" oncontextmenu="return false">
           <svg width="13" height="13" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 14h12v-2H2zM4 12V6h2v6zM10 12V6h2v6zM4 6l4-4 4 4z"/></svg>이동
         </button>
@@ -1916,30 +1927,134 @@ window._charRenderAvatar = function () {
     el.innerHTML = window.renderCharacter(cfg, { size: 76, masked: !!(cfg && cfg.mask) });   // SVG 폴백
   }
 };
+// ===== 방 인테리어 (LimeZu 48px 가구, 768 좌표계) =====
+window.ROOM_ITEMS = [
+  { id:'bed_green',  name:'그린 침대',   src:'char/rooms/bed_green.png?v=1',  w:126, h:156 },
+  { id:'table_wood', name:'우드 테이블', src:'char/rooms/table_wood.png?v=1', w:114, h:111 },
+  { id:'sofa_brown', name:'브라운 소파', src:'char/rooms/sofa_brown.png?v=1', w:135, h:64 },
+  { id:'rug_blue',   name:'블루 러그',   src:'char/rooms/rug_blue.png?v=1',   w:120, h:180, flat:true },
+  { id:'globe',      name:'지구본',      src:'char/rooms/globe.png?v=1',      w:84,  h:63 },
+];
+window._myRoom = null;   // { f:[{id,x,y}] } — users/{uid}.room
+window.mwFurnHtml = function (roomData, edit) {
+  const f = (roomData && roomData.f) || [];
+  return f.map((it, idx) => {
+    const def = window.ROOM_ITEMS.find(r => r.id === it.id); if (!def) return '';
+    const z = def.flat ? 2 : (10 + Math.floor((it.y + def.h) / 48) * 10);   // 바닥선 기준 z(캐릭터와 앞뒤)
+    return `<img src="${def.src}" data-idx="${idx}" draggable="false" style="position:absolute;left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${edit?'pointer-events:auto;cursor:grab;touch-action:none;':'pointer-events:none;'}">`;
+  }).join('');
+};
+window.mwRenderFurn = function () {
+  const el = document.getElementById('mw-furn'); if (!el) return;
+  el.innerHTML = (window._curField === 'home') ? window.mwFurnHtml(window._myRoom) : '';
+};
+// ---- 방 꾸미기 편집기: 카탈로그에서 추가 → 드래그 배치 → 저장(users/{uid}.room) ----
+window._reditDraft = null; window._reditSel = -1;
+window.mwRoomEdit = function () {
+  if (!window.currentUser) { showToast('로그인이 필요해요'); return; }
+  window._reditDraft = { f: (window._myRoom && Array.isArray(window._myRoom.f)) ? window._myRoom.f.map(it => ({ ...it })) : [] };
+  window._reditSel = -1;
+  let el = document.getElementById('mw-wpanel'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-wpanel'; el.className = 'mw-wpanel'; document.body.appendChild(el);
+  el.innerHTML = `
+    <div class="mw-wpanel-head"><b>방 꾸미기</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
+    <div class="mw-wpanel-body">
+      <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;max-width:320px;margin-left:auto;margin-right:auto">
+        <span style="font-size:11px;color:#8a93a8;font-family:'Galmuri11',sans-serif">가구를 끌어서 배치해요</span>
+        <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
+      </div>
+      <div class="mw-redit-cat">${window.ROOM_ITEMS.map(r =>
+        `<button onclick="window._reditAdd('${r.id}')"><img src="${r.src}" draggable="false"><span>${r.name}</span></button>`).join('')}
+      </div>
+      <button class="mw-btn" style="width:100%;margin-top:14px;padding:13px" onclick="window._reditSave()">저장하기</button>
+    </div>`;
+  window._reditPaint();
+  window._reditBind();
+};
+window._reditPaint = function () {
+  const room = document.getElementById('mw-redit-room'); if (!room) return;
+  room.innerHTML = window.mwFurnHtml(window._reditDraft, true);
+  room.querySelectorAll('img').forEach(function (img) { img.classList.toggle('sel', Number(img.dataset.idx) === window._reditSel); });
+  const del = document.getElementById('mw-redit-del');
+  if (del) del.style.visibility = window._reditSel >= 0 ? 'visible' : 'hidden';
+};
+window._reditAdd = function (id) {
+  const def = window.ROOM_ITEMS.find(r => r.id === id); if (!def) return;
+  const f = window._reditDraft.f;
+  if (f.length >= 12) { showToast('가구는 12개까지 놓을 수 있어요'); return; }
+  f.push({ id: id, x: Math.round((768 - def.w) / 2), y: Math.round((768 - def.h) / 2) });
+  window._reditSel = f.length - 1; window._reditPaint();
+};
+window._reditRemove = function () {
+  if (window._reditSel < 0) return;
+  window._reditDraft.f.splice(window._reditSel, 1);
+  window._reditSel = -1; window._reditPaint();
+};
+window._reditBind = function () {
+  const room = document.getElementById('mw-redit-room'); if (!room) return;
+  let drag = null;   // { idx, sx, sy, ox, oy }
+  room.addEventListener('pointerdown', function (e) {
+    const img = e.target && e.target.closest ? e.target.closest('img[data-idx]') : null;
+    if (!img) { window._reditSel = -1; window._reditPaint(); return; }
+    e.preventDefault();
+    const idx = Number(img.dataset.idx);
+    window._reditSel = idx; window._reditPaint();
+    const it = window._reditDraft.f[idx];
+    drag = { idx: idx, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y };
+    try { room.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  room.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    const it = window._reditDraft.f[drag.idx]; if (!it) { drag = null; return; }
+    const def = window.ROOM_ITEMS.find(r => r.id === it.id); if (!def) return;
+    const k = 768 / (room.clientWidth || 320);              // 화면px → 768좌표
+    const snap = function (v) { return Math.round(v / 12) * 12; };   // 1/4타일(12px) 스냅
+    it.x = Math.max(0, Math.min(768 - def.w, snap(drag.ox + (e.clientX - drag.sx) * k)));
+    it.y = Math.max(0, Math.min(768 - def.h, snap(drag.oy + (e.clientY - drag.sy) * k)));
+    const img = room.querySelector('img[data-idx="' + drag.idx + '"]');
+    if (img) {
+      img.style.left = (it.x / 7.68).toFixed(2) + '%'; img.style.top = (it.y / 7.68).toFixed(2) + '%';
+      img.style.zIndex = def.flat ? 2 : (10 + Math.floor((it.y + def.h) / 48) * 10);
+    }
+  });
+  const dragEnd = function () { drag = null; };
+  room.addEventListener('pointerup', dragEnd);
+  room.addEventListener('pointercancel', dragEnd);
+};
+window._reditSave = async function () {
+  const data = { f: window._reditDraft.f };
+  window._myRoom = data;
+  window.mwRenderFurn();
+  const p = document.getElementById('mw-wpanel'); if (p) p.remove();
+  showToast('방이 저장됐어요');
+  if (navigator.vibrate) navigator.vibrate(12);
+  if (window._charPersistRoom) window._charPersistRoom(data);
+};
 // ===== 필드(맵) + 타일 충돌: 한 칸씩 이동, 막힌 칸(#)엔 못 감(포켓몬/쯔꾸르식) =====
 window._FIELD_BORDER = ["################","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","################"];
 window._FIELDS = {
   home: {
-    name: '집', src: "char/fields/field_home.png?v=1", grid: 16,
+    name: '내 방', src: "char/fields/field_workshop.png?v=1", grid: 16,
     map: [
       "################",
       "################",
-      "################",
-      "######......####",
-      "####........####",
-      "####.........#.#",
-      "####...........#",
-      "####...........#",
-      "##.............#",
-      "##.............#",
-      "##.............#",
-      "##.............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
+      "#..............#",
       "#..............#",
       "#..............#",
       "#..............#",
       "################"
     ],
-    start: { tc: 7, tr: 10 }
+    start: { tc: 7, tr: 9 }
   },
   gym: { name: '헬스장', src: "char/fields/field_gym.png?v=2", grid: 16, start: { tc: 7, tr: 8 }, map: [
     "################","################","################","#....###########",
@@ -1967,6 +2082,9 @@ window.charSetField = function (key) {
   const st = f.start || { tc: 7, tr: 8 };
   window._charPos = { tc: st.tc, tr: st.tr, face: 'down', frame: 0 };
   window._charApplyPos && window._charApplyPos();
+  if (window.mwRenderFurn) window.mwRenderFurn();   // 내 방이면 가구 렌더
+  const ec = document.getElementById('mw-redit-chip');
+  if (ec) ec.style.display = (key === 'home') ? '' : 'none';   // 꾸미기는 내 방에서만
   const bar = document.getElementById('mw-field-bar');
   if (bar) bar.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.f === key); });
 };
@@ -1991,12 +2109,13 @@ window._charApplyPos = function () {
   const g = window._charTileGeom(), t = g.t;
   const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) || {};
   const b = window._CHAR_BODIES[cfg.body || 'human'] || window._CHAR_BODIES.human;
-  const DH = Math.round(t * 4.0), w = Math.round(DH * b.cw / b.ch);
+  const DH = Math.round(t * 3.3), w = Math.round(DH * b.cw / b.ch);   // LimeZu 가구 스케일 정합(실측: 3.3타일)
   window._SPR.w = w; window._SPR.h = DH;
   // 컨테이너: 크기/위치/미러 (바운스=translate, 스쿼시=scale 는 charMove가 별도 적용)
   host.style.width = w + 'px'; host.style.height = DH + 'px';
   const feetX = (window._charPos.tc + 0.5) * t, feetY = (window._charPos.tr + 1) * t;
   host.style.left = (feetX - w / 2) + 'px';
+  host.style.zIndex = 10 + window._charPos.tr * 10 + 5;   // 가구와 발밑 기준 앞뒤 정렬
   host.style.top = (feetY - DH) + 'px';
   const face = window._charPos.face || 'down';
   host.style.transform = 'none';   // 4방향 시트(좌·우 따로) → 미러 없음(꽁지머리 반전 버그 제거)
@@ -6813,6 +6932,7 @@ window._charState = { character: null, wardrobe: [], ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); } catch (e) { console.error('char save', e); } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
+window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 
 function _creditDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -6847,6 +6967,8 @@ window.ensureCreditsInit = async (uid) => {
       window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
     }
+    window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
     window._charState.ready = true;
     if (window.renderCreditUI) window.renderCreditUI();
@@ -9665,8 +9787,9 @@ window.mwVisitRoom = async function (uid) {
   el.innerHTML = `
     <div class="mw-wpanel-head"><b>${nick}의 방</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
-      <div style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_home.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto">
-        <div style="position:absolute;left:50%;bottom:16%;transform:translateX(-50%)">${window.mwMiniCharHtml(p.character, 118)}</div>
+      <div style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
+        ${window.mwFurnHtml(p.room)}
+        <div style="position:absolute;left:50%;bottom:16%;transform:translateX(-50%);z-index:145">${window.mwMiniCharHtml(p.character, 118)}</div>
       </div>
       <div style="display:flex;justify-content:center;gap:16px;font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;margin-bottom:14px">
         <span>TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
