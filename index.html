@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260716001 -->
+<!-- cache-bust: v20260716002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -9766,7 +9766,7 @@ window._mwPixelize = function () {
 window._mwBadgeFrames = {};
 function _mwBadgeFrame(kind) {
   let f = window._mwBadgeFrames[kind];
-  if (!f) { f = new Image(); f.src = 'char/ui/badge_frame_' + kind + '.png?v=2'; window._mwBadgeFrames[kind] = f; }
+  if (!f) { f = new Image(); f.src = 'char/ui/badge_frame_' + kind + '.png?v=3'; window._mwBadgeFrames[kind] = f; }
   return f;
 }
 window.mwBadgeHtml = function (c, size) {
@@ -9775,50 +9775,48 @@ window.mwBadgeHtml = function (c, size) {
   let hue = 0; for (const ch of String((c && c.name) || '')) hue = (hue*31 + ch.charCodeAt(0)) % 360;
   const gold = !!(c && c.partner);
   const star = s => `<svg class="mwb-spark" style="${s}" width="11" height="11" viewBox="0 0 24 24" fill="#F5C24B"><path d="M12 2l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"/></svg>`;
-  const sparks = gold ? star('left:-5px;top:4px') + star('right:-4px;bottom:7px;animation-delay:.85s') : '';
+  const sparks = gold ? star('right:6px;top:-3px') + star('left:-4px;bottom:12px;animation-delay:.85s') : '';
   return `<span class="mw-badge" style="width:${size}px;height:${size}px"><canvas class="mw-badgecv" width="64" height="64" data-frame="${gold?'gold':'silver'}"${c && c.pixelLogo ? ` data-pixlogo="${c.pixelLogo}"` : ''}${c && c.logo ? ` data-logo="${c.logo}"` : ''} data-fb="${ini}" data-hue="${hue}"></canvas>${sparks}</span>`;
 };
 window._mwRenderBadges = function () {
+  // 방패 프레임(내부 남색 필드 내장) 위에 로고를 얹는 방식. 필드 실측 박스 = x 25~75%, y 22~70%
+  const FB = { x0:0.25, x1:0.75, y0:0.22, y1:0.70 };
   document.querySelectorAll('canvas.mw-badgecv:not([data-done])').forEach(cv => {
     cv.dataset.done = '1';
     const S = cv.width, x = cv.getContext('2d');
     x.imageSmoothingEnabled = false;
-    x.fillStyle = '#141821';                                  // 내부 어두운 원판
-    x.beginPath(); x.arc(S/2, S/2, S*0.40, 0, 7); x.fill();
-    const finish = () => {                                     // 프레임은 맨 위
+    const fw = (FB.x1-FB.x0)*S, fh = (FB.y1-FB.y0)*S;
+    const cx = (FB.x0+FB.x1)/2*S, cy = (FB.y0+FB.y1)/2*S;
+    const withFrame = draw => {                                // 프레임 먼저, 콘텐츠는 그 위
       const f = _mwBadgeFrame(cv.dataset.frame || 'silver');
-      const put = () => { try { x.imageSmoothingEnabled = false; x.drawImage(f, 0, 0, S, S); } catch(e){} };
-      if (f.complete && f.naturalWidth) put(); else f.addEventListener('load', put, { once:true });
+      const go = () => { try { x.imageSmoothingEnabled = false; x.drawImage(f, 0, 0, S, S); } catch(e){} draw(); };
+      if (f.complete && f.naturalWidth) go(); else f.addEventListener('load', go, { once:true });
     };
-    const initials = () => {
-      x.fillStyle = 'hsl(' + (cv.dataset.hue || 210) + ',42%,58%)';
-      x.beginPath(); x.arc(S/2, S/2, S*0.36, 0, 7); x.fill();
-      x.fillStyle = '#0a0d14'; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.font = "17px 'Galmuri14','Galmuri11',sans-serif";
-      x.fillText(cv.dataset.fb || '?', S/2, S/2 + 1);
+    const initials = () => withFrame(() => {
+      x.fillStyle = 'hsl(' + (cv.dataset.hue || 210) + ',52%,72%)';
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.font = "15px 'Galmuri14','Galmuri11',sans-serif";
+      x.fillText(cv.dataset.fb || '?', cx, cy + 1);
       x.textAlign = 'start'; x.textBaseline = 'alphabetic';
-      finish();
-    };
+    });
     const px = cv.dataset.pixlogo, lg = cv.dataset.logo;
-    if (px) {                                                  // 전용 픽셀로고: contain 그대로
+    if (px) {                                                  // 전용 픽셀로고: 필드에 contain
       const img = new Image(); img.crossOrigin = 'anonymous';
-      img.onload = () => { try {
-        const box = S * 0.56, r = Math.min(box / img.width, box / img.height);
-        const w = Math.max(1, Math.round(img.width * r)), h = Math.max(1, Math.round(img.height * r));
-        x.drawImage(img, Math.round((S-w)/2), Math.round((S-h)/2), w, h);
-      } catch(e){} finish(); };
+      img.onload = () => withFrame(() => { try {
+        const r = Math.min(fw*0.82/img.width, fh*0.72/img.height);
+        const w = Math.max(1, Math.round(img.width*r)), h = Math.max(1, Math.round(img.height*r));
+        x.drawImage(img, Math.round(cx-w/2), Math.round(cy-h/2), w, h);
+      } catch(e){} });
       img.onerror = initials;
       img.src = px;
-    } else if (lg) {                                           // 일반 로고: 12px 픽셀화 → 원형 클립
+    } else if (lg) {                                           // 일반 로고: 12px 픽셀화 → 필드 중앙 정사각
       const img = new Image(); img.crossOrigin = 'anonymous';
-      img.onload = () => { try {
+      img.onload = () => withFrame(() => { try {
         const t = document.createElement('canvas'); t.width = 12; t.height = 12;
         t.getContext('2d').drawImage(img, 0, 0, 12, 12);
-        x.save(); x.beginPath(); x.arc(S/2, S/2, S*0.37, 0, 7); x.clip();
-        const box = S * 0.76;
-        x.drawImage(t, (S-box)/2, (S-box)/2, box, box);
-        x.restore();
-      } catch(e){} finish(); };
+        const box = Math.min(fw, fh) * 0.8;
+        x.drawImage(t, Math.round(cx-box/2), Math.round(cy-box/2), box, box);
+      } catch(e){} });
       img.onerror = initials;
       img.src = lg;
     } else initials();
