@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260716003 -->
+<!-- cache-bust: v20260716004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -541,8 +541,8 @@
   .mw-redit-cat img { height:44px; width:auto; max-width:80%; object-fit:contain }
   .mw-redit-cat span { font-size:10.5px; color:#cfd6e6 }
   #mw-redit-room img.sel { outline:3px solid #F5C24B; outline-offset:1px }
-  .mw-wpanel { position:fixed; inset:0; z-index:880; background:rgba(5,7,12,.92); max-width:390px; margin:0 auto;
-    display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }
+  .mw-wpanel { position:fixed; inset:0; height:100dvh; z-index:880; background:rgba(5,7,12,.92); max-width:390px; margin:0 auto;
+    display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }   /* 100dvh: 모바일 툴바에 하단이 가려지지 않게 */
   .mw-wpanel-head { display:flex; align-items:center; gap:10px; padding:16px 18px 12px;
     padding-top:max(16px, env(safe-area-inset-top)) }
   .mw-wpanel-head b { font-family:'Galmuri14',sans-serif; font-size:15px; color:#fff; font-weight:400 }
@@ -10018,12 +10018,12 @@ window.mwCenterField = async function (centerId) {
         <span style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#fff">센터 수다방</span>
         <span style="font-size:10px;color:#4a5266">이 센터에 도장 찍은 머피만 쓸 수 있어요</span>
       </div>
-      <div id="mw-ctalk-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px;min-height:80px">
-        <div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
-      </div>
-      <div style="display:flex;gap:7px;padding:8px 0 calc(13px + env(safe-area-inset-bottom));flex-shrink:0">
+      <div style="display:flex;gap:7px;padding:0 0 10px;flex-shrink:0">
         <input id="mw-ctalk-input" maxlength="200" disabled placeholder="확인 중…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.mwCtalkSend('${c.id}')">
         <button id="mw-ctalk-send" class="mw-btn mw-btn-sm" disabled onclick="window.mwCtalkSend('${c.id}')">보내기</button>
+      </div>
+      <div id="mw-ctalk-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px calc(14px + env(safe-area-inset-bottom));min-height:80px">
+        <div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
       </div>
     </div>`;
   if (window._mwRenderBadges) window._mwRenderBadges();
@@ -10066,7 +10066,7 @@ window._mwCtalkStart = async function (center) {
   const q1 = query(collection(db, 'centerTalk', cid, 'msgs'), orderBy('at', 'desc'), limit(40));
   window._mwCtalkUnsub = onSnapshot(q1, qs => {
     const el2 = document.getElementById('mw-ctalk-list'); if (!el2) { window._mwCtalkStop(); return; }
-    const msgs = qs.docs.map(d => d.data()).reverse();
+    const msgs = qs.docs.map(d => d.data());   // desc 그대로 = 최신이 맨 위(입력창 바로 아래)
     el2.innerHTML = msgs.length ? msgs.map(m => {
       const t = m.at && m.at.toDate ? m.at.toDate() : null;
       const ts = t ? String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') : '';
@@ -10079,7 +10079,7 @@ window._mwCtalkStart = async function (center) {
         <span style="font-size:9px;color:#4a5266;flex-shrink:0">${ts}</span>
       </div>`;
     }).join('') : '<div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">아직 조용하네요 — 첫 마디를 남겨보세요</div>';
-    el2.scrollTop = el2.scrollHeight;
+    el2.scrollTop = 0;
   }, e => console.warn('ctalk', e));
   // 쓰기 자격 = 이 센터 체크인 이력 (날짜 무관)
   const user = auth.currentUser || window.currentUser;
@@ -10249,23 +10249,50 @@ window.mwCheckin = function () {
         <div style="font-size:34px;margin-bottom:12px">📍</div>
         <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:9px">센터 반경 밖이에요</div>
         <div style="font-size:12px;color:#8a93a8;line-height:1.8">${near}<br>센터 ${MW_CHECKIN_RADIUS}m 안에서 다시 눌러주세요</div>
-        ${admin&&best?`<button class="mw-btn" style="margin-top:16px" onclick="window._mwOverlayClose();window.mwConfirmCheckin(window._mwTestC,0,0,0)">테스트 체크인 (관리자)</button>`:''}
+        ${admin?`<button class="mw-btn" style="margin-top:16px" onclick="window.mwAdminPickCenter()">테스트 체크인 — 센터 선택 (관리자)</button>`:''}
         <button onclick="window._mwOverlayClose()" style="display:block;margin:14px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
-      window._mwTestC = best;
     }
   }, err => {
     window._mwOverlayClose();
     showToast(err.code===1?'위치 권한을 허용해 주세요':'위치를 가져오지 못했어요');
   }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
 };
-window.mwConfirmCheckin = function (center, dist, lat, lng) {
+window.mwConfirmCheckin = async function (center, dist, lat, lng) {
+  const admin = (typeof isAdmin==='function') && isAdmin();
+  // 같은 센터·같은 날 재도장 방지 (도장은 하루 1회, 재촬영해도 카운트 안 늘어남)
+  try {
+    const mine = await mwLoadCheckins();
+    if (mine.some(k => String(k.centerId) === String(center.id) && k.day === mwTodayKey())) {
+      window._mwOverlay(`
+        <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>${center.name.slice(0,4)}</i></div>
+        <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:8px">오늘은 이미 도장 찍었어요</div>
+        <div style="font-size:12px;color:#8a93a8;margin-bottom:6px">${center.name} — 내일 또 만나요!</div>
+        ${admin?`<button class="mw-btn" style="margin-top:12px" onclick="window.mwAdminPickCenter()">다른 센터로 테스트 (관리자)</button>`:''}
+        <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
+      return;
+    }
+  } catch(e){}
   window._mwCkTarget = { center, dist, lat, lng };
   window._mwOverlay(`
     <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>GO</i></div>
     <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;margin-bottom:6px">${center.name}</div>
     <div style="font-size:12px;color:#8a93a8;margin-bottom:18px">${dist}m 거리 · 인증샷을 찍으면 도장이 찍혀요</div>
     <button class="mw-btn" style="width:100%" onclick="window.mwOpenCam()">픽셀 카메라 켜기</button>
+    ${admin?`<button onclick="window.mwAdminPickCenter()" style="display:block;margin:13px auto 0;background:none;border:none;color:#F5C24B;font-size:12px;cursor:pointer;font-family:inherit">다른 센터로 테스트 (관리자)</button>`:''}
     <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">다음에</button>`);
+};
+// 관리자: 센터 목록에서 골라 테스트 도장 (GPS 무시)
+window.mwAdminPickCenter = function () {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const centers = (typeof getCentersList==='function'?getCentersList():[]).filter(c=>c&&c.name);
+  if (!centers.length) { showToast('센터 목록이 아직 없어요'); return; }
+  window._mwOverlay(`
+    <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:14px">테스트 도장 찍을 센터</div>
+    <select id="mw-testc-sel" style="width:100%;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:12px;font-size:13px;font-family:inherit;outline:none">
+      ${centers.map(c=>`<option value="${c.id}">${c.name}${c.loc?` · ${c.loc}`:''}</option>`).join('')}
+    </select>
+    <button class="mw-btn" style="width:100%;margin-top:14px" onclick="window.mwAdminTestCheckin(document.getElementById('mw-testc-sel').value)">이 센터로 테스트 체크인</button>
+    <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
 };
 // ---------- 공용 픽셀 오버레이 ----------
 window._mwOverlay = function (inner) {
@@ -10418,6 +10445,7 @@ window.mwSealCheckin = async function (btn) {
       : '체크인 저장 실패: ' + ((e&&(e.code||e.message))||'알 수 없는 오류'));
     if(btn){btn.disabled=false;btn.textContent='도장 찍기';} return; }
   window._mwOverlayClose();
+  window._mwCheckins = null; window._mwTodayCk = null;   // 캐시 무효화 — 방금 도장이 바로 반영되게
   if (navigator.vibrate) navigator.vibrate([15,40,35]);
   // 도장 쾅 연출
   const slam=document.createElement('div'); slam.className='mw-slamwrap';
@@ -10425,7 +10453,10 @@ window.mwSealCheckin = async function (btn) {
   document.body.appendChild(slam);
   setTimeout(()=>{ document.body.classList.add('mw-shake'); }, 330);
   setTimeout(()=>{ document.body.classList.remove('mw-shake'); }, 640);
-  setTimeout(()=>{ slam.remove(); if (window._charHub==='dogam') window.mwRenderDogam(); }, 1500);
+  setTimeout(()=>{ slam.remove();
+    if (document.getElementById('mw-dogam-root')) window.mwRenderDogam();               // 뒤에 열린 도감 즉시 갱신
+    else if (document.getElementById('mw-cfd-stage')) window.mwCenterField(t.center.id); // 센터 필드가 열려 있으면 갱신
+  }, 1500);
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
   // 도감 보너스 판정 (도장 쾅 연출 끝난 뒤 축하가 이어지도록)
   setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 1700);
