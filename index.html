@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260716002 -->
+<!-- cache-bust: v20260716003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2122,6 +2122,7 @@ window._curField = 'home';
 // 필드 전환(간단): 배경 교체 + 시작위치로 리셋
 window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
+  if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
   const room = document.getElementById('charworld-room');
   if (room) room.style.backgroundImage = "url('" + f.src + "')";
@@ -2190,6 +2191,7 @@ window.charMove = function (dx, dy) {
   const ntc = window._charPos.tc + dx, ntr = window._charPos.tr + dy;
   const canMove = window._charWalkable(ntc, ntr);
   if (canMove) { window._charPos.tc = ntc; window._charPos.tr = ntr; }
+  if (window._curField === 'home' && window._mwQueueRoomPos) window._mwQueueRoomPos();   // 방 좌표·방향 저장(디바운스)
   // 걸음 프레임(1↔2), 이동 끝나면 정지 프레임(0)
   window._charStepToggle = !window._charStepToggle;
   window._charPos.frame = window._charStepToggle ? 1 : 2;
@@ -5835,7 +5837,8 @@ function openCenterDetail(id) {
 
     <div class="card"><div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:4px">${c.type}</div><div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${c.addr}</div></div>
 
-    ${admin ? `<button onclick="openCenterAdminEdit('${id}')" class="btn-white" style="width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:12px;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>센터 편집 (관리자)</button>` : ''}
+    ${admin ? `<button onclick="openCenterAdminEdit('${id}')" class="btn-white" style="width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:12px;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>센터 편집 (관리자)</button>
+    <button onclick="window.mwAdminTestCheckin&&window.mwAdminTestCheckin('${id}')" style="width:100%;background:rgba(245,194,75,0.10);border:1px solid rgba(245,194,75,0.4);color:#F5C24B;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px">이 센터에 테스트 도장 찍기 (관리자)</button>` : ''}
 
     <button onclick="openCenterEditRequest('${id}','${(c.name||'').replace(/'/g,'')}')" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.38);font-size:12px;cursor:pointer;padding:16px;font-family:inherit;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:5px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -9705,7 +9708,7 @@ window.mwRenderDogam = async function () {
     return `
       <div class="mw-stampcell ${b?'':'locked'}" onclick="window.openCenterDetail&&window.openCenterDetail('${c.id}')">
         <span class="mw-stampname">${b?c.name:'? ? ?'}</span>
-        <div style="position:relative">${window.mwBadgeHtml(c,54)}${b?'':'<span class="mw-lockq">?</span>'}</div>
+        <div style="position:relative">${window.mwBadgeHtml(c,66)}${b?'':'<span class="mw-lockq">?</span>'}</div>
         <span class="mw-visitcnt">${b?`방문 ${b.n}회`:'미발견'}</span>
       </div>`;
   };
@@ -9803,7 +9806,7 @@ window._mwRenderBadges = function () {
     if (px) {                                                  // 전용 픽셀로고: 필드에 contain
       const img = new Image(); img.crossOrigin = 'anonymous';
       img.onload = () => withFrame(() => { try {
-        const r = Math.min(fw*0.82/img.width, fh*0.72/img.height);
+        const r = Math.min(fw*0.68/img.width, fh*0.58/img.height);
         const w = Math.max(1, Math.round(img.width*r)), h = Math.max(1, Math.round(img.height*r));
         x.drawImage(img, Math.round(cx-w/2), Math.round(cy-h/2), w, h);
       } catch(e){} });
@@ -9850,6 +9853,7 @@ window._mwDogamBonusCheck = async function () {
 };
 // ---------- 월드 패널 (지도=위치기반 캐릭터 / 도감 / 필드이동) ----------
 window.mwWorldPanel = function (kind) {
+  window._mwCtalkStop && window._mwCtalkStop();
   let el=document.getElementById('mw-wpanel'); if (el) el.remove();
   el=document.createElement('div'); el.id='mw-wpanel'; el.className='mw-wpanel'; document.body.appendChild(el);
   const title = kind==='map' ? '지도' : kind==='field' ? '필드 이동' : '도감';
@@ -9874,14 +9878,15 @@ window.mwWorldPanel = function (kind) {
   }
 };
 // ---------- 지도: 지금 운동 중인 머피들 (오늘 체크인 · 센터별) ----------
-window.mwMiniCharHtml = function (cfg, h) {
+window.mwMiniCharHtml = function (cfg, h, face) {
   h = h || 62;
   const w = Math.round(h * 141 / 224);
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg || window.CHAR_DEFAULT) : null;
   if (!sheets) return '';
+  const row = face === 'up' ? 1 : (face === 'left' ? 2 : (face === 'right' ? 3 : 0));   // 시트 행: 아래0/위1/좌2/우3
   const order = ['body','bottom','shoes','top','hair','hat','acc'];
   const layers = order.filter(s=>sheets[s]).map(s =>
-    `<div style="position:absolute;left:0;top:0;width:${w}px;height:${h}px;background-image:url('${sheets[s]}');background-repeat:no-repeat;background-size:${w*3}px ${h*4}px;background-position:0 0"></div>`).join('');
+    `<div style="position:absolute;left:0;top:0;width:${w}px;height:${h}px;background-image:url('${sheets[s]}');background-repeat:no-repeat;background-size:${w*3}px ${h*4}px;background-position:0 ${-(row*h)}px"></div>`).join('');
   return `<div style="position:relative;width:${w}px;height:${h}px;flex-shrink:0">${layers}</div>`;
 };
 async function mwLoadLeaflet() {
@@ -9944,7 +9949,7 @@ window.mwRenderTodayMurpys = async function () {
     centers.forEach(c => {
       const n = byCenter[c.id] ? byCenter[c.id].list.length : 0;
       const icon = L.divIcon({ className:'', html:`<div class="mw-pin${n?' on':''}">${n||''}</div>`, iconSize:[26,32], iconAnchor:[13,32] });
-      L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{ if (window.openCenterDetail) { document.getElementById('mw-wpanel')?.remove(); openCenterDetail(c.id); } });
+      L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{ window.mwCenterField && window.mwCenterField(c.id); });   // 핀 = 바로 '우리 센터 머피들' 필드로
       pts.push([c.lat,c.lng]);
     });
     if (pts.length) map.fitBounds(pts, { padding:[36,36], maxZoom:15 });
@@ -9995,22 +10000,34 @@ window._mwCfdCount = async function (centerId) {
 window.mwCenterField = async function (centerId) {
   const c = (typeof getCentersList === 'function' ? getCentersList() : []).find(x => String(x.id) === String(centerId));
   if (!c) { showToast('센터 정보를 찾을 수 없어요'); return; }
+  window._mwCtalkStop && window._mwCtalkStop();
   let el = document.getElementById('mw-wpanel'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-wpanel'; el.className = 'mw-wpanel'; document.body.appendChild(el);
   el.innerHTML = `
     <div class="mw-wpanel-head" style="gap:11px">
-      ${window.mwBadgeHtml ? window.mwBadgeHtml(c, 38) : ''}
+      ${window.mwBadgeHtml ? window.mwBadgeHtml(c, 46) : ''}
       <div style="min-width:0;flex:1">
         <b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</b>
         <span id="mw-cfd-head-n" style="font-size:11px;color:#F5C24B">불러오는 중…</span>
       </div>
-      <button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button>
+      <button class="mw-wclose" onclick="window._mwCtalkStop&&window._mwCtalkStop();document.getElementById('mw-wpanel').remove()">✕</button>
     </div>
-    <div class="mw-wpanel-body">
-      <div class="mw-cfd-stage" id="mw-cfd-stage" style="background-image:url('${window.centerFieldSrc(c)}')"></div>
-      <div id="mw-cfd-note" style="font-size:11px;color:#4a5266;text-align:center;margin-top:10px">캐릭터를 누르면 그 머피의 방으로!</div>
+    <div class="mw-wpanel-body" style="display:flex;flex-direction:column;overflow:hidden;padding-bottom:0">
+      <div class="mw-cfd-stage" id="mw-cfd-stage" style="background-image:url('${window.centerFieldSrc(c)}');flex-shrink:0"></div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:11px 2px 8px;flex-shrink:0">
+        <span style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#fff">센터 수다방</span>
+        <span style="font-size:10px;color:#4a5266">이 센터에 도장 찍은 머피만 쓸 수 있어요</span>
+      </div>
+      <div id="mw-ctalk-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px;min-height:80px">
+        <div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
+      </div>
+      <div style="display:flex;gap:7px;padding:8px 0 calc(13px + env(safe-area-inset-bottom));flex-shrink:0">
+        <input id="mw-ctalk-input" maxlength="200" disabled placeholder="확인 중…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.mwCtalkSend('${c.id}')">
+        <button id="mw-ctalk-send" class="mw-btn mw-btn-sm" disabled onclick="window.mwCtalkSend('${c.id}')">보내기</button>
+      </div>
     </div>`;
   if (window._mwRenderBadges) window._mwRenderBadges();
+  window._mwCtalkStart && window._mwCtalkStart(c);
   const rows = (await mwTodayCheckins()).filter(k => String(k.centerId) === String(c.id));
   const headN = document.getElementById('mw-cfd-head-n');
   if (headN) headN.textContent = '현재 체크인 ' + rows.length + '명';
@@ -10021,7 +10038,6 @@ window.mwCenterField = async function (centerId) {
         <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff">아직 아무도 없어요</div>
         <div style="font-size:11px;color:#cfd6e6">오늘 첫 도장의 주인공이 되어보세요!</div>
       </div>`);
-    const note = document.getElementById('mw-cfd-note'); if (note) note.textContent = '도감에서 체크인하면 여기 등장해요';
     return;
   }
   const uids = [...new Set(rows.map(k => k.uid))].slice(0, 24);
@@ -10033,14 +10049,88 @@ window.mwCenterField = async function (centerId) {
   stage.insertAdjacentHTML('beforeend', uids.map(uid => {
     const p = profiles[uid] || {}; const s = spots[uid] || { x: 50, y: 70 };
     const wd = (((s.x * 7) | 0) % 9) / 10;   // 걷기 위상 스태거
-    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window.mwVisitRoom('${uid}')">
+    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window._mwCtalkStop&&window._mwCtalkStop();window.mwVisitRoom('${uid}')">
       <div class="mw-cfd-walk" style="--wd:-${wd}s">${window.mwMiniCharHtml(p.character, 44)}</div>
       <span class="mw-cfd-nick">${p.nickname || '머피'}</span>
     </div>`;
   }).join(''));
 };
+// ---------- 센터 수다방 (그 센터에 도장 찍은 머피 전용 실시간 톡) ----------
+window._mwCtalkStop = function () {
+  if (window._mwCtalkUnsub) { try { window._mwCtalkUnsub(); } catch (e) {} window._mwCtalkUnsub = null; }
+};
+window._mwCtalkStart = async function (center) {
+  window._mwCtalkStop();
+  if (!document.getElementById('mw-ctalk-list')) return;
+  const cid = String(center.id);
+  const q1 = query(collection(db, 'centerTalk', cid, 'msgs'), orderBy('at', 'desc'), limit(40));
+  window._mwCtalkUnsub = onSnapshot(q1, qs => {
+    const el2 = document.getElementById('mw-ctalk-list'); if (!el2) { window._mwCtalkStop(); return; }
+    const msgs = qs.docs.map(d => d.data()).reverse();
+    el2.innerHTML = msgs.length ? msgs.map(m => {
+      const t = m.at && m.at.toDate ? m.at.toDate() : null;
+      const ts = t ? String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') : '';
+      return `<div style="display:flex;gap:8px;align-items:flex-end">
+        <div style="flex-shrink:0">${window.mwMiniCharHtml(m.character, 34)}</div>
+        <div style="min-width:0">
+          <div style="font-size:10px;color:#7aa4ff;margin-bottom:3px">${(m.nick || '머피').replace(/</g, '&lt;')}</div>
+          <div style="font-size:12.5px;color:#e7ecf6;line-height:1.5;word-break:break-all;background:#101624;border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;padding:6px 9px;display:inline-block">${(m.text || '').replace(/</g, '&lt;')}</div>
+        </div>
+        <span style="font-size:9px;color:#4a5266;flex-shrink:0">${ts}</span>
+      </div>`;
+    }).join('') : '<div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">아직 조용하네요 — 첫 마디를 남겨보세요</div>';
+    el2.scrollTop = el2.scrollHeight;
+  }, e => console.warn('ctalk', e));
+  // 쓰기 자격 = 이 센터 체크인 이력 (날짜 무관)
+  const user = auth.currentUser || window.currentUser;
+  let can = false;
+  if (user) { try { const mine = await mwLoadCheckins(); can = mine.some(k => String(k.centerId) === cid); } catch (e) {} }
+  const input = document.getElementById('mw-ctalk-input'), btn = document.getElementById('mw-ctalk-send');
+  if (input && btn) {
+    if (can) { input.disabled = false; input.placeholder = '우리 센터 머피들에게 한마디…'; btn.disabled = false; }
+    else { input.disabled = true; btn.disabled = true; input.placeholder = user ? '이 센터에 도장을 찍으면 참여할 수 있어요' : '로그인하고 도장을 찍으면 참여할 수 있어요'; }
+  }
+};
+window.mwCtalkSend = async function (centerId) {
+  const user = auth.currentUser || window.currentUser; if (!user) return;
+  const input = document.getElementById('mw-ctalk-input'); if (!input || input.disabled) return;
+  const text = (input.value || '').trim(); if (!text) return;
+  input.value = '';
+  try {
+    if (!window._mwMyNick) { const us = await getDoc(doc(db, 'users', user.uid)); window._mwMyNick = (us.exists() && us.data().nickname) || '머피'; }
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    await addDoc(collection(db, 'centerTalk', String(centerId), 'msgs'),
+      { uid: user.uid, nick: window._mwMyNick, character: cfg || null, text: text.slice(0, 200), at: serverTimestamp() });
+    if (navigator.vibrate) navigator.vibrate(10);
+  } catch (e) { showToast(e && e.code === 'permission-denied' ? '보안규칙 게시가 필요해요' : '전송 실패'); }
+};
+// 관리자: 특정 센터에 테스트 도장 (GPS 무시)
+window.mwAdminTestCheckin = function (centerId) {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const c = (typeof getCentersList === 'function' ? getCentersList() : []).find(x => String(x.id) === String(centerId));
+  if (c) window.mwConfirmCheckin(c, 0, 0, 0);
+};
+// 내 방 좌표·방향 저장 (roomPos) — 이동 디바운스 + 이탈/숨김 시 즉시
+window._mwQueueRoomPos = function () {
+  clearTimeout(window._mwRoomPosT);
+  window._mwRoomPosT = setTimeout(() => window._mwSaveRoomPos && window._mwSaveRoomPos(), 4000);
+};
+window._mwSaveRoomPos = async function () {
+  clearTimeout(window._mwRoomPosT);
+  const user = auth.currentUser || window.currentUser;
+  if (!user || !window._charPos || window._curField !== 'home') return;
+  const p = { tc: window._charPos.tc, tr: window._charPos.tr, face: window._charPos.face || 'down' };
+  const last = window._mwRoomPosLast;
+  if (last && last.tc === p.tc && last.tr === p.tr && last.face === p.face) return;
+  window._mwRoomPosLast = p;
+  try { await updateDoc(doc(db, 'users', user.uid), { roomPos: p }); } catch (e) {}
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && window._mwSaveRoomPos) window._mwSaveRoomPos();
+});
 // ---------- 남의 방 구경 (TODAY + 방명록) ----------
 window.mwVisitRoom = async function (uid) {
+  window._mwCtalkStop && window._mwCtalkStop();
   const me = auth.currentUser || window.currentUser;
   let p = {}; try { const us = await getDoc(doc(db,'users',uid)); p = us.exists()?us.data():{}; } catch(e){}
   let el=document.getElementById('mw-wpanel'); if (el) el.remove();
@@ -10049,9 +10139,8 @@ window.mwVisitRoom = async function (uid) {
   el.innerHTML = `
     <div class="mw-wpanel-head"><b>${nick}의 방</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
-      <div style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
+      <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}
-        <div style="position:absolute;left:50%;bottom:16%;transform:translateX(-50%);z-index:145">${window.mwMiniCharHtml(p.character, 118)}</div>
       </div>
       <div style="display:flex;justify-content:center;gap:16px;font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;margin-bottom:14px">
         <span>TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
@@ -10063,6 +10152,15 @@ window.mwVisitRoom = async function (uid) {
       </div>
       <div id="mw-gb-list" style="display:flex;flex-direction:column;gap:8px"><div style="color:#4a5266;font-size:12px;text-align:center;padding:8px">불러오는 중…</div></div>
     </div>`;
+  // 방 주인 캐릭터: 마지막 저장 좌표·방향(roomPos), 실제 방과 같은 스케일(타일×3.3)
+  const vstage = el.querySelector('#mw-vroom-stage');
+  if (vstage) {
+    const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
+    const rp = (p.roomPos && typeof p.roomPos.tc === 'number') ? p.roomPos : { tc:7, tr:8, face:'down' };
+    const hpx = Math.round((vstage.clientWidth || 300) * 3.3 / N);
+    vstage.insertAdjacentHTML('beforeend',
+      `<div style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5}">${window.mwMiniCharHtml(p.character, hpx, rp.face)}</div>`);
+  }
   // TODAY 카운트 (본인 방문은 카운트 제외)
   const dayId = mwTodayKey();
   try {
