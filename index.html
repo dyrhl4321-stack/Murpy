@@ -9723,10 +9723,24 @@ window.mwRenderDogam = async function () {
         <span class="mw-visitcnt">${b?`방문 ${b.n}회`:'미발견'}</span>
       </div>`;
   };
+  const homeRegion = home ? ((home.loc||'').split(/\s+/)[0] || '') : '';
+  // 홈 미등록 시: 발견 센터가 가장 많은 지역 하나만 펼침 (발견 0이면 전부 접힘)
+  let fallbackRegion = '';
+  if (!homeRegion) {
+    let best = -1;
+    Object.keys(regions).forEach(r => {
+      const got = regions[r].filter(c => byCenter[c.id]).length;
+      if (got > best) { best = got; fallbackRegion = r; }
+    });
+    if (best <= 0) fallbackRegion = '';
+  }
+  const openRegion = homeRegion || fallbackRegion;
+  const expDiscovered = others.filter(c => byCenter[c.id]).length;
+  const expTotal = others.length;
   const passport = Object.keys(regions).sort().map(r => {
     const list=regions[r], got=list.filter(c=>byCenter[c.id]).length;
     return `
-      <details class="mw-region"${got?' open':''}>
+      <details class="mw-region"${r===openRegion?' open':''}>
         <summary>${r}<span class="mw-rgn-n">${got}/${list.length}</span></summary>
         <div class="mw-rgn-grid">${list.map(cellOf).join('')}</div>
       </details>`;
@@ -9792,7 +9806,10 @@ window.mwRenderDogam = async function () {
     </div>
     ${homeCard}
     ${bonusBar}
-    <div style="font-size:12px;color:#8a93a8;margin:16px 2px 9px">원정 스탬프 <span style="color:#4a5266">— 다른 센터에 가면 열려요</span></div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:16px 2px 9px">
+      <span style="font-size:12px;color:#8a93a8">원정 스탬프 <span style="color:#4a5266">— 다른 센터에 가면 열려요</span></span>
+      <span style="font-size:11px;color:#4a5266;flex-shrink:0">발견 <b style="color:#cfd6e6">${expDiscovered}</b>/${expTotal}</span>
+    </div>
     ${passport||'<div style="color:#4a5266;font-size:12px;text-align:center;padding:14px">등록된 센터가 없어요</div>'}`;
   window._mwRenderBadges && window._mwRenderBadges();
 };
