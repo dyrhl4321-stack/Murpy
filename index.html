@@ -6274,7 +6274,8 @@ if ('serviceWorker' in navigator) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -6299,6 +6300,14 @@ try {
   db = getFirestore(app);
 }
 const provider = new GoogleAuthProvider();
+// ---------- Realtime Database (스쿼드 워킹 룸 위치 동기화 전용) ----------
+// 콘솔에서 RTDB를 asia-southeast1 리전으로 생성해야 함. 미생성/미연결이면 _SQUAD_RT_OFF=true → 룸은 정적 배치 폴백.
+window._SQUAD_RT_OFF = true;
+try {
+  const rtdb = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
+  window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove };
+  rtOnValue(rtRef(rtdb, '.info/connected'), s => { window._SQUAD_RT_OFF = !s.val(); });
+} catch (e) { console.warn('RTDB off', e); }
 window.currentUser = null;
 const userPhotoCache = new Map(); // uid → photoURL, 로그아웃 시 clear
 
