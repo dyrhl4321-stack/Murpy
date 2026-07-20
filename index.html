@@ -12270,6 +12270,101 @@ window._sqRoomBubble = function (uid, text) {
   clearTimeout(c.bubbleT);
   c.bubbleT = setTimeout(() => b.classList.remove('on'), 3800);
 };
+
+// ---------- 출석 (호스트: 코드 발급 / 멤버: 코드 입력 → 도장 팝) ----------
+window.sqStartAttend = async function (sid) {
+  const s = window._sqDoc; const me = (auth.currentUser || {}).uid;
+  if (!s || me !== s.hostUid) return;
+  let code = s.checkinCode, expiry = s.checkinCodeExpiry;
+  const now = Date.now();
+  if (!code || !expiry || now > expiry) {
+    code = String(Math.floor(100000 + Math.random() * 900000));
+    expiry = now + 30 * 60 * 1000;
+    try { await updateDoc(doc(db,'squads',sid), { checkinCode: code, checkinCodeExpiry: expiry, status: 'active', startedAt: s.startedAt || serverTimestamp() }); }
+    catch(e) { showToast('출석 시작 실패'); return; }
+  }
+  let el = document.getElementById('sq-attend'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-attend';
+  el.style.cssText = 'position:fixed;inset:0;z-index:950;background:rgba(5,7,12,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px';
+  el.innerHTML = `
+    <div style="background:#0d1220;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px 22px;max-width:320px;width:100%;text-align:center">
+      <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px">출석 코드</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,.4);margin-bottom:16px">멤버들에게 이 코드를 보여주세요 · 30분 유효</div>
+      <div style="font-family:'Galmuri14',sans-serif;font-size:38px;letter-spacing:8px;color:#F5C24B;background:rgba(245,194,75,.08);border:1px dashed rgba(245,194,75,.4);border-radius:14px;padding:16px 0 14px;margin-bottom:12px">${code}</div>
+      <div id="sq-attend-qr" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+      <div id="sq-attend-timer" style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:16px"></div>
+      <button onclick="document.getElementById('sq-attend').remove();clearInterval(window._sqAttT)" style="width:100%;background:rgba(255,255,255,.08);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  document.body.appendChild(el);
+  try {   // QR = 스캔하면 자동으로 이 스쿼드 열고 코드 제출되는 링크
+    if (window.QRCode) new QRCode(document.getElementById('sq-attend-qr'),
+      { text: location.origin + location.pathname + '?sqa=' + sid + '&c=' + code, width: 132, height: 132, colorDark: '#05070c', colorLight: '#ffffff' });
+  } catch(e) {}
+  clearInterval(window._sqAttT);
+  const tick = () => { const rem = Math.max(0, Math.ceil((expiry - Date.now()) / 1000));
+    const t = document.getElementById('sq-attend-timer');
+    if (t) t.textContent = rem > 0 ? Math.floor(rem/60) + ':' + String(rem%60).padStart(2,'0') + ' 남음' : '코드가 만료됐어요';
+    if (rem === 0) clearInterval(window._sqAttT); };
+  tick(); window._sqAttT = setInterval(tick, 1000);
+};
+window.sqOpenCode = function (sid) {
+  let el = document.getElementById('sq-attend'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-attend';
+  el.style.cssText = 'position:fixed;inset:0;z-index:950;background:rgba(5,7,12,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px';
+  el.innerHTML = `
+    <div style="background:#0d1220;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:26px 22px;max-width:320px;width:100%;text-align:center">
+      <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:4px">출석 체크</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,.4);margin-bottom:16px">벙주가 보여주는 6자리 코드를 입력하세요</div>
+      <input id="sq-code-in" type="tel" inputmode="numeric" maxlength="6" placeholder="000000"
+        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#fff;border-radius:12px;padding:14px;font-size:24px;letter-spacing:8px;text-align:center;outline:none;font-family:'Galmuri14',sans-serif;margin-bottom:14px"
+        onkeydown="if(event.key==='Enter')window.sqSubmitCode('${sid}')">
+      <button onclick="window.sqSubmitCode('${sid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">도장 찍기</button>
+      <button onclick="document.getElementById('sq-attend').remove()" style="width:100%;background:none;color:rgba(255,255,255,.45);border:none;padding:8px;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => { const i = document.getElementById('sq-code-in'); i && i.focus(); }, 60);
+};
+window.sqSubmitCode = async function (sid, codeArg) {
+  const user = auth.currentUser; if (!user) return;
+  const code = codeArg || (document.getElementById('sq-code-in') || {}).value || '';
+  if (String(code).replace(/\D/g,'').length !== 6) { showToast('6자리 코드를 입력해주세요'); return; }
+  try {
+    const snap = await getDoc(doc(db,'squads',sid));
+    if (!snap.exists()) { showToast('스쿼드를 찾을 수 없어요'); return; }
+    const s = snap.data();
+    if (s.checkinCode !== String(code)) { showToast('코드가 틀렸어요'); return; }
+    if (Date.now() > (s.checkinCodeExpiry || 0)) { showToast('코드가 만료됐어요'); return; }
+    const mRef = doc(db,'squads',sid,'members',user.uid);
+    const mSnap = await getDoc(mRef);
+    if (!mSnap.exists() || mSnap.data().status !== 'accepted') { showToast('참가 멤버만 출석할 수 있어요'); return; }
+    if (mSnap.data().checkedIn) { showToast('이미 도장 찍었어요'); return; }
+    const late = Date.now() > s.scheduledAt + 5 * 60 * 1000;
+    await updateDoc(mRef, { checkedIn: true, checkinTime: serverTimestamp(), checkinType: late ? 'late' : 'present', status: 'checkedIn' });
+    const el = document.getElementById('sq-attend'); if (el) el.remove();
+    showToast(late ? '지각 도장 찍었어요' : '오운완 도장 쾅!');
+    if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    window._sqStampPop(user.uid);                                        // 내 화면 즉시
+    if (window._rt && !window._SQUAD_RT_OFF) {                            // 룸 안 전원에게 브로드캐스트
+      try { window._rt.update(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + user.uid), { stamp: Date.now() }); } catch(e) {}
+    }
+    window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 오운완 도장!' + (late ? ' (지각)' : ''));
+  } catch(e) { console.error(e); showToast('출석 처리 실패'); }
+};
+// QR 스캔 자동 출석: ?sqa={sid}&c={code}
+(function () {
+  const p = new URLSearchParams(location.search);
+  const sid = p.get('sqa'), code = p.get('c');
+  if (!sid || !code) return;
+  let tries = 0;
+  const t = setInterval(() => {
+    tries++;
+    if (auth.currentUser) {
+      clearInterval(t);
+      window.openSquadDetail(sid);
+      setTimeout(() => window.sqSubmitCode(sid, code), 1500);
+    } else if (tries > 30) clearInterval(t);
+  }, 500);
+})();
 </script>
 </body>
 </html>
