@@ -7,7 +7,9 @@
 
 - MURPY는 장기 소속형 "크루"를 걷어내고, **그날 함께 운동할 소규모(2~8명) 임시 "스쿼드"**로 전환한다.
 - **진짜 타겟 = "벙주"**: 주 1회 ~10명짜리 벙을 굴리는 서브 호스트. 대규모 30명+ 모임(소모임 앱 영역)이 아니라, **소규모를 자주 여는 벙주를 위한 빠르고 실질적인 도구.** 유입은 기존 소모임·카톡방 → MURPY 스쿼드.
-- **차별화 3축:** ①빠른 개설·출첵 ②참가자들의 머피월드 픽셀 캐릭터가 종목별 필드에 "한 방에 모인" 뷰 ③벙주가 실질 혜택(등급·머피 적립, 추후 참가비 정산)을 가져감.
+- **차별화 3축:** ①빠른 개설·출첵 ②참가자들의 머피월드 픽셀 캐릭터가 종목별 필드에 모여 **실시간으로 같이 걸어다니는 온라인게임식 스쿼드 룸** ③벙주가 실질 혜택(등급·머피 적립, 추후 참가비 정산)을 가져감.
+
+> **7-20 변경:** 대표 결정 — "한 방 뷰"를 정적 배치가 아니라 **실시간 멀티플레이 워킹 룸**(서로 걸어다니는 게 보임)으로 P0에 포함. 이동은 기존 머피월드 오버월드 재사용, 위치 동기화는 **Firebase Realtime Database** 신규 도입.
 
 ## 확정 결정 (대표)
 
@@ -42,17 +44,33 @@
 
 ### D. 스쿼드 상세
 - 헤더: 썸네일·일시·장소·인원·금액·공금 걷은 기록.
-- **한 방 뷰(핵심 차별화):** 종목별 필드 배경 + 참가 멤버들이 각자 머피 픽셀 캐릭터로 `mwFieldPlace` 안전영역에 정적 배치(제자리걷기 애니 `mwWalk`). `mwCenterField` 렌더를 스쿼드용으로 파생.
+- **실시간 워킹 룸(핵심 차별화):** 종목별 필드 배경 위에서 참가 멤버들이 각자 머피 픽셀 캐릭터로 **실시간으로 같이 걸어다님**(온라인게임식). 상세 §G.
 - 멤버 목록: 프로필·캐릭터·출석상태(누가 누군지).
-- 채팅: `squads/{id}/chat` 실시간(크루 채팅 재사용).
+- 채팅: `squads/{id}/chat` 실시간(크루 채팅 재사용). 룸 위에 오버레이(말풍선/하단 톡).
 - 출석: QR 체크인 + 6자리 코드 폴백. 정시/지각(시작+5분). *P0는 QR/코드, 하이파이브는 Phase 2.*
 - 공금: 금액·걷은 인원 표시·기록(실이체 X).
-- 자동 종료: `endedAt`/`expiresAt` 경과 시 `status='completed'`, 채팅 읽기전용, 운동기록은 프로필·머피월드 유지.
+- 자동 종료: `endedAt`/`expiresAt` 경과 시 `status='completed'`, 룸·채팅 읽기전용, 운동기록은 프로필·머피월드 유지.
 
-### E. 종목별 필드 (한 방 뷰 배경)
-- 종목 → 스쿼드 필드 src 매핑. **와이드 배경**(센터 필드 `field_gym_wide.png` 계열, 캐릭터 하단중앙 안전영역).
-- 자산 현황: 헬스=`field_gym_wide.png`(있음). **신규(나노바나나, 대표 생성):** 러닝·클라이밍·하이록스·등산 → `char/fields/squad_<type>.png`. 골프·테니스는 와이드 버전 후보(없으면 기본 폴백).
-- **폴백:** 종목 필드 미존재 시 `field_gym_wide.png`(기본)로 렌더 → 에셋 안 기다리고 P0 배포 가능. 필드는 도착하는 대로 매핑에 추가.
+### E. 종목별 필드 (워킹 룸 배경)
+- 종목 → 스쿼드 필드 src 매핑. **와이드 배경**(1376×768, `field_<type>_wide.png`, 캐릭터 하단중앙 걷기영역).
+- **자산 완료(7-20, sw v167):** 7종 전부 등록됨 — `char/fields/field_<gym|running|golf|tennis|climbing|hyrox|hiking>_wide.png`(제미나이 ✦ 제거·거울없는 gym). 매핑 예:
+  ```
+  gym→field_gym_wide, running→field_running_wide, golf→field_golf_wide,
+  tennis→field_tennis_wide, climbing→field_climbing_wide,
+  hyrox→field_hyrox_wide, hiking→field_hiking_wide
+  ```
+- **걷기 영역(충돌맵):** 각 와이드 필드의 하단중앙 개활지를 걷기 가능 사각영역으로(대략 x 12~88% / y 55~92%, 필드별 미세조정). 오버월드 `_FIELDS` 충돌맵 패턴 재사용하되 스쿼드 룸은 단순 사각 walkable로 시작.
+- 폴백: 매핑에 없는 종목은 `field_gym_wide`.
+
+### G. 실시간 워킹 룸 (온라인게임식 위치 동기화)
+- **이동(재사용):** 내 캐릭터 이동은 기존 머피월드 오버월드 조작(터치 조이스틱/탭 이동, 4방향 walk 애니 `mwWalk`) + 걷기영역 클램프. 새로 만들 것 = 남을 실시간으로 보는 동기화 층.
+- **동기화 = Firebase Realtime Database(RTDB) 신규 도입** (Firestore는 고빈도 위치엔 비용·지연 부담. RTDB가 실시간 위치·presence 표준):
+  - 경로 `squadRooms/{squadId}/players/{uid} = { x, y, dir, moving, nick, t }`.
+  - 내 위치 쓰기 = **쓰로틀**(이동 중 ~4–5회/초, 멈추면 1회). 남 위치 = 구독 후 **CSS transition으로 보간**(기존 오버월드 캐릭터가 이미 `transition:left/top`로 부드럽게 이동 → 재사용).
+  - **presence:** 룸 입장 시 등록, 이탈·새로고침·연결끊김 시 `onDisconnect().remove()`로 자동 정리(누가 지금 룸에 있는지).
+  - 렌더 상한 = 정원(≤8). 캐릭터는 `mwMiniCharHtml` 재사용.
+- **RTDB 보안규칙:** `squadRooms/{sid}/players/{uid}` 읽기=그 스쿼드 멤버, 쓰기=본인(uid 일치)+멤버. RTDB 활성화(같은 Firebase 프로젝트) + 규칙 게시 필요.
+- **P0 범위 한정:** 텍스트/이모트 정도의 가벼운 상호작용까지. 물리 충돌·미니게임·음성은 이후.
 
 ### F. 벙주 이코노미 (P0 = 등급/인증 + 호스트 머피 적립)
 - **벙주 등급/인증:** `users/{uid}.hostStats = { hosted, completed }`. 개설·완주 실적으로 등급·"인증 벙주" 배지. 스쿼드 카드/프로필에 표시.
@@ -82,6 +100,13 @@ squads/{squadId}/chat/{msgId}           // 크루 chat과 동형
 users/{uid}.hostStats { hosted, completed }
 ```
 
+**Realtime Database (신규 — 실시간 워킹 룸 위치/presence 전용):**
+```text
+squadRooms/{squadId}/players/{uid} = { x, y, dir, moving, nick, t }
+  · 고빈도 쓰로틀 쓰기, onDisconnect().remove()로 presence 자동정리
+  · Firestore(스쿼드 데이터)와 역할 분리: 영속 데이터=Firestore, 휘발 위치=RTDB
+```
+
 ## 보안 (P0 최소선 + Phase 2 승격)
 - **P0:** 보안규칙에서 스쿼드 쓰기=로그인, 멤버등록=본인, 삭제=호스트/관리자. 현재 크루 규칙 패턴 확장.
 - **알려진 약점(승격 필요):** 크루식 `submitAttendCode`는 클라가 코드 대조 → 위조 가능. **호스트 머피 적립 등 보상 연동 시 Cloud Functions 서버검증 필수**(Phase 2, 타당성 §16). P0는 보상 금액을 낮게 두고 남용 모니터링.
@@ -90,12 +115,13 @@ users/{uid}.hostStats { hosted, completed }
 - 근접 하이파이브(Multipeer/UWB/햅틱) = Capacitor+Swift, Phase 2+.
 - 참가비 실결제·정산(PG) = 사업자 후 Phase 2.
 - QR/센터/매칭/대숲발 스쿼드 생성 = P1(P0는 수동 생성 + QR 출첵만).
-- 걸어다니는 인터랙티브 스쿼드 룸 = 이후.
+- 워킹 룸의 물리 충돌·미니게임·음성·이모트 세트 = 이후(P0는 걷기+실시간 위치+가벼운 상호작용까지).
 - 기존 크루 데이터 마이그레이션/삭제 = 하지 않음(휴면 유지).
 
 ## 검증
 - 배포 후 대표 실앱 확인([[feedback_murpy_push_dont_preview]]): sw 버전업·푸시.
-- 확인 포인트: ①'스쿼드' 탭·생성 30초 ②카드에 종목·일시·장소·인원·금액 ③상세에서 참가 캐릭터가 종목 필드에 모여 보임 ④QR/코드 출첵·지각판정 ⑤완료 시 자동종료+호스트 머피 적립 ⑥벙주 등급 표시.
+- 확인 포인트: ①'스쿼드' 탭·생성 30초 ②카드에 종목·일시·장소·인원·금액 ③상세 워킹 룸에서 **내 캐릭터가 걷고, 같은 스쿼드 멤버가 실시간으로 움직이는 게 보임**(두 기기 동시 테스트: 관리자+테스트계정) ④QR/코드 출첵·지각판정 ⑤완료 시 자동종료+호스트 머피 적립 ⑥벙주 등급 표시.
+- 실시간 룸 검증엔 두 계정 동시 접속 필요([[project_murpy_admin_accounts]] 패수현/김현수 계정 활용).
 
 ## 관련 기억
 [[project_murpy_roadmap]] [[project_murpy_business]] [[project_murpy_character]] [[feedback_murpy_ui_hierarchy]] [[project_murpy_session_resume]] [[feedback_nanobanana_chroma_green]]
