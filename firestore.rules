@@ -147,6 +147,34 @@ service cloud.firestore {
       }
     }
 
+    // ===== 즉석 스쿼드 (벙주 시스템) =====
+    match /squads/{squadId} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.hostUid == request.auth.uid;
+      // 참가 트랜잭션(memberUids)·출석코드·상태전이 — P0는 로그인 게이트, P2에서 Functions로 조임
+      allow update: if signedIn();
+      allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
+
+      // 멤버 문서 = 본인 or 벙주(승인/입금 토글)
+      match /members/{memberId} {
+        allow read: if true;
+        allow write: if signedIn() && (request.auth.uid == memberId
+                     || get(/databases/$(database)/documents/squads/$(squadId)).data.hostUid == request.auth.uid);
+      }
+
+      // 스쿼드 톡 (sys 메시지는 uid=null 허용)
+      match /chat/{msgId} {
+        allow read: if true;
+        allow create: if signedIn()
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() <= 200
+                      && (request.resource.data.uid == request.auth.uid
+                          || (request.resource.data.sys == true && request.resource.data.uid == null));
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+    }
+
     // ===== 센터 (헬스장) =====
     match /centers/{centerId} {
       allow read: if true;
