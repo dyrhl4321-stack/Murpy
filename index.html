@@ -11817,6 +11817,187 @@ window._sqSubmitCreate = async function () {
     window.openSquadDetail && window.openSquadDetail(dRef.id);
   } catch(e) { console.error(e); showToast('생성 실패 — 다시 시도해주세요'); btn.disabled = false; btn.textContent = '스쿼드 열기'; }
 };
+
+// ---------- 상세 (실시간 문서·멤버 구독) ----------
+window._sqClose = function () {
+  window._sqDocUnsub && window._sqDocUnsub(); window._sqDocUnsub = null;
+  window._sqMemUnsub && window._sqMemUnsub(); window._sqMemUnsub = null;
+  window._sqChatStop && window._sqChatStop();
+  window._sqRtLeave && window._sqRtLeave(window._sqCurId);
+  window._sqCurId = null;
+  const el = document.getElementById('sq-detail'); if (el) el.remove();
+};
+window.openSquadDetail = function (sid) {
+  window._sqClose();
+  window._sqCurId = sid;
+  let el = document.createElement('div'); el.id = 'sq-detail';
+  el.style.cssText = 'position:fixed;inset:0;z-index:890;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain';
+  el.innerHTML = `
+    <div id="sq-d-hero" style="position:relative;flex-shrink:0"></div>
+    <div style="padding:0 16px calc(26px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px">
+      <div id="sq-room-wrap" style="margin-top:14px">
+        <div id="sq-room-stage"></div>
+        <div id="sq-room-hint" style="font-size:10.5px;color:rgba(255,255,255,.32);text-align:center;margin-top:6px">필드를 탭하면 캐릭터가 걸어가요</div>
+      </div>
+      <div id="sq-d-actions"></div>
+      <div id="sq-d-members"></div>
+      <div id="sq-chat-wrap"></div>
+    </div>`;
+  document.body.appendChild(el);
+  window._sqDoc = null; window._sqMembers = {};
+  window._sqDocUnsub = onSnapshot(doc(db,'squads',sid), s => {
+    if (!s.exists()) { showToast('삭제된 스쿼드예요'); window._sqClose(); return; }
+    window._sqDoc = { id: s.id, ...s.data() };
+    window._sqRenderDetail();
+  }, e => console.warn('sq doc', e));
+  window._sqMemUnsub = onSnapshot(collection(db,'squads',sid,'members'), qs => {
+    window._sqMembers = {}; qs.docs.forEach(d => window._sqMembers[d.id] = d.data());
+    window._sqRenderDetail();
+  }, e => console.warn('sq mem', e));
+};
+window._sqRenderDetail = function () {
+  const s = window._sqDoc; if (!s) return;
+  const el = document.getElementById('sq-detail'); if (!el) return;
+  const me = (auth.currentUser || window.currentUser || {}).uid || null;
+  const mem = window._sqMembers || {};
+  const t = window.SQUAD_TYPES[s.exerciseType] || window.SQUAD_TYPES.gym;
+  const n = (s.memberUids||[]).length;
+  const now = Date.now();
+  const done = ['completed','cancelled','expired'].includes(s.status);
+  const live = !done && now >= s.scheduledAt && now < (s.expiresAt||0);
+  const isHost = me && me === s.hostUid;
+  const myMem = me ? mem[me] : null;
+  const joined = !!(me && (s.memberUids||[]).includes(me));
+  const esc = v => String(v||'').replace(/</g,'&lt;');
+  // --- 히어로 ---
+  const paidN = Object.values(mem).filter(m => m.paid).length;
+  const hero = document.getElementById('sq-d-hero');
+  if (hero) hero.innerHTML = `
+    <div style="position:relative;height:172px;overflow:hidden">
+      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.55) 0%,rgba(5,7,12,.35) 45%,#05070c 100%)"></div>
+      <button onclick="window._sqClose()" style="position:absolute;left:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:17px;cursor:pointer;width:36px;height:36px;border-radius:50%">←</button>
+      <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+          <span style="background:rgba(255,255,255,.14);backdrop-filter:blur(4px);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
+          ${live ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(61,222,124,.2);color:#3dde7c;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700"><i style="width:6px;height:6px;border-radius:50%;background:#3dde7c;animation:mwBlink 1.1s steps(2) infinite"></i>LIVE</span>' : ''}
+          ${done ? '<span style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.55);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">종료됨</span>' : ''}
+        </div>
+        <div style="font-size:19px;font-weight:800;color:#fff;margin-bottom:5px">${esc(s.title)}</div>
+        <div style="font-size:12px;color:#cfd6e6;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span>${window._sqFmtTime(s.scheduledAt)}</span><span style="color:rgba(255,255,255,.3)">·</span><span>${esc(s.location)}</span>
+          <span style="color:rgba(255,255,255,.3)">·</span><span style="font-weight:700;color:#7aa8ff">${n}/${s.capacity}명</span>
+          ${s.feeAmount>0 ? `<span style="color:rgba(255,255,255,.3)">·</span><span style="font-weight:700;color:#F5C24B">${window._sqFmtFee(s.feeAmount)} <span style="font-weight:400;color:rgba(255,255,255,.45)">입금 ${paidN}/${n}</span></span>` : ''}
+        </div>
+        ${s.oneLineMemo ? `<div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:5px">"${esc(s.oneLineMemo)}"</div>` : ''}
+      </div>
+    </div>`;
+  // --- 액션 ---
+  const act = document.getElementById('sq-d-actions');
+  const btnCss = 'flex:1;border:none;border-radius:13px;padding:14px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit';
+  let actions = '';
+  if (done) actions = '';
+  else if (isHost) actions = `
+    <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">출석 시작</button>
+    <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">운동 종료</button>`;
+  else if (joined) actions = `
+    <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">출석 체크</button>
+    <button onclick="window.leaveSquad('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);flex:0.6">나가기</button>`;
+  else if (myMem && myMem.status === 'invited') actions = `
+    <button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">벙주 승인 기다리는 중…</button>`;
+  else if (n >= s.capacity) actions = `<button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.4)">정원 마감</button>`;
+  else actions = `<button onclick="window.joinSquad('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">${s.joinMode==='approval'?'참가 신청':'참가하기'}</button>`;
+  if (act) act.innerHTML = actions ? `<div style="display:flex;gap:8px">${actions}</div>` : '';
+  // --- 멤버 ---
+  const mv = document.getElementById('sq-d-members');
+  const stChip = m => {
+    if (m.checkinType === 'late') return '<span style="font-size:10px;color:#F5C24B;background:rgba(245,194,75,.12);border-radius:10px;padding:2px 8px;font-weight:700">지각</span>';
+    if (m.checkedIn || m.checkinType === 'present') return '<span style="font-size:10px;color:#3dde7c;background:rgba(61,222,124,.12);border-radius:10px;padding:2px 8px;font-weight:700">오운완</span>';
+    if (m.status === 'invited') return '<span style="font-size:10px;color:rgba(255,255,255,.45);background:rgba(255,255,255,.08);border-radius:10px;padding:2px 8px;font-weight:700">대기중</span>';
+    return '';
+  };
+  const crown = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" style="flex-shrink:0"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-1.6 10H4.6z"/></svg>';
+  const rows = Object.keys(mem)
+    .filter(uid => mem[uid].status !== 'left')
+    .sort((a,b) => (a===s.hostUid?-1:1) - (b===s.hostUid?-1:1))
+    .map(uid => { const m = mem[uid]; const wait = m.status==='invited';
+      return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;${wait?'opacity:.62':''}">
+        <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;color:#fff">
+            ${esc(m.nickname)} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid===s.hostUid?s:null, mem, uid) : ''}
+          </div>
+        </div>
+        ${stChip(m)}
+        ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:${m.paid?'rgba(61,222,124,.14)':'rgba(255,255,255,.07)'};color:${m.paid?'#3dde7c':'rgba(255,255,255,.5)'};border:none;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
+          : (s.feeAmount>0 && m.paid ? '<span style="font-size:10px;color:#3dde7c;font-weight:700">입금 ✓</span>' : '')}
+        ${wait && isHost ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
+      </div>`; }).join('');
+  if (mv) mv.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin:2px 2px 4px">스쿼드 멤버 <span style="color:#7aa8ff">${n}</span>/${s.capacity}</div>
+    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 10px">${rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>'}</div>`;
+  // --- 워킹 룸 스테이지 + 채팅 (한 번만 초기화) ---
+  if (!window._sqStageInit || window._sqStageInit !== s.id) {
+    window._sqStageInit = s.id;
+    window._sqRoomInit && window._sqRoomInit(s);
+    window._sqChatStart && window._sqChatStart(s.id);
+  }
+  window._sqRoomSync && window._sqRoomSync(s, mem);   // 정적 폴백 갱신용 훅
+};
+// ---------- 참가/승인/탈퇴/입금 ----------
+window.joinSquad = async function (sid) {
+  const user = auth.currentUser; if (!user) { window.requireLogin ? requireLogin() : showToast('로그인이 필요해요'); return; }
+  try {
+    if (!window._mwMyNick) { try { const us = await getDoc(doc(db,'users',user.uid)); window._mwMyNick = (us.exists() && us.data().nickname) || '머피'; } catch(e){} }
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    await runTransaction(db, async tx => {
+      const sRef = doc(db,'squads',sid); const snap = await tx.get(sRef);
+      if (!snap.exists()) throw new Error('없는 스쿼드예요');
+      const d = snap.data();
+      if ((d.memberUids||[]).includes(user.uid)) throw new Error('이미 참가중이에요');
+      const instant = d.joinMode !== 'approval';
+      if (instant && (d.memberUids||[]).length >= d.capacity) throw new Error('정원이 찼어요');
+      if (instant) tx.update(sRef, { memberUids: [...(d.memberUids||[]), user.uid] });
+      tx.set(doc(db,'squads',sid,'members',user.uid), {
+        status: instant ? 'accepted' : 'invited', nickname: window._mwMyNick || '머피',
+        character: cfg, paid: false, joinedAt: serverTimestamp() });
+    });
+    showToast('참가 완료!');
+  } catch(e) { showToast(e.message || '참가 실패'); }
+};
+window.approveSquadMember = async function (sid, uid) {
+  try {
+    await runTransaction(db, async tx => {
+      const sRef = doc(db,'squads',sid); const snap = await tx.get(sRef);
+      if (!snap.exists()) throw new Error('없는 스쿼드');
+      const d = snap.data();
+      if ((d.memberUids||[]).length >= d.capacity) throw new Error('정원이 찼어요');
+      if (!(d.memberUids||[]).includes(uid)) tx.update(sRef, { memberUids: [...(d.memberUids||[]), uid] });
+      tx.update(doc(db,'squads',sid,'members',uid), { status: 'accepted' });
+    });
+    showToast('승인했어요');
+  } catch(e) { showToast(e.message || '승인 실패'); }
+};
+window.leaveSquad = async function (sid) {
+  const user = auth.currentUser; if (!user) return;
+  if (!confirm('스쿼드에서 나갈까요?')) return;
+  try {
+    await runTransaction(db, async tx => {
+      const sRef = doc(db,'squads',sid); const snap = await tx.get(sRef);
+      if (!snap.exists()) return;
+      const d = snap.data();
+      tx.update(sRef, { memberUids: (d.memberUids||[]).filter(u => u !== user.uid) });
+      tx.update(doc(db,'squads',sid,'members',user.uid), { status: 'left' });
+    });
+    showToast('나갔어요');
+    window._sqClose();
+  } catch(e) { showToast('실패했어요'); }
+};
+window.sqTogglePaid = async function (sid, uid, cur) {
+  try { await updateDoc(doc(db,'squads',sid,'members',uid), { paid: !cur }); }
+  catch(e) { showToast('변경 실패'); }
+};
 </script>
 </body>
 </html>
