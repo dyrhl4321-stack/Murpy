@@ -11944,6 +11944,7 @@ window._sqRenderDetail = function () {
     window._sqChatStart && window._sqChatStart(s.id);
   }
   window._sqRoomSync && window._sqRoomSync(s, mem);   // 정적 폴백 갱신용 훅
+  window._sqChatGate && window._sqChatGate();         // 참가 상태 바뀌면 채팅 입력 자격 갱신
 };
 // ---------- 참가/승인/탈퇴/입금 ----------
 window.joinSquad = async function (sid) {
@@ -11997,6 +11998,81 @@ window.leaveSquad = async function (sid) {
 window.sqTogglePaid = async function (sid, uid, cur) {
   try { await updateDoc(doc(db,'squads',sid,'members',uid), { paid: !cur }); }
   catch(e) { showToast('변경 실패'); }
+};
+
+// ---------- 스쿼드 채팅 (게임식 하단 입력 + 캐릭터 말풍선 훅) ----------
+window._sqChatStop = function () {
+  if (window._sqChatUnsub) { try { window._sqChatUnsub(); } catch(e) {} window._sqChatUnsub = null; }
+  window._sqChatReady = false;
+};
+window._sqChatStart = function (sid) {
+  window._sqChatStop();
+  const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin:4px 2px 8px">
+      <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">스쿼드 톡</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.28)">— 말하면 캐릭터 머리 위에 떠요</span>
+    </div>
+    <div id="sq-chat-list" style="height:230px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:8px 2px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px 14px 0 0;padding:10px">
+      <div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
+    </div>
+    <div style="display:flex;gap:7px;padding:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-top:none;border-radius:0 0 14px 14px">
+      <input id="sq-chat-input" maxlength="120" disabled placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:11px 13px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
+      <button id="sq-chat-send" disabled onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">보내기</button>
+    </div>`;
+  const q1 = query(collection(db,'squads',sid,'chat'), orderBy('at','desc'), limit(60));
+  window._sqChatUnsub = onSnapshot(q1, qs => {
+    const listEl = document.getElementById('sq-chat-list'); if (!listEl) { window._sqChatStop(); return; }
+    const myUid = (auth.currentUser || window.currentUser || {}).uid;
+    // 새 메시지 → 워킹 룸 캐릭터 말풍선 (첫 스냅샷은 과거 로그라 스킵)
+    if (window._sqChatReady) {
+      qs.docChanges().filter(c => c.type === 'added').forEach(c => {
+        const m = c.doc.data();
+        if (!m.sys && window._sqRoomBubble) window._sqRoomBubble(m.uid, m.text);
+      });
+    }
+    window._sqChatReady = true;
+    const msgs = qs.docs.map(d => d.data());   // desc + column-reverse = 최신이 하단(게임 채팅)
+    listEl.innerHTML = msgs.length ? msgs.map(m => {
+      const esc = v => String(v||'').replace(/</g,'&lt;');
+      if (m.sys) return `<div style="text-align:center;font-size:10.5px;color:rgba(255,255,255,.35);padding:2px 0">${esc(m.text)}</div>`;
+      const td = m.at && m.at.toDate ? m.at.toDate() : null;
+      const ts = td ? String(td.getHours()).padStart(2,'0') + ':' + String(td.getMinutes()).padStart(2,'0') : '';
+      const mine = myUid && m.uid === myUid;
+      const bubble = `<div style="font-size:12.5px;line-height:1.5;word-break:break-all;padding:7px 10px;display:inline-block;border-radius:12px;color:${mine?'#fff':'#e7ecf6'};background:${mine?'var(--accent)':'rgba(255,255,255,.08)'}">${esc(m.text)}</div>`;
+      const time = `<span style="font-size:9px;color:rgba(255,255,255,.3);flex-shrink:0">${ts}</span>`;
+      const avatar = `<div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>`;
+      if (mine) return `<div style="display:flex;gap:7px;align-items:flex-end;justify-content:flex-end">${time}<div style="min-width:0;text-align:right">${bubble}</div></div>`;
+      return `<div style="display:flex;gap:7px;align-items:flex-end">${avatar}<div style="min-width:0"><div style="font-size:10px;color:#7aa8ff;margin-bottom:3px">${esc(m.nick)}</div>${bubble}</div>${time}</div>`;
+    }).join('') : '<div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">첫 마디를 남겨보세요</div>';
+    listEl.scrollTop = 0;
+  }, e => console.warn('sq chat', e));
+  // 쓰기 자격 = 스쿼드 멤버
+  const gate = () => {
+    const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
+    const can = !!(s && me && (s.memberUids||[]).includes(me));
+    const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
+    if (!input || !btn) return;
+    if (can) { input.disabled = false; input.placeholder = '스쿼드에 한마디…'; btn.disabled = false; }
+    else { input.disabled = true; btn.disabled = true; input.placeholder = me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요'; }
+  };
+  gate(); window._sqChatGate = gate;
+};
+window.sqChatSend = async function (sid) {
+  const user = auth.currentUser; if (!user) return;
+  const input = document.getElementById('sq-chat-input'); if (!input || input.disabled) return;
+  const text = (input.value||'').trim(); if (!text) return;
+  input.value = '';
+  try {
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    await addDoc(collection(db,'squads',sid,'chat'),
+      { uid:user.uid, nick:window._mwMyNick||'머피', character:cfg, text:text.slice(0,120), at:serverTimestamp() });
+    window._sqRoomBubble && window._sqRoomBubble(user.uid, text);   // 내 말풍선은 즉시
+    if (navigator.vibrate) navigator.vibrate(10);
+  } catch(e) { showToast('전송 실패'); }
+};
+window.sqChatSys = async function (sid, text) {   // 시스템 메시지 (입퇴장·출석)
+  try { await addDoc(collection(db,'squads',sid,'chat'), { sys:true, uid:null, text, at:serverTimestamp() }); } catch(e) {}
 };
 </script>
 </body>
