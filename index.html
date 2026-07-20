@@ -984,11 +984,13 @@
 <!-- CREW -->
 <div class="page" id="page-crew">
   <div class="page-head">
-    <span class="ph-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-    <div><div class="ph-title">크루</div><div class="ph-sub">같이 운동할 크루를 찾아요</div></div>
-    <button class="ph-action btn-white" style="border-radius:20px;padding:8px 15px;font-size:12px" onclick="openPanel('create-crew-panel')">+ 만들기</button>
+    <span class="ph-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5h5L11 22l8.5-11.5h-5z"/></svg></span>
+    <div><div class="ph-title">스쿼드</div><div class="ph-sub">오늘 같이 운동할 사람들</div></div>
+    <button class="ph-action btn-white" style="border-radius:20px;padding:8px 15px;font-size:12px" onclick="window.openSquadCreate&&window.openSquadCreate()">+ 만들기</button>
   </div>
-  <div class="tab-bar" id="crew-tab-bar">
+  <div id="squad-list" style="padding-top:14px"></div>
+  <!-- ↓ 옛 크루 UI (휴면 — 코드 보존용, 표시 안 함) -->
+  <div class="tab-bar" id="crew-tab-bar" style="display:none">
     <button class="tab-btn active" onclick="switchCrewTab('mine', this)">내 크루</button>
     <button class="tab-btn" onclick="switchCrewTab('explore', this)">탐색하기</button>
   </div>
@@ -1004,7 +1006,7 @@
       <button onclick="filterRegion('서울 전체', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">서울 전체</button>
     </div>
   </div>
-  <div id="crew-mine" style="padding-top:16px"></div>
+  <div id="crew-mine" style="padding-top:16px;display:none"></div>
   <div id="crew-explore" style="padding-top:16px;display:none"></div>
 </div>
 
@@ -3576,11 +3578,11 @@ window.mwPortal = function () {
   </button>
   <button class="nav-btn" onclick="goPage('crew')">
     <div class="nav-icon-wrap" id="nav-crew">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square">
-        <circle cx="9" cy="7" r="3"/><path d="M9 13c-4 0-6 2-6 4v2h12v-2c0-2-2-4-6-4z"/><circle cx="17" cy="8" r="2.5"/><path d="M17 13c2.5 0 4 1.5 4 3v1h-4"/>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 2L4.5 13.5h5L11 22l8.5-11.5h-5z"/>
       </svg>
     </div>
-    <span class="nav-label" id="navl-crew">크루</span>
+    <span class="nav-label" id="navl-crew">스쿼드</span>
   </button>
   <button class="nav-btn" onclick="goPage('char')">
     <div class="nav-icon-wrap" id="nav-char">
@@ -3754,7 +3756,7 @@ function goPage(name) {
     document.getElementById('navl-' + n).classList.toggle('active', n === name);
   });
   if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); }
-  if (name === 'crew') renderCrews();
+  if (name === 'crew') { if (window.renderSquadPage) window.renderSquadPage(); else renderCrews(); }   // 크루 탭 → 스쿼드 (크루 렌더는 휴면)
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
   if (name === 'home') { renderHomeCrews(); if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
@@ -11631,6 +11633,81 @@ window.togglePaid = async (crewId, scheduleId, userId, currentPaid) => {
     await window.showQRCheckin(attendCrew, attendSched);
   }
 })();
+
+// ==================== 즉석 스쿼드 P0 ====================
+// 종목 7종 → 워킹 룸 와이드 필드 매핑 (docs/superpowers/specs/2026-07-19-squad-p0-design.md)
+window.SQUAD_TYPES = {
+  gym:      { name:'헬스',     v:2 },
+  running:  { name:'러닝',     v:1 },
+  golf:     { name:'골프',     v:1 },
+  tennis:   { name:'테니스',   v:1 },
+  climbing: { name:'클라이밍', v:1 },
+  hyrox:    { name:'하이록스', v:1 },
+  hiking:   { name:'등산',     v:1 },
+};
+window.squadFieldSrc = function (t) {
+  const k = window.SQUAD_TYPES[t] ? t : 'gym';
+  return 'char/fields/field_' + k + '_wide.png?v=' + window.SQUAD_TYPES[k].v;
+};
+window.SQUAD_LEVELS = { easy:'가볍게', mid:'중간', hard:'빡세게' };
+window._sqFmtTime = function (ms) {
+  const d = new Date(ms), yo = ['일','월','화','수','목','금','토'];
+  return (d.getMonth()+1) + '.' + d.getDate() + '(' + yo[d.getDay()] + ') '
+    + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+};
+window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무료';
+
+// ---------- 피드 ----------
+window.renderSquadPage = async function () {
+  const root = document.getElementById('squad-list'); if (!root) return;
+  root.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">스쿼드 불러오는 중…</div>';
+  let rows = [];
+  try {
+    const qs = await getDocs(query(collection(db,'squads'), orderBy('scheduledAt','asc'), limit(40)));
+    const now = Date.now();
+    rows = qs.docs.map(d => ({ id:d.id, ...d.data() }))
+      .filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) > now);
+  } catch(e) { console.warn('squad feed', e); }
+  if (!rows.length) {
+    root.innerHTML = `
+      <div style="text-align:center;padding:44px 20px">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:14px"><path d="M13 2L4.5 13.5h5L11 22l8.5-11.5h-5z"/></svg>
+        <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:6px">오늘 첫 스쿼드를 열어보세요</div>
+        <div style="font-size:12.5px;color:rgba(255,255,255,.4);line-height:1.7;margin-bottom:18px">종목·장소·시간만 정하면 30초면 끝<br>같이 운동할 머피들이 모여요</div>
+        <button onclick="window.openSquadCreate&&window.openSquadCreate()" style="background:var(--accent);color:#fff;border:none;border-radius:24px;padding:13px 26px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">+ 스쿼드 만들기</button>
+      </div>`;
+    return;
+  }
+  const now = Date.now();
+  root.innerHTML = rows.map(s => {
+    const t = window.SQUAD_TYPES[s.exerciseType] || window.SQUAD_TYPES.gym;
+    const n = (s.memberUids||[]).length, full = n >= s.capacity;
+    const live = now >= s.scheduledAt && now < (s.expiresAt||0);
+    const chip = live
+      ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(61,222,124,.16);color:#3dde7c;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700"><i style="width:6px;height:6px;border-radius:50%;background:#3dde7c;animation:mwBlink 1.1s steps(2) infinite"></i>LIVE</span>'
+      : full ? '<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">마감</span>'
+      : '<span style="background:rgba(61,126,255,.2);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
+    return `
+    <div onclick="window.openSquadDetail('${s.id}')" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:12px;cursor:pointer;border:1px solid rgba(255,255,255,.08)">
+      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.94) 0%,rgba(5,7,12,.78) 52%,rgba(5,7,12,.30) 100%)"></div>
+      <div style="position:relative;padding:15px 16px;display:flex;flex-direction:column;gap:7px">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="background:rgba(255,255,255,.12);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
+          ${chip}
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${full?'rgba(255,255,255,.45)':'#7aa8ff'};font-weight:700">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}</span>
+        </div>
+        <div style="font-size:15.5px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.title||'').replace(/</g,'&lt;')}</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cfd6e6">
+          <span>${window._sqFmtTime(s.scheduledAt)}</span><span style="color:rgba(255,255,255,.25)">·</span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${(s.location||'미정').replace(/</g,'&lt;')}</span>
+          <span style="margin-left:auto;font-weight:700;color:${s.feeAmount>0?'#F5C24B':'#3dde7c'}">${window._sqFmtFee(s.feeAmount)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+};
 </script>
 </body>
 </html>
