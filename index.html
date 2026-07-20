@@ -11684,8 +11684,11 @@ window.renderSquadPage = async function () {
   try {
     const qs = await getDocs(query(collection(db,'squads'), orderBy('scheduledAt','asc'), limit(40)));
     const now = Date.now();
-    rows = qs.docs.map(d => ({ id:d.id, ...d.data() }))
-      .filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) > now);
+    const all = qs.docs.map(d => ({ id:d.id, ...d.data() }));
+    // lazy 만료: 시간 지난 스쿼드는 조용히 expired 처리
+    all.filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) <= now)
+       .slice(0, 5).forEach(s => { updateDoc(doc(db,'squads',s.id), { status:'expired' }).catch(()=>{}); });
+    rows = all.filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) > now);
   } catch(e) { console.warn('squad feed', e); }
   if (!rows.length) {
     root.innerHTML = `
@@ -11864,10 +11867,15 @@ window.openSquadDetail = function (sid) {
       <div id="sq-chat-wrap"></div>
     </div>`;
   document.body.appendChild(el);
-  window._sqDoc = null; window._sqMembers = {};
+  window._sqDoc = null; window._sqMembers = {}; window._sqHostStats = null;
   window._sqDocUnsub = onSnapshot(doc(db,'squads',sid), s => {
     if (!s.exists()) { showToast('삭제된 스쿼드예요'); window._sqClose(); return; }
     window._sqDoc = { id: s.id, ...s.data() };
+    if (window._sqHostFetched !== sid) { window._sqHostFetched = sid;   // 벙주 등급용 hostStats 1회 로드
+      getDoc(doc(db,'users',window._sqDoc.hostUid)).then(u => {
+        window._sqHostStats = (u.exists() && u.data().hostStats) || {}; window._sqRenderDetail();
+      }).catch(()=>{});
+    }
     window._sqRenderDetail();
   }, e => console.warn('sq doc', e));
   window._sqMemUnsub = onSnapshot(collection(db,'squads',sid,'members'), qs => {
@@ -11946,7 +11954,7 @@ window._sqRenderDetail = function () {
         <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
         <div style="min-width:0;flex:1">
           <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;color:#fff">
-            ${esc(m.nickname)} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid===s.hostUid?s:null, mem, uid) : ''}
+            ${esc(m.nickname)} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
           </div>
         </div>
         ${stChip(m)}
@@ -12070,11 +12078,13 @@ window._sqChatStart = function (sid) {
   // 쓰기 자격 = 스쿼드 멤버
   const gate = () => {
     const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
-    const can = !!(s && me && (s.memberUids||[]).includes(me));
+    const done = s && ['completed','cancelled','expired'].includes(s.status);
+    const can = !!(s && !done && me && (s.memberUids||[]).includes(me));
     const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
     if (!input || !btn) return;
     if (can) { input.disabled = false; input.placeholder = '스쿼드에 한마디…'; btn.disabled = false; }
-    else { input.disabled = true; btn.disabled = true; input.placeholder = me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요'; }
+    else { input.disabled = true; btn.disabled = true;
+      input.placeholder = done ? '종료된 스쿼드예요 (기록은 남아있어요)' : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요'; }
   };
   gate(); window._sqChatGate = gate;
 };
@@ -12349,6 +12359,35 @@ window.sqSubmitCode = async function (sid, codeArg) {
     }
     window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 오운완 도장!' + (late ? ' (지각)' : ''));
   } catch(e) { console.error(e); showToast('출석 처리 실패'); }
+};
+// ---------- 벙주 등급 (hostStats.completed 기준) ----------
+window._sqHostBadge = function (uid) {
+  const s = window._sqDoc; if (!s || uid !== s.hostUid) return '';
+  const n = (window._sqHostStats && window._sqHostStats.completed) || 0;
+  const g = n >= 10 ? ['인증 벙주','#F5C24B','rgba(245,194,75,.13)']
+        : n >= 3  ? ['단골 벙주','#7aa8ff','rgba(61,126,255,.15)']
+        :           ['새싹 벙주','#3dde7c','rgba(61,222,124,.12)'];
+  return `<span style="font-size:9.5px;color:${g[1]};background:${g[2]};border-radius:8px;padding:1.5px 7px;font-weight:700;flex-shrink:0">${g[0]}${n>0?' · '+n:''}</span>`;
+};
+// ---------- 운동 종료 (자동종료·호스트 머피 적립) ----------
+window.sqComplete = async function (sid) {
+  const s = window._sqDoc; const me = (auth.currentUser || {}).uid;
+  if (!s || me !== s.hostUid) return;
+  if (!confirm('오늘 운동을 종료할까요?\n스쿼드가 완료 처리되고 기록이 남아요.')) return;
+  try {
+    const checkedIn = Object.keys(window._sqMembers || {}).filter(u => window._sqMembers[u].checkedIn);
+    const reward = !s.hostRewarded && checkedIn.length >= 1;
+    await updateDoc(doc(db,'squads',sid), { status:'completed', endedAt: serverTimestamp(), hostRewarded: s.hostRewarded || reward });
+    for (const u of checkedIn) { try { await updateDoc(doc(db,'squads',sid,'members',u), { status:'completed' }); } catch(e) {} }
+    try { await updateDoc(doc(db,'users',me), reward
+      ? { 'hostStats.completed': increment(1), credits: increment(10) }
+      : { 'hostStats.completed': increment(1) }); } catch(e) {}
+    window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
+    if (reward) {
+      showToast('벙 완주! +10 머피 적립');
+      window.mwUpdateCoin && window.mwUpdateCoin();
+    } else showToast('스쿼드를 종료했어요');
+  } catch(e) { console.error(e); showToast('종료 실패'); }
 };
 // QR 스캔 자동 출석: ?sqa={sid}&c={code}
 (function () {
