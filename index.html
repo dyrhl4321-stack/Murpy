@@ -11708,6 +11708,115 @@ window.renderSquadPage = async function () {
     </div>`;
   }).join('');
 };
+
+// ---------- 생성 (30초 폼) ----------
+window._sqForm = null;
+window.openSquadCreate = function () {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { window.requireLogin ? requireLogin() : showToast('로그인이 필요해요'); return; }
+  window._sqForm = { type:'gym', capacity:4, level:'mid', joinMode:'instant', titleTouched:false };
+  let el = document.getElementById('sq-create'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-create';
+  el.style.cssText = 'position:fixed;inset:0;z-index:900;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column;overflow-y:auto';
+  const now = new Date(); const nextH = new Date(now.getTime() + 3600*1000); nextH.setMinutes(0,0,0);
+  const dstr = nextH.getFullYear() + '-' + String(nextH.getMonth()+1).padStart(2,'0') + '-' + String(nextH.getDate()).padStart(2,'0');
+  const tstr = String(nextH.getHours()).padStart(2,'0') + ':00';
+  const inputCss = 'width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:12px;padding:13px 14px;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box';
+  const lbl = t => `<div style="font-size:11.5px;color:rgba(255,255,255,.45);margin:16px 2px 7px;font-weight:700">${t}</div>`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px 8px">
+      <button onclick="document.getElementById('sq-create').remove()" style="background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px">←</button>
+      <span style="font-size:17px;font-weight:800;color:#fff">스쿼드 만들기</span>
+      <span style="margin-left:auto;font-size:11px;color:rgba(255,255,255,.35)">30초면 끝나요</span>
+    </div>
+    <div style="padding:0 18px calc(30px + env(safe-area-inset-bottom))">
+      ${lbl('무슨 운동인가요?')}
+      <div id="sq-c-types" style="display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none">
+        ${Object.keys(window.SQUAD_TYPES).map(k => `
+          <button data-t="${k}" onclick="window._sqPickType('${k}')" style="flex-shrink:0;background:${k==='gym'?'var(--accent)':'rgba(255,255,255,.07)'};color:#fff;border:none;border-radius:20px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${window.SQUAD_TYPES[k].name}</button>`).join('')}
+      </div>
+      ${lbl('제목')}
+      <input id="sq-c-title" maxlength="40" value="오늘 헬스 스쿼드" oninput="window._sqForm.titleTouched=true" style="${inputCss}">
+      ${lbl('장소')}
+      <input id="sq-c-loc" maxlength="40" placeholder="예) MK휘트니스 논현 · 반포 한강공원" style="${inputCss}">
+      ${lbl('언제 모여요?')}
+      <div style="display:flex;gap:8px">
+        <input id="sq-c-date" type="date" value="${dstr}" style="${inputCss};flex:1.3;color-scheme:dark">
+        <input id="sq-c-time" type="time" value="${tstr}" style="${inputCss};flex:1;color-scheme:dark">
+      </div>
+      ${lbl('정원')}
+      <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px">
+        <button onclick="window._sqCap(-1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">−</button>
+        <span style="flex:1;text-align:center;font-size:16px;font-weight:800;color:#fff"><b id="sq-c-cap">4</b>명</span>
+        <button onclick="window._sqCap(1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">+</button>
+      </div>
+      ${lbl('운동 강도')}
+      <div id="sq-c-levels" style="display:flex;gap:8px">
+        ${Object.keys(window.SQUAD_LEVELS).map(k => `
+          <button data-l="${k}" onclick="window._sqPickLevel('${k}')" style="flex:1;background:${k==='mid'?'var(--accent)':'rgba(255,255,255,.07)'};color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${window.SQUAD_LEVELS[k]}</button>`).join('')}
+      </div>
+      ${lbl('참가비 (없으면 0)')}
+      <input id="sq-c-fee" type="number" inputmode="numeric" value="0" min="0" step="1000" style="${inputCss}">
+      ${lbl('참가 방식')}
+      <div id="sq-c-join" style="display:flex;gap:8px">
+        <button data-j="instant" onclick="window._sqPickJoin('instant')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">바로 참가</button>
+        <button data-j="approval" onclick="window._sqPickJoin('approval')" style="flex:1;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">승인 후 참가</button>
+      </div>
+      ${lbl('한 줄 메모 (선택)')}
+      <input id="sq-c-memo" maxlength="60" placeholder="예) 가슴·삼두 하실 분! 초보 환영" style="${inputCss}">
+      <button id="sq-c-go" onclick="window._sqSubmitCreate()" style="width:100%;margin-top:24px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">스쿼드 열기</button>
+    </div>`;
+  document.body.appendChild(el);
+};
+window._sqPickType = function (k) {
+  window._sqForm.type = k;
+  document.querySelectorAll('#sq-c-types button').forEach(b => b.style.background = b.dataset.t===k ? 'var(--accent)' : 'rgba(255,255,255,.07)');
+  const ti = document.getElementById('sq-c-title');
+  if (ti && !window._sqForm.titleTouched) ti.value = '오늘 ' + window.SQUAD_TYPES[k].name + ' 스쿼드';
+};
+window._sqPickLevel = function (k) {
+  window._sqForm.level = k;
+  document.querySelectorAll('#sq-c-levels button').forEach(b => b.style.background = b.dataset.l===k ? 'var(--accent)' : 'rgba(255,255,255,.07)');
+};
+window._sqPickJoin = function (k) {
+  window._sqForm.joinMode = k;
+  document.querySelectorAll('#sq-c-join button').forEach(b => b.style.background = b.dataset.j===k ? 'var(--accent)' : 'rgba(255,255,255,.07)');
+};
+window._sqCap = function (d) {
+  window._sqForm.capacity = Math.max(2, Math.min(8, window._sqForm.capacity + d));
+  const el = document.getElementById('sq-c-cap'); if (el) el.textContent = window._sqForm.capacity;
+};
+window._sqSubmitCreate = async function () {
+  const user = auth.currentUser; if (!user) return;
+  const f = window._sqForm;
+  const title = (document.getElementById('sq-c-title').value||'').trim();
+  const loc = (document.getElementById('sq-c-loc').value||'').trim();
+  const date = document.getElementById('sq-c-date').value, time = document.getElementById('sq-c-time').value;
+  if (!title) { showToast('제목을 입력해주세요'); return; }
+  if (!loc) { showToast('장소를 입력해주세요'); return; }
+  if (!date || !time) { showToast('날짜와 시간을 정해주세요'); return; }
+  const sched = new Date(date + 'T' + time).getTime();
+  if (!sched || sched < Date.now() - 10*60*1000) { showToast('지난 시간이에요'); return; }
+  const btn = document.getElementById('sq-c-go'); btn.disabled = true; btn.textContent = '여는 중…';
+  try {
+    if (!window._mwMyNick) { try { const us = await getDoc(doc(db,'users',user.uid)); window._mwMyNick = (us.exists() && us.data().nickname) || '머피'; } catch(e){} }
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    const dRef = await addDoc(collection(db,'squads'), {
+      hostUid: user.uid, memberUids: [user.uid],
+      title, exerciseType: f.type, centerId: null, location: loc,
+      scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + 4*3600*1000,
+      capacity: f.capacity, level: f.level, oneLineMemo: (document.getElementById('sq-c-memo').value||'').trim(),
+      joinMode: f.joinMode, feeAmount: Math.max(0, parseInt(document.getElementById('sq-c-fee').value||'0',10) || 0),
+      status: 'recruiting', source: 'manual', hostRewarded: false, createdAt: serverTimestamp() });
+    await setDoc(doc(db,'squads',dRef.id,'members',user.uid),
+      { status:'accepted', nickname: window._mwMyNick || '머피', character: cfg, paid: false, joinedAt: serverTimestamp() });
+    try { await updateDoc(doc(db,'users',user.uid), { 'hostStats.hosted': increment(1) }); } catch(e) {}
+    const p = document.getElementById('sq-create'); if (p) p.remove();
+    showToast('스쿼드가 열렸어요!');
+    window.renderSquadPage();
+    window.openSquadDetail && window.openSquadDetail(dRef.id);
+  } catch(e) { console.error(e); showToast('생성 실패 — 다시 시도해주세요'); btn.disabled = false; btn.textContent = '스쿼드 열기'; }
+};
 </script>
 </body>
 </html>
