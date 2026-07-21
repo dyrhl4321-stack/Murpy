@@ -7125,13 +7125,15 @@ window.ensureCreditsInit = async (uid) => {
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
     // 월간 한정 오브젝트 상태
-    const _season = window.mwSeasonKey();
-    window._seasonState.season = _season;
-    window._seasonState.counts = (d.monthly && d.monthly[_season]) ? { ...d.monthly[_season] } : {};
-    window._seasonState.inv = Array.isArray(d.roomInv) ? d.roomInv.slice() : [];
-    window._seasonState.titles = Array.isArray(d.titles) ? d.titles.slice() : [];
-    window._seasonState.box = Array.isArray(d.pendingBox) ? d.pendingBox.slice() : [];
-    window._seasonState.ready = true;
+    if (window.mwSeasonKey) {
+      const _season = window.mwSeasonKey();
+      window._seasonState.season = _season;
+      window._seasonState.counts = (d.monthly && d.monthly[_season]) ? { ...d.monthly[_season] } : {};
+      window._seasonState.inv = Array.isArray(d.roomInv) ? d.roomInv.slice() : [];
+      window._seasonState.titles = Array.isArray(d.titles) ? d.titles.slice() : [];
+      window._seasonState.box = Array.isArray(d.pendingBox) ? d.pendingBox.slice() : [];
+      window._seasonState.ready = true;
+    }
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
     window._charState.ready = true;
@@ -10639,6 +10641,9 @@ window.mwSealCheckin = async function (btn) {
     photoUrl = await window.uploadImgbb(new File([blob],'stamp.jpg',{type:'image/jpeg'})) || '';
   } catch(e){ console.warn('stamp upload fail', e); }
   const id = `${user.uid}_${t.center.id}_${mwTodayKey()}`;
+  // 같은 센터·같은 날 재도장은 같은 문서를 덮어쓰므로, 처음 찍는 경우에만 월간 카운터를 올린다
+  let _isNewCheckin = true;
+  try { const _prevCk = await getDoc(doc(db, 'checkins', id)); _isNewCheckin = !_prevCk.exists(); } catch (e) {}
   try {
     await setDoc(doc(db,'checkins',id), {
       uid:user.uid, centerId:String(t.center.id), centerName:t.center.name, day:mwTodayKey(),
@@ -10664,7 +10669,7 @@ window.mwSealCheckin = async function (btn) {
     else if (document.getElementById('mw-cfd-stage')) window.mwCenterField(t.center.id); // 센터 필드가 열려 있으면 갱신
   }, 1500);
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
-  if (window.mwBumpMonthly) window.mwBumpMonthly('checkin');
+  if (_isNewCheckin && window.mwBumpMonthly) window.mwBumpMonthly('checkin');
   // 도감 보너스 판정 (도장 쾅 연출 끝난 뒤 축하가 이어지도록)
   setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 1700);
 };
