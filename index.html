@@ -7071,6 +7071,24 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); } catch (e) { console.error('char save', e); } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
+// ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
+window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
+// 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
+window.mwBumpMonthly = async function (axis) {
+  const user = auth.currentUser || window.currentUser;
+  if (!user || !axis) return;
+  const season = window.mwSeasonKey();
+  // 달이 바뀌었으면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
+  if (window._seasonState.season !== season) {
+    window._seasonState.season = season;
+    window._seasonState.counts = {};
+  }
+  window._seasonState.counts[axis] = (window._seasonState.counts[axis] || 0) + 1;
+  try {
+    await updateDoc(doc(db, 'users', user.uid), { ['monthly.' + season + '.' + axis]: increment(1) });
+  } catch (e) { console.warn('monthly bump', e); }
+  if (window.mwSeasonCheck) window.mwSeasonCheck();
+};
 
 function _creditDateStr(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -7106,6 +7124,14 @@ window.ensureCreditsInit = async (uid) => {
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    // 월간 한정 오브젝트 상태
+    const _season = window.mwSeasonKey();
+    window._seasonState.season = _season;
+    window._seasonState.counts = (d.monthly && d.monthly[_season]) ? { ...d.monthly[_season] } : {};
+    window._seasonState.inv = Array.isArray(d.roomInv) ? d.roomInv.slice() : [];
+    window._seasonState.titles = Array.isArray(d.titles) ? d.titles.slice() : [];
+    window._seasonState.box = Array.isArray(d.pendingBox) ? d.pendingBox.slice() : [];
+    window._seasonState.ready = true;
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
     window._charState.ready = true;
@@ -8376,6 +8402,7 @@ window.submitFeedPost = async function() {
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
     });
+    if (window.mwBumpMonthly) window.mwBumpMonthly('feed');
     const _earned = window.grantDailyCreditOnVerify ? await window.grantDailyCreditOnVerify(user.uid) : false;
     closeCropModal();
     window.cropData = { originalFile: null, croppedBlob: null };
@@ -8679,6 +8706,7 @@ window.postBambooFirestore = async (text) => {
       if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
     } catch(e) {}
     await addDoc(collection(db, 'bamboo'), { text, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
+    if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
   } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
 };
@@ -9234,6 +9262,7 @@ window._acceptBambooMatch = async (chatId, requesterUid, notifId) => {
   // 요청자에게 수락 알림
   await _sendNotif(requesterUid, 'bamboo_match_accept', { chatId }, myNick, myPhoto);
   showToast('매칭됐어요! 프로필이 공개됐어요');
+  if (window.mwBumpMonthly) window.mwBumpMonthly('matchOk');
   // 채팅방을 실명으로 다시 열기
   try {
     const chatSnap = await getDoc(doc(db, 'chats', chatId));
@@ -10635,6 +10664,7 @@ window.mwSealCheckin = async function (btn) {
     else if (document.getElementById('mw-cfd-stage')) window.mwCenterField(t.center.id); // 센터 필드가 열려 있으면 갱신
   }, 1500);
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
+  if (window.mwBumpMonthly) window.mwBumpMonthly('checkin');
   // 도감 보너스 판정 (도장 쾅 연출 끝난 뒤 축하가 이어지도록)
   setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 1700);
 };
@@ -12417,6 +12447,7 @@ window.sqComplete = async function (sid) {
     try { await updateDoc(doc(db,'users',me), reward
       ? { 'hostStats.completed': increment(1), credits: increment(10) }
       : { 'hostStats.completed': increment(1) }); } catch(e) {}
+    if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
     if (reward) {
       showToast('스쿼드 완주! +10 머피 적립');
