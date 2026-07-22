@@ -542,8 +542,10 @@
   .mw-redit-cat span { font-size:10.5px; color:#cfd6e6 }
   #mw-redit-room img.sel { outline:3px solid #F5C24B; outline-offset:1px }
   @keyframes mwBoxBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
-  /* 둥둥 뜨는 애니메이션 제거: 바닥 그림자가 없어 공중부양처럼 보였다. 금색 발광만 남긴다 */
+  /* 둥둥 뜨는 애니메이션 제거: 공중부양처럼 보였다. 접지 그림자는 _mwShadowHtml이 따로 그린다 */
   .mw-sbox { filter: drop-shadow(0 0 10px rgba(245,194,75,.55)) }
+  /* 캐릭터도 접지 그림자 — 가구에만 그림자가 있으면 캐릭터만 떠 보인다 */
+  #charworld-avatar { filter: drop-shadow(0 3px 2px rgba(0,0,0,.42)) }
   .mw-wpanel { position:fixed; inset:0; height:100dvh; z-index:880; background:#05070c; max-width:390px; margin:0 auto;
     display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }   /* 솔리드 배경: 뒤 페이지 비침·스크롤 거슬림 제거 (100dvh로 모바일 툴바 가림도 해소) */
   .mw-wpanel-head { display:flex; align-items:center; gap:9px; padding:17px 18px 13px;
@@ -2002,8 +2004,9 @@ window.ROOM_ITEMS = [
   { id:'lamp_blue',  name:'블루 스탠드', src:'char/rooms/lamp_blue.png?v=1',  w:45,  h:99 },
   { id:'plant_palm', name:'야자수 화분', src:'char/rooms/plant_palm.png?v=1', w:69,  h:93 },
   { id:'plant_tree', name:'나무 화분',   src:'char/rooms/plant_tree.png?v=1', w:54,  h:93 },
-  { id:'tv_wall',    name:'벽걸이 TV',   src:'char/rooms/tv_wall.png?v=1',    w:78,  h:54 },
-  { id:'map_world',  name:'세계지도',    src:'char/rooms/map_world.png?v=1',  w:96,  h:57 },
+  // wall:true = 벽에 걸린 것. 바닥 접지 그림자를 그리지 않는다(허공에 그림자가 생김)
+  { id:'tv_wall',    name:'벽걸이 TV',   src:'char/rooms/tv_wall.png?v=1',    w:78,  h:54, wall:true },
+  { id:'map_world',  name:'세계지도',    src:'char/rooms/map_world.png?v=1',  w:96,  h:57, wall:true },
   { id:'globe',      name:'지구본',      src:'char/rooms/globe.png?v=1',      w:84,  h:63 },
 ];
 // ===== 월간 한정 오브젝트 =====
@@ -2020,7 +2023,7 @@ window.SEASON_ITEMS = [
   { id:'s2608_lamp', name:'숲 요정 램프', src:'char/rooms/s2608_lamp.png?v=2', w:56, h:164,
     season:'2026-10', kind:'open', axis:'bamboo',
     hint:'숲의 요정들에게만 배달되는 선물입니다', title:'숲의 요정', cond:{ bamboo:5 } },
-  { id:'s2608_campfire', name:'스쿼드 캠프파이어', src:'char/rooms/s2608_campfire.png?v=2', w:152, h:104,
+  { id:'s2608_campfire', name:'스쿼드 캠프파이어', src:'char/rooms/s2608_campfire.png?v=3', w:152, h:104,
     season:'2026-10', kind:'open', axis:'squad',
     hint:'혼자 온 자는 받을 수 없습니다', title:'스쿼드의 심장', cond:{ squad:2 } },
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=2', w:94, h:104,
@@ -2058,12 +2061,26 @@ window.mwItemDef = function (id) {
       || null;
 };
 window._myRoom = null;   // { f:[{id,x,y}] } — users/{uid}.room
+// 바닥 접지 그림자. 이게 없으면 오브젝트가 방에 놓인 게 아니라 스티커처럼 붙어 보인다.
+// 발밑에 눌린 타원 하나면 충분하다 — 광원을 가정한 방향성 그림자는 방마다 배치가 달라 오히려 어긋난다.
+// 러그(flat)와 벽걸이(wall)는 제외: 바닥에 닿아 있지 않다.
+window._mwShadowHtml = function (x, y, def, z, idx) {
+  if (def.flat || def.wall) return '';
+  const sw = def.w * 0.80;
+  const sh = Math.max(9, Math.min(30, def.w * 0.26));
+  const sx = x + (def.w - sw) / 2;
+  const sy = y + def.h - sh * 0.62;          // 타원 중심이 밑변에 걸치도록
+  return `<div data-sdx="${idx}" style="position:absolute;left:${(sx/7.68).toFixed(2)}%;top:${(sy/7.68).toFixed(2)}%;`
+    + `width:${(sw/7.68).toFixed(2)}%;height:${(sh/7.68).toFixed(2)}%;z-index:${z - 1};pointer-events:none;`
+    + `background:radial-gradient(closest-side,rgba(0,0,0,.45),rgba(0,0,0,.2) 62%,rgba(0,0,0,0) 100%)"></div>`;
+};
 window.mwFurnHtml = function (roomData, edit) {
   const f = (roomData && roomData.f) || [];
   return f.map((it, idx) => {
     const def = window.mwItemDef(it.id); if (!def) return '';
     const z = def.flat ? 2 : (10 + Math.floor((it.y + def.h) / 48) * 10);   // 바닥선 기준 z(캐릭터와 앞뒤)
-    return `<img src="${def.src}" data-idx="${idx}" draggable="false" style="position:absolute;left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${edit?'pointer-events:auto;cursor:grab;touch-action:none;':'pointer-events:none;'}">`;
+    return window._mwShadowHtml(it.x, it.y, def, z, idx)
+      + `<img src="${def.src}" data-idx="${idx}" draggable="false" style="position:absolute;left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${edit?'pointer-events:auto;cursor:grab;touch-action:none;':'pointer-events:none;'}">`;
   }).join('');
 };
 window.mwRenderFurn = function () {
@@ -2146,10 +2163,19 @@ window._reditBind = function () {
     const snap = function (v) { return Math.round(v / 12) * 12; };   // 1/4타일(12px) 스냅
     it.x = Math.max(0, Math.min(768 - def.w, snap(drag.ox + (e.clientX - drag.sx) * k)));
     it.y = Math.max(0, Math.min(768 - def.h, snap(drag.oy + (e.clientY - drag.sy) * k)));
+    const z = def.flat ? 2 : (10 + Math.floor((it.y + def.h) / 48) * 10);
     const img = room.querySelector('img[data-idx="' + drag.idx + '"]');
     if (img) {
       img.style.left = (it.x / 7.68).toFixed(2) + '%'; img.style.top = (it.y / 7.68).toFixed(2) + '%';
-      img.style.zIndex = def.flat ? 2 : (10 + Math.floor((it.y + def.h) / 48) * 10);
+      img.style.zIndex = z;
+    }
+    // 그림자는 형제 요소라 따로 옮겨야 한다 — 안 옮기면 드래그 중에 제자리에 남는다
+    const sd = room.querySelector('div[data-sdx="' + drag.idx + '"]');
+    if (sd) {
+      const sw = def.w * 0.80, sh = Math.max(9, Math.min(30, def.w * 0.26));
+      sd.style.left = ((it.x + (def.w - sw) / 2) / 7.68).toFixed(2) + '%';
+      sd.style.top = ((it.y + def.h - sh * 0.62) / 7.68).toFixed(2) + '%';
+      sd.style.zIndex = z - 1;
     }
   });
   const dragEnd = function () { drag = null; };
@@ -7175,13 +7201,15 @@ window._mwSeasonModalNext = function () {
   if (!it) return;
   // 정수배만 (픽셀 아트 하드룰). 가로·세로 둘 다 한도 안에 들어와야 한다 —
   // 가로만 보면 세로로 긴 아이템(램프 56x164)이 3배로 잡혀 492px가 되어 화면을 뚫는다.
-  const sc = Math.max(1, Math.min(Math.floor(190 / it.w), Math.floor(190 / it.h)));
+  // 한도가 좁으면 전부 1배로 떨어져 램프가 56px로 뜬다(방에서보다 작다).
+  // 모달을 360까지 넓히고 한도를 키워 대부분 2~3배로 올린다 — 정수배는 그대로 지킨다.
+  const sc = Math.max(1, Math.min(Math.floor(320 / it.w), Math.floor(330 / it.h)));
   const el = document.createElement('div');
   el.id = 'mw-season-modal';
   el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:center;'
-    + 'justify-content:center;padding:24px;background:rgba(5,7,12,.82)';
+    + 'justify-content:center;padding:16px;background:rgba(5,7,12,.82)';
   el.innerHTML = `
-    <div style="width:100%;max-width:320px;background:#1b2233;border:3px solid #05070c;
+    <div style="width:100%;max-width:360px;background:#1b2233;border:3px solid #05070c;
                 box-shadow:0 0 0 2px #F5C24B, 0 10px 0 rgba(5,6,10,.45);padding:20px 18px;text-align:center">
       <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#F5C24B;letter-spacing:1px;margin-bottom:14px">이번 달 한정 획득</div>
       <div style="min-height:${it.h * sc}px;display:flex;align-items:center;justify-content:center;margin-bottom:14px">
@@ -7253,7 +7281,8 @@ window.mwSeasonCheck = async function () {
 window.mwBoxHtml = function (boxArr, clickable) {
   if (!Array.isArray(boxArr) || !boxArr.length) return '';
   const x = 320, y = 306, w = 128;   // 768 좌표계. w는 PNG 실측(128×128), x는 가로 중앙(384-64)
-  return '<img src="char/rooms/season_box.png?v=2" alt="" draggable="false" class="mw-sbox"'
+  return window._mwShadowHtml(x, y, { w: w, h: w }, 900, 'box')
+    + '<img src="char/rooms/season_box.png?v=2" alt="" draggable="false" class="mw-sbox"'
     + (clickable ? ' onclick="window.mwOpenBox()"' : '')
     + ' style="position:absolute;left:' + (x / 7.68).toFixed(2) + '%;top:' + (y / 7.68).toFixed(2) + '%;'
     + 'width:' + (w / 7.68).toFixed(2) + '%;z-index:900;'
