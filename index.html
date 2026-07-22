@@ -2078,7 +2078,7 @@ window.mwRoomEdit = function () {
         const inv = (window._seasonState && window._seasonState.inv) || [];
         const owned = window.SEASON_ITEMS.filter(s => inv.includes(s.id));
         if (!owned.length) return '';
-        return `<div style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#F5C24B;margin:16px 2px 8px">한정 오브젝트</div>
+        return `<div style="font-family:'Galmuri14',sans-serif;font-size:11.5px;color:#F5C24B;margin:16px 2px 8px">한정 오브젝트</div>
           <div class="mw-redit-cat">${owned.map(r =>
             `<button onclick="window._reditAdd('${r.id}')"><img src="${r.src}" draggable="false"><span>${r.name}</span></button>`).join('')}
           </div>`;
@@ -7193,51 +7193,51 @@ window.mwOpenBox = async function () {
 };
 
 // 도감 "이번 달" 섹션 + 지난 시즌 아카이브
-window.mwSeasonSectionHtml = function () {
-  const season = window.mwSeasonKey();
-  const st = window._seasonState || { inv: [] };
-  const inv = st.inv || [];
-  const cur = window.SEASON_ITEMS.filter(it => it.season === season);
-  const past = window.SEASON_ITEMS.filter(it => it.season < season);
-  const days = window.mwSeasonDaysLeft();
-  const mLabel = Number(season.split('-')[1]) + '월';
+window.mwSeasonSectionHtml = function (fallbackInv) {
+  try {
+    const season = window.mwSeasonKey();
+    const st = window._seasonState || { inv: [], ready: false };
+    const inv = st.ready ? (st.inv || []) : (fallbackInv || []);
+    const cur = window.SEASON_ITEMS.filter(it => it.season === season);
+    // 지난 시즌: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출(해금 조건 비공개 원칙)
+    const past = window.SEASON_ITEMS.filter(it => it.season < season && (it.kind === 'open' || inv.includes(it.id)));
+    const days = window.mwSeasonDaysLeft();
+    const mLabel = Number(season.split('-')[1]) + '월';
 
-  // 이번 달: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출
-  const cells = cur.filter(it => it.kind === 'open' || inv.includes(it.id)).map(it => {
-    const got = inv.includes(it.id);
-    const isHidden = it.kind === 'hidden';
-    const art = got
-      ? `<img src="${it.src}" alt="" style="width:100%;height:56px;object-fit:contain;image-rendering:pixelated">`
-      : `<img src="${it.src}" alt="" style="width:100%;height:56px;object-fit:contain;image-rendering:pixelated;filter:brightness(0) opacity(.45)">`;
-    const name = got ? it.name : (isHidden ? '???' : '???');
-    const sub = got
-      ? `<span style="color:#F5C24B">${it.title}</span>`
-      : `<span style="color:#8a93a8">${it.hint}</span>`;
-    return `<div class="mw-panel" style="padding:11px 10px;text-align:center">
-        <div style="height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:7px">${art}</div>
-        <div style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:${got ? '#fff' : '#4a5266'};margin-bottom:4px">${name}</div>
-        <div style="font-size:10.5px;line-height:1.5">${sub}</div>
-      </div>`;
-  }).join('');
+    // 이번 달: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출
+    const cells = cur.filter(it => it.kind === 'open' || inv.includes(it.id)).map(it => {
+      const got = inv.includes(it.id);
+      const art = `<img src="${it.src}" alt="" style="width:100%;height:56px;object-fit:contain;image-rendering:pixelated${got ? '' : ';filter:brightness(0) opacity(.45)'}">`;
+      const name = got ? it.name : '???';
+      const sub = got
+        ? `<span style="color:#F5C24B">${it.title}</span>`
+        : `<span style="color:#8a93a8">${it.hint}</span>`;
+      return `<div class="mw-panel" style="padding:11px 10px;text-align:center">
+          <div style="height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:7px">${art}</div>
+          <div style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:${got ? '#fff' : '#4a5266'};margin-bottom:4px">${name}</div>
+          <div style="font-size:10.5px;line-height:1.5">${sub}</div>
+        </div>`;
+    }).join('');
 
-  const pastCells = past.map(it => {
-    const got = inv.includes(it.id);
-    return `<div class="mw-panel" style="padding:9px 8px;text-align:center;opacity:${got ? '1' : '.55'}">
-        <img src="${it.src}" alt="" style="width:100%;height:40px;object-fit:contain;image-rendering:pixelated;${got ? '' : 'filter:brightness(0) opacity(.4);'}">
-        <div style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:${got ? '#cfd6e6' : '#3b465e'};margin-top:5px">${got ? it.name : '???'}</div>
-      </div>`;
-  }).join('');
+    const pastCells = past.map(it => {
+      const got = inv.includes(it.id);
+      return `<div class="mw-panel" style="padding:9px 8px;text-align:center;opacity:${got ? '1' : '.55'}">
+          <img src="${it.src}" alt="" style="width:100%;height:40px;object-fit:contain;image-rendering:pixelated;${got ? '' : 'filter:brightness(0) opacity(.4);'}">
+          <div style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:${got ? '#cfd6e6' : '#3b465e'};margin-top:5px">${got ? it.name : '???'}</div>
+        </div>`;
+    }).join('');
 
-  return `
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 2px 10px">
-      <span style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#F5C24B;letter-spacing:1px">${mLabel} 한정</span>
-      <span style="font-size:11px;color:#8a93a8">${days}일 남음</span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${cells}</div>
-    <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>
-    ${past.length ? `
-      <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#4a5266;letter-spacing:1px;margin:20px 2px 9px">지난 시즌</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">${pastCells}</div>` : ''}`;
+    return `
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 2px 10px">
+        <span style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#F5C24B;letter-spacing:1px">${mLabel} 한정</span>
+        <span style="font-size:11px;color:#8a93a8">${days}일 남음</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${cells}</div>
+      <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>
+      ${past.length ? `
+        <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#4a5266;letter-spacing:1px;margin:20px 2px 9px">지난 시즌</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">${pastCells}</div>` : ''}`;
+  } catch (e) { console.warn('season section', e); return ''; }
 };
 
 function _creditDateStr(d) {
@@ -10064,7 +10064,7 @@ window.mwRenderDogam = async function () {
     </div>
     ${tiles}
     <div id="mw-dg-home" style="scroll-margin-top:8px">${homeCard}</div>
-    ${window.mwSeasonSectionHtml ? window.mwSeasonSectionHtml() : ''}
+    ${window.mwSeasonSectionHtml ? window.mwSeasonSectionHtml(me.roomInv) : ''}
     <div id="mw-dg-rally" style="scroll-margin-top:8px">${bonusBar}</div>
     <div id="mw-dg-expedition" style="scroll-margin-top:8px">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin:16px 2px 9px">
