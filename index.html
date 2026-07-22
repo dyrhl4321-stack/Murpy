@@ -2009,6 +2009,9 @@ window.ROOM_ITEMS = [
 // 매달 운영: 에셋 제작 → 이 배열에 항목 추가. 지난 시즌은 남겨둔다(도감 아카이브 표시용).
 // kind:'open'   → 도감에 실루엣+힌트 노출, 조건 충족 시 즉시 축하
 // kind:'hidden' → 어디에도 노출 안 함, 조건 충족 시 방에 상자로 배달
+// cond의 키는 반드시 feed/bamboo/matchOk/squad/checkin 중 하나여야 한다 — 오타(예: match)는 에러 없이 그 달 내내 해금 불가
+// season은 반드시 0으로 채운 'YYYY-MM' 형식('2026-9' 금지) — 이번 달 비교·아카이브 정렬(<)이 모두 문자열 비교라 깨진다
+// w/h는 반드시 PNG 원본 픽셀 크기와 같아야 한다 — 축하 연출의 정수배 확대(mwSeasonCelebrate)가 이 값을 기준으로 계산한다
 window.SEASON_ITEMS = [
   { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=1', w:132, h:96,
     season:'2026-08', kind:'open', axis:'feed',
@@ -7086,16 +7089,20 @@ window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; 
 window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 // ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
 window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
-// 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
-window.mwBumpMonthly = async function (axis) {
-  const user = auth.currentUser || window.currentUser;
-  if (!user || !axis) return;
+// 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
+window._seasonEnsureMonth = function () {
   const season = window.mwSeasonKey();
-  // 달이 바뀌었으면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
   if (window._seasonState.season !== season) {
     window._seasonState.season = season;
     window._seasonState.counts = {};
   }
+  return season;
+};
+// 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
+window.mwBumpMonthly = async function (axis) {
+  const user = auth.currentUser || window.currentUser;
+  if (!user || !axis) return;
+  const season = window._seasonEnsureMonth();
   window._seasonState.counts[axis] = (window._seasonState.counts[axis] || 0) + 1;
   try {
     await updateDoc(doc(db, 'users', user.uid), { ['monthly.' + season + '.' + axis]: increment(1) });
@@ -7124,7 +7131,7 @@ window.mwSeasonCelebrate = function (it, _tries) {
 window.mwSeasonCheck = async function () {
   const user = auth.currentUser || window.currentUser;
   if (!user || !window._seasonState.ready) return;
-  const season = window.mwSeasonKey();
+  const season = window._seasonEnsureMonth();
   const st = window._seasonState;
   const counts = st.counts || {};
   const items = window.SEASON_ITEMS.filter(it => it.season === season);
@@ -7138,17 +7145,22 @@ window.mwSeasonCheck = async function () {
     if (!ok) continue;
     if (it.kind === 'hidden') {
       // 히든: 알리지 않고 상자로 배달 — 방에 들어갔을 때 발견하게 한다
-      st.box.push(it.id);
-      try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) }); } catch (e) { console.warn('box grant', e); }
-      // box 렌더는 mwRenderFurn이 _seasonState.box를 읽어 mwBoxHtml로 그린다 (Task 5)
-      if (window.mwRenderFurn) window.mwRenderFurn();
+      // 쓰기가 성공했을 때만 로컬에 반영한다 — 실패한 쓰기를 먼저 반영하면 새로고침 시 사라지는 유령 지급이 된다
+      try {
+        await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) });
+        st.box.push(it.id);
+        // box 렌더는 mwRenderFurn이 _seasonState.box를 읽어 mwBoxHtml로 그린다 (Task 5)
+        if (window.mwRenderFurn) window.mwRenderFurn();
+      } catch (e) { console.warn('box grant', e); }
     } else {
-      st.inv.push(it.id);
-      if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
       const upd = { roomInv: arrayUnion(it.id) };
       if (it.title) upd.titles = arrayUnion(it.title);
-      try { await updateDoc(doc(db, 'users', user.uid), upd); } catch (e) { console.warn('item grant', e); }
-      _granted.push(it);
+      try {
+        await updateDoc(doc(db, 'users', user.uid), upd);
+        st.inv.push(it.id);
+        if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
+        _granted.push(it);
+      } catch (e) { console.warn('item grant', e); }
     }
   }
   // 기존 머피 적립·도감 축하(2.4s)와 같은 DOM을 쓰므로, 끝난 뒤 이어서 재생한다
@@ -7197,7 +7209,8 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
   try {
     const season = window.mwSeasonKey();
     const st = window._seasonState || { inv: [], ready: false };
-    const inv = st.ready ? (st.inv || []) : (fallbackInv || []);
+    // 로컬(st.inv)과 서버 스냅샷(fallbackInv)을 합집합으로 — 다른 기기에서 받은 아이템도 즉시 반영
+    const inv = Array.from(new Set([...(st.inv || []), ...(fallbackInv || [])]));
     const cur = window.SEASON_ITEMS.filter(it => it.season === season);
     // 지난 시즌: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출(해금 조건 비공개 원칙)
     const past = window.SEASON_ITEMS.filter(it => it.season < season && (it.kind === 'open' || inv.includes(it.id)));
@@ -7227,13 +7240,16 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
         </div>`;
     }).join('');
 
+    // 이번 달 항목이 없으면(카탈로그 미등록 등) 헤더/그리드 전체를 숨긴다 — 지난 시즌만 있으면 아카이브만 노출
+    if (!cells && !pastCells) return '';
     return `
+      ${cells ? `
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 2px 10px">
         <span style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#F5C24B;letter-spacing:1px">${mLabel} 한정</span>
         <span style="font-size:11px;color:#8a93a8">${days}일 남음</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${cells}</div>
-      <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>
+      <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>` : ''}
       ${past.length ? `
         <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#4a5266;letter-spacing:1px;margin:20px 2px 9px">지난 시즌</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">${pastCells}</div>` : ''}`;
@@ -7283,6 +7299,9 @@ window.ensureCreditsInit = async (uid) => {
       window._seasonState.titles = Array.isArray(d.titles) ? d.titles.slice() : [];
       window._seasonState.box = Array.isArray(d.pendingBox) ? d.pendingBox.slice() : [];
       window._seasonState.ready = true;
+      // 이 시점까지 못 받은 활동(로드 전 완료·부분 카운트로 놓친 임계값·다른 기기 적립)을 다시 판정한다.
+      // mwSeasonCheck는 idempotent(이미 inv/box에 있는 id는 건너뜀)라 매 앱 오픈마다 실행해도 안전하다.
+      if (window.mwSeasonCheck) window.mwSeasonCheck();
     }
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
@@ -10495,7 +10514,9 @@ window.mwVisitRoom = async function (uid) {
   el=document.createElement('div'); el.id='mw-wpanel'; el.className='mw-wpanel'; document.body.appendChild(el);
   const nick = p.nickname || '머피';
   const _titles = Array.isArray(p.titles) ? p.titles : [];
-  const _title = _titles.length ? _titles[_titles.length - 1] : '';   // 가장 최근 획득 칭호
+  // titles는 보안규칙상 임의 값 쓰기가 가능해 카탈로그에 실제 존재하는 칭호로만 필터링한다(마크업 주입 방지 + 길이 제한 겸용)
+  const _valid = new Set(window.SEASON_ITEMS.map(s => s.title));
+  const _title = _titles.filter(t => _valid.has(t)).pop() || '';   // 가장 최근 획득 칭호
   const _titleHtml = _title
     ? `<span style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#F5C24B;border:2px solid #05070c;background:#1a2233;padding:3px 7px;margin-left:8px;flex-shrink:0">${_title}</span>`
     : '';
