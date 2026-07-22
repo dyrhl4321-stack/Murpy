@@ -2102,8 +2102,22 @@ window.mwRenderFurn = function () {
 window._reditDraft = null; window._reditSel = -1;
 window.mwRoomEdit = function () {
   if (!window.currentUser) { showToast('로그인이 필요해요'); return; }
-  window._reditDraft = { f: (window._myRoom && Array.isArray(window._myRoom.f)) ? window._myRoom.f.map(it => ({ ...it })) : [] };
+  // ★카탈로그에서 사라진 옛 아이템은 편집기로 들일 때 걷어낸다.
+  // mwFurnHtml은 정의 없는 id를 렌더에서 건너뛰지만 배열에는 그대로 남는다. 그래서
+  // 카탈로그를 갈아치우면 "방은 비었는데 15개 상한에 걸려 더 못 놓는" 상태가 된다
+  // (Phase 2 가구 교체 후 실제 발생). 저장하면 영구 정리된다.
+  const _saved = (window._myRoom && Array.isArray(window._myRoom.f)) ? window._myRoom.f : [];
+  const _live = _saved.filter(it => window.mwItemDef(it.id));
+  const _dropped = _saved.length - _live.length;
+  window._reditDraft = { f: _live.map(it => ({ ...it })) };
   window._reditSel = -1;
+  if (_dropped) {
+    // 조용히 지우지 않고 즉시 서버에도 반영한다 — 저장을 안 누르고 나가면 다시 상한에 걸린다
+    window._myRoom = { f: _live.map(it => ({ ...it })) };
+    window._charPersistRoom && window._charPersistRoom(window._myRoom);
+    window.mwRenderFurn && window.mwRenderFurn();
+    showToast('예전 가구 ' + _dropped + '개를 정리했어요');
+  }
   let el = document.getElementById('mw-wpanel'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-wpanel'; el.className = 'mw-wpanel'; document.body.appendChild(el);
   el.innerHTML = `
@@ -2111,8 +2125,11 @@ window.mwRoomEdit = function () {
     <div class="mw-wpanel-body">
       <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;max-width:320px;margin-left:auto;margin-right:auto">
-        <span style="font-size:11px;color:#8a93a8;font-family:'Galmuri11',sans-serif">가구를 끌어서 배치해요</span>
-        <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
+        <span id="mw-redit-hint" style="font-size:11px;color:#8a93a8;font-family:'Galmuri11',sans-serif">가구를 끌어서 배치해요</span>
+        <span style="display:flex;gap:6px">
+          <button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window._reditClear()">전부 비우기</button>
+          <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
+        </span>
       </div>
       <div class="mw-redit-cat">${window.ROOM_ITEMS.map(r =>
         `<button onclick="window._reditAdd('${r.id}')"><img src="${r.src}" draggable="false"><span>${r.name}</span></button>`).join('')}
@@ -2137,6 +2154,14 @@ window._reditPaint = function () {
   room.querySelectorAll('img').forEach(function (img) { img.classList.toggle('sel', Number(img.dataset.idx) === window._reditSel); });
   const del = document.getElementById('mw-redit-del');
   if (del) del.style.visibility = window._reditSel >= 0 ? 'visible' : 'hidden';
+  // 몇 개 놓았는지 항상 보여준다 — 상한에 걸렸을 때 이유를 알 수 없던 게 문제였다
+  const hint = document.getElementById('mw-redit-hint');
+  if (hint) {
+    const n = window._reditDraft ? window._reditDraft.f.length : 0;
+    hint.innerHTML = n >= 15
+      ? '<span style="color:#F5C24B">가득 찼어요 ' + n + '/15</span>'
+      : '가구 ' + n + '/15';
+  }
 };
 window._reditAdd = function (id) {
   const def = window.mwItemDef(id); if (!def) return;
@@ -2149,6 +2174,12 @@ window._reditRemove = function () {
   if (window._reditSel < 0) return;
   window._reditDraft.f.splice(window._reditSel, 1);
   window._reditSel = -1; window._reditPaint();
+};
+window._reditClear = function () {
+  if (!window._reditDraft || !window._reditDraft.f.length) return;
+  window._reditDraft.f = [];
+  window._reditSel = -1; window._reditPaint();
+  showToast('전부 비웠어요. 저장을 눌러야 반영돼요');
 };
 window._reditBind = function () {
   const room = document.getElementById('mw-redit-room'); if (!room) return;
