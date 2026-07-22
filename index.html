@@ -7089,6 +7089,7 @@ window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; 
 window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 // ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
 window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
+const _seasonBusy = new Set();   // 지급 처리 중인 아이템 (동시 실행 시 중복 지급 방지)
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
 window._seasonEnsureMonth = function () {
   const season = window.mwSeasonKey();
@@ -7137,7 +7138,7 @@ window.mwSeasonCheck = async function () {
   const items = window.SEASON_ITEMS.filter(it => it.season === season);
   const _granted = [];
   for (const it of items) {
-    if (st.inv.includes(it.id) || st.box.includes(it.id)) continue;
+    if (st.inv.includes(it.id) || st.box.includes(it.id) || _seasonBusy.has(it.id)) continue;
     // cond 없는(또는 빈) 항목은 절대 자동 지급하지 않는다 — 수기로 매달 편집하는 배열이라 오타/누락 방어
     const condKeys = it.cond ? Object.keys(it.cond) : [];
     if (!condKeys.length) continue;
@@ -7146,21 +7147,25 @@ window.mwSeasonCheck = async function () {
     if (it.kind === 'hidden') {
       // 히든: 알리지 않고 상자로 배달 — 방에 들어갔을 때 발견하게 한다
       // 쓰기가 성공했을 때만 로컬에 반영한다 — 실패한 쓰기를 먼저 반영하면 새로고침 시 사라지는 유령 지급이 된다
+      _seasonBusy.add(it.id);
       try {
         await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) });
         st.box.push(it.id);
         // box 렌더는 mwRenderFurn이 _seasonState.box를 읽어 mwBoxHtml로 그린다 (Task 5)
         if (window.mwRenderFurn) window.mwRenderFurn();
       } catch (e) { console.warn('box grant', e); }
+      finally { _seasonBusy.delete(it.id); }
     } else {
       const upd = { roomInv: arrayUnion(it.id) };
       if (it.title) upd.titles = arrayUnion(it.title);
+      _seasonBusy.add(it.id);
       try {
         await updateDoc(doc(db, 'users', user.uid), upd);
         st.inv.push(it.id);
         if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
         _granted.push(it);
       } catch (e) { console.warn('item grant', e); }
+      finally { _seasonBusy.delete(it.id); }
     }
   }
   // 기존 머피 적립·도감 축하(2.4s)와 같은 DOM을 쓰므로, 끝난 뒤 이어서 재생한다
@@ -7211,6 +7216,9 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
     const st = window._seasonState || { inv: [], ready: false };
     // 로컬(st.inv)과 서버 스냅샷(fallbackInv)을 합집합으로 — 다른 기기에서 받은 아이템도 즉시 반영
     const inv = Array.from(new Set([...(st.inv || []), ...(fallbackInv || [])]));
+    // 합집합을 다시 _seasonState.inv에 반영 — 방 편집기(mwRoomEdit, ~line 2081)는 서버 재조회 없이 이 상태만 읽으므로,
+    // 여기서 갱신해두지 않으면 도감에는 보이는데 편집기에서는 새로고침 전까지 배치할 수 없다
+    if (window._seasonState) window._seasonState.inv = inv;
     const cur = window.SEASON_ITEMS.filter(it => it.season === season);
     // 지난 시즌: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출(해금 조건 비공개 원칙)
     const past = window.SEASON_ITEMS.filter(it => it.season < season && (it.kind === 'open' || inv.includes(it.id)));
@@ -10515,7 +10523,7 @@ window.mwVisitRoom = async function (uid) {
   const nick = p.nickname || '머피';
   const _titles = Array.isArray(p.titles) ? p.titles : [];
   // titles는 보안규칙상 임의 값 쓰기가 가능해 카탈로그에 실제 존재하는 칭호로만 필터링한다(마크업 주입 방지 + 길이 제한 겸용)
-  const _valid = new Set(window.SEASON_ITEMS.map(s => s.title));
+  const _valid = new Set(window.SEASON_ITEMS.map(s => s.title).filter(Boolean));
   const _title = _titles.filter(t => _valid.has(t)).pop() || '';   // 가장 최근 획득 칭호
   const _titleHtml = _title
     ? `<span style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#F5C24B;border:2px solid #05070c;background:#1a2233;padding:3px 7px;margin-left:8px;flex-shrink:0">${_title}</span>`
