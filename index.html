@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260722003 -->
+<!-- cache-bust: v20260722004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2027,6 +2027,15 @@ window.SEASON_ITEMS = [
     season:'2026-10', kind:'hidden', axis:'',
     hint:'', title:'공룡의 친구', cond:{ feed:5, bamboo:3, checkin:3 } },
 ];
+// 퀘스트형 해금 캐릭터 (상시 — 기한 없음).
+// SEASON_ITEMS와 달리 소유처가 _charState.wardrobe이고, 그림도 걷기 시트라 thumb을 따로 쓴다.
+// id는 반드시 _CHAR_BODIES의 키와 같아야 한다 — 로스터 잠금 해제 판정이 그 키를 본다.
+// ※ 코드형(헬토리)은 여기 넣지 않는다. 운동으로 여는 게 아니라 근방단 코드로 여는 것이라
+//    퀘스트에 섞으면 "운동하면 열린다"로 오해된다. 코드형은 내 캐릭터 탭에서만 다룬다.
+// { id:'…', name:'…', thumb:'char/…_thumb.png', hint:'…', title:'…', cond:{ feed:30 } }
+window.QUEST_CHARS = [];
+// 기한 없는 해금물을 SEASON_ITEMS에 넣을 때는 season:'always'.
+// 'always'는 문자열 비교에서 어떤 'YYYY-MM'보다 크므로 지난 시즌(season < 이번달)에 절대 안 걸린다.
 // 현재 시즌 키 (YYYY-MM)
 // 관리자 실험실이 켜져 있으면 그 달인 척한다 — 도감/편집기/판정이 전부 이 함수만 보므로
 // 여기 한 곳만 바꾸면 "10월에 접속한 유저" 화면을 7월에 그대로 재현할 수 있다.
@@ -2564,16 +2573,33 @@ window.charRenderRoster = function () {
   const grid = document.getElementById('charworld-roster'); if (!grid || !window._charDraft) return;
   const owned = (window._charState && window._charState.wardrobe) || [];
   const cur = window._charDraft.body || 'human';
+  // 잠금은 두 종류다. 코드형(헬토리)은 존재를 드러내고 코드로 연다 — 이름·모습을 보여준다.
+  // 퀘스트형은 존재만 알리고 정체는 숨긴다 — ??? 실루엣으로 두고, 조건 설명은 하지 않는다.
+  // 설명은 퀘스트 탭 한 곳에서만 한다(탭하면 그리로 보낸다).
+  const questIds = (window.QUEST_CHARS || []).map(c => c.id);
   grid.innerHTML = Object.keys(window._CHAR_BODIES).map(key => {
     const b = window._CHAR_BODIES[key];
-    const unlocked = !b.code || owned.includes(key);
+    const isQuest = questIds.includes(key);
+    const unlocked = !(b.code || isQuest) || owned.includes(key);
     const equipped = cur === key;
     const th = 66, tw = Math.round(th * b.cw / b.ch);
-    const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + (unlocked ? "" : "filter:grayscale(1) brightness(.5);") + "\"></div>";
-    const sub = equipped ? '<span class="mw-sub on">착용중</span>' : unlocked ? '<span class="mw-sub">착용</span>' : '<span class="mw-sub gold">' + (b.tag || '한정') + '</span>';
-    const action = unlocked ? ("window.charPickBody('" + key + "')") : ("window.openCharCodeModal('" + key + "')");
-    return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + b.name + "</span>" + sub + "</button>";
+    const lockFilter = unlocked ? "" : (isQuest ? "filter:brightness(0) opacity(.5);" : "filter:grayscale(1) brightness(.5);");
+    const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + lockFilter + "\"></div>";
+    const sub = equipped ? '<span class="mw-sub on">착용중</span>'
+      : unlocked ? '<span class="mw-sub">착용</span>'
+      : '<span class="mw-sub gold">' + (isQuest ? '퀘스트' : (b.tag || '한정')) + '</span>';
+    const action = unlocked ? ("window.charPickBody('" + key + "')")
+      : (isQuest ? "window.mwGoQuest()" : ("window.openCharCodeModal('" + key + "')"));
+    const label = (!unlocked && isQuest) ? '???' : b.name;
+    return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + label + "</span>" + sub + "</button>";
   }).join('');
+};
+// 잠긴 퀘스트형 실루엣 → 퀘스트 탭으로. 실루엣은 여러 곳에 뿌리되 설명은 한 곳에서만 한다는 규칙.
+window.mwGoQuest = function () {
+  const tabs = document.querySelectorAll('#charworld-hub-tabs .tab-btn');
+  window.charHubTab('quest', tabs[2]);
+  const panel = document.getElementById('charworld-hub-panel');
+  if (panel && panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 window.charHubTab = function (name, btn) {
   window._charHub = name;
@@ -7186,7 +7212,8 @@ window.mwSeasonCheck = async function () {
   const season = window._seasonEnsureMonth();
   const st = window._seasonState;
   const counts = st.counts || {};
-  const items = window.SEASON_ITEMS.filter(it => it.season === season);
+  // 이번 달 것 + 기한 없는 상시 해금물을 함께 판정한다
+  const items = window.SEASON_ITEMS.filter(it => it.season === season || it.season === 'always');
   const _granted = [];
   for (const it of items) {
     if (st.inv.includes(it.id) || st.box.includes(it.id) || _seasonBusy.has(it.id)) continue;
@@ -7286,24 +7313,35 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
       if (!keys.length) return 0;
       return Math.max(0, Math.min(1, Math.min.apply(null, keys.map(k => (counts[k] || 0) / it.cond[k]))));
     };
-    // 이번 달: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출
-    const cells = cur.filter(it => it.kind === 'open' || inv.includes(it.id)).map(it => {
-      const got = inv.includes(it.id);
+    // 해금 칸 하나. 오브젝트와 캐릭터가 소유처는 달라도 유저에겐 같은 "아직 못 가진 것"이라
+    // 렌더는 하나로 통일한다. src를 밖에서 받는 이유: 캐릭터는 걷기 시트라 썸네일을 따로 쓴다.
+    const cellHtml = function (it, got, src) {
       const p = got ? 1 : prog(it);
       const dim = got ? '' : `;filter:brightness(${(p * 0.5).toFixed(2)}) opacity(${(0.45 + p * 0.3).toFixed(2)})`;
-      const art = `<img src="${it.src}" alt="" style="width:100%;height:56px;object-fit:contain;image-rendering:pixelated${dim}">`;
-      const name = got ? it.name : '???';
+      const art = `<img src="${src}" alt="" style="width:100%;height:56px;object-fit:contain;image-rendering:pixelated${dim}">`;
       const sub = got
-        ? `<span style="color:#F5C24B">${it.title}</span>`
+        ? `<span style="color:#F5C24B">${it.title || ''}</span>`
         : (p >= 0.8
             ? `<span style="color:#F5C24B">거의 다 왔어요</span>`
-            : `<span style="color:#8a93a8">${it.hint}</span>`);
+            : `<span style="color:#8a93a8">${it.hint || ''}</span>`);
       return `<div class="mw-panel" style="padding:11px 10px;text-align:center">
           <div style="height:56px;display:flex;align-items:center;justify-content:center;margin-bottom:7px">${art}</div>
-          <div style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:${got ? '#fff' : '#4a5266'};margin-bottom:4px">${name}</div>
+          <div style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:${got ? '#fff' : '#4a5266'};margin-bottom:4px">${got ? it.name : '???'}</div>
           <div style="font-size:10.5px;line-height:1.5">${sub}</div>
         </div>`;
-    }).join('');
+    };
+    // 이번 달: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출
+    const cells = cur.filter(it => it.kind === 'open' || inv.includes(it.id))
+      .map(it => cellHtml(it, inv.includes(it.id), it.src)).join('');
+
+    // 상시 해금: 기한이 없는 것들. 오브젝트(season:'always')와 퀘스트형 캐릭터를 섞는다.
+    // 캐릭터 소유는 _charState.wardrobe라 판정이 다르다.
+    const ownedChars = (window._charState && window._charState.wardrobe) || [];
+    const alwaysCells = window.SEASON_ITEMS.filter(it => it.season === 'always')
+      .filter(it => it.kind === 'open' || inv.includes(it.id))
+      .map(it => cellHtml(it, inv.includes(it.id), it.src))
+      .concat((window.QUEST_CHARS || []).map(c => cellHtml(c, ownedChars.includes(c.id), c.thumb)))
+      .join('');
 
     const pastCells = past.map(it => {
       const got = inv.includes(it.id);
@@ -7313,8 +7351,10 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
         </div>`;
     }).join('');
 
-    // 이번 달 항목이 없으면(카탈로그 미등록 등) 헤더/그리드 전체를 숨긴다 — 지난 시즌만 있으면 아카이브만 노출
-    if (!cells && !pastCells) return '';
+    // 구획은 종류가 아니라 기한으로 나눈다 — 유저가 실제로 묻는 건 "지금 안 하면 놓치나?"이지
+    // "이게 캐릭터인가 가구인가"가 아니다(그건 그림만 봐도 안다).
+    // 빈 구획은 헤더까지 통째로 숨긴다. 카탈로그가 비어 있는데 빈 그리드만 뜨는 걸 막는다.
+    if (!cells && !alwaysCells && !pastCells) return '';
     return `
       ${cells ? `
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin:22px 2px 10px">
@@ -7323,6 +7363,10 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${cells}</div>
       <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>` : ''}
+      ${alwaysCells ? `
+        <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#cfd6e6;letter-spacing:1px;margin:22px 2px 10px">상시 해금</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${alwaysCells}</div>
+        <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">기한은 없어요. 천천히 열어도 돼요</div>` : ''}
       ${past.length ? `
         <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#4a5266;letter-spacing:1px;margin:20px 2px 9px">지난 시즌</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">${pastCells}</div>` : ''}`;
@@ -7346,7 +7390,7 @@ window.mwLabHtml = function () {
   }
   const st = window._seasonState;
   const cur = window.mwSeasonKey();
-  const seasons = Array.from(new Set(window.SEASON_ITEMS.map(i => i.season)));
+  const seasons = Array.from(new Set(window.SEASON_ITEMS.map(i => i.season))).filter(s => s !== 'always');
   const real = window.mwSeasonKey(new Date());
   if (!seasons.includes(real)) seasons.push(real);
   seasons.sort();
@@ -7362,7 +7406,7 @@ window.mwLabHtml = function () {
       <button onclick="window.mwLabCount('${k}',1)" style="${bs};padding:3px 9px">+</button>
     </div>`).join('');
 
-  const items = window.SEASON_ITEMS.filter(it => it.season === cur);
+  const items = window.SEASON_ITEMS.filter(it => it.season === cur || it.season === 'always');
   const itemRows = items.length ? items.map(it => {
     const got = st.inv.includes(it.id);
     const boxed = st.box.includes(it.id);
