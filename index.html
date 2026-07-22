@@ -7165,7 +7165,13 @@ window.mwOpenBox = async function () {
   const id = (st.box || [])[0];
   if (!id) return;
   const it = window.mwItemDef(id);
-  if (!it) { st.box.shift(); return; }
+  if (!it) {
+    // 정의를 찾을 수 없는 id는 로컬·서버 양쪽에서 함께 걷어낸다 (로컬만 지우면 다음 로드에 되살아남)
+    st.box.shift();
+    try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayRemove(id) }); } catch (e) { console.warn('drop stale box', e); }
+    if (window.mwRenderFurn) window.mwRenderFurn();
+    return;
+  }
   st.box.shift();
   st.inv.push(id);
   if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
