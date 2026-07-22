@@ -7220,8 +7220,8 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
     // 여기서 갱신해두지 않으면 도감에는 보이는데 편집기에서는 새로고침 전까지 배치할 수 없다
     if (window._seasonState) window._seasonState.inv = inv;
     const cur = window.SEASON_ITEMS.filter(it => it.season === season);
-    // 지난 시즌: 공개형은 항상 노출(미보유는 실루엣), 히든은 획득자에게만 노출(해금 조건 비공개 원칙)
-    const past = window.SEASON_ITEMS.filter(it => it.season < season && (it.kind === 'open' || inv.includes(it.id)));
+    // 지난 시즌: 종류 무관 전부 노출(미보유는 실루엣) — 지난 시즌 히든템도 동기부여용으로 다시 공개
+    const past = window.SEASON_ITEMS.filter(it => it.season < season);
     const days = window.mwSeasonDaysLeft();
     const mLabel = Number(season.split('-')[1]) + '월';
 
@@ -12605,6 +12605,7 @@ window.sqSubmitCode = async function (sid, codeArg) {
     if (mSnap.data().checkedIn) { showToast('이미 도장 찍었어요'); return; }
     const late = Date.now() > s.scheduledAt + 5 * 60 * 1000;
     await updateDoc(mRef, { checkedIn: true, checkinTime: serverTimestamp(), checkinType: late ? 'late' : 'present', status: 'checkedIn' });
+    if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     const el = document.getElementById('sq-attend'); if (el) el.remove();
     showToast(late ? '지각 도장 찍었어요' : '오운완 도장 쾅!');
     if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
@@ -12637,7 +12638,6 @@ window.sqComplete = async function (sid) {
     try { await updateDoc(doc(db,'users',me), reward
       ? { 'hostStats.completed': increment(1), credits: increment(10) }
       : { 'hostStats.completed': increment(1) }); } catch(e) {}
-    if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
     if (reward) {
       showToast('스쿼드 완주! +10 머피 적립');
