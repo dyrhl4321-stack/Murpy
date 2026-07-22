@@ -7091,10 +7091,18 @@ window.mwBumpMonthly = async function (axis) {
 };
 
 // 한정 오브젝트 축하 연출 (머피 적립 연출 재사용)
-window.mwSeasonCelebrate = function (it) {
+// 다른 축하(머피 적립·도감 보너스)가 같은 DOM을 쓰는 중이면 끝난 뒤로 미룬다 — 시간 추측 대신 실제 상태를 본다
+window.mwSeasonCelebrate = function (it, _tries) {
   if (!it || !window.celebrateMurpy) return;
+  const el = document.getElementById('murpy-celebrate');
+  const busy = el && (el.classList.contains('show') || el.classList.contains('hide'));
+  if (busy && (_tries || 0) < 30) {
+    setTimeout(function () { window.mwSeasonCelebrate(it, (_tries || 0) + 1); }, 400);
+    return;
+  }
+  const _sc = Math.max(1, Math.floor(200 / it.w));   // 정수배만 (픽셀 아트 하드룰)
   window.celebrateMurpy(0, {
-    iconHtml: '<img src="' + it.src + '" alt="" style="width:120px;height:auto;image-rendering:pixelated">',
+    iconHtml: '<img src="' + it.src + '" alt="" style="width:' + (it.w * _sc) + 'px;height:auto;image-rendering:pixelated">',
     amountHtml: '<span style="color:#F5C24B">' + it.name + '</span>',
     title: '이번 달 한정 오브젝트 획득!'
   });
@@ -7110,12 +7118,16 @@ window.mwSeasonCheck = async function () {
   const _granted = [];
   for (const it of items) {
     if (st.inv.includes(it.id) || st.box.includes(it.id)) continue;
-    const ok = Object.keys(it.cond).every(k => (counts[k] || 0) >= it.cond[k]);
+    // cond 없는(또는 빈) 항목은 절대 자동 지급하지 않는다 — 수기로 매달 편집하는 배열이라 오타/누락 방어
+    const condKeys = it.cond ? Object.keys(it.cond) : [];
+    if (!condKeys.length) continue;
+    const ok = condKeys.every(k => (counts[k] || 0) >= it.cond[k]);
     if (!ok) continue;
     if (it.kind === 'hidden') {
       // 히든: 알리지 않고 상자로 배달 — 방에 들어갔을 때 발견하게 한다
       st.box.push(it.id);
       try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) }); } catch (e) { console.warn('box grant', e); }
+      // mwRenderFurn은 현재 _myRoom.f만 그려서 여기선 사실상 no-op — box 렌더는 Task 5에서 렌더러가 _seasonState.box를 알게 되면 의미가 생긴다
       if (window.mwRenderFurn) window.mwRenderFurn();
     } else {
       st.inv.push(it.id);
