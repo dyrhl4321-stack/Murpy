@@ -6667,9 +6667,9 @@ window.celebrateMurpy = function (balance, opts) {
   if (!el) return;
   clearTimeout(el._t);
   const tw = el.querySelector('.mc-token');
-  if (tw && window.murpyTokenSVG) tw.innerHTML = window.murpyTokenSVG(120);
+  if (tw) tw.innerHTML = opts.iconHtml || (window.murpyTokenSVG ? window.murpyTokenSVG(120) : '');
   const _amt = el.querySelector('.mc-amt');
-  if (_amt) _amt.innerHTML = '+' + (opts.amount != null ? opts.amount : 1) + ' <span style="color:#F5C24B">머피</span>';
+  if (_amt) _amt.innerHTML = opts.amountHtml || ('+' + (opts.amount != null ? opts.amount : 1) + ' <span style="color:#F5C24B">머피</span>');
   const _title = el.querySelector('.mc-title');
   const _s = window._creditState ? (window._creditState.streak || 0) : 0;
   if (_title) _title.textContent = opts.title || ((_s >= 2) ? (_s + '일 연속 인증!') : '오늘도 운동 완료!');
@@ -7088,6 +7088,48 @@ window.mwBumpMonthly = async function (axis) {
     await updateDoc(doc(db, 'users', user.uid), { ['monthly.' + season + '.' + axis]: increment(1) });
   } catch (e) { console.warn('monthly bump', e); }
   if (window.mwSeasonCheck) window.mwSeasonCheck();
+};
+
+// 한정 오브젝트 축하 연출 (머피 적립 연출 재사용)
+window.mwSeasonCelebrate = function (it) {
+  if (!it || !window.celebrateMurpy) return;
+  window.celebrateMurpy(0, {
+    iconHtml: '<img src="' + it.src + '" alt="" style="width:120px;height:auto;image-rendering:pixelated">',
+    amountHtml: '<span style="color:#F5C24B">' + it.name + '</span>',
+    title: '이번 달 한정 오브젝트 획득!'
+  });
+};
+// 현재 시즌 아이템 판정. 조건 충족 + 미보유만 처리한다.
+window.mwSeasonCheck = async function () {
+  const user = auth.currentUser || window.currentUser;
+  if (!user || !window._seasonState.ready) return;
+  const season = window.mwSeasonKey();
+  const st = window._seasonState;
+  const counts = st.counts || {};
+  const items = window.SEASON_ITEMS.filter(it => it.season === season);
+  const _granted = [];
+  for (const it of items) {
+    if (st.inv.includes(it.id) || st.box.includes(it.id)) continue;
+    const ok = Object.keys(it.cond).every(k => (counts[k] || 0) >= it.cond[k]);
+    if (!ok) continue;
+    if (it.kind === 'hidden') {
+      // 히든: 알리지 않고 상자로 배달 — 방에 들어갔을 때 발견하게 한다
+      st.box.push(it.id);
+      try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) }); } catch (e) { console.warn('box grant', e); }
+      if (window.mwRenderFurn) window.mwRenderFurn();
+    } else {
+      st.inv.push(it.id);
+      if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
+      const upd = { roomInv: arrayUnion(it.id) };
+      if (it.title) upd.titles = arrayUnion(it.title);
+      try { await updateDoc(doc(db, 'users', user.uid), upd); } catch (e) { console.warn('item grant', e); }
+      _granted.push(it);
+    }
+  }
+  // 기존 머피 적립·도감 축하(2.4s)와 같은 DOM을 쓰므로, 끝난 뒤 이어서 재생한다
+  _granted.forEach(function (it, i) {
+    setTimeout(function () { window.mwSeasonCelebrate(it); }, 2700 + i * 2700);
+  });
 };
 
 function _creditDateStr(d) {
