@@ -541,6 +541,8 @@
   .mw-redit-cat img { height:44px; width:auto; max-width:80%; object-fit:contain }
   .mw-redit-cat span { font-size:10.5px; color:#cfd6e6 }
   #mw-redit-room img.sel { outline:3px solid #F5C24B; outline-offset:1px }
+  @keyframes mwBoxBob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
+  .mw-sbox { animation: mwBoxBob 1.7s ease-in-out infinite; filter: drop-shadow(0 0 10px rgba(245,194,75,.55)) }
   .mw-wpanel { position:fixed; inset:0; height:100dvh; z-index:880; background:#05070c; max-width:390px; margin:0 auto;
     display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }   /* 솔리드 배경: 뒤 페이지 비침·스크롤 거슬림 제거 (100dvh로 모바일 툴바 가림도 해소) */
   .mw-wpanel-head { display:flex; align-items:center; gap:9px; padding:17px 18px 13px;
@@ -2049,7 +2051,9 @@ window.mwFurnHtml = function (roomData, edit) {
 };
 window.mwRenderFurn = function () {
   const el = document.getElementById('mw-furn'); if (!el) return;
-  el.innerHTML = (window._curField === 'home') ? window.mwFurnHtml(window._myRoom) : '';
+  if (window._curField !== 'home') { el.innerHTML = ''; return; }
+  const box = (window._seasonState && window._seasonState.box) || [];
+  el.innerHTML = window.mwFurnHtml(window._myRoom) + window.mwBoxHtml(box, true);
 };
 // ---- 방 꾸미기 편집기: 카탈로그에서 추가 → 드래그 배치 → 저장(users/{uid}.room) ----
 window._reditDraft = null; window._reditSel = -1;
@@ -7127,7 +7131,7 @@ window.mwSeasonCheck = async function () {
       // 히든: 알리지 않고 상자로 배달 — 방에 들어갔을 때 발견하게 한다
       st.box.push(it.id);
       try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) }); } catch (e) { console.warn('box grant', e); }
-      // mwRenderFurn은 현재 _myRoom.f만 그려서 여기선 사실상 no-op — box 렌더는 Task 5에서 렌더러가 _seasonState.box를 알게 되면 의미가 생긴다
+      // box 렌더는 mwRenderFurn이 _seasonState.box를 읽어 mwBoxHtml로 그린다 (Task 5)
       if (window.mwRenderFurn) window.mwRenderFurn();
     } else {
       st.inv.push(it.id);
@@ -7142,6 +7146,35 @@ window.mwSeasonCheck = async function () {
   _granted.forEach(function (it, i) {
     setTimeout(function () { window.mwSeasonCelebrate(it); }, 2700 + i * 2700);
   });
+};
+// 미개봉 상자 렌더 (방 중앙 하단). clickable=true면 본인 방 → 탭해서 개봉
+window.mwBoxHtml = function (boxArr, clickable) {
+  if (!Array.isArray(boxArr) || !boxArr.length) return '';
+  const x = 318, y = 306, w = 132;   // 768 좌표계
+  return '<img src="char/rooms/season_box.png?v=1" alt="" draggable="false" class="mw-sbox"'
+    + (clickable ? ' onclick="window.mwOpenBox()"' : '')
+    + ' style="position:absolute;left:' + (x / 7.68).toFixed(2) + '%;top:' + (y / 7.68).toFixed(2) + '%;'
+    + 'width:' + (w / 7.68).toFixed(2) + '%;z-index:900;'
+    + (clickable ? 'cursor:pointer;pointer-events:auto;' : 'pointer-events:none;') + '">';
+};
+// 상자 개봉: pendingBox 맨 앞 1개 → roomInv로 이동 + 축하
+window.mwOpenBox = async function () {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  const st = window._seasonState;
+  const id = (st.box || [])[0];
+  if (!id) return;
+  const it = window.mwItemDef(id);
+  if (!it) { st.box.shift(); return; }
+  st.box.shift();
+  st.inv.push(id);
+  if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
+  const upd = { pendingBox: arrayRemove(id), roomInv: arrayUnion(id) };
+  if (it.title) upd.titles = arrayUnion(it.title);
+  try { await updateDoc(doc(db, 'users', user.uid), upd); } catch (e) { console.warn('open box', e); }
+  if (navigator.vibrate) navigator.vibrate([12, 40, 30]);
+  if (window.mwRenderFurn) window.mwRenderFurn();
+  window.mwSeasonCelebrate(it);
 };
 
 function _creditDateStr(d) {
@@ -10401,7 +10434,7 @@ window.mwVisitRoom = async function (uid) {
     <div class="mw-wpanel-head"><b>${nick}의 방</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
-        ${window.mwFurnHtml(p.room)}
+        ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false)}
       </div>
       <div style="display:flex;justify-content:center;gap:16px;font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;margin-bottom:14px">
         <span>TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
