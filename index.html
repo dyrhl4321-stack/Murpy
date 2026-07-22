@@ -2027,7 +2027,11 @@ window.SEASON_ITEMS = [
     hint:'', title:'공룡의 친구', cond:{ feed:5, bamboo:3, checkin:3 } },
 ];
 // 현재 시즌 키 (YYYY-MM)
+// 관리자 실험실이 켜져 있으면 그 달인 척한다 — 도감/편집기/판정이 전부 이 함수만 보므로
+// 여기 한 곳만 바꾸면 "10월에 접속한 유저" 화면을 7월에 그대로 재현할 수 있다.
+// 날짜를 명시로 넘긴 호출(아카이브 비교 등)은 오버라이드하지 않는다.
 window.mwSeasonKey = function (d) {
+  if (!d && window._seasonLab && window._seasonLab.on && window._seasonLab.key) return window._seasonLab.key;
   d = d || new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 };
@@ -7090,6 +7094,15 @@ window._charPersistRoom = async (room) => { if (!window.currentUser) return; try
 // ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
 window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
 const _seasonBusy = new Set();   // 지급 처리 중인 아이템 (동시 실행 시 중복 지급 방지)
+
+// ===== 관리자 시즌 실험실 =====
+// on=true인 동안 시즌 관련 Firestore 쓰기를 전부 삼킨다. 로컬 _seasonState만 움직이므로
+// 시즌·카운터·보유를 아무리 돌려봐도 실계정 데이터는 그대로고, 새로고침하면 원상복구된다.
+window._seasonLab = { on: false, key: '' };
+window._seasonWrite = async function (uid, upd) {
+  if (window._seasonLab.on) return;
+  await updateDoc(doc(db, 'users', uid), upd);
+};
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
 window._seasonEnsureMonth = function () {
   const season = window.mwSeasonKey();
@@ -7106,7 +7119,7 @@ window.mwBumpMonthly = async function (axis) {
   const season = window._seasonEnsureMonth();
   window._seasonState.counts[axis] = (window._seasonState.counts[axis] || 0) + 1;
   try {
-    await updateDoc(doc(db, 'users', user.uid), { ['monthly.' + season + '.' + axis]: increment(1) });
+    await window._seasonWrite(user.uid, { ['monthly.' + season + '.' + axis]: increment(1) });
   } catch (e) { console.warn('monthly bump', e); }
   if (window.mwSeasonCheck) window.mwSeasonCheck();
 };
@@ -7151,7 +7164,7 @@ window.mwSeasonCheck = async function () {
       // 쓰기가 성공했을 때만 로컬에 반영한다 — 실패한 쓰기를 먼저 반영하면 새로고침 시 사라지는 유령 지급이 된다
       _seasonBusy.add(it.id);
       try {
-        await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayUnion(it.id) });
+        await window._seasonWrite(user.uid, { pendingBox: arrayUnion(it.id) });
         st.box.push(it.id);
         // box 렌더는 mwRenderFurn이 _seasonState.box를 읽어 mwBoxHtml로 그린다 (Task 5)
         if (window.mwRenderFurn) window.mwRenderFurn();
@@ -7162,7 +7175,7 @@ window.mwSeasonCheck = async function () {
       if (it.title) upd.titles = arrayUnion(it.title);
       _seasonBusy.add(it.id);
       try {
-        await updateDoc(doc(db, 'users', user.uid), upd);
+        await window._seasonWrite(user.uid, upd);
         st.inv.push(it.id);
         if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
         _granted.push(it);
@@ -7196,7 +7209,7 @@ window.mwOpenBox = async function () {
   if (!it) {
     // 정의를 찾을 수 없는 id는 로컬·서버 양쪽에서 함께 걷어낸다 (로컬만 지우면 다음 로드에 되살아남)
     st.box.shift();
-    try { await updateDoc(doc(db, 'users', user.uid), { pendingBox: arrayRemove(id) }); } catch (e) { console.warn('drop stale box', e); }
+    try { await window._seasonWrite(user.uid, { pendingBox: arrayRemove(id) }); } catch (e) { console.warn('drop stale box', e); }
     if (window.mwRenderFurn) window.mwRenderFurn();
     return;
   }
@@ -7205,7 +7218,7 @@ window.mwOpenBox = async function () {
   if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
   const upd = { pendingBox: arrayRemove(id), roomInv: arrayUnion(id) };
   if (it.title) upd.titles = arrayUnion(it.title);
-  try { await updateDoc(doc(db, 'users', user.uid), upd); } catch (e) { console.warn('open box', e); }
+  try { await window._seasonWrite(user.uid, upd); } catch (e) { console.warn('open box', e); }
   if (navigator.vibrate) navigator.vibrate([12, 40, 30]);
   if (window.mwRenderFurn) window.mwRenderFurn();
   window.mwSeasonCelebrate(it);
@@ -7217,7 +7230,10 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
     const season = window.mwSeasonKey();
     const st = window._seasonState || { inv: [], ready: false };
     // 로컬(st.inv)과 서버 스냅샷(fallbackInv)을 합집합으로 — 다른 기기에서 받은 아이템도 즉시 반영
-    const inv = Array.from(new Set([...(st.inv || []), ...(fallbackInv || [])]));
+    // 단 실험실에서는 합치지 않는다. 합치면 실제 보유템이 섞여 들어와 "아무것도 없는 신규 유저" 화면을 볼 수 없다.
+    const inv = window._seasonLab.on
+      ? (st.inv || []).slice()
+      : Array.from(new Set([...(st.inv || []), ...(fallbackInv || [])]));
     // 합집합을 다시 _seasonState.inv에 반영 — 방 편집기(mwRoomEdit, ~line 2081)는 서버 재조회 없이 이 상태만 읽으므로,
     // 여기서 갱신해두지 않으면 도감에는 보이는데 편집기에서는 새로고침 전까지 배치할 수 없다
     if (window._seasonState) window._seasonState.inv = inv;
@@ -7264,6 +7280,124 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
         <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#4a5266;letter-spacing:1px;margin:20px 2px 9px">지난 시즌</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px">${pastCells}</div>` : ''}`;
   } catch (e) { console.warn('season section', e); return ''; }
+};
+
+// ===== 관리자 시즌 실험실 =====
+// 한정 콘텐츠를 상시 실험하기 위한 도구. 앞으로 추가될 한정 캐릭터·의상도 SEASON_ITEMS에
+// 얹기만 하면 여기서 바로 돌려볼 수 있게, 축·카탈로그를 하드코딩하지 않고 데이터로만 읽는다.
+// 켜져 있는 동안 _seasonWrite가 Firestore 쓰기를 전부 삼키므로 실계정은 오염되지 않는다.
+window._SEASON_AXES = [
+  ['feed', '운동인증'], ['bamboo', '대숲'], ['matchOk', '매칭성사'], ['squad', '스쿼드'], ['checkin', '센터도장']
+];
+window.mwLabHtml = function () {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return '';
+  const lab = window._seasonLab;
+  const bs = "font-family:inherit;cursor:pointer;border:2px solid #05070c;background:#1b2233;color:#cfd6e6;font-size:11px;padding:5px 9px";
+  if (!lab.on) {
+    return `<div style="margin:22px 2px 0;text-align:right">
+      <button onclick="window.mwLabToggle()" style="${bs}">시즌 실험실</button></div>`;
+  }
+  const st = window._seasonState;
+  const cur = window.mwSeasonKey();
+  const seasons = Array.from(new Set(window.SEASON_ITEMS.map(i => i.season)));
+  const real = window.mwSeasonKey(new Date());
+  if (!seasons.includes(real)) seasons.push(real);
+  seasons.sort();
+
+  const seasonBtns = seasons.map(s => `<button onclick="window.mwLabSetSeason('${s}')" style="${bs};${
+    s === cur ? 'background:#3D7EFF;color:#fff;border-color:#3D7EFF' : ''}">${s}${s === real ? ' (실제)' : ''}</button>`).join('');
+
+  const axisRows = window._SEASON_AXES.map(([k, label]) => `
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">
+      <span style="width:62px;font-size:11px;color:#8a93a8;flex-shrink:0">${label}</span>
+      <button onclick="window.mwLabCount('${k}',-1)" style="${bs};padding:3px 9px">−</button>
+      <b style="min-width:26px;text-align:center;color:#F5C24B;font-size:12px">${st.counts[k] || 0}</b>
+      <button onclick="window.mwLabCount('${k}',1)" style="${bs};padding:3px 9px">+</button>
+    </div>`).join('');
+
+  const items = window.SEASON_ITEMS.filter(it => it.season === cur);
+  const itemRows = items.length ? items.map(it => {
+    const got = st.inv.includes(it.id);
+    const boxed = st.box.includes(it.id);
+    const need = Object.keys(it.cond || {}).map(k => k + ':' + it.cond[k]).join(' ');
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <span style="flex:1;min-width:0;font-size:11px;color:${got ? '#fff' : '#8a93a8'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${it.kind === 'hidden' ? '<span style="color:#4a5266">[히든] </span>' : ''}${it.name}
+          <span style="color:#4a5266">${need}</span>${boxed ? ' <span style="color:#F5C24B">상자대기</span>' : ''}</span>
+        <button onclick="window.mwLabGrant('${it.id}')" style="${bs};padding:3px 8px">지급</button>
+        ${it.kind === 'hidden' ? `<button onclick="window.mwLabBox('${it.id}')" style="${bs};padding:3px 8px">상자</button>` : ''}
+        <button onclick="window.mwLabRevoke('${it.id}')" style="${bs};padding:3px 8px">회수</button>
+      </div>`;
+  }).join('') : '<div style="font-size:11px;color:#4a5266;padding:4px 0">이 시즌 카탈로그가 비어 있어요</div>';
+
+  return `
+    <div class="mw-panel" style="margin:22px 2px 0;padding:13px 12px;border-color:#3D7EFF">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
+        <span style="font-family:'Galmuri14',sans-serif;font-size:12px;color:#3D7EFF;letter-spacing:1px">시즌 실험실</span>
+        <span style="font-size:10px;color:#4a5266">실험 중엔 실제 활동도 적립 안 돼요</span>
+      </div>
+      <div style="font-size:10.5px;color:#8a93a8;margin-bottom:5px">시즌</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:11px">${seasonBtns}</div>
+      <div style="font-size:10.5px;color:#8a93a8;margin-bottom:5px">이번 달 활동 카운터</div>
+      ${axisRows}
+      <div style="font-size:10.5px;color:#8a93a8;margin:9px 0 5px">아이템</div>
+      ${itemRows}
+      <div style="display:flex;gap:5px;margin-top:11px">
+        <button onclick="window.mwLabCold()" style="${bs};flex:1">신규 유저 시점</button>
+        <button onclick="window.mwSeasonCheck()" style="${bs};flex:1">판정 실행</button>
+        <button onclick="location.reload()" style="${bs};flex:1;border-color:#3D7EFF;color:#3D7EFF">종료</button>
+      </div>
+    </div>`;
+};
+window.mwLabToggle = function () {
+  const lab = window._seasonLab;
+  lab.on = !lab.on;
+  lab.key = lab.on ? window.mwSeasonKey(new Date()) : '';
+  if (lab.on) window._seasonState.season = lab.key;
+  window.mwLabRepaint();
+};
+window.mwLabSetSeason = function (key) {
+  window._seasonLab.key = key;
+  // season을 직접 맞춰둔다 — 안 맞추면 _seasonEnsureMonth가 달이 바뀐 줄 알고 카운터를 지운다
+  window._seasonState.season = key;
+  window.mwLabRepaint();
+};
+window.mwLabCount = function (axis, d) {
+  const c = window._seasonState.counts;
+  c[axis] = Math.max(0, (c[axis] || 0) + d);
+  window.mwLabRepaint();
+};
+window.mwLabCold = function () {
+  const st = window._seasonState;
+  st.counts = {}; st.inv = []; st.box = []; st.titles = [];
+  window.mwLabRepaint();
+};
+window.mwLabGrant = function (id) {
+  const st = window._seasonState, it = window.mwItemDef(id);
+  if (!it) return;
+  if (!st.inv.includes(id)) st.inv.push(id);
+  st.box = st.box.filter(b => b !== id);
+  if (it.title && !st.titles.includes(it.title)) st.titles.push(it.title);
+  window.mwSeasonCelebrate(it);
+  window.mwLabRepaint();
+};
+window.mwLabRevoke = function (id) {
+  const st = window._seasonState, it = window.mwItemDef(id);
+  st.inv = st.inv.filter(v => v !== id);
+  st.box = st.box.filter(v => v !== id);
+  if (it && it.title) st.titles = st.titles.filter(t => t !== it.title);
+  window.mwLabRepaint();
+};
+window.mwLabBox = function (id) {
+  const st = window._seasonState;
+  st.inv = st.inv.filter(v => v !== id);
+  if (!st.box.includes(id)) st.box.push(id);
+  window.mwLabRepaint();
+  if (window.showToast) window.showToast('방에 상자를 배달했어요');
+};
+window.mwLabRepaint = function () {
+  if (window.mwRenderFurn) window.mwRenderFurn();
+  if (document.getElementById('mw-dogam-root') && window.mwRenderDogam) window.mwRenderDogam();
 };
 
 function _creditDateStr(d) {
@@ -10094,6 +10228,7 @@ window.mwRenderDogam = async function () {
     ${tiles}
     <div id="mw-dg-home" style="scroll-margin-top:8px">${homeCard}</div>
     ${window.mwSeasonSectionHtml ? window.mwSeasonSectionHtml(me.roomInv) : ''}
+    ${window.mwLabHtml ? window.mwLabHtml() : ''}
     <div id="mw-dg-rally" style="scroll-margin-top:8px">${bonusBar}</div>
     <div id="mw-dg-expedition" style="scroll-margin-top:8px">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin:16px 2px 9px">
