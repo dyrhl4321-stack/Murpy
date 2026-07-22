@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260722001 -->
+<!-- cache-bust: v20260722002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2073,7 +2073,7 @@ window.mwRoomEdit = function () {
   el.innerHTML = `
     <div class="mw-wpanel-head"><b>방 꾸미기</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
-      <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
+      <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;max-width:320px;margin-left:auto;margin-right:auto">
         <span style="font-size:11px;color:#8a93a8;font-family:'Galmuri11',sans-serif">가구를 끌어서 배치해요</span>
         <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
@@ -2158,11 +2158,13 @@ window._reditSave = async function () {
 window._FIELD_BORDER = ["################","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","################"];
 window._FIELDS = {
   home: {
-    name: '내 방', src: "char/fields/field_workshop.png?v=1", grid: 16,
+    name: '내 방', src: "char/fields/field_room.png?v=1", grid: 16,
+    // 벽 3타일(144유닛 = 행 0~2)을 막는다. field_room.png의 바닥 시작 y와 반드시 일치 —
+    // 어긋나면 캐릭터가 벽에 파묻히거나 걸레받이 위에 떠 보인다.
     map: [
       "################",
       "################",
-      "#..............#",
+      "################",
       "#..............#",
       "#..............#",
       "#..............#",
@@ -10668,7 +10670,7 @@ window.mwVisitRoom = async function (uid) {
   el.innerHTML = `
     <div class="mw-wpanel-head"><b>${nick}의 방</b>${_titleHtml}<button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
-      <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_workshop.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
+      <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false)}
       </div>
       <div style="display:flex;justify-content:center;gap:16px;font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;margin-bottom:14px">
@@ -10686,6 +10688,9 @@ window.mwVisitRoom = async function (uid) {
   if (vstage) {
     const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
     const rp = (p.roomPos && typeof p.roomPos.tc === 'number') ? p.roomPos : { tc:7, tr:8, face:'down' };
+    // 벽 행(0~2)에 저장된 옛 좌표는 끌어내린다 — 방 배경이 벽 3타일로 바뀌기 전에 저장된
+    // 위치가 남아 있으면 방 주인이 벽에 박힌 채로 그려진다
+    if (rp.tr < 3) rp.tr = 3;
     const hpx = Math.round((vstage.clientWidth || 300) * 3.3 / N);
     vstage.insertAdjacentHTML('beforeend',
       `<div style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5}">${window.mwMiniCharHtml(p.character, hpx, rp.face)}</div>`);
