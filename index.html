@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260723007 -->
+<!-- cache-bust: v20260723008 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2000,8 +2000,9 @@ window.ROOM_ITEMS = [
   //   surface = 위에 소품을 얹을 수 있는 상판 가구
   //   prop    = 상판 위에 올라가는 소품. surface 위에 놓으면 얹힘 + z를 상판보다 위로
   //   sbw = 바닥 접지폭 실측(char/slice_pi_furniture.py --footprint). 그림자 폭 기준.
-  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112 },
-  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112 },
+  //   blockBand = 바닥 발자국 비율(충돌). 미지정=0.30(발밑만). 침대·탁자처럼 통째 장애물은 크게.
+  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112, blockBand:0.82 },
+  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112, blockBand:0.82 },
   { id:'pi_bookshelf', name:'책장', src:'char/rooms/pi_bookshelf.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_wardrobe', name:'키큰 수납장', src:'char/rooms/pi_wardrobe.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_cabinet', name:'원목 옷장', src:'char/rooms/pi_cabinet.png?v=1', w:112, h:176, back:true, sbw:112 },
@@ -2011,8 +2012,8 @@ window.ROOM_ITEMS = [
   { id:'pi_armchair_rose', name:'로즈 안락의자', src:'char/rooms/pi_armchair_rose.png?v=1', w:104, h:116, sbw:80 },
   { id:'pi_armchair_teal', name:'민트 안락의자', src:'char/rooms/pi_armchair_teal.png?v=1', w:104, h:116, sbw:80 },
   { id:'pi_armchair_blue', name:'블루 안락의자', src:'char/rooms/pi_armchair_blue.png?v=1', w:104, h:116, sbw:80 },
-  { id:'pi_desk', name:'책상', src:'char/rooms/pi_desk.png?v=1', w:192, h:112, surface:true, sbw:176 },
-  { id:'pi_table', name:'테이블', src:'char/rooms/pi_table.png?v=1', w:144, h:112, surface:true, sbw:128 },
+  { id:'pi_desk', name:'책상', src:'char/rooms/pi_desk.png?v=1', w:192, h:112, surface:true, sbw:176, blockBand:0.80 },
+  { id:'pi_table', name:'테이블', src:'char/rooms/pi_table.png?v=1', w:144, h:112, surface:true, sbw:128, blockBand:0.80 },
   { id:'pi_rug', name:'줄무늬 러그', src:'char/rooms/pi_rug.png?v=1', w:152, h:84, flat:true },
   { id:'pi_door', name:'문', src:'char/rooms/pi_door.png?v=1', w:72, h:124, wall:true },
   { id:'pi_tv', name:'TV', src:'char/rooms/pi_tv.png?v=1', w:96, h:76, prop:true, sbw:96 },
@@ -2041,7 +2042,7 @@ window.SEASON_ITEMS = [
     season:'2026-10', kind:'open', axis:'bamboo',
     hint:'숲의 요정들에게만 배달되는 선물입니다', title:'숲의 요정', cond:{ bamboo:5 } },
   { id:'s2608_campfire', name:'스쿼드 캠프파이어', src:'char/rooms/s2608_campfire.png?v=6', w:152, h:116,
-    season:'2026-10', kind:'open', axis:'squad', noShadow:true,
+    season:'2026-10', kind:'open', axis:'squad', noShadow:true, blockBand:0.72,
     hint:'혼자 온 자는 받을 수 없습니다', title:'스쿼드의 심장', cond:{ squad:2 } },
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=2', w:94, h:104,
     season:'2026-10', kind:'hidden', axis:'',
@@ -2129,6 +2130,7 @@ window.mwFurnHtml = function (roomData, edit) {
 };
 window.mwRenderFurn = function () {
   window.mwUpdateQuestBadge && window.mwUpdateQuestBadge();   // 상자 유무가 곧 탭 배지
+  window._mwComputeBlocked && window._mwComputeBlocked();     // 충돌 오버레이 갱신(렌더 시점)
   const el = document.getElementById('mw-furn'); if (!el) return;
   if (window._curField !== 'home') { el.innerHTML = ''; return; }
   const box = (window._seasonState && window._seasonState.box) || [];
@@ -2296,7 +2298,8 @@ window._reditSnap = function (it) {
 window._reditSave = async function () {
   const data = { f: window._reditDraft.f };
   window._myRoom = data;
-  window.mwRenderFurn();
+  window.mwRenderFurn();                          // 충돌 오버레이도 여기서 갱신됨
+  if (window._mwUnstick) window._mwUnstick();     // 새로 놓은 가구에 캐릭터가 깔렸으면 밀어냄
   const p = document.getElementById('mw-wpanel'); if (p) p.remove();
   showToast('방이 저장됐어요');
   if (navigator.vibrate) navigator.vibrate(12);
@@ -2356,7 +2359,8 @@ window.charSetField = function (key) {
   const st = f.start || { tc: 7, tr: 8 };
   window._charPos = { tc: st.tc, tr: st.tr, face: 'down', frame: 0 };
   window._charApplyPos && window._charApplyPos();
-  if (window.mwRenderFurn) window.mwRenderFurn();   // 내 방이면 가구 렌더
+  if (window.mwRenderFurn) window.mwRenderFurn();   // 내 방이면 가구 렌더(+충돌 오버레이 갱신)
+  if (key === 'home' && window._mwUnstick) window._mwUnstick();   // 시작칸이 가구에 깔렸으면 밀어냄
   const ec = document.getElementById('mw-redit-chip');
   if (ec) ec.style.display = (key === 'home') ? '' : 'none';   // 꾸미기는 내 방에서만
   const bar = document.getElementById('mw-field-bar');
@@ -2369,10 +2373,54 @@ window._charTileGeom = function () {
   const size = room ? (room.clientWidth || 320) : 320;
   return { N: N, t: size / N };
 };
+// ===== 가구 충돌 (동적 오버레이) =====
+// 현실감의 핵심: 가구가 '실제 바닥에 닿는 면적'만 막고 등받이·상판처럼 위로 솟은 부분은 통과.
+// 스프라이트 하단 blockBand 비율만큼을 바닥 발자국으로 보고 그 타일을 막는다.
+// 저장 데이터는 안 건드리고 렌더 시점에 계산 — 규칙만 바꿔도 기존 방이 안 깨진다(설계서).
+window._mwBlocked = new Set();
+window._mwComputeBlocked = function () {
+  const set = new Set();
+  const f = (window._myRoom && window._myRoom.f) || [];
+  const arr = f.map(it => ({ it, def: window.mwItemDef(it.id) })).filter(o => o.def);
+  arr.forEach(({ it, def }) => {
+    if (def.flat || def.wall || def.noBlock) return;         // 러그·벽걸이·명시적 통과
+    // 상판 위에 얹힌 소품은 공중이라 바닥을 안 막는다
+    if (def.prop) {
+      const cx = it.x + def.w / 2;
+      const onSurface = arr.some(o => o.def.surface && cx >= o.it.x && cx <= o.it.x + o.def.w && it.y < o.it.y);
+      if (onSurface) return;
+    }
+    const band = def.blockBand || 0.30;
+    const bot = it.y + def.h, top = bot - def.h * band;
+    const T = 48;
+    const c0 = Math.max(0, Math.floor((it.x + def.w * 0.10) / T));     // 좌우 10%는 그림자 여유로 빼서 과블록 방지
+    const c1 = Math.min(15, Math.floor((it.x + def.w * 0.90 - 1) / T));
+    const r0 = Math.max(0, Math.floor(top / T)), r1 = Math.min(15, Math.floor((bot - 1) / T));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) set.add(r * 16 + c);
+  });
+  window._mwBlocked = set;
+};
 window._charWalkable = function (tc, tr) {
   const f = window._FIELDS[window._curField]; if (!f) return true;
   if (tr < 0 || tc < 0 || tr >= f.map.length || tc >= f.map[0].length) return false;
-  return f.map[tr][tc] !== '#';
+  if (f.map[tr][tc] === '#') return false;
+  if (window._curField === 'home' && window._mwBlocked.has(tr * 16 + tc)) return false;   // 가구 발자국
+  return true;
+};
+// 갇힘 해소: 가구에 깔린 칸(자기 위에 가구 배치 등)에 있으면 가장 가까운 빈 칸으로 밀어낸다.
+window._mwUnstick = function () {
+  if (window._curField !== 'home') return;
+  const p = window._charPos; if (!p || window._charWalkable(p.tc, p.tr)) return;
+  for (let rad = 1; rad <= 15; rad++) {
+    for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
+      if (Math.abs(dr) !== rad && Math.abs(dc) !== rad) continue;   // 링 둘레만
+      if (window._charWalkable(p.tc + dc, p.tr + dr)) {
+        p.tc += dc; p.tr += dr;
+        window._charApplyPos && window._charApplyPos();
+        return;
+      }
+    }
+  }
 };
 // 캐릭터 종류 변경 시 겹 다시 반영 (몸통 시트는 _charEquippedSheets가 cfg.body로 처리)
 window._charApplySprite = function (/* body */) { window._charApplyPos && window._charApplyPos(); };
