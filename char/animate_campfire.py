@@ -21,7 +21,7 @@ import argparse
 import math
 import os
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
 ART = 2            # 아트픽셀 크기(유닛). 이동량은 이 배수여야 한다
 # 이 아래는 손대지 않는다. 40으로 두면 장작 윗부분(y 36~40)까지 마스크에 들어와
@@ -32,10 +32,31 @@ AMP = 4            # 꼭대기 최대 진폭(유닛) = 아트픽셀 2칸
 FRAMES = 4
 DURATION = 170     # 프레임당 ms
 
+# 접지 그림자(돌무더기 하단 실루엣을 따라 U자로 은은하게).
+# CSS 타원 그림자는 돌무더기 전체 아래에 뜬금없이 깔려 어색했다 — 대표는 돌 링을 따라
+# 하단에 은은한 U자를 원했다. 실루엣을 아래로 내린 뒤 원본과 겹치는 부분을 빼면
+# '물체 아래로 삐져나온 하단 테두리'만 남아 자연스러운 U자 접지가 된다.
+GROUND_PAD = 12        # 캔버스를 아래로 늘려 그림자 공간 확보(원본은 하단 여백 0)
+GROUND_DROP = 6        # 실루엣을 얼마나 내릴지
+GROUND_BLUR = 3.2
+GROUND_ALPHA = 0.42    # 은은하게
+
 
 def is_flame(p):
     r, g, b, a = p
     return a > 128 and r > 170 and g > 60 and r > b + 60
+
+
+def ground_shadow(im, W, H):
+    """돌무더기 하단 실루엣을 따라가는 U자 접지 그림자. 확장 캔버스(H+GROUND_PAD)로 반환."""
+    HH = H + GROUND_PAD
+    mask = im.getchannel('A').point(lambda v: 255 if v >= 128 else 0)
+    orig = Image.new('L', (W, HH), 0); orig.paste(mask, (0, 0))
+    drop = Image.new('L', (W, HH), 0); drop.paste(mask, (0, GROUND_DROP))
+    below = ImageChops.subtract(drop, orig)                 # 물체 아래로 삐져나온 하단 테두리 = U자
+    below = below.filter(ImageFilter.GaussianBlur(GROUND_BLUR))
+    below = below.point(lambda v: int(v * GROUND_ALPHA))
+    return Image.merge('RGBA', (Image.new('L', (W, HH), 0),) * 3 + (below,))
 
 
 def build_frames(im, frames=FRAMES):
@@ -97,7 +118,15 @@ def build_frames(im, frames=FRAMES):
                 fpx[x, y] = (min(255, int(p[0] * glow)), min(255, int(p[1] * glow)),
                              min(255, int(p[2] * glow)), p[3])
         out.append(fr)
-    return out, len(mask), len(safe)
+
+    # 접지 그림자를 맨 아래 레이어로 깔고 프레임을 얹는다 (캔버스는 아래로 GROUND_PAD 확장)
+    shadow = ground_shadow(im, W, H)
+    final = []
+    for fr in out:
+        canvas = shadow.copy()
+        canvas.alpha_composite(fr, (0, 0))
+        final.append(canvas)
+    return final, len(mask), len(safe)
 
 
 def main():
