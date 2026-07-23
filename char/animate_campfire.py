@@ -29,8 +29,8 @@ ART = 2            # 아트픽셀 크기(유닛). 이동량은 이 배수여야 
 # 행 프로파일상 y>=38부터 불꽃 x범위가 급격히 넓어진다 = 장작이 시작되는 지점.
 FLAME_MAX_Y = 26
 AMP = 4            # 꼭대기 최대 진폭(유닛) = 아트픽셀 2칸
-FRAMES = 4
-DURATION = 170     # 프레임당 ms
+FRAMES = 6         # 부드러운 순환 (4는 뚝뚝 끊겨 보였다)
+DURATION = 130     # 프레임당 ms
 
 # 접지 그림자(돌무더기 하단 실루엣을 따라 U자로 은은하게).
 # CSS 타원 그림자는 돌무더기 전체 아래에 뜬금없이 깔려 어색했다 — 대표는 돌 링을 따라
@@ -102,21 +102,24 @@ def build_frames(im, frames=FRAMES):
         fr = base.copy()
         fpx = fr.load()
         # 프레임마다 하나의 기울기. 행에 따라 진동시키면(sin(y·k)) 전단이 생겨 불꽃이 찢어진다.
-        lean = math.sin(2 * math.pi * f / frames)
-        glow = 1.0 + 0.07 * math.cos(2 * math.pi * f / frames)   # 흔들림과 위상을 어긋나게
+        phase = 2 * math.pi * f / frames
+        lean = math.sin(phase)
         for (x, y) in safe:
-            taper = max(0.0, 1.0 - (y / float(FLAME_MAX_Y)))     # 위=1, 밑동=0 (단조 감쇠)
+            # 부드러운 감쇠(제곱근). 선형이면 흔들리는 위와 고정된 아래가 뚝 갈려 '반으로 나뉜' 느낌.
+            taper = max(0.0, 1.0 - (y / float(FLAME_MAX_Y))) ** 0.6
             dx = int(round(AMP * taper * lean / ART)) * ART      # 아트픽셀 격자 유지
             nx = x + dx
             # 목적지가 원래 돌·장작이면 덮지 않는다. 안 막으면 불꽃이 돌 위로 번진다(실측 15~18px).
             if 0 <= nx < W and ((nx, y) in mask or px[nx, y][3] <= 128):
                 fpx[nx, y] = px[x, y]
-        # 불꽃 전체는 밝기로 맥동시킨다 — 기하가 안 변하니 구멍이 날 수 없다
+        # 밝기 맥동을 강화(7%→14%)하고 세로 위상차를 줘 아래→위로 흐르는 일렁임을 만든다.
+        # 이게 없으면 하단 불꽃이 완전히 고정돼 보여 '아래는 안 깜빡'이라는 인상을 준다(대표 지적).
         for (x, y) in mask:
             p = fpx[x, y]
             if p[3] > 128 and is_flame(p):
-                fpx[x, y] = (min(255, int(p[0] * glow)), min(255, int(p[1] * glow)),
-                             min(255, int(p[2] * glow)), p[3])
+                g = 1.0 + 0.14 * math.cos(phase - y * 0.16)
+                fpx[x, y] = (min(255, int(p[0] * g)), min(255, int(p[1] * g)),
+                             min(255, int(p[2] * g)), p[3])
         out.append(fr)
 
     # 접지 그림자를 맨 아래 레이어로 깔고 프레임을 얹는다 (캔버스는 아래로 GROUND_PAD 확장)
