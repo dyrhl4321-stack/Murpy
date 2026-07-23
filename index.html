@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260724002 -->
+<!-- cache-bust: v20260724003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -11576,6 +11576,7 @@ window.mwShowStampResult = function () {
       <button onclick="window._mwOverlayClose()">닫기</button>
     </div>`);
   const box=document.querySelector('#mw-ck-overlay .mw-ck-box'); if (box) box.classList.add('stamp');   // 결과 화면은 크게
+  window._mwKakaoPrep && window._mwKakaoPrep();   // 카톡용 공개 URL 미리 업로드(탭 시 즉시·동기 공유)
 };
 window.mwSaveStamp = async function () {
   // 모바일: dataURL 링크는 '문서 열기'로 새는 브라우저가 많음 → 공유시트(사진 저장 포함) 우선, blob 다운로드 폴백
@@ -11602,30 +11603,39 @@ window.mwShareSheet = async function () {
     showToast('이 브라우저는 공유시트를 지원하지 않아요 · 저장 후 올려주세요');
   } catch(e) { if (e && e.name==='AbortError') return; showToast('공유에 실패했어요'); }
 };
-// 카카오톡: 로컬 파일 첨부가 안 되고 공개 이미지 URL이 필수 → imgBB에 올린 뒤 피드 템플릿으로.
-window.mwShareKakao = async function (btn) {
-  if (!(window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized())) {
-    showToast('카카오 공유를 지금 쓸 수 없어요'); return;
-  }
-  const old = btn && btn.textContent;
+// 카카오 피드 템플릿은 공개 이미지 URL이 필수 → 결과 화면이 뜨는 즉시 백그라운드로 미리 업로드해 둔다.
+// ★이게 없으면 탭 후 업로드(느림) + Kakao.Share가 await 뒤에 호출돼 '사용자 제스처'를 잃고
+//   모바일이 앱 스킴을 막아 카카오가 '스토어(다운로드)'로 폴백한다(대표 지적: 카톡 깔렸는데 스토어로 감).
+window._mwKakaoPrep = function () {
+  window._mwStampUrl = null;
+  const data = window._mwStampData;
+  if (!data) return;
+  (async () => {
+    try {
+      const blob = await (await fetch(data)).blob();
+      const url = await window.uploadImgbb(new File([blob], 'stamp.jpg', { type: 'image/jpeg' }));
+      if (url && window._mwStampData === data) window._mwStampUrl = url;   // 그 사이 다시 찍었으면 무시
+    } catch (e) { console.warn('kakao prep', e); }
+  })();
+};
+// 카카오톡: ★반드시 동기(await 금지)로 호출해야 앱이 열린다. 미리 올려둔 URL을 쓴다.
+window.mwShareKakao = function (btn) {
+  const ok = window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized();
+  // 카카오 SDK 불가 또는 아직 업로드 안 끝남 → 기다리지 말고 시스템 공유시트로 즉시(사진 직접 전송)
+  if (!ok || !window._mwStampUrl) { window.mwShareSheet(); return; }
+  const APP = 'https://dyrhl4321-stack.github.io/Murpy/';
   try {
-    if (btn) { btn.disabled = true; btn.textContent = '준비 중…'; }
-    const blob = await (await fetch(window._mwStampData)).blob();
-    const url = await window.uploadImgbb(new File([blob], 'stamp.jpg', { type:'image/jpeg' }));
-    if (!url) throw new Error('upload fail');
-    const APP = 'https://dyrhl4321-stack.github.io/Murpy/';
     Kakao.Share.sendDefault({
       objectType: 'feed',
       content: {
         title: '오운완 인증!',
         description: 'MURPY 픽셀 카메라로 남긴 오늘의 운동',
-        imageUrl: url, imageWidth: 1080, imageHeight: 1350,
+        imageUrl: window._mwStampUrl, imageWidth: 1080, imageHeight: 1350,
         link: { mobileWebUrl: APP, webUrl: APP },
       },
       buttons: [{ title: '머피 구경하기', link: { mobileWebUrl: APP, webUrl: APP } }],
     });
-  } catch(e) { console.warn('kakao share', e); showToast('카톡 공유에 실패했어요'); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = old || '카카오톡'; } }
+  } catch (e) { console.warn('kakao share', e); window.mwShareSheet(); }
 };
 window.mwSealCheckin = async function (btn) {
   const user = auth.currentUser || window.currentUser; if (!user) return;
