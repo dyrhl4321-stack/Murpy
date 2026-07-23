@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260723016 -->
+<!-- cache-bust: v20260723017 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1996,17 +1996,18 @@ window.ROOM_ITEMS = [
   // w/h는 PNG 실측이어야 한다. 배치 좌표와 z(바닥선)가 이 값을 기준으로 계산된다.
   // flat:true = 밟고 지나가는 것(러그) / wall:true = 벽에 걸린 것 — 둘 다 접지 그림자를 안 그린다.
   // 배치 성격 태그 (스냅 보정용):
-  //   벽 붙임: 러그(flat)·문(wall) 빼고 전부 방 위쪽에 놓으면 벽에 '붙은' 위치로 스냅(_mwWallY).
+  //   벽 붙임(클램프): 러그(flat)·문(wall) 빼고 전부, _mwWallY 위로는 못 올라감 — 자석처럼 당기지
+  //     않고(대표 피드백) 위로 밀다 멈추는 지점 = 딱 붙은 위치. 그 아래는 전부 자유.
   //     기본 = 바닥접지선(_WALL_STAND_BOTTOM=184) - h → 서 있는 가구는 키가 클수록 벽을 많이 덮는다
   //     (옷장·냉장고 y0~8 = 꼭대기까지). wallY = 눕는 가구(침대·덤벨)처럼 몸이 바닥으로 깊은 것만 개별 지정.
-  //   back    = 벽에 등 대는 키 큰 가구 표시. 스냅 발동 범위가 넓다(y<210, 나머지는 바닥이 벽 근처일 때만)
+  //   겹침 금지: 발자국(_mwFootRect, 하단 blockBand 밴드)끼리 겹치면 원위치 (상판 위 소품·러그·문 제외)
   //   surface = 위에 소품을 얹을 수 있는 상판 가구
   //     topDepth = 상판 윗면(자유배치 가능 밴드)의 앞끝 깊이 px(스프라이트 top 기준). 미지정=h*0.42.
   //   prop    = 상판 위에 올라가는 소품. surface 위 topDepth 밴드 안 어디든 자유 배치 + z를 상판보다 위로
   //   sbw = 바닥 접지폭 실측(char/slice_pi_furniture.py --footprint). 그림자 폭 기준.
   //   blockBand = 바닥 발자국 비율(충돌). 미지정=0.30(발밑만). 침대·탁자처럼 통째 장애물은 크게.
-  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112, blockBand:0.82, wallY:32 },
-  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112, blockBand:0.82, wallY:32 },
+  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112, blockBand:0.82, wallY:48 },
+  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112, blockBand:0.82, wallY:48 },
   { id:'pi_bookshelf', name:'책장', src:'char/rooms/pi_bookshelf.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_wardrobe', name:'키큰 수납장', src:'char/rooms/pi_wardrobe.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_cabinet', name:'원목 옷장', src:'char/rooms/pi_cabinet.png?v=1', w:112, h:176, back:true, sbw:112 },
@@ -2046,7 +2047,7 @@ window._SURFACE_TOP = 10;
 // season은 반드시 0으로 채운 'YYYY-MM' 형식('2026-9' 금지) — 이번 달 비교·아카이브 정렬(<)이 모두 문자열 비교라 깨진다
 // w/h는 반드시 PNG 원본 픽셀 크기와 같아야 한다 — 축하 연출의 정수배 확대(mwSeasonCelebrate)가 이 값을 기준으로 계산한다
 window.SEASON_ITEMS = [
-  { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=2', w:208, h:130, wallY:94,
+  { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=2', w:208, h:130, wallY:72,
     season:'2026-10', kind:'open', axis:'feed',
     hint:'헬스장 지박령의 기운이 느껴지는 자에게', title:'헬스장 지박령', cond:{ feed:8 } },
   { id:'s2608_lamp', name:'숲 요정 램프', src:'char/rooms/s2608_lamp.png?v=2', w:56, h:164, sbw:32,
@@ -2216,7 +2217,20 @@ window._reditAdd = function (id) {
   const def = window.mwItemDef(id); if (!def) return;
   const f = window._reditDraft.f;
   if (f.length >= 15) { showToast('가구는 15개까지 놓을 수 있어요'); return; }
-  f.push({ id: id, x: Math.round((768 - def.w) / 2), y: Math.round((768 - def.h) / 2) });
+  const cx = Math.round((768 - def.w) / 2), cy = Math.round((768 - def.h) / 2);
+  const it = { id: id, x: cx, y: cy };
+  f.push(it);
+  // 가운데가 이미 차 있으면 근처 빈 자리를 찾는다(겹침 금지라 겹친 채로 시작하면 못 내려놓는다)
+  if (window._mwOverlaps(it, def, f)) {
+    outer:
+    for (let r = 48; r <= 480; r += 48) {
+      for (const d of [[0, r], [0, -r], [r, 0], [-r, 0], [r, r], [-r, r], [r, -r], [-r, -r]]) {
+        it.x = Math.max(0, Math.min(768 - def.w, cx + d[0]));
+        it.y = Math.max(0, Math.min(768 - def.h, cy + d[1]));
+        if (!window._mwOverlaps(it, def, f)) break outer;
+      }
+    }
+  }
   window._reditSel = f.length - 1; window._reditPaint();
 };
 window._reditRemove = function () {
@@ -2271,15 +2285,15 @@ window._reditBind = function () {
   const dragEnd = function () {
     if (drag) {
       const it = window._reditDraft.f[drag.idx];
-      if (it) { window._reditSnap(it); window._reditPaint(); }   // 놓는 순간 스냅 보정
+      if (it) { window._reditSnap(it, { x: drag.ox, y: drag.oy }); window._reditPaint(); }   // 놓는 순간 스냅 보정(겹치면 원위치)
     }
     drag = null;
   };
   room.addEventListener('pointerup', dragEnd);
   room.addEventListener('pointercancel', dragEnd);
 };
-// 스냅 보정: 자유 드래그를 존중하되, 소품은 상판 위에 얹고, 나머지는 벽 근처에 놓으면 '붙은' 위치로.
-window._reditSnap = function (it) {
+// 스냅 보정: 자유 드래그를 존중하되, 소품은 상판 위에 얹고, 벽 위로는 한계까지만, 겹치면 되돌림.
+window._reditSnap = function (it, prev) {
   const def = window.mwItemDef(it.id); if (!def) return;
   // 1) 소품: 상판 위 자유 배치. 뒤끝(맨 위)~앞끝(topDepth) 밴드 안에서 사용자가 놓은 세로위치를 존중하고
   //    밴드 밖으로만 클램프한다(예전엔 무조건 뒤끝 한 줄=끄트머리에만 붙었다). 얹혔으면 벽 스냅은 건너뜀.
@@ -2304,17 +2318,53 @@ window._reditSnap = function (it) {
       onSurface = true;
     }
   }
-  // 2) 벽 붙임: 벽 근처에 놓으면 오브젝트별 '붙은' 위치(_mwWallY)로. 아래쪽 의도면 건드리지 않는다.
-  //    back(키 큰 가구)은 넓게(y<210), 나머지는 바닥이 벽 근처(접지선+안쪽 2타일)일 때만 발동 —
-  //    작은 가구를 방 중상단에 두려는 것까지 벽으로 끌고 가지 않기 위해.
+  // 2) 벽 붙임 한계(클램프): 자석처럼 끌어당기지 않는다(대표 피드백: 자석 범위가 너무 컸다).
+  //    오브젝트별 '최대로 붙는' 높이(_mwWallY) 위로만 못 올라가게 막고, 그 아래는 전부 자유 배치 —
+  //    벽에 붙이고 싶으면 위로 밀어올리다 멈추는 지점이 곧 딱 붙은 위치.
   if (!onSurface) {
     const wy = window._mwWallY(def);
-    const near = def.back ? (it.y < 210) : (it.y + def.h < window._WALL_STAND_BOTTOM + 96);
-    if (wy != null && near) it.y = wy;
+    if (wy != null && it.y < wy) it.y = wy;
   }
   // 경계 클램프 (벽 정렬로 음수가 되거나 스냅이 밀어냈을 때)
   it.x = Math.max(0, Math.min(768 - def.w, it.x));
   it.y = Math.max(0, Math.min(768 - def.h, it.y));
+  // 3) 겹침 금지(상판 위 소품·러그·문 제외): 겹치는 자리면 드래그 시작 위치로 되돌린다
+  if (prev && window._mwOverlaps(it, def, window._reditDraft.f)) {
+    it.x = prev.x; it.y = prev.y;
+    showToast('가구가 겹쳐요');
+  }
+};
+// 가구 발자국(바닥 점유) 사각형 — 겹침 판정용. 캐릭터 충돌(_mwComputeBlocked)과 같은 밴드 개념.
+window._mwFootRect = function (it, def) {
+  const band = def.blockBand || 0.30;
+  return { l: it.x + def.w * 0.10, r: it.x + def.w * 0.90,
+           t: it.y + def.h - def.h * band, b: it.y + def.h };
+};
+// it가 상판 위에 얹힌 소품인가 (겹침 판정 제외 — "책상 위 오브젝트들 제외")
+window._mwOnSurface = function (it, def, list) {
+  if (!def.prop) return false;
+  const cx = it.x + def.w / 2, bottom = it.y + def.h;
+  return list.some(o => {
+    if (o === it) return false;
+    const od = window.mwItemDef(o.id);
+    if (!od || !od.surface) return false;
+    if (cx < o.x || cx > o.x + od.w) return false;
+    return bottom >= o.y && bottom <= o.y + (od.topDepth != null ? od.topDepth : Math.round(od.h * 0.42)) + 4;
+  });
+};
+// 겹침 검사: it를 지금 자리에 두면 다른 가구 발자국과 겹치는가
+window._mwOverlaps = function (it, def, list) {
+  if (def.flat || def.wall) return false;                 // 러그는 밟고, 문은 벽이라 겹침 무관
+  if (window._mwOnSurface(it, def, list)) return false;
+  const a = window._mwFootRect(it, def);
+  return list.some(o => {
+    if (o === it) return false;
+    const od = window.mwItemDef(o.id);
+    if (!od || od.flat || od.wall) return false;
+    if (window._mwOnSurface(o, od, list)) return false;
+    const b = window._mwFootRect(o, od);
+    return a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+  });
 };
 window._reditSave = async function () {
   const data = { f: window._reditDraft.f };
