@@ -9,10 +9,13 @@
   APNG는 파일만 바꾸면 되므로 앱 코드를 한 줄도 건드리지 않는다. 크롬·사파리·파이어폭스
   모두 지원하고 image-rendering:pixelated도 그대로 먹는다.
 
-어떻게 흔드는가
-  불꽃 픽셀만 골라 행 단위로 좌우로 민다. 이동량은 항상 아트픽셀(2유닛)의 배수여야
-  픽셀 격자가 깨지지 않는다. 진폭은 위로 갈수록 크고 밑동에서 0이 되게 감쇠시킨다 —
-  밑동까지 흔들면 장작과 맞닿은 자리에 틈이 생긴다.
+어떻게 살아있게 하는가 (★좌우 전단 폐기, 7-23)
+  행마다 좌우로 미는 방식(전단)은 '움직이는 행'과 '안 움직이는 밑동' 사이에 아트픽셀 계단
+  경계 = 밑동과 윗동을 가르는 '한 선'을 만든다(대표 반복 지적, 이게 문제의 정체였다). 그래서
+  좌우 흔들림을 아예 버린다. 대신:
+    (1) 불꽃 '끝'을 위(투명 공간)로만 날름거리게 한다 — 투명한 곳으로만 자라니 전단선·구멍이 없고
+        밑동은 손대지 않는다(나뉠 선이 없다).
+    (2) 전체를 은은히 밝혔다 되돌리는 '숨쉬기'만 준다(어두워지지 않음·세로 파동 없음).
 
   불꽃과 장작은 둘 다 따뜻한 색이라 색만으로는 못 가른다. 불꽃은 장작 위에 있으므로
   FLAME_MAX_Y 위쪽만 대상으로 삼는다.
@@ -28,7 +31,7 @@ ART = 2            # 아트픽셀 크기(유닛). 이동량은 이 배수여야 
 # 6시 방향 세로 장작에 1픽셀 턱이 생겼다 사라지며 들썩거린다(대표 실앱 지적, 7-22).
 # 행 프로파일상 y>=38부터 불꽃 x범위가 급격히 넓어진다 = 장작이 시작되는 지점.
 FLAME_MAX_Y = 26
-AMP = 4            # 꼭대기 최대 진폭(유닛) = 아트픽셀 2칸
+TIP = 2            # 불꽃 끝 날름거림 최대 높이(아트픽셀). 위(투명)로만 자란다
 FRAMES = 6         # 부드러운 순환 (4는 뚝뚝 끊겨 보였다)
 DURATION = 130     # 프레임당 ms
 
@@ -79,49 +82,43 @@ def build_frames(im, frames=FRAMES):
                     if p[3] > 128 and (p[0] + p[1] + p[2]) < 240:   # 어두운 것 = 테두리
                         mask.add((nx, ny))
 
-    # ★움직여도 안전한 픽셀만 고른다: 8이웃이 전부 마스크이거나 투명인 것.
-    #   돌·장작에 맞닿은 픽셀을 옮기면 원래 자리가 투명해지면서 이웃에 구멍이 뚫린다(실측 90px).
-    safe = set()
-    for (x, y) in mask:
-        ok = True
-        for dy in (-1, 0, 1):
-            for dx2 in (-1, 0, 1):
-                nx, ny = x + dx2, y + dy
-                if 0 <= nx < W and 0 <= ny < H and (nx, ny) not in mask and px[nx, ny][3] > 128:
-                    ok = False
-        if ok:
-            safe.add((x, y))
-
-    base = im.copy()
-    bpx = base.load()
-    for x, y in safe:
-        bpx[x, y] = (0, 0, 0, 0)
+    # 각 열의 불꽃 꼭대기 y. 좌우 전단은 밑동↔윗동을 가르는 '한 선'을 만드니 안 쓴다(대표 지적).
+    #  대신 불꽃 끝만 위(투명)로 날름거리게 한다 → 투명한 곳으로만 자라 전단선·구멍이 없다.
+    cols = {}
+    for (x, y) in flame:
+        if x not in cols or y < cols[x]:
+            cols[x] = y
+    xs = sorted(cols)
+    xmid = (xs[0] + xs[-1]) / 2.0
+    span = max(1.0, (xs[-1] - xs[0]) / 2.0)
 
     out = []
     for f in range(frames):
-        fr = base.copy()
+        fr = im.copy()
         fpx = fr.load()
-        # 프레임마다 하나의 기울기. 행에 따라 진동시키면(sin(y·k)) 전단이 생겨 불꽃이 찢어진다.
         phase = 2 * math.pi * f / frames
-        lean = math.sin(phase)
-        for (x, y) in safe:
-            # 부드러운 감쇠(제곱근). 선형이면 흔들리는 위와 고정된 아래가 뚝 갈려 '반으로 나뉜' 느낌.
-            taper = max(0.0, 1.0 - (y / float(FLAME_MAX_Y))) ** 0.6
-            dx = int(round(AMP * taper * lean / ART)) * ART      # 아트픽셀 격자 유지
-            nx = x + dx
-            # 목적지가 원래 돌·장작이면 덮지 않는다. 안 막으면 불꽃이 돌 위로 번진다(실측 15~18px).
-            if 0 <= nx < W and ((nx, y) in mask or px[nx, y][3] <= 128):
-                fpx[nx, y] = px[x, y]
-        # 밝기 맥동. ★어두워지면(g<1) 그게 '검은 그림자 밴드'로 보이고, 세로 위상차를 주면 그 밴드가
-        # 위→아래로 훑고 지나가 더 이상해진다(대표 지적 7-23, 이 조합이 이전 시도의 실패 원인).
-        # 그래서: (1) g는 항상 ≥1 — 절대 어두워지지 않고 '밝아졌다 원래로'만 (2) 세로 위상차 없음 —
-        # 전체 불꽃이 같은 위상으로 은은히 숨쉰다(훑는 파동 금지). 밑동만 진폭을 살짝 더 줘 덜 죽어 보이게.
+
+        # 1) 불꽃 끝 날름거림(세로). 중심 열일수록 크게·가장자리 0, 열마다 위상이 달라 자연스레 일렁인다.
+        for x, ty in cols.items():
+            edge = 1.0 - abs(x - xmid) / span                    # 중심 1 → 가장자리 0(가장자리는 안 튄다)
+            if edge <= 0:
+                continue
+            n = 0.5 + 0.32 * math.sin(phase + x * 0.55) + 0.18 * math.sin(2 * phase + x * 0.31)
+            add = int(round(max(0.0, min(1.0, n)) * edge * TIP)) * ART   # 0~TIP*ART 유닛, 아트픽셀 격자
+            src = px[x, ty]                                      # 그 열 끝색을 위로 복제
+            for k in range(1, add + 1):
+                yy = ty - k
+                if yy < 0:
+                    break
+                if px[x, yy][3] <= 128:                          # 원래 투명한 곳에만 → 구멍·덮어쓰기 없음
+                    fpx[x, yy] = src
+
+        # 2) 은은한 밝기 숨쉬기. ★어두워지면(g<1) '검은 그림자 밴드'로 보이고 세로 위상차를 주면 그게
+        #    위→아래로 훑어 더 이상하다(대표 지적) → g는 항상 ≥1, 전체 같은 위상, 파동 없음.
         for (x, y) in mask:
             p = fpx[x, y]
             if p[3] > 128 and is_flame(p):
-                yr = y / float(FLAME_MAX_Y)                     # 0=꼭대기, 1=밑동
-                amp = 0.10 + 0.12 * yr                          # 상단 0.10 → 밑동 0.22 (은은하게)
-                g = 1.0 + amp * (0.5 + 0.5 * math.cos(phase))   # 0.5+0.5cos ∈ [0,1] → g는 항상 ≥1
+                g = 1.0 + 0.12 * (0.5 + 0.5 * math.cos(phase))
                 fpx[x, y] = (min(255, int(p[0] * g)), min(255, int(p[1] * g)),
                              min(255, int(p[2] * g)), p[3])
         out.append(fr)
@@ -133,7 +130,7 @@ def build_frames(im, frames=FRAMES):
         canvas = shadow.copy()
         canvas.alpha_composite(fr, (0, 0))
         final.append(canvas)
-    return final, len(mask), len(safe)
+    return final, len(mask), len(cols)
 
 
 def main():
@@ -145,8 +142,8 @@ def main():
     args = ap.parse_args()
 
     im = Image.open(args.src).convert('RGBA')
-    frames, n, nsafe = build_frames(im, args.frames)
-    print(f'원본 {im.size}, 불꽃+테두리 {n}개, 그중 이동 가능 {nsafe}개, 프레임 {len(frames)}장')
+    frames, n, ncols = build_frames(im, args.frames)
+    print(f'원본 {im.size}, 불꽃+테두리 {n}개, 혀 낼 열 {ncols}개, 프레임 {len(frames)}장')
 
     dst = args.out or args.src
     # disposal=1(배경 복원) + blend=0(덮어쓰기): 매 프레임을 통짜로 교체한다.
