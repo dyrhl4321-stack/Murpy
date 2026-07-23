@@ -79,6 +79,8 @@ def main():
     ap.add_argument('--out', default=ROOMS)
     ap.add_argument('--contact', default=None, help='이름·크기 확인용 대조표')
     ap.add_argument('--catalog', action='store_true', help='ROOM_ITEMS 코드 출력')
+    ap.add_argument('--footprint', action='store_true',
+                    help='각 가구 바닥 접지폭(sbw) 측정 출력 — 접지 그림자 폭 기준')
     args = ap.parse_args()
 
     sheet = Image.open(args.sheet).convert('RGBA')
@@ -106,6 +108,15 @@ def main():
         for name, label, w, h, extra, _ in made:
             flags = ''.join(f", {k}:true" for k in extra)
             print(f"  {{ id:'{name}', name:'{label}', src:'char/rooms/{name}.png?v=1', w:{w}, h:{h}{flags} }},")
+
+    if args.footprint:
+        # 바닥 접지폭 = 하단 12% 구간의 불투명 픽셀 가로 범위. 접지 그림자를 이 폭에 맞춘다.
+        print('\n--- sbw (바닥 접지폭) ---')
+        for name, label, w, h, extra, im in made:
+            px = im.load()
+            band = max(4, int(h * 0.12))
+            xs = [x for y in range(h - band, h) for x in range(w) if px[x, y][3] > 0]
+            print(f"  {name:18s} sbw:{max(xs) - min(xs) + 1}" if xs else f"  {name}: 없음")
 
     if args.contact:
         # 캐릭터(158유닛)를 맨 앞에 세워 비율을 눈으로 확인한다
