@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260723022 -->
+<!-- cache-bust: v20260723023 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -11530,15 +11530,19 @@ window.mwCompose = async function (photo) {
   window.mwShowStampResult();
 };
 window.mwShowStampResult = function () {
-  const t = window._mwCkTarget;   // null = 자유 촬영 → 도장 대신 저장이 메인
+  const t = window._mwCkTarget;   // null = 자유 촬영 → 도장 저장 없음, 공유가 메인
+  // SNS 공유 3버튼(계획 ④): 인스타=시스템 공유시트(웹은 인스타 딥링크 불가) / 카톡=Kakao.Share / 저장
   window._mwOverlay(`
     <div class="mw-polaroid"><img src="${window._mwStampData}" style="width:100%;display:block"></div>
-    ${t ? `<button class="mw-btn" style="width:100%;margin-top:16px" onclick="window.mwSealCheckin(this)">도장 찍기</button>`
-        : `<button class="mw-btn" style="width:100%;margin-top:16px" onclick="window.mwSaveStamp()">사진 저장</button>`}
+    ${t ? `<button class="mw-btn" style="width:100%;margin-top:16px" onclick="window.mwSealCheckin(this)">도장 찍기</button>` : ''}
+    <div style="display:flex;gap:8px;margin-top:${t ? '10px' : '16px'}">
+      <button class="mw-btn" style="flex:1;padding:12px 4px;font-size:12px" onclick="window.mwShareSheet()">인스타그램</button>
+      <button class="mw-btn" style="flex:1;padding:12px 4px;font-size:12px;background:#FEE500;color:#191919" onclick="window.mwShareKakao(this)">카카오톡</button>
+      <button class="mw-btn" style="flex:1;padding:12px 4px;font-size:12px;background:#1b2233;color:#cfd6e6" onclick="window.mwSaveStamp()">저장</button>
+    </div>
     <div style="display:flex;gap:18px;justify-content:center;margin-top:12px">
       <button onclick="window.mwOpenCam()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">다시 찍기</button>
-      ${t ? `<button onclick="window.mwSaveStamp()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">사진 저장</button>`
-          : `<button onclick="window._mwOverlayClose()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">닫기</button>`}
+      <button onclick="window._mwOverlayClose()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;font-family:inherit">닫기</button>
     </div>`);
   const box=document.querySelector('#mw-ck-overlay .mw-ck-box'); if (box) box.classList.add('stamp');   // 결과 화면은 크게
 };
@@ -11554,6 +11558,43 @@ window.mwSaveStamp = async function () {
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
     showToast('사진을 저장했어요');
   } catch(e) { if (e && e.name==='AbortError') return; showToast('저장이 안 되면 사진을 길게 눌러 저장해 주세요'); }
+};
+// 인스타그램: 웹에선 딥링크로 스토리 직행이 불가 → 시스템 공유시트(파일)를 열어 인스타를 고르게 한다.
+window.mwShareSheet = async function () {
+  try {
+    const blob = await (await fetch(window._mwStampData)).blob();
+    const file = new File([blob], `murpy_${mwTodayKey()}.jpg`, { type:'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files:[file] })) {
+      await navigator.share({ files:[file] });
+      return;
+    }
+    showToast('이 브라우저는 공유시트를 지원하지 않아요 · 저장 후 올려주세요');
+  } catch(e) { if (e && e.name==='AbortError') return; showToast('공유에 실패했어요'); }
+};
+// 카카오톡: 로컬 파일 첨부가 안 되고 공개 이미지 URL이 필수 → imgBB에 올린 뒤 피드 템플릿으로.
+window.mwShareKakao = async function (btn) {
+  if (!(window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized())) {
+    showToast('카카오 공유를 지금 쓸 수 없어요'); return;
+  }
+  const old = btn && btn.textContent;
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '준비 중…'; }
+    const blob = await (await fetch(window._mwStampData)).blob();
+    const url = await window.uploadImgbb(new File([blob], 'stamp.jpg', { type:'image/jpeg' }));
+    if (!url) throw new Error('upload fail');
+    const APP = 'https://dyrhl4321-stack.github.io/Murpy/';
+    Kakao.Share.sendDefault({
+      objectType: 'feed',
+      content: {
+        title: '오운완 인증!',
+        description: 'MURPY 픽셀 카메라로 남긴 오늘의 운동',
+        imageUrl: url, imageWidth: 1080, imageHeight: 1350,
+        link: { mobileWebUrl: APP, webUrl: APP },
+      },
+      buttons: [{ title: '머피 구경하기', link: { mobileWebUrl: APP, webUrl: APP } }],
+    });
+  } catch(e) { console.warn('kakao share', e); showToast('카톡 공유에 실패했어요'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = old || '카카오톡'; } }
 };
 window.mwSealCheckin = async function (btn) {
   const user = auth.currentUser || window.currentUser; if (!user) return;
