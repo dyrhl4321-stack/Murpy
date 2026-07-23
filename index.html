@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260723004 -->
+<!-- cache-bust: v20260723005 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2041,7 +2041,7 @@ window.SEASON_ITEMS = [
     season:'2026-10', kind:'open', axis:'bamboo',
     hint:'숲의 요정들에게만 배달되는 선물입니다', title:'숲의 요정', cond:{ bamboo:5 } },
   { id:'s2608_campfire', name:'스쿼드 캠프파이어', src:'char/rooms/s2608_campfire.png?v=4', w:152, h:104,
-    season:'2026-10', kind:'open', axis:'squad', noShadow:true,
+    season:'2026-10', kind:'open', axis:'squad', sbw:132, shThin:true, shAlpha:0.24,
     hint:'혼자 온 자는 받을 수 없습니다', title:'스쿼드의 심장', cond:{ squad:2 } },
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=2', w:94, h:104,
     season:'2026-10', kind:'hidden', axis:'',
@@ -2085,16 +2085,18 @@ window._myRoom = null;   // { f:[{id,x,y}] } — users/{uid}.room
 //   방사 그라데이션(중앙만 진하고 원형)은 떠 있는 공처럼 보여 네모난 가구와 안 맞는다.
 // 러그(flat)와 벽걸이(wall)는 제외: 바닥에 닿아 있지 않다.
 window._mwShadowHtml = function (x, y, def, z, idx) {
-  // noShadow = 자기 바닥이 이미 넓게 접지된 오브젝트(캠프파이어 돌무더기 등).
-  // 접지 그림자를 더 그리면 사각 그림자가 밑에 깔려 어색하다.
+  // noShadow = 접지 그림자를 완전히 생략(벽걸이 등).
   if (def.flat || def.wall || def.noShadow) return '';
   const bw = (def.sbw || def.w * 0.82) * 1.04;    // 실측 바닥폭 + 살짝 퍼짐
-  const sh = Math.max(8, Math.min(26, bw * 0.19));
+  // shThin: 이미 자기 바닥이 넓게 깔린 오브젝트(캠프파이어 돌무더기)는 얇고 연하게 —
+  //   돌 자체가 접지감을 주므로 진한 타원을 더 얹으면 냉장고처럼 뜬금없어진다(대표 피드백).
+  const a = def.shAlpha || 0.40;
+  const sh = Math.max(6, Math.min(26, bw * (def.shThin ? 0.11 : 0.19)));
   const sx = x + (def.w - bw) / 2;                // 바닥 중심(실측상 전부 0.5)에 정렬
   const sy = y + def.h - sh * 0.72;               // 그림자 상단이 밑변에 살짝 걸침
   return `<div data-sdx="${idx}" style="position:absolute;left:${(sx/7.68).toFixed(2)}%;top:${(sy/7.68).toFixed(2)}%;`
     + `width:${(bw/7.68).toFixed(2)}%;height:${(sh/7.68).toFixed(2)}%;z-index:${z - 1};pointer-events:none;`
-    + `background:radial-gradient(ellipse at center,rgba(0,0,0,.40) 0%,rgba(0,0,0,.40) 48%,rgba(0,0,0,.14) 78%,rgba(0,0,0,0) 100%)"></div>`;
+    + `background:radial-gradient(ellipse at center,rgba(0,0,0,${a}) 0%,rgba(0,0,0,${a}) 48%,rgba(0,0,0,${(a*0.35).toFixed(2)}) 78%,rgba(0,0,0,0) 100%)"></div>`;
 };
 // 아이템별 z를 계산한다. 스택(소품이 상판 위)은 저장 데이터를 안 건드리고 렌더 시점에 판정한다 —
 // 좌표만 저장하고 규칙만 바꿔도 기존 방이 안 깨지게(설계서 "렌더 시점 계산").
@@ -2246,7 +2248,8 @@ window._reditBind = function () {
     // (_mwShadowHtml과 같은 공식을 써야 폭이 어긋나지 않는다)
     const sd = room.querySelector('div[data-sdx="' + drag.idx + '"]');
     if (sd) {
-      const bw = (def.sbw || def.w * 0.82) * 1.04, sh = Math.max(8, Math.min(26, bw * 0.19));
+      const bw = (def.sbw || def.w * 0.82) * 1.04;
+      const sh = Math.max(6, Math.min(26, bw * (def.shThin ? 0.11 : 0.19)));
       sd.style.left = ((it.x + (def.w - bw) / 2) / 7.68).toFixed(2) + '%';
       sd.style.top = ((it.y + def.h - sh * 0.72) / 7.68).toFixed(2) + '%';
       sd.style.zIndex = z - 1;
