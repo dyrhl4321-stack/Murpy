@@ -7614,6 +7614,19 @@ window.ensureCreditsInit = async (uid) => {
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    // ★카탈로그에서 사라진 옛 가구를 불러오는 즉시 걷어낸다.
+    // 렌더는 정의 없는 id를 건너뛰지만 배열에는 남아 15개 상한을 잡아먹는다
+    // ("방은 비었는데 더 못 놓는" 상태). 편집기를 열 때만 정리하면 늦다 — 여기서 처리해야
+    // 카탈로그를 바꾼 다음 접속만 해도 스스로 낫는다.
+    if (window._myRoom && window.mwItemDef) {
+      const _live = window._myRoom.f.filter(it => window.mwItemDef(it.id));
+      if (_live.length !== window._myRoom.f.length) {
+        const _n = window._myRoom.f.length - _live.length;
+        window._myRoom = { f: _live };
+        try { await updateDoc(ref, { room: window._myRoom }); } catch (e) { console.warn('room prune', e); }
+        console.log('[room] 카탈로그에 없는 옛 가구 ' + _n + '개 정리');
+      }
+    }
     // 월간 한정 오브젝트 상태
     if (window.mwSeasonKey) {
       const _season = window.mwSeasonKey();
