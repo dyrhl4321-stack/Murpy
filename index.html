@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260723015 -->
+<!-- cache-bust: v20260723016 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1996,16 +1996,17 @@ window.ROOM_ITEMS = [
   // w/h는 PNG 실측이어야 한다. 배치 좌표와 z(바닥선)가 이 값을 기준으로 계산된다.
   // flat:true = 밟고 지나가는 것(러그) / wall:true = 벽에 걸린 것 — 둘 다 접지 그림자를 안 그린다.
   // 배치 성격 태그 (스냅 보정용):
-  //   back    = 벽에 등 대는 세로 가구. 방 위쪽에 놓으면 벽 라인에 자동 정렬
-  //     wallY = 벽 정렬 시 스프라이트 상단 y(작을수록 벽지 위로 더 침범=벽에 붙은 느낌). 미지정=_WALL_BACK_Y(24).
-  //             기본값이 벽지를 확 침범(세로 가구 전부 벽에 딱 붙음). 침대만 눕는 가구라 덜 침범(64) 예외.
+  //   벽 붙임: 러그(flat)·문(wall) 빼고 전부 방 위쪽에 놓으면 벽에 '붙은' 위치로 스냅(_mwWallY).
+  //     기본 = 바닥접지선(_WALL_STAND_BOTTOM=184) - h → 서 있는 가구는 키가 클수록 벽을 많이 덮는다
+  //     (옷장·냉장고 y0~8 = 꼭대기까지). wallY = 눕는 가구(침대·덤벨)처럼 몸이 바닥으로 깊은 것만 개별 지정.
+  //   back    = 벽에 등 대는 키 큰 가구 표시. 스냅 발동 범위가 넓다(y<210, 나머지는 바닥이 벽 근처일 때만)
   //   surface = 위에 소품을 얹을 수 있는 상판 가구
   //     topDepth = 상판 윗면(자유배치 가능 밴드)의 앞끝 깊이 px(스프라이트 top 기준). 미지정=h*0.42.
   //   prop    = 상판 위에 올라가는 소품. surface 위 topDepth 밴드 안 어디든 자유 배치 + z를 상판보다 위로
   //   sbw = 바닥 접지폭 실측(char/slice_pi_furniture.py --footprint). 그림자 폭 기준.
   //   blockBand = 바닥 발자국 비율(충돌). 미지정=0.30(발밑만). 침대·탁자처럼 통째 장애물은 크게.
-  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112, blockBand:0.82, wallY:64 },
-  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112, blockBand:0.82, wallY:64 },
+  { id:'pi_bed_wood', name:'원목 침대', src:'char/rooms/pi_bed_wood.png?v=1', w:112, h:184, back:true, sbw:112, blockBand:0.82, wallY:32 },
+  { id:'pi_bed_pink', name:'핑크 침대', src:'char/rooms/pi_bed_pink.png?v=1', w:112, h:180, back:true, sbw:112, blockBand:0.82, wallY:32 },
   { id:'pi_bookshelf', name:'책장', src:'char/rooms/pi_bookshelf.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_wardrobe', name:'키큰 수납장', src:'char/rooms/pi_wardrobe.png?v=1', w:96, h:184, back:true, sbw:96 },
   { id:'pi_cabinet', name:'원목 옷장', src:'char/rooms/pi_cabinet.png?v=1', w:112, h:176, back:true, sbw:112 },
@@ -2026,8 +2027,15 @@ window.ROOM_ITEMS = [
   { id:'pi_fridge', name:'냉장고', src:'char/rooms/pi_fridge.png?v=1', w:112, h:184, back:true, sbw:112 },
   { id:'pi_fridge_white', name:'화이트 냉장고', src:'char/rooms/pi_fridge_white.png?v=1', w:112, h:184, back:true, sbw:112 },
 ];
-// 벽 기댐 가구가 자동 정렬될 상단 y (768 좌표계). 확 위로 붙여 벽지(0~144)를 대부분 덮음 = 벽에 딱 붙은 느낌(대표 지시).
-window._WALL_BACK_Y = 24;
+// 벽에 붙은 가구의 바닥 접지선 (768 좌표계) = 벽 밑(144) + 40. 발이 벽 앞 바닥을 살짝 덮는 위치.
+window._WALL_STAND_BOTTOM = 184;
+// 오브젝트별 벽 붙임 y. 서 있는 가구 = 접지선 - 키(키 클수록 벽을 많이 덮음, 옷장·냉장고는 꼭대기까지),
+// 눕는 가구(침대·덤벨)는 몸이 바닥으로 깊어 wallY 개별 지정. 러그·문(이미 벽)은 해당 없음.
+window._mwWallY = function (def) {
+  if (def.flat || def.wall) return null;
+  if (def.wallY != null) return def.wallY;
+  return Math.max(0, window._WALL_STAND_BOTTOM - def.h);
+};
 // 상판 윗면 오프셋. 소품 바닥이 상판 이 지점에 얹힌다(상판은 스프라이트 맨 위 y 0~4, 실측).
 window._SURFACE_TOP = 10;
 // ===== 월간 한정 오브젝트 =====
@@ -2038,7 +2046,7 @@ window._SURFACE_TOP = 10;
 // season은 반드시 0으로 채운 'YYYY-MM' 형식('2026-9' 금지) — 이번 달 비교·아카이브 정렬(<)이 모두 문자열 비교라 깨진다
 // w/h는 반드시 PNG 원본 픽셀 크기와 같아야 한다 — 축하 연출의 정수배 확대(mwSeasonCelebrate)가 이 값을 기준으로 계산한다
 window.SEASON_ITEMS = [
-  { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=2', w:208, h:130,
+  { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=2', w:208, h:130, wallY:94,
     season:'2026-10', kind:'open', axis:'feed',
     hint:'헬스장 지박령의 기운이 느껴지는 자에게', title:'헬스장 지박령', cond:{ feed:8 } },
   { id:'s2608_lamp', name:'숲 요정 램프', src:'char/rooms/s2608_lamp.png?v=2', w:56, h:164, sbw:32,
@@ -2270,16 +2278,12 @@ window._reditBind = function () {
   room.addEventListener('pointerup', dragEnd);
   room.addEventListener('pointercancel', dragEnd);
 };
-// 스냅 보정: 자유 드래그를 존중하되, 벽 기댐 가구는 벽 라인에, 소품은 상판 위에 얹는다.
+// 스냅 보정: 자유 드래그를 존중하되, 소품은 상판 위에 얹고, 나머지는 벽 근처에 놓으면 '붙은' 위치로.
 window._reditSnap = function (it) {
   const def = window.mwItemDef(it.id); if (!def) return;
-  // 1) 벽 기댐: 방 위쪽(상단 y<210)에 놓으면 벽 라인에 정렬. 아래쪽에 두려는 의도면 건드리지 않는다.
-  //    wallY가 작을수록 벽지 위로 더 침범 → '벽에 붙은' 느낌(침대·냉장고). 미지정은 _WALL_BACK_Y.
-  if (def.back && it.y < 210) {
-    it.y = (def.wallY != null) ? def.wallY : window._WALL_BACK_Y;
-  }
-  // 2) 소품: 상판 위 자유 배치. 뒤끝(맨 위)~앞끝(topDepth) 밴드 안에서 사용자가 놓은 세로위치를 존중하고
-  //    밴드 밖으로만 클램프한다(예전엔 무조건 뒤끝 한 줄=끄트머리에만 붙었다).
+  // 1) 소품: 상판 위 자유 배치. 뒤끝(맨 위)~앞끝(topDepth) 밴드 안에서 사용자가 놓은 세로위치를 존중하고
+  //    밴드 밖으로만 클램프한다(예전엔 무조건 뒤끝 한 줄=끄트머리에만 붙었다). 얹혔으면 벽 스냅은 건너뜀.
+  let onSurface = false;
   if (def.prop) {
     const cx = it.x + def.w / 2;
     let best = null, bestTop = 1e9;
@@ -2297,7 +2301,16 @@ window._reditSnap = function (it) {
       const bottom = Math.max(backB, Math.min(frontB, it.y + def.h));       // 놓은 위치를 상판 윗면 밴드로만 클램프
       it.y = bottom - def.h;
       it.x = Math.max(best.x, Math.min(best.x + bd.w - def.w, it.x));        // 상판 밖으로 안 나가게
+      onSurface = true;
     }
+  }
+  // 2) 벽 붙임: 벽 근처에 놓으면 오브젝트별 '붙은' 위치(_mwWallY)로. 아래쪽 의도면 건드리지 않는다.
+  //    back(키 큰 가구)은 넓게(y<210), 나머지는 바닥이 벽 근처(접지선+안쪽 2타일)일 때만 발동 —
+  //    작은 가구를 방 중상단에 두려는 것까지 벽으로 끌고 가지 않기 위해.
+  if (!onSurface) {
+    const wy = window._mwWallY(def);
+    const near = def.back ? (it.y < 210) : (it.y + def.h < window._WALL_STAND_BOTTOM + 96);
+    if (wy != null && near) it.y = wy;
   }
   // 경계 클램프 (벽 정렬로 음수가 되거나 스냅이 밀어냈을 때)
   it.x = Math.max(0, Math.min(768 - def.w, it.x));
