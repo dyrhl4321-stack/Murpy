@@ -51,15 +51,23 @@ ITEMS = [
 ROOMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rooms')
 
 
+# ★그림자 임계값. Pixel Interiors는 접지 그림자를 RGB(47,47,46) alpha 131 단일값으로
+# 구워 넣었다(실측: 반투명 픽셀이 전부 alpha 131 하나뿐 = 안티에일리어싱 없음).
+# 임계값 128로 이진화하면 131>=128이라 그림자가 불투명 회색 얼룩으로 굳어 가구 아래에 남는다
+# (LimeZu 때와 같은 문제, 대표 지적 7-23). 200으로 올리면 그림자(131)만 투명해지고
+# 본체(alpha 255)는 그대로 살아, 우리 CSS 접지 그림자(_mwShadowHtml)로 통일된다.
+SHADOW_CUT = 200
+
+
 def solid_bbox(im):
-    """알파 128 이상만 내용으로 본다. 잔여 반투명 픽셀에 bbox가 끌려가지 않게."""
+    """본체(alpha >= SHADOW_CUT)만 내용으로 본다. 구워진 그림자에 bbox가 끌려가지 않게."""
     W, H = im.size
     a = im.getchannel('A').tobytes()
     x0, y0, x1, y1 = W, H, -1, -1
     for y in range(H):
         row = y * W
         for x in range(W):
-            if a[row + x] >= 128:
+            if a[row + x] >= SHADOW_CUT:
                 x0 = min(x0, x); x1 = max(x1, x)
                 y0 = min(y0, y); y1 = max(y1, y)
     return None if x1 < 0 else (x0, y0, x1 + 1, y1 + 1)
@@ -84,9 +92,9 @@ def main():
             print(f'  건너뜀 {name}: 내용 없음')
             continue
         crop = crop.crop(bb)                      # 여백 제거 — 배치 좌표가 실제 형태와 어긋나지 않게
-        # 알파 이진화: 시트에 반투명 가장자리가 있으면 4배 NEAREST 후에도 남아 halo가 된다
+        # 알파 이진화(임계 SHADOW_CUT). 구워진 그림자(alpha 131)를 투명으로 날리고 본체만 남긴다.
         r, g, b, a = crop.split()
-        crop = Image.merge('RGBA', (r, g, b, a.point(lambda v: 255 if v >= 128 else 0)))
+        crop = Image.merge('RGBA', (r, g, b, a.point(lambda v: 255 if v >= SHADOW_CUT else 0)))
         w, h = crop.size
         big = crop.resize((w * SCALE, h * SCALE), Image.NEAREST)
         big.save(os.path.join(args.out, name + '.png'))
