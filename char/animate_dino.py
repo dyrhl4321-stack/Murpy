@@ -25,7 +25,7 @@ from PIL import Image
 
 FRAMES = 8
 DURATION = 120       # 프레임당 ms
-SQUISH = 0.028       # 세로 스쿼시 진폭(±2.8%). 대표 피드백으로 5.5%→2.8%로 크게 줄임
+SQUISH = 0.016       # 세로 스쿼시 진폭(±1.6%). 대표 피드백으로 5.5%→2.8%→1.6%로 단계적 축소
 
 
 def frame_sizes(cw, ch, frames):
