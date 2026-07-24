@@ -69,7 +69,11 @@ def _best_donor(target: np.ndarray, donors: dict[str, np.ndarray], ring: np.ndar
     return mae, name, dx, dy
 
 
-def remove(src: Path, out_dir: Path) -> Path | None:
+def remove(src: Path, out_dir: Path, force: bool = False) -> Path | None:
+    # force=True: 판정(present/도너품질) 검사를 건너뛰고, 정합된 최적 도너를 무조건 이식한다.
+    # 흐린 배경(흰 셔츠) 위 워터마크가 임계값 미달로 안 잡히거나, 프레임 차이로 띠MAE가
+    # 큰(헝클어진 머리 등) 경우용. 도너 정합 자체는 그대로라 '없는 픽셀 지어내기'는 아니다.
+    # 반드시 결과를 눈으로 검증할 것.
     img = Image.open(src)
     if img.size != SHEET:
         print(f"  건너뜀 — 크기 {img.size}, 기대 {SHEET}")
@@ -96,14 +100,17 @@ def remove(src: Path, out_dir: Path) -> Path | None:
 
     print(f"  도너 {name}  이동({dx:+d},{dy:+d})  띠MAE {ring_mae:.2f}  안쪽MAE {inner_mae:.2f}  비율 {ratio:.2f}")
 
-    # 도너가 안 맞으면 워터마크 유무 자체를 판정할 수 없다. 이 검사가 먼저다.
-    if ring_mae > DONOR_MAX_RING:
-        print(f"  중단 - 띠MAE {ring_mae:.2f} > {DONOR_MAX_RING}. 도너가 대상 프레임과 안 맞음")
-        print("         (프레임끼리 그림이 다를 수 있음. 워터마크 유무는 판정 불가. 사람이 볼 것)")
-        return None
-    if not (ratio > PRESENT_RATIO and inner_mae > PRESENT_INNER):
-        print("  워터마크 없음 - 원본 유지")
-        return None
+    if force:
+        print("  --force: 판정 건너뛰고 최적 도너 이식 (결과 눈으로 검증 필수)")
+    else:
+        # 도너가 안 맞으면 워터마크 유무 자체를 판정할 수 없다. 이 검사가 먼저다.
+        if ring_mae > DONOR_MAX_RING:
+            print(f"  중단 - 띠MAE {ring_mae:.2f} > {DONOR_MAX_RING}. 도너가 대상 프레임과 안 맞음")
+            print("         (프레임끼리 그림이 다를 수 있음. 워터마크 유무는 판정 불가. 사람이 볼 것)")
+            return None
+        if not (ratio > PRESENT_RATIO and inner_mae > PRESENT_INNER):
+            print("  워터마크 없음 - 원본 유지")
+            return None
 
     fixed = target.copy()
     fixed[wm] = donor[wm]
@@ -125,12 +132,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("sources", nargs="+", type=Path)
     ap.add_argument("-o", "--out", type=Path, required=True)
+    ap.add_argument("-f", "--force", action="store_true",
+                    help="판정 건너뛰고 최적 도너 무조건 이식(흐린 배경/머리 흔들림용). 눈검증 필수")
     args = ap.parse_args()
 
     made = 0
     for s in args.sources:
         print(f"{s.name}")
-        if remove(s, args.out):
+        if remove(s, args.out, force=args.force):
             made += 1
     print(f"\n{made}장 처리됨")
     return 0
