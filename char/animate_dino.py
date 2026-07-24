@@ -6,18 +6,20 @@
 왜 APNG인가 — 캠프파이어와 동일. 방 렌더(mwFurnHtml)가 <img>라 스프라이트시트+CSS를
 쓰면 드래그가 깨진다. APNG는 파일만 갈면 된다. 저장 시 disposal=1, blend=0 필수.
 
-모션(둥가둥가): 엉덩이(바닥)를 고정한 스쿼시-스트레치 바운스. 아래로 눌릴 땐 세로로
-  눌리고 가로로 살짝 벌어지며(부피보존 근사), 위로는 늘어난다 → 젤리처럼 통통. 배 위에
-  얹힌 두 손도 함께 오르내려 '배 안고 둥가둥가'로 읽힌다.
-  ※대표 피드백: 세로 워프(배만 눌림)보다 이 스쿼시 버전이 낫다 → 이 버전 유지, 진폭만 줄임.
+모션(둥가둥가): 엉덩이(바닥)를 고정하고 배만 세로로 눌렀다 폈다 → 얼굴이 그 위에 얹혀
+  통통 오르내린다. 배 위 두 손도 함께 움직여 '배 안고 둥가둥가'로 읽힌다.
+  ★얼굴(눈·입이 있는 상단 HEAD_RATIO 영역)은 절대 리샘플하지 않는다 — 통째로 정수픽셀
+    이동만 한다. 예전엔 스프라이트 전체를 매 프레임 리샘플(가로세로 스케일)해서, NEAREST
+    반올림이 프레임마다 눈 픽셀을 다르게 스냅 → '오른쪽 눈이 커졌다 작아졌다' 했다(대표 지적
+    2026-07-24). 가로 스케일이 좌우 눈을 비대칭으로 만든 게 특히 원인. 지금은 가로 스케일을
+    없애고(세로만), 얼굴은 리지드로 이동해 눈이 매 프레임 픽셀 단위로 동일하다.
   ※재생성은 반드시 애니 이전 정적 원본에서(현재 png가 APNG면 0프레임만 읽힘).
     공룡의 정적 원본 = char/rooms/s2608_dino_still.png (도감 썸네일과 겸용, 바이트 동일).
 
-★캔버스 여백(2026-07-24 버그수정): 원본 그림이 캔버스를 꽉 채우면(공룡 bbox = 0,0,94,104)
-  위로 늘어나는 프레임이 캔버스 밖으로 밀려 뿔 끝이 잘린다 — 방에서 보면 '투명 벽에 숨었다
-  나타났다' 하는 현상. 그래서 모든 프레임의 최대 크기를 먼저 재고 그만큼 위/좌우에 투명
-  여백을 붙인 캔버스에 그린다. 바닥(엉덩이)은 캔버스 밑변에 그대로 붙여 접지선을 지킨다.
-  → 캔버스가 커지므로 index.html SEASON_ITEMS의 w/h를 출력된 새 크기로 반드시 갱신할 것.
+★캔버스 여백(2026-07-24): 위로 오르는 프레임이 캔버스를 넘으면 뿔 끝이 잘려 '투명 벽에
+  숨었다 나타났다' 한다. 그래서 최대 프레임 높이를 먼저 재고 그만큼 위에 투명 여백을 붙인다.
+  바닥(엉덩이)은 캔버스 밑변에 붙여 접지선을 지킨다.
+  → 캔버스가 바뀌므로 index.html SEASON_ITEMS의 w/h를 출력된 새 크기로 반드시 갱신할 것.
 """
 import argparse
 import math
@@ -25,18 +27,19 @@ from PIL import Image
 
 FRAMES = 8
 DURATION = 120       # 프레임당 ms
-SQUISH = 0.016       # 세로 스쿼시 진폭(±1.6%). 대표 피드백으로 5.5%→2.8%→1.6%로 단계적 축소
+SQUISH = 0.022       # 배 세로 눌림 진폭(±2.2%). 배만 눌리므로 전신 스쿼시보다 체감은 절반쯤.
+HEAD_RATIO = 0.60    # 콘텐츠 상단 이 비율(눈·입·얼굴)은 리지드 — 리샘플 금지. 아래(배)만 눌린다.
+                     # 분할선 = round(ch*0.60) ≈ y62. 정적 원본에서 입은 ~y55, 그 아래는 배(크림).
 
 
-def frame_sizes(cw, ch, frames):
-    """프레임별 (가로배율, 세로배율, 리사이즈 폭, 리사이즈 높이)."""
+def belly_heights(belly_h, frames):
+    """프레임별 배 높이(px). 세로만 스케일 — 가로는 안 건드려 좌우 대칭·얼굴 무관."""
     out = []
     for f in range(frames):
         ph = 2 * math.pi * f / frames
-        # cos: f=0에서 최대로 눌림(아래) → 위로 늘었다 반복. 부드러운 순환.
-        sy = 1.0 - SQUISH * math.cos(ph)          # 세로 배율
-        sx = 1.0 / math.sqrt(sy)                  # 가로는 반대(부피보존 근사)
-        out.append((max(1, round(cw * sx)), max(1, round(ch * sy))))
+        # cos: f=0에서 최대로 눌림(짧아짐) → 폈다(길어짐) 반복. 부드러운 순환.
+        sy = 1.0 - SQUISH * math.cos(ph)
+        out.append(max(1, round(belly_h * sy)))
     return out
 
 
@@ -50,23 +53,26 @@ def build_frames(im, frames=FRAMES):
     cx = (bbox[0] + bbox[2]) / 2.0      # 콘텐츠 가로중심
     cb = bbox[3]                        # 콘텐츠 바닥 y(고정점=엉덩이)
 
-    sizes = frame_sizes(cw, ch, frames)
-    # 여백 계산: 어떤 프레임도 캔버스 밖으로 나가지 않게 위·좌·우를 넓힌다.
-    # 세로는 위로만(바닥 고정), 가로는 중심을 지키려고 좌우 같은 값으로.
-    pad_t = max(0, max(nh for _, nh in sizes) - cb)
-    pad_x = max(0, max(max(-round(cx - nw / 2.0),
-                           round(cx - nw / 2.0) + nw - W) for nw, _ in sizes))
-    NW, NH = W + pad_x * 2, H + pad_t
-    cx += pad_x                          # 새 캔버스 기준 콘텐츠 중심
-    cb += pad_t                          # 새 캔버스 기준 바닥(= NH, 밑변에 붙음)
+    head_h = max(1, round(ch * HEAD_RATIO))
+    belly_h = ch - head_h
+    head = content.crop((0, 0, cw, head_h))          # 눈·입 포함 상단 — 리샘플 안 함
+    belly = content.crop((0, head_h, cw, ch))        # 배 하단 — 세로로만 눌림
+
+    sizes = belly_heights(belly_h, frames)
+    # 위 여백 = 가장 큰 프레임(머리+배 최대)이 바닥 위로 넘치는 만큼. 가로는 원폭 그대로.
+    pad_t = max(0, (head_h + max(sizes)) - cb)
+    NW, NH = W, H + pad_t
+    cbn = cb + pad_t                     # 새 캔버스 기준 바닥(엉덩이 고정점)
+    ox = round(cx - cw / 2.0)            # 원본 그대로면 0
 
     out = []
-    for nw, nh in sizes:
-        sc = content.resize((nw, nh), Image.NEAREST)   # 픽셀 유지
+    for nbh in sizes:
+        belly_sc = belly.resize((cw, nbh), Image.NEAREST)   # 세로만 · 픽셀 유지
         canvas = Image.new('RGBA', (NW, NH), (0, 0, 0, 0))
-        ox = round(cx - nw / 2.0)                  # 가로중심 정렬
-        oy = round(cb - nh)                        # ★바닥(엉덩이) 정렬 = 위에서만 늘고줄음
-        canvas.alpha_composite(sc, (ox, oy))
+        oy_belly = cbn - nbh                      # 배 밑 = 엉덩이(고정)
+        oy_head = oy_belly - head_h               # 머리는 배 위에 리지드로 얹혀 함께 오르내림
+        canvas.alpha_composite(head, (ox, oy_head))
+        canvas.alpha_composite(belly_sc, (ox, oy_belly))
         out.append(canvas)
     return out
 

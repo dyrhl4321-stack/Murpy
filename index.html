@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260724011 -->
+<!-- cache-bust: v20260724012 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -2152,11 +2152,10 @@ window.SEASON_ITEMS = [
     hd:'char/rooms/hd/s2608_campfire.webp?v=1', hdMax:160, still:'char/rooms/s2608_campfire_still.png?v=1',
     season:'2026-10', kind:'open', axis:'squad', noShadow:true, blockBand:0.72,
     hint:'혼자 온 자는 받을 수 없습니다', title:'스쿼드의 심장', cond:{ squad:2 } },
-  // w/h 96x106 = APNG 캔버스. 원본 그림(94x104)에 스쿼시가 위로 늘어날 여백을 붙인 크기다 —
-  // 여백 없이 꽉 채우면 늘어나는 프레임에서 뿔 끝이 캔버스 밖으로 잘려 '투명 벽에 숨었다
-  // 나타났다' 한다(7-24 수정). 캔버스 높이는 SQUISH 진폭 따라 바뀜(진폭↓=여백↓).
+  // w/h 94x105 = APNG 캔버스. 얼굴은 리지드로 두고 배만 눌러 둥가둥가(7-24: 눈 흔들림·뿔 잘림
+  // 수정). 가로 스케일을 없애 원폭(94) 유지, 위 1px만 여백. 캔버스 크기는 진폭 따라 바뀜.
   // 정적 원본은 s2608_dino_still.png, 재생성은 char/animate_dino.py.
-  { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=7', w:96, h:106,
+  { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105,
     hd:'char/rooms/hd/s2608_dino.webp?v=1', hdMax:200, still:'char/rooms/s2608_dino_still.png?v=1',
     season:'2026-10', kind:'hidden', axis:'',
     hint:'', title:'공룡의 친구', cond:{ feed:5, bamboo:3, checkin:3 } },
@@ -10705,6 +10704,11 @@ function mwHaversine(lat1, lng1, lat2, lng2) {
   return 2*R*Math.asin(Math.sqrt(a));
 }
 function mwTodayKey() { const t=new Date(); return `${t.getFullYear()}${String(t.getMonth()+1).padStart(2,'0')}${String(t.getDate()).padStart(2,'0')}`; }
+// N일 전의 dayKey(YYYYMMDD). 0=오늘. day 필드가 zero-pad 8자리라 문자열 비교로 최근 판정 가능.
+function mwDayKeyAgo(daysAgo) { const t=new Date(); t.setDate(t.getDate()-daysAgo); return `${t.getFullYear()}${String(t.getMonth()+1).padStart(2,'0')}${String(t.getDate()).padStart(2,'0')}`; }
+// 센터 대숲 쓰기 자격이 유지되는 기간(일). 이 안에 그 센터 도장이 있어야 채팅 가능 —
+// 예전 도장 하나로 영구 해제되지 않게 해서 "계속 방문"을 유도(대표 지시 7-24). 숫자만 바꾸면 조절됨.
+const MW_CTALK_RECENT_DAYS = 7;
 function mwLevel(visits) {
   if (visits >= 30) return { name:'터줏대감', color:'#F5C24B', next:null,  base:30 };
   if (visits >= 5)  return { name:'단골',    color:'#3D7EFF', next:30, base:5 };
@@ -11245,12 +11249,12 @@ window.mwCenterField = async function (centerId) {
       <div style="display:flex;align-items:center;gap:7px;margin:12px 2px 9px;flex-shrink:0">
         <img src="char/ui/ui_ic_bamboo.png?v=1" alt="" style="height:22px;width:auto;image-rendering:pixelated;flex-shrink:0">
         <span style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff">우리 센터 대숲</span>
-        <span style="font-size:10px;color:#4a5266;margin-left:auto">도장 찍은 머피만 쓸 수 있어요</span>
+        <span style="font-size:10px;color:#4a5266;margin-left:auto">최근 ${MW_CTALK_RECENT_DAYS}일 도장 찍은 머피만</span>
       </div>
       <div id="mw-ctalk-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:10px;padding:6px 2px 13px;min-height:80px">
         <div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
       </div>
-      <div style="display:flex;gap:7px;padding-top:12px;margin:0 0 calc(22px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid #141a2a">
+      <div style="display:flex;gap:7px;padding-top:12px;margin:0 0 calc(40px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid #141a2a">
         <input id="mw-ctalk-input" maxlength="200" disabled placeholder="확인 중…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.mwCtalkSend('${c.id}')">
         <button id="mw-ctalk-send" class="mw-btn mw-btn-sm" disabled onclick="window.mwCtalkSend('${c.id}')">보내기</button>
       </div>
@@ -11322,14 +11326,28 @@ window._mwCtalkStart = async function (center) {
     }).join('') : '<div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">아직 조용하네요 — 첫 마디를 남겨보세요</div>';
     el2.scrollTop = 0;
   }, e => console.warn('ctalk', e));
-  // 쓰기 자격 = 이 센터 체크인 이력 (날짜 무관)
+  // 쓰기 자격 = 최근 N일 내 이 센터 도장(재방문 유도 — 예전 도장 하나로 영구 해제 안 되게).
+  // ※서버(보안규칙)는 아직 자격을 강제하지 않는 '클라이언트 게이트, 베타'다(firestore.rules 주석).
+  //   하드 강제는 규칙에서 체크인 문서 조회가 필요해 별도 과제. 지금은 클라 UI 게이트만.
   const user = auth.currentUser || window.currentUser;
-  let can = false;
-  if (user) { try { const mine = await mwLoadCheckins(); can = mine.some(k => String(k.centerId) === cid); } catch (e) {} }
+  const cutoff = mwDayKeyAgo(MW_CTALK_RECENT_DAYS - 1);   // 오늘 포함 최근 N일
+  let can = false, everStamped = false;
+  if (user) {
+    try {
+      const here = (await mwLoadCheckins()).filter(k => String(k.centerId) === cid);
+      everStamped = here.length > 0;
+      can = here.some(k => String(k.day || '') >= cutoff);
+    } catch (e) {}
+  }
   const input = document.getElementById('mw-ctalk-input'), btn = document.getElementById('mw-ctalk-send');
   if (input && btn) {
     if (can) { input.disabled = false; input.placeholder = '우리 센터 대숲에 한마디…'; btn.disabled = false; }
-    else { input.disabled = true; btn.disabled = true; input.placeholder = user ? '이 센터에 도장을 찍으면 참여할 수 있어요' : '로그인하고 도장을 찍으면 참여할 수 있어요'; }
+    else {
+      input.disabled = true; btn.disabled = true;
+      input.placeholder = !user ? '로그인하고 도장을 찍으면 참여할 수 있어요'
+        : everStamped ? `최근 ${MW_CTALK_RECENT_DAYS}일 안에 다시 도장을 찍어야 참여할 수 있어요`
+        : '이 센터에 도장을 찍으면 참여할 수 있어요';
+    }
   }
 };
 window.mwCtalkSend = async function (centerId) {
