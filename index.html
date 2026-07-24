@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260724007 -->
+<!-- cache-bust: v20260724008 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -543,7 +543,30 @@
     transform:rotate(45deg); border-radius:50% 50% 50% 0 }
   .mw-pin.on { background:#E4472E; animation:mwPinBob 1s ease-in-out infinite }
   @keyframes mwPinBob { 50% { transform:rotate(45deg) translate(-2px,-2px) } }
-  #mw-realmap .leaflet-tile { filter:grayscale(.35) brightness(.92) contrast(1.02) }
+  /* 타일에 filter를 걸면 글자 획까지 같이 흐려진다 — 어둡게는 다크 베이스맵으로 해결하고
+     여기선 보정을 걸지 않는다(대표 지적 7-24: 지도 글씨 깨짐). */
+  /* 타일 로딩 전/여백에 깔리는 색 — 밝은 지도라 어두운 배경이면 깜빡임이 심하다 */
+  #mw-realmap .leaflet-container { background:#e8e5df; font-family:'Pretendard',sans-serif }
+  #mw-realmap .leaflet-control-attribution { background:rgba(255,255,255,.72); color:#6b7280; font-size:9px; padding:1px 5px }
+  #mw-realmap .leaflet-control-attribution a { color:#4b5563 }
+  /* 내 위치 버튼 (카카오맵·네이버지도의 과녁 버튼 자리 = 지도 우측 하단).
+     메인 월드 UI라 라운드가 아니라 사각 픽셀 입체로 — .mw-wclose와 같은 결. */
+  .mw-locate { position:absolute; right:10px; bottom:10px; z-index:1001; width:40px; height:40px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; color:#cfd6e6;
+    -webkit-tap-highlight-color:transparent; transition:transform .05s }
+  .mw-locate:active { transform:translateY(2px) }
+  .mw-locate.on { color:#3D7EFF }
+  .mw-locate.busy { color:#4a5266 }
+  .mw-locate.busy svg { animation:mwLocSpin 1s linear infinite }
+  @keyframes mwLocSpin { to { transform:rotate(360deg) } }
+  /* 내 위치 점 — 핀(센터)과 헷갈리지 않게 파란 원 + 퍼지는 물결 */
+  .mw-mypos { position:relative; width:16px; height:16px }
+  .mw-mypos i { position:absolute; inset:0; background:#3D7EFF; border:2px solid #fff;
+    border-radius:50%; box-shadow:0 0 0 1px rgba(5,7,12,.8) }
+  .mw-mypos b { position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px;
+    border-radius:50%; background:rgba(61,126,255,.45); animation:mwPosPulse 1.8s ease-out infinite }
+  @keyframes mwPosPulse { to { transform:scale(3.2); opacity:0 } }
   .mw-movecoach { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:7;
     background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; padding:10px 14px;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; white-space:nowrap;
@@ -593,7 +616,9 @@
     padding-top:max(17px, env(safe-area-inset-top)); border-bottom:3px solid #0e1320 }
   .mw-wpanel-head b { font-family:'Galmuri14',sans-serif; font-size:19px; color:#fff; font-weight:400; letter-spacing:.5px }
   .mw-wpanel-head .mw-headic { flex-shrink:0; color:#3D7EFF; display:flex; align-items:center }
-  .mw-wpanel-body { flex:1; overflow-y:auto; padding:2px 16px calc(30px + env(safe-area-inset-bottom)) }
+  /* 제목 밑줄(head의 border-bottom)과 첫 콘텐츠가 붙어 보이던 문제 → 위 여백 확보.
+     체크인의 FITNESS PASSPORT 줄, 지도의 지도 상자가 선에 딱 붙어 답답했다(대표 지적 7-24). */
+  .mw-wpanel-body { flex:1; overflow-y:auto; padding:16px 16px calc(30px + env(safe-area-inset-bottom)) }
   .mw-wclose { margin-left:auto; width:40px; height:40px; background:#141a28; border:3px solid #05070c;
     box-shadow:0 0 0 2px #2b3350; color:#8a93a8; font-size:15px; cursor:pointer; flex-shrink:0 }
   details.mw-region { background:#101624; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; margin-bottom:10px }
@@ -10662,6 +10687,9 @@ window.setCenterCoords = async (centerId, lat, lng) => {   // 콘솔/관리자�
   await window.loadCentersFirestore(); console.log('✓ 좌표 저장', centerId, lat, lng);
 };
 const MW_CHECKIN_RADIUS = 200;   // m (실내 GPS 오차 감안, 브리프 권장)
+// 지도 '내 위치' 버튼이 한 화면에 담아줄 반경(m). 체크인 반경(200m)과 목적이 달라 따로 둔다 —
+// 이건 도장 판정이 아니라 "내 동네에 어떤 센터가 있나"를 보여주는 카메라 이동이다.
+const MW_LOCATE_RADIUS = 3000;
 function mwHaversine(lat1, lng1, lat2, lng2) {
   const R = 6371000, d = Math.PI / 180;
   const a = Math.sin((lat2-lat1)*d/2)**2 + Math.cos(lat1*d)*Math.cos(lat2*d)*Math.sin((lng2-lng1)*d/2)**2;
@@ -10989,7 +11017,7 @@ window.mwWorldPanel = function (kind) {
           onclick="window.charSetField('${k}');document.getElementById('mw-wpanel').remove()">${F[k]}${window._curField===k?'<div style=\'font-size:10px;color:#3D7EFF;margin-top:6px\'>현재 위치</div>':''}</button>`).join('')
       + '</div><div style="font-size:11.5px;color:#4a5266;text-align:center;margin-top:16px">한강 러닝존 · 클라이밍 … 곧 열려요</div>';
   } else if (kind==='map') {
-    body.innerHTML = '<div id="mw-realmap" style="height:225px;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;margin-bottom:13px"></div>'
+    body.innerHTML = '<div id="mw-realmap" style="position:relative;height:225px;background:#e8e5df;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;margin-bottom:13px"></div>'
       + '<div id="mw-map-root"><div class="mw-panel" style="text-align:center;padding:26px;color:#8a93a8"><span class="mw-blink">▌</span> 머피들 찾는 중…</div></div>';
     window.mwRenderTodayMurpys();
   } else {
@@ -11058,13 +11086,25 @@ window.mwRenderTodayMurpys = async function () {
     ${groups || `<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">
       <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;margin-bottom:8px">아직 아무도 없어요</div>
       <div style="font-size:12px;line-height:1.7">오늘 첫 도장의 주인공이 되어보세요!<br>도감 → 체크인</div></div>`}`;
-  // ---- 리얼 지도 (Leaflet + OSM) : 좌표 있는 센터 + 오늘 인원 배지 ----
+  // ---- 리얼 지도 (Leaflet) : 좌표 있는 센터 + 오늘 인원 배지 ----
+  // 타일은 CARTO Voyager(밝은 지도). OSM 기본 타일에서 바꾼 이유(대표 지적 7-24):
+  //   ① {r} = 고해상도(@2x) 타일 지원 → 폰(2~3배 화면)에서 지명 글씨가 안 뭉갠다. OSM 기본은 @2x가 없다.
+  //   ② 밝은 지도를 filter(grayscale+brightness)로 눌러 쓰고 있었는데, filter는 글자 획까지 흐린다.
+  //      → 필터를 걷어내고 타일 자체를 쓴다. 밝게 유지는 대표 지시(7-24).
+  // ★지도는 픽셀아트가 아니다 — image-rendering:pixelated를 절대 얹지 말 것(글씨 깨짐의 원인).
+  // 저작자 표시는 OSM/CARTO 이용조건상 필수라 켜 둔다(작게).
   try {
     await mwLoadLeaflet();
     const mapEl = document.getElementById('mw-realmap'); if (!mapEl || mapEl._done) return; mapEl._done = true;
     const centers = (typeof getCentersList==='function'?getCentersList():[]).filter(c=>c&&c.lat&&c.lng);
-    const map = L.map(mapEl, { zoomControl:false, attributionControl:false }).setView([37.5665,126.978], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    const map = L.map(mapEl, { zoomControl:false, attributionControl:true }).setView([37.5665,126.978], 12);
+    map.attributionControl.setPrefix(false).setPosition('bottomleft');   // 우측 하단은 내 위치 버튼 자리
+    // ※detectRetina는 쓰지 않는다. URL의 {r}만으로 레티나에서 @2x 타일을 받는다.
+    //   둘을 같이 켜면 타일크기 반토막+줌오프셋까지 겹쳐 이중 적용된다(글씨 크기가 한 단계 어긋남).
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      subdomains:'abcd', maxZoom:19,
+      attribution:'&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(map);
     const pts = [];
     centers.forEach(c => {
       const n = byCenter[c.id] ? byCenter[c.id].list.length : 0;
@@ -11072,9 +11112,59 @@ window.mwRenderTodayMurpys = async function () {
       L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{ window.mwCenterField && window.mwCenterField(c.id); });   // 핀 = 바로 '우리 센터 머피들' 필드로
       pts.push([c.lat,c.lng]);
     });
-    if (pts.length) map.fitBounds(pts, { padding:[36,36], maxZoom:15 });
-    else document.getElementById('mw-realmap').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#4a5266;font-size:12px;font-family:\'Galmuri11\',sans-serif">좌표 등록된 센터가 아직 없어요</div>';
+    if (!pts.length) {
+      mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#4a5266;font-size:12px;font-family:\'Galmuri11\',sans-serif">좌표 등록된 센터가 아직 없어요</div>';
+      return;
+    }
+    map.fitBounds(pts, { padding:[36,36], maxZoom:15 });
+    window._mwAddLocateBtn(map, mapEl, centers);
   } catch(e){ console.warn('map load fail', e); }
+};
+// ---------- 지도 '내 위치' 버튼 (카카오맵·네이버지도의 우측 하단 과녁 자리) ----------
+// 누르면 GPS를 잡아 내 위치 점을 찍고, 반경 3km 안의 센터들이 한 화면에 들어오게 확대한다.
+// 내 위치만 확대하면 "그래서 뭐가 있는데?"가 남는다 — 이 버튼의 목적은 내 동네 센터를 보여주는 것.
+window._mwAddLocateBtn = function (map, mapEl, centers) {
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'mw-locate'; btn.setAttribute('aria-label', '내 위치');
+  btn.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="6.2"/>'
+    + '<circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>'
+    + '<path d="M12 1.9v3.1M12 19v3.1M1.9 12h3.1M19 12h3.1"/></svg>';
+  L.DomEvent.disableClickPropagation(btn);   // 버튼 터치가 지도 드래그로 새지 않게
+  L.DomEvent.disableScrollPropagation(btn);
+  mapEl.appendChild(btn);
+  const fmt = d => d < 1000 ? Math.round(d) + 'm' : (d / 1000).toFixed(1) + 'km';
+  let myMarker = null;
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('busy')) return;
+    if (!navigator.geolocation) { showToast('이 기기는 위치를 지원하지 않아요'); return; }
+    btn.classList.add('busy'); btn.classList.remove('on');
+    navigator.geolocation.getCurrentPosition(pos => {
+      btn.classList.remove('busy'); btn.classList.add('on');
+      const { latitude:lat, longitude:lng } = pos.coords;
+      const dot = L.divIcon({ className:'', html:'<div class="mw-mypos"><b></b><i></i></div>',
+        iconSize:[16,16], iconAnchor:[8,8] });
+      if (myMarker) myMarker.setLatLng([lat, lng]);
+      else myMarker = L.marker([lat, lng], { icon:dot, interactive:false, zIndexOffset:500 }).addTo(map);
+      const near = centers.map(c => ({ c, d: mwHaversine(lat, lng, c.lat, c.lng) }))
+        .filter(x => x.d <= MW_LOCATE_RADIUS).sort((a, b) => a.d - b.d);
+      if (near.length) {
+        // 너무 많으면 가까운 6곳까지만 — 다 담으려다 도로 축소돼서 아무것도 안 보이게 되는 걸 막는다
+        map.fitBounds([[lat, lng]].concat(near.slice(0, 6).map(x => [x.c.lat, x.c.lng])),
+          { padding:[42,42], maxZoom:16, animate:true });
+        showToast('내 주변 센터 ' + near.length + '곳 · 가장 가까운 ' + near[0].c.name + ' ' + fmt(near[0].d));
+      } else {
+        map.setView([lat, lng], 15, { animate:true });
+        let best = null, bd = 1e12;
+        centers.forEach(c => { const d = mwHaversine(lat, lng, c.lat, c.lng); if (d < bd) { bd = d; best = c; } });
+        showToast(best ? '3km 안엔 센터가 없어요 — 가장 가까운 ' + best.name + ' ' + fmt(bd)
+                       : '좌표 등록된 센터가 아직 없어요');
+      }
+    }, err => {
+      btn.classList.remove('busy');
+      showToast(err.code === 1 ? '위치 권한을 허용해 주세요' : '위치를 가져오지 못했어요');
+    }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
+  });
 };
 // ---------- 우리 센터 머피들 (센터 필드 화면) ----------
 window.centerFieldSrc = function (center) {
