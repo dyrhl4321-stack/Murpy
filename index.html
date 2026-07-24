@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260724014 -->
+<!-- cache-bust: v20260724015 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1933,7 +1933,7 @@ window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
-  human:   { name: '사람',   src: "char/walk.png?v=22",    cw: 141, ch: 224, code: null },
+  human:   { name: '기본',   src: "char/walk.png?v=22",    cw: 141, ch: 224, code: null },
   heltori: { name: '헬토리', src: "char/heltori.png?v=3", cw: 175, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' }
 };
 window.CHAR_ITEMS = [
@@ -3072,7 +3072,7 @@ window.charHubTab = function (name, btn) {
       + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
       + '<button class="mw-btn" style="width:100%;margin-top:18px" onclick="window.charSave()">저장</button>';
     if (body !== 'human') {
-      panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:#8a93a8;line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 사람 캐릭터에서!</div>');
+      panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:#8a93a8;line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 기본 캐릭터에서!</div>');
     }
     window._charRenderAvatar();
     window.charSlot('hair');
@@ -3089,16 +3089,34 @@ window.charHubTab = function (name, btn) {
 // 머피 충전(결제) 진입점 — 지금은 자리/구조만, 추후 PG/IAP 로직 연결
 window.openMurpyCharge = function () { if (window.openModal) openModal('murpy-charge-modal'); };
 // ===== 머피월드 입장 연출 (첫 방문 인트로 + 매번 짧은 포털) — 주인공은 캐릭터/세계 =====
+// 저장된 내 캐릭터의 착용 레이어를 합성한 스프라이트 divs (몸통→하의→신발→상의→머리→모자→소품).
+// ★인트로/포털이 예전엔 몸통 시트 하나만 깔아 저장 캐릭터와 무관하게 '빡빡이'로 나왔다(대표 지적
+//   7-24). 여기서 _charEquippedSheets로 레이어를 합성해 실제 저장 캐릭터가 나오게 한다.
+window._mwSpriteLayers = function (cfg, w, h) {
+  const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg || window.CHAR_DEFAULT) : null;
+  if (!sheets) return '';
+  return ['body','bottom','shoes','top','hair','hat','acc'].filter(function (s) { return sheets[s]; }).map(function (s) {
+    return '<div class="mw-sp-l" style="position:absolute;left:0;top:0;width:' + w + 'px;height:' + h + 'px;image-rendering:pixelated;'
+      + "background-image:url('" + sheets[s] + "');background-repeat:no-repeat;"
+      + 'background-size:' + (w * 3) + 'px ' + (h * 4) + 'px;background-position:0 0"></div>';
+  }).join('');
+};
+// 합성 스프라이트의 모든 레이어를 같은 프레임으로 이동(row=방향, col=걷기 프레임).
+window._mwSpriteFrame = function (host, w, h, row, col) {
+  if (!host) return;
+  const bp = (-col * w) + 'px ' + (-row * h) + 'px';
+  host.querySelectorAll('.mw-sp-l').forEach(function (el) { el.style.backgroundPosition = bp; });
+};
+// 인트로 히어로 = 저장 캐릭터 정면 정지(레이어 합성). _charDraft(편집 초안) 아니라 저장본을 쓴다.
 window._mwHeroBg = function (el, h) {
   if (!el) return;
-  const body = (window._charDraft && window._charDraft.body) || 'human';
-  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=22', cw: 135, ch: 224 };
+  const cfg = (window.getMyCharacter ? window.getMyCharacter() : null) || window.CHAR_DEFAULT;
+  const b = (window._CHAR_BODIES && window._CHAR_BODIES[(cfg && cfg.body) || 'human']) || { cw: 141, ch: 224 };
   const w = Math.round(h * b.cw / b.ch);
   el.style.width = w + 'px'; el.style.height = h + 'px';
-  el.style.backgroundImage = "url('" + b.src + "')";
-  el.style.backgroundRepeat = 'no-repeat';
-  el.style.backgroundSize = (w * 3) + 'px ' + (h * 4) + 'px';
-  el.style.backgroundPosition = '0 0';   // 정면 정지(down c0)
+  el.style.position = 'relative';
+  el.style.backgroundImage = 'none';
+  el.innerHTML = window._mwSpriteLayers(cfg, w, h);   // row0/col0 = 정면 정지
 };
 // ⚠️ 개발용: 배포(뿌리기) 전엔 true → 인트로/연출 매번 표시(계속 확인 가능). 배포 시 false로!
 window.MW_DEV_ALWAYS = true;
@@ -3139,15 +3157,16 @@ window.mwPortal = function () {
   try { clearTimeout(window._mwCoachT); window._mwCoachT = setTimeout(function () { if (window._maybeCoachChar) window._maybeCoachChar(); }, reduce ? 700 : 2600); } catch (e) {}
   if (reduce) { clearTimeout(window._mwPortalT); window._mwPortalT = setTimeout(function () { p.style.display = 'none'; if (window._mwWorldReveal) window._mwWorldReveal(); }, 320); return; }
   const ch = document.getElementById('mw-portal-char'), flash = document.getElementById('mw-portal-flash');
-  const body = (window._charDraft && window._charDraft.body) || 'human';
-  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { src: 'char/walk.png?v=22', cw: 135, ch: 224 };
+  const cfg = (window.getMyCharacter ? window.getMyCharacter() : null) || window.CHAR_DEFAULT;
+  const body = (cfg && cfg.body) || 'human';
+  const b = (window._CHAR_BODIES && window._CHAR_BODIES[body]) || (window._CHAR_BODIES && window._CHAR_BODIES.human) || { cw: 141, ch: 224 };
   const SH = stage ? (stage.clientHeight || 360) : 360;
   const H0 = Math.round(SH * 0.20), w = Math.round(H0 * b.cw / b.ch), row = 1; // row1 = 위(뒤통수) 걷기
   ch.style.width = w + 'px'; ch.style.height = H0 + 'px';
-  ch.style.backgroundImage = "url('" + b.src + "')";
-  ch.style.backgroundSize = (w * 3) + 'px ' + (H0 * 4) + 'px';
+  ch.style.backgroundImage = 'none';
+  ch.innerHTML = window._mwSpriteLayers(cfg, w, H0);   // 저장 캐릭터 레이어 합성(뒤통수 걷기)
   ch.style.top = '64%'; ch.style.opacity = '1'; ch.style.transform = 'translate(-50%,0) scale(1)';
-  const setCharFrame = function (c) { ch.style.backgroundPosition = (-c * w) + 'px ' + (-row * H0) + 'px'; };
+  const setCharFrame = function (c) { window._mwSpriteFrame(ch, w, H0, row, c); };
   setCharFrame(0);
   const DUR = 1900;   // 느리게
   let t = false; clearInterval(window._mwWalkI);
