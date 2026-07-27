@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260727008 -->
+<!-- cache-bust: v20260727009 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -614,10 +614,15 @@
      → 상자는 제자리·고정 발광, 맥동은 뒤에 깔린 헤일로/바닥 광원 div가 담당한다. */
   .mw-sbox { filter: drop-shadow(0 0 6px rgba(245,194,75,.92)) drop-shadow(0 0 18px rgba(245,194,75,.55)) }
   .mw-sbox-halo, .mw-sbox-pool { pointer-events:none; border-radius:50%; will-change:opacity,transform }
+  /* 상자 전용 접지 그림자: 밑면이 아이소메트릭 마름모라 가구 공식(스프라이트 하단 기준)이 안 맞는다.
+     밑면보다 살짝 큰 타원을 밑면 중심에 깔아 둘레만 삐져나오게 = 캠프파이어식 은은한 접지. */
+  .mw-sbox-shadow { pointer-events:none;
+    background:radial-gradient(ellipse at center,rgba(0,0,0,.42) 0%,rgba(0,0,0,.42) 44%,rgba(0,0,0,.16) 74%,rgba(0,0,0,0) 100%) }
   .mw-sbox-halo { background:radial-gradient(circle at center,rgba(245,194,75,.34) 0%,rgba(245,194,75,.13) 45%,rgba(245,194,75,0) 70%);
     animation:mwBoxHalo 1.6s ease-in-out infinite }
   @keyframes mwBoxHalo { 0%,100% { opacity:.55; transform:scale(.9) } 50% { opacity:1; transform:scale(1.12) } }
-  .mw-sbox-pool { background:radial-gradient(ellipse at center,rgba(245,194,75,.5) 0%,rgba(245,194,75,.2) 46%,rgba(245,194,75,0) 74%);
+  /* 바닥 광원은 '고리'다 — 가운데를 비워야 접지 그림자가 안 묻힌다(꽉 찬 원이면 상자가 빛 위에 뜬다). */
+  .mw-sbox-pool { background:radial-gradient(ellipse at center,rgba(245,194,75,0) 30%,rgba(245,194,75,.34) 55%,rgba(245,194,75,.13) 72%,rgba(245,194,75,0) 88%);
     animation:mwBoxPool 1.6s ease-in-out infinite }
   @keyframes mwBoxPool { 0%,100% { opacity:.68; transform:scale(.92) } 50% { opacity:1; transform:scale(1.08) } }
   @media (prefers-reduced-motion: reduce) { .mw-sbox-halo, .mw-sbox-pool { animation:none; opacity:.9 } }
@@ -7860,12 +7865,20 @@ window.mwBoxHtml = function (boxArr, clickable, opts) {
     : (window._mwBoxAt || window.mwBoxSpot(window._mwBlockedFurn, (window.currentUser || {}).uid));
   const x = p.x, y = p.y, pc = (v) => (v / 7.68).toFixed(2) + '%';
   const hw = w * 1.75, hx = x + (w - hw) / 2, hy = y + (w - hw) / 2;          // 헤일로(상자 뒤 후광)
-  const gw = w * 1.5, gh = w * 0.5, gx = x + (w - gw) / 2, gy = y + w - gh * 0.62;  // 바닥 광원
+  // 접지: PNG 알파 실측상 밑면은 아이소메트릭 마름모다(가로 6~118, 세로 103~126, 중심 62/114).
+  // 가구용 _mwShadowHtml은 '스프라이트 맨 아래'에 그림자를 두는 전제라 여기엔 안 맞는다 —
+  // 밑면 높이로 올리면 상자 그림에 통째로 가려지고, 이미지 하단(y=128)에 두면 밑면과 어긋나
+  // 사각한 얼룩처럼 보인다(대표 지적 7-27). 그래서 밑면보다 살짝 큰 타원을 직접 깐다.
+  const sw2 = 128, sh2 = 32, sx2 = x + 62 - sw2 / 2, sy2 = y + 114 - sh2 / 2;
+  const gw = 172, gh = 48, gx = x + 62 - gw / 2, gy = y + 114 - gh / 2;      // 바닥 광원도 밑면 중심에
+  // ★그리는 순서 주의: 바닥 광원 → 접지 그림자 순. 뒤집으면 금색 광원이 그림자를 덮어
+  //   상자가 빛 위에 떠 보인다(실측 미리보기로 확인). 그림자가 항상 마지막에 얹혀야 접지감이 산다.
   return '<div class="mw-sbox-halo" style="position:absolute;left:' + pc(hx) + ';top:' + pc(hy) + ';'
     + 'width:' + pc(hw) + ';height:' + pc(hw) + ';z-index:898"></div>'
-    + window._mwShadowHtml(x, y, { w: w, h: w, shAlpha: 0.5 }, 900, 'box')
     + '<div class="mw-sbox-pool" style="position:absolute;left:' + pc(gx) + ';top:' + pc(gy) + ';'
     + 'width:' + pc(gw) + ';height:' + pc(gh) + ';z-index:899"></div>'
+    + '<div class="mw-sbox-shadow" style="position:absolute;left:' + pc(sx2) + ';top:' + pc(sy2) + ';'
+    + 'width:' + pc(sw2) + ';height:' + pc(sh2) + ';z-index:899"></div>'
     + '<img src="char/rooms/season_box.png?v=2" alt="" draggable="false" class="mw-sbox"'
     + (clickable ? ' onclick="window.mwOpenBox()"' : '')
     + ' style="position:absolute;left:' + pc(x) + ';top:' + pc(y) + ';'
