@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260727002 -->
+<!-- cache-bust: v20260727003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -3035,19 +3035,38 @@ window.charRenderRoster = function () {
   grid.innerHTML = Object.keys(window._CHAR_BODIES).map(key => {
     const b = window._CHAR_BODIES[key];
     const isQuest = questIds.includes(key);
-    const unlocked = !(b.code || isQuest) || owned.includes(key);
+    const isHidden = !!b.hidden;   // 히든 3종: 해금=_charState.hidden(mwHasHidden), 미해금은 정체 숨김
+    const unlocked = isHidden ? (window.mwHasHidden && window.mwHasHidden(key))
+      : (!(b.code || isQuest) || owned.includes(key));
+    const secret = (isHidden || isQuest) && !unlocked;   // ??? 실루엣(조건 비공개)
     const equipped = cur === key;
     const th = 66, tw = Math.round(th * b.cw / b.ch);
-    const lockFilter = unlocked ? "" : (isQuest ? "filter:brightness(0) opacity(.5);" : "filter:grayscale(1) brightness(.5);");
+    const lockFilter = unlocked ? "" : (secret ? "filter:brightness(0) opacity(.5);" : "filter:grayscale(1) brightness(.5);");
     const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + b.src + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + lockFilter + "\"></div>";
     const sub = equipped ? '<span class="mw-sub on">착용중</span>'
       : unlocked ? '<span class="mw-sub">착용</span>'
-      : '<span class="mw-sub gold">' + (isQuest ? '퀘스트' : (b.tag || '한정')) + '</span>';
+      : '<span class="mw-sub gold">' + (isHidden ? '히든' : isQuest ? '퀘스트' : (b.tag || '한정')) + '</span>';
     const action = unlocked ? ("window.charPickBody('" + key + "')")
-      : (isQuest ? "window.mwGoQuest()" : ("window.openCharCodeModal('" + key + "')"));
-    const label = (!unlocked && isQuest) ? '???' : b.name;
+      : isHidden ? "window.mwHiddenLockedTap()"
+      : isQuest ? "window.mwGoQuest()"
+      : ("window.openCharCodeModal('" + key + "')");
+    let label = b.name;
+    if (isHidden && unlocked && key === 'cult' && window._charState.hidden.cult) label = window._charState.hidden.cult.weekday + '요일교 교주';
+    if (secret) label = '???';
     return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + label + "</span>" + sub + "</button>";
   }).join('');
+  // 관리자(패수현) 전용: 히든 연출 강제 테스트 + 실루엣 확인용
+  let adm = document.getElementById('mw-hidden-admtest');
+  if (typeof isAdmin === 'function' && isAdmin()) {
+    if (!adm) { adm = document.createElement('div'); adm.id = 'mw-hidden-admtest'; grid.after(adm); }
+    adm.style.cssText = 'margin-top:14px;display:flex;gap:6px;flex-wrap:wrap';
+    adm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 히든 연출 테스트</span>'
+      + ['cult', 'somm', 'zombie'].map(id => "<button class='mw-btn mw-btn-sm mw-btn-ghost' onclick=\"window.mwAdminTestHidden('" + id + "')\">" + window._CHAR_BODIES[id].name + "</button>").join('');
+  } else if (adm) { adm.remove(); }
+};
+// 미해금 히든 탭 시: 조건은 절대 공개 안 함(하드룰). 미스터리 톤 토스트만.
+window.mwHiddenLockedTap = function () {
+  if (window.showToast) showToast('숨겨진 캐릭터예요. 조건은… 비밀입니다.');
 };
 // 잠긴 퀘스트형 실루엣 → 퀘스트 탭으로. 실루엣은 여러 곳에 뿌리되 설명은 한 곳에서만 한다는 규칙.
 window.mwGoQuest = function () {
