@@ -4366,6 +4366,9 @@ window._mwWorldReveal = function () {
   const lw = document.getElementById('mw-logowrap');
   if (lw) { lw.classList.remove('shine'); void lw.offsetWidth; lw.classList.add('shine');
     setTimeout(function () { lw.classList.remove('shine'); }, 950); }
+  // 히든 캐릭터 판정 — 세션당 1회(진입 시). 체크인 직후는 mwSealCheckin이 따로 호출.
+  if (!window._mwHiddenEntryChecked) { window._mwHiddenEntryChecked = true;
+    if (window.mwCheckHidden) setTimeout(window.mwCheckHidden, 1200); }
 };
 
 function openPanel(id) {
@@ -10875,6 +10878,14 @@ window.mwAdminTestHidden = function (id) {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
   window.mwHiddenReveal((id === 'cult') ? { id: 'cult', weekday: '화' } : { id: id });
 };
+// 체크인 후·머피월드 진입 시 호출. 최신 체크인 판정 → 아직 미보유분만 연출 큐잉.
+window.mwCheckHidden = async function () {
+  if (!window.currentUser) return;
+  let ck = [];
+  try { ck = await mwLoadCheckins(true); } catch (e) { return; }
+  const res = window.mwEvalHidden(ck, new Date());
+  res.forEach(r => { if (!window.mwHasHidden(r.id)) window.mwHiddenReveal(r); });
+};
 // ---------- 도감 렌더 ----------
 window.mwRenderDogam = async function () {
   const root = document.getElementById('mw-dogam-root'); if (!root) return;
@@ -11970,6 +11981,8 @@ window.mwSealCheckin = async function (btn) {
   if (_isNewCheckin && window.mwBumpMonthly) window.mwBumpMonthly('checkin');
   // 도감 보너스 판정 (도장 쾅 연출 끝난 뒤 축하가 이어지도록)
   setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 1700);
+  // 히든 캐릭터 판정 (방금 체크인 반영 — 도감 보너스 축하 뒤에 이어지도록 더 늦게)
+  setTimeout(()=>{ if (window.mwCheckHidden) window.mwCheckHidden(); }, 2600);
 };
 
 window.joinCrewFirestore = async (crewId) => {
