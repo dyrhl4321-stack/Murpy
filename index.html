@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260727006 -->
+<!-- cache-bust: v20260727007 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -53,10 +53,16 @@
       }
       return;
     }
-    // 모바일 redirect flow: ?code=xxx
+    // code flow: ?code=xxx — 모바일 리다이렉트 + PC 팝업 공용
     const q = new URLSearchParams(window.location.search);
     const code = q.get('code');
     if (code) {
+      if (window.opener) {   // PC 팝업: 인가코드를 부모창에 넘기고 닫는다(교환은 부모가 Worker로)
+        try { window.opener.postMessage({type:'kakao_code',code}, window.location.origin); }
+        catch(e) { window.opener.postMessage({type:'kakao_code',code},'*'); }
+        window.close();
+        return;
+      }
       sessionStorage.setItem('kakao_pending_code', code);
       history.replaceState(null, '', window.location.pathname);
     }
@@ -9243,13 +9249,15 @@ window.kakaoLogin = async () => {
     return;
   }
 
-  // PC: 팝업 (implicit flow — 데스크탑에서는 여전히 동작)
-  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=token`;
+  // PC: 팝업 + 인가코드(code) flow.
+  // ※ 예전 response_type=token(implicit)은 카카오가 KOE202로 차단함(OAUTH_IMPLICIT_GRANT_SUPPORTED 권한 필요).
+  //   되돌리지 말 것 — 모바일과 동일하게 code를 받아 Worker에서 교환한다.
+  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=code`;
   const popup = window.open(authUrl, 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
   if (!popup) { showToast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해주세요'); return; }
 
   try {
-    const accessToken = await new Promise((resolve, reject) => {
+    const res = await new Promise((resolve, reject) => {
       let done = false;
       const finish = (fn) => { if (done) return; done = true; cleanup(); fn(); };
       const cleanup = () => {
@@ -9260,12 +9268,15 @@ window.kakaoLogin = async () => {
       const poll = setInterval(() => { if (popup.closed) finish(() => reject(new Error('cancelled'))); }, 500);
       const timer = setTimeout(() => { popup.close(); finish(() => reject(new Error('timeout'))); }, 120000);
       function onMsg(e) {
-        if (e.data?.type === 'kakao_token' && e.data.accessToken)
-          finish(() => resolve(e.data.accessToken));
+        if (e.data?.type === 'kakao_code' && e.data.code)
+          finish(() => resolve({ code: e.data.code }));
+        else if (e.data?.type === 'kakao_token' && e.data.accessToken)   // 하위호환
+          finish(() => resolve({ token: e.data.accessToken }));
       }
       window.addEventListener('message', onMsg);
     });
-    await _kakaoFirebaseAuth(accessToken);
+    if (res.code) await _kakaoCodeToAuth(res.code);
+    else await _kakaoFirebaseAuth(res.token);
   } catch(e) {
     if (e.message === 'cancelled') return;
     console.error('카카오 로그인 실패:', e);
