@@ -1,0 +1,58 @@
+# -*- coding: utf-8 -*-
+"""히든 캐릭터 누끼본(1408x3008, 3열x4행, 투명) → 게임 시트 char/hidden_*.png.
+
+build_walk.py와 같은 규격(셀 높이 224 = TARGET_H 214 + 상6 하4)으로 맞춰 사람/헬토리와 스케일 일치.
+소스가 정확한 3등분이 아니어도(1408÷3 비정수) 셀별로 캐릭터 bbox를 찾아 균일 셀에 재정렬한다.
+프레임 재생성 시 소스만 갈고 재실행 → index.html ?v= 만 올리면 반영.
+"""
+import os
+from PIL import Image
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TARGET_H = 214
+PADX, PAD_TOP, PAD_BOTTOM = 6, 6, 4
+SRCDIR = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스터마이징 3차\머피_로고삭제툴_에셋보관"
+SOURCES = {
+    'hidden_cult': '화요일교 교주 시안_clean-nukki.png',
+    'hidden_somm': '소믈리에_clean-nukki.png',
+    'hidden_zombie': '좀비_clean-nukki.png',
+}
+
+
+def build(name, fn):
+    im = Image.open(os.path.join(SRCDIR, fn)).convert('RGBA')
+    W, H = im.size
+    subs = []
+    maxw = 0
+    for r in range(4):
+        for c in range(3):
+            x0, x1 = round(W * c / 3), round(W * (c + 1) / 3)
+            y0, y1 = round(H * r / 4), round(H * (r + 1) / 4)
+            cell = im.crop((x0, y0, x1, y1))
+            bb = cell.getbbox()
+            if not bb:
+                subs.append(None)
+                continue
+            s = cell.crop(bb)
+            sc = TARGET_H / s.height
+            s = s.resize((max(1, round(s.width * sc)), TARGET_H), Image.LANCZOS)
+            subs.append(s)
+            maxw = max(maxw, s.width)
+    cw = maxw + PADX * 2
+    chh = TARGET_H + PAD_TOP + PAD_BOTTOM
+    sheet = Image.new('RGBA', (cw * 3, chh * 4), (0, 0, 0, 0))
+    for i, s in enumerate(subs):
+        if s is None:
+            continue
+        r, c = i // 3, i % 3
+        ox = c * cw + (cw - s.width) // 2
+        oy = r * chh + (chh - PAD_BOTTOM - s.height)
+        sheet.alpha_composite(s, (ox, oy))
+    out = os.path.join(HERE, name + '.png')
+    sheet.save(out)
+    print(name, '->', sheet.size, 'cell', cw, 'x', chh)
+
+
+if __name__ == '__main__':
+    for name, fn in SOURCES.items():
+        build(name, fn)
