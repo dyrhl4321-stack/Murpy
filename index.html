@@ -726,6 +726,14 @@
   @keyframes mwSlam { from{ transform:rotate(-38deg) scale(2.8); opacity:0 } 60%{ opacity:1 } to{ transform:rotate(-12deg) scale(1); opacity:.94 } }
   .mw-shake { animation:mwShake .28s steps(4) } @keyframes mwShake { 25%{ transform:translate(3px,-2px) } 50%{ transform:translate(-3px,2px) } 75%{ transform:translate(2px,1px) } }
   @media (prefers-reduced-motion: reduce) { .mw-inkstamp.slam, .mw-polaroid, .mw-radar i { animation:none } .mw-shake { animation:none } }
+  /* 히든 캐릭터 '비밀 관찰 파일' 연출. 검열은 텍스트의 ▓ 문자로 직접 표현(타자기 textContent 호환). */
+  .mw-dossier { background:#0e1015; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350;
+    padding:16px 16px 18px; font-family:'GalmuriMono11','Galmuri11',monospace; color:#cfd6e6;
+    font-size:13px; line-height:1.85; white-space:pre-wrap; word-break:break-all; min-height:120px }
+  .mw-hidden-glitch { animation:mwGlitch .5s steps(3) 2 }
+  @keyframes mwGlitch { 33%{ transform:translate(-2px,1px); filter:hue-rotate(25deg) } 66%{ transform:translate(2px,-1px) } }
+  .mw-verdict-card { background:#1b2233; border:3px solid #05070c; box-shadow:0 0 0 2px #F5C24B; padding:18px 18px 16px; text-align:center }
+  @media (prefers-reduced-motion: reduce) { .mw-hidden-glitch { animation:none } }
   .mw-dialog input { border-radius:0 !important; background:#0e1320 !important; border:3px solid #05070c !important;
     box-shadow:inset 2px 2px 0 rgba(0,0,0,0.4); font-family:'GalmuriMono11',monospace !important; }
 
@@ -10776,6 +10784,23 @@ window.mwEvalHidden = function (checkins, now) {
     if (gap >= 14) out.push({ id: 'zombie' });
   }
   return out;
+};
+// 타자기 출력(포켓몬/쯔꾸르식 한 글자씩). lines=문자열 배열('\n'로 줄바꿈), ▓는 검열 문자.
+// reduced-motion이면 즉시 표시. 완료 시 resolve.
+window.mwTypewriter = function (el, lines, opts) {
+  opts = opts || {}; const speed = opts.speed || 45;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const text = lines.join('\n');
+  el.textContent = '';
+  if (reduce) { el.textContent = text; return Promise.resolve(); }
+  return new Promise(res => {
+    let i = 0;
+    const t = setInterval(() => {
+      el.textContent = text.slice(0, ++i);
+      if (opts.tick && i % 2 === 0 && navigator.vibrate) { try { navigator.vibrate(4); } catch (e) {} }
+      if (i >= text.length) { clearInterval(t); res(); }
+    }, speed);
+  });
 };
 // ---------- 도감 렌더 ----------
 window.mwRenderDogam = async function () {
