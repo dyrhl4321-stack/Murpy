@@ -10802,6 +10802,79 @@ window.mwTypewriter = function (el, lines, opts) {
     }, speed);
   });
 };
+// ---------- 히든 캐릭터 '비밀 관찰 파일 → 판정' 등장 연출 ----------
+// 축하 모달이 아니라 '감시 파일' 톤: 글리치→기밀파일→타자기 증거(검열 ▓)→판정 도장→캐릭터→판정서 카드.
+window._HIDDEN_META = {
+  cult: (r) => ({ title: r.weekday + '요일교 교주',
+    lines: ['관찰기록 #머피-' + Math.floor(1000 + Math.random() * 9000) + ' [기밀]', '',
+      '대상: ' + (window._mwMyNick || '머피'), '관찰기간: 지난 8주', '패턴 감지... ▓▓▓▓',
+      [0,1,2,3,4].map(() => r.weekday + '요일').join(' · ')],
+    quip: '찾았다. ' + r.weekday + '요일에만 오는 자여.' }),
+  somm: () => ({ title: '헬스장 소믈리에',
+    lines: ['관찰기록 [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
+      '헬스장 5곳 시음 확인 ▓▓▓', '정착: 실패'],
+    quip: '다섯 곳을 떠도는 혀로군.' }),
+  zombie: () => ({ title: '작심삼일 좀비',
+    lines: ['관찰기록 [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
+      '사망 확인... 공백 ▓▓일...', '부활 감지'],
+    quip: '또 돌아왔네. 근성인가 저주인가.' }),
+};
+window._hiddenQueue = [];
+window.mwHiddenReveal = function (r) {
+  window._hiddenQueue.push(r);
+  if (!document.getElementById('mw-hidden')) window.mwHiddenNext();
+};
+window.mwHiddenNext = async function () {
+  const old = document.getElementById('mw-hidden'); if (old) old.remove();
+  const r = window._hiddenQueue.shift(); if (!r) return;
+  const body = window._CHAR_BODIES[r.id]; if (!body) { window.mwHiddenNext(); return; }
+  const meta = window._HIDDEN_META[r.id](r);
+  const el = document.createElement('div'); el.id = 'mw-hidden';
+  el.style.cssText = 'position:fixed;inset:0;z-index:2200;display:flex;align-items:center;justify-content:center;'
+    + 'padding:18px;background:rgba(5,7,12,.92);max-width:390px;margin:0 auto';
+  el.innerHTML = '<div style="width:100%;max-width:340px">'
+    + '<div class="mw-dossier" id="mw-dossier-txt"></div>'
+    + '<div id="mw-dossier-stamp" style="text-align:center;height:0"></div>'
+    + '<div id="mw-dossier-card" style="display:none"></div></div>';
+  document.body.appendChild(el);
+  el.classList.add('mw-hidden-glitch');
+  setTimeout(() => { const e = document.getElementById('mw-hidden'); if (e) e.classList.remove('mw-hidden-glitch'); }, 1000);
+  await window.mwTypewriter(document.getElementById('mw-dossier-txt'), meta.lines, { tick: true, speed: 45 });
+  const st = document.getElementById('mw-dossier-stamp'); if (!st) return;
+  st.style.height = 'auto';
+  st.innerHTML = '<div class="mw-inkstamp slam" style="margin:14px auto"><i>판정</i></div>';
+  const box = document.getElementById('mw-hidden'); if (box) box.classList.add('mw-shake');
+  if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
+  await new Promise(res => setTimeout(res, 760));
+  if (box) box.classList.remove('mw-shake');
+  const w = 96, h = Math.round(w * body.ch / body.cw);
+  const card = document.getElementById('mw-dossier-card'); if (!card) return;
+  card.className = 'mw-verdict-card'; card.style.display = 'block';
+  card.innerHTML = '<div style="width:' + w + 'px;height:' + h + 'px;margin:0 auto 10px;image-rendering:pixelated;'
+    + "background:url('" + body.src + "') no-repeat;background-size:" + (w * 3) + 'px ' + (h * 4) + "px;background-position:0 0\"></div>"
+    + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:16px;color:#F5C24B">〈' + meta.title + '〉</div>'
+    + '<div style="font-size:12px;color:#cfd6e6;margin:9px 4px 5px;line-height:1.6">' + meta.quip + '</div>'
+    + '<div style="font-size:11px;color:#8a93a8;margin-bottom:14px">내 히든 캐릭터 · ' + meta.title + '</div>'
+    + '<button class="mw-btn" style="width:100%" onclick="window.mwHiddenShare()">자랑하기</button>'
+    + '<button onclick="var e=document.getElementById(\'mw-hidden\');if(e)e.remove();window.mwHiddenNext()" '
+    + 'style="display:block;margin:11px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>';
+  // 소유 저장(멱등)
+  window._charState.hidden = window._charState.hidden || {};
+  if (!window._charState.hidden[r.id]) {
+    window._charState.hidden[r.id] = (r.id === 'cult') ? { weekday: r.weekday } : true;
+    window._charPersistHidden && window._charPersistHidden(window._charState.hidden);
+  }
+};
+window.mwHiddenShare = function () {
+  const t = '나 머피월드에서 히든 캐릭터 떴다 ㅋㅋ #머피월드';
+  if (navigator.share) navigator.share({ text: t }).catch(function () {});
+  else if (window.showToast) showToast('스크린샷으로 자랑해보세요!');
+};
+// 관리자(패수현) 테스트: 조건 안 맞아도 각 연출을 강제 미리보기(저장은 됨).
+window.mwAdminTestHidden = function (id) {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  window.mwHiddenReveal((id === 'cult') ? { id: 'cult', weekday: '화' } : { id: id });
+};
 // ---------- 도감 렌더 ----------
 window.mwRenderDogam = async function () {
   const root = document.getElementById('mw-dogam-root'); if (!root) return;
