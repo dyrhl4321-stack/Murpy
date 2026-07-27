@@ -7586,10 +7586,13 @@ window._isConnected = async (otherUid) => {
 window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트). 사용자 충분히 모이면 'enforced'.
 const CREDIT_WELCOME = 10, CREDIT_DAILY = 1, COST_MATCH = 1, COST_BAMBOO = 1;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
-window._charState = { character: null, wardrobe: [], ready: false };
+window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); } catch (e) { console.error('char save', e); } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
+// 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
+window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
+window._charPersistHidden = async (map) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); } catch (e) { console.error('hidden save', e); } };
 window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 // ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
 window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
@@ -8069,12 +8072,14 @@ window.ensureCreditsInit = async (uid) => {
       window._creditState.streak = 0;
       window._charState.character = { ...window.CHAR_DEFAULT };
       window._charState.wardrobe = [...window.CHAR_FREE];
+      window._charState.hidden = {};
     } else {
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
       window._creditState.streak = (typeof d.streak === 'number') ? d.streak : 0;
       window._charState.character = d.character || { ...window.CHAR_DEFAULT };
       window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
+      window._charState.hidden = (d.hiddenChars && typeof d.hiddenChars === 'object') ? d.hiddenChars : {};
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
