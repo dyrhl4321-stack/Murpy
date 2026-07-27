@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260727003 -->
+<!-- cache-bust: v20260727004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -733,14 +733,25 @@
   @keyframes mwSlam { from{ transform:rotate(-38deg) scale(2.8); opacity:0 } 60%{ opacity:1 } to{ transform:rotate(-12deg) scale(1); opacity:.94 } }
   .mw-shake { animation:mwShake .28s steps(4) } @keyframes mwShake { 25%{ transform:translate(3px,-2px) } 50%{ transform:translate(-3px,2px) } 75%{ transform:translate(2px,1px) } }
   @media (prefers-reduced-motion: reduce) { .mw-inkstamp.slam, .mw-polaroid, .mw-radar i { animation:none } .mw-shake { animation:none } }
-  /* 히든 캐릭터 '비밀 관찰 파일' 연출. 검열은 텍스트의 ▓ 문자로 직접 표현(타자기 textContent 호환). */
+  /* 히든 캐릭터 '비밀 관찰 파일' 연출. 블록문자(▓)는 픽셀폰트에서 깨져 안 씀 — 평문/[기밀]로. */
   .mw-dossier { background:#0e1015; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     padding:16px 16px 18px; font-family:'GalmuriMono11','Galmuri11',monospace; color:#cfd6e6;
     font-size:13px; line-height:1.85; white-space:pre-wrap; word-break:break-all; min-height:120px }
   .mw-hidden-glitch { animation:mwGlitch .5s steps(3) 2 }
   @keyframes mwGlitch { 33%{ transform:translate(-2px,1px); filter:hue-rotate(25deg) } 66%{ transform:translate(2px,-1px) } }
+  /* 판정 = '기밀 해제' 붉은 스탬프 + 검열바가 좌→우로 벗겨지며 칭호가 드러남.
+     검열은 CSS 박스로 그린다(▓ 블록문자는 픽셀폰트에서 깨짐). 벗겨짐은 steps로 픽셀 단위. */
+  .mw-declass { display:inline-block; color:#E4472E; font-family:'Galmuri11',sans-serif; font-size:13px;
+    letter-spacing:5px; padding:5px 10px 4px 15px; border:3px solid #E4472E;
+    animation:mwDeclass .4s cubic-bezier(.15,1.5,.5,1) both }
+  @keyframes mwDeclass { from{ transform:rotate(-26deg) scale(2.3); opacity:0 } to{ transform:rotate(-7deg) scale(1); opacity:.95 } }
+  .mw-redact-label { color:#8a93a8; font-size:11px; letter-spacing:3px; margin:15px 0 6px }
+  .mw-redact { position:relative; display:inline-block; padding:2px 5px;
+    font-family:'Galmuri14','Galmuri11',sans-serif; font-size:21px; color:#F5C24B }
+  .mw-redact i { position:absolute; inset:-1px; background:#05070c; animation:mwUnredact .8s steps(14) both .36s }
+  @keyframes mwUnredact { from{ left:-1px } to{ left:100% } }
   .mw-verdict-card { background:#1b2233; border:3px solid #05070c; box-shadow:0 0 0 2px #F5C24B; padding:18px 18px 16px; text-align:center }
-  @media (prefers-reduced-motion: reduce) { .mw-hidden-glitch { animation:none } }
+  @media (prefers-reduced-motion: reduce) { .mw-hidden-glitch, .mw-declass { animation:none } .mw-redact i { display:none } }
   .mw-dialog input { border-radius:0 !important; background:#0e1320 !important; border:3px solid #05070c !important;
     box-shadow:inset 2px 2px 0 rgba(0,0,0,0.4); font-family:'GalmuriMono11',monospace !important; }
 
@@ -10814,10 +10825,10 @@ window.mwEvalHidden = function (checkins, now) {
   }
   return out;
 };
-// 타자기 출력(포켓몬/쯔꾸르식 한 글자씩). lines=문자열 배열('\n'로 줄바꿈), ▓는 검열 문자.
-// reduced-motion이면 즉시 표시. 완료 시 resolve.
+// 타자기 출력(포켓몬/쯔꾸르식 한 글자씩). lines=문자열 배열('\n'로 줄바꿈).
+// reduced-motion이면 즉시 표시. 완료 시 resolve. speed=글자당 ms(클수록 느림).
 window.mwTypewriter = function (el, lines, opts) {
-  opts = opts || {}; const speed = opts.speed || 45;
+  opts = opts || {}; const speed = opts.speed || 55;
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const text = lines.join('\n');
   el.textContent = '';
@@ -10831,21 +10842,22 @@ window.mwTypewriter = function (el, lines, opts) {
     }, speed);
   });
 };
-// ---------- 히든 캐릭터 '비밀 관찰 파일 → 판정' 등장 연출 ----------
-// 축하 모달이 아니라 '감시 파일' 톤: 글리치→기밀파일→타자기 증거(검열 ▓)→판정 도장→캐릭터→판정서 카드.
+// ---------- 히든 캐릭터 '비밀 관찰 파일 → 기밀 해제' 등장 연출 ----------
+// 감시 파일 톤: 글리치→기밀파일→타자기 증거→기밀 해제 스탬프+검열바 소거→캐릭터→판정서 카드.
+// ※ ▓ 같은 블록문자는 픽셀폰트에서 깨진다 — 검열은 .mw-redact(CSS 박스)로만 표현할 것.
 window._HIDDEN_META = {
   cult: (r) => ({ title: r.weekday + '요일교 교주',
-    lines: ['관찰기록 #머피-' + Math.floor(1000 + Math.random() * 9000) + ' [기밀]', '',
-      '대상: ' + (window._mwMyNick || '머피'), '관찰기간: 지난 8주', '패턴 감지... ▓▓▓▓',
+    lines: ['관찰기록 #머피-' + Math.floor(1000 + Math.random() * 9000) + '  [기밀]', '',
+      '대상: ' + (window._mwMyNick || '머피'), '관찰기간: 지난 8주', '요일 패턴 분석 완료.',
       [0,1,2,3,4].map(() => r.weekday + '요일').join(' · ')],
     quip: '찾았다. ' + r.weekday + '요일에만 오는 자여.' }),
   somm: () => ({ title: '헬스장 소믈리에',
-    lines: ['관찰기록 [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
-      '헬스장 5곳 시음 확인 ▓▓▓', '정착: 실패'],
+    lines: ['관찰기록  [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
+      '방문 기록 대조 중...', '서로 다른 헬스장 다섯 곳 확인', '정착: 없음'],
     quip: '다섯 곳을 떠도는 혀로군.' }),
   zombie: () => ({ title: '작심삼일 좀비',
-    lines: ['관찰기록 [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
-      '사망 확인... 공백 ▓▓일...', '부활 감지'],
+    lines: ['관찰기록  [기밀]', '', '대상: ' + (window._mwMyNick || '머피'),
+      '사망 확인 — 장기 공백', '...부활 감지'],
     quip: '또 돌아왔네. 근성인가 저주인가.' }),
 };
 window._hiddenQueue = [];
@@ -10868,13 +10880,15 @@ window.mwHiddenNext = async function () {
   document.body.appendChild(el);
   el.classList.add('mw-hidden-glitch');
   setTimeout(() => { const e = document.getElementById('mw-hidden'); if (e) e.classList.remove('mw-hidden-glitch'); }, 1000);
-  await window.mwTypewriter(document.getElementById('mw-dossier-txt'), meta.lines, { tick: true, speed: 45 });
+  await window.mwTypewriter(document.getElementById('mw-dossier-txt'), meta.lines, { tick: true });
   const st = document.getElementById('mw-dossier-stamp'); if (!st) return;
-  st.style.height = 'auto';
-  st.innerHTML = '<div class="mw-inkstamp slam" style="margin:14px auto"><i>판정</i></div>';
+  st.style.height = 'auto'; st.style.marginTop = '16px';
+  st.innerHTML = '<div class="mw-declass">기 밀 해 제</div>'
+    + '<div class="mw-redact-label">대상 분류</div>'
+    + '<div class="mw-redact">〈' + meta.title + '〉<i></i></div>';
   const box = document.getElementById('mw-hidden'); if (box) box.classList.add('mw-shake');
-  if (navigator.vibrate) { try { navigator.vibrate(30); } catch (e) {} }
-  await new Promise(res => setTimeout(res, 760));
+  if (navigator.vibrate) { try { navigator.vibrate([20, 30, 20]); } catch (e) {} }
+  await new Promise(res => setTimeout(res, 1450)); // 스탬프 .4s + 검열바 해제(.36 지연 +.8s)
   if (box) box.classList.remove('mw-shake');
   const w = 96, h = Math.round(w * body.ch / body.cw);
   const card = document.getElementById('mw-dossier-card'); if (!card) return;
