@@ -42,15 +42,29 @@
   - 여러 장 한 번에: 파일 경로를 여러 개 나열.
   - **`--force`**: 흐린 배경(흰옷) 위라 워터마크가 임계값 미달로 안 잡히거나, 머리 흔들림으로
     도너가 안 맞아 "중단"되면 붙인다. 판정을 건너뛰고 최적 도너를 무조건 이식 → **반드시 눈으로 검증.**
-- **출력:** `<원본>_clean.png` (초록 배경 유지). 이후 Photoroom 누끼 → `_clean-Photoroom.png`.
+- **출력:** `<원본>_clean.png` (초록 배경 유지). 이후 아래 누끼 툴로 투명 처리.
 - **의존성:** `numpy`, `pillow` (이 머신은 `python -m pip install numpy` 필요했음).
 
-## 후처리 흐름 (에셋 파이프라인)
-```
-원본(초록 #00FF00 배경)
-  └─▶ [워터마크 제거] char/remove_gemini_watermark.py  →  _clean.png (초록 배경)
-        └─▶ [누끼] Photoroom                            →  _clean-Photoroom.png (투명)
-              └─▶ [앱 추출] char/build_walk.py 등        →  게임용 시트(char/*.png)
-```
+## 누끼(배경 제거) — Photoroom 대체 (자체 파이프라인)
 
-*마지막 갱신: 2026-07-24 — 라이브러리 신설, 워터마크 제거 툴에 `--force` 추가.*
+Photoroom 없이 우리 툴로 배경을 뗀다. 나노바나나가 **단색 형광초록 #00FF00** 위에 뽑으므로
+그 초록만 크로마키로 투명 처리(방송 그린스크린과 같은 원리).
+
+- **툴:** `char/nukki.py`
+- **사용:** `python char/nukki.py "입력.png" -o "출력폴더"` → `<이름>-nukki.png`(투명)
+- **원리:** '초록기 = G − max(R,B)'. 배경은 이 값이 극단적(≈255), 캐릭터 초록(나비넥타이~86,
+  좀비피부~24)은 낮아서 임계값(기본 `--greenness 120`) 사이로 가른다. 경계 초록 번짐은 despill.
+- **튜닝:** 캐릭터 초록이 지워지면 `--greenness` 올리고, 배경 초록이 남으면 내린다.
+- 반드시 결과를 눈으로 검증(마젠타 배경 합성 등)해 헤일로·구멍 확인.
+
+## 후처리 흐름 (에셋 파이프라인 = Murpy Asset Studio)
+```
+원본(초록 #00FF00 배경, ✦ 있을 수 있음)
+  └─▶ [워터마크 제거] char/remove_gemini_watermark.py  →  _clean.png (초록 배경)
+        └─▶ [누끼] char/nukki.py                        →  _clean-nukki.png (투명)
+              └─▶ [프레임 보정] 필요 시 (예: 좀비 앞머리 통일 = 정지프레임 머리 이식)
+                    └─▶ [앱 추출] char/build_walk.py 등  →  게임용 시트(char/*.png)
+```
+> 이제 Photoroom 불필요 — 누끼·워터마크 제거 전부 numpy로 자체 처리(대표 방침 7-27).
+
+*마지막 갱신: 2026-07-27 — 자체 누끼 툴 `char/nukki.py` 추가(Photoroom 대체), 파이프라인 갱신.*
