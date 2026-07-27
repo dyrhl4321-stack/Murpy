@@ -12,15 +12,33 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TARGET_H = 214
 PADX, PAD_TOP, PAD_BOTTOM = 6, 6, 4
 SRCDIR = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스터마이징 3차\머피_로고삭제툴_에셋보관"
+_DESKTOP = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스터마이징 3차"
+# (파일명, largest_only). largest_only=True면 셀에서 가장 큰 연결덩어리(캐릭터)만 추출 →
+#   외딴 제미나이 ✦ 등 작은 잡티가 자동 제거된다(누끼 전 워터마크 제거를 못 한 헬토리용).
 SOURCES = {
-    'hidden_cult': '화요일교 교주 시안_clean-nukki.png',
-    'hidden_somm': '소믈리에_clean-nukki.png',
-    'hidden_zombie': '좀비_clean-nukki.png',
+    'hidden_cult':   (os.path.join(SRCDIR, '화요일교 교주 시안_clean-nukki.png'), False),
+    'hidden_somm':   (os.path.join(SRCDIR, '소믈리에_clean-nukki.png'), False),
+    'hidden_zombie': (os.path.join(SRCDIR, '좀비_clean-nukki.png'), False),
+    'heltori':       (os.path.join(_DESKTOP, '헬토리_초안-Photoroom.png'), True),
 }
 
 
-def build(name, fn):
-    im = Image.open(os.path.join(SRCDIR, fn)).convert('RGBA')
+def _largest_bbox(cell):
+    """셀에서 가장 큰 불투명 연결덩어리의 bbox. 외딴 잡티(워터마크)는 무시."""
+    import numpy as np
+    from scipy import ndimage
+    a = np.asarray(cell)[..., 3] >= 40
+    lab, n = ndimage.label(a)
+    if n == 0:
+        return None
+    sizes = ndimage.sum(a, lab, range(1, n + 1))
+    big = int(np.argmax(sizes)) + 1
+    ys, xs = np.where(lab == big)
+    return (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+
+def build(name, path, largest_only=False):
+    im = Image.open(path).convert('RGBA')
     W, H = im.size
     subs = []
     maxw = 0
@@ -29,7 +47,7 @@ def build(name, fn):
             x0, x1 = round(W * c / 3), round(W * (c + 1) / 3)
             y0, y1 = round(H * r / 4), round(H * (r + 1) / 4)
             cell = im.crop((x0, y0, x1, y1))
-            bb = cell.getbbox()
+            bb = _largest_bbox(cell) if largest_only else cell.getbbox()
             if not bb:
                 subs.append(None)
                 continue
@@ -54,5 +72,5 @@ def build(name, fn):
 
 
 if __name__ == '__main__':
-    for name, fn in SOURCES.items():
-        build(name, fn)
+    for name, (path, largest) in SOURCES.items():
+        build(name, path, largest)
