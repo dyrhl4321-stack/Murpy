@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>머피 하이파이브 측정</title>
+<!--
+  머피 하이파이브 실측 도구 (2026-07-28)
+  목적: 두 사람이 손을 마주쳤을 때 두 폰이 감지한 '충격 시각의 차이(Δt)'를 실제로 재기 위한 것.
+        이 숫자가 특허 청구항의 임계시간과 실제 구현 가능 여부를 동시에 결정한다.
+
+  방법: 각 폰이 가속도 센서로 충격 피크를 잡고, Firebase RTDB의 serverTimeOffset으로 보정한
+        '서버 기준 시각'을 기록해 같은 방에 올린다. 두 기록의 차이가 곧 Δt.
+
+  주의: - HTTPS에서만 동작한다(GitHub Pages OK). 로컬 file:// 로는 센서가 안 잡힌다.
+        - iOS는 반드시 사용자가 버튼을 눌러 센서 권한을 허용해야 한다.
+        - 폰을 서로 부딪히지 말 것. 폰을 손에 쥔 채 '손바닥끼리' 마주친다.
+        - 계정은 이 페이지가 임시로 자동 생성한다(로컬에 저장해 재사용).
+-->
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:#0a0d16; color:#cfd6e6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;
+         padding:18px 16px 40px; max-width:520px; margin:0 auto; }
+  h1 { font-size:19px; color:#fff; margin:0 0 4px }
+  .sub { font-size:12.5px; color:#8a93a8; line-height:1.6; margin-bottom:16px }
+  .card { background:#151b2b; border:1px solid #2b3350; border-radius:12px; padding:14px; margin-bottom:12px }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13.5px; padding:5px 0 }
+  .row b { color:#fff; font-variant-numeric:tabular-nums }
+  button { width:100%; padding:15px; font-size:16px; font-weight:700; border:none; border-radius:12px;
+           background:#3D7EFF; color:#fff; font-family:inherit; cursor:pointer; margin-top:8px }
+  button:disabled { background:#2a3350; color:#6b7490 }
+  button.ghost { background:#1e2740; color:#cfd6e6 }
+  .big { font-size:42px; font-weight:800; color:#F5C24B; text-align:center; margin:6px 0; font-variant-numeric:tabular-nums }
+  .big small { display:block; font-size:12px; color:#8a93a8; font-weight:500; margin-top:2px }
+  .ok { color:#4ade80 } .bad { color:#E4472E }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; line-height:1.7; color:#8a93a8;
+         max-height:210px; overflow-y:auto; white-space:pre-wrap; word-break:break-all }
+  .hint { font-size:12px; color:#8a93a8; line-height:1.65; margin-top:10px }
+  .meter { height:8px; background:#0a0d16; border-radius:4px; overflow:hidden; margin-top:8px }
+  .meter i { display:block; height:100%; background:#3D7EFF; width:0%; transition:width .05s linear }
+</style>
+</head>
+<body>
+
+<h1>머피 하이파이브 측정</h1>
+<div class="sub">
+  두 폰에서 이 페이지를 열고 <b>같은 방 이름</b>을 쓴 뒤, 폰을 쥔 손으로 <b>손바닥을 마주치세요</b>.<br>
+  두 폰이 감지한 충격 시각의 차이(Δt)를 잽니다. <b>폰끼리 부딪히지 마세요.</b>
+</div>
+
+<div class="card">
+  <div class="row"><span>방 이름</span><b id="room">-</b></div>
+  <div class="row"><span>내 기기</span><b id="me">-</b></div>
+  <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
+  <div class="row"><span>센서</span><b id="sensor">대기</b></div>
+  <div class="row"><span>현재 충격량</span><b id="mag">-</b></div>
+  <div class="meter"><i id="bar"></i></div>
+  <button id="start">센서 켜기 (iOS는 필수)</button>
+</div>
+
+<div class="card">
+  <div style="font-size:13px;color:#8a93a8;margin-bottom:2px">마지막 하이파이브 시각차</div>
+  <div class="big" id="dt">–<small>두 폰 모두 충격이 잡히면 표시됩니다</small></div>
+  <div class="row"><span>측정 횟수</span><b id="cnt">0</b></div>
+  <div class="row"><span>평균 Δt</span><b id="avg">-</b></div>
+  <div class="row"><span>최대 Δt</span><b id="max">-</b></div>
+</div>
+
+<div class="card">
+  <div style="font-size:13px;color:#8a93a8;margin-bottom:6px">기록</div>
+  <div class="log" id="log">시작 대기 중…</div>
+  <button class="ghost" id="reset">기록 지우기</button>
+</div>
+
+<div class="hint">
+  <b>임계값</b> 충격 판정 25 m/s² · 재감지 대기 1.2초<br>
+  <b>오차 요인</b> 서버 시각 보정 오차가 Δt에 그대로 더해집니다. 보정값이 크게 흔들리면 와이파이/LTE를 바꿔 다시 재보세요.<br>
+  <b>판단 기준</b> 평균 Δt가 <b>150ms 이하</b>면 넉넉하게 쓸 수 있고, <b>300ms 이하</b>면 임계값으로 쓸 만합니다.
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set, onValue, remove, onDisconnect }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
+  authDomain: "murpyprototype.firebaseapp.com",
+  projectId: "murpyprototype",
+  storageBucket: "murpyprototype.firebasestorage.app",
+  messagingSenderId: "534058034338",
+  appId: "1:534058034338:web:6aee952dfb648a612b23fb"
+});
+const auth = getAuth(app);
+const db = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
+
+const $ = id => document.getElementById(id);
+const logs = [];
+function log(s) {
+  logs.unshift(new Date().toLocaleTimeString('ko-KR') + '  ' + s);
+  $('log').textContent = logs.slice(0, 40).join('\n');
+}
+
+// 방 이름: ?room=xxx 로 바꿀 수 있다. 기본은 hifiveTest.
+// 경로는 기존 보안규칙(squadRooms/{sid}/players/{uid})을 그대로 재사용한다 — 규칙 수정 불필요.
+const ROOM = new URLSearchParams(location.search).get('room') || 'hifiveTest';
+$('room').textContent = ROOM;
+
+// ---- 임시 계정 (규칙이 로그인 사용자를 요구하므로) ----
+// 로컬에 저장해 다시 열어도 같은 계정을 쓴다. 두 폰은 각각 다른 계정이 된다.
+async function ensureUser() {
+  let cred = null;
+  try { cred = JSON.parse(localStorage.getItem('hifive_cred') || 'null'); } catch (e) {}
+  if (!cred) {
+    cred = {
+      email: 'hifive' + Math.random().toString(36).slice(2, 10) + '@murpy-test.local',
+      pw: 'Hf!' + Math.random().toString(36).slice(2, 12)
+    };
+    localStorage.setItem('hifive_cred', JSON.stringify(cred));
+  }
+  try {
+    const u = await signInWithEmailAndPassword(auth, cred.email, cred.pw);
+    return u.user;
+  } catch (e) {
+    const u = await createUserWithEmailAndPassword(auth, cred.email, cred.pw);
+    return u.user;
+  }
+}
+
+let uid = null, offset = 0, offsetReady = false;
+
+// ---- 서버 시각 보정 ----
+// .info/serverTimeOffset 은 보안규칙과 무관한 클라이언트 메타 경로다.
+// 서버시각 = Date.now() + offset
+onValue(ref(db, '.info/serverTimeOffset'), snap => {
+  offset = snap.val() || 0;
+  offsetReady = true;
+  $('off').textContent = (offset >= 0 ? '+' : '') + Math.round(offset) + ' ms';
+});
+const serverNow = () => Date.now() + offset;
+
+const start = async () => {
+  const user = await ensureUser();
+  uid = user.uid;
+  $('me').textContent = uid.slice(0, 6);
+  log('로그인됨 ' + uid.slice(0, 6));
+
+  const meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
+  onDisconnect(meRef).remove();
+  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0 });
+
+  // 같은 방의 모든 기기를 구독해 Δt를 계산한다
+  onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
+    const all = snap.val() || {};
+    const others = Object.values(all).filter(p => p && p.uid !== uid && p.peakAt);
+    const mine = all[uid];
+    if (!mine || !mine.peakAt || !others.length) return;
+    // 내 피크와 가장 가까운 상대 피크를 짝지어 Δt 계산
+    let best = null;
+    for (const o of others) {
+      const d = Math.abs(o.peakAt - mine.peakAt);
+      if (!best || d < best.d) best = { d, o };
+    }
+    if (!best || best.d > 4000) return;          // 4초 넘게 벌어지면 다른 시도로 본다
+    record(best.d, best.o.uid);
+  });
+  return meRef;
+};
+
+// ---- Δt 집계 ----
+let meRef = null, samples = [], lastRecordKey = '';
+function record(d, otherUid) {
+  const key = otherUid + ':' + Math.round(d);
+  if (key === lastRecordKey) return;             // 같은 스냅샷 중복 방지
+  lastRecordKey = key;
+  samples.push(d);
+  const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+  const mx = Math.max(...samples);
+  $('dt').innerHTML = Math.round(d) + '<small>ms</small>';
+  $('dt').className = 'big ' + (d <= 300 ? 'ok' : 'bad');
+  $('cnt').textContent = samples.length;
+  $('avg').textContent = Math.round(avg) + ' ms';
+  $('max').textContent = Math.round(mx) + ' ms';
+  log('Δt = ' + Math.round(d) + 'ms  (상대 ' + otherUid.slice(0, 6) + ')');
+}
+
+// ---- 충격 피크 감지 ----
+let lastPeak = 0, peakArmed = true;
+const THRESH = 25;      // m/s² (중력 포함 합성 가속도)
+const COOLDOWN = 1200;  // ms
+
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity;
+  if (!a || a.x == null) return;
+  const mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  $('mag').textContent = mag.toFixed(1);
+  $('bar').style.width = Math.min(100, mag / 40 * 100) + '%';
+
+  const now = Date.now();
+  if (mag >= THRESH && peakArmed && now - lastPeak > COOLDOWN) {
+    lastPeak = now; peakArmed = false;
+    setTimeout(() => { peakArmed = true; }, COOLDOWN);
+    const at = serverNow();
+    log('충격 감지 ' + mag.toFixed(1) + ' m/s²' + (offsetReady ? '' : ' (보정 미완료!)'));
+    if (meRef) set(meRef, { uid, peakAt: at, mag: Math.round(mag * 10) / 10, joinedAt: at });
+  }
+}
+
+$('start').onclick = async () => {
+  $('start').disabled = true;
+  try {
+    meRef = await start();
+  } catch (e) {
+    log('로그인 실패: ' + (e && e.message));
+    $('start').disabled = false;
+    return;
+  }
+  // iOS 13+ 는 사용자 제스처 안에서 권한을 요청해야 한다
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      const p = await DeviceMotionEvent.requestPermission();
+      if (p !== 'granted') { $('sensor').textContent = '권한 거부됨'; log('센서 권한 거부'); return; }
+    }
+    window.addEventListener('devicemotion', onMotion);
+    $('sensor').textContent = '켜짐';
+    $('start').textContent = '측정 중 — 손바닥을 마주치세요';
+    log('센서 시작. 폰을 쥔 손으로 하이파이브!');
+  } catch (e) {
+    $('sensor').textContent = '오류';
+    log('센서 오류: ' + (e && e.message));
+  }
+};
+
+$('reset').onclick = () => { samples = []; logs.length = 0; lastRecordKey = '';
+  $('cnt').textContent = '0'; $('avg').textContent = '-'; $('max').textContent = '-';
+  $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big'; $('log').textContent = '초기화'; };
+</script>
+</body>
+</html>
