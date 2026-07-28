@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>머피 범프 계측 v14</title>
+<!--
+  머피 범프 실측 도구 v14 (2026-07-28) — 새 주소(bump5.html), 캐시 회피용
+
+  v13에서 바뀐 것
+   ① 자세별 분리 집계 — 옆면 5회 / 주먹 5회를 따로 세고 따로 통계낸다.
+      v13은 전부 한 통에 섞여서 "장변 168~177 / 주먹 1~7" 같은 분리를 손으로 해야 했다.
+   ② ★사후 조회(retro-check) — 상대가 "나 맞았다"를 보내왔는데 내가 못 잡았으면,
+      그 시각 ±200ms를 내 버퍼에서 더 낮은 임계로 되짚어 본다.
+      임계를 낮추지 않고도 검출률이 오른다. 상대 신호가 있을 때만 열리므로
+      혼자 흔든 건 여전히 안 걸린다(직전 정적도 조건은 그대로 적용).
+      v13까지의 문제: 받는 쪽이 약해 15회 중 11쌍(73%)만 검출 → 임계를 18→15→11로 계속 낮췄음.
+   ③ 결과 요약 + 복사 버튼 — 측정 끝나고 그대로 붙여넣어 전달할 수 있다.
+   ④ 버퍼 1500→2500ms — 상대 신호는 충격 후 약 1초 뒤 도착하므로 사후 조회에 여유가 필요하다.
+
+  재는 것 (v13과 동일)
+   1) Δt      — 두 폰이 감지한 충격 시각의 차이. 실측 평균26/중앙17/최대100ms(11쌍) → 임계 150ms 권장
+   2) 방위차   — 나침반. 자세에 따라 170°와 4°로 갈려 단독 판정 불가로 이미 실증됨(보조 지표)
+   3) 이격방향 — 지구 좌표로 변환해 비교. 자세 무관 판정. 마주 서면 120° 이상
+   4) 파형     — 충격 전후 구간의 진동 모양
+
+  측정 방법
+   - 두 폰 모두 이 페이지를 열고 [센서 켜기] → 접속 2대 확인
+   - 두 폰 모두 같은 자세 버튼을 선택 → 5회 톡 → 자세 바꿔서 5회
+   - 세게 부딪히지 말 것. 위쪽(머리)끼리는 NameDrop이 떠서 금지, 반드시 옆면.
+
+  주의: 이 파일을 PowerShell로 편집하지 말 것(한글 깨짐). Write 도구 사용.
+-->
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:#0a0d16; color:#cfd6e6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;
+         padding:16px 14px 40px; max-width:520px; margin:0 auto; }
+  h1 { font-size:19px; color:#fff; margin:0 0 4px }
+  .sub { font-size:12.5px; color:#8a93a8; line-height:1.65; margin-bottom:14px }
+  .card { background:#151b2b; border:1px solid #2b3350; border-radius:12px; padding:13px; margin-bottom:11px }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13.5px; padding:4px 0 }
+  .row b { color:#fff; font-variant-numeric:tabular-nums; text-align:right }
+  button { width:100%; padding:15px; font-size:16px; font-weight:700; border:none; border-radius:12px;
+           background:#3D7EFF; color:#fff; font-family:inherit; cursor:pointer; margin-top:8px }
+  button:disabled { background:#2a3350; color:#6b7490 }
+  button.ghost { background:#1e2740; color:#cfd6e6; font-size:14px; padding:11px }
+  .big { font-size:40px; font-weight:800; color:#F5C24B; text-align:center; margin:4px 0; font-variant-numeric:tabular-nums }
+  .big small { display:block; font-size:12px; color:#8a93a8; font-weight:500; margin-top:2px }
+  .ok { color:#4ade80 !important } .bad { color:#E4472E !important } .warn { color:#F5C24B !important }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; line-height:1.65; color:#8a93a8;
+         max-height:170px; overflow-y:auto; white-space:pre-wrap; word-break:break-all }
+  .hint { font-size:12px; color:#8a93a8; line-height:1.6; margin-top:8px }
+  .meter { height:8px; background:#0a0d16; border-radius:4px; overflow:hidden; margin-top:6px }
+  .meter i { display:block; height:100%; background:#3D7EFF; width:0%; transition:width .05s linear }
+  canvas { width:100%; height:70px; display:block; background:#0a0d16; border-radius:8px; margin-top:6px }
+  .sec { font-size:12px; color:#6b7490; letter-spacing:1px; margin:2px 0 6px }
+
+  /* 자세 선택 — 두 폰이 같은 자세여야 통계가 맞는다 */
+  .poses { display:flex; gap:9px; margin-top:4px }
+  .pose { flex:1; background:#0e1320; border:2px solid #2b3350; border-radius:11px; padding:12px 8px; text-align:center; cursor:pointer }
+  .pose.on { border-color:#3D7EFF; background:#16213f }
+  .pose .t { font-size:14px; font-weight:800; color:#fff }
+  .pose .d { font-size:10.5px; color:#8a93a8; margin-top:3px; line-height:1.4 }
+  .pose .c { font-size:19px; font-weight:800; color:#F5C24B; font-variant-numeric:tabular-nums; margin-top:5px }
+  .pose.done .c { color:#4ade80 }
+  #sum { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; line-height:1.7; color:#cfd6e6;
+         white-space:pre-wrap; background:#0a0d16; border-radius:8px; padding:11px; min-height:60px }
+</style>
+</head>
+<body>
+
+<h1>머피 범프 계측 <span style="font-size:13px;color:#4ade80">v14</span></h1>
+<div class="sub">
+  두 폰에서 이 페이지를 열면 자동으로 같은 방에 연결됩니다. <b>접속 기기 2대</b>가 되면 준비 끝입니다.<br>
+  <b>두 폰이 같은 자세 버튼을 선택</b>한 뒤 <b>5회씩</b> 톡 대고 떼세요.<br>
+  <b class="warn">세게 부딪히지 마세요. 위쪽(머리)끼리는 NameDrop이 떠서 안 됩니다.</b>
+</div>
+
+<div class="card">
+  <div class="sec">자세 — 두 폰 모두 같은 걸 선택</div>
+  <div class="poses">
+    <div class="pose on" id="p-side" data-p="side">
+      <div class="t">옆면</div>
+      <div class="d">눕혀서 긴 옆구리끼리<br>화면 둘 다 보임</div>
+      <div class="c" id="c-side">0/5</div>
+    </div>
+    <div class="pose" id="p-fist" data-p="fist">
+      <div class="t">주먹</div>
+      <div class="d">주먹 쥐고 톡<br>화면은 가림</div>
+      <div class="c" id="c-fist">0/5</div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:9px"><span>상대 자세</span><b id="pepose">-</b></div>
+</div>
+
+<div class="card">
+  <div class="row"><span>기울기 수신</span><b id="oristat" class="bad">아직 없음</b></div>
+  <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
+  <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
+  <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
+  <div class="row"><span>현재 충격량</span><b id="mag">-</b></div>
+  <div class="meter"><i id="bar"></i></div>
+  <div class="row"><span>최근 최대 충격</span><b id="peakhold">-</b></div>
+  <div class="row"><span>흔들림으로 무시</span><b id="ign">0회</b></div>
+  <div class="row"><span>감지 기준</span><b id="thv">11</b></div>
+  <input id="th" type="range" min="6" max="40" step="1" value="11" style="width:100%;margin:2px 0;accent-color:#3D7EFF">
+  <div class="row"><span>사후 조회 기준</span><b id="rthv">6</b></div>
+  <input id="rth" type="range" min="3" max="20" step="1" value="6" style="width:100%;margin:2px 0;accent-color:#4ade80">
+  <button id="start">센서 켜기 (iOS는 필수)</button>
+</div>
+
+<div class="card">
+  <div class="sec">1. 충격 시각차</div>
+  <div class="big" id="dt">–<small>두 폰 모두 충격이 잡히면 표시됩니다</small></div>
+  <div class="row"><span>이번 자세 쌍 수</span><b id="cnt">0</b></div>
+  <div class="row"><span>평균 / 최대</span><b id="avgmax">-</b></div>
+  <div class="row"><span>내가 놓쳐서 사후 구제</span><b id="retroN" class="ok">0회</b></div>
+</div>
+
+<div class="card">
+  <div class="sec">2. 마주 봤나 (나침반 · 보조 지표)</div>
+  <div class="row"><span>내 방위 / 상대</span><b id="heads">-</b></div>
+  <div class="row"><span>차이</span><b id="hdiff">-</b></div>
+</div>
+
+<div class="card">
+  <div class="sec">3. 떼는 방향 (지구 기준 · 진짜 판정값)</div>
+  <div class="row"><span>내 기기</span><b id="myplat">-</b></div>
+  <div class="row"><span><b>지구기준 방향차</b></span><b id="opp">-</b></div>
+  <div class="hint">마주 선 두 사람이 떨어지면 <b>120° 이상</b>이 나와야 합니다. 자세와 무관합니다.</div>
+</div>
+
+<div class="card">
+  <div class="sec">4. 충격 파형 (위=내 폰, 아래=상대)</div>
+  <canvas id="w1" height="70"></canvas>
+  <canvas id="w2" height="70"></canvas>
+</div>
+
+<div class="card">
+  <div class="sec">결과 요약</div>
+  <div id="sum">아직 측정 없음</div>
+  <button class="ghost" id="copy">결과 복사하기</button>
+  <button class="ghost" id="reset">기록 지우기</button>
+</div>
+
+<div class="card">
+  <div class="sec">기록</div>
+  <div class="log" id="log">시작 대기 중…</div>
+</div>
+
+<script>
+  window.__boot = false;
+  function __log(s) {
+    var el = document.getElementById('log'); if (!el) return;
+    el.textContent = new Date().toLocaleTimeString('ko-KR') + '  ' + s + '\n' + el.textContent;
+  }
+  window.addEventListener('error', function (e) { __log('오류: ' + (e.message || e.type)); });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason; __log('오류(비동기): ' + (r && (r.message || r.code) || r));
+  });
+  setTimeout(function () {
+    if (!window.__boot) {
+      __log('초기화 실패 — 스크립트 로드가 안 됐습니다. 네트워크 차단이나 구버전 브라우저일 수 있어요.');
+      var b = document.getElementById('start'); if (b) b.textContent = '초기화 실패 (기록 확인)';
+    }
+  }, 6000);
+  if (!window.isSecureContext) setTimeout(function(){ __log('경고: HTTPS가 아니라 센서 접근이 막힙니다.'); }, 300);
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set, onValue, onDisconnect }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+window.__boot = true;
+const $ = id => document.getElementById(id);
+const logs = [];
+function log(s) { logs.unshift(new Date().toLocaleTimeString('ko-KR') + '  ' + s); $('log').textContent = logs.slice(0, 30).join('\n'); }
+
+const app = initializeApp({
+  apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
+  authDomain: "murpyprototype.firebaseapp.com",
+  projectId: "murpyprototype",
+  storageBucket: "murpyprototype.firebasestorage.app",
+  messagingSenderId: "534058034338",
+  appId: "1:534058034338:web:6aee952dfb648a612b23fb"
+});
+const auth = getAuth(app);
+const db = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
+
+// 기존 보안규칙(squadRooms/{sid}/players/{uid})을 그대로 재사용한다 — 규칙 수정 불필요
+const ROOM = new URLSearchParams(location.search).get('room') || 'bump5';
+const PLAT = /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'iOS' : 'Android';
+setTimeout(() => { const e = $('myplat'); if (e) e.textContent = PLAT; }, 0);
+
+let offset = 0;
+onValue(ref(db, '.info/serverTimeOffset'), s => {
+  offset = s.val() || 0; $('off').textContent = (offset >= 0 ? '+' : '') + Math.round(offset) + ' ms';
+});
+const serverNow = () => Date.now() + offset;
+
+async function ensureUser() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem('hifive_cred') || 'null'); } catch (e) {}
+  if (!c) {
+    c = { email: 'hifive' + Math.random().toString(36).slice(2, 10) + '@murpy-test.local',
+          pw: 'Hf!' + Math.random().toString(36).slice(2, 12) };
+    localStorage.setItem('hifive_cred', JSON.stringify(c));
+  }
+  try { return (await signInWithEmailAndPassword(auth, c.email, c.pw)).user; }
+  catch (e) { return (await createUserWithEmailAndPassword(auth, c.email, c.pw)).user; }
+}
+
+// ---------- 센서 버퍼 ----------
+// 상대 신호는 충격 후 약 1초 뒤 도착한다(상대 capture 지연 600ms + 네트워크).
+// 사후 조회로 그 시점을 되짚으려면 버퍼가 그보다 길어야 한다 → 2500ms.
+const BUF = [];                 // { t, mag, ax, ay, az }  t = 로컬 ms
+const BUF_MS = 2500;
+let heading = null;
+let THRESH = 11, RETRO_TH = 6, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
+let uid = null, meRef = null, logRef = null;
+let hist = [], lastRise = 0, lastPre = 0, myWorld = null;
+
+// 자세별 집계 — 옆면 5회 / 주먹 5회를 섞지 않는다
+let pose = 'side';
+const stats = { side: [], fist: [] };
+const POSE_NAME = { side: '옆면', fist: '주먹' };
+const GOAL = 5;
+
+document.querySelectorAll('.pose').forEach(el => {
+  el.onclick = () => {
+    pose = el.dataset.p;
+    document.querySelectorAll('.pose').forEach(x => x.classList.toggle('on', x === el));
+    // 자세를 바꾸면 직전 접촉은 잊는다 — 남겨두면 새 자세의 첫 접촉과 잘못 짝지어진다
+    lastPayload = null; lastKey = ''; lastPeak = 0;
+    if (meRef) set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, plat: PLAT }).catch(() => {});
+    renderStats();
+    log('자세 전환 → ' + POSE_NAME[pose]);
+  };
+});
+
+$('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
+$('rth').oninput = e => { RETRO_TH = +e.target.value; $('rthv').textContent = RETRO_TH; };
+
+let ori = null;
+function onOrient(e) {
+  if (typeof e.alpha === 'number') {
+    ori = { a: e.alpha, b: e.beta || 0, g: e.gamma || 0 };
+    const st = $('oristat');
+    if (st && st.className !== 'ok') { st.className = 'ok'; st.textContent = '정상'; }
+  }
+  const h = (typeof e.webkitCompassHeading === 'number') ? e.webkitCompassHeading
+          : (e.absolute && typeof e.alpha === 'number') ? (360 - e.alpha) % 360 : null;
+  if (h != null) heading = h;
+}
+
+const D2R = Math.PI / 180;
+function toWorld(o, v) {
+  if (!o) return null;
+  const A = o.a * D2R, B = o.b * D2R, G = o.g * D2R;
+  const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B), cG = Math.cos(G), sG = Math.sin(G);
+  return {
+    x: (cA * cG - sA * sB * sG) * v.x + (-cB * sA) * v.y + (cA * sG + cG * sA * sB) * v.z,
+    y: (cG * sA + cA * sB * sG) * v.x + (cA * cB) * v.y + (sA * sG - cA * cG * sB) * v.z
+  };
+}
+function cosXY(p, q) {
+  if (!p || !q) return null;
+  const na = Math.hypot(p.x, p.y), nb = Math.hypot(q.x, q.y);
+  if (na < 0.02 || nb < 0.02) return null;
+  return (p.x * q.x + p.y * q.y) / (na * nb);
+}
+
+// 흔들림 배제 — 충격 시점(tRef) 기준으로 직전 구간이 조용했는지 본다.
+// 정검출과 사후 조회가 같은 기준을 쓰도록 함수로 뺐다.
+function quietBefore(tRef) {
+  const pre = BUF.filter(s => s.t >= tRef - 260 && s.t <= tRef - 60);
+  return pre.length ? pre.reduce((a, s) => a + Math.abs(s.mag - 9.8), 0) / pre.length : 0;
+}
+
+function onMotion(e) {
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  const lin = e.acceleration && e.acceleration.x != null ? e.acceleration : null;
+  const mag = Math.sqrt(g.x * g.x + g.y * g.y + g.z * g.z);
+  const now = Date.now();
+
+  BUF.push({ t: now, mag, ax: lin ? lin.x : g.x, ay: lin ? lin.y : g.y, az: lin ? lin.z : g.z });
+  while (BUF.length && now - BUF[0].t > BUF_MS) BUF.shift();
+
+  $('mag').textContent = mag.toFixed(1);
+  $('bar').style.width = Math.min(100, mag / 40 * 100) + '%';
+  if (mag > hold || now - holdT > 3000) { hold = mag; holdT = now; $('peakhold').textContent = mag.toFixed(1); }
+
+  if (mag >= THRESH && now - lastPeak > 800) {
+    // 흔들기는 '천천히 커지고 계속 시끄럽다', 부딪힘은 '조용하다 한순간에 튄다'
+    const preAvg = quietBefore(now);
+    const recent = BUF.slice(-5);
+    const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
+    const quietOK = preAvg < 2.5;
+    const riseOK = rise >= THRESH * 0.55;
+
+    if (!quietOK || !riseOK) {
+      ignored++; $('ign').textContent = ignored + '회';
+      lastPeak = now - 1200;
+      log('무시: ' + (!quietOK ? '흔드는 중(직전 ' + preAvg.toFixed(1) + ')' : '천천히 올라옴(상승 ' + rise.toFixed(1) + ')'));
+      return;
+    }
+    lastPeak = now;
+    lastRise = Math.round(rise * 10) / 10; lastPre = Math.round(preAvg * 10) / 10;
+    const at = serverNow();   // 충격 '그 순간'의 서버 시각. 600ms 뒤에 재면 그만큼 밀린다
+    log('범프 감지 ' + mag.toFixed(1) + ' (직전 ' + preAvg.toFixed(1) + ' / 상승 ' + rise.toFixed(1) + ')');
+    setTimeout(() => capture(now, at, mag, false), 600);
+  }
+}
+
+// ★사후 조회 — 상대는 잡았는데 내가 못 잡은 경우, 그 시각을 내 버퍼에서 낮은 임계로 되짚는다.
+//   상대 신호가 있을 때만 열리므로 임계를 낮춰도 혼자 흔든 건 안 걸린다.
+let retroN = 0;
+function retroCheck(other) {
+  if (!other || !other.peakAt || other.retro) return false;   // 사후검출끼리 되먹임 방지
+  if (!BUF.length) return false;
+  const tLocal = other.peakAt - offset;                        // 서버시각 → 내 로컬시각
+  if (Math.abs(tLocal - lastPeak) < 500) return false;         // 이미 정검출로 잡은 접촉
+  const win = BUF.filter(s => Math.abs(s.t - tLocal) <= 200);
+  if (!win.length) return false;
+  let pk = win[0];
+  win.forEach(s => { if (s.mag > pk.mag) pk = s; });
+  if (pk.mag < RETRO_TH) return false;
+  const preAvg = quietBefore(pk.t);
+  if (preAvg >= 2.5) { log('사후 조회 기각: 직전이 시끄러움 ' + preAvg.toFixed(1)); return false; }
+
+  retroN++; $('retroN').textContent = retroN + '회';
+  lastPeak = pk.t;
+  lastRise = 0; lastPre = Math.round(preAvg * 10) / 10;
+  log('★사후 구제 ' + pk.mag.toFixed(1) + ' (내 임계 ' + THRESH + ' 미달, 상대 신호로 되짚음)');
+  // ★내 피크의 '내 시각'을 서버 기준으로 올린다. 상대 peakAt을 그대로 쓰면 Δt가 항상 0이 되어
+  //   측정 자체가 무의미해진다 — 사후 조회로 구제된 쌍도 진짜 Δt를 남겨야 한다.
+  capture(pk.t, pk.t + offset, pk.mag, true);
+  return true;
+}
+
+let lastPayload = null;
+function capture(tLocal, tServer, mag, isRetro) {
+  const win = BUF.filter(s => s.t >= tLocal - 200 && s.t <= tLocal + 600);
+  const wave = win.map(s => Math.round((s.mag - 9.8) * 10) / 10).slice(0, 80);
+  const sep = win.filter(s => s.t >= tLocal + 100 && s.t <= tLocal + 500);
+  const avg = a => sep.length ? Math.round(sep.reduce((x, s) => x + s[a], 0) / sep.length * 100) / 100 : 0;
+  const dev = { x: avg('ax'), y: avg('ay'), z: avg('az') };
+  const wld = toWorld(ori, dev);
+  if (!wld) log('※ 기울기 값이 없어 지구기준 방향차를 계산할 수 없습니다 — 나침반 권한 확인');
+  const payload = {
+    uid, peakAt: tServer, mag: Math.round(mag * 10) / 10,
+    heading: heading == null ? -1 : Math.round(heading),
+    sx: dev.x, sy: dev.y, sz: dev.z,
+    wx: wld ? Math.round(wld.x * 100) / 100 : null,
+    wy: wld ? Math.round(wld.y * 100) / 100 : null,
+    plat: PLAT, pose, retro: !!isRetro, wave, joinedAt: tServer
+  };
+  myWorld = wld; lastPayload = payload;
+  draw($('w1'), wave, '#3D7EFF');
+  if (meRef) set(meRef, payload).catch(e => log('업로드 실패: ' + e.message));
+  else log('서버 미연결 — 내 폰 데이터만 표시');
+
+  hist.unshift({ at: tServer, pose, retro: !!isRetro, mag: payload.mag, rise: lastRise, pre: lastPre,
+                 heading: payload.heading, sx: payload.sx, sy: payload.sy, sz: payload.sz, wave });
+  hist = hist.slice(0, 30);
+  if (logRef) set(logRef, { uid, plat: PLAT, n: hist.length, list: hist })
+    .catch(e => log('기록 저장 실패: ' + e.message));
+}
+
+function draw(cv, wave, color) {
+  if (!cv || !wave || !wave.length) return;
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 140;
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, w, h);
+  const mx = Math.max(6, ...wave.map(Math.abs));
+  c.strokeStyle = '#2b3350'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+  c.strokeStyle = color; c.lineWidth = 3; c.beginPath();
+  wave.forEach((v, i) => {
+    const x = i / (wave.length - 1) * w, y = h / 2 - (v / mx) * (h / 2 - 6);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  });
+  c.stroke();
+}
+
+// ---------- 상대와 비교 ----------
+let lastKey = '';
+function compare(mine, other) {
+  const d = Math.abs(other.peakAt - mine.peakAt);
+  if (d > 4000) return;
+  const key = other.uid + ':' + other.peakAt;
+  if (key === lastKey) return;
+  lastKey = key;
+
+  let hd = null;
+  if (other.heading >= 0 && mine.heading >= 0) {
+    hd = Math.abs(other.heading - mine.heading); if (hd > 180) hd = 360 - hd;
+    $('heads').textContent = mine.heading + '° / ' + other.heading + '°';
+    $('hdiff').textContent = Math.round(hd) + '°';
+  }
+  let deg = null;
+  const c = cosXY(myWorld, (other.wx != null ? { x: other.wx, y: other.wy } : null));
+  if (c != null) {
+    deg = Math.round(Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI);
+    $('opp').textContent = deg + '° (코사인 ' + c.toFixed(2) + ')';
+    $('opp').className = deg > 120 ? 'ok' : (deg > 90 ? 'warn' : 'bad');
+  }
+
+  // 두 폰의 자세가 다르면 통계가 섞인다 — 경고하고 내 자세 기준으로 기록
+  if (other.pose && other.pose !== mine.pose) log('※ 상대 자세가 다릅니다(' + POSE_NAME[other.pose] + ') — 둘 다 같은 버튼을 눌러주세요');
+  if (other.plat && other.plat !== PLAT) log('※ 플랫폼 다름 — 떼는 방향 부호는 비교 불가, Δt는 정확');
+
+  stats[mine.pose].push({ dt: Math.round(d), mag: mine.mag, hd: hd == null ? null : Math.round(hd),
+                          deg, retro: !!(mine.retro || other.retro) });
+
+  $('dt').innerHTML = Math.round(d) + '<small>ms · ' + POSE_NAME[mine.pose] + '</small>';
+  $('dt').className = 'big ' + (d <= 150 ? 'ok' : (d <= 300 ? 'warn' : 'bad'));
+  draw($('w2'), other.wave || [], '#F5C24B');
+  log('[' + POSE_NAME[mine.pose] + '] Δt ' + Math.round(d) + 'ms · 방위차 ' + (hd == null ? '-' : Math.round(hd) + '°')
+      + ' · 지구기준 ' + (deg == null ? '-' : deg + '°') + (mine.retro || other.retro ? ' (사후구제)' : ''));
+  renderStats();
+}
+
+const med = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1;
+                   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2); };
+const rng = a => a.length ? Math.min(...a) + '~' + Math.max(...a) : '-';
+
+function renderStats() {
+  ['side', 'fist'].forEach(p => {
+    const n = stats[p].length;
+    const el = $('c-' + p); if (el) el.textContent = n + '/' + GOAL;
+    const box = $('p-' + p); if (box) box.classList.toggle('done', n >= GOAL);
+  });
+  const cur = stats[pose];
+  $('cnt').textContent = cur.length;
+  const dts = cur.map(s => s.dt);
+  $('avgmax').textContent = dts.length
+    ? Math.round(dts.reduce((a, b) => a + b, 0) / dts.length) + ' / ' + Math.max(...dts) + ' ms' : '-';
+  $('sum').textContent = summary();
+}
+
+function summary() {
+  const L = ['[머피 범프 계측 v14] ' + new Date().toLocaleString('ko-KR'),
+             '기기 ' + PLAT + ' · 감지임계 ' + THRESH + ' · 사후조회 ' + RETRO_TH];
+  let any = false;
+  ['side', 'fist'].forEach(p => {
+    const a = stats[p]; if (!a.length) return;
+    any = true;
+    const dts = a.map(s => s.dt);
+    const hds = a.map(s => s.hd).filter(v => v != null);
+    const dgs = a.map(s => s.deg).filter(v => v != null);
+    const mgs = a.map(s => s.mag);
+    const rt = a.filter(s => s.retro).length;
+    L.push('',
+      '■ ' + POSE_NAME[p] + ' — ' + a.length + '쌍',
+      '  Δt  평균 ' + Math.round(dts.reduce((x, y) => x + y, 0) / dts.length) +
+        ' / 중앙 ' + med(dts) + ' / 최대 ' + Math.max(...dts) + ' ms',
+      '  방위차      ' + rng(hds) + (hds.length ? '°' : ''),
+      '  지구기준각  ' + rng(dgs) + (dgs.length ? '°' : ''),
+      '  충격크기    ' + rng(mgs),
+      '  사후구제    ' + rt + '쌍');
+  });
+  if (!any) return '아직 측정 없음';
+  L.push('', '무시(흔들림) ' + ignored + '회 · 사후구제 총 ' + retroN + '회');
+  return L.join('\n');
+}
+
+async function connect() {
+  const u = await ensureUser(); uid = u.uid;
+  meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
+  logRef = ref(db, 'squadRooms/bump5Log/players/' + uid);   // 접속이 끊겨도 남는 분석용 기록
+  onDisconnect(meRef).remove();
+  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, plat: PLAT });
+  onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
+    const all = snap.val() || {};
+    const n = Object.keys(all).length;
+    $('peers').textContent = n + '대'; $('peers').className = n >= 2 ? 'ok' : '';
+    const others = Object.values(all).filter(p => p && p.uid !== uid);
+    if (others.length && others[0].pose) $('pepose').textContent = POSE_NAME[others[0].pose] || '-';
+    const withPeak = others.filter(p => p.peakAt);
+    if (!withPeak.length) return;
+
+    let best = null;
+    const mine = all[uid];
+    for (const o of withPeak) {
+      const d = mine && mine.peakAt ? Math.abs(o.peakAt - mine.peakAt) : 0;
+      if (!best || d < best.d) best = { d, o };
+    }
+    // 내가 못 잡았거나(peakAt 없음) 상대 충격이 내 것과 한참 떨어져 있으면 사후 조회를 시도한다
+    if (!mine || !mine.peakAt || Math.abs(best.o.peakAt - mine.peakAt) > 1000) {
+      if (retroCheck(best.o)) return;   // 성공하면 업로드 → onValue가 다시 돌며 compare
+    }
+    if (!mine || !mine.peakAt) return;
+    compare(mine, best.o);
+  });
+  return true;
+}
+
+// ★★ iOS는 '버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다. 앞에 await를 두면 거부된다.
+$('start').onclick = () => {
+  $('start').disabled = true;
+  const need = t => typeof t !== 'undefined' && typeof t.requestPermission === 'function';
+  const pM = need(window.DeviceMotionEvent) ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted');
+  const pO = need(window.DeviceOrientationEvent) ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
+
+  pM.then(r => {
+    if (r !== 'granted') { $('sensor').textContent = '동작 권한 거부'; log('동작 권한 거부 — 설정 > Safari > 동작 및 방향 접근을 켜주세요'); return; }
+    window.addEventListener('devicemotion', onMotion);
+    $('sensor').textContent = '동작 켜짐';
+    $('start').textContent = '측정 중 — 자세 고르고 톡';
+    log('동작 센서 시작');
+  }).catch(e => { $('sensor').textContent = '권한 오류'; log('동작 권한 오류: ' + e.message); });
+
+  pO.then(r => {
+    if (r !== 'granted') { log('나침반 권한 거부 — 방위차는 측정 안 됨'); return; }
+    window.addEventListener('deviceorientationabsolute', onOrient);
+    window.addEventListener('deviceorientation', onOrient);
+    $('sensor').textContent += ' / 나침반 켜짐';
+  }).catch(e => log('나침반 권한 오류: ' + e.message));
+
+  connect().then(() => log('서버 연결됨 — 상대와 비교 가능'))
+           .catch(e => log('서버 연결 실패(센서는 계속 동작): ' + e.message));
+};
+
+$('copy').onclick = async () => {
+  const t = summary();
+  try { await navigator.clipboard.writeText(t); $('copy').textContent = '복사됨!'; setTimeout(() => $('copy').textContent = '결과 복사하기', 1500); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); $('copy').textContent = '복사됨!'; } catch (e2) { log('복사 실패 — 요약을 길게 눌러 선택하세요'); }
+    ta.remove(); setTimeout(() => $('copy').textContent = '결과 복사하기', 1500);
+  }
+};
+
+$('reset').onclick = () => {
+  stats.side = []; stats.fist = []; logs.length = 0; lastKey = ''; ignored = 0; retroN = 0;
+  $('ign').textContent = '0회'; $('retroN').textContent = '0회';
+  $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big';
+  $('heads').textContent = '-'; $('hdiff').textContent = '-'; $('opp').textContent = '-';
+  renderStats();
+  $('log').textContent = '초기화';
+};
+
+renderStats();
+</script>
+</body>
+</html>
