@@ -57,7 +57,7 @@
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b class="ok">v6 (흔들림 걸러냄)</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v7 (기기 종류 표시)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
@@ -88,6 +88,7 @@
 <div class="card">
   <div class="sec">3. 떼는 방향 (충격 직후 0.4초)</div>
   <div class="row"><span>내 이동</span><b id="mysep">-</b></div>
+  <div class="row"><span>내 기기</span><b id="myplat">-</b></div>
   <div class="row"><span>상대 이동</span><b id="pesep">-</b></div>
   <div class="hint">각 폰 기준 앞뒤(Y)·좌우(X)·위아래(Z)로 얼마나 밀렸는지입니다.
     떼는 동작이 실제로 찍히는지 보는 값입니다.</div>
@@ -134,6 +135,7 @@ import { getDatabase, ref, set, onValue, onDisconnect }
 
 window.__boot = true;
 const $ = id => document.getElementById(id);
+setTimeout(() => { const e = $('myplat'); if (e) e.textContent = PLAT; }, 0);
 const logs = [];
 function log(s) { logs.unshift(new Date().toLocaleTimeString('ko-KR') + '  ' + s); $('log').textContent = logs.slice(0, 30).join('\n'); }
 
@@ -150,6 +152,9 @@ const db = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1
 
 // 기존 보안규칙(squadRooms/{sid}/players/{uid})을 그대로 재사용한다 — 규칙 수정 불필요
 const ROOM = new URLSearchParams(location.search).get('room') || 'hifiveTest';
+// 플랫폼 표시 — iOS와 안드로이드는 가속도 축 부호 규약이 달라서, '떼는 방향' 비교는
+// 같은 플랫폼끼리만 신뢰할 수 있다. Δt와 파형은 크기 기반이라 섞여도 정확하다.
+const PLAT = /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'iOS' : 'Android';
 
 let offset = 0;
 onValue(ref(db, '.info/serverTimeOffset'), s => {
@@ -236,7 +241,7 @@ function capture(tLocal, tServer, mag) {
     uid, peakAt: tServer, mag: Math.round(mag * 10) / 10,
     heading: heading == null ? -1 : Math.round(heading),
     sx: avg('ax'), sy: avg('ay'), sz: avg('az'),
-    wave, joinedAt: tServer
+    plat: PLAT, wave, joinedAt: tServer
   };
   draw($('w1'), wave, '#3D7EFF');
   $('mysep').textContent = fmtSep(payload);
@@ -283,7 +288,11 @@ function compare(mine, other) {
     $('hdiff').textContent = Math.round(hd) + '°';
     $('hdiff').className = (hd > 130 && hd < 230) || hd > 130 ? 'ok' : 'warn';
   }
-  $('pesep').textContent = fmtSep(other);
+  $('pesep').textContent = fmtSep(other) + (other.plat ? '  (' + other.plat + ')' : '');
+  if (other.plat && other.plat !== PLAT) {
+    $('pesep').className = 'warn';
+    log('※ 서로 다른 플랫폼(' + PLAT + ' ↔ ' + other.plat + ') — 떼는 방향 부호는 비교 불가, Δt는 정확');
+  }
   draw($('w2'), other.wave || [], '#F5C24B');
   log('Δt ' + Math.round(d) + 'ms · 방위차 ' + ($('hdiff').textContent) + ' · 상대이동 ' + fmtSep(other));
 }
