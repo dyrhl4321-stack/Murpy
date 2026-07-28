@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260728003 -->
+<!-- cache-bust: v20260728004 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -14035,7 +14035,8 @@ window.bumpIconHtml = function (sz) {
     ${line(3, -4, 6, -30)}${line(11, -6, 7, 0)}${line(19, -4, 6, 30)}</span>`;
 };
 let bpBuf = [], bpSid = null, bpRole = 'guest', bpMeRef = null, bpUnsub = null,
-    bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null;
+    bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null,
+    bpMyChar = null;
 
 const bpNow = () => Date.now() + bpOff;
 function bpQuietBefore(t) {
@@ -14093,6 +14094,12 @@ window.bumpOpen = async function (sid) {
   }).catch(() => bpMsg('센서를 켤 수 없어요'));
   pO.then(r => { if (r === 'granted') window.addEventListener('deviceorientation', bpOrient); }).catch(() => {});
 
+  // 내 캐릭터를 대기 화면에 세운다 — 접촉하면 이 캐릭터가 그대로 경계로 걸어간다
+  getDoc(doc(db, 'users', user.uid)).then(us => {
+    if (us.exists()) bpMyChar = us.data().character || null;
+    bpPlaceMe();
+  }).catch(() => {});
+
   const R = window._rt, room = 'squadRooms/bump_' + sid + '/players/';   // 기존 규칙 재사용(수정 불필요)
   try {
     R.onValue(R.ref(R.db, '.info/serverTimeOffset'), sn => { bpOff = sn.val() || 0; });
@@ -14132,13 +14139,18 @@ window.bumpClose = function () {
   const el = document.getElementById('bp-ov'); if (el) el.remove();
 };
 
-// 접촉 성립 — 연출 → 출석 판정 → (인정된 경우에만) 범퍼 기록
+// 접촉 성립 — 즉시 타격 → 출석 판정 → (인정된 경우에만) 연속 장면 연출 → 범퍼 기록
 async function bpSucceed(other, dt) {
-  if (navigator.vibrate) { try { navigator.vibrate([30, 20, 14]); } catch (e) {} }
-  bpFx();
   const user = auth.currentUser;
+  bpImpact(true);                                   // 부딪힌 즉시 반응(판정은 그 뒤에 붙는다)
   let place = '';
   try { const s = window._sqDoc; place = (s && (s.placeName || s.centerName || s.place)) || ''; } catch (e) {}
+
+  // 상대 캐릭터는 연출에 필요하므로 판정과 동시에 받아둔다(늦으면 기본 캐릭터로 진행)
+  const charP = Promise.race([
+    getDoc(doc(db, 'users', other.uid)).then(s => (s.exists() ? (s.data().character || null) : null)).catch(() => null),
+    new Promise(r => setTimeout(() => r(null), 900))
+  ]);
   const res = await bpAttend(bpSid, other.uid);
 
   if (res === 'need-verifier') {
@@ -14148,6 +14160,7 @@ async function bpSucceed(other, dt) {
     bpDone = false;
     return;
   }
+  await bpScene(await charP);
   await bpSaveBumper(other, place);
   bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already' });
   if (window._rt && bpSid) {
@@ -14220,7 +14233,20 @@ async function bpSaveBumper(other, place) {
 }
 
 // ---------- 오버레이 ----------
+// 색 규칙: 개시자=골드 / 참여자=파랑. ★섬광과 손바닥에만 쓰고 캐릭터 본체는 물들이지 않는다.
 function bpColor() { return bpRole === 'host' ? '#F5C24B' : '#3D7EFF'; }
+// 대기 화면에 내 캐릭터를 세워둔다 — 접촉하면 이 캐릭터가 그대로 경계로 걸어간다
+function bpPlaceMe() {
+  const stage = document.getElementById('bp-stage'); if (!stage) return;
+  const old = document.getElementById('bp-me'); if (old) old.remove();
+  const el = bpMakeChar(bpMyChar, bpSide() === 'right' ? 'right' : 'left');
+  if (!el) return;
+  el.id = 'bp-me';
+  el.style.left = Math.round((stage.clientWidth || 320) / 2 - CH_W / 2) + 'px';
+  el.style.transition = 'none';
+  stage.appendChild(el);
+  requestAnimationFrame(() => { el.style.transition = 'left .62s linear'; });
+}
 function bpOverlay(mode, data) {
   let el = document.getElementById('bp-ov');
   if (!el) { el = document.createElement('div'); el.id = 'bp-ov'; document.body.appendChild(el); }
@@ -14230,25 +14256,37 @@ function bpOverlay(mode, data) {
   if (mode === 'wait') {
     // ★접점을 화면 정중앙(50%)에 둔다 — 어긋남 = |f-0.5| x (두 화면 높이차) 이므로 f=0.5면 0이 된다.
     //   화면 크기가 달라도 중앙끼리 맞추면 접점이 어긋나지 않는다.
+    // 경계는 역할로 나눈다: 개시자=오른쪽 옆면 / 참여자=왼쪽 옆면. 그래야 두 화면이 마주 보고
+    // 하나의 연속 장면이 된다.
+    const side = bpSide(), sideKo = side === 'right' ? '오른쪽' : '왼쪽';
+    el.style.justifyContent = 'flex-start';
     el.innerHTML = `
-      <div style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:0;height:0;
-        border-top:11px solid transparent;border-bottom:11px solid transparent;border-left:14px solid ${c}"></div>
-      <div style="position:absolute;right:0;top:50%;transform:translateY(-50%);width:0;height:0;
-        border-top:11px solid transparent;border-bottom:11px solid transparent;border-right:14px solid ${c}"></div>
-      <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:linear-gradient(90deg,${c}00,${c}55,${c}00)"></div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:11px;color:${c};margin-bottom:12px">
-        ${window.bumpIconHtml ? window.bumpIconHtml(30) : ''}
-        <span style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff">머피 범프</span></div>
-      <div style="font-size:13px;color:#8a93a8;line-height:1.75;margin-bottom:6px">
-        두 폰의 <b style="color:#fff">긴 옆면</b>을 맞대고<br><b style="color:#fff">이 삼각형 높이</b>를 서로 맞춰 <b style="color:#fff">톡</b> 대세요<br>
-        <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
-      <div style="font-size:11.5px;color:#4a5266;line-height:1.7;margin-top:4px">
-        ${bpRole === 'host' ? '리더는 누구에게든 도장을 찍어줄 수 있어요' : '리더나 이미 도장을 받은 사람과 맞대세요'}<br>
-        도장을 받으면 그다음부터는 내가 찍어줄 수 있어요</div>
-      <div id="bp-peers" style="font-size:12px;color:${c};margin-top:12px">상대를 기다리는 중…</div>
-      <div id="bp-msg" style="font-size:12px;color:#E4472E;margin-top:10px;line-height:1.6"></div>
-      <button onclick="window.bumpClose()" style="margin-top:26px;background:#1e2740;color:#cfd6e6;border:none;
-        border-radius:12px;padding:13px 30px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">닫기</button>`;
+      <div id="bp-stage" style="position:absolute;inset:0;overflow:hidden;z-index:1"></div>
+      <div id="bp-seam" style="position:absolute;${side}:0;top:0;bottom:0;width:32%;z-index:14;opacity:0;
+        pointer-events:none;transition:opacity .25s ease;
+        background:linear-gradient(to ${side},rgba(255,255,255,.95),${c}8c 45%,transparent)"></div>
+      <div style="position:absolute;${side}:0;top:50%;transform:translateY(-50%);width:0;height:0;z-index:15;
+        border-top:11px solid transparent;border-bottom:11px solid transparent;
+        border-${side}:14px solid ${c}"></div>
+      <div style="position:absolute;${side}:0;top:50%;width:34%;height:2px;z-index:15;
+        background:linear-gradient(to ${side},${c}00,${c}66)"></div>
+      <div style="position:relative;z-index:18;padding-top:6px">
+        <div style="display:flex;align-items:center;justify-content:center;gap:11px;color:${c};margin-bottom:12px">
+          ${window.bumpIconHtml ? window.bumpIconHtml(30) : ''}
+          <span style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff">머피 범프</span></div>
+        <div style="font-size:13px;color:#8a93a8;line-height:1.75">
+          폰의 <b style="color:${c}">${sideKo} 긴 옆면</b>을 상대 폰에 대고<br>
+          <b style="color:#fff">삼각형 높이</b>를 맞춰 <b style="color:#fff">톡</b> 대세요<br>
+          <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
+        <div style="font-size:11.5px;color:#4a5266;line-height:1.7;margin-top:8px">
+          ${bpRole === 'host' ? '리더는 누구에게든 도장을 찍어줄 수 있어요' : '리더나 이미 도장을 받은 사람과 맞대세요'}</div>
+        <div id="bp-peers" style="font-size:12px;color:${c};margin-top:10px">상대를 기다리는 중…</div>
+        <div id="bp-msg" style="font-size:12px;color:#E4472E;margin-top:8px;line-height:1.6"></div>
+      </div>
+      <button onclick="window.bumpClose()" style="position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
+        z-index:18;background:rgba(255,255,255,.08);color:#cfd6e6;border:none;border-radius:12px;
+        padding:12px 28px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">닫기</button>`;
+    bpPlaceMe();
   } else if (mode === 'need') {
     // 접촉은 진짜였지만 검증 근거가 없는 경우 — 무엇을 하면 되는지만 알려준다
     el.innerHTML = `
@@ -14287,30 +14325,117 @@ function bpPeers(n) {
   const p = document.getElementById('bp-peers');
   if (p) { p.textContent = n >= 1 ? '상대 연결됨 — 이제 맞대세요' : '상대를 기다리는 중…'; p.style.color = n >= 1 ? '#4ade80' : bpColor(); }
 }
-// 충격 순간 — 섬광 + 손바닥이 경계에서 잘린 채 맞닿는다(잘린 단면이 '저쪽으로 이어진다'는 신호)
-function bpFx() {
+// ================= 연속 장면 연출 =================
+// 두 폰을 맞대면 접촉선이 두 화면의 '경계'가 된다. 개시자는 오른쪽 옆면, 참여자는 왼쪽 옆면을
+// 대므로 각자의 경계가 서로를 향하고, 두 화면을 붙이면 하나의 장면이 된다.
+//   내 캐릭터가 경계로 걸어가 손을 맞대고 → 경계를 넘어 저쪽으로 나가고
+//   → 상대가 경계를 넘어 내 화면으로 들어온다.
+// 각 화면에는 언제나 1명만 있어서 붙이면 정확히 2명이 된다(겹치지도, 허전하지도 않다).
+const bpSleep = ms => new Promise(r => setTimeout(r, ms));
+const bpSide = () => (bpRole === 'host' ? 'right' : 'left');   // 내 화면에서 경계가 있는 쪽
+const CH_H = 150, CH_W = Math.round(150 * 141 / 224);
+
+function bpMakeChar(cfg, face) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, CH_H, face) : '';
+  const el = wrap.firstElementChild;
+  if (el) { el.style.position = 'absolute'; el.style.bottom = '18%'; el.style.transition = 'left .62s linear'; }
+  return el;
+}
+// 걷기 — 시트는 3열(정지·걸음1·걸음2)이고 mwMiniCharHtml은 col 0(정지)으로 고정해 그린다.
+// 그래서 자식 레이어의 background-position X만 돌려주면 그대로 걷는다.
+function bpWalk(el) {
+  if (!el) return null;
+  const kids = el.querySelectorAll('div'), seq = [0, 1, 2, 1];
+  let i = 0;
+  return setInterval(() => {
+    i = (i + 1) % seq.length;
+    kids.forEach(k => { k.style.backgroundPositionX = (-seq[i] * CH_W) + 'px'; });
+  }, 130);
+}
+const SIL = 'brightness(0) invert(1) drop-shadow(0 0 5px #FFF3CC) drop-shadow(0 0 14px %C) drop-shadow(0 0 30px %C)';
+
+function bpImpact(big) {
   const ov = document.getElementById('bp-ov'); if (!ov) return;
-  const c = bpColor();
+  if (navigator.vibrate) { try { navigator.vibrate(big ? [30, 20, 14] : [20]); } catch (e) {} }
   const f = document.createElement('div');
-  f.style.cssText = 'position:absolute;inset:0;background:#fff;pointer-events:none;z-index:5';
+  f.style.cssText = 'position:absolute;inset:0;background:#fff;pointer-events:none;z-index:20';
   ov.appendChild(f);
-  f.animate([{ opacity: 1 }, { opacity: .3, offset: .28 }, { opacity: 0 }], { duration: 220, easing: 'ease-out' })
-   .onfinish = () => f.remove();
-  ['left', 'right'].forEach(side => {
-    const p = document.createElement('div');
-    p.style.cssText = `position:absolute;${side}:-14%;top:50%;translate:0 -50%;width:58%;aspect-ratio:256/290;`
-      + `z-index:6;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png') no-repeat center/contain;`
-      + `filter:drop-shadow(0 0 7px #fff) drop-shadow(0 0 22px ${c}) drop-shadow(0 0 46px ${c});`
-      + (side === 'right' ? 'scale:-1 1;' : '');
-    ov.appendChild(p);
-    const away = side === 'left' ? -1 : 1;
-    p.animate([
-      { opacity: 0, transform: `translateX(${away * 55}%) scale(.62)` },
-      { opacity: 1, transform: `translateX(${away * 8}%) scale(1.08)`, offset: .45 },
-      { opacity: 1, transform: 'translateX(0) scale(1)', offset: .62 },
-      { opacity: 0, transform: 'translateX(0) scale(1.3)' }
-    ], { duration: 520, easing: 'cubic-bezier(.2,.9,.3,1)' }).onfinish = () => p.remove();
-  });
+  f.animate([{ opacity: big ? 1 : .6 }, { opacity: .3, offset: .28 }, { opacity: 0 }],
+            { duration: 200, easing: 'ease-out' }).onfinish = () => f.remove();
+  ov.animate([{ transform: 'scale(1.05)' }, { transform: 'scale(1.01) translate(7px,-5px)', offset: .3 },
+              { transform: 'scale(1) translate(-5px,4px)', offset: .6 }, { transform: 'scale(1)' }],
+             { duration: 280, easing: 'steps(5)' });
+}
+
+// 손바닥 — ★경계에서 잘린 채 멈춘다. 잘린 단면이 "저쪽으로 이어진다"는 신호가 되어
+//   두 폰 사이의 물리적 틈(베젤 5~10mm)을 보는 사람이 알아서 메운다.
+function bpPalm(stage, side, color) {
+  const p = document.createElement('div');
+  p.style.cssText = `position:absolute;${side}:-14%;top:50%;translate:0 -50%;width:58%;aspect-ratio:256/290;`
+    + `z-index:16;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png') no-repeat center/contain;`
+    + `filter:drop-shadow(0 0 7px #fff) drop-shadow(0 0 22px ${color}) drop-shadow(0 0 46px ${color});`
+    + (side === 'right' ? 'scale:-1 1;' : '');
+  stage.appendChild(p);
+  const away = side === 'left' ? -1 : 1;
+  p.animate([
+    { opacity: 0, transform: `translateX(${away * 55}%) scale(.62)` },
+    { opacity: 1, transform: `translateX(${away * 8}%) scale(1.08)`, offset: .45 },
+    { opacity: 1, transform: 'translateX(0) scale(1)', offset: .62 },
+    { opacity: 0, transform: 'translateX(0) scale(1.3)' }
+  ], { duration: 460, easing: 'cubic-bezier(.2,.9,.3,1)' }).onfinish = () => p.remove();
+}
+
+async function bpScene(otherChar) {
+  const stage = document.getElementById('bp-stage'); if (!stage) return;
+  const side = bpSide(), c = bpColor(), inner = side === 'right' ? 'left' : 'right';
+  const W = stage.clientWidth || 320;
+  const seam = document.getElementById('bp-seam');
+  const me = document.getElementById('bp-me');
+
+  if (seam) seam.style.opacity = '1';                       // 경계에 빛의 통로가 열린다
+  await bpSleep(220);
+
+  // 내 캐릭터가 경계로 걸어간다
+  let t = bpWalk(me);
+  if (me) me.style.left = (side === 'right' ? W - CH_W * 1.15 : CH_W * 0.15) + 'px';
+  await bpSleep(640);
+  clearInterval(t);
+
+  // 빛에 들어서면 실루엣이 된다 — CSS 필터라 어떤 옷·헤어를 입어도 그대로 적용된다(새 그림 0장)
+  if (me) me.style.filter = SIL.replace(/%C/g, c);
+  await bpSleep(140);
+
+  bpPalm(stage, side, c);
+  await bpSleep(285);                                       // 손이 경계에 닿는 순간
+  bpImpact(true);
+
+  // 교환 — 나는 경계를 넘어 나가고, 상대가 경계를 넘어 들어온다(섬광에 가려 전환이 안 보인다)
+  if (me) me.remove();
+  const you = bpMakeChar(otherChar, inner === 'left' ? 'left' : 'right');
+  if (you) {
+    you.style.left = (side === 'right' ? W - CH_W * 0.35 : -CH_W * 0.65) + 'px';
+    you.style.transition = 'none';
+    you.style.filter = SIL.replace(/%C/g, c);
+    stage.appendChild(you);
+    await bpSleep(60);
+    you.style.filter = '';
+    you.style.transition = 'left .62s linear';
+    const t2 = bpWalk(you);
+    you.style.left = Math.round(W / 2 - CH_W / 2) + 'px';
+    await bpSleep(640);
+    clearInterval(t2);
+    // 정면으로 돌아서 인사
+    const face = bpMakeChar(otherChar, 'down');
+    if (face) {
+      face.style.left = you.style.left; face.style.transition = 'none';
+      stage.appendChild(face); you.remove();
+      face.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-20px)', offset: .45 },
+                    { transform: 'translateY(0)' }], { duration: 460, easing: 'ease-out' });
+    }
+  }
+  if (seam) seam.style.opacity = '0';
+  await bpSleep(420);
 }
 
 // ---------- 범프 도감 (마이범프) ----------
