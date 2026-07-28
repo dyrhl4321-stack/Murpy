@@ -57,13 +57,14 @@
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b class="ok">v5 (범프 구간 기록)</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v6 (흔들림 걸러냄)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
   <div class="row"><span>현재 충격량</span><b id="mag">-</b></div>
   <div class="meter"><i id="bar"></i></div>
   <div class="row"><span>최근 최대 충격</span><b id="peakhold">-</b></div>
+  <div class="row"><span>흔들림으로 무시</span><b id="ign">0회</b></div>
   <div class="row"><span>감지 기준</span><b id="thv">18</b></div>
   <input id="th" type="range" min="12" max="40" step="1" value="18" style="width:100%;margin:2px 0;accent-color:#3D7EFF">
   <button id="start">센서 켜기 (iOS는 필수)</button>
@@ -173,7 +174,7 @@ async function ensureUser() {
 const BUF = [];                 // { t, mag, ax, ay, az }  t = 로컬 ms
 const BUF_MS = 1500;
 let heading = null;             // 나침반 방위(0~360)
-let THRESH = 18, lastPeak = 0, hold = 0, holdT = 0;
+let THRESH = 18, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
 let uid = null, meRef = null;
 
 $('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
@@ -198,9 +199,27 @@ function onMotion(e) {
   if (mag > hold || now - holdT > 3000) { hold = mag; holdT = now; $('peakhold').textContent = mag.toFixed(1); }
 
   if (mag >= THRESH && now - lastPeak > 1500) {
+    // ── 흔들림 걸러내기 ──────────────────────────────────────────────
+    // 흔들기는 '천천히 커지고 계속 시끄럽다', 부딪힘은 '조용하다 한순간에 튄다'.
+    // ① 직전 정적도: 충격 60~260ms 전 구간의 평균 흔들림. 흔드는 중이면 이미 크다.
+    // ② 상승 급격도: 최근 4샘플 최솟값 대비 얼마나 순간적으로 뛰었는가.
+    const pre = BUF.filter(s => s.t >= now - 260 && s.t <= now - 60);
+    const preAvg = pre.length ? pre.reduce((a, s) => a + Math.abs(s.mag - 9.8), 0) / pre.length : 0;
+    const recent = BUF.slice(-5);
+    const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
+
+    const quietOK = preAvg < 3.0;
+    const riseOK = rise >= THRESH * 0.55;
+
+    if (!quietOK || !riseOK) {
+      ignored++; $('ign').textContent = ignored + '회';
+      lastPeak = now - 1200;   // 짧게만 잠금 — 흔든 직후 진짜 범프도 잡히게
+      log('무시: ' + (!quietOK ? '흔드는 중(직전 ' + preAvg.toFixed(1) + ')' : '천천히 올라옴(상승 ' + rise.toFixed(1) + ')'));
+      return;
+    }
     lastPeak = now;
     const at = serverNow();
-    log('충격 ' + mag.toFixed(1) + ' — 1초간 기록 중');
+    log('범프 감지 ' + mag.toFixed(1) + ' (직전 ' + preAvg.toFixed(1) + ' / 상승 ' + rise.toFixed(1) + ')');
     // 충격 직후 구간이 아직 안 쌓였으므로 0.6초 기다렸다가 잘라서 올린다
     setTimeout(() => capture(now, at, mag), 600);
   }
