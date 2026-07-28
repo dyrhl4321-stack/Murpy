@@ -52,14 +52,16 @@
 <div class="sub">
   <b>두 폰에서 이 페이지를 열기만 하면 자동으로 같은 방에 연결됩니다.</b> 입력할 건 없습니다.
   아래 <b>접속 기기</b>가 <b>2대</b>가 되면 준비 끝입니다.<br>
-  마주 서서 <b>폰을 평소처럼 세로로 쥐고</b>, 상대 쪽으로 내밀어 <b>긴 옆면끼리 가볍게 톡</b> 댄 뒤
-  <b>서로 떨어지세요</b>. 이렇게 하면 두 사람 다 자기 화면을 정면으로 볼 수 있습니다.
+  마주 서서 가볍게 <b>톡</b> 댄 뒤 <b>서로 떨어지세요</b>. 두 자세를 다 재보세요.<br>
+  <b>① 세로로 쥐고 옆면끼리</b> — 화면이 정면으로 보임 (연출용 기본 자세)<br>
+  <b>② 가로로 쥐거나 주먹 쥐고</b> — 화면은 안 보임 (운동인 자세)<br>
+  둘 다 <b>지구기준 방향차</b>가 비슷하게 나와야 정상입니다.
   <b class="warn">세게 부딪히지 마세요.</b><br>
   <b class="warn">※ 위쪽(머리)끼리 대면 아이폰 에어드롭(NameDrop)이 떠서 방해됩니다. 반드시 옆면으로.</b>
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b class="ok">v11 (세로 쥐고 옆면)</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v12 (자세 무관 방향판정)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
@@ -92,8 +94,10 @@
   <div class="row"><span>내 이동</span><b id="mysep">-</b></div>
   <div class="row"><span>내 기기</span><b id="myplat">-</b></div>
   <div class="row"><span>상대 이동</span><b id="pesep">-</b></div>
-  <div class="hint">각 폰 기준 앞뒤(Y)·좌우(X)·위아래(Z)로 얼마나 밀렸는지입니다.
-    떼는 동작이 실제로 찍히는지 보는 값입니다.</div>
+  <div class="row"><span><b>지구기준 방향차</b></span><b id="opp">-</b></div>
+  <div class="hint">위 X/Y/Z는 각 폰 기준이라 잡는 자세에 따라 달라집니다.
+    <b>맨 아래 "지구기준 방향차"가 진짜 판정값</b>입니다 — 마주 선 두 사람이 떨어지면
+    <b>120도 이상(반대 방향)</b>이 나와야 합니다. 세로로 들든 가로로 들든 같은 규칙입니다.</div>
 </div>
 
 <div class="card">
@@ -185,14 +189,38 @@ let heading = null;             // 나침반 방위(0~360)
 // 그런데 한 대는 7회 중 4회만 감지 — 받는 쪽 충격이 약해 놓친 것으로 보인다. 그래서 11로 더 낮춘다.
 let THRESH = 11, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
 let uid = null, meRef = null, logRef = null;
-let hist = [], lastRise = 0, lastPre = 0;
+let hist = [], lastRise = 0, lastPre = 0, myWorld = null;
 
 $('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
 
+let ori = null;   // { a, b, g } 기울기 — 기기 좌표를 지구 좌표로 바꾸는 데 쓴다
 function onOrient(e) {
+  if (typeof e.alpha === 'number') ori = { a: e.alpha, b: e.beta || 0, g: e.gamma || 0 };
   const h = (typeof e.webkitCompassHeading === 'number') ? e.webkitCompassHeading
           : (e.absolute && typeof e.alpha === 'number') ? (360 - e.alpha) % 360 : null;
   if (h != null) { heading = h; $('myhead').textContent = Math.round(h) + '°'; }
+}
+
+// 기기 좌표 → 지구 좌표 변환.
+// 나침반 방위(폰 '위쪽'이 어디를 보는가)는 세로로 들면 하늘을 향해 무의미해진다.
+// 대신 '떼는 방향'을 지구 기준으로 바꿔 비교하면, 세로/가로/주먹 어떤 자세든 규칙이 하나가 된다.
+// 마주 선 두 사람이 떨어지면 두 벡터는 정반대(코사인 -1)가 되어야 한다.
+const D2R = Math.PI / 180;
+function toWorld(o, v) {
+  if (!o) return null;
+  const A = o.a * D2R, B = o.b * D2R, G = o.g * D2R;
+  const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B), cG = Math.cos(G), sG = Math.sin(G);
+  return {
+    x: (cA * cG - sA * sB * sG) * v.x + (-cB * sA) * v.y + (cA * sG + cG * sA * sB) * v.z,
+    y: (cG * sA + cA * sB * sG) * v.x + (cA * cB) * v.y + (sA * sG - cA * cG * sB) * v.z
+  };
+}
+// 수평면에서 두 벡터가 이루는 각의 코사인 (-1 = 정반대 = 마주보고 떨어짐)
+function cosXY(p, q) {
+  if (!p || !q) return null;
+  const na = Math.hypot(p.x, p.y), nb = Math.hypot(q.x, q.y);
+  if (na < 0.02 || nb < 0.02) return null;
+  return (p.x * q.x + p.y * q.y) / (na * nb);
 }
 
 function onMotion(e) {
@@ -244,12 +272,17 @@ function capture(tLocal, tServer, mag) {
   // 떼는 방향: 충격 직후 0.1~0.5초 구간의 평균 선형가속도(각 폰 자기 좌표계)
   const sep = win.filter(s => s.t >= tLocal + 100 && s.t <= tLocal + 500);
   const avg = a => sep.length ? Math.round(sep.reduce((x, s) => x + s[a], 0) / sep.length * 100) / 100 : 0;
+  const dev = { x: avg('ax'), y: avg('ay'), z: avg('az') };
+  const wld = toWorld(ori, dev);   // 지구 기준 이동 방향(수평 성분만 비교)
   const payload = {
     uid, peakAt: tServer, mag: Math.round(mag * 10) / 10,
     heading: heading == null ? -1 : Math.round(heading),
-    sx: avg('ax'), sy: avg('ay'), sz: avg('az'),
+    sx: dev.x, sy: dev.y, sz: dev.z,
+    wx: wld ? Math.round(wld.x * 100) / 100 : null,
+    wy: wld ? Math.round(wld.y * 100) / 100 : null,
     plat: PLAT, wave, joinedAt: tServer
   };
+  myWorld = wld;
   draw($('w1'), wave, '#3D7EFF');
   $('mysep').textContent = fmtSep(payload);
   if (meRef) set(meRef, payload).catch(e => log('업로드 실패: ' + e.message));
@@ -302,6 +335,13 @@ function compare(mine, other) {
     let hd = Math.abs(other.heading - mine.heading); if (hd > 180) hd = 360 - hd;
     $('hdiff').textContent = Math.round(hd) + '°';
     $('hdiff').className = (hd > 130 && hd < 230) || hd > 130 ? 'ok' : 'warn';
+  }
+  // ★자세 무관 판정: 지구 좌표로 바꾼 '떼는 방향'이 서로 반대인가
+  const c = cosXY(myWorld, (other.wx != null ? { x: other.wx, y: other.wy } : null));
+  if (c != null) {
+    const deg = Math.round(Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI);
+    $('opp').textContent = deg + '° (코사인 ' + c.toFixed(2) + ')';
+    $('opp').className = deg > 120 ? 'ok' : (deg > 90 ? 'warn' : 'bad');
   }
   $('pesep').textContent = fmtSep(other) + (other.plat ? '  (' + other.plat + ')' : '');
   if (other.plat && other.plat !== PLAT) {
