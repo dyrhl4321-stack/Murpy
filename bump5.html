@@ -69,10 +69,14 @@
 </head>
 <body>
 
-<h1>머피 범프 계측 <span style="font-size:13px;color:#4ade80">v15</span></h1>
+<h1>머피 범프 계측 <span style="font-size:13px;color:#4ade80">v16 · 혼자 측정</span></h1>
 <div class="sub">
-  두 폰에서 이 페이지를 열면 자동으로 같은 방에 연결됩니다. <b>접속 기기 2대</b>가 되면 준비 끝입니다.<br>
-  <b>두 폰이 같은 자세 버튼을 선택</b>한 뒤 <b>5회씩</b> 톡 대고 떼세요.<br>
+  <b style="color:#4ade80">혼자서 폰 2대로 측정할 수 있습니다.</b>
+  두 폰 다 이 페이지를 열고 <b>[센서 켜기]만</b> 누르면 그다음은 손 안 대도 됩니다 —
+  <b>진행 상황을 소리로 알려주고, 5회를 채우면 자세가 알아서 넘어갑니다.</b>
+  한쪽에서 자세를 바꾸면 다른 폰도 따라오므로 <b>화면을 안 봐도 됩니다.</b><br>
+  ① 두 폰 [센서 켜기] → "두 대 연결됨" 소리 → ② <b>옆면</b>으로 5회 톡 →
+  ③ "주먹 자세로 바꿔주세요" 소리 → <b>주먹</b>으로 5회 → ④ 완료음<br>
   <b class="warn">세게 부딪히지 마세요. 위쪽(머리)끼리는 NameDrop이 떠서 안 됩니다.</b>
 </div>
 
@@ -224,26 +228,66 @@ let uid = null, meRef = null, logRef = null;
 let hist = [], lastRise = 0, lastPre = 0, myWorld = null;
 
 // 자세별 집계 — 옆면 5회 / 주먹 5회를 섞지 않는다
-let pose = 'side';
+let pose = 'side', myPoseAt = 0;
 const stats = { side: [], fist: [] };
 const POSE_NAME = { side: '옆면', fist: '주먹' };
 const GOAL = 5;
 
-document.querySelectorAll('.pose').forEach(el => {
-  el.onclick = () => {
-    pose = el.dataset.p;
-    document.querySelectorAll('.pose').forEach(x => x.classList.toggle('on', x === el));
-    // ★v15 — 자세 전환 처리를 정반대로 바꿨다.
-    //   v14는 lastKey·lastPeak을 0으로 지웠는데, 그러면 버퍼에 남은 '직전 자세의 마지막 충격'이
-    //   중복 방지를 통과해 되살아나 새 자세에 잘못 기록됐다(실측: 주먹으로 바꾸자마자 여러 쌍이 쌓임).
-    //   지금은 반대로 — 버퍼를 비우고 1.2초간 감지를 잠가 과거를 완전히 끊는다.
-    BUF.length = 0;
-    lastPeak = Date.now() + 1200;   // 미래로 밀어 잠금
-    if (meRef) set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, plat: PLAT }).catch(() => {});
-    renderStats();
-    log('자세 전환 → ' + POSE_NAME[pose]);
-  };
-});
+// ---------- 소리 안내 (★혼자 측정용) ----------
+// 양손에 폰을 하나씩 들면 화면을 볼 수도, 버튼을 누를 수도 없다.
+// 그래서 진행 상황을 전부 소리로 알린다. iOS는 진동(vibrate)을 지원하지 않으므로 소리가 유일한 수단이다.
+let actx = null;
+function beep(freq, ms, vol) {
+  try {
+    if (!actx) return;
+    const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol || 0.3, t); g.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + ms / 1000 + 0.02);
+  } catch (e) {}
+}
+function say(text) {
+  try {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR'; u.rate = 1.05;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+// 자세 전환은 버튼·자동진행·상대동기화 셋 다 이 함수 하나를 지난다
+function setPose(p, announce, peerAt) {
+  if (p === pose) { if (peerAt) myPoseAt = Math.max(myPoseAt, peerAt); return; }
+  pose = p;
+  myPoseAt = peerAt || serverNow();
+  document.querySelectorAll('.pose').forEach(x => x.classList.toggle('on', x.dataset.p === p));
+  // ★v15 — 자세 전환 처리를 v14와 정반대로 바꿨다.
+  //   v14는 중복 방지 장치를 0으로 지웠는데, 그러면 버퍼에 남은 '직전 자세의 마지막 충격'이
+  //   되살아나 새 자세에 잘못 기록됐다(실측: 주먹으로 바꾸자마자 여러 쌍이 쌓임).
+  //   지금은 반대로 — 버퍼를 비우고 잠시 감지를 잠가 과거를 완전히 끊는다.
+  BUF.length = 0;
+  lastPeak = Date.now() + 1500;
+  if (meRef) set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, poseAt: myPoseAt, plat: PLAT }).catch(() => {});
+  renderStats();
+  if (announce) { beep(660, 140, .35); say(POSE_NAME[p] + ' 자세로 바꿔주세요'); }
+  log('자세 → ' + POSE_NAME[p]);
+}
+document.querySelectorAll('.pose').forEach(el => { el.onclick = () => setPose(el.dataset.p, true); });
+
+// 쌍이 하나 성립할 때마다 — 소리로 세어주고, 5회를 채우면 알아서 다음 자세로 넘어간다
+function afterPair() {
+  const n = stats[pose].length;
+  const done = stats.side.length >= GOAL && stats.fist.length >= GOAL;
+  beep(n >= GOAL ? 1200 : 880, 90, .3);
+  say(POSE_NAME[pose] + ' ' + n);
+  if (done) {
+    setTimeout(() => { beep(1400, 130, .4); setTimeout(() => beep(1900, 220, .4), 160); say('측정 완료. 결과를 복사하세요'); }, 900);
+  } else if (n >= GOAL && pose === 'side') {
+    setTimeout(() => setPose('fist', true), 1300);      // 옆면 5회 → 자동으로 주먹으로
+  } else if (n >= GOAL && pose === 'fist' && stats.side.length < GOAL) {
+    setTimeout(() => setPose('side', true), 1300);
+  }
+}
 
 $('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
 $('rth').oninput = e => { RETRO_TH = +e.target.value; $('rthv').textContent = RETRO_TH; };
@@ -445,6 +489,7 @@ function compare(mine, other) {
   log('[' + POSE_NAME[mine.pose] + '] Δt ' + Math.round(d) + 'ms · 방위차 ' + (hd == null ? '-' : Math.round(hd) + '°')
       + ' · 지구기준 ' + (deg == null ? '-' : deg + '°') + (mine.retro || other.retro ? ' (사후구제)' : ''));
   renderStats();
+  afterPair();
 }
 
 const med = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1;
@@ -496,13 +541,20 @@ async function connect() {
   meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
   logRef = ref(db, 'squadRooms/bump5Log/players/' + uid);   // 접속이 끊겨도 남는 분석용 기록
   onDisconnect(meRef).remove();
-  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, plat: PLAT });
+  myPoseAt = serverNow();
+  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, poseAt: myPoseAt, plat: PLAT });
   onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
     const all = snap.val() || {};
     const n = Object.keys(all).length;
     $('peers').textContent = n + '대'; $('peers').className = n >= 2 ? 'ok' : '';
+    if (n >= 2 && !readyBeeped) { readyBeeped = true; beep(1000, 120, .35); say('두 대 연결됨. 옆면부터 시작하세요'); }
     const others = Object.values(all).filter(p => p && p.uid !== uid);
     if (others.length && others[0].pose) $('pepose').textContent = POSE_NAME[others[0].pose] || '-';
+    // ★혼자 측정 — 한 폰에서 자세를 바꾸면 다른 폰이 따라온다.
+    //   양손에 폰을 들고 있으면 반대쪽 버튼을 누를 수 없으므로 동기화가 필수다.
+    //   더 나중에 바뀐 쪽을 따르고, 따라갈 때 상대의 시각을 그대로 받아 핑퐁을 막는다.
+    const o = others[0];
+    if (o && o.pose && o.poseAt && o.poseAt > myPoseAt && o.pose !== pose) setPose(o.pose, true, o.poseAt);
     const withPeak = others.filter(p => p.peakAt);
     if (!withPeak.length) return;
 
@@ -523,8 +575,13 @@ async function connect() {
 }
 
 // ★★ iOS는 '버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다. 앞에 await를 두면 거부된다.
+let readyBeeped = false;
 $('start').onclick = () => {
   $('start').disabled = true;
+  // 소리는 반드시 사용자 조작 안에서 깨워야 한다(iOS 제한). 여기서 한 번 워밍업해두면 이후 자유롭게 울린다.
+  try { actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {}
+  try { if (window.speechSynthesis) { const w = new SpeechSynthesisUtterance(' '); w.lang = 'ko-KR'; speechSynthesis.speak(w); } } catch (e) {}
+  setTimeout(() => { beep(880, 100, .3); say('센서 켰습니다'); }, 300);
   const need = t => typeof t !== 'undefined' && typeof t.requestPermission === 'function';
   const pM = need(window.DeviceMotionEvent) ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted');
   const pO = need(window.DeviceOrientationEvent) ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
@@ -577,6 +634,7 @@ $('copy').onclick = async () => {
 $('reset').onclick = () => {
   stats.side = []; stats.fist = []; logs.length = 0; ignored = 0; retroN = 0;
   usedMine.clear(); usedOther.clear(); savedPeaks.length = 0;
+  if (pose !== 'side') setPose('side', false);
   $('ign').textContent = '0회'; $('retroN').textContent = '0회';
   $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big';
   $('heads').textContent = '-'; $('hdiff').textContent = '-'; $('opp').textContent = '-';
