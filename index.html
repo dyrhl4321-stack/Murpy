@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260727014 -->
+<!-- cache-bust: v20260728001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -13450,13 +13450,18 @@ window._sqRenderDetail = function () {
   const act = document.getElementById('sq-d-actions');
   const btnCss = 'flex:1;border:none;border-radius:13px;padding:14px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit';
   let actions = '';
+  // 범프 = 코드 없이 폰을 맞대는 출석. 개시자(호스트)는 골드, 참여자는 블루로 구분한다.
+  const bumpBtn = (gold) => `<button onclick="window.bumpOpen&&window.bumpOpen('${s.id}')" style="${btnCss};`
+    + (gold ? 'background:#F5C24B;color:#05070c' : 'background:#3D7EFF;color:#fff') + `">범프</button>`;
   if (done) actions = '';
   else if (isHost) actions = `
-    <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">출석 시작</button>
-    <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">운동 종료</button>`;
+    <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">출석 코드</button>
+    ${bumpBtn(true)}
+    <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">종료</button>`;
   else if (joined) actions = `
-    <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">출석 체크</button>
-    <button onclick="window.leaveSquad('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);flex:0.6">나가기</button>`;
+    <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">코드 입력</button>
+    ${bumpBtn(false)}
+    <button onclick="window.leaveSquad('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);flex:0.55">나가기</button>`;
   else if (myMem && myMem.status === 'invited') actions = `
     <button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">리더 승인 기다리는 중…</button>`;
   else if (n >= s.capacity) actions = `<button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.4)">정원 마감</button>`;
@@ -13964,6 +13969,242 @@ window.sqComplete = async function (sid) {
     } else showToast('스쿼드를 종료했어요');
   } catch(e) { console.error(e); showToast('종료 실패'); }
 };
+// ================== 머피 범프 (대면 출석) ==================
+// 두 폰의 긴 옆면을 맞대면 양쪽 가속도계에 '같은 순간' 충격이 잡힌다.
+// 그 시각차(Δt)가 임계 이내면 "같은 자리에서 부딪혔다"로 보고 출석을 인정한다.
+//   실측 근거(2026-07-28, iPhone 2대 11쌍): Δt 평균 26 / 중앙 17 / 최대 100ms → 임계 150ms
+//   접촉 충격 15.6~38.4 · 접촉 직전 정적도 0.2~1.4(흔들면 5~15) → 정적도 임계 2.5
+// 6자리 코드는 메신저로 전달되지만(원격 대리출석), 범프는 같은 시각·같은 장소·물리적 충돌을
+// 동시에 만족해야 한다. 코드보다 위조가 어렵다.
+// 색 규칙: 개시자(호스트)=골드 / 참여자=파랑. ★캐릭터 본체는 절대 물들이지 않는다.
+const BP = { TH: 11, RETRO: 6, QUIET: 2.5, PAIR_MS: 150, COOL: 800, BUF_MS: 2500 };
+let bpBuf = [], bpSid = null, bpRole = 'guest', bpMeRef = null, bpUnsub = null,
+    bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null;
+
+const bpNow = () => Date.now() + bpOff;
+function bpQuietBefore(t) {
+  const pre = bpBuf.filter(s => s.t >= t - 260 && s.t <= t - 60);
+  return pre.length ? pre.reduce((a, s) => a + Math.abs(s.mag - 9.8), 0) / pre.length : 0;
+}
+function bpOrient(e) { if (typeof e.alpha === 'number') bpOri = { a: e.alpha, b: e.beta || 0, g: e.gamma || 0 }; }
+
+function bpOnMotion(e) {
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  const mag = Math.sqrt(g.x * g.x + g.y * g.y + g.z * g.z), now = Date.now();
+  bpBuf.push({ t: now, mag });
+  while (bpBuf.length && now - bpBuf[0].t > BP.BUF_MS) bpBuf.shift();
+  if (bpDone || mag < BP.TH || now - bpLastPeak < BP.COOL) return;
+  // 흔들기는 '천천히 커지고 계속 시끄럽다', 부딪힘은 '조용하다 한순간에 튄다'
+  const recent = bpBuf.slice(-5);
+  const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
+  if (bpQuietBefore(now) >= BP.QUIET || rise < BP.TH * 0.55) return;
+  bpLastPeak = now;
+  bpPublish(bpNow(), mag);
+}
+function bpPublish(at, mag) {
+  if (!bpMeRef || !window._rt) return;
+  try { window._rt.update(bpMeRef, { peakAt: at, mag: Math.round(mag * 10) / 10 }); } catch (e) {}
+}
+// 사후 조회 — 상대는 잡았는데 내가 못 잡은 접촉을, 그 시각만 낮은 임계로 되짚는다.
+// 상대 신호가 있을 때만 열리므로 혼자 흔든 건 걸리지 않는다(정적도 조건은 그대로).
+function bpRetro(otherAt) {
+  const tLocal = otherAt - bpOff;
+  if (Math.abs(tLocal - bpLastPeak) < 500) return false;
+  const win = bpBuf.filter(s => Math.abs(s.t - tLocal) <= 200);
+  if (!win.length) return false;
+  let pk = win[0]; win.forEach(s => { if (s.mag > pk.mag) pk = s; });
+  if (pk.mag < BP.RETRO || bpQuietBefore(pk.t) >= BP.QUIET) return false;
+  bpLastPeak = pk.t;
+  bpPublish(pk.t + bpOff, pk.mag);
+  return true;
+}
+
+window.bumpOpen = async function (sid) {
+  const user = auth.currentUser; if (!user) { showToast('로그인이 필요해요'); return; }
+  if (!window._rt || window._SQUAD_RT_OFF) { showToast('실시간 연결이 안 돼요'); return; }
+  const s = window._sqDoc;
+  bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0;
+  bpRole = (s && user.uid === s.hostUid) ? 'host' : 'guest';
+  bpOverlay('wait');
+
+  // ★iOS는 '버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다. 앞에 await를 두면 거부된다.
+  const need = t => typeof t !== 'undefined' && typeof t.requestPermission === 'function';
+  const pM = need(window.DeviceMotionEvent) ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted');
+  const pO = need(window.DeviceOrientationEvent) ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
+  pM.then(r => {
+    if (r !== 'granted') { bpMsg('동작 센서 권한이 필요해요<br><span style="font-size:11px">설정 > Safari > 동작 및 방향 접근</span>'); return; }
+    bpMotion = bpOnMotion; window.addEventListener('devicemotion', bpMotion);
+  }).catch(() => bpMsg('센서를 켤 수 없어요'));
+  pO.then(r => { if (r === 'granted') window.addEventListener('deviceorientation', bpOrient); }).catch(() => {});
+
+  const R = window._rt, room = 'squadRooms/bump_' + sid + '/players/';   // 기존 규칙 재사용(수정 불필요)
+  try {
+    R.onValue(R.ref(R.db, '.info/serverTimeOffset'), sn => { bpOff = sn.val() || 0; });
+    bpMeRef = R.ref(R.db, room + user.uid);
+    R.onDisconnect(bpMeRef).remove();
+    await R.set(bpMeRef, { uid: user.uid, nick: window._mwMyNick || '머피', role: bpRole, peakAt: 0, mag: 0, joinedAt: bpNow() });
+    bpUnsub = R.onValue(R.ref(R.db, 'squadRooms/bump_' + sid + '/players'), snap => {
+      const all = snap.val() || {}, mine = all[user.uid];
+      const others = Object.values(all).filter(p => p && p.uid !== user.uid);
+      bpPeers(others.length);
+      if (bpDone) return;
+      const hit = others.filter(o => o.peakAt);
+      if (!hit.length) return;
+      for (const o of hit) {
+        if (bpUsed[o.uid + ':' + o.peakAt]) continue;
+        if (!mine || !mine.peakAt || Math.abs(o.peakAt - mine.peakAt) > BP.PAIR_MS) {
+          // 내가 놓친 접촉이면 되짚어 본다. 성공하면 갱신된 값으로 다시 들어온다.
+          if (!mine || !mine.peakAt || Math.abs(o.peakAt - mine.peakAt) > BP.PAIR_MS) { bpRetro(o.peakAt); }
+          continue;
+        }
+        bpUsed[o.uid + ':' + o.peakAt] = 1;
+        bpDone = true;
+        bpSucceed(o, Math.abs(o.peakAt - mine.peakAt));
+        break;
+      }
+    });
+  } catch (e) { console.error(e); bpMsg('연결에 실패했어요'); }
+};
+
+window.bumpClose = function () {
+  bpDone = true;
+  if (bpMotion) { window.removeEventListener('devicemotion', bpMotion); bpMotion = null; }
+  window.removeEventListener('deviceorientation', bpOrient);
+  if (bpUnsub) { try { bpUnsub(); } catch (e) {} bpUnsub = null; }
+  if (bpMeRef && window._rt) { try { window._rt.remove(bpMeRef); } catch (e) {} }
+  bpMeRef = null; bpBuf = [];
+  const el = document.getElementById('bp-ov'); if (el) el.remove();
+};
+
+// 성공 — 연출 → 출석 → 범퍼 기록
+async function bpSucceed(other, dt) {
+  if (navigator.vibrate) { try { navigator.vibrate([30, 20, 14]); } catch (e) {} }
+  bpFx();
+  const user = auth.currentUser;
+  let place = '';
+  try { const s = window._sqDoc; place = (s && (s.placeName || s.centerName || s.place)) || ''; } catch (e) {}
+  await bpAttend(bpSid);
+  await bpSaveBumper(other, place);
+  bpOverlay('done', { other, dt, place });
+  if (window._rt && bpSid) {
+    try { window._rt.update(window._rt.ref(window._rt.db, 'squadRooms/' + bpSid + '/players/' + user.uid), { stamp: Date.now() }); } catch (e) {}
+  }
+}
+
+// 출석 처리 — 코드 입력(sqSubmitCode)과 같은 결과를 내되 검증 근거가 범프다
+async function bpAttend(sid) {
+  const user = auth.currentUser; if (!user || !sid) return;
+  try {
+    const s = window._sqDoc || {};
+    const mRef = doc(db, 'squads', sid, 'members', user.uid);
+    const mSnap = await getDoc(mRef);
+    if (!mSnap.exists() || (mSnap.data().status !== 'accepted' && mSnap.data().status !== 'checkedIn')) return;
+    if (mSnap.data().checkedIn) return;
+    const late = Date.now() > (s.scheduledAt || 0) + 5 * 60 * 1000;
+    await updateDoc(mRef, {
+      checkedIn: true, checkinTime: serverTimestamp(),
+      checkinType: late ? 'late' : 'present', checkinVia: 'bump', status: 'checkedIn'
+    });
+    if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
+    window._sqStampPop && window._sqStampPop(user.uid);
+    window.sqChatSys && window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 범프 출석!' + (late ? ' (지각)' : ''));
+  } catch (e) { console.error('bump attend', e); }
+}
+
+// 범퍼 = 실제로 만나 범프한 사람. users 문서의 맵으로 저장해 보안규칙 수정이 필요 없다.
+// 캐릭터는 '그때 그 차림'으로 스냅샷해 둔다 — 나중에 옷을 갈아입어도 그날이 남는다.
+async function bpSaveBumper(other, place) {
+  const user = auth.currentUser; if (!user || !other) return;
+  try {
+    const meSnap = await getDoc(doc(db, 'users', user.uid));
+    const prev = (meSnap.exists() && meSnap.data().bumpers) || {};
+    const was = prev[other.uid] || {};
+    let ch = null;
+    try { const os = await getDoc(doc(db, 'users', other.uid)); if (os.exists()) ch = os.data().character || null; } catch (e) {}
+    await setDoc(doc(db, 'users', user.uid), {
+      bumpers: Object.assign({}, prev, {
+        [other.uid]: {
+          nick: other.nick || '머피',
+          character: was.character || ch,
+          firstAt: was.firstAt || Date.now(),
+          lastAt: Date.now(),
+          count: (was.count || 0) + 1,
+          place: place || was.place || ''
+        }
+      })
+    }, { merge: true });
+  } catch (e) { console.error('bumper save', e); }
+}
+
+// ---------- 오버레이 ----------
+function bpColor() { return bpRole === 'host' ? '#F5C24B' : '#3D7EFF'; }
+function bpOverlay(mode, data) {
+  let el = document.getElementById('bp-ov');
+  if (!el) { el = document.createElement('div'); el.id = 'bp-ov'; document.body.appendChild(el); }
+  el.style.cssText = 'position:fixed;inset:0;z-index:9600;background:#05070c;display:flex;flex-direction:column;'
+    + 'align-items:center;justify-content:center;padding:24px;text-align:center;font-family:inherit';
+  const c = bpColor();
+  if (mode === 'wait') {
+    // ★접점을 화면 정중앙(50%)에 둔다 — 어긋남 = |f-0.5| x (두 화면 높이차) 이므로 f=0.5면 0이 된다.
+    //   화면 크기가 달라도 중앙끼리 맞추면 접점이 어긋나지 않는다.
+    el.innerHTML = `
+      <div style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:0;height:0;
+        border-top:11px solid transparent;border-bottom:11px solid transparent;border-left:14px solid ${c}"></div>
+      <div style="position:absolute;right:0;top:50%;transform:translateY(-50%);width:0;height:0;
+        border-top:11px solid transparent;border-bottom:11px solid transparent;border-right:14px solid ${c}"></div>
+      <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:linear-gradient(90deg,${c}00,${c}55,${c}00)"></div>
+      <div style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff;margin-bottom:10px">머피 범프</div>
+      <div style="font-size:13px;color:#8a93a8;line-height:1.75;margin-bottom:6px">
+        두 폰의 <b style="color:#fff">긴 옆면</b>을 맞대고<br><b style="color:#fff">이 삼각형 높이</b>를 서로 맞춰 <b style="color:#fff">톡</b> 대세요<br>
+        <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
+      <div id="bp-peers" style="font-size:12px;color:${c};margin-top:12px">상대를 기다리는 중…</div>
+      <div id="bp-msg" style="font-size:12px;color:#E4472E;margin-top:10px;line-height:1.6"></div>
+      <button onclick="window.bumpClose()" style="margin-top:26px;background:#1e2740;color:#cfd6e6;border:none;
+        border-radius:12px;padding:13px 30px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">닫기</button>`;
+  } else {
+    const o = data.other, ch = '';
+    el.innerHTML = `
+      <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:${c};margin-bottom:6px">범프 성공</div>
+      <div style="font-family:'Galmuri14',sans-serif;font-size:22px;color:#fff;margin-bottom:4px">${(o.nick || '머피')}</div>
+      <div style="font-size:12.5px;color:#8a93a8;margin-bottom:18px">
+        ${data.place ? data.place + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
+        <span style="color:${c}">범퍼로 등록됐어요</span></div>
+      <div style="font-size:12.5px;color:#4ade80;margin-bottom:22px">오운완 도장 쾅!</div>
+      <button onclick="window.bumpClose()" style="background:${c};color:#fff;border:none;border-radius:12px;
+        padding:14px 34px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer">확인</button>`;
+  }
+}
+function bpMsg(html) { const m = document.getElementById('bp-msg'); if (m) m.innerHTML = html; }
+function bpPeers(n) {
+  const p = document.getElementById('bp-peers');
+  if (p) { p.textContent = n >= 1 ? '상대 연결됨 — 이제 맞대세요' : '상대를 기다리는 중…'; p.style.color = n >= 1 ? '#4ade80' : bpColor(); }
+}
+// 충격 순간 — 섬광 + 손바닥이 경계에서 잘린 채 맞닿는다(잘린 단면이 '저쪽으로 이어진다'는 신호)
+function bpFx() {
+  const ov = document.getElementById('bp-ov'); if (!ov) return;
+  const c = bpColor();
+  const f = document.createElement('div');
+  f.style.cssText = 'position:absolute;inset:0;background:#fff;pointer-events:none;z-index:5';
+  ov.appendChild(f);
+  f.animate([{ opacity: 1 }, { opacity: .3, offset: .28 }, { opacity: 0 }], { duration: 220, easing: 'ease-out' })
+   .onfinish = () => f.remove();
+  ['left', 'right'].forEach(side => {
+    const p = document.createElement('div');
+    p.style.cssText = `position:absolute;${side}:-14%;top:50%;translate:0 -50%;width:58%;aspect-ratio:256/290;`
+      + `z-index:6;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png') no-repeat center/contain;`
+      + `filter:drop-shadow(0 0 7px #fff) drop-shadow(0 0 22px ${c}) drop-shadow(0 0 46px ${c});`
+      + (side === 'right' ? 'scale:-1 1;' : '');
+    ov.appendChild(p);
+    const away = side === 'left' ? -1 : 1;
+    p.animate([
+      { opacity: 0, transform: `translateX(${away * 55}%) scale(.62)` },
+      { opacity: 1, transform: `translateX(${away * 8}%) scale(1.08)`, offset: .45 },
+      { opacity: 1, transform: 'translateX(0) scale(1)', offset: .62 },
+      { opacity: 0, transform: 'translateX(0) scale(1.3)' }
+    ], { duration: 520, easing: 'cubic-bezier(.2,.9,.3,1)' }).onfinish = () => p.remove();
+  });
+}
+
 // QR 스캔 자동 출석: ?sqa={sid}&c={code}
 (function () {
   const p = new URLSearchParams(location.search);
