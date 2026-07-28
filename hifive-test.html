@@ -57,7 +57,7 @@
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b class="ok">v8 (기록 영구저장)</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v9 (실측 기준 반영)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
@@ -65,8 +65,8 @@
   <div class="meter"><i id="bar"></i></div>
   <div class="row"><span>최근 최대 충격</span><b id="peakhold">-</b></div>
   <div class="row"><span>흔들림으로 무시</span><b id="ign">0회</b></div>
-  <div class="row"><span>감지 기준</span><b id="thv">18</b></div>
-  <input id="th" type="range" min="12" max="40" step="1" value="18" style="width:100%;margin:2px 0;accent-color:#3D7EFF">
+  <div class="row"><span>감지 기준</span><b id="thv">15</b></div>
+  <input id="th" type="range" min="10" max="40" step="1" value="15" style="width:100%;margin:2px 0;accent-color:#3D7EFF">
   <button id="start">센서 켜기 (iOS는 필수)</button>
 </div>
 
@@ -179,7 +179,8 @@ async function ensureUser() {
 const BUF = [];                 // { t, mag, ax, ay, az }  t = 로컬 ms
 const BUF_MS = 1500;
 let heading = null;             // 나침반 방위(0~360)
-let THRESH = 18, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
+// 실측(2026-07-28 iOS, 살짝 툭 7회): 충격 19.4~38.4(평균 26.8). 최소값 아래로 여유를 둬 15.
+let THRESH = 15, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
 let uid = null, meRef = null, logRef = null;
 let hist = [], lastRise = 0, lastPre = 0;
 
@@ -214,7 +215,8 @@ function onMotion(e) {
     const recent = BUF.slice(-5);
     const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
 
-    const quietOK = preAvg < 3.0;
+    // 실측: 직전 정적도 0.2~1.3(평균 0.7). 흔드는 중이면 5~15로 뛴다. 2.5면 여유 있게 갈린다.
+    const quietOK = preAvg < 2.5;
     const riseOK = rise >= THRESH * 0.55;
 
     if (!quietOK || !riseOK) {
