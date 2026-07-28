@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260728002 -->
+<!-- cache-bust: v20260728003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -14132,39 +14132,66 @@ window.bumpClose = function () {
   const el = document.getElementById('bp-ov'); if (el) el.remove();
 };
 
-// 성공 — 연출 → 출석 → 범퍼 기록
+// 접촉 성립 — 연출 → 출석 판정 → (인정된 경우에만) 범퍼 기록
 async function bpSucceed(other, dt) {
   if (navigator.vibrate) { try { navigator.vibrate([30, 20, 14]); } catch (e) {} }
   bpFx();
   const user = auth.currentUser;
   let place = '';
   try { const s = window._sqDoc; place = (s && (s.placeName || s.centerName || s.place)) || ''; } catch (e) {}
-  await bpAttend(bpSid);
+  const res = await bpAttend(bpSid, other.uid);
+
+  if (res === 'need-verifier') {
+    // 접촉은 진짜였지만 둘 다 아직 도장이 없다 — 근거 없이 인정하지 않고 다시 시도하게 둔다.
+    // 범퍼 기록도 남기지 않는다(인정되지 않은 만남이므로).
+    bpOverlay('need', { other });
+    bpDone = false;
+    return;
+  }
   await bpSaveBumper(other, place);
-  bpOverlay('done', { other, dt, place });
+  bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already' });
   if (window._rt && bpSid) {
     try { window._rt.update(window._rt.ref(window._rt.db, 'squadRooms/' + bpSid + '/players/' + user.uid), { stamp: Date.now() }); } catch (e) {}
   }
 }
 
-// 출석 처리 — 코드 입력(sqSubmitCode)과 같은 결과를 내되 검증 근거가 범프다
-async function bpAttend(sid) {
-  const user = auth.currentUser; if (!user || !sid) return;
+// 출석 처리 — 코드 입력(sqSubmitCode)과 같은 결과를 내되 검증 근거가 범프다.
+//
+// ★도장 번지기 — 리더가 전원과 1:1로 맞대면 10명 기준 3분이 걸리고, 줄 뒤쪽은 기다리다 지각이 된다.
+//   그래서 "도장을 받은 사람은 다음 사람의 검증 주체가 될 수 있다"로 넓힌다.
+//     1라운드 리더-A / 2라운드 리더-B, A-C / 3라운드 4쌍 … → 10명이 4라운드(약 80초)에 끝난다.
+//   검증 요건 자체는 완화하지 않는다. 매 범프마다 시각 동시성·접촉을 그대로 요구하고,
+//   '검증 주체의 자격'만 넓히는 것이다. 덕분에 현장에 오지 않은 두 사람이 자기들끼리
+//   맞대는 경우는 (둘 다 미검증이라) 통과하지 못한다.
+//   누가 누구를 통해 도장을 받았는지는 verifiedBy에 남아 사후 역추적이 가능하다.
+async function bpAttend(sid, otherUid) {
+  const user = auth.currentUser; if (!user || !sid) return 'error';
   try {
     const s = window._sqDoc || {};
     const mRef = doc(db, 'squads', sid, 'members', user.uid);
     const mSnap = await getDoc(mRef);
-    if (!mSnap.exists() || (mSnap.data().status !== 'accepted' && mSnap.data().status !== 'checkedIn')) return;
-    if (mSnap.data().checkedIn) return;
+    if (!mSnap.exists() || (mSnap.data().status !== 'accepted' && mSnap.data().status !== 'checkedIn')) return 'not-member';
+    if (mSnap.data().checkedIn) return 'already';
+
+    const iAmHost = user.uid === s.hostUid;
+    let otherOk = (otherUid === s.hostUid);
+    if (!otherOk && otherUid) {
+      try { const o = await getDoc(doc(db, 'squads', sid, 'members', otherUid)); otherOk = o.exists() && !!o.data().checkedIn; } catch (e) {}
+    }
+    // 나도 상대도 아직 도장이 없으면 번질 근거가 없다 — 리더나 이미 찍은 사람과 맞대야 한다
+    if (!iAmHost && !otherOk) return 'need-verifier';
+
     const late = Date.now() > (s.scheduledAt || 0) + 5 * 60 * 1000;
     await updateDoc(mRef, {
       checkedIn: true, checkinTime: serverTimestamp(),
-      checkinType: late ? 'late' : 'present', checkinVia: 'bump', status: 'checkedIn'
+      checkinType: late ? 'late' : 'present', checkinVia: 'bump',
+      verifiedBy: otherUid || null, status: 'checkedIn'
     });
     if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     window._sqStampPop && window._sqStampPop(user.uid);
     window.sqChatSys && window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 범프 출석!' + (late ? ' (지각)' : ''));
-  } catch (e) { console.error('bump attend', e); }
+    return late ? 'late' : 'ok';
+  } catch (e) { console.error('bump attend', e); return 'error'; }
 }
 
 // 범퍼 = 실제로 만나 범프한 사람. users 문서의 맵으로 저장해 보안규칙 수정이 필요 없다.
@@ -14215,19 +14242,37 @@ function bpOverlay(mode, data) {
       <div style="font-size:13px;color:#8a93a8;line-height:1.75;margin-bottom:6px">
         두 폰의 <b style="color:#fff">긴 옆면</b>을 맞대고<br><b style="color:#fff">이 삼각형 높이</b>를 서로 맞춰 <b style="color:#fff">톡</b> 대세요<br>
         <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
+      <div style="font-size:11.5px;color:#4a5266;line-height:1.7;margin-top:4px">
+        ${bpRole === 'host' ? '리더는 누구에게든 도장을 찍어줄 수 있어요' : '리더나 이미 도장을 받은 사람과 맞대세요'}<br>
+        도장을 받으면 그다음부터는 내가 찍어줄 수 있어요</div>
       <div id="bp-peers" style="font-size:12px;color:${c};margin-top:12px">상대를 기다리는 중…</div>
       <div id="bp-msg" style="font-size:12px;color:#E4472E;margin-top:10px;line-height:1.6"></div>
       <button onclick="window.bumpClose()" style="margin-top:26px;background:#1e2740;color:#cfd6e6;border:none;
         border-radius:12px;padding:13px 30px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">닫기</button>`;
+  } else if (mode === 'need') {
+    // 접촉은 진짜였지만 검증 근거가 없는 경우 — 무엇을 하면 되는지만 알려준다
+    el.innerHTML = `
+      <div style="font-family:'Galmuri14',sans-serif;font-size:16px;color:#F5C24B;margin-bottom:10px">도장이 아직 없어요</div>
+      <div style="font-size:13px;color:#8a93a8;line-height:1.8;margin-bottom:6px">
+        ${(data.other.nick || '상대')}님도 아직 도장 전이라<br>둘 다 출석으로 인정되지 않았어요<br><br>
+        <b style="color:#fff">리더</b>나 <b style="color:#fff">이미 도장을 받은 사람</b>과<br>먼저 맞대주세요<br>
+        <span style="font-size:11.5px;color:#4a5266">도장을 받으면 그다음부터는<br>다른 사람에게 찍어줄 수 있어요</span></div>
+      <button onclick="window.bumpOpen&&window.bumpOpen('${bpSid}')" style="margin-top:22px;background:var(--accent);
+        color:#fff;border:none;border-radius:12px;padding:14px 30px;font-size:14px;font-weight:800;
+        font-family:inherit;cursor:pointer">다시 시도</button>
+      <button onclick="window.bumpClose()" style="margin-top:10px;background:none;border:none;color:#8a93a8;
+        font-size:13px;padding:8px;cursor:pointer;font-family:inherit">닫기</button>`;
   } else {
-    const o = data.other, ch = '';
+    const o = data.other;
     el.innerHTML = `
       <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:${c};margin-bottom:6px">범프 성공</div>
       <div style="font-family:'Galmuri14',sans-serif;font-size:22px;color:#fff;margin-bottom:4px">${(o.nick || '머피')}</div>
       <div style="font-size:12.5px;color:#8a93a8;margin-bottom:18px">
         ${data.place ? data.place + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
         <span style="color:${c}">범퍼로 등록됐어요</span></div>
-      <div style="font-size:12.5px;color:#4ade80;margin-bottom:22px">오운완 도장 쾅!</div>
+      <div style="font-size:12.5px;color:${data.late ? '#F5C24B' : '#4ade80'};margin-bottom:6px">
+        ${data.already ? '이미 도장이 있어요' : (data.late ? '지각 도장 찍었어요' : '오운완 도장 쾅!')}</div>
+      <div style="font-size:11.5px;color:#4a5266;margin-bottom:20px">이제 아직 안 찍은 사람에게<br>도장을 찍어줄 수 있어요</div>
       <div style="display:flex;gap:9px">
         <button onclick="window.bumpClose();window.bumpDogam&&window.bumpDogam()" style="background:rgba(255,255,255,.08);
           color:#cfd6e6;border:none;border-radius:12px;padding:14px 20px;font-size:14px;font-weight:700;
