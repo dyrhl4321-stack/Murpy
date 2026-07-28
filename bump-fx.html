@@ -13,9 +13,11 @@
   구성: 화면에 '내 폰'과 '상대 폰' 두 개를 나란히 붙여 놓고, 가운데 선이 곧 접촉면이다.
         실제로는 폰 두 대가 그 선에서 맞닿는다.
 
-  풀버전 3.5초 = 접촉(섬광·흔들림·파편) → 경계로 걸어감 → 경계 넘어 상대 화면 등장
-                 → 인사 후 복귀 → 파형 카드
-  짧은버전 0.6초 = 타격감만 (두 번째 만남부터)
+  ★두 모드는 물리적으로 다르다(대표 지적 7-28).
+    - 범프(치고 뗌)   : 인증용. 두 화면이 곧바로 떨어지므로 넘나들기가 성립하지 않는다. 0.6초 타격감만.
+    - 잇기(맞대고 유지): 두 화면이 붙어 있는 동안에만 하나의 면이 되어 캐릭터가 건너갈 수 있다.
+                        붙어 있는지는 두 단말의 움직임 상관도가 높게 유지되는지로 판정한다.
+    흐름: 톡 친다(인증) → 그대로 붙여둔다(통로 열림) → 캐릭터 왕래·교환 → 떼면 종료
 
   시트 규격: 141x224, 3열 x 4행 [아래0 / 위1 / 좌2 / 우3]  — index.html과 동일
 -->
@@ -72,9 +74,12 @@
 
 <h1>머피 범프 연출 시안</h1>
 <div class="sub">
-  두 화면이 <b>가운데 선</b>에서 맞닿아 있다고 보시면 됩니다. 실제로는 폰 두 대가 그 선에서 부딪힙니다.<br>
+  두 화면이 <b>가운데 선</b>에서 맞닿아 있다고 보시면 됩니다.<br>
+  <b>범프</b>는 톡 치고 떼는 것(인증), <b>잇기</b>는 <b>붙여둔 채 유지</b>하는 것(교환·왕래)입니다.
+  붙어 있는 동안에만 캐릭터가 건너갈 수 있습니다.<br>
   <b>새로 그린 그림은 한 장도 없습니다</b> — 기존 걷기 스프라이트만 씁니다.
 </div>
+<div id="state" style="font-size:12px;color:#8a93a8;margin-bottom:8px">상태: 대기</div>
 
 <div class="pair" id="pair">
   <div class="stage left" id="s1">
@@ -92,15 +97,18 @@
 </div>
 
 <div class="btns">
-  <button id="full">첫 만남 (풀버전 3.5초)</button>
-  <button id="short" class="ghost">두 번째부터 (0.6초)</button>
+  <button id="full">잇기 — 붙여둔 채 왕래</button>
+  <button id="short" class="ghost">범프만 — 치고 뗌 (0.6초)</button>
 </div>
 
 <div class="note">
   <b>확인 포인트</b><br>
   ① 팔이 올라가는 그림 없이도 <b>친 느낌</b>이 나는가<br>
   ② 캐릭터가 <b>경계를 넘어</b> 상대 화면으로 가는 게 이어져 보이는가<br>
-  ③ 풀버전 3.5초가 <b>길게 느껴지는가</b> (길면 첫 만남에만 쓰면 됩니다)
+  ③ 붙여두는 시간(약 2.5초)이 <b>기다릴 만한가</b><br><br>
+  <b>왜 두 모드인가</b> — 치고 떼면 두 화면이 바로 떨어져 캐릭터가 건널 다리가 없습니다.
+  넘나들기는 <b>붙여둔 동안에만</b> 성립합니다. 그래서 인증은 범프로 끝내고,
+  교환·왕래는 붙여둔 채 하는 별도 모드로 둡니다.
 </div>
 
 <script>
@@ -196,19 +204,24 @@ function reset() {
   $('c2').style.left = (w * 0.10) + 'px'; setFrame($('c2'), 'left', 1); $('c2').style.opacity = 1;
 }
 
+const st = s => { $('state').textContent = '상태: ' + s; };
+
 async function playShort() {
   if (busy) return; busy = true; reset();
+  st('범프 — 톡 치고 뗌 (인증 완료)');
   impact();
   await sleep(700);
-  busy = false;
+  st('대기'); busy = false;
 }
 
 async function playFull() {
   if (busy) return; busy = true; reset();
   const W = $('s1').clientWidth;
 
+  st('범프 — 접촉');
   impact();
   await sleep(600);
+  st('붙어 있는 중 — 통로 열림 (떼지 마세요)');
 
   // 내 캐릭터가 접촉면(오른쪽 끝)으로 걸어가 경계를 넘는다
   const t1 = walkLoop($('c1'), 'right', 130); timers.push(t1);
@@ -243,9 +256,12 @@ async function playFull() {
   clearInterval(t3); ghost.remove();
   $('c1').style.opacity = 1; setFrame($('c1'), 'right', 1);
 
-  // 파형 카드
+  // 떼면 종료 → 결과 카드
+  st('떼는 순간 — 통로 닫힘');
+  await sleep(260);
   drawWave($('w1')); drawWave($('w2'));
   $('k1').classList.add('on'); $('k2').classList.add('on');
+  st('완료 — 기록 남음');
   busy = false;
 }
 
