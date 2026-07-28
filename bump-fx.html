@@ -3,215 +3,244 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>머피 범프 연출 시안</title>
+<title>머피 범프 연출 시안 v2</title>
 <!--
-  머피 범프 연출 프로토타입 (2026-07-28)
+  머피 범프 연출 프로토타입 v2 (2026-07-28)
 
-  목적: 새 스프라이트를 한 장도 그리지 않고 기존 걷기 시트(char/walk.png)만으로
-        범프 순간 연출이 어디까지 되는지 확인한다.
+  v1 피드백(대표):
+   - "친 느낌이 하나도 안 든다"  → 격투게임식 타격감 기본기를 전부 빼먹었었다.
+       히트스톱 / 줌 펀치 / 캐릭터 반동(스쿼시) / 짧고 강한 섬광 / 충격파 링 추가.
+   - "내가 상대 폰에 갔다가 돌아오는 느낌뿐"  → 일방 방문이라 '만남'이 아니었다.
+   - "서로 만나는 화면(중간 다리)이 있어야 하는 것 아닌가"  → 맞다. 각자 화면에서는
+       자기 캐릭터가 밖으로 나가버려 만나는 장면을 아무도 못 본다.
+       → 경계를 넘는 순간 두 화면이 '만남의 공간'으로 전환되고, 그 안에서 둘이 마주 선다.
+         (스쿼드 워킹룸과 같은 구조 — 같은 공간을 각자 본다)
 
-  구성: 화면에 '내 폰'과 '상대 폰' 두 개를 나란히 붙여 놓고, 가운데 선이 곧 접촉면이다.
-        실제로는 폰 두 대가 그 선에서 맞닿는다.
-
-  ★두 모드는 물리적으로 다르다(대표 지적 7-28).
-    - 범프(치고 뗌)   : 인증용. 두 화면이 곧바로 떨어지므로 넘나들기가 성립하지 않는다. 0.6초 타격감만.
-    - 잇기(맞대고 유지): 두 화면이 붙어 있는 동안에만 하나의 면이 되어 캐릭터가 건너갈 수 있다.
-                        붙어 있는지는 두 단말의 움직임 상관도가 높게 유지되는지로 판정한다.
-    흐름: 톡 친다(인증) → 그대로 붙여둔다(통로 열림) → 캐릭터 왕래·교환 → 떼면 종료
-
-  시트 규격: 141x224, 3열 x 4행 [아래0 / 위1 / 좌2 / 우3]  — index.html과 동일
+  새 그림은 여전히 0장. 기존 walk.png(141x224, 3열x4행 [아래0/위1/좌2/우3])만 사용.
 -->
 <style>
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; margin:0; padding:0 }
   body { background:#05070c; color:#cfd6e6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;
-         padding:14px 12px 40px; max-width:860px; margin:0 auto }
+         padding:14px 12px 40px; max-width:880px; margin:0 auto }
   h1 { font-size:17px; color:#fff; margin-bottom:4px }
-  .sub { font-size:12.5px; color:#8a93a8; line-height:1.6; margin-bottom:12px }
+  .sub { font-size:12.5px; color:#8a93a8; line-height:1.6; margin-bottom:8px }
+  #state { font-size:12px; color:#F5C24B; margin-bottom:8px; min-height:16px }
 
-  /* 두 폰이 접촉면(가운데 선)에서 맞닿아 있는 상태 */
-  .pair { display:flex; align-items:stretch; justify-content:center; gap:0; margin-bottom:12px }
-  .stage { position:relative; width:50%; aspect-ratio:9/16; max-height:58vh; overflow:hidden;
+  .pair { display:flex; justify-content:center; gap:0; margin-bottom:12px; transform-origin:center }
+  .stage { position:relative; width:50%; aspect-ratio:9/16; max-height:56vh; overflow:hidden;
            background:#1a1408 url('char/fields/field_room.png') center/cover no-repeat;
            image-rendering:pixelated; border:3px solid #05070c }
   .stage.left  { box-shadow:inset -2px 0 0 #F5C24B }
   .stage.right { box-shadow:inset 2px 0 0 #F5C24B }
-  .tag { position:absolute; top:5px; left:6px; z-index:9; font-size:10.5px; color:#fff;
+  .tag { position:absolute; top:5px; left:6px; z-index:19; font-size:10.5px; color:#fff;
          background:rgba(5,7,12,.66); padding:2px 6px; border-radius:4px }
 
-  /* 캐릭터 — 기존 걷기 시트를 그대로 쓴다. 새 그림 없음 */
-  .mchar { position:absolute; bottom:14%; width:141px; height:224px; background-image:url('char/walk.png');
-           background-repeat:no-repeat; transform-origin:bottom center; transform:scale(.46);
-           transition:left .0s linear; z-index:5 }
+  /* 만남의 공간 — 경계를 넘으면 두 화면이 같은 배경으로 전환된다 */
+  .venue { position:absolute; inset:0; background:#0d1420 url('char/fields/field_gym_wide.png') center/cover no-repeat;
+           opacity:0; transition:opacity .28s ease; z-index:2 }
+  .venue.on { opacity:1 }
 
-  /* 접촉 순간 3종 */
-  .flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:20 }
-  .flash.on { animation:fx-flash .34s ease-out }
-  @keyframes fx-flash { 0%{opacity:.95} 25%{opacity:.5} 100%{opacity:0} }
+  .mchar { position:absolute; bottom:15%; width:141px; height:224px; background-image:url('char/walk.png');
+           background-repeat:no-repeat; transform-origin:bottom center; z-index:6 }
 
-  .shake { animation:fx-shake .26s steps(4) }
-  @keyframes fx-shake { 25%{transform:translate(4px,-3px)} 50%{transform:translate(-4px,3px)} 75%{transform:translate(3px,2px)} }
+  .flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:22 }
+  .ring  { position:absolute; border:5px solid #fff; border-radius:50%; pointer-events:none; z-index:21; opacity:0 }
+  .p { position:absolute; pointer-events:none; z-index:20 }
 
-  .p { position:absolute; width:7px; height:7px; background:#F5C24B; pointer-events:none; z-index:18 }
-
-  /* 파형 카드 */
-  .card { position:absolute; left:8%; right:8%; bottom:8%; background:#151b2b; border:3px solid #05070c;
+  .card { position:absolute; left:7%; right:7%; bottom:7%; background:#151b2b; border:3px solid #05070c;
           box-shadow:0 0 0 2px #F5C24B; padding:10px; z-index:30; opacity:0; transform:translateY(14px);
-          transition:opacity .5s ease, transform .5s cubic-bezier(.2,.9,.3,1) }
+          transition:opacity .45s ease, transform .45s cubic-bezier(.2,.9,.3,1) }
   .card.on { opacity:1; transform:none }
   .card b { display:block; font-size:11.5px; color:#F5C24B; margin-bottom:5px }
-  .card canvas { width:100%; height:38px; display:block; background:#0a0d16 }
+  .card canvas { width:100%; height:36px; display:block; background:#0a0d16 }
 
-  .btns { display:flex; gap:8px; margin-top:6px }
-  button { flex:1; padding:14px; font-size:15px; font-weight:700; border:none; border-radius:11px;
+  .btns { display:flex; gap:8px; flex-wrap:wrap }
+  button { flex:1; min-width:150px; padding:14px; font-size:15px; font-weight:700; border:none; border-radius:11px;
            background:#3D7EFF; color:#fff; font-family:inherit; cursor:pointer }
   button.ghost { background:#1e2740; color:#cfd6e6 }
-  button:disabled { opacity:.45 }
   .note { font-size:12px; color:#8a93a8; line-height:1.65; margin-top:12px; border-top:1px solid #2b3350; padding-top:10px }
   .note b { color:#cfd6e6 }
 </style>
 </head>
 <body>
 
-<h1>머피 범프 연출 시안</h1>
+<h1>머피 범프 연출 시안 v2</h1>
 <div class="sub">
-  두 화면이 <b>가운데 선</b>에서 맞닿아 있다고 보시면 됩니다.<br>
-  <b>범프</b>는 톡 치고 떼는 것(인증), <b>잇기</b>는 <b>붙여둔 채 유지</b>하는 것(교환·왕래)입니다.
-  붙어 있는 동안에만 캐릭터가 건너갈 수 있습니다.<br>
-  <b>새로 그린 그림은 한 장도 없습니다</b> — 기존 걷기 스프라이트만 씁니다.
+  가운데 선이 <b>두 폰이 맞닿는 면</b>입니다. 경계를 넘으면 <b>두 화면이 같은 공간</b>으로 바뀌고,
+  거기서 둘이 만납니다. <b>새로 그린 그림은 0장</b>입니다.
 </div>
-<div id="state" style="font-size:12px;color:#8a93a8;margin-bottom:8px">상태: 대기</div>
+<div id="state">상태: 대기</div>
 
 <div class="pair" id="pair">
   <div class="stage left" id="s1">
     <div class="tag">내 폰</div>
+    <div class="venue" id="v1"></div>
     <div class="mchar" id="c1"></div>
     <div class="flash" id="f1"></div>
-    <div class="card" id="k1"><b>오늘의 범프</b><canvas id="w1" height="38"></canvas></div>
+    <div class="card" id="k1"><b>오늘의 범프</b><canvas id="w1" height="36"></canvas></div>
   </div>
   <div class="stage right" id="s2">
     <div class="tag">상대 폰</div>
+    <div class="venue" id="v2"></div>
     <div class="mchar" id="c2"></div>
     <div class="flash" id="f2"></div>
-    <div class="card" id="k2"><b>오늘의 범프</b><canvas id="w2" height="38"></canvas></div>
+    <div class="card" id="k2"><b>오늘의 범프</b><canvas id="w2" height="36"></canvas></div>
   </div>
 </div>
 
 <div class="btns">
-  <button id="full">잇기 — 붙여둔 채 왕래</button>
-  <button id="short" class="ghost">범프만 — 치고 뗌 (0.6초)</button>
+  <button id="full">잇기 — 만남의 공간까지</button>
+  <button id="short" class="ghost">범프만 — 타격감 (0.6초)</button>
 </div>
 
 <div class="note">
-  <b>확인 포인트</b><br>
-  ① 팔이 올라가는 그림 없이도 <b>친 느낌</b>이 나는가<br>
-  ② 캐릭터가 <b>경계를 넘어</b> 상대 화면으로 가는 게 이어져 보이는가<br>
-  ③ 붙여두는 시간(약 2.5초)이 <b>기다릴 만한가</b><br><br>
-  <b>왜 두 모드인가</b> — 치고 떼면 두 화면이 바로 떨어져 캐릭터가 건널 다리가 없습니다.
-  넘나들기는 <b>붙여둔 동안에만</b> 성립합니다. 그래서 인증은 범프로 끝내고,
-  교환·왕래는 붙여둔 채 하는 별도 모드로 둡니다.
+  <b>v2에서 고친 것</b><br>
+  ① <b>타격감</b> — 히트스톱(0.09초 정지) · 줌 펀치 · 캐릭터 뒤로 밀리며 찌그러짐 · 충격파 링 · 짧고 강한 섬광<br>
+  ② <b>만남의 공간</b> — 경계를 넘으면 두 화면이 같은 배경으로 전환. 각자 자기 폰만 봐도 둘이 만나는 게 보임<br><br>
+  <b>확인 포인트</b> — 이제 친 느낌이 나는가 / 만남의 공간 전환이 자연스러운가 / 전체 길이가 적당한가
 </div>
 
 <script>
-const CW = 141, CH = 224, COLS = 3;
-const ROW = { down: 0, up: 1, left: 2, right: 3 };
+const CW = 141, CH = 224;
+const ROW = { down:0, up:1, left:2, right:3 };
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const st = s => { $('state').textContent = '상태: ' + s; };
 
 function setFrame(el, face, col) {
   el.style.backgroundPosition = (-col * CW) + 'px ' + (-ROW[face] * CH) + 'px';
 }
-// 걷기: 3프레임 중 1(정지) 기준으로 0-1-2-1 순환
 const WALK = [0, 1, 2, 1];
 function walkLoop(el, face, ms) {
-  let i = 0;
-  setFrame(el, face, WALK[0]);
+  let i = 0; setFrame(el, face, WALK[0]);
   return setInterval(() => { i = (i + 1) % WALK.length; setFrame(el, face, WALK[i]); }, ms);
 }
+// 캐릭터는 scale로 축소해 쓰므로, 위치·반동을 줄 때 항상 scale을 같이 써야 크기가 안 튄다
+const SC = 0.46;
+function place(el, leftPx, extra) {
+  el.style.left = leftPx + 'px';
+  el.style.transform = 'scale(' + SC + ')' + (extra || '');
+}
 
-// "쿵" 효과음 — 오디오 파일 없이 합성한다
 let actx = null;
 function thud() {
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
     const t = actx.currentTime;
+    // 저음 '쿵' — v1보다 더 깊고 짧게
     const o = actx.createOscillator(), g = actx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.16);
-    g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.3);
-    // 짧은 잡음 = 타격의 '탁'
-    const n = actx.createBufferSource(), buf = actx.createBuffer(1, 2000, actx.sampleRate);
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(240, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.13);
+    g.gain.setValueAtTime(0.8, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.28);
+    // 날카로운 '탁'
+    const n = actx.createBufferSource(), buf = actx.createBuffer(1, 1400, actx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2);
     n.buffer = buf;
-    const ng = actx.createGain(); ng.gain.setValueAtTime(0.28, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-    n.connect(ng).connect(actx.destination); n.start(t);
+    const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1600;
+    const ng = actx.createGain(); ng.gain.setValueAtTime(0.5, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    n.connect(hp).connect(ng).connect(actx.destination); n.start(t);
   } catch (e) {}
 }
 
-// 접촉면에서 튀는 픽셀 파편. 왼쪽 화면은 왼쪽으로, 오른쪽 화면은 오른쪽으로 퍼진다
+function ring(stage, side) {
+  const r = stage.getBoundingClientRect();
+  const el = document.createElement('div'); el.className = 'ring';
+  const y = r.height * 0.44, x = side === 'l' ? r.width : 0;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.width = '10px'; el.style.height = '10px'; el.style.marginLeft = '-5px'; el.style.marginTop = '-5px';
+  stage.appendChild(el);
+  el.animate([{ transform:'scale(.2)', opacity:.95, borderWidth:'6px' },
+              { transform:'scale(7)',  opacity:0,   borderWidth:'1px' }],
+             { duration:420, easing:'cubic-bezier(.1,.7,.3,1)' }).onfinish = () => el.remove();
+}
+
 function burst(stage, side) {
   const r = stage.getBoundingClientRect();
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 22; i++) {
     const p = document.createElement('div'); p.className = 'p';
-    const y0 = r.height * 0.42;
+    const sz = 6 + Math.random() * 7;
+    p.style.width = sz + 'px'; p.style.height = sz + 'px';
+    p.style.background = i % 4 === 0 ? '#fff' : (i % 4 === 1 ? '#FFE9A8' : '#F5C24B');
     p.style.left = (side === 'l' ? r.width - 4 : 0) + 'px';
-    p.style.top = y0 + 'px';
-    p.style.background = i % 3 === 0 ? '#fff' : '#F5C24B';
+    p.style.top = (r.height * 0.44) + 'px';
     stage.appendChild(p);
-    const ang = (side === 'l' ? Math.PI : 0) + (Math.random() - 0.5) * 2.1;
-    const dist = 40 + Math.random() * 110;
-    const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 30;
-    p.animate([{ transform: 'translate(0,0) scale(1)', opacity: 1 },
-               { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0)', opacity: 0 }],
-              { duration: 520 + Math.random() * 320, easing: 'cubic-bezier(.2,.8,.4,1)' })
+    const ang = (side === 'l' ? Math.PI : 0) + (Math.random() - 0.5) * 2.4;
+    const dist = 70 + Math.random() * 160;
+    const dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 46;
+    p.animate([{ transform:'translate(0,0) scale(1.3)', opacity:1 },
+               { transform:'translate(' + dx + 'px,' + dy + 'px) scale(0)', opacity:0 }],
+              { duration: 380 + Math.random() * 300, easing:'cubic-bezier(.15,.85,.35,1)' })
      .onfinish = () => p.remove();
   }
 }
 
+// ★타격감 = 히트스톱 + 줌 펀치 + 캐릭터 반동. 이 셋이 빠지면 아무리 번쩍여도 안 친 것 같다.
+async function impact() {
+  thud();
+  if (navigator.vibrate) { try { navigator.vibrate([26, 22, 12]); } catch (e) {} }
+
+  // 섬광 — 짧고 강하게
+  [$('f1'), $('f2')].forEach(f => {
+    f.animate([{ opacity:1 }, { opacity:.35, offset:.3 }, { opacity:0 }], { duration:150, easing:'ease-out' });
+  });
+  ring($('s1'), 'l'); ring($('s2'), 'r');
+  burst($('s1'), 'l'); burst($('s2'), 'r');
+
+  // 캐릭터 반동 — 접촉면 반대쪽으로 밀리며 가로로 찌그러졌다 복귀
+  const push = (el, dir) => el.animate([
+    { transform:'scale(' + SC + ')' },
+    { transform:'scale(' + (SC * 1.18) + ',' + (SC * 0.82) + ') translateX(' + (dir * 26) + 'px)', offset:.18 },
+    { transform:'scale(' + (SC * 0.94) + ',' + (SC * 1.06) + ') translateX(' + (dir * 8) + 'px)', offset:.5 },
+    { transform:'scale(' + SC + ')' }
+  ], { duration:420, easing:'cubic-bezier(.2,.9,.3,1)' });
+  push($('c1'), -1); push($('c2'), 1);
+
+  // 줌 펀치 + 화면 흔들림
+  $('pair').animate([
+    { transform:'scale(1.06)' }, { transform:'scale(1.02) translate(9px,-6px)', offset:.25 },
+    { transform:'scale(1.01) translate(-8px,5px)', offset:.5 },
+    { transform:'scale(1) translate(4px,2px)', offset:.75 }, { transform:'scale(1)' }
+  ], { duration:300, easing:'steps(5)' });
+
+  // 히트스톱 — 아주 짧게 멈춘다
+  await sleep(90);
+}
+
 function drawWave(cv) {
-  const w = cv.width = cv.clientWidth * 2, h = cv.height = 76, c = cv.getContext('2d');
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 72, c = cv.getContext('2d');
   c.clearRect(0, 0, w, h);
   c.strokeStyle = '#F5C24B'; c.lineWidth = 3; c.beginPath();
   const seed = Math.random() * 10;
   for (let i = 0; i <= 60; i++) {
     const x = i / 60 * w;
-    const env = Math.exp(-Math.pow((i - 14) / 9, 2)) + 0.28 * Math.exp(-Math.pow((i - 30) / 16, 2));
-    const v = Math.sin(i * 0.9 + seed) * env;
-    const y = h / 2 - v * (h / 2 - 5);
+    const env = Math.exp(-Math.pow((i - 13) / 8, 2)) + 0.3 * Math.exp(-Math.pow((i - 30) / 15, 2));
+    const y = h / 2 - Math.sin(i * 0.95 + seed) * env * (h / 2 - 5);
     i ? c.lineTo(x, y) : c.moveTo(x, y);
   }
   c.stroke();
 }
 
-function impact() {
-  thud();
-  if (navigator.vibrate) { try { navigator.vibrate([18, 30, 14]); } catch (e) {} }
-  $('f1').classList.remove('on'); $('f2').classList.remove('on');
-  void $('f1').offsetWidth;
-  $('f1').classList.add('on'); $('f2').classList.add('on');
-  $('pair').classList.remove('shake'); void $('pair').offsetWidth; $('pair').classList.add('shake');
-  burst($('s1'), 'l'); burst($('s2'), 'r');
-}
-
 let busy = false, timers = [];
 function reset() {
   timers.forEach(clearInterval); timers = [];
-  $('k1').classList.remove('on'); $('k2').classList.remove('on');
-  const w = $('s1').clientWidth;
-  // 내 캐릭터: 왼쪽 화면 오른쪽 끝 근처(접촉면 앞)에서 오른쪽을 보고 대기
-  $('c1').style.left = (w * 0.52) + 'px'; setFrame($('c1'), 'right', 1); $('c1').style.opacity = 1;
-  // 상대 캐릭터: 오른쪽 화면 왼쪽 끝 근처에서 왼쪽을 보고 대기
-  $('c2').style.left = (w * 0.10) + 'px'; setFrame($('c2'), 'left', 1); $('c2').style.opacity = 1;
+  ['k1','k2'].forEach(i => $(i).classList.remove('on'));
+  ['v1','v2'].forEach(i => $(i).classList.remove('on'));
+  const W = $('s1').clientWidth;
+  $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
+  $('c1').style.opacity = 1; $('c2').style.opacity = 1;
+  place($('c1'), W * 0.50); setFrame($('c1'), 'right', 1);
+  place($('c2'), W * 0.11); setFrame($('c2'), 'left', 1);
+  st('대기');
 }
-
-const st = s => { $('state').textContent = '상태: ' + s; };
 
 async function playShort() {
   if (busy) return; busy = true; reset();
   st('범프 — 톡 치고 뗌 (인증 완료)');
-  impact();
-  await sleep(700);
-  st('대기'); busy = false;
+  await impact();
+  await sleep(600);
+  st('완료'); busy = false;
 }
 
 async function playFull() {
@@ -219,46 +248,51 @@ async function playFull() {
   const W = $('s1').clientWidth;
 
   st('범프 — 접촉');
-  impact();
-  await sleep(600);
-  st('붙어 있는 중 — 통로 열림 (떼지 마세요)');
+  await impact();
+  await sleep(360);
 
-  // 내 캐릭터가 접촉면(오른쪽 끝)으로 걸어가 경계를 넘는다
-  const t1 = walkLoop($('c1'), 'right', 130); timers.push(t1);
-  $('c1').style.transition = 'left .8s linear';
-  $('c1').style.left = (W * 0.86) + 'px';
-  await sleep(800);
-  clearInterval(t1);
-  $('c1').style.opacity = 0;                      // 경계 도달 = 사라짐 (폰 크기 무관)
+  // 양쪽 캐릭터가 각자 경계로 걸어간다
+  st('붙어 있는 중 — 서로 경계로');
+  const t1 = walkLoop($('c1'), 'right', 120), t2 = walkLoop($('c2'), 'left', 120);
+  timers.push(t1, t2);
+  $('c1').style.transition = 'left .62s linear'; $('c2').style.transition = 'left .62s linear';
+  place($('c1'), W * 0.92); place($('c2'), W * -0.30);
+  await sleep(640);
+  clearInterval(t1); clearInterval(t2);
+  $('c1').style.opacity = 0; $('c2').style.opacity = 0;
 
-  // 같은 순간 상대 화면 왼쪽 끝에서 등장해 걸어 들어온다
-  const ghost = $('c2').cloneNode(); ghost.id = 'ghost';
-  ghost.style.left = (-W * 0.16) + 'px'; ghost.style.opacity = 1;
-  $('s2').appendChild(ghost);
-  const t2 = walkLoop(ghost, 'right', 130); timers.push(t2);
-  ghost.style.transition = 'left .7s linear';
-  requestAnimationFrame(() => { ghost.style.left = (W * 0.42) + 'px'; });
-  await sleep(720);
-  clearInterval(t2);
+  // ★경계를 넘는 순간, 두 화면이 같은 공간으로 바뀐다
+  st('만남의 공간');
+  $('v1').classList.add('on'); $('v2').classList.add('on');
+  await sleep(300);
 
-  // 마주 보고 인사 (정면 프레임으로 전환 + 살짝 점프)
-  setFrame(ghost, 'left', 1); setFrame($('c2'), 'right', 1);
-  ghost.animate([{ transform: 'scale(.46) translateY(0)' }, { transform: 'scale(.46) translateY(-16px)' },
-                 { transform: 'scale(.46) translateY(0)' }], { duration: 420, easing: 'ease-out' });
-  $('c2').animate([{ transform: 'scale(.46) translateY(0)' }, { transform: 'scale(.46) translateY(-16px)' },
-                   { transform: 'scale(.46) translateY(0)' }], { duration: 420, easing: 'ease-out', delay: 60 });
+  // 같은 공간에 둘이 마주 선다 — 두 화면 모두 같은 장면
+  $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
+  $('c1').style.opacity = 1; $('c2').style.opacity = 1;
+  place($('c1'), W * 0.16); setFrame($('c1'), 'right', 1);
+  place($('c2'), W * 0.50); setFrame($('c2'), 'left', 1);
+  // 상대 화면에도 같은 배치를 복제해 보여준다(실제로는 서버가 동기화)
+  const g1 = $('c1').cloneNode(); g1.id = 'g1'; $('s2').appendChild(g1);
+  const g2 = $('c2').cloneNode(); g2.id = 'g2'; $('s1').appendChild(g2);
+  await sleep(340);
+
+  // 마주 보고 하이파이브 — 서로 다가가 부딪히고 위로 튄다
+  const hop = el => el.animate([
+    { transform:'scale(' + SC + ') translateY(0)' },
+    { transform:'scale(' + SC + ') translateY(-26px)', offset:.45 },
+    { transform:'scale(' + (SC * 1.1) + ',' + (SC * 0.9) + ') translateY(0)', offset:.75 },
+    { transform:'scale(' + SC + ') translateY(0)' }
+  ], { duration:520, easing:'ease-out' });
+  [$('c1'), $('c2'), g1, g2].forEach(hop);
+  thud();
+  [$('s1'), $('s2')].forEach((s, i) => { ring(s, i ? 'r' : 'l'); burst(s, i ? 'r' : 'l'); });
   await sleep(620);
 
-  // 돌아감
-  const t3 = walkLoop(ghost, 'left', 130); timers.push(t3);
-  ghost.style.left = (-W * 0.16) + 'px';
-  await sleep(700);
-  clearInterval(t3); ghost.remove();
-  $('c1').style.opacity = 1; setFrame($('c1'), 'right', 1);
-
-  // 떼면 종료 → 결과 카드
+  // 떼면 종료
   st('떼는 순간 — 통로 닫힘');
-  await sleep(260);
+  g1.remove(); g2.remove();
+  $('v1').classList.remove('on'); $('v2').classList.remove('on');
+  await sleep(300);
   drawWave($('w1')); drawWave($('w2'));
   $('k1').classList.add('on'); $('k2').classList.add('on');
   st('완료 — 기록 남음');
@@ -267,7 +301,7 @@ async function playFull() {
 
 $('full').onclick = playFull;
 $('short').onclick = playShort;
-window.addEventListener('resize', reset);
+window.addEventListener('resize', () => { if (!busy) reset(); });
 setTimeout(reset, 60);
 </script>
 </body>
