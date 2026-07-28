@@ -3,120 +3,138 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>머피 하이파이브 측정</title>
+<title>머피 범프 측정</title>
 <!--
-  머피 하이파이브 실측 도구 (2026-07-28)
-  목적: 두 사람이 손을 마주쳤을 때 두 폰이 감지한 '충격 시각의 차이(Δt)'를 실제로 재기 위한 것.
-        이 숫자가 특허 청구항의 임계시간과 실제 구현 가능 여부를 동시에 결정한다.
+  머피 범프 실측 도구 v5 (2026-07-28)
 
-  방법: 각 폰이 가속도 센서로 충격 피크를 잡고, Firebase RTDB의 serverTimeOffset으로 보정한
-        '서버 기준 시각'을 기록해 같은 방에 올린다. 두 기록의 차이가 곧 Δt.
+  재는 것 4가지
+   1) Δt      — 두 폰이 감지한 충격 시각의 차이 (이게 임계값을 정한다)
+   2) 방위차   — 두 폰이 서로 마주 보고 있었는지 (나침반)
+   3) 이격방향 — 충격 직후 두 폰이 어느 쪽으로 움직였는지 (주먹/폰을 떼는 동작)
+   4) 파형     — 충격 순간의 진동 모양. 두 폰이 같은 모양을 기록하는지
 
-  주의: - HTTPS에서만 동작한다(GitHub Pages OK). 로컬 file:// 로는 센서가 안 잡힌다.
-        - iOS는 반드시 사용자가 버튼을 눌러 센서 권한을 허용해야 한다.
-        - 폰을 서로 부딪히지 말 것. 폰을 손에 쥔 채 '손바닥끼리' 마주친다.
-        - 계정은 이 페이지가 임시로 자동 생성한다(로컬에 저장해 재사용).
+  방법: 각 폰이 가속도 피크를 잡고, RTDB serverTimeOffset으로 보정한 서버 기준 시각과
+        전후 구간 데이터를 같은 방에 올린다. 상대 것과 나란히 비교한다.
+
+  주의  - HTTPS 필수(GitHub Pages OK). iOS는 버튼을 눌러 센서 권한을 허용해야 한다.
+        - 폰끼리는 '가볍게' 톡. 세게 부딪히지 말 것.
+        - 이 파일을 PowerShell로 편집하지 말 것(한글 깨짐). Write 도구 사용.
 -->
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body { margin:0; background:#0a0d16; color:#cfd6e6; font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;
-         padding:18px 16px 40px; max-width:520px; margin:0 auto; }
+         padding:16px 14px 40px; max-width:520px; margin:0 auto; }
   h1 { font-size:19px; color:#fff; margin:0 0 4px }
-  .sub { font-size:12.5px; color:#8a93a8; line-height:1.6; margin-bottom:16px }
-  .card { background:#151b2b; border:1px solid #2b3350; border-radius:12px; padding:14px; margin-bottom:12px }
-  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13.5px; padding:5px 0 }
-  .row b { color:#fff; font-variant-numeric:tabular-nums }
+  .sub { font-size:12.5px; color:#8a93a8; line-height:1.65; margin-bottom:14px }
+  .card { background:#151b2b; border:1px solid #2b3350; border-radius:12px; padding:13px; margin-bottom:11px }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13.5px; padding:4px 0 }
+  .row b { color:#fff; font-variant-numeric:tabular-nums; text-align:right }
   button { width:100%; padding:15px; font-size:16px; font-weight:700; border:none; border-radius:12px;
            background:#3D7EFF; color:#fff; font-family:inherit; cursor:pointer; margin-top:8px }
   button:disabled { background:#2a3350; color:#6b7490 }
-  button.ghost { background:#1e2740; color:#cfd6e6 }
-  .big { font-size:42px; font-weight:800; color:#F5C24B; text-align:center; margin:6px 0; font-variant-numeric:tabular-nums }
+  button.ghost { background:#1e2740; color:#cfd6e6; font-size:14px; padding:11px }
+  .big { font-size:40px; font-weight:800; color:#F5C24B; text-align:center; margin:4px 0; font-variant-numeric:tabular-nums }
   .big small { display:block; font-size:12px; color:#8a93a8; font-weight:500; margin-top:2px }
-  .ok { color:#4ade80 } .bad { color:#E4472E }
-  .log { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; line-height:1.7; color:#8a93a8;
-         max-height:210px; overflow-y:auto; white-space:pre-wrap; word-break:break-all }
-  .hint { font-size:12px; color:#8a93a8; line-height:1.65; margin-top:10px }
-  .meter { height:8px; background:#0a0d16; border-radius:4px; overflow:hidden; margin-top:8px }
+  .ok { color:#4ade80 !important } .bad { color:#E4472E !important } .warn { color:#F5C24B !important }
+  .log { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; line-height:1.65; color:#8a93a8;
+         max-height:180px; overflow-y:auto; white-space:pre-wrap; word-break:break-all }
+  .hint { font-size:12px; color:#8a93a8; line-height:1.6; margin-top:8px }
+  .meter { height:8px; background:#0a0d16; border-radius:4px; overflow:hidden; margin-top:6px }
   .meter i { display:block; height:100%; background:#3D7EFF; width:0%; transition:width .05s linear }
+  canvas { width:100%; height:70px; display:block; background:#0a0d16; border-radius:8px; margin-top:6px }
+  .lbl { font-size:11.5px; color:#8a93a8; margin-top:8px }
+  .sec { font-size:12px; color:#6b7490; letter-spacing:1px; margin:2px 0 6px }
 </style>
 </head>
 <body>
 
-<h1>머피 하이파이브 측정</h1>
+<h1>머피 범프 측정</h1>
 <div class="sub">
-  <b>두 폰에서 이 페이지를 열기만 하면 자동으로 같은 방에 연결됩니다.</b> 따로 입력할 건 없습니다.
+  <b>두 폰에서 이 페이지를 열기만 하면 자동으로 같은 방에 연결됩니다.</b> 입력할 건 없습니다.
   아래 <b>접속 기기</b>가 <b>2대</b>가 되면 준비 끝입니다.<br>
-  그 상태에서 마주치면, 두 폰이 감지한 충격 시각의 차이(Δt)를 잽니다.<br>
-  <b>① 폰 맞대기</b> — 두 폰의 <b>등끼리 가볍게 톡</b> (권장)<br>
-  <b>② 손바닥 하이파이브</b> — 폰을 쥔 손으로 손바닥을 마주치기<br>
-  가만히 두면 <b>9.8</b>이 정상입니다(중력). 안 잡히면 아래 <b>감지 기준</b>을 낮추세요.
+  두 폰을 수평으로 들고 <b>위쪽 모서리끼리 가볍게 톡</b> 댄 뒤 <b>서로 떨어지세요</b>.
+  <b class="warn">세게 부딪히지 마세요.</b>
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b id="build" style="color:#4ade80">v4 (기준값 조절·접속표시)</b></div>
-  <div class="row"><span>방 이름</span><b id="room">-</b></div>
-  <div class="row"><span>내 기기</span><b id="me">-</b></div>
-  <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
-  <div class="row"><span>센서</span><b id="sensor">대기</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v5 (범프 구간 기록)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
+  <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
+  <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
   <div class="row"><span>현재 충격량</span><b id="mag">-</b></div>
   <div class="meter"><i id="bar"></i></div>
   <div class="row"><span>최근 최대 충격</span><b id="peakhold">-</b></div>
   <div class="row"><span>감지 기준</span><b id="thv">18</b></div>
-  <input id="th" type="range" min="12" max="40" step="1" value="18"
-         style="width:100%;margin:4px 0 2px;accent-color:#3D7EFF">
-  <div style="font-size:11.5px;color:#8a93a8">낮출수록 약한 충격도 잡습니다. 가만히 뒀을 때 저절로 잡히면 다시 올리세요.</div>
+  <input id="th" type="range" min="12" max="40" step="1" value="18" style="width:100%;margin:2px 0;accent-color:#3D7EFF">
   <button id="start">센서 켜기 (iOS는 필수)</button>
 </div>
 
 <div class="card">
-  <div style="font-size:13px;color:#8a93a8;margin-bottom:2px">마지막 하이파이브 시각차</div>
+  <div class="sec">1. 충격 시각차</div>
   <div class="big" id="dt">–<small>두 폰 모두 충격이 잡히면 표시됩니다</small></div>
   <div class="row"><span>측정 횟수</span><b id="cnt">0</b></div>
-  <div class="row"><span>평균 Δt</span><b id="avg">-</b></div>
-  <div class="row"><span>최대 Δt</span><b id="max">-</b></div>
+  <div class="row"><span>평균 / 최대</span><b id="avgmax">-</b></div>
 </div>
 
 <div class="card">
-  <div style="font-size:13px;color:#8a93a8;margin-bottom:6px">기록</div>
+  <div class="sec">2. 서로 마주 봤나 (나침반)</div>
+  <div class="row"><span>내 방위</span><b id="myhead">-</b></div>
+  <div class="row"><span>상대 방위</span><b id="pehead">-</b></div>
+  <div class="row"><span>차이</span><b id="hdiff">-</b></div>
+  <div class="hint">두 사람이 마주 보면 <b>180도에 가깝게</b> 나와야 합니다.</div>
+</div>
+
+<div class="card">
+  <div class="sec">3. 떼는 방향 (충격 직후 0.4초)</div>
+  <div class="row"><span>내 이동</span><b id="mysep">-</b></div>
+  <div class="row"><span>상대 이동</span><b id="pesep">-</b></div>
+  <div class="hint">각 폰 기준 앞뒤(Y)·좌우(X)·위아래(Z)로 얼마나 밀렸는지입니다.
+    떼는 동작이 실제로 찍히는지 보는 값입니다.</div>
+</div>
+
+<div class="card">
+  <div class="sec">4. 충격 파형 (위=내 폰, 아래=상대)</div>
+  <canvas id="w1" height="70"></canvas>
+  <canvas id="w2" height="70"></canvas>
+  <div class="hint">같은 순간을 겪었다면 두 파형의 모양이 비슷해야 합니다.</div>
+</div>
+
+<div class="card">
+  <div class="sec">기록</div>
   <div class="log" id="log">시작 대기 중…</div>
   <button class="ghost" id="reset">기록 지우기</button>
 </div>
 
-<div class="hint">
-  <b>임계값</b> 충격 판정 25 m/s² · 재감지 대기 1.2초<br>
-  <b>오차 요인</b> 서버 시각 보정 오차가 Δt에 그대로 더해집니다. 보정값이 크게 흔들리면 와이파이/LTE를 바꿔 다시 재보세요.<br>
-  <b>판단 기준</b> 평균 Δt가 <b>150ms 이하</b>면 넉넉하게 쓸 수 있고, <b>300ms 이하</b>면 임계값으로 쓸 만합니다.
-</div>
-
-<!-- 모듈 로드 자체가 실패하면 아래 module 스크립트는 아예 안 돈다.
-     그 경우에도 화면에 원인이 보이도록 일반 스크립트로 먼저 안전망을 깐다. -->
 <script>
   window.__boot = false;
   function __log(s) {
     var el = document.getElementById('log'); if (!el) return;
     el.textContent = new Date().toLocaleTimeString('ko-KR') + '  ' + s + '\n' + el.textContent;
   }
-  window.addEventListener('error', function (e) {
-    __log('오류: ' + (e.message || e.type) + (e.filename ? ' @ ' + e.filename.split('/').pop() : ''));
-  });
+  window.addEventListener('error', function (e) { __log('오류: ' + (e.message || e.type)); });
   window.addEventListener('unhandledrejection', function (e) {
     var r = e.reason; __log('오류(비동기): ' + (r && (r.message || r.code) || r));
   });
   setTimeout(function () {
     if (!window.__boot) {
-      __log('초기화 실패 — 스크립트 로드가 안 됐습니다. 네트워크 차단(사내 와이파이)이나 구버전 브라우저일 수 있어요.');
+      __log('초기화 실패 — 스크립트 로드가 안 됐습니다. 네트워크 차단이나 구버전 브라우저일 수 있어요.');
       var b = document.getElementById('start'); if (b) b.textContent = '초기화 실패 (기록 확인)';
     }
   }, 6000);
-  if (!window.isSecureContext) { setTimeout(function(){ __log('경고: HTTPS가 아니라 센서 접근이 막힙니다.'); }, 300); }
+  if (!window.isSecureContext) setTimeout(function(){ __log('경고: HTTPS가 아니라 센서 접근이 막힙니다.'); }, 300);
 </script>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, set, onValue, remove, onDisconnect }
+import { getDatabase, ref, set, onValue, onDisconnect }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+window.__boot = true;
+const $ = id => document.getElementById(id);
+const logs = [];
+function log(s) { logs.unshift(new Date().toLocaleTimeString('ko-KR') + '  ' + s); $('log').textContent = logs.slice(0, 30).join('\n'); }
 
 const app = initializeApp({
   apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
@@ -129,167 +147,180 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
 
-window.__boot = true;   // 모듈이 실제로 실행됐음을 안전망에 알린다
-const $ = id => document.getElementById(id);
-const logs = [];
-function log(s) {
-  logs.unshift(new Date().toLocaleTimeString('ko-KR') + '  ' + s);
-  $('log').textContent = logs.slice(0, 40).join('\n');
-}
-
-// 방 이름: ?room=xxx 로 바꿀 수 있다. 기본은 hifiveTest.
-// 경로는 기존 보안규칙(squadRooms/{sid}/players/{uid})을 그대로 재사용한다 — 규칙 수정 불필요.
+// 기존 보안규칙(squadRooms/{sid}/players/{uid})을 그대로 재사용한다 — 규칙 수정 불필요
 const ROOM = new URLSearchParams(location.search).get('room') || 'hifiveTest';
-$('room').textContent = ROOM;
 
-// ---- 임시 계정 (규칙이 로그인 사용자를 요구하므로) ----
-// 로컬에 저장해 다시 열어도 같은 계정을 쓴다. 두 폰은 각각 다른 계정이 된다.
-async function ensureUser() {
-  let cred = null;
-  try { cred = JSON.parse(localStorage.getItem('hifive_cred') || 'null'); } catch (e) {}
-  if (!cred) {
-    cred = {
-      email: 'hifive' + Math.random().toString(36).slice(2, 10) + '@murpy-test.local',
-      pw: 'Hf!' + Math.random().toString(36).slice(2, 12)
-    };
-    localStorage.setItem('hifive_cred', JSON.stringify(cred));
-  }
-  try {
-    const u = await signInWithEmailAndPassword(auth, cred.email, cred.pw);
-    return u.user;
-  } catch (e) {
-    const u = await createUserWithEmailAndPassword(auth, cred.email, cred.pw);
-    return u.user;
-  }
-}
-
-let uid = null, offset = 0, offsetReady = false;
-
-// ---- 서버 시각 보정 ----
-// .info/serverTimeOffset 은 보안규칙과 무관한 클라이언트 메타 경로다.
-// 서버시각 = Date.now() + offset
-onValue(ref(db, '.info/serverTimeOffset'), snap => {
-  offset = snap.val() || 0;
-  offsetReady = true;
-  $('off').textContent = (offset >= 0 ? '+' : '') + Math.round(offset) + ' ms';
+let offset = 0;
+onValue(ref(db, '.info/serverTimeOffset'), s => {
+  offset = s.val() || 0; $('off').textContent = (offset >= 0 ? '+' : '') + Math.round(offset) + ' ms';
 });
 const serverNow = () => Date.now() + offset;
 
-const start = async () => {
-  const user = await ensureUser();
-  uid = user.uid;
-  $('me').textContent = uid.slice(0, 6);
-  log('로그인됨 ' + uid.slice(0, 6));
-
-  const meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
-  onDisconnect(meRef).remove();
-  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0 });
-
-  // 같은 방의 모든 기기를 구독해 Δt를 계산한다
-  onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
-    const all = snap.val() || {};
-    const n = Object.keys(all).length;
-    $('peers').textContent = n + '대';
-    $('peers').className = n >= 2 ? 'ok' : '';
-    const others = Object.values(all).filter(p => p && p.uid !== uid && p.peakAt);
-    const mine = all[uid];
-    if (!mine || !mine.peakAt || !others.length) return;
-    // 내 피크와 가장 가까운 상대 피크를 짝지어 Δt 계산
-    let best = null;
-    for (const o of others) {
-      const d = Math.abs(o.peakAt - mine.peakAt);
-      if (!best || d < best.d) best = { d, o };
-    }
-    if (!best || best.d > 4000) return;          // 4초 넘게 벌어지면 다른 시도로 본다
-    record(best.d, best.o.uid);
-  });
-  return meRef;
-};
-
-// ---- Δt 집계 ----
-let meRef = null, samples = [], lastRecordKey = '';
-function record(d, otherUid) {
-  const key = otherUid + ':' + Math.round(d);
-  if (key === lastRecordKey) return;             // 같은 스냅샷 중복 방지
-  lastRecordKey = key;
-  samples.push(d);
-  const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
-  const mx = Math.max(...samples);
-  $('dt').innerHTML = Math.round(d) + '<small>ms</small>';
-  $('dt').className = 'big ' + (d <= 300 ? 'ok' : 'bad');
-  $('cnt').textContent = samples.length;
-  $('avg').textContent = Math.round(avg) + ' ms';
-  $('max').textContent = Math.round(mx) + ' ms';
-  log('Δt = ' + Math.round(d) + 'ms  (상대 ' + otherUid.slice(0, 6) + ')');
+async function ensureUser() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem('hifive_cred') || 'null'); } catch (e) {}
+  if (!c) {
+    c = { email: 'hifive' + Math.random().toString(36).slice(2, 10) + '@murpy-test.local',
+          pw: 'Hf!' + Math.random().toString(36).slice(2, 12) };
+    localStorage.setItem('hifive_cred', JSON.stringify(c));
+  }
+  try { return (await signInWithEmailAndPassword(auth, c.email, c.pw)).user; }
+  catch (e) { return (await createUserWithEmailAndPassword(auth, c.email, c.pw)).user; }
 }
 
-// ---- 충격 피크 감지 ----
-let lastPeak = 0, peakArmed = true, hold = 0, holdT = 0;
-let THRESH = 18;        // m/s² (중력 포함 합성 가속도). 슬라이더로 조절. 정지 시 9.8이 기준선.
-const COOLDOWN = 1200;  // ms
+// ---------- 센서 버퍼 ----------
+// 충격 전후를 보려면 계속 최근 샘플을 들고 있어야 한다(충격이 난 뒤엔 과거를 못 만든다).
+const BUF = [];                 // { t, mag, ax, ay, az }  t = 로컬 ms
+const BUF_MS = 1500;
+let heading = null;             // 나침반 방위(0~360)
+let THRESH = 18, lastPeak = 0, hold = 0, holdT = 0;
+let uid = null, meRef = null;
 
 $('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
 
+function onOrient(e) {
+  const h = (typeof e.webkitCompassHeading === 'number') ? e.webkitCompassHeading
+          : (e.absolute && typeof e.alpha === 'number') ? (360 - e.alpha) % 360 : null;
+  if (h != null) { heading = h; $('myhead').textContent = Math.round(h) + '°'; }
+}
+
 function onMotion(e) {
-  const a = e.accelerationIncludingGravity;
-  if (!a || a.x == null) return;
-  const mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  const lin = e.acceleration && e.acceleration.x != null ? e.acceleration : null;
+  const mag = Math.sqrt(g.x * g.x + g.y * g.y + g.z * g.z);
+  const now = Date.now();
+
+  BUF.push({ t: now, mag, ax: lin ? lin.x : g.x, ay: lin ? lin.y : g.y, az: lin ? lin.z : g.z });
+  while (BUF.length && now - BUF[0].t > BUF_MS) BUF.shift();
+
   $('mag').textContent = mag.toFixed(1);
   $('bar').style.width = Math.min(100, mag / 40 * 100) + '%';
-
-  const now = Date.now();
-  // 최근 최대 충격(3초 유지) — 어느 정도 세기로 쳤는지 눈으로 확인해 기준값을 정하는 데 쓴다
   if (mag > hold || now - holdT > 3000) { hold = mag; holdT = now; $('peakhold').textContent = mag.toFixed(1); }
 
-  if (mag >= THRESH && peakArmed && now - lastPeak > COOLDOWN) {
-    lastPeak = now; peakArmed = false;
-    setTimeout(() => { peakArmed = true; }, COOLDOWN);
+  if (mag >= THRESH && now - lastPeak > 1500) {
+    lastPeak = now;
     const at = serverNow();
-    log('충격 감지 ' + mag.toFixed(1) + ' m/s²' + (offsetReady ? '' : ' (보정 미완료!)'));
-    if (meRef) set(meRef, { uid, peakAt: at, mag: Math.round(mag * 10) / 10, joinedAt: at });
+    log('충격 ' + mag.toFixed(1) + ' — 1초간 기록 중');
+    // 충격 직후 구간이 아직 안 쌓였으므로 0.6초 기다렸다가 잘라서 올린다
+    setTimeout(() => capture(now, at, mag), 600);
   }
 }
 
-// ★★ 순서 주의: iOS는 '사용자가 버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다.
-// 앞에 await(로그인 등)를 두면 제스처 컨텍스트가 풀려 권한 요청이 거부된다.
-// (카카오 공유 sendDefault에서 겪은 것과 같은 함정 — 반드시 동기로 먼저 호출할 것)
+// 충격 시점 기준으로 앞 0.2초 ~ 뒤 0.6초를 잘라 요약 + 파형을 만든다
+function capture(tLocal, tServer, mag) {
+  const win = BUF.filter(s => s.t >= tLocal - 200 && s.t <= tLocal + 600);
+  const wave = win.map(s => Math.round((s.mag - 9.8) * 10) / 10).slice(0, 80);
+  // 떼는 방향: 충격 직후 0.1~0.5초 구간의 평균 선형가속도(각 폰 자기 좌표계)
+  const sep = win.filter(s => s.t >= tLocal + 100 && s.t <= tLocal + 500);
+  const avg = a => sep.length ? Math.round(sep.reduce((x, s) => x + s[a], 0) / sep.length * 100) / 100 : 0;
+  const payload = {
+    uid, peakAt: tServer, mag: Math.round(mag * 10) / 10,
+    heading: heading == null ? -1 : Math.round(heading),
+    sx: avg('ax'), sy: avg('ay'), sz: avg('az'),
+    wave, joinedAt: tServer
+  };
+  draw($('w1'), wave, '#3D7EFF');
+  $('mysep').textContent = fmtSep(payload);
+  if (meRef) set(meRef, payload).catch(e => log('업로드 실패: ' + e.message));
+  else log('서버 미연결 — 내 폰 데이터만 표시');
+}
+
+const fmtSep = p => 'X ' + p.sx + ' / Y ' + p.sy + ' / Z ' + p.sz;
+
+function draw(cv, wave, color) {
+  if (!cv || !wave || !wave.length) return;
+  const w = cv.width = cv.clientWidth * 2, h = cv.height = 140;
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, w, h);
+  const mx = Math.max(6, ...wave.map(Math.abs));
+  c.strokeStyle = '#2b3350'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+  c.strokeStyle = color; c.lineWidth = 3; c.beginPath();
+  wave.forEach((v, i) => {
+    const x = i / (wave.length - 1) * w, y = h / 2 - (v / mx) * (h / 2 - 6);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  });
+  c.stroke();
+}
+
+// ---------- 상대와 비교 ----------
+let samples = [], lastKey = '';
+function compare(mine, other) {
+  const d = Math.abs(other.peakAt - mine.peakAt);
+  if (d > 4000) return;
+  const key = other.uid + ':' + other.peakAt;
+  if (key === lastKey) return;
+  lastKey = key;
+
+  samples.push(d);
+  const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+  $('dt').innerHTML = Math.round(d) + '<small>ms</small>';
+  $('dt').className = 'big ' + (d <= 300 ? 'ok' : 'bad');
+  $('cnt').textContent = samples.length;
+  $('avgmax').textContent = Math.round(avg) + ' / ' + Math.round(Math.max(...samples)) + ' ms';
+
+  if (other.heading >= 0) $('pehead').textContent = other.heading + '°';
+  if (other.heading >= 0 && mine.heading >= 0) {
+    let hd = Math.abs(other.heading - mine.heading); if (hd > 180) hd = 360 - hd;
+    $('hdiff').textContent = Math.round(hd) + '°';
+    $('hdiff').className = (hd > 130 && hd < 230) || hd > 130 ? 'ok' : 'warn';
+  }
+  $('pesep').textContent = fmtSep(other);
+  draw($('w2'), other.wave || [], '#F5C24B');
+  log('Δt ' + Math.round(d) + 'ms · 방위차 ' + ($('hdiff').textContent) + ' · 상대이동 ' + fmtSep(other));
+}
+
+async function connect() {
+  const u = await ensureUser(); uid = u.uid;
+  meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
+  onDisconnect(meRef).remove();
+  await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0 });
+  onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
+    const all = snap.val() || {};
+    const n = Object.keys(all).length;
+    $('peers').textContent = n + '대'; $('peers').className = n >= 2 ? 'ok' : '';
+    const mine = all[uid]; if (!mine || !mine.peakAt) return;
+    const others = Object.values(all).filter(p => p && p.uid !== uid && p.peakAt);
+    if (!others.length) return;
+    let best = null;
+    for (const o of others) { const d = Math.abs(o.peakAt - mine.peakAt); if (!best || d < best.d) best = { d, o }; }
+    compare(mine, best.o);
+  });
+  return true;
+}
+
+// ★★ iOS는 '버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다. 앞에 await를 두면 거부된다.
+//    (카카오 공유 sendDefault와 같은 함정 — 반드시 동기로 먼저 호출)
 $('start').onclick = () => {
   $('start').disabled = true;
+  const need = t => typeof t !== 'undefined' && typeof t.requestPermission === 'function';
+  const pM = need(window.DeviceMotionEvent) ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted');
+  const pO = need(window.DeviceOrientationEvent) ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
 
-  // 1) 센서 권한 먼저 — await 없이 동기로 시작
-  let permP = Promise.resolve('granted');
-  try {
-    if (typeof DeviceMotionEvent !== 'undefined' &&
-        typeof DeviceMotionEvent.requestPermission === 'function') {
-      permP = DeviceMotionEvent.requestPermission();
-    }
-  } catch (e) {
-    log('권한 요청 예외: ' + (e && e.message));
-  }
-
-  permP.then(p => {
-    if (p !== 'granted') { $('sensor').textContent = '권한 거부됨'; log('센서 권한 거부됨 — 설정에서 동작 및 방향 접근을 허용해주세요'); return; }
+  pM.then(r => {
+    if (r !== 'granted') { $('sensor').textContent = '동작 권한 거부'; log('동작 권한 거부 — 설정 > Safari > 동작 및 방향 접근을 켜주세요'); return; }
     window.addEventListener('devicemotion', onMotion);
-    $('sensor').textContent = '켜짐';
-    $('start').textContent = '측정 중 — 마주치세요';
-    log('센서 시작됨');
-  }).catch(e => {
-    $('sensor').textContent = '권한 오류';
-    log('권한 오류: ' + (e && e.message) + ' — HTTPS인지, iOS 설정에서 동작 접근이 꺼져있는지 확인');
-  });
+    $('sensor').textContent = '동작 켜짐';
+    $('start').textContent = '측정 중 — 위쪽 모서리끼리 톡';
+    log('동작 센서 시작');
+  }).catch(e => { $('sensor').textContent = '권한 오류'; log('동작 권한 오류: ' + e.message); });
 
-  // 2) 로그인·RTDB 연결은 뒤에서 따로 진행 (실패해도 센서 측정은 계속된다)
-  start().then(r => { meRef = r; log('서버 연결됨 — 상대와 Δt 비교 가능'); })
-         .catch(e => { log('서버 연결 실패(센서는 계속 동작): ' + (e && e.message)); });
+  pO.then(r => {
+    if (r !== 'granted') { log('나침반 권한 거부 — 방위차는 측정 안 됨'); return; }
+    window.addEventListener('deviceorientationabsolute', onOrient);
+    window.addEventListener('deviceorientation', onOrient);
+    $('sensor').textContent += ' / 나침반 켜짐';
+  }).catch(e => log('나침반 권한 오류: ' + e.message));
+
+  connect().then(() => log('서버 연결됨 — 상대와 비교 가능'))
+           .catch(e => log('서버 연결 실패(센서는 계속 동작): ' + e.message));
 };
 
-// 잡히지 않은 오류를 화면 기록에 남긴다 — 원인 파악용
-window.addEventListener('error', e => log('JS 오류: ' + e.message));
-window.addEventListener('unhandledrejection', e => log('오류: ' + (e.reason && (e.reason.message || e.reason.code || e.reason))));
-
-$('reset').onclick = () => { samples = []; logs.length = 0; lastRecordKey = '';
-  $('cnt').textContent = '0'; $('avg').textContent = '-'; $('max').textContent = '-';
-  $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big'; $('log').textContent = '초기화'; };
+$('reset').onclick = () => {
+  samples = []; logs.length = 0; lastKey = '';
+  $('cnt').textContent = '0'; $('avgmax').textContent = '-';
+  $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big';
+  $('log').textContent = '초기화';
+};
 </script>
 </body>
 </html>
