@@ -44,21 +44,28 @@
 
 <h1>머피 하이파이브 측정</h1>
 <div class="sub">
-  두 폰에서 이 페이지를 열고 <b>같은 방 이름</b>을 쓴 뒤 마주치면 됩니다. 두 폰이 감지한
-  충격 시각의 차이(Δt)를 잽니다.<br>
-  <b>① 폰 맞대기</b> — 두 폰의 <b>등끼리 가볍게 톡</b> 대세요. 신호가 가장 깨끗합니다(권장).<br>
-  <b>② 손바닥 하이파이브</b> — 폰을 쥔 손으로 손바닥을 마주칩니다.<br>
-  둘 다 재보고 어느 쪽 Δt가 안정적인지 비교해 보세요. <b>세게 부딪히지는 마세요.</b>
+  <b>두 폰에서 이 페이지를 열기만 하면 자동으로 같은 방에 연결됩니다.</b> 따로 입력할 건 없습니다.
+  아래 <b>접속 기기</b>가 <b>2대</b>가 되면 준비 끝입니다.<br>
+  그 상태에서 마주치면, 두 폰이 감지한 충격 시각의 차이(Δt)를 잽니다.<br>
+  <b>① 폰 맞대기</b> — 두 폰의 <b>등끼리 가볍게 톡</b> (권장)<br>
+  <b>② 손바닥 하이파이브</b> — 폰을 쥔 손으로 손바닥을 마주치기<br>
+  가만히 두면 <b>9.8</b>이 정상입니다(중력). 안 잡히면 아래 <b>감지 기준</b>을 낮추세요.
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b id="build" style="color:#4ade80">v3 (권한 동기요청)</b></div>
+  <div class="row"><span>빌드</span><b id="build" style="color:#4ade80">v4 (기준값 조절·접속표시)</b></div>
   <div class="row"><span>방 이름</span><b id="room">-</b></div>
   <div class="row"><span>내 기기</span><b id="me">-</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
   <div class="row"><span>센서</span><b id="sensor">대기</b></div>
+  <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>현재 충격량</span><b id="mag">-</b></div>
   <div class="meter"><i id="bar"></i></div>
+  <div class="row"><span>최근 최대 충격</span><b id="peakhold">-</b></div>
+  <div class="row"><span>감지 기준</span><b id="thv">18</b></div>
+  <input id="th" type="range" min="12" max="40" step="1" value="18"
+         style="width:100%;margin:4px 0 2px;accent-color:#3D7EFF">
+  <div style="font-size:11.5px;color:#8a93a8">낮출수록 약한 충격도 잡습니다. 가만히 뒀을 때 저절로 잡히면 다시 올리세요.</div>
   <button id="start">센서 켜기 (iOS는 필수)</button>
 </div>
 
@@ -181,6 +188,9 @@ const start = async () => {
   // 같은 방의 모든 기기를 구독해 Δt를 계산한다
   onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
     const all = snap.val() || {};
+    const n = Object.keys(all).length;
+    $('peers').textContent = n + '대';
+    $('peers').className = n >= 2 ? 'ok' : '';
     const others = Object.values(all).filter(p => p && p.uid !== uid && p.peakAt);
     const mine = all[uid];
     if (!mine || !mine.peakAt || !others.length) return;
@@ -214,9 +224,11 @@ function record(d, otherUid) {
 }
 
 // ---- 충격 피크 감지 ----
-let lastPeak = 0, peakArmed = true;
-const THRESH = 25;      // m/s² (중력 포함 합성 가속도)
+let lastPeak = 0, peakArmed = true, hold = 0, holdT = 0;
+let THRESH = 18;        // m/s² (중력 포함 합성 가속도). 슬라이더로 조절. 정지 시 9.8이 기준선.
 const COOLDOWN = 1200;  // ms
+
+$('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
 
 function onMotion(e) {
   const a = e.accelerationIncludingGravity;
@@ -226,6 +238,9 @@ function onMotion(e) {
   $('bar').style.width = Math.min(100, mag / 40 * 100) + '%';
 
   const now = Date.now();
+  // 최근 최대 충격(3초 유지) — 어느 정도 세기로 쳤는지 눈으로 확인해 기준값을 정하는 데 쓴다
+  if (mag > hold || now - holdT > 3000) { hold = mag; holdT = now; $('peakhold').textContent = mag.toFixed(1); }
+
   if (mag >= THRESH && peakArmed && now - lastPeak > COOLDOWN) {
     lastPeak = now; peakArmed = false;
     setTimeout(() => { peakArmed = true; }, COOLDOWN);
