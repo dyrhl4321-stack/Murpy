@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260728001 -->
+<!-- cache-bust: v20260728002 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -11763,7 +11763,27 @@ window.mwGbLoad = async function (uid) {
   try {
     const qs = await getDocs(query(collection(db,'users',uid,'guestbook'), orderBy('at','desc'), limit(30)));
     const items = qs.docs.map(d=>d.data());
-    list.innerHTML = items.length ? items.map(g=>`
+    // ★범프한 사이(범퍼)가 남긴 글은 급이 다르다 — 방명록은 온라인으로 누구나 쓸 수 있지만
+    //   범프는 실제로 만나야만 생긴다. 그 차이를 캐릭터 + 도장 + 만난 기록으로 드러낸다.
+    const bumpMark = g => {
+      const when = g.bumpAt ? new Date(g.bumpAt) : null;
+      const día = when ? `${when.getMonth()+1}.${String(when.getDate()).padStart(2,'0')}` : '';
+      const where = (g.bumpPlace||'').replace(/</g,'&lt;').slice(0,18);
+      return `<div style="display:flex;align-items:center;gap:5px;margin-top:5px">
+        <span style="font-family:'Galmuri11',sans-serif;font-size:8.5px;color:#F5C24B;border:2px solid #F5C24B;
+          border-radius:3px;padding:1px 5px;letter-spacing:.5px">범프</span>
+        <span style="font-size:10.5px;color:#8a93a8">${día}${where?' · '+where:''}에서 만남</span></div>`;
+    };
+    list.innerHTML = items.length ? items.map(g=> g.bump ? `
+      <div class="mw-panel" style="padding:10px 12px;display:flex;gap:10px;align-items:flex-start;
+        box-shadow:0 0 0 2px rgba(245,194,75,.55)">
+        <div style="flex-shrink:0;width:34px">${window.mwMiniCharHtml ? window.mwMiniCharHtml(g.fromChar, 34) : ''}</div>
+        <div style="min-width:0;flex:1">
+          <b style="font-size:12px;color:#F5C24B">${g.fromNick||'머피'}</b>
+          <div style="font-size:12.5px;color:#e7ecf6;line-height:1.5;word-break:break-all;margin-top:2px">${(g.text||'').replace(/</g,'&lt;')}</div>
+          ${bumpMark(g)}
+        </div>
+      </div>` : `
       <div class="mw-panel" style="padding:10px 12px;display:flex;gap:9px;align-items:baseline">
         <b style="font-size:12px;color:#7aa4ff;flex-shrink:0">${g.fromNick||'머피'}</b>
         <span style="font-size:12.5px;color:#e7ecf6;line-height:1.5;word-break:break-all">${(g.text||'').replace(/</g,'&lt;')}</span>
@@ -11776,9 +11796,20 @@ window.mwGbWrite = async function (uid) {
   if (!me) { showToast('로그인이 필요해요'); return; }
   const input = document.getElementById('mw-gb-input');
   const text = (input && input.value || '').trim(); if (!text) return;
-  let myNick = '머피'; try { const us = await getDoc(doc(db,'users',me.uid)); if (us.exists()) myNick = us.data().nickname||'머피'; } catch(e){}
+  let myNick = '머피', myChar = null, bp = null;
   try {
-    await addDoc(collection(db,'users',uid,'guestbook'), { from:me.uid, fromNick:myNick, text, at:serverTimestamp() });
+    const us = await getDoc(doc(db,'users',me.uid));
+    if (us.exists()) {
+      const d = us.data();
+      myNick = d.nickname || '머피';
+      myChar = d.character || null;
+      bp = (d.bumpers || {})[uid] || null;   // 이 방 주인과 실제로 범프한 사이인가
+    }
+  } catch(e){}
+  try {
+    // 범퍼가 남기는 글에는 캐릭터와 만난 기록을 함께 심는다(방명록에서 급이 구분된다)
+    const extra = bp ? { bump:true, fromChar:myChar, bumpAt:bp.firstAt||null, bumpPlace:bp.place||'' } : {};
+    await addDoc(collection(db,'users',uid,'guestbook'), Object.assign({ from:me.uid, fromNick:myNick, text, at:serverTimestamp() }, extra));
     input.value=''; window.mwGbLoad(uid);
     if (navigator.vibrate) navigator.vibrate(12);
   } catch(e){ showToast(e&&e.code==='permission-denied'?'보안규칙 게시가 필요해요':'방명록 저장 실패'); }
@@ -13450,23 +13481,34 @@ window._sqRenderDetail = function () {
   const act = document.getElementById('sq-d-actions');
   const btnCss = 'flex:1;border:none;border-radius:13px;padding:14px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit';
   let actions = '';
-  // 범프 = 코드 없이 폰을 맞대는 출석. 개시자(호스트)는 골드, 참여자는 블루로 구분한다.
-  const bumpBtn = (gold) => `<button onclick="window.bumpOpen&&window.bumpOpen('${s.id}')" style="${btnCss};`
-    + (gold ? 'background:#F5C24B;color:#05070c' : 'background:#3D7EFF;color:#fff') + `">범프</button>`;
+  // 범프가 주 동선이므로 위에 한 줄로 크게, 나머지는 아래 보조로 내린다.
+  // 버튼 색은 액션색(블루) 하나로 통일 — 골드는 별점/VERIFIED 자리이고,
+  // 개시자=골드/참여자=파랑 규칙은 '범프 연출'에만 적용된다(버튼이 아니다).
+  const bumpMain = `<button onclick="window.bumpOpen&&window.bumpOpen('${s.id}')"
+    style="width:100%;border:none;border-radius:14px;padding:16px 0;font-size:15px;font-weight:800;
+    background:var(--accent);color:#fff;cursor:pointer;font-family:inherit;display:flex;
+    align-items:center;justify-content:center;gap:10px">${window.bumpIconHtml ? window.bumpIconHtml(23) : ''}범프로 출석</button>`;
+  const sub = 'flex:1;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;'
+    + 'cursor:pointer;font-family:inherit;background:rgba(255,255,255,.08);color:rgba(255,255,255,.82)';
   if (done) actions = '';
-  else if (isHost) actions = `
-    <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">출석 코드</button>
-    ${bumpBtn(true)}
-    <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">종료</button>`;
-  else if (joined) actions = `
-    <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:#fff">코드 입력</button>
-    ${bumpBtn(false)}
-    <button onclick="window.leaveSquad('${s.id}')" style="${btnCss};background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);flex:0.55">나가기</button>`;
+  else if (isHost) actions = `${bumpMain}
+    <div style="display:flex;gap:8px">
+      <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
+      <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>
+    </div>`;
+  else if (joined) actions = `${bumpMain}
+    <div style="display:flex;gap:8px">
+      <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>
+      <button onclick="window.leaveSquad('${s.id}')" style="${sub};flex:0.6;color:rgba(255,255,255,.5)">나가기</button>
+    </div>`;
+  if (actions && (isHost || joined)) actions += `
+    <button onclick="window.bumpDogam&&window.bumpDogam()" style="background:none;border:none;color:#8a93a8;
+      font-size:12px;padding:4px 0 0;cursor:pointer;font-family:inherit">내 범프 도감 보기</button>`;
   else if (myMem && myMem.status === 'invited') actions = `
     <button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">리더 승인 기다리는 중…</button>`;
   else if (n >= s.capacity) actions = `<button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.4)">정원 마감</button>`;
   else actions = `<button onclick="window.joinSquad('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">${s.joinMode==='approval'?'참가 신청':'참가하기'}</button>`;
-  if (act) act.innerHTML = actions ? `<div style="display:flex;gap:8px">${actions}</div>` : '';
+  if (act) act.innerHTML = actions ? `<div style="display:flex;flex-direction:column;gap:8px">${actions}</div>` : '';
   // --- 멤버 ---
   const mv = document.getElementById('sq-d-members');
   const stChip = m => {
@@ -13978,6 +14020,20 @@ window.sqComplete = async function (sid) {
 // 동시에 만족해야 한다. 코드보다 위조가 어렵다.
 // 색 규칙: 개시자(호스트)=골드 / 참여자=파랑. ★캐릭터 본체는 절대 물들이지 않는다.
 const BP = { TH: 11, RETRO: 6, QUIET: 2.5, PAIR_MS: 150, COOL: 800, BUF_MS: 2500 };
+
+// 범프 아이콘 = 손바닥(char/fx/palm.png) + 위로 튀는 '탁!' 임팩트 선 3개.
+// 이모지 대신 우리 에셋을 쓰고, 선은 CSS 도형이라 그림 추가가 없다.
+// 임팩트를 위쪽으로 두면 손바닥이 어느 방향을 보든 자연스럽다.
+window.bumpIconHtml = function (sz) {
+  const s = sz || 22, u = s / 24;   // 24px 기준으로 잡고 배율만 맞춘다
+  const line = (left, top, h, deg) => `<span style="position:absolute;left:${left * u}px;top:${top * u}px;`
+    + `width:${Math.max(2, 2 * u)}px;height:${h * u}px;background:currentColor;opacity:.85;border-radius:1px;`
+    + `transform:rotate(${deg}deg);transform-origin:bottom center"></span>`;
+  return `<span style="position:relative;display:inline-block;width:${s}px;height:${s}px;flex-shrink:0">
+    <span style="position:absolute;inset:0;background:url('char/fx/palm.png') no-repeat center/contain;
+      image-rendering:pixelated;filter:drop-shadow(0 1px 0 rgba(0,0,0,.35))"></span>
+    ${line(3, -4, 6, -30)}${line(11, -6, 7, 0)}${line(19, -4, 6, 30)}</span>`;
+};
 let bpBuf = [], bpSid = null, bpRole = 'guest', bpMeRef = null, bpUnsub = null,
     bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null;
 
@@ -14153,7 +14209,9 @@ function bpOverlay(mode, data) {
       <div style="position:absolute;right:0;top:50%;transform:translateY(-50%);width:0;height:0;
         border-top:11px solid transparent;border-bottom:11px solid transparent;border-right:14px solid ${c}"></div>
       <div style="position:absolute;left:0;right:0;top:50%;height:2px;background:linear-gradient(90deg,${c}00,${c}55,${c}00)"></div>
-      <div style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff;margin-bottom:10px">머피 범프</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:11px;color:${c};margin-bottom:12px">
+        ${window.bumpIconHtml ? window.bumpIconHtml(30) : ''}
+        <span style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff">머피 범프</span></div>
       <div style="font-size:13px;color:#8a93a8;line-height:1.75;margin-bottom:6px">
         두 폰의 <b style="color:#fff">긴 옆면</b>을 맞대고<br><b style="color:#fff">이 삼각형 높이</b>를 서로 맞춰 <b style="color:#fff">톡</b> 대세요<br>
         <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
@@ -14170,8 +14228,13 @@ function bpOverlay(mode, data) {
         ${data.place ? data.place + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
         <span style="color:${c}">범퍼로 등록됐어요</span></div>
       <div style="font-size:12.5px;color:#4ade80;margin-bottom:22px">오운완 도장 쾅!</div>
-      <button onclick="window.bumpClose()" style="background:${c};color:#fff;border:none;border-radius:12px;
-        padding:14px 34px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer">확인</button>`;
+      <div style="display:flex;gap:9px">
+        <button onclick="window.bumpClose();window.bumpDogam&&window.bumpDogam()" style="background:rgba(255,255,255,.08);
+          color:#cfd6e6;border:none;border-radius:12px;padding:14px 20px;font-size:14px;font-weight:700;
+          font-family:inherit;cursor:pointer">범프 도감</button>
+        <button onclick="window.bumpClose()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;
+          padding:14px 30px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer">확인</button>
+      </div>`;
   }
 }
 function bpMsg(html) { const m = document.getElementById('bp-msg'); if (m) m.innerHTML = html; }
@@ -14204,6 +14267,57 @@ function bpFx() {
     ], { duration: 520, easing: 'cubic-bezier(.2,.9,.3,1)' }).onfinish = () => p.remove();
   });
 }
+
+// ---------- 범프 도감 (마이범프) ----------
+// 방명록은 온라인으로 누구나 쓸 수 있지만, 범퍼는 실제로 만나야만 생긴다.
+// 그래서 이 목록은 "온라인으로는 채울 수 없는" 수집이 된다.
+window.bumpDogam = async function () {
+  const user = auth.currentUser; if (!user) { showToast('로그인이 필요해요'); return; }
+  let el = document.getElementById('bp-dg'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'bp-dg';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9500;background:#05070c;overflow-y:auto;padding:18px 16px 40px';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff;flex:1">범프 도감</div>
+      <button onclick="document.getElementById('bp-dg').remove()" style="background:none;border:none;
+        color:#8a93a8;font-size:20px;cursor:pointer;font-family:inherit;padding:0 4px">✕</button>
+    </div>
+    <div id="bp-dg-body" style="color:#8a93a8;font-size:12.5px;text-align:center;padding:30px 0">불러오는 중…</div>`;
+  document.body.appendChild(el);
+  try {
+    const us = await getDoc(doc(db, 'users', user.uid));
+    const map = (us.exists() && us.data().bumpers) || {};
+    const list = Object.keys(map).map(k => Object.assign({ uid: k }, map[k]))
+      .sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+    const body = document.getElementById('bp-dg-body'); if (!body) return;
+    if (!list.length) {
+      body.innerHTML = `<div style="line-height:1.9;padding:20px 10px">
+        아직 범퍼가 없어요<br><span style="font-size:11.5px">스쿼드에서 만난 사람과 폰을 맞대면<br>여기에 한 명씩 쌓입니다</span></div>`;
+      return;
+    }
+    const fmt = t => { const d = new Date(t); return `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, '0')}`; };
+    body.style.cssText = 'display:flex;flex-direction:column;gap:9px';
+    body.innerHTML = `<div style="font-size:12px;color:#8a93a8;margin-bottom:3px;text-align:left">
+        실제로 만난 머피 <b style="color:#F5C24B">${list.length}</b>명</div>`
+      + list.map(b => `
+      <div class="mw-panel" style="padding:11px 13px;display:flex;gap:12px;align-items:center;text-align:left"
+        onclick="document.getElementById('bp-dg').remove();window.mwVisitRoom&&window.mwVisitRoom('${b.uid}')">
+        <div style="flex-shrink:0;width:42px">${window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 42) : ''}</div>
+        <div style="min-width:0;flex:1">
+          <div style="font-family:'Galmuri14',sans-serif;font-size:13.5px;color:#fff">${(b.nick || '머피')}</div>
+          <div style="font-size:11px;color:#8a93a8;margin-top:3px">
+            첫 범프 ${fmt(b.firstAt || Date.now())}${b.place ? ' · ' + String(b.place).replace(/</g, '&lt;').slice(0, 16) : ''}</div>
+        </div>
+        <div style="flex-shrink:0;text-align:right">
+          <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#F5C24B">${b.count || 1}</div>
+          <div style="font-size:9.5px;color:#4a5266">번</div>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    console.error(e);
+    const body = document.getElementById('bp-dg-body');
+    if (body) body.textContent = '불러오지 못했어요';
+  }
+};
 
 // QR 스캔 자동 출석: ?sqa={sid}&c={code}
 (function () {
