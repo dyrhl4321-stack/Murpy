@@ -47,13 +47,28 @@
 
   .mchar { position:absolute; bottom:15%; width:141px; height:224px; background-image:url('char/walk.png');
            background-repeat:no-repeat; transform-origin:bottom center; z-index:8 }
-  /* ★실루엣 — 새 그림이 아니라 필터다. 어떤 옷/헤어를 입혀도 그대로 적용된다 */
-  .mchar.sil { filter: brightness(0) invert(1)
-               drop-shadow(0 0 5px #FFF3CC) drop-shadow(0 0 14px #F5C24B) drop-shadow(0 0 30px #F5C24B) }
-  /* 데모에서 '상대'를 구분하려고 색만 돌린다. 실제 앱에서는 옷·헤어가 달라 저절로 구분된다 */
-  .mchar.other { filter: hue-rotate(185deg) saturate(1.4) }
-  .mchar.other.sil { filter: brightness(0) invert(1)
-               drop-shadow(0 0 5px #CFE4FF) drop-shadow(0 0 14px #3D7EFF) drop-shadow(0 0 30px #3D7EFF) }
+
+  /* ★★ 색 규칙 (대표 확정 · 위반 금지) ★★
+     ① 색이 묻는 곳은 딱 두 군데 — <실루엣 섬광>과 <하이파이브 손바닥>.
+        캐릭터 본체(옷·헤어·피부)는 절대 물들이지 않는다. 꾸민 그대로 보여야 한다.
+        (v7까지 있던 .other{hue-rotate} = 캐릭터를 파랗게 칠하던 코드, v9에서 삭제)
+     ② 색 기준은 '화면'이 아니라 '사람'이다.
+        골드 = 머피 범프를 처음 켠 사람(개시자) — 언제나 이 한 명만.
+        파랑 = 나머지 참여자 전원(2명이든 5명이든).
+        내 폰이냐 상대 폰이냐와 무관하다. 내가 참여자면 내 캐릭터 섬광이 파랑이다.
+        교환으로 화면을 옮겨가도 색은 그 사람을 따라간다. */
+  .mchar.sil       { filter: brightness(0) invert(1)
+                     drop-shadow(0 0 5px #FFF3CC) drop-shadow(0 0 14px #F5C24B) drop-shadow(0 0 30px #F5C24B) }
+  .mchar.guest.sil { filter: brightness(0) invert(1)
+                     drop-shadow(0 0 5px #CFE4FF) drop-shadow(0 0 14px #3D7EFF) drop-shadow(0 0 30px #3D7EFF) }
+
+  /* 이름표 — 캐릭터를 칠하지 않고 누가 누군지 구분하는 방법(색은 글자에만).
+     실제 앱에서는 닉네임이 들어간다. 섬광 구간에는 숨는다. */
+  .nm { position:absolute; left:50%; bottom:-34px; transform:translateX(-50%); white-space:nowrap;
+        font-size:27px; font-weight:800; letter-spacing:-1px; color:#F5C24B;
+        text-shadow:0 3px 0 #05070c, 0 0 12px rgba(5,7,12,.95); transition:opacity .16s }
+  .mchar.guest .nm { color:#7FB0FF }
+  .mchar.sil   .nm { opacity:0 }
 
   /* ★손바닥 임팩트 — 막대 팔은 짜쳐서 버렸다(대표 지적).
      백열장식 '손바닥 퉁'. 경계에서 크게 맞닿으며 화면을 가리므로 교차 은폐도 겸한다.
@@ -66,8 +81,9 @@
           background:url('char/fx/palm.png') no-repeat center/contain }
   .stage.left  .palm { right:-14% }
   .stage.right .palm { left:-14%; scale:-1 1 }
-  .palm.mine  { filter: drop-shadow(0 0 7px #FFF3CC) drop-shadow(0 0 20px #F5C24B) drop-shadow(0 0 44px #F5C24B) }
-  .palm.other { filter: drop-shadow(0 0 7px #CFE4FF) drop-shadow(0 0 20px #3D7EFF) drop-shadow(0 0 44px #3D7EFF) }
+  /* 손바닥도 '사람' 색을 따른다 — 개시자 손=골드, 참여자 손=파랑 */
+  .palm.host  { filter: drop-shadow(0 0 7px #FFF3CC) drop-shadow(0 0 20px #F5C24B) drop-shadow(0 0 44px #F5C24B) }
+  .palm.guest { filter: drop-shadow(0 0 7px #CFE4FF) drop-shadow(0 0 20px #3D7EFF) drop-shadow(0 0 44px #3D7EFF) }
   .flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:22 }
   .ring  { position:absolute; border:5px solid #fff; border-radius:50%; pointer-events:none; z-index:21; opacity:0 }
   .p { position:absolute; pointer-events:none; z-index:20 }
@@ -89,7 +105,7 @@
 </head>
 <body>
 
-<h1>머피 범프 연출 시안 v8 — 손 한 번, 바로 교환</h1>
+<h1>머피 범프 연출 시안 v9 — 색 규칙 확정</h1>
 <div class="sub">
   두 캐릭터가 경계에서 <b>하이파이브하며 서로 지나칩니다.</b>
   그래서 <b>내 화면엔 상대가, 상대 화면엔 내가</b> 남습니다.
@@ -99,17 +115,17 @@
 
 <div class="pair" id="pair">
   <div class="stage left" id="s1">
-    <div class="tag">내 폰</div>
-    <div class="mchar" id="c1"></div>
-    <div class="palm mine" id="a1"></div>
+    <div class="tag" id="t1">내 폰</div>
+    <div class="mchar" id="c1"><span class="nm"></span></div>
+    <div class="palm" id="a1"></div>
     <div class="seam" id="m1"></div>
     <div class="flash" id="f1"></div>
     <div class="card" id="k1"><b>오늘의 범프</b><canvas id="w1" height="36"></canvas></div>
   </div>
   <div class="stage right" id="s2">
-    <div class="tag">상대 폰</div>
-    <div class="mchar" id="c2"></div>
-    <div class="palm other" id="a2"></div>
+    <div class="tag" id="t2">상대 폰</div>
+    <div class="mchar" id="c2"><span class="nm"></span></div>
+    <div class="palm" id="a2"></div>
     <div class="seam" id="m2"></div>
     <div class="flash" id="f2"></div>
     <div class="card" id="k2"><b>오늘의 범프</b><canvas id="w2" height="36"></canvas></div>
@@ -119,6 +135,7 @@
 <div class="btns">
   <button id="full">잇기 — 경계에서 맞대기</button>
   <button id="short" class="ghost">범프만 — 타격감 (0.6초)</button>
+  <button id="flip" class="ghost">시점 바꾸기 — 내가 참여자일 때</button>
 </div>
 
 <div class="note">
@@ -126,13 +143,22 @@
   ① 경계에서 하이파이브하며 <b>서로 지나칩니다</b>. 내 화면엔 상대가, 상대 화면엔 내가 남습니다<br>
   ② 겹쳐 보이는 찰나(4명)는 <b>가장 강한 섬광으로 가립니다</b> — 전환은 이펙트로 감춥니다<br>
   ③ 맵 전환 없음 · 각 화면 항상 1명 · 실루엣과 팔은 <b>새 그림 0장</b><br>
-  ※ 데모에서 상대는 <b>파란 색조</b>로 구분했습니다. 실제로는 옷·헤어가 달라 저절로 구분됩니다<br><br>
-  <b>v8에서 바뀐 것</b> (대표 지적: "손이 두 번 뜬다")<br>
-  ① <b>넘어오는 두 번째 손을 걷어냈습니다.</b> 손은 <b>한 번</b>만 뜹니다<br>
-  ② 순서를 조였습니다 — <b>맞닿음 쿵 → 각자 손바닥에서 쾅 1회 → 곧바로 방 교환</b><br>
-  ③ 쾅이 <b>손바닥 한가운데</b>에서 터집니다(이펙트 중심을 손 위치에 맞춤). 손은 그 섬광에 삼켜지며 사라지고,
-     같은 섬광 안에서 교환이 끝납니다 — 중간에 비는 구간 없음<br>
-  ④ 유지: 손바닥은 <b>경계에서 잘린 채</b> 멈춤(붙이면 두 손이 맞닿은 한 장면) · 색 <b>나=황금 / 상대=파랑</b>
+  ※ (v9에서 폐기) 데모에서 상대 캐릭터를 파란 색조로 칠하던 처리는 삭제했습니다 — 아래 색 규칙 참조<br><br>
+  <b>v8</b> (대표 지적: "손이 두 번 뜬다") — 넘어오던 두 번째 손 삭제, 손은 <b>한 번</b>만.
+  <b>맞닿음 쿵 → 각자 손바닥에서 쾅 1회 → 곧바로 방 교환</b>. 쾅은 손바닥 한가운데서 터지고 손은 그 섬광에 삼켜집니다<br><br>
+
+  <b>v9 색 규칙 (확정 · 위반 금지)</b><br>
+  ① <b>색은 섬광과 손바닥에만</b> 묻습니다. <b>캐릭터 본체는 절대 물들이지 않습니다</b> —
+     옷·헤어·피부는 꾸민 그대로입니다. (v7까지 상대 캐릭터를 통째로 파랗게 칠하던
+     <code>hue-rotate</code> 코드가 남아 있었고, v9에서 <b>삭제</b>했습니다)<br>
+  ② <b>기준은 화면이 아니라 사람입니다.</b>
+     <b style="color:#F5C24B">골드 = 머피 범프를 처음 켠 사람(개시자), 언제나 이 한 명</b>.
+     <b style="color:#7FB0FF">파랑 = 나머지 참여자 전원</b>(2명이든 5명이든).
+     내 폰이든 상대 폰이든 동일하게 보입니다 — <b>내가 참여자면 내 캐릭터 섬광이 파랑</b>입니다<br>
+  ③ 교환으로 화면을 건너가도 <b>색은 그 사람을 따라갑니다</b>(화면에 붙은 색이 아님)<br>
+  ④ 누가 누군지는 <b>이름표</b>로 구분합니다(색은 글자에만, 실제 앱에선 닉네임). 캐릭터는 손 안 댑니다<br>
+  ※ <b>[시점 바꾸기]</b> 버튼으로 ②를 직접 확인하실 수 있습니다 — 내 폰이 참여자가 되면
+     내 섬광이 파랑, 저쪽이 골드로 바뀝니다
 </div>
 
 <script>
@@ -263,13 +289,39 @@ function palmStrike(el, side) {
   ], { duration:PALM_MS, easing:'cubic-bezier(.2,.9,.3,1)' });
 }
 
+// ★역할 = 색의 유일한 근거. host(범프를 처음 켠 사람)=골드 1명, guest(나머지 참여자 전원)=파랑.
+//   실제 앱에서는 범프 세션을 개설한 uid가 host, 그 세션에 들어온 나머지가 전부 guest다.
+//   화면 소유자("내 폰")와는 아무 상관이 없다.
+const ROLE_LABEL = { host:'개시자', guest:'참여자' };
+function setRole(el, role) {
+  el.classList.toggle('guest', role === 'guest');
+  el.querySelector('.nm').textContent = ROLE_LABEL[role];
+}
+const roleOf = el => el.classList.contains('guest') ? 'guest' : 'host';
+// 교환하면 색도 그 사람을 따라 화면을 건너간다(색은 화면에 붙어 있지 않다)
+function swapRoles() {
+  const r1 = roleOf($('c1'));
+  setRole($('c1'), roleOf($('c2'))); setRole($('c2'), r1);
+}
+
+let hostSide = 'l';   // 데모 시점: 개시자가 왼쪽('내 폰')인가 오른쪽('상대 폰')인가
+function applyTags() {
+  const H = '개시자 · 범프 켠 사람', G = '참여자';
+  $('t1').textContent = '내 폰 · '   + (hostSide === 'l' ? H : G);
+  $('t2').textContent = '상대 폰 · ' + (hostSide === 'l' ? G : H);
+}
+
 let busy = false, timers = [];
 function reset() {
   timers.forEach(clearInterval); timers = [];
   ['k1','k2'].forEach(i => $(i).classList.remove('on'));
   ['m1','m2'].forEach(i => $(i).classList.remove('on'));
-  ['c1','c2'].forEach(i => { $(i).classList.remove('sil'); $(i).classList.remove('other'); });
-  $('c2').classList.add('other');   // 오른쪽 화면 캐릭터가 '상대'
+  ['c1','c2'].forEach(i => $(i).classList.remove('sil'));
+  setRole($('c1'), hostSide === 'l' ? 'host' : 'guest');
+  setRole($('c2'), hostSide === 'l' ? 'guest' : 'host');
+  $('a1').className = 'palm ' + roleOf($('c1'));   // 손 색 = 그 손 주인의 역할색
+  $('a2').className = 'palm ' + roleOf($('c2'));
+  applyTags();
   ['a1','a2'].forEach(i => { $(i).style.opacity = 0; $(i).getAnimations().forEach(a => a.cancel()); });
   const W = $('s1').clientWidth;
   $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
@@ -319,7 +371,7 @@ async function playFull() {
   palmStrike($('a1'), 'l'); palmStrike($('a2'), 'r');
   await sleep(PALM_HIT);
   await impact(true);
-  $('c1').classList.toggle('other'); $('c2').classList.toggle('other');   // 스왑(빛에 가려 안 보임)
+  swapRoles();   // 자리 교환 = 사람이 건너간 것. 색·이름표가 그 사람을 따라간다(빛에 가려 안 보임)
   $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
   placeFromSeam($('c1'), $('s1'), -CW * SC * 0.6, 'l'); setFrame($('c1'), 'left', 1);
   placeFromSeam($('c2'), $('s2'), -CW * SC * 0.6, 'r'); setFrame($('c2'), 'right', 1);
@@ -359,6 +411,9 @@ async function playFull() {
 
 $('full').onclick = playFull;
 $('short').onclick = playShort;
+// 색이 '화면'이 아니라 '사람'에 붙어 있음을 증명하는 데모 버튼 —
+// 내 폰이 참여자가 되면 내 캐릭터 섬광이 파랑, 저쪽(개시자)이 골드가 된다
+$('flip').onclick = () => { if (busy) return; hostSide = hostSide === 'l' ? 'r' : 'l'; reset(); };
 window.addEventListener('resize', () => { if (!busy) reset(); });
 setTimeout(reset, 60);
 </script>
