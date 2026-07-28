@@ -57,7 +57,7 @@
 </div>
 
 <div class="card">
-  <div class="row"><span>빌드</span><b class="ok">v7 (기기 종류 표시)</b></div>
+  <div class="row"><span>빌드</span><b class="ok">v8 (기록 영구저장)</b></div>
   <div class="row"><span>접속 기기</span><b id="peers">0대</b></div>
   <div class="row"><span>센서 / 나침반</span><b id="sensor">대기</b></div>
   <div class="row"><span>서버 시각 보정</span><b id="off">측정 중…</b></div>
@@ -180,7 +180,8 @@ const BUF = [];                 // { t, mag, ax, ay, az }  t = 로컬 ms
 const BUF_MS = 1500;
 let heading = null;             // 나침반 방위(0~360)
 let THRESH = 18, lastPeak = 0, hold = 0, holdT = 0, ignored = 0;
-let uid = null, meRef = null;
+let uid = null, meRef = null, logRef = null;
+let hist = [], lastRise = 0, lastPre = 0;
 
 $('th').oninput = e => { THRESH = +e.target.value; $('thv').textContent = THRESH; };
 
@@ -223,6 +224,7 @@ function onMotion(e) {
       return;
     }
     lastPeak = now;
+    lastRise = Math.round(rise * 10) / 10; lastPre = Math.round(preAvg * 10) / 10;
     const at = serverNow();
     log('범프 감지 ' + mag.toFixed(1) + ' (직전 ' + preAvg.toFixed(1) + ' / 상승 ' + rise.toFixed(1) + ')');
     // 충격 직후 구간이 아직 안 쌓였으므로 0.6초 기다렸다가 잘라서 올린다
@@ -247,6 +249,14 @@ function capture(tLocal, tServer, mag) {
   $('mysep').textContent = fmtSep(payload);
   if (meRef) set(meRef, payload).catch(e => log('업로드 실패: ' + e.message));
   else log('서버 미연결 — 내 폰 데이터만 표시');
+
+  // 영구 기록: players 노드는 접속이 끊기면 지워지므로(onDisconnect), 나중에 분석하려면
+  // 지워지지 않는 별도 방(hifiveLog)에 누적해 둔다. 최근 25회만 유지.
+  hist.unshift({ at: tServer, mag: payload.mag, rise: lastRise, pre: lastPre,
+                 heading: payload.heading, sx: payload.sx, sy: payload.sy, sz: payload.sz, wave });
+  hist = hist.slice(0, 25);
+  if (logRef) set(logRef, { uid, plat: PLAT, n: hist.length, list: hist })
+    .catch(e => log('기록 저장 실패: ' + e.message));
 }
 
 const fmtSep = p => 'X ' + p.sx + ' / Y ' + p.sy + ' / Z ' + p.sz;
@@ -300,6 +310,7 @@ function compare(mine, other) {
 async function connect() {
   const u = await ensureUser(); uid = u.uid;
   meRef = ref(db, 'squadRooms/' + ROOM + '/players/' + uid);
+  logRef = ref(db, 'squadRooms/hifiveLog/players/' + uid);   // 접속 끊겨도 남는 분석용 기록
   onDisconnect(meRef).remove();
   await set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0 });
   onValue(ref(db, 'squadRooms/' + ROOM + '/players'), snap => {
