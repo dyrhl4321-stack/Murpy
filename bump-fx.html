@@ -58,12 +58,18 @@
   /* ★손바닥 임팩트 — 막대 팔은 짜쳐서 버렸다(대표 지적).
      백열장식 '손바닥 퉁'. 경계에서 크게 맞닿으며 화면을 가리므로 교차 은폐도 겸한다.
      지금은 코드로 그린 도형(SVG)이라 에셋 0장. 나중에 그림 1장으로 교체 가능(공통 1장이면 됨). */
-  .palm { position:absolute; width:46%; z-index:16; opacity:0; pointer-events:none;
-          top:46%; translate:0 -50%; }
-  .stage.left  .palm { right:-6%; transform-origin:right center }
-  .stage.right .palm { left:-6%;  transform-origin:left center; scale:-1 1 }
-  .palm.mine  { filter: drop-shadow(0 0 8px #FFF3CC) drop-shadow(0 0 22px #F5C24B) }
-  .palm.other { filter: drop-shadow(0 0 8px #CFE4FF) drop-shadow(0 0 22px #3D7EFF) }
+  /* 손바닥 = 나노바나나로 뽑아 누끼 딴 픽셀 실루엣 1장(char/fx/palm.png).
+     ★경계에서 잘리게 둔다 — 잘린 단면이 '저쪽으로 이어진다'는 신호가 된다.
+       두 폰을 붙이면 두 손바닥이 경계에서 정확히 맞닿은 한 장면이 된다. */
+  .palm { position:absolute; width:58%; aspect-ratio:256/290; z-index:16; opacity:0; pointer-events:none;
+          top:44%; translate:0 -50%; image-rendering:pixelated;
+          background:url('char/fx/palm.png') no-repeat center/contain }
+  .stage.left  .palm { right:-14% }
+  .stage.right .palm { left:-14%; scale:-1 1 }
+  .palm.mine  { filter: drop-shadow(0 0 7px #FFF3CC) drop-shadow(0 0 20px #F5C24B) drop-shadow(0 0 44px #F5C24B) }
+  .palm.other { filter: drop-shadow(0 0 7px #CFE4FF) drop-shadow(0 0 20px #3D7EFF) drop-shadow(0 0 44px #3D7EFF) }
+  /* 충격 직후 상대 손이 경계를 뚫고 잠깐 넘어온다 — 연결감의 핵심 */
+  .palm.thru { z-index:17 }
   .flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:22 }
   .ring  { position:absolute; border:5px solid #fff; border-radius:50%; pointer-events:none; z-index:21; opacity:0 }
   .p { position:absolute; pointer-events:none; z-index:20 }
@@ -85,7 +91,7 @@
 </head>
 <body>
 
-<h1>머피 범프 연출 시안 v6 — 손바닥 교차</h1>
+<h1>머피 범프 연출 시안 v7 — 손바닥(실제 에셋)</h1>
 <div class="sub">
   두 캐릭터가 경계에서 <b>하이파이브하며 서로 지나칩니다.</b>
   그래서 <b>내 화면엔 상대가, 상대 화면엔 내가</b> 남습니다.
@@ -97,14 +103,8 @@
   <div class="stage left" id="s1">
     <div class="tag">내 폰</div>
     <div class="mchar" id="c1"></div>
-    <svg class="palm mine" id="a1" viewBox="0 0 100 120"><g fill="#fff">
-      <rect x="26" y="44" width="50" height="58" rx="18"/>
-      <rect x="29" y="13" width="11" height="42" rx="5.5"/>
-      <rect x="43" y="6"  width="11" height="49" rx="5.5"/>
-      <rect x="57" y="11" width="11" height="44" rx="5.5"/>
-      <rect x="71" y="23" width="11" height="34" rx="5.5"/>
-      <rect x="10" y="50" width="11" height="34" rx="5.5" transform="rotate(-30 15.5 67)"/>
-    </g></svg>
+    <div class="palm mine" id="a1"></div>
+    <div class="palm other thru" id="b1"></div>
     <div class="seam" id="m1"></div>
     <div class="flash" id="f1"></div>
     <div class="card" id="k1"><b>오늘의 범프</b><canvas id="w1" height="36"></canvas></div>
@@ -112,14 +112,8 @@
   <div class="stage right" id="s2">
     <div class="tag">상대 폰</div>
     <div class="mchar" id="c2"></div>
-    <svg class="palm other" id="a2" viewBox="0 0 100 120"><g fill="#fff">
-      <rect x="26" y="44" width="50" height="58" rx="18"/>
-      <rect x="29" y="13" width="11" height="42" rx="5.5"/>
-      <rect x="43" y="6"  width="11" height="49" rx="5.5"/>
-      <rect x="57" y="11" width="11" height="44" rx="5.5"/>
-      <rect x="71" y="23" width="11" height="34" rx="5.5"/>
-      <rect x="10" y="50" width="11" height="34" rx="5.5" transform="rotate(-30 15.5 67)"/>
-    </g></svg>
+    <div class="palm other" id="a2"></div>
+    <div class="palm mine thru" id="b2"></div>
     <div class="seam" id="m2"></div>
     <div class="flash" id="f2"></div>
     <div class="card" id="k2"><b>오늘의 범프</b><canvas id="w2" height="36"></canvas></div>
@@ -137,10 +131,11 @@
   ② 겹쳐 보이는 찰나(4명)는 <b>가장 강한 섬광으로 가립니다</b> — 전환은 이펙트로 감춥니다<br>
   ③ 맵 전환 없음 · 각 화면 항상 1명 · 실루엣과 팔은 <b>새 그림 0장</b><br>
   ※ 데모에서 상대는 <b>파란 색조</b>로 구분했습니다. 실제로는 옷·헤어가 달라 저절로 구분됩니다<br><br>
-  <b>v6에서 바뀐 것</b><br>
-  ① 막대 팔 <b>폐기</b> → <b>큰 손바닥 임팩트</b>(백열장식)로 교체. 화면을 가려 교차 은폐도 겸함<br>
-  ② 정지 위치를 <b>경계 기준 대칭</b>으로 계산 — 한쪽만 붙어 서던 문제 해결<br>
-  ③ 손바닥도 지금은 <b>코드로 그린 도형</b>이라 에셋 0장. 나중에 그림 1장으로 교체 가능<br>
+  <b>v7에서 바뀐 것</b><br>
+  ① 대표님이 뽑아주신 <b>실제 손바닥 에셋</b> 적용 (누끼 → <code>char/fx/palm.png</code>, 공통 1장)<br>
+  ② 손바닥이 <b>경계에서 잘린 채</b> 멈춥니다 — 잘린 단면이 "저쪽으로 이어진다"는 신호입니다.
+     두 폰을 붙이면 <b>두 손이 정확히 맞닿은 한 장면</b>이 됩니다<br>
+  ③ 충격 직후 <b>상대 손이 경계를 뚫고 넘어옵니다</b> — 각자 화면에서도 저쪽 손이 보입니다<br>
   ④ 색: <b>나=황금 / 상대=파랑</b> (의도된 구분)
 </div>
 
@@ -258,14 +253,24 @@ function placeFromSeam(el, stage, dist, side) {
   place(el, cx - CW / 2);
 }
 
-// 손바닥이 경계 밖에서 밀려 들어와 맞닿는다
-function palmStrike(el) {
+// 내 손바닥: 안쪽에서 경계로 밀려나가 경계에서 잘린 채 멈춘다(= 저쪽으로 이어진다는 신호)
+function palmStrike(el, side) {
+  const away = side === 'l' ? -1 : 1;   // 경계 반대쪽에서 출발
   el.animate([
-    { opacity:0, transform:'translateX(46%) scale(.55)' },
-    { opacity:1, transform:'translateX(4%)  scale(1.08)', offset:.55 },
-    { opacity:1, transform:'translateX(0)   scale(1)',    offset:.72 },
-    { opacity:0, transform:'translateX(-6%) scale(1.25)' }
-  ], { duration:620, easing:'cubic-bezier(.2,.9,.3,1)' });
+    { opacity:0, transform:'translateX(' + (away * 60) + '%) scale(.6)' },
+    { opacity:1, transform:'translateX(' + (away * 6) + '%) scale(1.06)', offset:.5 },
+    { opacity:1, transform:'translateX(0) scale(1)', offset:.7 },
+    { opacity:0, transform:'translateX(' + (-away * 8) + '%) scale(1.22)' }
+  ], { duration:700, easing:'cubic-bezier(.2,.9,.3,1)' });
+}
+// 상대 손바닥: 충격 직후 경계를 뚫고 내 화면으로 잠깐 넘어온다 — 연결감의 핵심
+function palmThrough(el, side) {
+  const into = side === 'l' ? -1 : 1;   // 경계에서 화면 안쪽으로
+  el.animate([
+    { opacity:0, transform:'translateX(' + (-into * 30) + '%) scale(1.15)' },
+    { opacity:.95, transform:'translateX(' + (into * 12) + '%) scale(1.05)', offset:.35 },
+    { opacity:0, transform:'translateX(' + (into * 26) + '%) scale(.95)' }
+  ], { duration:460, easing:'cubic-bezier(.15,.85,.3,1)' });
 }
 
 let busy = false, timers = [];
@@ -275,9 +280,7 @@ function reset() {
   ['m1','m2'].forEach(i => $(i).classList.remove('on'));
   ['c1','c2'].forEach(i => { $(i).classList.remove('sil'); $(i).classList.remove('other'); });
   $('c2').classList.add('other');   // 오른쪽 화면 캐릭터가 '상대'
-  $('a1').classList.remove('other'); $('a1').classList.add('mine');
-  $('a2').classList.remove('mine');  $('a2').classList.add('other');
-  $('a1').style.opacity = 0; $('a2').style.opacity = 0;
+  ['a1','a2','b1','b2'].forEach(i => { $(i).style.opacity = 0; $(i).getAnimations().forEach(a => a.cancel()); });
   const W = $('s1').clientWidth;
   $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
   placeFromSeam($('c1'), $('s1'), W * 0.40, 'l'); setFrame($('c1'), 'right', 1);
@@ -321,13 +324,13 @@ async function playFull() {
   $('c1').classList.add('sil'); $('c2').classList.add('sil');
   await sleep(160);
 
-  // ★손바닥 임팩트가 경계에서 맞닿으며 화면을 가린다 → 그 뒤에서 교차가 일어난다
-  palmStrike($('a1')); palmStrike($('a2'));
-  await sleep(330);
+  // ★손바닥이 경계에서 잘린 채 맞닿는다 → 붙이면 두 손이 정확히 만나는 한 장면
+  palmStrike($('a1'), 'l'); palmStrike($('a2'), 'r');
+  await sleep(400);
   await impact(true);
+  // 충격 직후 상대 손이 경계를 뚫고 넘어온다 (각자 화면에서 '저쪽 손'이 보인다)
+  palmThrough($('b1'), 'l'); palmThrough($('b2'), 'r');
   $('c1').classList.toggle('other'); $('c2').classList.toggle('other');   // 스왑(빛에 가려 안 보임)
-  $('a1').classList.toggle('mine'); $('a1').classList.toggle('other');
-  $('a2').classList.toggle('mine'); $('a2').classList.toggle('other');
   $('c1').style.transition = 'none'; $('c2').style.transition = 'none';
   placeFromSeam($('c1'), $('s1'), -CW * SC * 0.6, 'l'); setFrame($('c1'), 'left', 1);
   placeFromSeam($('c2'), $('s2'), -CW * SC * 0.6, 'r'); setFrame($('c2'), 'right', 1);
