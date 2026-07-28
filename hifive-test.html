@@ -81,6 +81,28 @@
   <b>판단 기준</b> 평균 Δt가 <b>150ms 이하</b>면 넉넉하게 쓸 수 있고, <b>300ms 이하</b>면 임계값으로 쓸 만합니다.
 </div>
 
+<!-- 모듈 로드 자체가 실패하면 아래 module 스크립트는 아예 안 돈다.
+     그 경우에도 화면에 원인이 보이도록 일반 스크립트로 먼저 안전망을 깐다. -->
+<script>
+  window.__boot = false;
+  function __log(s) {
+    var el = document.getElementById('log'); if (!el) return;
+    el.textContent = new Date().toLocaleTimeString('ko-KR') + '  ' + s + '\n' + el.textContent;
+  }
+  window.addEventListener('error', function (e) {
+    __log('오류: ' + (e.message || e.type) + (e.filename ? ' @ ' + e.filename.split('/').pop() : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason; __log('오류(비동기): ' + (r && (r.message || r.code) || r));
+  });
+  setTimeout(function () {
+    if (!window.__boot) {
+      __log('초기화 실패 — 스크립트 로드가 안 됐습니다. 네트워크 차단(사내 와이파이)이나 구버전 브라우저일 수 있어요.');
+      var b = document.getElementById('start'); if (b) b.textContent = '초기화 실패 (기록 확인)';
+    }
+  }, 6000);
+  if (!window.isSecureContext) { setTimeout(function(){ __log('경고: HTTPS가 아니라 센서 접근이 막힙니다.'); }, 300); }
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword }
@@ -99,6 +121,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
 
+window.__boot = true;   // 모듈이 실제로 실행됐음을 안전망에 알린다
 const $ = id => document.getElementById(id);
 const logs = [];
 function log(s) {
@@ -211,31 +234,42 @@ function onMotion(e) {
   }
 }
 
-$('start').onclick = async () => {
+// ★★ 순서 주의: iOS는 '사용자가 버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다.
+// 앞에 await(로그인 등)를 두면 제스처 컨텍스트가 풀려 권한 요청이 거부된다.
+// (카카오 공유 sendDefault에서 겪은 것과 같은 함정 — 반드시 동기로 먼저 호출할 것)
+$('start').onclick = () => {
   $('start').disabled = true;
-  try {
-    meRef = await start();
-  } catch (e) {
-    log('로그인 실패: ' + (e && e.message));
-    $('start').disabled = false;
-    return;
-  }
-  // iOS 13+ 는 사용자 제스처 안에서 권한을 요청해야 한다
+
+  // 1) 센서 권한 먼저 — await 없이 동기로 시작
+  let permP = Promise.resolve('granted');
   try {
     if (typeof DeviceMotionEvent !== 'undefined' &&
         typeof DeviceMotionEvent.requestPermission === 'function') {
-      const p = await DeviceMotionEvent.requestPermission();
-      if (p !== 'granted') { $('sensor').textContent = '권한 거부됨'; log('센서 권한 거부'); return; }
+      permP = DeviceMotionEvent.requestPermission();
     }
+  } catch (e) {
+    log('권한 요청 예외: ' + (e && e.message));
+  }
+
+  permP.then(p => {
+    if (p !== 'granted') { $('sensor').textContent = '권한 거부됨'; log('센서 권한 거부됨 — 설정에서 동작 및 방향 접근을 허용해주세요'); return; }
     window.addEventListener('devicemotion', onMotion);
     $('sensor').textContent = '켜짐';
-    $('start').textContent = '측정 중 — 손바닥을 마주치세요';
-    log('센서 시작. 폰을 쥔 손으로 하이파이브!');
-  } catch (e) {
-    $('sensor').textContent = '오류';
-    log('센서 오류: ' + (e && e.message));
-  }
+    $('start').textContent = '측정 중 — 마주치세요';
+    log('센서 시작됨');
+  }).catch(e => {
+    $('sensor').textContent = '권한 오류';
+    log('권한 오류: ' + (e && e.message) + ' — HTTPS인지, iOS 설정에서 동작 접근이 꺼져있는지 확인');
+  });
+
+  // 2) 로그인·RTDB 연결은 뒤에서 따로 진행 (실패해도 센서 측정은 계속된다)
+  start().then(r => { meRef = r; log('서버 연결됨 — 상대와 Δt 비교 가능'); })
+         .catch(e => { log('서버 연결 실패(센서는 계속 동작): ' + (e && e.message)); });
 };
+
+// 잡히지 않은 오류를 화면 기록에 남긴다 — 원인 파악용
+window.addEventListener('error', e => log('JS 오류: ' + e.message));
+window.addEventListener('unhandledrejection', e => log('오류: ' + (e.reason && (e.reason.message || e.reason.code || e.reason))));
 
 $('reset').onclick = () => { samples = []; logs.length = 0; lastRecordKey = '';
   $('cnt').textContent = '0'; $('avg').textContent = '-'; $('max').textContent = '-';
