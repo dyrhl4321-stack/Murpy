@@ -69,7 +69,7 @@
 </head>
 <body>
 
-<h1>머피 범프 계측 <span style="font-size:13px;color:#4ade80">v14</span></h1>
+<h1>머피 범프 계측 <span style="font-size:13px;color:#4ade80">v15</span></h1>
 <div class="sub">
   두 폰에서 이 페이지를 열면 자동으로 같은 방에 연결됩니다. <b>접속 기기 2대</b>가 되면 준비 끝입니다.<br>
   <b>두 폰이 같은 자세 버튼을 선택</b>한 뒤 <b>5회씩</b> 톡 대고 떼세요.<br>
@@ -233,8 +233,12 @@ document.querySelectorAll('.pose').forEach(el => {
   el.onclick = () => {
     pose = el.dataset.p;
     document.querySelectorAll('.pose').forEach(x => x.classList.toggle('on', x === el));
-    // 자세를 바꾸면 직전 접촉은 잊는다 — 남겨두면 새 자세의 첫 접촉과 잘못 짝지어진다
-    lastPayload = null; lastKey = ''; lastPeak = 0;
+    // ★v15 — 자세 전환 처리를 정반대로 바꿨다.
+    //   v14는 lastKey·lastPeak을 0으로 지웠는데, 그러면 버퍼에 남은 '직전 자세의 마지막 충격'이
+    //   중복 방지를 통과해 되살아나 새 자세에 잘못 기록됐다(실측: 주먹으로 바꾸자마자 여러 쌍이 쌓임).
+    //   지금은 반대로 — 버퍼를 비우고 1.2초간 감지를 잠가 과거를 완전히 끊는다.
+    BUF.length = 0;
+    lastPeak = Date.now() + 1200;   // 미래로 밀어 잠금
     if (meRef) set(meRef, { uid, joinedAt: serverNow(), peakAt: 0, mag: 0, pose, plat: PLAT }).catch(() => {});
     renderStats();
     log('자세 전환 → ' + POSE_NAME[pose]);
@@ -333,7 +337,12 @@ function retroCheck(other) {
 
   retroN++; $('retroN').textContent = retroN + '회';
   lastPeak = pk.t;
-  lastRise = 0; lastPre = Math.round(preAvg * 10) / 10;
+  // 상승 급격도도 실제로 계산해 남긴다 — v14는 0으로 박아둬서 기록만 보고는
+  // 정검출인지 사후구제인지 구분이 흐려졌다
+  const idx = BUF.indexOf(pk);
+  const around = BUF.slice(Math.max(0, idx - 4), idx + 1);
+  lastRise = around.length >= 2 ? Math.round((pk.mag - Math.min(...around.map(s => s.mag))) * 10) / 10 : 0;
+  lastPre = Math.round(preAvg * 10) / 10;
   log('★사후 구제 ' + pk.mag.toFixed(1) + ' (내 임계 ' + THRESH + ' 미달, 상대 신호로 되짚음)');
   // ★내 피크의 '내 시각'을 서버 기준으로 올린다. 상대 peakAt을 그대로 쓰면 Δt가 항상 0이 되어
   //   측정 자체가 무의미해진다 — 사후 조회로 구제된 쌍도 진짜 Δt를 남겨야 한다.
@@ -342,7 +351,19 @@ function retroCheck(other) {
 }
 
 let lastPayload = null;
+// ★v15 — 같은 충격을 두 번 저장하지 않는다.
+//   v14 실측에서 40.29초·46.89초에 똑같은 충격값(34.5 / 36.9)이 두 번씩 기록됐다.
+//   정검출은 600ms 뒤에 저장되는데 그 사이 사후 조회가 먼저 발동하면 둘 다 저장돼버렸다.
+//   이 이중 기록이 "한 번 쳤는데 3~4번 쌓인다"의 직접 원인이다.
+const savedPeaks = [];
+function alreadySaved(t) {
+  while (savedPeaks.length && t - savedPeaks[0] > 5000) savedPeaks.shift();
+  return savedPeaks.some(x => Math.abs(x - t) < 600);
+}
+
 function capture(tLocal, tServer, mag, isRetro) {
+  if (alreadySaved(tLocal)) { log('중복 저장 방지 — 이미 기록된 충격'); return; }
+  savedPeaks.push(tLocal);
   const win = BUF.filter(s => s.t >= tLocal - 200 && s.t <= tLocal + 600);
   const wave = win.map(s => Math.round((s.mag - 9.8) * 10) / 10).slice(0, 80);
   const sep = win.filter(s => s.t >= tLocal + 100 && s.t <= tLocal + 500);
@@ -386,13 +407,16 @@ function draw(cv, wave, color) {
 }
 
 // ---------- 상대와 비교 ----------
-let lastKey = '';
+// ★v15 — 쌍을 1:1로 맺는다.
+//   v14는 상대 피크가 올 때마다 무조건 1쌍을 추가해서, 내 피크 1개에 상대 피크 4개면 4쌍이 됐다.
+//   또 허용 범위가 4초라 전혀 다른 접촉끼리도 짝지어졌다(실측 Δt 최대는 199ms).
+const PAIR_MAX = 400;                       // 이 이상 벌어지면 같은 접촉으로 보지 않는다
+const usedMine = new Set(), usedOther = new Set();
 function compare(mine, other) {
   const d = Math.abs(other.peakAt - mine.peakAt);
-  if (d > 4000) return;
-  const key = other.uid + ':' + other.peakAt;
-  if (key === lastKey) return;
-  lastKey = key;
+  if (d > PAIR_MAX) return;
+  if (usedMine.has(mine.peakAt) || usedOther.has(other.peakAt)) return;   // 이미 짝지어진 피크는 재사용 금지
+  usedMine.add(mine.peakAt); usedOther.add(other.peakAt);
 
   let hd = null;
   if (other.heading >= 0 && mine.heading >= 0) {
@@ -520,9 +544,25 @@ $('start').onclick = () => {
     $('sensor').textContent += ' / 나침반 켜짐';
   }).catch(e => log('나침반 권한 오류: ' + e.message));
 
+  // ★v15 — 화면이 꺼지면 iOS가 센서 이벤트를 끊는다.
+  //   v14 실측에서 한 폰이 16~28초 구간(6회 접촉)을 통째로 놓쳤는데, 화면 잠김이 유력한 원인이다.
+  if (navigator.wakeLock && navigator.wakeLock.request) {
+    navigator.wakeLock.request('screen')
+      .then(l => { log('화면 꺼짐 방지 켜짐'); l.addEventListener('release', () => log('※ 화면 꺼짐 방지가 풀렸습니다')); })
+      .catch(e => log('화면 꺼짐 방지 실패(수동으로 자동잠금을 꺼주세요): ' + e.message));
+  } else {
+    log('※ 이 브라우저는 화면 꺼짐 방지를 지원하지 않습니다 — 설정에서 자동잠금을 꺼주세요');
+  }
+
   connect().then(() => log('서버 연결됨 — 상대와 비교 가능'))
            .catch(e => log('서버 연결 실패(센서는 계속 동작): ' + e.message));
 };
+
+// 화면이 백그라운드로 갔다 오면 센서가 끊겼을 수 있다 — 눈에 보이게 알린다
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') log('화면 복귀 — 센서가 끊겼으면 [센서 켜기]를 다시 눌러주세요');
+  else log('※ 화면이 가려졌습니다 — 이 구간은 측정이 안 됩니다');
+});
 
 $('copy').onclick = async () => {
   const t = summary();
@@ -535,7 +575,8 @@ $('copy').onclick = async () => {
 };
 
 $('reset').onclick = () => {
-  stats.side = []; stats.fist = []; logs.length = 0; lastKey = ''; ignored = 0; retroN = 0;
+  stats.side = []; stats.fist = []; logs.length = 0; ignored = 0; retroN = 0;
+  usedMine.clear(); usedOther.clear(); savedPeaks.length = 0;
   $('ign').textContent = '0회'; $('retroN').textContent = '0회';
   $('dt').innerHTML = '–<small>초기화됨</small>'; $('dt').className = 'big';
   $('heads').textContent = '-'; $('hdiff').textContent = '-'; $('opp').textContent = '-';
