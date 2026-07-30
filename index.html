@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260730002 -->
+<!-- cache-bust: v20260730003 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -14063,7 +14063,7 @@ window.bumpIconHtml = function (sz) {
 };
 let bpBuf = [], bpSid = null, bpRole = 'guest', bpMeRef = null, bpUnsub = null,
     bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null,
-    bpMyChar = null;
+    bpMyChar = null, bpArrivedAt = 0;
 
 const bpNow = () => Date.now() + bpOff;
 function bpQuietBefore(t) {
@@ -14109,6 +14109,11 @@ window.bumpOpen = async function (sid) {
   const s = window._sqDoc;
   bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0;
   bpRole = (s && user.uid === s.hostUid) ? 'host' : 'guest';
+  // ★출석의 '여부'와 '시각'을 분리한다.
+  //   여부 = 범프(위조하기 어려운 강한 증거) / 시각 = 이 화면을 연 순간(= 현장 도착).
+  //   도장 번지기로 순서를 기다리는 동안 지각으로 넘어가면 안 되기 때문이다.
+  //   시각을 앞당기려 미리 눌러봐야, 결국 범프를 해야 출석이 인정되고 그러려면 현장에 있어야 한다.
+  bpArrivedAt = Date.now();
   bpAudioWake();   // ★버튼을 누른 이 순간에 깨워야 iOS에서 소리가 난다
   bpOverlay('wait');
 
@@ -14222,9 +14227,14 @@ async function bpAttend(sid, otherUid) {
     // 나도 상대도 아직 도장이 없으면 번질 근거가 없다 — 리더나 이미 찍은 사람과 맞대야 한다
     if (!iAmHost && !otherOk) return 'need-verifier';
 
-    const late = Date.now() > (s.scheduledAt || 0) + 5 * 60 * 1000;
+    // 범프 창 = 호스트가 출석을 연 뒤 유효한 구간(코드 만료 시각을 그대로 창으로 쓴다).
+    // 창이 열려 있지 않으면 예정 시각 + 5분을 기준으로 본다.
+    const arrived = bpArrivedAt || Date.now();
+    const winEnd = s.checkinCodeExpiry || ((s.scheduledAt || 0) + 5 * 60 * 1000);
+    const late = arrived > winEnd;
     await updateDoc(mRef, {
       checkedIn: true, checkinTime: serverTimestamp(),
+      arrivedAt: arrived,                        // 실제 도착(= 범프 화면을 연) 시각
       checkinType: late ? 'late' : 'present', checkinVia: 'bump',
       verifiedBy: otherUid || null, status: 'checkedIn'
     });
