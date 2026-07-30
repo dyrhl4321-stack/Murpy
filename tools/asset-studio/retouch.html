@@ -119,6 +119,10 @@ button.go:hover{background:#5590ff}
     <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 8 8"/><path d="M12 20v-4M8 12h8"/></svg>
     같은색
   </div>
+  <div class="t" id="tMirror" title="잘 나온 쪽을 반대쪽에 대칭 복사 — 칠한 쪽이 원본이 됩니다">
+    <svg viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M10 6 4 12l6 6z"/><path d="M14 6l6 6-6 6z" fill="currentColor" opacity=".25"/></svg>
+    대칭복사
+  </div>
   <div class="t" id="tFlip" title="좌우 반전해서 반대쪽에도 같은 수정">
     <svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M9 7 4 12l5 5z"/><path d="M15 7l5 5-5 5z"/></svg>
     좌우반전
@@ -203,7 +207,7 @@ const ITEMS=[
  {id:'hair_m_basic',slot:'hair',body:'human',name:'남자 기본헤어'},
  {id:'hair_ivyleague',slot:'hair',body:'human',name:'아이비리그컷'},
  {id:'hair_m_semileaf',slot:'hair',body:'human',name:'세미리프컷'},
- {id:'hair_m_part55',slot:'hair',body:'human',name:'오대오 가르마펌'},
+ {id:'hair_m_part55',slot:'hair',body:'human',name:'오대오 (폐기·재작업용)'},
  {id:'hair_f_basic',slot:'hair',body:'human_f',name:'여자 기본헤어'},
  {id:'hair_f_bob_bang',slot:'hair',body:'human_f',name:'앞머리 단발'},
  {id:'hair_f_long',slot:'hair',body:'human_f',name:'긴 생머리'},
@@ -414,6 +418,36 @@ $('tSame').onclick=()=>{
   paintSel();say('현재 색과 같은 픽셀 <b>'+n+'px</b> 를 선택했습니다. (스포이드로 색을 먼저 고르세요)');
 };
 // 선택영역을 좌우로 뒤집어 반대쪽에도 더한다 — 좌우 대칭 결함에 유용
+// ★★잘 나온 쪽을 반대쪽에 대칭 복사. 칠한 쪽이 원본이 된다.
+//   프레임마다 아이템 위치가 다르므로 **각 프레임의 bbox 중심**을 축으로 뒤집는다.
+//   (셀 한가운데를 축으로 쓰면 걸음 프레임에서 어긋난다.)
+$('tMirror').onclick=()=>{
+  if(!itemData){say('먼저 아이템을 골라주세요.');return;}
+  if(!M.some(v=>v)){say('먼저 <b>잘 나온 쪽</b>을 칠해주세요. 그쪽이 원본이 됩니다.');return;}
+  snap();
+  const nc=Math.round(W/CW),ref=bbox(0);let n=0;
+  for(let c=0;c<nc;c++){
+    // 이 프레임의 아이템 가로 범위 → 그 중심을 대칭축으로
+    let lo=1e9,hi=-1;
+    for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+      if(itemData.data[(((cellR*CH+y)*W)+(c*CW+x))*4+3]>=128){if(x<lo)lo=x;if(x>hi)hi=x;}}
+    if(hi<0)continue;
+    const bb=bbox(c),dx=(ref&&bb)?bb[0]-ref[0]:0,dy=(ref&&bb)?bb[1]-ref[1]:0;
+    const snapshot2=new Uint8ClampedArray(itemData.data);
+    for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+      const sx=x-dx,sy=y-dy;
+      if(sx<0||sx>=CW||sy<0||sy>=CH||!M[sy*CW+sx])continue;
+      const mx=lo+hi-x;                       // bbox 중심 기준 좌우 반전
+      if(mx<0||mx>=CW)continue;
+      const from=(((cellR*CH+y)*W)+(c*CW+x))*4, to=(((cellR*CH+y)*W)+(c*CW+mx))*4;
+      itemData.data[to]=snapshot2[from];itemData.data[to+1]=snapshot2[from+1];
+      itemData.data[to+2]=snapshot2[from+2];itemData.data[to+3]=snapshot2[from+3];
+      n++;}
+  }
+  clearSel();draw();buildPal();
+  say('칠한 쪽을 반대쪽에 대칭 복사했습니다. <b>'+n+'px</b> (걸음 3프레임 반영)');
+};
+
 $('tFlip').onclick=()=>{
   if(!itemData)return;
   const bb=bbox(0);const cx=bb?Math.round(CW/2):Math.round(CW/2);
@@ -493,14 +527,9 @@ function findDefects(){
   for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
     const i=y*CW+x;
     if(!item[i]&&!out[i]&&B(x,y,3)>=128){M2[i]=1;cnt.hole++;continue;}
-    if(item[i])continue;
-    let near=false;
-    for(let j=-2;j<=2&&!near;j++)for(let k=-2;k<=2;k++)
-      if(has(x+k,y+j)&&item[(y+j)*CW+(x+k)]){near=true;break;}
-    if(near&&B(x,y,3)>=128){
-      const r=B(x,y,0),g=B(x,y,1),b=B(x,y,2);
-      if(r>=140&&r>g+30&&g>b+5){M2[i]=1;cnt.skin++;}
-    }
+    // ★'테두리 밖 살색' 규칙은 뺐다 — 이 툴은 **얼굴이 어딘지 모른다.**
+    //   그래서 얼굴 윤곽·볼·턱까지 전부 결함으로 잡아 쓸모가 없었다(대표 확인).
+    //   얼굴 판정이 필요한 검사는 char/base_regions.py 의 영역지도가 있어야 한다.
   }
   // 3) 고립 조각 (40px 미만) — 떠다니는 점
   const seen=new Uint8Array(CW*CH);
@@ -520,10 +549,9 @@ function findDefects(){
   if(!tot){say('이 방향에서는 의심되는 곳을 못 찾았습니다.');return;}
   say('의심되는 곳 <b>'+tot+'px</b> 를 선택했습니다.\n'+
       '· 안쪽 구멍 '+cnt.hole+'px  → "구멍 메워줘"\n'+
-      '· 테두리 밖 살색 '+cnt.skin+'px  → "머리색으로 덮어줘"\n'+
       '· 고립 조각 '+cnt.stray+'px  → "지워줘"\n'+
       '· 반투명 '+cnt.semi+'px  → "지워줘"\n'+
-      '전부 한 번에 하지 마시고, 유형별로 다시 칠해서 하나씩 처리하는 게 안전합니다.');
+      '확실한 것만 찾습니다. 살색 노출은 얼굴 위치를 알아야 해서 여기선 안 봅니다.');
 }
 $('tFind').onclick=findDefects;
 
