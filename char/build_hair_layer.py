@@ -449,6 +449,37 @@ SKULL_H = 42     # 정수리 돔 높이(앱 px)
 HEAD_H = 78      # 두상 높이(앱 px). 이보다 아래는 목·어깨·팔     # 정수리 돔 높이(앱 px). 이보다 아래는 얼굴·목이라 헤어 밖이 정상이다.
 
 
+def head_skin_need(hc, bc, truth):
+    """★머리 영역에서 base 살색이 헤어 밖으로 보이는 것을 전부 덮는다.
+
+    대표가 계속 지적한 결함: 옆에서 귀·뒤통수 살색, 앞머리·이마 살색, 정면 양쪽 빡빡이 삐짐.
+    원인 = 헤어 시트를 뽑을 때 AI가 두상을 base보다 작게 그린다. 그래서 base 두상이
+    헤어보다 크고, 차분 추출만으로는 그 차이를 메울 수 없다.
+
+    ★판정 기준은 헤어 시트 자신이다(truth = 시트를 같은 변환으로 정규화한 것).
+      truth에서 살색인 곳 = 얼굴이므로 살색으로 남긴다.
+      truth에서 살색이 아닌데 base가 살색인 곳 = 머리카락이 덮어야 할 자리.
+    이러면 얼굴은 안 건드리고 귀·뒤통수·이마만 덮인다. 색 임계로 얼굴을 지키려던
+    이전 시도들(정면 앞머리가 눈을 덮는 사고)이 필요 없어진다.
+    """
+    hm = hc[:, :, 3] >= ALPHA_BIN
+    bm = largest(bc[:, :, 3] >= ALPHA_BIN)
+    if not hm.any() or not bm.any():
+        return np.zeros_like(bm)
+    top = int(np.where(bm.any(axis=1))[0].min())
+    head = np.zeros_like(bm)
+    head[top:top + HEAD_H] = True          # 두상 구간(목 위까지)
+
+    def skinmask(a):
+        R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+        return (a[:, :, 3] >= ALPHA_BIN) & (R >= 140) & (R > G + 30) & (G > B + 5)
+
+    tskin = skinmask(truth)
+    # truth가 살색인 자리 주변 1px는 얼굴 경계 오차를 감안해 보호한다
+    tskin = ndimage.binary_dilation(tskin, np.ones((3, 3), bool))
+    return skinmask(bc) & head & ~tskin & ~hm
+
+
 def cover_need(hc, bc):
     """정수리에서 base 외곽선이 헤어보다 밖에 남으면 검은 테두리가 두 겹으로 보인다.
     (대표: '이마에 도트 검은거 한 줄 더 튀어나옴') → 덮어야 할 자리를 마스크로 돌려준다."""
@@ -570,6 +601,7 @@ def main():
         hr[mask, :3] = hair[mask, :3]
         hr[:, :, 3] = np.where(mask, 255, 0)
         hair_pad = pad_img(hr)
+        src_pad = pad_img(hair)      # 마스크 안 씌운 원본 = 얼굴 위치 판정용
 
         print("■ %s (%s)  헤어색 %s" % (cfg["label"], cfg["out"], tuple(med)))
         sheet = Image.new("RGBA", (CW * 3, CH * 4), (0, 0, 0, 0))
@@ -599,8 +631,10 @@ def main():
             need = np.zeros((CH, CW), bool)
             for c, (dx, dy) in enumerate(shifts):
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
+                truth = binarize(norm.cell(src_pad, r, c))   # 시트 원본 = 얼굴 위치의 정답
                 moved = shift(chosen, dx, dy)
-                n = cover_need(moved, bc) | gap_need(moved, bc)
+                n = (cover_need(moved, bc) | gap_need(moved, bc)
+                     | head_skin_need(moved, bc, truth))
                 need |= shift(n, -dx, -dy)
             chosen = paint(chosen, need)
             chosen, _ = drop_strays(chosen)
@@ -610,13 +644,16 @@ def main():
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 cell = shift(chosen, dx, dy)
                 oh = overhang(cell[:, :, 3] >= ALPHA_BIN, largest(bc[:, :, 3] >= ALPHA_BIN))
-                info.append((dx, dy, int(need.sum()), oh))
+                tr = binarize(norm.cell(src_pad, r, c))
+                leak = int(head_skin_need(cell, bc, tr).sum())    # 남은 머리 살색 노출
+                info.append((dx, dy, int(need.sum()), oh, leak))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
 
             print("   [%s] col%d 채택 | 제거 base복사%4d 유령%4d 살색%4d (총%4d) | "
-                  "이동%s 틈메움%s | 삐짐%s" % (
+                  "이동%s 틈메움%s | 삐짐%s 살색노출%s" % (
                       ROWNAME[r], ref, nsame, nshadow, nskin, nkill,
-                      [(i[0], i[1]) for i in info], [i[2] for i in info], [i[3] for i in info]))
+                      [(i[0], i[1]) for i in info], [i[2] for i in info], [i[3] for i in info],
+                      [i[4] for i in info]))
 
         a = np.asarray(sheet).astype(int)
         semi = int(((a[:, :, 3] > 0) & (a[:, :, 3] < 255)).sum())
