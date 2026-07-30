@@ -34,6 +34,14 @@ canvas{image-rendering:pixelated;display:block}
 #hint{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:12px;color:var(--dim)}
 .tag{display:inline-block;font-size:11px;color:var(--gold);margin-left:6px}
 .note{font-size:11px;color:var(--dim);line-height:1.6;margin-top:4px}
+#gal{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.card{border:1px solid var(--line);border-radius:7px;padding:6px;cursor:pointer;
+      background:#26262c;text-align:center}
+.card:hover{border-color:var(--blue)}
+.card.on{border-color:var(--blue);background:#2b3550}
+.card img{width:100%;height:52px;object-fit:contain;image-rendering:pixelated;display:block}
+.card span{display:block;font-size:10px;color:var(--dim);margin-top:3px;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -41,14 +49,27 @@ canvas{image-rendering:pixelated;display:block}
   <h1>머피 에셋 리터치</h1>
   <div class="sub">칠하고 → 버튼 누르면 그 부분만 고쳐집니다.</div>
 
-  <div class="grp">
-    <label>1. 캐릭터 몸 (walk.png)</label>
+  <div class="grp" id="gWarn" style="display:none">
+    <div class="note" style="color:var(--gold)">
+      파일을 직접 열면 브라우저가 픽셀 읽기를 막습니다.<br>
+      <b>retouch.bat</b> 을 더블클릭해서 여세요.
+    </div>
+  </div>
+
+  <div class="grp" id="gPick">
+    <label>고칠 아이템 <span class="tag" id="slotTag"></span></label>
+    <select id="slot">
+      <option value="hair">헤어</option><option value="hat">모자</option>
+      <option value="top">상의</option><option value="bottom">하의</option>
+      <option value="shoes">신발</option><option value="acc">액세서리</option>
+    </select>
+    <div id="gal"></div>
+  </div>
+
+  <div class="grp" id="gFile" style="display:none">
+    <label>직접 올리기 (몸 / 아이템)</label>
     <input type="file" id="fBase" accept="image/png">
-  </div>
-  <div class="grp">
-    <label>2. 고칠 아이템 (헤어 등)</label>
-    <input type="file" id="fItem" accept="image/png">
-  </div>
+    <input type="file" id="fItem" accept="image/png" style="margin-top:6px">
 
   <div class="grp">
     <label>보는 곳</label>
@@ -90,6 +111,28 @@ canvas{image-rendering:pixelated;display:block}
 
 <script>
 const CW=141, CH=224, ROWS=['정면','후면','좌','우'];
+// ★index.html 의 CHAR_ITEMS 와 같은 목록. 아이템을 추가하면 여기도 한 줄 추가한다.
+const ITEMS=[
+ {id:'hair_m_basic',   slot:'hair',  body:'human',   name:'남자 기본헤어'},
+ {id:'hair_ivyleague', slot:'hair',  body:'human',   name:'아이비리그컷'},
+ {id:'hair_m_semileaf',slot:'hair',  body:'human',   name:'세미리프컷'},
+ {id:'hair_m_part55',  slot:'hair',  body:'human',   name:'오대오 가르마펌'},
+ {id:'hair_f_basic',   slot:'hair',  body:'human_f', name:'여자 기본헤어'},
+ {id:'hair_f_bob_bang',slot:'hair',  body:'human_f', name:'앞머리 단발'},
+ {id:'hair_f_long',    slot:'hair',  body:'human_f', name:'긴 생머리'},
+ {id:'hat_beanie',     slot:'hat',   body:'human',   name:'GBD 비니'},
+ {id:'hat_ladodgers',  slot:'hat',   body:'human',   name:'LA 볼캡'},
+ {id:'acc_airpodsmax', slot:'acc',   body:'human',   name:'에어팟 맥스'},
+ {id:'top_redhood',    slot:'top',   body:'human',   name:'레드 후디'},
+ {id:'top_ringer',     slot:'top',   body:'human',   name:'ART 링거티'},
+ {id:'bottom_bermuda', slot:'bottom',body:'human',   name:'회색 버뮤다'},
+ {id:'bottom_trainpt', slot:'bottom',body:'human',   name:'검정 트레이닝'},
+ {id:'shoes_white',    slot:'shoes', body:'human',   name:'흰색 러닝화'},
+ {id:'shoes_black',    slot:'shoes', body:'human',   name:'검정 러닝화'},
+];
+// 이 파일은 tools/asset-studio/ 에 있으므로 프로젝트 루트는 두 단계 위다.
+const ROOT='../../';
+let curItem=null;
 let baseImg=null, itemImg=null;      // 원본 시트 (ImageData)
 let itemData=null;                    // 편집 중인 아이템 픽셀
 let W=0,H=0, cellR=0, cellC=0, Z=5;
@@ -108,6 +151,55 @@ function readPng(file, cb){
   };
   img.src=URL.createObjectURL(file);
 }
+// ── 아이템 목록 (썸네일) ─────────────────────────────────────
+function loadPng(url){
+  return new Promise((res,rej)=>{
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{ const c=document.createElement('canvas');
+      c.width=img.width; c.height=img.height;
+      const x=c.getContext('2d'); x.drawImage(img,0,0);
+      try{ res(x.getImageData(0,0,img.width,img.height)); }catch(err){ rej(err); }
+    };
+    img.onerror=()=>rej(new Error(url+' 을 못 읽었습니다'));
+    img.src=url;
+  });
+}
+function renderGal(){
+  const slot=document.getElementById('slot').value;
+  const list=ITEMS.filter(i=>i.slot===slot);
+  document.getElementById('slotTag').textContent=list.length+'개';
+  const g=document.getElementById('gal'); g.innerHTML='';
+  list.forEach(it=>{
+    const d=document.createElement('div'); d.className='card'; d.title=it.name;
+    d.innerHTML='<img src="'+ROOT+'char/items/'+it.id+'_thumb.png" alt=""><span>'+it.name+'</span>';
+    d.onclick=()=>pick(it,d);
+    g.appendChild(d);
+  });
+}
+async function pick(it,el){
+  document.querySelectorAll('.card').forEach(c=>c.classList.remove('on'));
+  if(el) el.classList.add('on');
+  stat.textContent=it.name+' 불러오는 중...';
+  try{
+    const walk=it.body==='human_f'?'walk_female.png':'walk.png';
+    baseImg=await loadPng(ROOT+'char/'+walk);
+    const d=await loadPng(ROOT+'char/items/'+it.id+'.png');
+    itemImg=d; itemData=new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+    curItem=it; history.length=0;
+    ready(); stat.textContent=it.name+' — 고칠 부분을 칠하세요.';
+  }catch(err){
+    stat.textContent='못 불러왔습니다. retouch.bat 으로 여세요.';
+    document.getElementById('gWarn').style.display='block';
+    document.getElementById('gFile').style.display='block';
+  }
+}
+document.getElementById('slot').onchange=renderGal;
+renderGal();
+if(location.protocol==='file:'){
+  document.getElementById('gWarn').style.display='block';
+  document.getElementById('gFile').style.display='block';
+}
+
 document.getElementById('fBase').onchange=e=>{
   if(e.target.files[0]) readPng(e.target.files[0], d=>{ baseImg=d; ready(); });
 };
@@ -244,9 +336,10 @@ document.getElementById('save').onclick=()=>{
   c.getContext('2d').putImageData(itemData,0,0);
   c.toBlob(bl=>{
     const a=document.createElement('a');
-    a.href=URL.createObjectURL(bl); a.download='retouched.png'; a.click();
+    const fn=(curItem?curItem.id:'retouched')+'.png';
+    a.href=URL.createObjectURL(bl); a.download=fn; a.click();
+    stat.textContent=fn+' 저장 완료 → char/items/ 에 덮어쓰세요.';
   });
-  stat.textContent='retouched.png 로 저장했습니다.';
 };
 </script>
 </body>
