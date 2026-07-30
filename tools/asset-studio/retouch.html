@@ -102,6 +102,27 @@ button.go:hover{background:#5590ff}
     <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
     되돌리기
   </div>
+  <div class="t" id="tRedo" title="앞으로 가기 (Ctrl+Y)">
+    <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>
+    앞으로
+  </div>
+  <div class="sep"></div>
+  <div class="t" id="tGrow" title="선택 넓히기 1px">
+    <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M3 3h3M18 3h3M3 21h3M18 21h3M3 3v3M21 3v3M3 18v3M21 18v3"/></svg>
+    넓히기
+  </div>
+  <div class="t" id="tShrink" title="선택 좁히기 1px">
+    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><rect x="9" y="9" width="6" height="6"/></svg>
+    좁히기
+  </div>
+  <div class="t" id="tSame" title="같은 색 모두 선택 — 클릭한 색과 같은 픽셀을 전부 고릅니다">
+    <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 1 8 8"/><path d="M12 20v-4M8 12h8"/></svg>
+    같은색
+  </div>
+  <div class="t" id="tFlip" title="좌우 반전해서 반대쪽에도 같은 수정">
+    <svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M9 7 4 12l5 5z"/><path d="M15 7l5 5-5 5z"/></svg>
+    좌우반전
+  </div>
   <div class="sep"></div>
   <div class="t" data-tool="pen" title="연필 — 픽셀 직접 찍기 (P)">
     <svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/></svg>
@@ -350,12 +371,58 @@ addEventListener('keydown',e=>{
   if(e.key==='b')document.querySelector('[data-tool=brush]').click();
   if(e.key==='r')document.querySelector('[data-tool=rect]').click();
   if(e.key==='e')document.querySelector('[data-tool=unbrush]').click();
-  if(e.ctrlKey&&e.key==='z')$('tUndo').click();});
+  if(e.key==='p')document.querySelector('[data-tool=pen]').click();
+  if(e.key==='i')document.querySelector('[data-tool=pipe]').click();
+  if(e.ctrlKey&&e.key==='z')$('tUndo').click();
+  if(e.ctrlKey&&(e.key==='y'||(e.shiftKey&&e.key==='Z')))$('tRedo').click();});
 
 /* ── 보정 ─────────────────────────────────────────────── */
-function snap(){history.push(new Uint8ClampedArray(itemData.data));if(history.length>40)history.shift();}
-$('tUndo').onclick=()=>{if(!history.length)return;itemData.data.set(history.pop());draw();
-  say('되돌렸습니다.');};
+const future=[];
+function snap(){history.push(new Uint8ClampedArray(itemData.data));
+  if(history.length>40)history.shift(); future.length=0;}   // 새 작업 = 앞으로가기 초기화
+$('tUndo').onclick=()=>{if(!history.length)return;
+  future.push(new Uint8ClampedArray(itemData.data));
+  itemData.data.set(history.pop());draw();buildPal();say('되돌렸습니다.');};
+$('tRedo').onclick=()=>{if(!future.length)return;
+  history.push(new Uint8ClampedArray(itemData.data));
+  itemData.data.set(future.pop());draw();buildPal();say('앞으로 갔습니다.');};
+
+/* ── API 없이 쓰는 선택 도구들 ─────────────────────────── */
+function growSel(n){const o=new Uint8Array(M);
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){if(!o[y*CW+x])continue;
+    for(let j=-n;j<=n;j++)for(let i=-n;i<=n;i++){const px=x+i,py=y+j;
+      if(px>=0&&px<CW&&py>=0&&py<CH)M[py*CW+px]=1;}}
+  paintSel();}
+function shrinkSel(){const o=new Uint8Array(M);
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    if(!o[y*CW+x])continue;let edge=false;
+    for(const[dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const px=x+dx,py=y+dy;
+      if(px<0||px>=CW||py<0||py>=CH||!o[py*CW+px]){edge=true;break;}}
+    if(edge)M[y*CW+x]=0;}
+  paintSel();}
+$('tGrow').onclick=()=>growSel(1);
+$('tShrink').onclick=shrinkSel;
+// 현재 잉크색과 같은 아이템 픽셀을 전부 선택 (검은 줄 한 번에 잡을 때)
+$('tSame').onclick=()=>{
+  if(!itemData)return;let n=0;
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    const i=((cellR*CH+y)*W+x)*4;
+    if(itemData.data[i+3]<128)continue;
+    const d=Math.max(Math.abs(itemData.data[i]-ink[0]),
+                     Math.abs(itemData.data[i+1]-ink[1]),Math.abs(itemData.data[i+2]-ink[2]));
+    if(d<=18){M[y*CW+x]=1;n++;}}
+  paintSel();say('현재 색과 같은 픽셀 <b>'+n+'px</b> 를 선택했습니다. (스포이드로 색을 먼저 고르세요)');
+};
+// 선택영역을 좌우로 뒤집어 반대쪽에도 더한다 — 좌우 대칭 결함에 유용
+$('tFlip').onclick=()=>{
+  if(!itemData)return;
+  const bb=bbox(0);const cx=bb?Math.round(CW/2):Math.round(CW/2);
+  const o=new Uint8Array(M);let n=0;
+  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    if(!o[y*CW+x])continue;const mx=CW-1-x;
+    if(mx>=0&&mx<CW&&!M[y*CW+mx]){M[y*CW+mx]=1;n++;}}
+  paintSel();say('반대쪽에도 <b>'+n+'px</b> 를 같이 선택했습니다.');
+};
 
 function bbox(c){let x0=1e9,y0=1e9,ok=false;
   for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
