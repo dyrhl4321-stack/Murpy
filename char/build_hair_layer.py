@@ -55,6 +55,9 @@ STRAY_MAX = 40       # 앱 셀 기준 고립조각 하한
 SAME_T = 24          # base와 같은 색 판정 = 이중 그리기
 HEAD_FRAC = 0.42     # 머리 구간(정수리 복구·삐짐 판정에 쓰는 세로 비율)
 MARGIN = 34          # 헤어가 몸보다 옆으로 벌어지는 여유
+# 머리 옆면 맹점(세로 이음매)의 최대 폭(앱 px). 실측 틈이 7px이라 8이면 덮이고,
+# 앞머리 사이 이마(정면 실측 최대 76px)는 훨씬 넓어 걸리지 않는다.
+SEAM_W = 8
 
 MHAIR = os.path.join(DESK, "헤어", "남자")
 FBASIC = os.path.join(DESK, "머피_로고삭제툴_에셋보관", "여자")
@@ -462,6 +465,9 @@ BROW_Y_BY_BASE = {                # 후면(1)은 얼굴이 없다
 #   프로필에서 뒤통수를 덮되 **귀보다 아래로는 내려가지 않는다** — 귀를 헤어색으로
 #   칠하면 귀가 사라진다.
 EAR_Y = 60
+# 귀 높이 아래에서 '뒤통수'로 볼 깊이(머리 뒤 끝 기준 앱 px). 프로필 귀는 머리 가운데라
+# (좌 x70~89 / 우 x46~68, 머리 x17~120) 뒤 끝에서 28px 안쪽이면 귀에 닿지 않는다.
+BACK_DEPTH = 28
 
 
 def head_skin_need(hc, bc, r, brow=None):
@@ -518,7 +524,19 @@ def head_skin_need(hc, bc, r, brow=None):
             else:           # 우향 = 얼굴이 오른쪽 → 뒤통수는 왼쪽 절반
                 back[:, :mid + 1] = True
             back[top + EAR_Y:] = False
-            skull |= back
+            # ★★뒤통수는 귀보다 훨씬 아래까지 이어진다. 위 back을 귀 높이에서 자르면
+            #   대표가 본 '좌·우 뒤통수 살색'이 그대로 남는다(실측: 좌 x100~120, y75~95).
+            #   프로필의 귀는 머리 **가운데**에 있으므로(좌 x70~89 / 우 x46~68),
+            #   귀 높이 아래에서는 **머리 뒤 끝에서 BACK_DEPTH 이내**만 덮어 귀를 피한다.
+            xs_h = np.where(bm[top:top + HEAD_H].any(axis=0))[0]
+            hlo, hhi = int(xs_h.min()), int(xs_h.max())
+            deep = np.zeros_like(bm)
+            if r == 2:
+                deep[:, max(0, hhi - BACK_DEPTH):] = True
+            else:
+                deep[:, :min(bm.shape[1], hlo + BACK_DEPTH + 1)] = True
+            deep[:top + EAR_Y] = False       # 위쪽은 back이 이미 덮는다
+            skull |= back | deep
 
     # ★★귀는 두상보다 옆으로 튀어나와 있다. 귀 높이 아래에서는 **귀 위에서 잰 두상 폭**
     #   안쪽만 덮는다 — 그 폭을 넘어 튀어나온 것이 귀다. 이 clamp가 없으면 후면에서
@@ -555,7 +573,35 @@ def head_skin_need(hc, bc, r, brow=None):
             lateral[y, :int(hx.min())] = True
             lateral[y, int(hx.max()) + 1:] = True
         need &= lateral
-    return need
+
+    # ★★세로 이음매(대표: '정면 좌우 ㅣ 살색선') — 위 lateral 규칙으로는 절대 안 잡힌다.
+    # 원인: base 검은 외곽선과 헤어가 같은 어두운 색이라 차분이 0이 되어 머리 **옆면**에
+    # 세로로 긴 틈이 뚫린다(정수리 맹점과 같은 현상, 위치만 옆면). 실측 정면 x20~26 7px폭.
+    # 그 틈은 **양옆이 헤어로 둘러싸여** 있어서 '헤어 바깥' 조건에 걸리지 않는다.
+    # ★기각한 접근 2개 (추출 단계에서 고치려다 둘 다 얼굴을 망쳤다):
+    #   ① base 실루엣 경계 근처를 열어 propagation → 프로필은 코·입이 경계에 있어 얼굴을 먹음
+    #   ② 소스에서 가로 닫힘 → hairish가 눈썹까지 포함해 앞머리·눈썹을 이어붙여 머리가 무거워짐
+    # → 얼굴이 이미 제외된 **여기(앱 셀)**에서, 좁은 틈만 메운다. 이마는 훨씬 넓어 안 걸린다.
+    seam = np.zeros_like(need)
+    for y in range(top, min(top + HEAD_H, need.shape[0])):
+        hx = np.where(hm[y])[0]
+        if len(hx) < 2:
+            continue
+        lo, hi = int(hx.min()), int(hx.max())
+        x = lo
+        while x <= hi:
+            if bm[y, x] and not hm[y, x]:
+                x2 = x
+                while x2 <= hi and bm[y, x2] and not hm[y, x2]:
+                    x2 += 1
+                if x2 - x <= SEAM_W:
+                    seam[y, x:x2] = True
+                x = x2
+            else:
+                x += 1
+    # ★skull(눈썹 위)로 제한하지 않는다 — 실측 이음매는 눈썹 아래 관자놀이까지 이어진다
+    #   (정면 y53~79, 눈썹 y65). 얼굴은 넓게 열려 있어 '≤8px + 양옆 헤어' 조건에 안 걸린다.
+    return need | (seam & head)
 
 
 def cover_need(hc, bc):
