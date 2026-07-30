@@ -58,6 +58,9 @@ MARGIN = 34          # 헤어가 몸보다 옆으로 벌어지는 여유
 # 머리 옆면 맹점(세로 이음매)의 최대 폭(앱 px). 실측 틈이 7px이라 8이면 덮이고,
 # 앞머리 사이 이마(정면 실측 최대 76px)는 훨씬 넓어 걸리지 않는다.
 SEAM_W = 8
+# base 외곽선 링 두께(소스 px). base 외곽선은 앱 2~3px(소스 ~8px)이고, 눈·눈썹은 실루엣
+# 경계에서 앱 17px(소스 45px) 이상 안쪽이라 16이면 링만 잡고 얼굴은 안 건드린다.
+RING_D = 16
 
 MHAIR = os.path.join(DESK, "헤어", "남자")
 FBASIC = os.path.join(DESK, "머피_로고삭제툴_에셋보관", "여자")
@@ -304,6 +307,22 @@ def hair_mask(hair, base, norm, ref=None, ghost=True):
     # base의 어두운 자리를 넓게(5px) 지우면 진짜 머리카락까지 파낸다(기각). 그래서
     # **헤어 시트 실루엣 경계 ∩ base 몸 경계 근처(2px) ∩ 머리 아래** 만 뺀다.
     # 몸에서 멀리 떨어진 머리카락(긴 머리)은 base 경계 근처가 아니라 그대로 남는다.
+    # ★★★차분 맹점을 원인 자리에서 정확히 메운다 (2026-07-31).
+    # 차분(diff)은 **헤어가 base의 검은 외곽선 위에 얹힌 자리**에서 0이 된다 — 둘 다 어두워서다.
+    # 그 자리가 통째로 빠져서 정면 ㅣ선·귀쪽 구멍·뒤통수 살색이 전부 여기서 나왔다.
+    # (실측: 원본 시트엔 머리카락 (30,27,34)이 있는데 우리 마스크만 비어 있었다.)
+    # 정수리 복구(mtop+7)는 이 현상의 '위쪽 일부'만 막고 있었다.
+    # ★얼굴을 지키는 법: base의 어두운 픽셀 중 **실루엣 경계 근처(=외곽선 링)**만 대상으로 한다.
+    #   눈·눈썹은 실루엣 안쪽 깊숙이(앱 17px 이상) 있어 링에 들어오지 않는다 → 안전.
+    bsil_ = base[:, :, 3] > 40
+    bdark = bsil_ & (base[:, :, :3].max(axis=2) <= 110)
+    ring = bdark & (ndimage.distance_transform_edt(bsil_) <= RING_D)
+    head_zone = np.zeros(cand.shape, bool)
+    for r in range(4):
+        ry0, ry1 = norm.rb[r]
+        head_zone[max(0, ry0 - 12):ry0 + int((ry1 - ry0) * HEAD_FRAC)] = True
+    cand |= hairish & ring & head_zone
+
     hsil = hair[:, :, 3] > 40
     bsil = base[:, :, 3] > 40
     hedge = hsil & ~ndimage.binary_erosion(hsil, np.ones((3, 3), bool))
@@ -735,7 +754,10 @@ def main():
             scores = [raggedness(x) for x in cells]
             fc = cfg.get("force_col")
             ref = int(fc[r]) if fc else int(np.argmin(scores))   # 대표 지정이 있으면 그걸 쓴다
-            chosen, _pal = quantize(cells[ref])
+            # ★quantize(5단계 팔레트)는 **끈다.** 후면 정수리처럼 넓고 매끈한 면에서
+            #   밴딩이 생겨 '동그랗게 빛 받은 것 같은' 큰 얼룩이 됐다(대표 지적).
+            #   머리색 커스터마이징을 실제로 구현할 때 그 단계에서 다시 켤 것.
+            chosen = cells[ref].copy()
 
             bref = wsheet[r * CH:(r + 1) * CH, ref * CW:(ref + 1) * CW]
             chosen, nsame, nshadow, nskin, nkill = strip_base_echo(chosen, bref)
