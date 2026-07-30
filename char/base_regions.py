@@ -76,8 +76,33 @@ def neck_end(bm, top):
     return ymin
 
 
-def regions(bc, r, base_name):
+def _override(base_name, r, c):
+    """★대표가 직접 칠한 지도가 있으면 그걸 정답으로 쓴다 (자동 판정보다 우선).
+
+    파일: char/_regions_<base>_EDIT.png  (자동 생성본 _regions_<base>.png 를 그대로 덧칠)
+      순빨강(R>=200,G<80,B<80)  = MUST  머리카락이 반드시 덮어야 함
+      순초록(G>=180,R<120,B<120) = KEEP  절대 건드리지 말 것
+    ★대표 눈이 내 자동 판정보다 정확하다. 특히 귀 경계는 규칙으로 못 맞춘다.
+    """
+    p = os.path.join(HERE, f"_regions_{base_name.replace('.png', '')}_EDIT.png")
+    if not os.path.exists(p):
+        return None
+    im = Image.open(p).convert("RGB")
+    # 저장본은 3배 확대되어 있다 — 원래 셀 크기로 되돌린다.
+    if im.width != CW * 3:
+        im = im.resize((CW * 3, CH * 4), Image.NEAREST)
+    a = np.asarray(im).astype(int)[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
+    R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+    must = (R >= 200) & (G < 80) & (B < 80)
+    keep = (G >= 180) & (R < 120) & (B < 120)
+    return must, keep
+
+
+def regions(bc, r, base_name, c=0):
     """(must, keep) 반환. must=헤어가 덮어야 함, keep=절대 건드리지 말 것."""
+    ov = _override(base_name, r, c)
+    if ov is not None:
+        return ov
     bm = largest(bc[:, :, 3] >= ALPHA_BIN)
     if not bm.any():
         z = np.zeros(bm.shape, bool)
@@ -113,9 +138,12 @@ def regions(bc, r, base_name):
         dx0, dx1, y0, y1 = EAR_BOX_PROF[r]
         ear[top + y0:top + y1 + 1,
             max(0, mid + dx0):min(bm.shape[1], mid + dx1 + 1)] = True
-    # ★귀는 넉넉히 남긴다. 좁게 잡았더니 정면·후면에서 귀가 헤어색에 먹혀 안 보였다
-    #   (대표: "귀에 살색 하나도 안 보이고", "뒤에서 귀가 너무 안 보임").
-    ear = ndimage.binary_dilation(ear, np.ones((5, 5), bool)) & bm
+    # ★정면·후면은 귀 검출(폭 임계)이 빡빡해서 조금 넓혀야 귀가 안 먹힌다.
+    # ★프로필은 이미 상자로 넉넉하다 — 여기서 더 부풀리면 **귀 둘레의 진짜 두상까지
+    #   KEEP이 되어 살색 링이 생긴다**(대표: "귀 둘레 따라서 살색 아직 보여"). 부풀리지 말 것.
+    if r in (0, 1):
+        ear = ndimage.binary_dilation(ear, np.ones((3, 3), bool))
+    ear &= bm
 
     # ── 얼굴 앞면 (눈·코·입) ──────────────────────────────────────────────
     keep_face = np.zeros_like(bm)

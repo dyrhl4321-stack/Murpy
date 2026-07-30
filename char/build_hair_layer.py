@@ -802,7 +802,7 @@ def main():
             for c, (dx, dy) in enumerate(shifts):
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 moved = shift(chosen, dx, dy)
-                must, _keep = base_regions(bc, r, cfg["walk"])
+                must, _keep = base_regions(bc, r, cfg["walk"], c)
                 n = gap_need(moved, bc) | (must & ~(moved[:, :, 3] >= ALPHA_BIN))
                 need |= shift(n, -dx, -dy)
             # 원본 시트를 같은 변환으로 정규화한 셀 = 채울 자리의 '진짜 머리카락 색' 공급원
@@ -814,7 +814,7 @@ def main():
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 cell = shift(chosen, dx, dy)
                 oh = overhang(cell[:, :, 3] >= ALPHA_BIN, largest(bc[:, :, 3] >= ALPHA_BIN))
-                must, _k = base_regions(bc, r, cfg["walk"])
+                must, _k = base_regions(bc, r, cfg["walk"], c)
                 leak = int((must & ~(cell[:, :, 3] >= ALPHA_BIN)).sum())   # MUST 미커버
                 info.append((dx, dy, int(need.sum()), oh, leak))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
