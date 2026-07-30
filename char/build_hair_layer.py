@@ -30,6 +30,8 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
+from base_regions import regions as base_regions
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -774,12 +776,16 @@ def main():
                 top_c, cx_c = skull_ref(bc[:, :, 3] >= ALPHA_BIN)
                 shifts.append((int(round(cx_c - cx_ref)), int(top_c - top_ref)))
 
+            # ★★기준은 base 영역지도(char/base_regions.py)다 — 손으로 박은 얼굴 상수 대신
+            #   '머리카락이 반드시 덮어야 할 영역(MUST)'을 base에서 한 번 계산해 쓴다.
+            #   귀 그 자체만 빼고 귀 위·뒤·아래와 목덜미는 전부 MUST에 들어간다
+            #   (대표가 반복 지적한 자리가 정확히 거기였다).
             need = np.zeros((CH, CW), bool)
             for c, (dx, dy) in enumerate(shifts):
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 moved = shift(chosen, dx, dy)
-                n = (cover_need(moved, bc) | gap_need(moved, bc)
-                     | head_skin_need(moved, bc, r, brow))
+                must, _keep = base_regions(bc, r, cfg["walk"])
+                n = gap_need(moved, bc) | (must & ~(moved[:, :, 3] >= ALPHA_BIN))
                 need |= shift(n, -dx, -dy)
             chosen = paint(chosen, need)
             chosen, _ = drop_strays(chosen)
@@ -789,7 +795,8 @@ def main():
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 cell = shift(chosen, dx, dy)
                 oh = overhang(cell[:, :, 3] >= ALPHA_BIN, largest(bc[:, :, 3] >= ALPHA_BIN))
-                leak = int(head_skin_need(cell, bc, r, brow).sum())   # 남은 두상 노출
+                must, _k = base_regions(bc, r, cfg["walk"])
+                leak = int((must & ~(cell[:, :, 3] >= ALPHA_BIN)).sum())   # MUST 미커버
                 info.append((dx, dy, int(need.sum()), oh, leak))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
 
