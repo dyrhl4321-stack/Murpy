@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """헤어 레이어 빌더 v2 — "base에 헤어만 쑉 얹힌" 결과를 만든다.
 
 대표 지적(2026-07-30)에서 드러난 결함 6가지를 전부 구조로 막는다.
@@ -258,25 +258,56 @@ def strip_base_echo(hc, bc):
     R, G, B = hc[:, :, 0], hc[:, :, 1], hc[:, :, 2]
     skin = hm & (R >= 120) & (R > G + 25) & (G > B + 5)
 
+    # ★★머리 아래(목·어깨·팔)에서는 base가 어두운 자리 근처를 헤어가 아예 갖지 않게 한다.
+    # 헤어 시트의 몸이 AI 드리프트로 1px 어긋나게 그려져서, 그 어긋난 몸 윤곽선이 '헤어'로
+    # 잡혀 base 윤곽선 옆에 한 겹 더 그려졌다(대표: 후면 걸음 팔-어깨 몸통 겹침, 목·귀 겹침).
+    # 색이 어긋나 있어 same(색 일치) 규칙으로는 안 걸린다 → 위치로 잡는다.
+    # 이러면 윤곽선은 항상 base 것 하나만 남는다.
+    # ★기각한 접근: base가 어두운 자리 근처(5x5)를 머리 아래에서 전부 지우기.
+    # 유령 윤곽선은 지워졌지만 **진짜 머리카락까지 파냈다** — 우측 목에 살색 쐐기가
+    # 헤어를 뚫고 들어오고 후면 밑단이 갉였다. 헤어가 몸 윤곽선 위에 정당하게 걸치기 때문.
+    # 몸 드리프트는 규칙으로 분리할 수 없다 → 재생성 시 몸을 base와 동일하게 받아야 한다.
+    ghost = np.zeros_like(hm)
+
     # ★same(base와 같은 색)은 어디서든 지워도 안전하다 — base가 그 자리에 같은 색을 그리므로
     #   화면은 그대로고 '두 겹으로 그리는 것'만 없어진다. 어깨 외곽선이 겹쳐 '몸통이 하나 더'
     #   보이던 것도 이걸 안 지워서였다(대표: 후면 걸음에서 어깨에 몸통 하나 더).
     #   반면 shadow·skin을 머리 안쪽에서 지우면 구멍이 난다 → 경계만.
     inner = ndimage.binary_erosion(hm, np.ones((5, 5), bool))
-    kill = same | ((shadow | skin) & ~inner)
+    kill = same | ghost | ((shadow | skin) & ~inner)
     out = hc.copy()
     out[kill] = 0
-    return out, int(same.sum()), int(shadow.sum()), int(skin.sum()), int(kill.sum())
+    return out, int(same.sum()), int(ghost.sum()), int(skin.sum()), int(kill.sum())
+
+
+GAP_MAX = 20        # 이보다 큰 틈은 메우지 않는다
+GAP_HAIR_FRAC = 0.7  # 틈 경계의 이 비율 이상이 헤어여야 메운다
 
 
 def gap_need(hc, bc):
-    """합성 후 갇힌 투명 구멍(등-머리 사이 ㅣ). 메워야 할 자리를 마스크로 돌려준다."""
-    vis = (hc[:, :, 3] >= ALPHA_BIN) | (bc[:, :, 3] >= ALPHA_BIN)
-    holes = ndimage.binary_fill_holes(vis) & ~vis
-    if not holes.any():
-        return np.zeros(vis.shape, bool)
+    """합성 후 갇힌 투명 구멍(등-머리 사이 ㅣ). 메워야 할 자리를 마스크로 돌려준다.
+
+    ★크기·경계 조건이 없으면 헤어 밑단과 어깨 사이의 넓은 틈까지 메워서
+      **base의 어깨·팔 윤곽선을 헤어색으로 따라 그린다** → 몸통이 하나 더 보인다
+      (대표: 후면 걸음에서 팔-어깨 겹침). 작고 헤어로 둘러싸인 틈만 메운다.
+    """
     hm = hc[:, :, 3] >= ALPHA_BIN
-    return holes & ndimage.binary_dilation(hm, np.ones((3, 3), bool))
+    vis = hm | (bc[:, :, 3] >= ALPHA_BIN)
+    holes = ndimage.binary_fill_holes(vis) & ~vis
+    out = np.zeros(vis.shape, bool)
+    if not holes.any():
+        return out
+    bm = bc[:, :, 3] >= ALPHA_BIN
+    lab, n = ndimage.label(holes)
+    for i in range(1, n + 1):
+        comp = lab == i
+        if comp.sum() > GAP_MAX:
+            continue
+        ring = ndimage.binary_dilation(comp, np.ones((3, 3), bool)) & ~comp
+        h, b = int((ring & hm).sum()), int((ring & bm).sum())
+        if h / max(1, h + b) >= GAP_HAIR_FRAC:
+            out |= comp
+    return out
 
 
 def paint(hc, need):
@@ -294,7 +325,8 @@ def paint(hc, need):
     return out
 
 
-SKULL_H = 42     # 정수리 돔 높이(앱 px). 이보다 아래는 얼굴·목이라 헤어 밖이 정상이다.
+SKULL_H = 42     # 정수리 돔 높이(앱 px)
+HEAD_H = 78      # 두상 높이(앱 px). 이보다 아래는 목·어깨·팔     # 정수리 돔 높이(앱 px). 이보다 아래는 얼굴·목이라 헤어 밖이 정상이다.
 
 
 def cover_need(hc, bc):
@@ -452,7 +484,7 @@ def main():
                 info.append((dx, dy, int(need.sum()), oh))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
 
-            print("   [%s] col%d 채택 | 제거 base복사%4d 그림자%4d 살색%4d (총%4d) | "
+            print("   [%s] col%d 채택 | 제거 base복사%4d 유령%4d 살색%4d (총%4d) | "
                   "이동%s 틈메움%s | 삐짐%s" % (
                       ROWNAME[r], ref, nsame, nshadow, nskin, nkill,
                       [(i[0], i[1]) for i in info], [i[2] for i in info], [i[3] for i in info]))
