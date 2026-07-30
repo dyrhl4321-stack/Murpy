@@ -258,45 +258,52 @@ def strip_base_echo(hc, bc):
     R, G, B = hc[:, :, 0], hc[:, :, 1], hc[:, :, 2]
     skin = hm & (R >= 120) & (R > G + 25) & (G > B + 5)
 
-    kill = same | shadow | skin
-    # ★단, 머리 안쪽(사방이 헤어로 둘러싸인 자리)은 지우면 구멍이 난다. 경계만 지운다.
+    # ★same(base와 같은 색)은 어디서든 지워도 안전하다 — base가 그 자리에 같은 색을 그리므로
+    #   화면은 그대로고 '두 겹으로 그리는 것'만 없어진다. 어깨 외곽선이 겹쳐 '몸통이 하나 더'
+    #   보이던 것도 이걸 안 지워서였다(대표: 후면 걸음에서 어깨에 몸통 하나 더).
+    #   반면 shadow·skin을 머리 안쪽에서 지우면 구멍이 난다 → 경계만.
     inner = ndimage.binary_erosion(hm, np.ones((5, 5), bool))
-    kill &= ~inner
+    kill = same | ((shadow | skin) & ~inner)
     out = hc.copy()
     out[kill] = 0
     return out, int(same.sum()), int(shadow.sum()), int(skin.sum()), int(kill.sum())
 
 
-def seal_gaps(hc, bc):
-    """합성 후 갇힌 투명 구멍(등-머리 사이 ㅣ)을 헤어색으로 메운다."""
+def gap_need(hc, bc):
+    """합성 후 갇힌 투명 구멍(등-머리 사이 ㅣ). 메워야 할 자리를 마스크로 돌려준다."""
     vis = (hc[:, :, 3] >= ALPHA_BIN) | (bc[:, :, 3] >= ALPHA_BIN)
     holes = ndimage.binary_fill_holes(vis) & ~vis
     if not holes.any():
-        return hc, 0
+        return np.zeros(vis.shape, bool)
     hm = hc[:, :, 3] >= ALPHA_BIN
-    near_hair = ndimage.binary_dilation(hm, np.ones((3, 3), bool))
-    fill = holes & near_hair
-    if not fill.any():
-        return hc, 0
-    # 색은 가장 가까운 헤어 픽셀에서 가져온다 (지어내지 않는다)
+    return holes & ndimage.binary_dilation(hm, np.ones((3, 3), bool))
+
+
+def paint(hc, need):
+    """need 자리를 가장 가까운 헤어 픽셀 색으로 채운다 (색을 지어내지 않는다)."""
+    if not need.any():
+        return hc
+    hm = hc[:, :, 3] >= ALPHA_BIN
+    if not hm.any():
+        return hc
     idx = ndimage.distance_transform_edt(~hm, return_distances=False, return_indices=True)
     out = hc.copy()
-    ys, xs = np.where(fill)
+    ys, xs = np.where(need)
     out[ys, xs, :3] = hc[idx[0][ys, xs], idx[1][ys, xs], :3]
     out[ys, xs, 3] = 255
-    return out, int(fill.sum())
+    return out
 
 
 SKULL_H = 42     # 정수리 돔 높이(앱 px). 이보다 아래는 얼굴·목이라 헤어 밖이 정상이다.
 
 
-def cover_outline(hc, bc):
-    """정수리에서 base 외곽선이 헤어보다 1px 밖에 남으면 검은 테두리가 두 겹으로 보인다.
-    (대표: '이마에 도트 검은거 한 줄 더 튀어나옴') → 그 링을 헤어색으로 덮는다."""
+def cover_need(hc, bc):
+    """정수리에서 base 외곽선이 헤어보다 밖에 남으면 검은 테두리가 두 겹으로 보인다.
+    (대표: '이마에 도트 검은거 한 줄 더 튀어나옴') → 덮어야 할 자리를 마스크로 돌려준다."""
     hm = hc[:, :, 3] >= ALPHA_BIN
     bm = largest(bc[:, :, 3] >= ALPHA_BIN)
     if not hm.any() or not bm.any():
-        return hc, 0
+        return np.zeros_like(hm)
     top = int(np.where(bm.any(axis=1))[0].min())
     band = np.zeros_like(bm)
     band[top:top + SKULL_H] = True
@@ -304,15 +311,40 @@ def cover_outline(hc, bc):
     # 여전히 두 겹으로 보인다. 그래서 '어두운 픽셀'을 두께 상관없이 덮는다.
     # ★살색 조건이 핵심: 이게 없으면 측면에서 이마·얼굴까지 헤어색으로 칠해버린다.
     dark_base = bc[:, :, :3].max(axis=2) <= 110
-    need = bm & dark_base & ~hm & ndimage.binary_dilation(hm, np.ones((7, 7), bool)) & band
-    if not need.any():
-        return hc, 0
-    idx = ndimage.distance_transform_edt(~hm, return_distances=False, return_indices=True)
-    out = hc.copy()
-    ys, xs = np.where(need)
-    out[ys, xs, :3] = hc[idx[0][ys, xs], idx[1][ys, xs], :3]
-    out[ys, xs, 3] = 255
-    return out, int(need.sum())
+    near = ndimage.binary_dilation(hm, np.ones((7, 7), bool))
+    need = bm & dark_base & ~hm & near & band
+
+    # ★관자놀이~이마에서 base 살색이 앞머리 경계 밖으로 새는 것도 덮는다
+    #   (대표: '오른쪽 이동 중 귀 위·귀 아래·이마가 살색'). 실측 75~155px, 후면은 0~10px.
+    #   범위를 머리 구간(70px) + 헤어에서 3px 안쪽으로 묶어 얼굴 옆선(코·턱)은 건드리지 않는다.
+    # ★두상이 헤어보다 살짝 삐진 곳을 색으로 판정하면 안 된다. 귀 주변은 어두운 외곽선도
+    #   밝은 살색도 아닌 중간톤이라 두 규칙 사이로 빠져나간다(대표: 후면 양쪽 귀쪽 이상).
+    #   대신 '헤어를 몇 px 늘리면 두상을 덮는가'로 판정한다. 삐진 폭이 GROW 이내면 늘리고,
+    #   그보다 크면 그건 얼굴 옆선(코·턱)이므로 건드리지 않는다 — 이게 얼굴을 지키는 장치다.
+    GROW = 3
+    top2 = int(np.where(bm.any(axis=1))[0].min())
+    hband = np.zeros_like(bm); hband[top2:top2 + 70] = True
+
+    # ★관자놀이 노출은 행 양끝이 아니라 '앞머리 사이에 끼인' 살색이다(위아래로 헤어가 있다).
+    #   그래서 위 GROW 규칙으로는 닿지 않는다. 세로로 끼인 살색만 덮는다.
+    #   실측: 우 75~96px / 좌 73~91px 이 걸리고, 정면은 6~14px뿐이라 얼굴은 안 건드린다
+    #   (정면의 헤어밖 살색 212px = 얼굴. 끼임 조건이 그걸 걸러낸다).
+    R, G, B = bc[:, :, 0], bc[:, :, 1], bc[:, :, 2]
+    skin = bm & (R >= 150) & (R > G + 20) & (G > B + 5)
+    above = np.cumsum(hm, axis=0) > 0
+    below = np.cumsum(hm[::-1], axis=0)[::-1] > 0
+    need |= skin & ~hm & above & below & hband & ndimage.binary_dilation(hm, np.ones((7, 7), bool))
+
+    for y in range(top2, min(top2 + 70, bm.shape[0])):
+        hx = np.where(hm[y])[0]
+        bx = np.where(bm[y])[0]
+        if not len(hx) or not len(bx):
+            continue
+        if 0 < hx.min() - bx.min() <= GROW:
+            need[y, bx.min():hx.min()] = True
+        if 0 < bx.max() - hx.max() <= GROW:
+            need[y, hx.max() + 1:bx.max() + 1] = True
+    return need
 
 
 def overhang(hm, bm):
@@ -393,16 +425,31 @@ def main():
             chosen, _ = drop_strays(chosen)
             top_ref, cx_ref = skull_ref(bref[:, :, 3] >= ALPHA_BIN)
 
-            info = []
+            # ★후처리를 열마다 따로 하면 프레임마다 모양이 달라져 걸을 때 깜빡인다
+            #   (실측 18~627px 차이. 대표: '왼쪽 갈 때 앞머리 구멍이 채워졌다 메꿔졌다 반복').
+            #   그래서 3열에서 필요한 자리를 모두 모아 기준 좌표계로 되돌린 뒤,
+            #   기준 프레임에 **한 번만** 칠한다. 결과적으로 3열은 평행이동만 다르다.
+            shifts = []
             for c in range(3):
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 top_c, cx_c = skull_ref(bc[:, :, 3] >= ALPHA_BIN)
-                dx, dy = int(round(cx_c - cx_ref)), int(top_c - top_ref)
+                shifts.append((int(round(cx_c - cx_ref)), int(top_c - top_ref)))
+
+            need = np.zeros((CH, CW), bool)
+            for c, (dx, dy) in enumerate(shifts):
+                bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
+                moved = shift(chosen, dx, dy)
+                n = cover_need(moved, bc) | gap_need(moved, bc)
+                need |= shift(n, -dx, -dy)
+            chosen = paint(chosen, need)
+            chosen, _ = drop_strays(chosen)
+
+            info = []
+            for c, (dx, dy) in enumerate(shifts):
+                bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 cell = shift(chosen, dx, dy)
-                cell, ncov = cover_outline(cell, bc)
-                cell, ngap = seal_gaps(cell, bc)
                 oh = overhang(cell[:, :, 3] >= ALPHA_BIN, largest(bc[:, :, 3] >= ALPHA_BIN))
-                info.append((dx, dy, ngap + ncov, oh))
+                info.append((dx, dy, int(need.sum()), oh))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
 
             print("   [%s] col%d 채택 | 제거 base복사%4d 그림자%4d 살색%4d (총%4d) | "
