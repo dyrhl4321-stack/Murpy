@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- cache-bust: v20260728004 -->
+<!-- cache-bust: v20260730001 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -13545,6 +13545,9 @@ window._sqRenderDetail = function () {
     window._sqChatStart && window._sqChatStart(s.id);
   }
   window._sqRoomSync && window._sqRoomSync(s, mem);   // 정적 폴백 갱신용 훅
+  // 문서가 갱신될 때마다 내 위치를 다시 올린다 — 참가 직후 memberUids가 채워지는 순간
+  // 곧바로 남들 화면에 내가 뜬다(종전에는 나갔다 들어와야 보였다)
+  window._sqRtSend && window._sqRtSend();
   window._sqChatGate && window._sqChatGate();         // 참가 상태 바뀌면 채팅 입력 자격 갱신
 };
 // ---------- 참가/승인/탈퇴/입금 ----------
@@ -13790,7 +13793,9 @@ window._sqRoomInit = function (s) {
     const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle);
     if (c) { window._sqPlace(c, sx, 108, 0); requestAnimationFrame(() => requestAnimationFrame(() => window._sqWalkTo(sx, sy))); }
   }
-  window._sqRtJoin && window._sqRtJoin(s.id);
+  window._sqRtJoin && window._sqRtJoin(s.id, s);
+  // 구독보다 스테이지가 늦게 준비된 경우를 대비해 마지막 스냅샷으로 한 번 더 그린다
+  if (window._sqRtLast) window._sqRenderRemotes(s.id, window._sqRtLast, me);
 };
 window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 멤버 정적 배치
   if (!window._SQUAD_RT_OFF) return;
@@ -13807,15 +13812,24 @@ window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 �
   });
 };
 // ---------- 워킹 룸: RTDB 실시간 동기화 ----------
-window._sqRtJoin = function (sid) {
+window._sqRtJoin = function (sid, sArg) {
   if (!window._rt) return;
   const u = auth.currentUser; if (!u) return;
-  const s = window._sqDoc;
-  if (!s || !(s.memberUids || []).includes(u.uid)) return;   // 멤버만 위치 브로드캐스트 (구경은 읽기만)
   const R = window._rt;
+  // ★멤버 여부로 '구독'까지 막으면 안 된다(대표 지적: 캐릭터가 늦게 뜨고 들락날락해야 보임).
+  //   원인은 두 가지였다 —
+  //   ① 이 함수가 window._sqDoc을 보고 memberUids가 아직 안 채워졌으면 조용히 return 해서
+  //      RTDB 구독 자체가 안 걸렸다. 한 번만 초기화되는 구조라 재시도도 없었다.
+  //   ② 구경 중이거나 참가 직후에는 남들 캐릭터도 못 봤다.
+  //   그래서 구독은 언제나 걸고, '위치 전송'만 멤버로 제한한다.
+  const isMember = () => {
+    const s = window._sqDoc || sArg;
+    return !!(s && (s.memberUids || []).includes(u.uid));
+  };
   const meRef = R.ref(R.db, 'squadRooms/' + sid + '/players/' + u.uid);
   try { R.onDisconnect(meRef).remove(); } catch(e) {}
   const send = () => {
+    if (!isMember()) return;                                  // 구경꾼은 읽기만
     const p = window._sqMyPos || { x: 50, y: 78, dir: 'down' };
     try { R.set(meRef, { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, dir: p.dir || 'down',
       moving: !!p.moving, nick: window._mwMyNick || '머피',
@@ -13831,13 +13845,14 @@ window._sqRtJoin = function (sid) {
     if (n - last > 220) { last = n; send(); }
     clearTimeout(window._sqMoveT); window._sqMoveT = setTimeout(send, 280);
   };
-  // 입장 시스템 메시지 (스쿼드당 세션 1회만 — 도배 방지)
+  // 입장 시스템 메시지 (스쿼드당 세션 1회만 — 도배 방지). 멤버일 때만.
   window._sqJoinedOnce = window._sqJoinedOnce || {};
-  if (!window._sqJoinedOnce[sid]) { window._sqJoinedOnce[sid] = 1; window.sqChatSys(sid, (window._mwMyNick || '머피') + '님이 필드에 들어왔어요'); }
-  // 구독: 모든 플레이어 위치
+  if (isMember() && !window._sqJoinedOnce[sid]) { window._sqJoinedOnce[sid] = 1; window.sqChatSys(sid, (window._mwMyNick || '머피') + '님이 필드에 들어왔어요'); }
+  // 구독: 모든 플레이어 위치. 마지막 스냅샷을 들고 있어야 스테이지가 늦게 준비돼도 다시 그릴 수 있다
   window._sqRtSeen = {};
   const unsub = R.onValue(R.ref(R.db, 'squadRooms/' + sid + '/players'), snap => {
-    window._sqRenderRemotes(sid, snap.val() || {}, u.uid);
+    window._sqRtLast = snap.val() || {};
+    window._sqRenderRemotes(sid, window._sqRtLast, u.uid);
   }, e => console.warn('rt players', e));
   window._sqRtUnsub = () => { try { unsub(); } catch(e) {} };
 };
@@ -14019,7 +14034,15 @@ window.sqComplete = async function (sid) {
 // 6자리 코드는 메신저로 전달되지만(원격 대리출석), 범프는 같은 시각·같은 장소·물리적 충돌을
 // 동시에 만족해야 한다. 코드보다 위조가 어렵다.
 // 색 규칙: 개시자(호스트)=골드 / 참여자=파랑. ★캐릭터 본체는 절대 물들이지 않는다.
-const BP = { TH: 11, RETRO: 6, QUIET: 2.5, PAIR_MS: 150, COOL: 800, BUF_MS: 2500 };
+// TH(감지 임계) — 실측 접촉 충격은 15.6~38.4였다. 11은 가벼운 흔들림까지 잡아 오탐이 났다(대표 지적).
+//   16으로 올리고 상승 급격도 조건도 0.55→0.72로 조인다. 놓친 접촉은 사후 조회가 건진다.
+const BP = { TH: 16, RETRO: 10, QUIET: 2.2, RISE: 0.72, PAIR_MS: 150, COOL: 800, BUF_MS: 2500 };
+// 경계는 언제나 화면 '왼쪽'이다 — 오른손으로 폰을 쥐면 왼쪽 옆면이 상대를 향한다.
+// 두 사람이 마주 서서 각자 오른손으로 들면 서로의 왼쪽 옆면이 맞닿는다.
+const BP_SIDE = 'left';
+// ★경계의 빛은 두 폰이 '같은 색'이어야 이어져 보인다. 사람 색(개시자 골드/참여자 파랑)은
+//   캐릭터 실루엣에만 쓰고, 경계·손바닥·섬광은 이 공통색을 쓴다.
+const BP_SEAM = '#F5C24B';
 
 // 범프 아이콘 = 손바닥(char/fx/palm.png) + 위로 튀는 '탁!' 임팩트 선 3개.
 // 이모지 대신 우리 에셋을 쓰고, 선은 CSS 도형이라 그림 추가가 없다.
@@ -14054,7 +14077,7 @@ function bpOnMotion(e) {
   // 흔들기는 '천천히 커지고 계속 시끄럽다', 부딪힘은 '조용하다 한순간에 튄다'
   const recent = bpBuf.slice(-5);
   const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
-  if (bpQuietBefore(now) >= BP.QUIET || rise < BP.TH * 0.55) return;
+  if (bpQuietBefore(now) >= BP.QUIET || rise < BP.TH * BP.RISE) return;
   bpLastPeak = now;
   bpPublish(bpNow(), mag);
 }
@@ -14082,6 +14105,7 @@ window.bumpOpen = async function (sid) {
   const s = window._sqDoc;
   bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0;
   bpRole = (s && user.uid === s.hostUid) ? 'host' : 'guest';
+  bpAudioWake();   // ★버튼을 누른 이 순간에 깨워야 iOS에서 소리가 난다
   bpOverlay('wait');
 
   // ★iOS는 '버튼을 누른 그 순간'에만 센서 권한 요청이 허용된다. 앞에 await를 두면 거부된다.
@@ -14262,22 +14286,22 @@ function bpOverlay(mode, data) {
     el.style.justifyContent = 'flex-start';
     el.innerHTML = `
       <div id="bp-stage" style="position:absolute;inset:0;overflow:hidden;z-index:1"></div>
-      <div id="bp-seam" style="position:absolute;${side}:0;top:0;bottom:0;width:32%;z-index:14;opacity:0;
+      <div id="bp-seam" style="position:absolute;${side}:0;top:0;bottom:0;width:13%;z-index:14;opacity:0;
         pointer-events:none;transition:opacity .25s ease;
-        background:linear-gradient(to ${side},rgba(255,255,255,.95),${c}8c 45%,transparent)"></div>
+        background:linear-gradient(to ${side},rgba(255,255,255,.98),${BP_SEAM}aa 40%,transparent)"></div>
       <div style="position:absolute;${side}:0;top:50%;transform:translateY(-50%);width:0;height:0;z-index:15;
         border-top:11px solid transparent;border-bottom:11px solid transparent;
-        border-${side}:14px solid ${c}"></div>
-      <div style="position:absolute;${side}:0;top:50%;width:34%;height:2px;z-index:15;
-        background:linear-gradient(to ${side},${c}00,${c}66)"></div>
+        border-${side}:14px solid ${BP_SEAM}"></div>
+      <div style="position:absolute;${side}:0;top:50%;width:22%;height:2px;z-index:15;
+        background:linear-gradient(to ${side},${BP_SEAM}00,${BP_SEAM}66)"></div>
       <div style="position:relative;z-index:18;padding-top:6px">
         <div style="display:flex;align-items:center;justify-content:center;gap:11px;color:${c};margin-bottom:12px">
           ${window.bumpIconHtml ? window.bumpIconHtml(30) : ''}
           <span style="font-family:'Galmuri14',sans-serif;font-size:17px;color:#fff">머피 범프</span></div>
         <div style="font-size:13px;color:#8a93a8;line-height:1.75">
-          폰의 <b style="color:${c}">${sideKo} 긴 옆면</b>을 상대 폰에 대고<br>
+          오른손으로 잡고 폰의 <b style="color:${BP_SEAM}">${sideKo} 긴 옆면</b>끼리<br>
           <b style="color:#fff">삼각형 높이</b>를 맞춰 <b style="color:#fff">톡</b> 대세요<br>
-          <span style="font-size:11.5px">세게 부딪히지 마세요 · 위쪽(머리)끼리는 안 됩니다</span></div>
+          <span style="font-size:11.5px">위쪽(머리)끼리는 안 됩니다</span></div>
         <div style="font-size:11.5px;color:#4a5266;line-height:1.7;margin-top:8px">
           ${bpRole === 'host' ? '리더는 누구에게든 도장을 찍어줄 수 있어요' : '리더나 이미 도장을 받은 사람과 맞대세요'}</div>
         <div id="bp-peers" style="font-size:12px;color:${c};margin-top:10px">상대를 기다리는 중…</div>
@@ -14332,8 +14356,46 @@ function bpPeers(n) {
 //   → 상대가 경계를 넘어 내 화면으로 들어온다.
 // 각 화면에는 언제나 1명만 있어서 붙이면 정확히 2명이 된다(겹치지도, 허전하지도 않다).
 const bpSleep = ms => new Promise(r => setTimeout(r, ms));
-const bpSide = () => (bpRole === 'host' ? 'right' : 'left');   // 내 화면에서 경계가 있는 쪽
+const bpSide = () => BP_SIDE;
 const CH_H = 150, CH_W = Math.round(150 * 141 / 224);
+
+// ---------- 소리 ----------
+// 실앱에 소리가 아예 없었다(대표 지적). 부딪힘은 '팡!' 하고 터져야 타격감이 산다.
+// 저역 '쿵'(몸통) + 고역 노이즈 버스트(파열음)를 겹쳐 만든다. iOS는 사용자 조작 안에서 깨워야 한다.
+let bpActx = null;
+function bpAudioWake() {
+  try {
+    bpActx = bpActx || new (window.AudioContext || window.webkitAudioContext)();
+    if (bpActx.state === 'suspended') bpActx.resume();
+  } catch (e) {}
+}
+function bpThud(strong) {
+  try {
+    if (!bpActx) return;
+    if (bpActx.state === 'suspended') bpActx.resume();
+    const t = bpActx.currentTime, k = strong ? 1 : 0.55;
+    const master = bpActx.createGain(); master.gain.value = 1; master.connect(bpActx.destination);
+    // ① 저역 '쿵' — 몸통
+    const o = bpActx.createOscillator(), g = bpActx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(340, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.15);
+    g.gain.setValueAtTime(1.0 * k, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.42);
+    // ② 고역 파열 '팡' — 짧고 밝게
+    const n = bpActx.createBufferSource(), buf = bpActx.createBuffer(1, 4800, bpActx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5);
+    n.buffer = buf;
+    const hp = bpActx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1100;
+    const ng = bpActx.createGain(); ng.gain.setValueAtTime(0.95 * k, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    n.connect(hp).connect(ng).connect(master); n.start(t);
+    // ③ 살짝 밝은 링 — '반짝'
+    const o2 = bpActx.createOscillator(), g2 = bpActx.createGain();
+    o2.type = 'sine'; o2.frequency.setValueAtTime(1250, t); o2.frequency.exponentialRampToValueAtTime(620, t + 0.22);
+    g2.gain.setValueAtTime(0.35 * k, t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+    o2.connect(g2).connect(master); o2.start(t); o2.stop(t + 0.28);
+  } catch (e) {}
+}
 
 function bpMakeChar(cfg, face) {
   const wrap = document.createElement('div');
@@ -14357,6 +14419,7 @@ const SIL = 'brightness(0) invert(1) drop-shadow(0 0 5px #FFF3CC) drop-shadow(0 
 
 function bpImpact(big) {
   const ov = document.getElementById('bp-ov'); if (!ov) return;
+  bpThud(big);
   if (navigator.vibrate) { try { navigator.vibrate(big ? [30, 20, 14] : [20]); } catch (e) {} }
   const f = document.createElement('div');
   f.style.cssText = 'position:absolute;inset:0;background:#fff;pointer-events:none;z-index:20';
@@ -14370,11 +14433,13 @@ function bpImpact(big) {
 
 // 손바닥 — ★경계에서 잘린 채 멈춘다. 잘린 단면이 "저쪽으로 이어진다"는 신호가 되어
 //   두 폰 사이의 물리적 틈(베젤 5~10mm)을 보는 사람이 알아서 메운다.
+// ★색은 공통(흰빛+골드)이다. 여기에 사람 색(골드/파랑)을 쓰면 두 화면의 경계가 서로 다른 색이 되어
+//   '이어진다'는 느낌이 깨진다(대표 지적). 사람 색은 캐릭터 실루엣에만 쓴다.
 function bpPalm(stage, side, color) {
   const p = document.createElement('div');
   p.style.cssText = `position:absolute;${side}:-14%;top:50%;translate:0 -50%;width:58%;aspect-ratio:256/290;`
     + `z-index:16;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png') no-repeat center/contain;`
-    + `filter:drop-shadow(0 0 7px #fff) drop-shadow(0 0 22px ${color}) drop-shadow(0 0 46px ${color});`
+    + `filter:drop-shadow(0 0 6px #fff) drop-shadow(0 0 18px #FFF3CC) drop-shadow(0 0 40px ${BP_SEAM});`
     + (side === 'right' ? 'scale:-1 1;' : '');
   stage.appendChild(p);
   const away = side === 'left' ? -1 : 1;
