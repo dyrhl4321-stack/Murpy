@@ -454,10 +454,27 @@ def gap_need(hc, bc):
     return out
 
 
-def paint(hc, need):
-    """need 자리를 가장 가까운 헤어 픽셀 색으로 채운다 (색을 지어내지 않는다)."""
+def paint(hc, need, src=None):
+    """need 자리를 채운다.
+
+    ★★src(원본 시트를 같은 변환으로 정규화한 셀)가 있으면 **그 자리의 진짜 머리카락 픽셀**을
+      쓴다. 예전엔 '가장 가까운 헤어 색'으로만 칠했는데, 넓은 자리를 그렇게 채우면 결이 없는
+      **단색 덩어리**가 되어 대표가 "밤톨처럼 씌워둔 거에 머리를 다시 씌운 느낌"이라고 했다.
+      원본에는 그 자리에 실제 머리카락이 그려져 있으니(실측 확인) 그걸 그대로 가져오면 된다.
+    ★이건 시트를 '얼굴 위치의 정답'으로 쓰는 것과 다르다 — 덮을지 말지는 이미 base 영역지도가
+      정했고, 시트는 **색만** 제공한다. 그래서 예전의 눈 깨짐 회귀와 무관하다.
+    """
     if not need.any():
         return hc
+    if src is not None:
+        ok = need & (src[:, :, 3] >= ALPHA_BIN)
+        if ok.any():
+            hc = hc.copy()
+            hc[ok, :3] = src[ok, :3]
+            hc[ok, 3] = 255
+            need = need & ~ok
+        if not need.any():
+            return hc
     hm = hc[:, :, 3] >= ALPHA_BIN
     if not hm.any():
         return hc
@@ -747,6 +764,7 @@ def main():
         hr[mask, :3] = hair[mask, :3]
         hr[:, :, 3] = np.where(mask, 255, 0)
         hair_pad = pad_img(hr)
+        src_pad = pad_img(hair)      # 마스크 안 씌운 원본 = 채울 자리의 색 공급원
 
         print("■ %s (%s)  헤어색 %s" % (cfg["label"], cfg["out"], tuple(med)))
         sheet = Image.new("RGBA", (CW * 3, CH * 4), (0, 0, 0, 0))
@@ -787,7 +805,8 @@ def main():
                 must, _keep = base_regions(bc, r, cfg["walk"])
                 n = gap_need(moved, bc) | (must & ~(moved[:, :, 3] >= ALPHA_BIN))
                 need |= shift(n, -dx, -dy)
-            chosen = paint(chosen, need)
+            # 원본 시트를 같은 변환으로 정규화한 셀 = 채울 자리의 '진짜 머리카락 색' 공급원
+            chosen = paint(chosen, need, binarize(norm.cell(src_pad, r, ref)))
             chosen, _ = drop_strays(chosen)
 
             info = []

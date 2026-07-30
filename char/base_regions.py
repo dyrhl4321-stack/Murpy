@@ -113,7 +113,9 @@ def regions(bc, r, base_name):
         dx0, dx1, y0, y1 = EAR_BOX_PROF[r]
         ear[top + y0:top + y1 + 1,
             max(0, mid + dx0):min(bm.shape[1], mid + dx1 + 1)] = True
-    ear &= bm
+    # ★귀는 넉넉히 남긴다. 좁게 잡았더니 정면·후면에서 귀가 헤어색에 먹혀 안 보였다
+    #   (대표: "귀에 살색 하나도 안 보이고", "뒤에서 귀가 너무 안 보임").
+    ear = ndimage.binary_dilation(ear, np.ones((5, 5), bool)) & bm
 
     # ── 얼굴 앞면 (눈·코·입) ──────────────────────────────────────────────
     keep_face = np.zeros_like(bm)
