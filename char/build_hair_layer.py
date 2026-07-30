@@ -448,25 +448,50 @@ def paint(hc, need):
 SKULL_H = 42     # 정수리 돔 높이(앱 px)
 HEAD_H = 78      # 두상 높이(앱 px). 이보다 아래는 목·어깨·팔     # 정수리 돔 높이(앱 px). 이보다 아래는 얼굴·목이라 헤어 밖이 정상이다.
 
+# ★★방향별 얼굴 경계 = base 시트 실측 상수 (머리 최상단 기준 상대 y).
+#   base 시트는 고정 파일이라 이 값도 고정이다 → AI 드리프트와 무관해진다.
+#   측정: 눈썹 덩어리 최상단 y - 두상 최상단 y (col0 기준, 3열 편차 1px 이내).
+#     남 walk.png        정면 y65/top11 -> 54 · 좌 y59/top12 -> 47 · 우 y57/top11 -> 46
+#     여 walk_female.png 정면 y64/top11 -> 53 · 좌 y58/top11 -> 47 · 우 y57/top12 -> 45
+#   ★남녀를 같은 값으로 쓰면 안 된다 — 1px씩 달라서 여캐 눈썹 윗줄을 건드린다.
+BROW_Y_BY_BASE = {                # 후면(1)은 얼굴이 없다
+    "walk.png": [54, None, 47, 46],
+    "walk_female.png": [53, None, 47, 45],
+}
+#   귀 최상단: 좌 y=73(top12) -> 61 / 우 y=71(top11) -> 60. 안전하게 작은 값을 쓴다.
+#   프로필에서 뒤통수를 덮되 **귀보다 아래로는 내려가지 않는다** — 귀를 헤어색으로
+#   칠하면 귀가 사라진다.
+EAR_Y = 60
 
-def head_skin_need(hc, bc, truth):
+
+def head_skin_need(hc, bc, r, brow=None):
     """★머리 영역에서 base 살색이 헤어 밖으로 보이는 것을 전부 덮는다.
 
     대표가 계속 지적한 결함: 옆에서 귀·뒤통수 살색, 앞머리·이마 살색, 정면 양쪽 빡빡이 삐짐.
     원인 = 헤어 시트를 뽑을 때 AI가 두상을 base보다 작게 그린다. 그래서 base 두상이
     헤어보다 크고, 차분 추출만으로는 그 차이를 메울 수 없다.
 
-    ★판정 기준은 헤어 시트 자신이다(truth = 시트를 같은 변환으로 정규화한 것).
-      truth에서 살색인 곳 = 얼굴이므로 살색으로 남긴다.
-      truth에서 살색이 아닌데 base가 살색인 곳 = 머리카락이 덮어야 할 자리.
-    이러면 얼굴은 안 건드리고 귀·뒤통수·이마만 덮인다. 색 임계로 얼굴을 지키려던
-    이전 시도들(정면 앞머리가 눈을 덮는 사고)이 필요 없어진다.
+    ★이전엔 판정 기준을 헤어 시트 자신(truth)으로 삼았다가 롤백됐다(14ef1ed, sw v252) —
+      헤어 시트의 캐릭터는 base와 얼굴 위치·크기가 달라서(AI가 두상을 작게 그림) 정규화해도
+      얼굴이 어긋나고, 그 어긋난 마스크가 base의 눈을 덮어 눈알이 깨졌다.
+      → **방향별 기하 규칙**으로 대체한다. 좌표는 walk.png에서 1회 실측해 고정값으로 박는다
+      (walk.png는 재수정 금지 파일이라 좌표도 고정 → AI 드리프트·시트 오염과 무관해진다).
+
+        정면 = 눈썹 위가 두상. 그 아래(눈·코·입)는 건드리지 않는다.
+        후면 = 얼굴이 없다 → 두상 구간 전체.
+        좌·우 = ①눈썹 위 전체(정수리는 앞뒤 구분 없이 머리카락이다)
+               ②눈썹 아래는 **뒤통수 쪽 절반만**, 그것도 **귀 위까지만**.
+               (귀보다 아래로 내려가면 귀를 헤어색으로 칠해 귀가 사라진다.)
+
+    ★프로필에서 ②만 쓰면 정수리 앞쪽이 빠져서, 헤어가 거기까지 안 닿을 때 살색이 그대로
+      남는다. ①이 그 구멍을 막는다.
     """
     hm = hc[:, :, 3] >= ALPHA_BIN
     bm = largest(bc[:, :, 3] >= ALPHA_BIN)
     if not hm.any() or not bm.any():
         return np.zeros_like(bm)
-    top = int(np.where(bm.any(axis=1))[0].min())
+    ys = np.where(bm.any(axis=1))[0]
+    top = int(ys.min())
     head = np.zeros_like(bm)
     head[top:top + HEAD_H] = True          # 두상 구간(목 위까지)
 
@@ -474,10 +499,63 @@ def head_skin_need(hc, bc, truth):
         R, G, B = a[:, :, 0], a[:, :, 1], a[:, :, 2]
         return (a[:, :, 3] >= ALPHA_BIN) & (R >= 140) & (R > G + 30) & (G > B + 5)
 
-    tskin = skinmask(truth)
-    # truth가 살색인 자리 주변 1px는 얼굴 경계 오차를 감안해 보호한다
-    tskin = ndimage.binary_dilation(tskin, np.ones((3, 3), bool))
-    return skinmask(bc) & head & ~tskin & ~hm
+    if brow is None:
+        brow = BROW_Y_BY_BASE["walk.png"]
+    bskin = skinmask(bc)
+    skull = np.zeros_like(bm)
+    if r == 1:      # 후면: 얼굴 없음 — 두상 구간 전체
+        skull[:, :] = True
+    else:
+        skull[top:top + brow[r]] = True            # ① 눈썹 위 = 두상
+        if r != 0:                                 # ② 프로필: 뒤통수 절반, 귀 위까지
+            # ★절반 경계는 **두상 구간**에서 잰다. 몸 전체로 재면 팔·다리 폭이 섞여
+            #   머리 중심과 어긋난다(우 col1 실측 2px 차이).
+            xs = np.where(bm[top:top + HEAD_H].any(axis=0))[0]
+            mid = (int(xs.min()) + int(xs.max())) // 2
+            back = np.zeros_like(bm)
+            if r == 2:      # 좌향 = 얼굴이 왼쪽 → 뒤통수는 오른쪽 절반
+                back[:, mid:] = True
+            else:           # 우향 = 얼굴이 오른쪽 → 뒤통수는 왼쪽 절반
+                back[:, :mid + 1] = True
+            back[top + EAR_Y:] = False
+            skull |= back
+
+    # ★★귀는 두상보다 옆으로 튀어나와 있다. 귀 높이 아래에서는 **귀 위에서 잰 두상 폭**
+    #   안쪽만 덮는다 — 그 폭을 넘어 튀어나온 것이 귀다. 이 clamp가 없으면 후면에서
+    #   귀까지 헤어색으로 칠해 귀가 사라진다.
+    # ★폭은 반드시 **살색**으로 잰다. 실루엣으로 재면 검은 외곽선(두께 5px)이 폭에 섞여
+    #   귀와 두상이 구분되지 않는다(실측: 실루엣 기준은 귀를 1px밖에 못 걸렀다).
+    #   후면 실측 — 두상 살색 x21~117 / 귀 살색 x15~123 → 좌우 6px씩이 귀.
+    ref_band = bskin[max(0, top + EAR_Y - 10):top + EAR_Y]
+    if ref_band.any():
+        rxs = np.where(ref_band.any(axis=0))[0]
+        skull[top + EAR_Y:, :int(rxs.min())] = False
+        skull[top + EAR_Y:, int(rxs.max()) + 1:] = False
+
+    # ★두상 영역 안에서는 **색을 따지지 않는다.** 살색 조건으로 걸렀더니 관자놀이·귀 주변의
+    #   중간톤(어두운 외곽선도 밝은 살색도 아닌 색)이 두 규칙 사이로 빠져나가, 대표가 본
+    #   '정면 좌우 ㅣ 살색선'이 그대로 남았다(실측: 살색 기준으로는 정면 노출 0으로 잡혔다).
+    #   기하 규칙이 이미 얼굴을 제외했으므로, 이 영역에 남은 base는 전부 '빡빡이 노출'이다.
+    need = bm & head & skull & ~hm
+
+    # ★★★두상 구간의 살색을 전부 칠하면 안 된다 — **앞머리 결이 뭉개진다**.
+    #   그렇게 했더니 정면 이마가 통짜 덩어리가 되고 머리카락 사이로 비치던 이마가
+    #   전부 메워졌다(대표 지적은 '좌우 ㅣ 살색선'이지 이마 전체가 아니다).
+    #   결함은 **두상이 헤어 실루엣보다 옆으로 삐져나온 것**이다. 그래서 행마다
+    #   헤어의 좌우 끝 밖에 있는 살색만 덮는다 — 헤어 폭 안쪽 살색은 '이마'라 그대로 둔다.
+    # ★후면은 얼굴이 없어 이마 개념 자체가 없다. 거기서 이 제한을 걸면 뒤통수 구멍이
+    #   안 메워지므로 후면만 전체 채우기를 유지한다.
+    if r != 1:
+        lateral = np.zeros_like(need)
+        for y in range(top, min(top + HEAD_H, need.shape[0])):
+            hx = np.where(hm[y])[0]
+            if not len(hx):
+                lateral[y] = True      # 헤어가 아예 없는 행 = 헤어선 위 정수리 → 전부 덮는다
+                continue
+            lateral[y, :int(hx.min())] = True
+            lateral[y, int(hx.max()) + 1:] = True
+        need &= lateral
+    return need
 
 
 def cover_need(hc, bc):
@@ -590,6 +668,7 @@ def main():
                 cfg["walk"], ys.min(), ys.max(), ys.max() - ys.min() + 1, note))
 
         wsheet = np.asarray(walks[cfg["walk"]]).astype(int)
+        brow = BROW_Y_BY_BASE[cfg["walk"]]      # 얼굴 경계는 base 시트마다 다르다(남녀 1px 차)
         hair = load(cfg["hair"])
         refsheet = load(cfg["ref"]) if cfg.get("ref") else None
         mask = hair_mask(hair, base, norm, refsheet, cfg.get("ghost", True))
@@ -601,7 +680,6 @@ def main():
         hr[mask, :3] = hair[mask, :3]
         hr[:, :, 3] = np.where(mask, 255, 0)
         hair_pad = pad_img(hr)
-        src_pad = pad_img(hair)      # 마스크 안 씌운 원본 = 얼굴 위치 판정용
 
         print("■ %s (%s)  헤어색 %s" % (cfg["label"], cfg["out"], tuple(med)))
         sheet = Image.new("RGBA", (CW * 3, CH * 4), (0, 0, 0, 0))
@@ -631,10 +709,9 @@ def main():
             need = np.zeros((CH, CW), bool)
             for c, (dx, dy) in enumerate(shifts):
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
-                truth = binarize(norm.cell(src_pad, r, c))   # 시트 원본 = 얼굴 위치의 정답
                 moved = shift(chosen, dx, dy)
                 n = (cover_need(moved, bc) | gap_need(moved, bc)
-                     | head_skin_need(moved, bc, truth))
+                     | head_skin_need(moved, bc, r, brow))
                 need |= shift(n, -dx, -dy)
             chosen = paint(chosen, need)
             chosen, _ = drop_strays(chosen)
@@ -644,8 +721,7 @@ def main():
                 bc = wsheet[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
                 cell = shift(chosen, dx, dy)
                 oh = overhang(cell[:, :, 3] >= ALPHA_BIN, largest(bc[:, :, 3] >= ALPHA_BIN))
-                tr = binarize(norm.cell(src_pad, r, c))
-                leak = int(head_skin_need(cell, bc, tr).sum())    # 남은 머리 살색 노출
+                leak = int(head_skin_need(cell, bc, r, brow).sum())   # 남은 두상 노출
                 info.append((dx, dy, int(need.sum()), oh, leak))
                 sheet.paste(Image.fromarray(cell.astype(np.uint8), "RGBA"), (c * CW, r * CH))
 
