@@ -56,15 +56,38 @@ SAME_T = 24          # base와 같은 색 판정 = 이중 그리기
 HEAD_FRAC = 0.42     # 머리 구간(정수리 복구·삐짐 판정에 쓰는 세로 비율)
 MARGIN = 34          # 헤어가 몸보다 옆으로 벌어지는 여유
 
+MHAIR = os.path.join(DESK, "헤어", "남자")
+FBASIC = os.path.join(DESK, "머피_로고삭제툴_에셋보관", "여자")
+BALD_M = os.path.join(DESK, "빡빡이_눈썹포함시안2-Photoroom.png")
+BALD_F = os.path.join(DESK, "빡빡이_여캐시안-Photoroom.png")
+
+# ★ref = 차분 기준 시트. 대표 아이디어: 같은 배치에서 생성된 '기본헤어'를 기준으로 삼으면
+#   몸 드리프트가 서로 상쇄된다(실측 몸 차분 71,366 -> 18,083, 75% 감소).
+#   기본헤어 자신은 빡빡이(base)를 기준으로 뽑는다. ref=None 이면 base를 쓴다.
+# ★force_col = 방향별로 쓸 프레임을 대표가 지정. 세미리프컷은 1열(col0)만 앞머리 가르마가
+#   제대로 나왔다(대표 확인) → 4방향 전부 col0 강제.
 CONFIG = [
-    dict(out="hair_fem_bob", label="여-단발",
-         base=os.path.join(DESK, "빡빡이_여캐시안-Photoroom.png"),
-         hair=os.path.join(NUKKI, "여자 검정단발머리_clean-Photoroom.png"),
-         walk="walk_female.png"),
-    dict(out="hair_fem_long", label="여-생머리",
-         base=os.path.join(DESK, "빡빡이_여캐시안-Photoroom.png"),
+    dict(out="hair_m_basic", label="남자 기본헤어", walk="walk.png",
+         base=BALD_M, ref=None,
+         hair=os.path.join(MHAIR, "남자기본헤어_clean-Photoroom.png")),
+    dict(out="hair_m_semileaf", label="세미리프컷", walk="walk.png",
+         base=BALD_M, ref=os.path.join(MHAIR, "남자기본헤어_clean-Photoroom.png"),
+         hair=os.path.join(MHAIR, "세미리프컷_clean-Photoroom.png"),
+         force_col=[0, 0, 0, 0]),
+    dict(out="hair_m_part55", label="오대오 가르마펌", walk="walk.png",
+         base=BALD_M, ref=os.path.join(MHAIR, "남자기본헤어_clean-Photoroom.png"),
+         hair=os.path.join(MHAIR, "오대오가르마펌_clean-Photoroom.png")),
+    dict(out="hair_f_basic", label="여자 기본헤어", walk="walk_female.png",
+         base=BALD_F, ref=None,
+         hair=os.path.join(FBASIC, "여자기본머리_clean-Photoroom.png")),
+    dict(out="hair_f_bob_bang", label="앞머리 단발", walk="walk_female.png",
+         base=BALD_F, ref=os.path.join(FBASIC, "여자기본머리_clean-Photoroom.png"),
+         hair=os.path.join(NUKKI, "여자 검정단발머리_clean-Photoroom.png")),
+    dict(out="hair_f_long", label="긴 생머리", walk="walk_female.png",
+         base=BALD_F, ref=os.path.join(FBASIC, "여자기본머리_clean-Photoroom.png"),
          hair=os.path.join(NUKKI, "여자 검정생머리_clean-Photoroom.png"),
-         walk="walk_female.png"),
+         # 긴 머리는 몸을 넓게 덮어 유령이 묻힌다. 유령 배제를 켜면 목 부근에서 머리가 끊긴다.
+         ghost=False),
 ]
 
 
@@ -179,18 +202,115 @@ def skull_ref(bm):
 
 
 # ---------- 헤어 마스크 (소스 해상도) ----------
-def hair_mask(hair, base, norm):
+def quantize(arr, levels=5):
+    """팔레트 양자화 — 색 커스터마이징(머리색 바꾸기)의 전제.
+
+    소스는 그라데이션이라 90%를 덮는 색이 950~2200개다(실측). 그 상태로 머리색을 바꾸면
+    수천 색을 각각 매핑해야 해서 지저분해진다. 명암 단계를 몇 개로 정리하면
+    그 단계만 목표 색으로 갈아끼우면 되고, 도트 룩도 좋아진다.
+    밝기로 나누고 각 구간의 대표색(중앙값)으로 대체한다 — 색을 지어내지 않는다.
+    """
+    m = arr[:, :, 3] >= ALPHA_BIN
+    if not m.any():
+        return arr, []
+    rgb = arr[:, :, :3]
+    lum = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2])
+    vals = lum[m]
+    edges = np.quantile(vals, np.linspace(0, 1, levels + 1))
+    edges[0] -= 1; edges[-1] += 1
+    out = arr.copy()
+    pal = []
+    for i in range(levels):
+        sel = m & (lum > edges[i]) & (lum <= edges[i + 1])
+        if not sel.any():
+            continue
+        rep = np.median(rgb[sel], axis=0).round().astype(int)
+        out[sel, 0], out[sel, 1], out[sel, 2] = rep
+        pal.append((tuple(int(v) for v in rep), int(sel.sum())))
+    return out, pal
+
+
+def hair_mask(hair, base, norm, ref=None, ghost=True):
+    """헤어 마스크. base = 빡빡이(차분 기준), ref = 기본헤어(몸 유령 판정용, 없으면 base)."""
+    if ref is None:
+        ref = base
     hr, hg, hb = hair[:, :, 0], hair[:, :, 1], hair[:, :, 2]
-    dark = hair[:, :, :3].max(axis=2) <= DARK_MAX
-    skin = (hr >= SKIN_R) & (hr > hg + 18) & (hg >= hb - 4)
+
+    # ★헤어 색을 시트에서 학습한다. 고정 임계(max<=150)로는 갈색 머리가 걸러진다 —
+    # 세미리프컷·오대오가르마펌은 갈색이라 하이라이트가 185까지 올라가고, 어두운 갈색
+    # (87,55,49)은 살색 조건(r>g+18)에도 걸려 '살색'으로 오판된다(후면 삐짐 2327px).
+    # 정수리(머리 최상단 12%)는 반드시 머리카락이므로 거기서 색 단계를 뽑아 기준으로 쓴다.
+    crown = []
+    for _r in range(4):
+        _y0, _y1 = norm.rb[_r]
+        _yc = _y0 + max(4, int((_y1 - _y0) * 0.12))
+        for _c in range(3):
+            _x0, _x1 = norm.cb[_c]
+            sub = hair[_y0:_yc, _x0:_x1 + 1]
+            sm = sub[:, :, 3] > 40
+            if sm.any():
+                crown.append(sub[:, :, :3][sm])
+    cc = np.concatenate(crown) if crown else np.array([[40, 36, 42]])
+    clum = 0.299 * cc[:, 0] + 0.587 * cc[:, 1] + 0.114 * cc[:, 2]
+    pal = []
+    for q in np.quantile(clum, [0.08, 0.28, 0.5, 0.72, 0.94]):
+        sel = np.abs(clum - q) <= 14
+        if sel.any():
+            pal.append(np.median(cc[sel], axis=0))
+    pal = np.array(pal) if pal else np.array([[40, 36, 42]])
+    dist = np.min(np.abs(hair[:, :, None, :3] - pal[None, None, :, :]).max(axis=3), axis=2)
+    dark = dist <= 62
+    # 살색은 '밝고 붉은 기가 강한 것'만. 어두운 갈색 머리를 살리기 위해 조건을 좁혔다.
+    skin = (hr >= 150) & (hr > hg + 45) & (hg > hb + 8)
     # ★알파 조건 필수. 투명 배경은 RGB가 (0,0,0)이라 'dark'로 판정되어,
     #   빼면 정수리 복구가 머리 위 빈 배경까지 헤어로 칠한다(실측: 셀 상단 전체 폭 검은 띠).
     hairish = dark & ~skin & (hair[:, :, 3] > 40)
 
+    # ★차분은 반드시 **빡빡이 base** 대비다. 기본헤어를 차분 기준으로 쓰면 두 헤어가 겹치는
+    # 머리카락(정수리 등)이 차분 0이 되어 빠지고, base가 빡빡이라 그 자리가 대머리로 비어버린다
+    # (실측: 세미리프컷 좌 삐짐 2805px). 기본헤어는 아래 '몸 유령 판정'에만 쓴다.
     d = np.abs(hair[:, :, :3] - base[:, :, :3]).max(axis=2)
     newpx = (hair[:, :, 3] > 40) & (base[:, :, 3] <= 40)
     changed = (hair[:, :, 3] > 40) & (base[:, :, 3] > 40) & (d > DIFF_T)
     cand = (newpx | changed) & hairish
+
+    # ★★몸 유령 배제 (대표 아이디어의 핵심).
+    # 기준이 '같은 배치에서 생성된 기본헤어'일 때만 성립한다: 두 시트의 몸은 거의 같은
+    # 위치로 삐뚤어져 있으므로, **머리 아래에서 기준 시트가 어두우면 그건 몸 윤곽선**이다.
+    # (기본헤어는 짧아서 몸에 닿지 않는다 — 그래서 이 판정이 안전하다.)
+    # 빡빡이를 기준으로 할 때는 몸 위치가 달라서 이 판정을 쓸 수 없었고, 그래서
+    # 어깨·팔 윤곽선이 '헤어'로 잡혀 몸이 하나 더 보였다.
+    # ★ref의 '어두운 픽셀 전부'를 대상으로 하면 기본헤어의 머리카락까지 걸려서, 긴 머리가
+    # 목 부근에서 끊기고 아래쪽이 '머리에서 시작 안 한 조각'으로 버려진다(긴 생머리가 통째로
+    # 사라졌다). 배제 대상은 **ref 실루엣의 경계선(=몸 윤곽선)**뿐이다 — 머리카락 내부는 경계가
+    # 아니라서 자동으로 빠진다.
+    ref_sil = ref[:, :, 3] > 40
+    ref_dark = (ref_sil & ~ndimage.binary_erosion(ref_sil, np.ones((3, 3), bool))
+                & (ref[:, :, :3].max(axis=2) <= 110))
+    body = np.zeros(cand.shape, bool)
+    for r in range(4):
+        ry0, ry1 = norm.rb[r]
+        body[ry0 + int((ry1 - ry0) * HEAD_FRAC):ry1 + 1] = True
+    if ghost:
+        cand &= ~(body & ndimage.binary_dilation(ref_dark, np.ones((3, 3), bool)))
+
+    # ★★몸 드리프트 유령 제거 (AI는 "몸 그대로"라고 해도 매번 살짝 삐뚤게 그린다 — 대표 확인).
+    # 핵심: **머리 아래에서 헤어 시트 자신의 실루엣 경계는 머리카락이 아니라 '몸 윤곽선'이다.**
+    # 그 윤곽선이 base보다 1px 어긋나면 차분에 걸려 '헤어'로 잡히고, base 윤곽선 옆에
+    # 한 겹 더 그려진다(대표: 팔-어깨 몸통 겹침, 목·귀 겹침).
+    # base의 어두운 자리를 넓게(5px) 지우면 진짜 머리카락까지 파낸다(기각). 그래서
+    # **헤어 시트 실루엣 경계 ∩ base 몸 경계 근처(2px) ∩ 머리 아래** 만 뺀다.
+    # 몸에서 멀리 떨어진 머리카락(긴 머리)은 base 경계 근처가 아니라 그대로 남는다.
+    hsil = hair[:, :, 3] > 40
+    bsil = base[:, :, 3] > 40
+    hedge = hsil & ~ndimage.binary_erosion(hsil, np.ones((3, 3), bool))
+    bedge = bsil ^ ndimage.binary_erosion(bsil, np.ones((3, 3), bool))
+    near_bedge = ndimage.binary_dilation(bedge, np.ones((5, 5), bool))
+    body = np.zeros(cand.shape, bool)
+    for r in range(4):
+        ry0, ry1 = norm.rb[r]
+        body[ry0 + int((ry1 - ry0) * HEAD_FRAC):ry1 + 1] = True
+    cand &= ~(hedge & near_bedge & body)
 
     H, W = d.shape
     mask = np.zeros((H, W), bool)
@@ -419,21 +539,29 @@ def main():
         base = load(cfg["base"])
         norm = Norm(base)
 
-        # base 시트 (키 209로 walk.png와 통일)
+        # base 시트. ★walk.png(남캐)는 **절대 재생성하지 않는다** — 하드룰(base 시트 재수정 금지).
+        # 이미 있는 파일을 읽어서 정합 기준으로만 쓴다. walk_female.png는 우리가 만든 것이라 생성한다.
         if cfg["walk"] not in walks:
-            ws = norm.sheet()
+            wpath = os.path.join(HERE, cfg["walk"])
+            if cfg["walk"] == "walk.png":
+                ws = Image.open(wpath).convert("RGBA")
+                note = "기존 파일 사용(재생성 금지)"
+            else:
+                ws = norm.sheet()
+                note = "정규화 생성"
+                if not args.dry:
+                    ws.save(wpath)
             walks[cfg["walk"]] = ws
             wa = np.asarray(ws).astype(int)
             m = largest(wa[0:CH, 0:CW, 3] >= ALPHA_BIN)
             ys = np.where(m.any(axis=1))[0]
-            print("● %s  머리끝 y=%d 발끝 y=%d 키=%d  (walk.png와 같아야 함: 11/219/209)" % (
-                cfg["walk"], ys.min(), ys.max(), ys.max() - ys.min() + 1))
-            if not args.dry:
-                ws.save(os.path.join(HERE, cfg["walk"]))
+            print("● %-16s 머리끝 y=%d 발끝 y=%d 키=%d  %s" % (
+                cfg["walk"], ys.min(), ys.max(), ys.max() - ys.min() + 1, note))
 
         wsheet = np.asarray(walks[cfg["walk"]]).astype(int)
         hair = load(cfg["hair"])
-        mask = hair_mask(hair, base, norm)
+        refsheet = load(cfg["ref"]) if cfg.get("ref") else None
+        mask = hair_mask(hair, base, norm, refsheet, cfg.get("ghost", True))
 
         # 헤어 RGBA (투명 픽셀 RGB도 헤어색으로 채워 리샘플 헤일로 방지)
         med = np.median(hair[:, :, :3][mask], axis=0).astype(int) if mask.any() else np.array([60, 54, 66])
@@ -449,8 +577,9 @@ def main():
             # 방향당 1프레임 선택 (모양 고정 = 출렁임 없음)
             cells = [binarize(norm.cell(hair_pad, r, c)) for c in range(3)]
             scores = [raggedness(x) for x in cells]
-            ref = int(np.argmin(scores))
-            chosen = cells[ref]
+            fc = cfg.get("force_col")
+            ref = int(fc[r]) if fc else int(np.argmin(scores))   # 대표 지정이 있으면 그걸 쓴다
+            chosen, _pal = quantize(cells[ref])
 
             bref = wsheet[r * CH:(r + 1) * CH, ref * CW:(ref + 1) * CW]
             chosen, nsame, nshadow, nskin, nkill = strip_base_echo(chosen, bref)
