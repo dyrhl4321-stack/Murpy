@@ -26,8 +26,9 @@ button.go{background:var(--blue);border-color:var(--blue);font-weight:600;text-a
 button.go:hover:not(:disabled){background:#5590ff}
 .row{display:flex;gap:6px}
 .row button{margin-bottom:0}
-select,input[type=range]{width:100%;background:#26262c;color:var(--tx);border:1px solid var(--line);
-        border-radius:6px;padding:6px}
+select,input[type=range],textarea,input[type=password]{width:100%;background:#26262c;color:var(--tx);
+        border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit;font-size:12px}
+textarea{resize:vertical}
 canvas{image-rendering:pixelated;display:block}
 #wrap{position:relative;line-height:0}
 #paint{position:absolute;left:0;top:0;opacity:.45;cursor:crosshair}
@@ -86,7 +87,21 @@ canvas{image-rendering:pixelated;display:block}
   </div>
 
   <div class="grp">
-    <label>칠한 곳을 어떻게 할까요</label>
+    <label>칠한 곳을 어떻게 할까요 — 직접 말해보세요</label>
+    <textarea id="prompt" rows="3" placeholder="예) 여기 귀 옆에 검은 선 한 겹 더 그려진 거 빼줘"></textarea>
+    <button class="go" id="run" style="margin-top:6px">AI로 고치기</button>
+    <div class="note" id="plan"></div>
+  </div>
+
+  <div class="grp">
+    <label>AI 연결 (선택)</label>
+    <input type="password" id="apikey" placeholder="Anthropic API 키 (없으면 규칙 해석)">
+    <div class="note">키를 넣으면 문장을 그대로 이해합니다. 없으면 키워드로 해석합니다.
+      키는 이 브라우저에만 저장됩니다.</div>
+  </div>
+
+  <div class="grp">
+    <label>자주 쓰는 것 (예시)</label>
     <button data-cmd="fill">이 부분 머리색으로 덮어줘</button>
     <button data-cmd="erase">이 부분 빼줘 (투명하게)</button>
     <button data-cmd="dark">여기 검은 줄 없애줘</button>
@@ -299,21 +314,27 @@ function nearestHair(pal,x,y){   // 가장 가까운 아이템 픽셀의 색
   return best;
 }
 
-document.querySelectorAll('[data-cmd]').forEach(btn=>{
-  btn.onclick=()=>{
-    if(!itemData){ stat.textContent='파일을 먼저 올려주세요.'; return; }
-    const m=mask();
-    if(!m.some(v=>v)){ stat.textContent='먼저 고칠 부분을 칠해주세요.'; return; }
-    snapshot();
-    const cmd=btn.dataset.cmd, pal=hairPalette();
-    let n=0;
+// ★★AI가 쓸 수 있는 연산 목록. 여기 하나 추가하면 프롬프트로도 바로 쓸 수 있다.
+const OPS={
+  fill :'칠한 곳을 아이템(머리카락 등) 색으로 덮는다',
+  erase:'칠한 곳의 아이템 픽셀을 지워 투명하게 만든다',
+  dark :'칠한 곳에서 어두운(검은 선) 픽셀만 지운다. maxDark=어디까지 어둡다고 볼지(0~255)',
+  skin :'칠한 곳에서 살색 픽셀만 지운다',
+  hole :'칠한 곳의 빈 구멍만 아이템 색으로 메운다',
+};
+function apply(cmd, opt){
+  const m=mask();
+  if(!m.some(v=>v)){ stat.textContent='먼저 고칠 부분을 칠해주세요.'; return 0; }
+  snapshot();
+  const pal=hairPalette(); const maxDark=(opt&&opt.maxDark)||90;
+  let n=0;
     for(let y=0;y<CH;y++) for(let x=0;x<CW;x++){
       if(!m[y*CW+x]) continue;
       const i=idx(x,y), a=itemData.data[i+3];
       const r=itemData.data[i], g=itemData.data[i+1], b=itemData.data[i+2];
       if(cmd==='erase'){ if(a>0){ itemData.data[i+3]=0; n++; } }
       else if(cmd==='dark'){                       // 검은 줄 빼기
-        if(a>=128 && Math.max(r,g,b)<=90){ itemData.data[i+3]=0; n++; }
+        if(a>=128 && Math.max(r,g,b)<=maxDark){ itemData.data[i+3]=0; n++; }
       }
       else if(cmd==='skin'){                       // 살색 빼기
         if(a>=128 && r>=140 && r>g+30 && g>b+5){ itemData.data[i+3]=0; n++; }
@@ -325,10 +346,69 @@ document.querySelectorAll('[data-cmd]').forEach(btn=>{
         itemData.data[i+3]=255; n++;
       }
     }
-    draw();
-    stat.textContent=n+'픽셀 고쳤습니다. (되돌리기 가능)';
+  draw();
+  return n;
+}
+
+document.querySelectorAll('[data-cmd]').forEach(btn=>{
+  btn.onclick=()=>{
+    if(!itemData){ stat.textContent='아이템을 먼저 고르세요.'; return; }
+    const n=apply(btn.dataset.cmd);
+    if(n!==0) stat.textContent=n+'픽셀 고쳤습니다. (되돌리기 가능)';
   };
 });
+
+// ── 프롬프트 해석 ────────────────────────────────────────────
+const key=document.getElementById('apikey');
+key.value=localStorage.getItem('murpy_ak')||'';
+key.onchange=()=>localStorage.setItem('murpy_ak',key.value.trim());
+
+function localPlan(t){            // 키 없이 쓰는 키워드 해석
+  const s=t.replace(/\s/g,'');
+  const has=(...w)=>w.some(x=>s.includes(x));
+  const steps=[];
+  if(has('검은','검정','까만','어두운','블랙','잉크')&&has('빼','없애','지워','제거'))
+    steps.push({op:'dark',maxDark:has('진한','아주')?70:110});
+  if(has('살색','피부','살가죽')&&has('빼','없애','지워','제거','덮'))
+    steps.push({op: has('덮')?'fill':'skin'});
+  if(has('구멍','뚫','빵꾸','메꿔','메워','채워'))  steps.push({op:'hole'});
+  if(!steps.length&&has('덮','채워','머리색','메꿔')) steps.push({op:'fill'});
+  if(!steps.length&&has('빼','지워','없애','투명')) steps.push({op:'erase'});
+  return steps;
+}
+async function aiPlan(t){         // 키가 있으면 Claude 가 문장을 그대로 이해
+  const body={model:'claude-sonnet-5',max_tokens:400,
+    system:'너는 픽셀아트 리터치 도구의 지시 해석기다. 사용자가 이미 고칠 영역을 붓으로 칠해 뒀다. '+
+      '사용 가능한 연산: '+JSON.stringify(OPS)+
+      ' 사용자의 한국어 요청을 연산 순서로 바꿔라. 반드시 JSON만 출력한다. '+
+      '형식: {"steps":[{"op":"dark","maxDark":90}],"say":"한 줄 설명"}',
+    messages:[{role:'user',content:t}]};
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':key.value.trim(),
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify(body)});
+  if(!res.ok) throw new Error('API '+res.status);
+  const j=await res.json();
+  const txt=(j.content||[]).map(c=>c.text||'').join('');
+  return JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}')+1));
+}
+document.getElementById('run').onclick=async()=>{
+  if(!itemData){ stat.textContent='아이템을 먼저 고르세요.'; return; }
+  const t=document.getElementById('prompt').value.trim();
+  if(!t){ stat.textContent='무엇을 할지 적어주세요.'; return; }
+  const plan=document.getElementById('plan');
+  let steps=[], say='';
+  if(key.value.trim()){
+    plan.textContent='AI가 읽는 중...';
+    try{ const r=await aiPlan(t); steps=r.steps||[]; say=r.say||''; }
+    catch(e){ plan.textContent='AI 연결 실패 — 키워드로 해석합니다.'; steps=localPlan(t); }
+  } else steps=localPlan(t);
+  if(!steps.length){ plan.textContent='무슨 뜻인지 모르겠습니다. 아래 예시 버튼을 써보세요.'; return; }
+  let n=0;
+  for(const s of steps){ if(OPS[s.op]) n+=apply(s.op,s)||0; }
+  plan.textContent=(say||steps.map(s=>s.op).join(' → '))+'  ('+n+'픽셀)';
+  stat.textContent=n+'픽셀 고쳤습니다. (되돌리기 가능)';
+};
 
 document.getElementById('save').onclick=()=>{
   if(!itemData){ stat.textContent='파일을 먼저 올려주세요.'; return; }
