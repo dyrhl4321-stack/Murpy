@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>머피 에셋 리터치</title>
+<style>
+:root{--blue:#3D7EFF;--gold:#F5C24B;--bg:#141416;--panel:#1d1d21;--line:#2e2e34;--tx:#f2f2f4;--dim:#9a9aa4}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font:14px/1.5 Pretendard,-apple-system,'Malgun Gothic',sans-serif;
+     display:flex;height:100vh;overflow:hidden}
+#side{width:280px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+      padding:16px;overflow-y:auto}
+#stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       position:relative;overflow:auto;background:#0f0f11}
+h1{font-size:15px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px}
+.sub{font-size:12px;color:var(--dim);margin-bottom:16px}
+.grp{margin-bottom:18px}
+.grp>label{display:block;font-size:11px;color:var(--dim);margin-bottom:6px;letter-spacing:.3px}
+input[type=file]{width:100%;font-size:12px;color:var(--dim)}
+button{width:100%;padding:9px 10px;margin-bottom:6px;border:1px solid var(--line);border-radius:7px;
+       background:#26262c;color:var(--tx);font:inherit;font-size:13px;cursor:pointer;text-align:left}
+button:hover:not(:disabled){border-color:var(--blue);background:#2c2c34}
+button:disabled{opacity:.4;cursor:default}
+button.go{background:var(--blue);border-color:var(--blue);font-weight:600;text-align:center}
+button.go:hover:not(:disabled){background:#5590ff}
+.row{display:flex;gap:6px}
+.row button{margin-bottom:0}
+select,input[type=range]{width:100%;background:#26262c;color:var(--tx);border:1px solid var(--line);
+        border-radius:6px;padding:6px}
+canvas{image-rendering:pixelated;display:block}
+#wrap{position:relative;line-height:0}
+#paint{position:absolute;left:0;top:0;opacity:.45;cursor:crosshair}
+#hint{position:absolute;bottom:12px;left:0;right:0;text-align:center;font-size:12px;color:var(--dim)}
+.tag{display:inline-block;font-size:11px;color:var(--gold);margin-left:6px}
+.note{font-size:11px;color:var(--dim);line-height:1.6;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>머피 에셋 리터치</h1>
+  <div class="sub">칠하고 → 버튼 누르면 그 부분만 고쳐집니다.</div>
+
+  <div class="grp">
+    <label>1. 캐릭터 몸 (walk.png)</label>
+    <input type="file" id="fBase" accept="image/png">
+  </div>
+  <div class="grp">
+    <label>2. 고칠 아이템 (헤어 등)</label>
+    <input type="file" id="fItem" accept="image/png">
+  </div>
+
+  <div class="grp">
+    <label>보는 곳</label>
+    <select id="cell"></select>
+  </div>
+
+  <div class="grp">
+    <label>붓 굵기 <span id="bsz" class="tag">6</span></label>
+    <input type="range" id="brush" min="1" max="24" value="6">
+    <div class="row" style="margin-top:6px">
+      <button id="clr">칠한 것 지우기</button>
+      <button id="undo">되돌리기</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <label>칠한 곳을 어떻게 할까요</label>
+    <button data-cmd="fill">이 부분 머리색으로 덮어줘</button>
+    <button data-cmd="erase">이 부분 빼줘 (투명하게)</button>
+    <button data-cmd="dark">여기 검은 줄 없애줘</button>
+    <button data-cmd="skin">여기 살색 없애줘</button>
+    <button data-cmd="hole">여기 구멍 메워줘</button>
+    <div class="note">칠한 영역 안에서만 처리합니다. 마음에 안 들면 되돌리기.</div>
+  </div>
+
+  <div class="grp">
+    <button class="go" id="save">고친 파일 저장</button>
+    <div class="note" id="stat">파일을 먼저 올려주세요.</div>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="wrap">
+    <canvas id="view"></canvas>
+    <canvas id="paint"></canvas>
+  </div>
+  <div id="hint">마우스로 고칠 부분을 칠하세요</div>
+</div>
+
+<script>
+const CW=141, CH=224, ROWS=['정면','후면','좌','우'];
+let baseImg=null, itemImg=null;      // 원본 시트 (ImageData)
+let itemData=null;                    // 편집 중인 아이템 픽셀
+let W=0,H=0, cellR=0, cellC=0, Z=5;
+const history=[];
+
+const view=document.getElementById('view'), paint=document.getElementById('paint');
+const vctx=view.getContext('2d'), pctx=paint.getContext('2d');
+const stat=document.getElementById('stat');
+
+function readPng(file, cb){
+  const img=new Image();
+  img.onload=()=>{
+    const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+    const x=c.getContext('2d'); x.drawImage(img,0,0);
+    cb(x.getImageData(0,0,img.width,img.height));
+  };
+  img.src=URL.createObjectURL(file);
+}
+document.getElementById('fBase').onchange=e=>{
+  if(e.target.files[0]) readPng(e.target.files[0], d=>{ baseImg=d; ready(); });
+};
+document.getElementById('fItem').onchange=e=>{
+  if(e.target.files[0]) readPng(e.target.files[0], d=>{
+    itemImg=d;
+    itemData=new ImageData(new Uint8ClampedArray(d.data), d.width, d.height);
+    ready();
+  });
+};
+
+function ready(){
+  if(!baseImg||!itemData) return;
+  W=itemData.width; H=itemData.height;
+  const sel=document.getElementById('cell');
+  if(!sel.options.length){
+    const nr=Math.round(H/CH), nc=Math.round(W/CW);
+    for(let r=0;r<nr;r++) for(let c=0;c<nc;c++){
+      const o=document.createElement('option');
+      o.value=r+','+c; o.textContent=(ROWS[r]||('행'+r))+'  '+(c===0?'정지':'걸음'+c);
+      sel.appendChild(o);
+    }
+    sel.onchange=()=>{ const p=sel.value.split(','); cellR=+p[0]; cellC=+p[1]; draw(); };
+  }
+  view.width=paint.width=CW*Z; view.height=paint.height=CH*Z;
+  stat.textContent='준비됐습니다. 고칠 부분을 칠하세요.';
+  draw();
+}
+
+// ── 셀 좌표 헬퍼 ──────────────────────────────────────────────
+const idx=(x,y)=>(( (cellR*CH+y)*W + (cellC*CW+x) )*4);
+
+function draw(){
+  const out=vctx.createImageData(CW,CH);
+  for(let y=0;y<CH;y++) for(let x=0;x<CW;x++){
+    const i=idx(x,y), o=(y*CW+x)*4;
+    // 체크무늬 배경
+    const chk=((x>>2)+(y>>2))&1 ? 30:38;
+    let r=chk,g=chk,b=chk;
+    const ba=baseImg.data[i+3];
+    if(ba>=128){ r=baseImg.data[i]; g=baseImg.data[i+1]; b=baseImg.data[i+2]; }
+    const ia=itemData.data[i+3];
+    if(ia>=128){ r=itemData.data[i]; g=itemData.data[i+1]; b=itemData.data[i+2]; }
+    out.data[o]=r; out.data[o+1]=g; out.data[o+2]=b; out.data[o+3]=255;
+  }
+  const tmp=document.createElement('canvas'); tmp.width=CW; tmp.height=CH;
+  tmp.getContext('2d').putImageData(out,0,0);
+  vctx.imageSmoothingEnabled=false;
+  vctx.clearRect(0,0,view.width,view.height);
+  vctx.drawImage(tmp,0,0,CW*Z,CH*Z);
+}
+
+// ── 브러시 ────────────────────────────────────────────────────
+let painting=false, brush=6;
+const mask=()=>{ // 칠한 영역을 셀 좌표 불린 배열로
+  const d=pctx.getImageData(0,0,paint.width,paint.height).data, m=new Uint8Array(CW*CH);
+  for(let y=0;y<CH;y++) for(let x=0;x<CW;x++)
+    if(d[((y*Z)*paint.width+(x*Z))*4+3]>0) m[y*CW+x]=1;
+  return m;
+};
+document.getElementById('brush').oninput=e=>{
+  brush=+e.target.value; document.getElementById('bsz').textContent=brush;
+};
+function dab(ev){
+  const b=paint.getBoundingClientRect();
+  const x=(ev.clientX-b.left)/Z, y=(ev.clientY-b.top)/Z;
+  pctx.fillStyle='#3D7EFF';
+  pctx.fillRect(Math.round(x-brush/2)*Z, Math.round(y-brush/2)*Z, brush*Z, brush*Z);
+}
+paint.onmousedown=e=>{painting=true; dab(e);};
+paint.onmousemove=e=>{ if(painting) dab(e); };
+window.onmouseup=()=>painting=false;
+document.getElementById('clr').onclick=()=>pctx.clearRect(0,0,paint.width,paint.height);
+
+// ── 보정 명령 ────────────────────────────────────────────────
+function snapshot(){
+  history.push(new Uint8ClampedArray(itemData.data));
+  if(history.length>30) history.shift();
+}
+document.getElementById('undo').onclick=()=>{
+  if(!history.length) return;
+  itemData.data.set(history.pop()); draw();
+  stat.textContent='되돌렸습니다.';
+};
+
+function hairPalette(){          // 이 셀에서 아이템이 실제로 쓰는 색들
+  const list=[];
+  for(let y=0;y<CH;y++) for(let x=0;x<CW;x++){
+    const i=idx(x,y);
+    if(itemData.data[i+3]>=128) list.push([itemData.data[i],itemData.data[i+1],itemData.data[i+2],x,y]);
+  }
+  return list;
+}
+function nearestHair(pal,x,y){   // 가장 가까운 아이템 픽셀의 색
+  let best=null,bd=1e9;
+  for(const p of pal){ const d=(p[3]-x)**2+(p[4]-y)**2; if(d<bd){bd=d;best=p;} }
+  return best;
+}
+
+document.querySelectorAll('[data-cmd]').forEach(btn=>{
+  btn.onclick=()=>{
+    if(!itemData){ stat.textContent='파일을 먼저 올려주세요.'; return; }
+    const m=mask();
+    if(!m.some(v=>v)){ stat.textContent='먼저 고칠 부분을 칠해주세요.'; return; }
+    snapshot();
+    const cmd=btn.dataset.cmd, pal=hairPalette();
+    let n=0;
+    for(let y=0;y<CH;y++) for(let x=0;x<CW;x++){
+      if(!m[y*CW+x]) continue;
+      const i=idx(x,y), a=itemData.data[i+3];
+      const r=itemData.data[i], g=itemData.data[i+1], b=itemData.data[i+2];
+      if(cmd==='erase'){ if(a>0){ itemData.data[i+3]=0; n++; } }
+      else if(cmd==='dark'){                       // 검은 줄 빼기
+        if(a>=128 && Math.max(r,g,b)<=90){ itemData.data[i+3]=0; n++; }
+      }
+      else if(cmd==='skin'){                       // 살색 빼기
+        if(a>=128 && r>=140 && r>g+30 && g>b+5){ itemData.data[i+3]=0; n++; }
+      }
+      else if(cmd==='fill'||cmd==='hole'){         // 머리색으로 덮기 / 구멍 메우기
+        if(cmd==='hole' && a>=128) continue;       // 구멍 메우기는 빈 곳만
+        const p=nearestHair(pal,x,y); if(!p) continue;
+        itemData.data[i]=p[0]; itemData.data[i+1]=p[1]; itemData.data[i+2]=p[2];
+        itemData.data[i+3]=255; n++;
+      }
+    }
+    draw();
+    stat.textContent=n+'픽셀 고쳤습니다. (되돌리기 가능)';
+  };
+});
+
+document.getElementById('save').onclick=()=>{
+  if(!itemData){ stat.textContent='파일을 먼저 올려주세요.'; return; }
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  c.getContext('2d').putImageData(itemData,0,0);
+  c.toBlob(bl=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(bl); a.download='retouched.png'; a.click();
+  });
+  stat.textContent='retouched.png 로 저장했습니다.';
+};
+</script>
+</body>
+</html>
