@@ -187,6 +187,22 @@ button.go:hover{background:#5590ff}
       <select id="dir"></select>
       <div class="note" style="margin-top:6px">고치면 걸음 3프레임에 같이 반영됩니다.</div>
     </div>
+    <div class="grp">
+      <h2>배경</h2>
+      <select id="bgMode">
+        <option value="chk">체크무늬 (기본)</option>
+        <option value="mag">형광 마젠타</option>
+        <option value="grn">형광 초록</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;font-size:11px">
+        <input type="checkbox" id="hideBody" style="width:15px;height:15px;accent-color:#c8f542">
+        몸통 숨기기 (헤어만 보기)
+      </label>
+      <div class="note" style="margin-top:6px">
+        검은 머리는 체크무늬가 어두워 경계가 안 보입니다.
+        <b style="color:var(--gold)">형광 배경 + 몸통 숨기기</b>로 보면 빈 구멍이 그대로 드러납니다.
+      </div>
+    </div>
     <div class="grp" id="gWarn" style="display:none">
       <div class="note" style="color:var(--gold)">
         직접 열면 브라우저가 픽셀 읽기를 막습니다.<br><b>retouch.bat</b> 으로 여세요.
@@ -348,13 +364,19 @@ if(location.protocol==='file:') $('gWarn').style.display='block';
 
 /* ── 화면 ─────────────────────────────────────────────── */
 function resize(){view.width=sel.width=CW*Z;view.height=sel.height=CH*Z;}
+/* 배경 — 검은 머리를 어두운 체크무늬 위에서 보면 경계도 구멍도 안 보인다.
+   형광 배경 + 몸통 숨기기로 보면 아이템 레이어의 빈 자리가 그대로 드러난다. */
+const BG={chk:null,mag:[255,0,255],grn:[0,255,0]};
 function draw(){
   if(!itemData)return;
   const out=vctx.createImageData(CW,CH);
+  const bg=BG[$('bgMode').value], hideBody=$('hideBody').checked;   // 루프 밖에서 한 번만 읽는다
   for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
     const i=((cellR*CH+y)*W+x)*4,o=(y*CW+x)*4;
-    const chk=((x>>2)+(y>>2))&1?26:34;let r=chk,g=chk,b=chk;
-    if(baseImg.data[i+3]>=128){r=baseImg.data[i];g=baseImg.data[i+1];b=baseImg.data[i+2];}
+    let r,g,b;
+    if(bg){r=bg[0];g=bg[1];b=bg[2];}
+    else{const chk=((x>>2)+(y>>2))&1?26:34;r=chk;g=chk;b=chk;}
+    if(!hideBody&&baseImg.data[i+3]>=128){r=baseImg.data[i];g=baseImg.data[i+1];b=baseImg.data[i+2];}
     if(itemData.data[i+3]>=128){r=itemData.data[i];g=itemData.data[i+1];b=itemData.data[i+2];}
     out.data[o]=r;out.data[o+1]=g;out.data[o+2]=b;out.data[o+3]=255;}
   const t=document.createElement('canvas');t.width=CW;t.height=CH;
@@ -443,6 +465,8 @@ document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{
   b.classList.add('on');tool=b.dataset.tool;});
 $('tAll').onclick=()=>{M.fill(1);paintSel();};
 $('tNone').onclick=clearSel;
+$('bgMode').onchange=draw;
+$('hideBody').onchange=draw;
 $('brush').oninput=e=>{brush=+e.target.value;$('bsz').textContent=brush;};
 $('zoom').oninput=e=>{Z=+e.target.value;$('zl').textContent=Z;resize();draw();paintSel();};
 addEventListener('keydown',e=>{
