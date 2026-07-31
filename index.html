@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<!-- cache-bust: v20260731016 -->
+<!-- cache-bust: v20260731017 -->
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -1993,14 +1993,15 @@ window.collapseBambooCompose = function () {
 
 // ===== 머피 캐릭터 (Phase 1): 카탈로그 · 도트 파츠 · 렌더 =====
 window.CHAR_COLORS = { skin: ['#F0C9A0', '#E0A878', '#C68642'], hair: ['#2B2B2B', '#6B4226', '#C9A227', '#7C3AED'], top: ['#3D7EFF', '#4ADE80', '#F5C24B', '#FF6B6B', '#E5E7EB'] };
-window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_short', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, acc: null, hat: null, mask: null, body: 'human' };
+window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_m_basic', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, acc: null, hat: null, mask: null, body: 'human' };
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
   // thumb = 캐릭터 선택 카드에 쓰는 그림. src(빡빡이 base)를 그대로 쓰면 민머리로 보여서
   //         기본헤어를 씌운 미리보기 시트를 따로 만든다 (char/build_body_preview.py).
-  human:   { name: '기본 남성', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
-  human_f: { name: '기본 여성', src: "char/walk_female.png?v=4", thumb: "char/preview_human_f.png?v=1", cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
+  // defaultHair = 이 몸통을 고르면 자동으로 씌우는 헤어. 빡빡이 base 가 그대로 보이면 안 된다.
+  human:   { name: '기본 남성', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   defaultHair: 'hair_m_basic', cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
+  human_f: { name: '기본 여성', src: "char/walk_female.png?v=4", thumb: "char/preview_human_f.png?v=1", defaultHair: 'hair_f_basic', cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
   heltori: { name: '헬토리', src: "char/heltori.png?v=4", cw: 150, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' },
   // 히든 3종(고정 캐릭터). 해금=users.hiddenChars, 소유 판정은 mwHasHidden. 실제 발동/연출은 mwEvalHidden/mwHiddenReveal.
   cult:   { name: '요일교 교주',   src: "char/hidden_cult.png?v=1",   cw: 135, ch: 224, hidden: true, limited: true, tag: '히든' },
@@ -3008,6 +3009,17 @@ window.charMove = function (dx, dy) {
 window.renderCharSpace = function () {
   window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
   if (!window._charDraft.body) window._charDraft.body = 'human';
+  // ★없어진 헤어 id(옛 'hair_short' 등)를 들고 있으면 빡빡이로 보인다 → 몸통 기본헤어로 보정
+  {
+    const d = window._charDraft;
+    const valid = d.hair && (window.CHAR_ITEMS || []).some(function (x) {
+      return x.id === d.hair && (!x.body || x.body === d.body);
+    });
+    if (!valid) {
+      const dh = (window._CHAR_BODIES[d.body] || {}).defaultHair;
+      d.hair = (dh && (window.CHAR_ITEMS || []).some(function (x) { return x.id === dh; })) ? dh : null;
+    }
+  }
   const room = document.getElementById('charworld-room');
   const f = window._FIELDS[window._curField];
   if (room && f) room.style.backgroundImage = "url('" + f.src + "')";  // 필드 배경
@@ -3126,6 +3138,14 @@ window.charPickBody = function (key) {
     const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id; });
     if (it && it.body && it.body !== key) window._charDraft[slot] = null;
   });
+  // ★헤어는 빈 채로 두지 않는다 — 빡빡이 base 가 그대로 보이기 때문이다.
+  //   위에서 다른 성별 헤어를 벗겼거나 애초에 없으면 그 몸통의 기본헤어를 씌운다.
+  if (!window._charDraft.hair) {
+    const dh = (window._CHAR_BODIES[key] || {}).defaultHair;
+    if (dh && (window.CHAR_ITEMS || []).some(function (x) { return x.id === dh; })) {
+      window._charDraft.hair = dh;
+    }
+  }
   window._charApplySprite(key);
   window._charPos.face = 'down'; window._charPos.frame = 0;
   window._charApplyPos();
