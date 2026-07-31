@@ -20,11 +20,13 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_hair_layer import skull_ref, shift   # noqa: E402
+from diag_face_drift import face_ref   # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CW, CH = 141, 224
 ALPHA_BIN = 128
 ROWS = ["정면", "후면", "좌", "우"]
+REF = "skull"     # 정렬 기준: skull(두상) | face(이목구비) | mid(중간). --ref 로 바꾼다
 
 
 def main():
@@ -36,6 +38,9 @@ def main():
     base_name = "walk.png"
     if "--base" in sys.argv:
         base_name = sys.argv[sys.argv.index("--base") + 1]
+    global REF
+    if "--ref" in sys.argv:
+        REF = sys.argv[sys.argv.index("--ref") + 1]
     rows = range(4) if rowarg == "all" else [int(rowarg)]
 
     base = np.asarray(Image.open(os.path.join(HERE, base_name)).convert("RGBA")).astype(int)
@@ -46,12 +51,31 @@ def main():
     print(f"■ {name}  (기준 {base_name})")
     for r in rows:
         src = a[r * CH:(r + 1) * CH, 0:CW]
-        bm0 = base[r * CH:(r + 1) * CH, 0:CW, 3] >= ALPHA_BIN
+        bc0 = base[r * CH:(r + 1) * CH, 0:CW]
+        bm0 = bc0[:, :, 3] >= ALPHA_BIN
         t0, x0 = skull_ref(bm0)
+        f0 = face_ref(bc0, bm0, t0)
         for c in range(1, 3):
-            bmc = base[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW, 3] >= ALPHA_BIN
+            bcc = base[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
+            bmc = bcc[:, :, 3] >= ALPHA_BIN
             tc, xc = skull_ref(bmc)
-            dx, dy = int(round(xc - x0)), int(tc - t0)
+            # ★base 는 걸음 프레임마다 두상과 얼굴을 **다른 양만큼** 움직인다(실측 최대 3.4px).
+            #   두상에만 맞추면 헤어와 얼굴이 틀어져 이마·입이 프레임마다 열렸다 닫혔다 한다
+            #   (대표: "오른쪽으로 갈 때 이마나 입이 계속 튀어나온다").
+            #   기준을 고를 수 있게 한다 — mid 는 둘의 중간(오차를 절반씩 나눔).
+            fc = face_ref(bcc, bmc, tc)
+            sdx, sdy = xc - x0, float(tc - t0)
+            if f0 and fc:
+                fdx, fdy = fc[0] - f0[0], fc[1] - f0[1]
+            else:
+                fdx, fdy = sdx, sdy
+            if REF == "face":
+                ddx, ddy = fdx, fdy
+            elif REF == "mid":
+                ddx, ddy = (sdx + fdx) / 2.0, (sdy + fdy) / 2.0
+            else:
+                ddx, ddy = sdx, sdy
+            dx, dy = int(round(ddx)), int(round(ddy))
             moved = shift(src, dx, dy)
             before = int((out[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW, 3] >= ALPHA_BIN).sum())
             out[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW] = moved
