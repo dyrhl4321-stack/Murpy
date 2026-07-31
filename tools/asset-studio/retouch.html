@@ -167,6 +167,22 @@ button.go:hover{background:#5590ff}
       <div id="gal"></div>
     </div>
     <div class="grp">
+      <h2>파일에서 불러오기</h2>
+      <div id="drop" style="border:1px dashed #3a3a3a;border-radius:8px;padding:14px 10px;
+           text-align:center;font-size:11px;color:#888;cursor:pointer;line-height:1.6">
+        PNG를 여기로 끌어다 놓거나<br><b style="color:#c8f542">클릭해서 파일 찾기</b>
+      </div>
+      <input type="file" id="fileInp" accept="image/png,.png" style="display:none">
+      <select id="fileBody" style="margin-top:6px">
+        <option value="human">남자 몸통 (walk.png)</option>
+        <option value="human_f">여자 몸통 (walk_female.png)</option>
+      </select>
+      <div class="note" id="fileNote" style="margin-top:6px">
+        작업요청 폴더의 밑그림도 여기서 바로 엽니다. 파일명으로 남녀를 자동으로 고르고,
+        틀리면 위에서 바꾸면 됩니다.
+      </div>
+    </div>
+    <div class="grp">
       <h2>보는 방향</h2>
       <select id="dir"></select>
       <div class="note" style="margin-top:6px">고치면 걸음 3프레임에 같이 반영됩니다.</div>
@@ -253,22 +269,80 @@ function renderGal(){
     d.innerHTML='<img src="'+ROOT+'char/items/'+it.id+'_thumb.png" alt=""><span>'+it.name+'</span>';
     d.onclick=()=>pick(it,d);g.appendChild(d);});
 }
+/* 갤러리·파일 어느 쪽으로 불러오든 여기로 모인다 */
+async function useItem(it,d){
+  // ★baseImg 는 검사를 통과한 뒤에 갈아끼운다. 먼저 바꾸면 규격이 안 맞아 되돌아갈 때
+  //   몸통만 바뀐 채로 남아 그리기가 어긋난다.
+  const nb=await loadPng(ROOT+'char/'+(it.body==='human_f'?'walk_female.png':'walk.png'));
+  if(d.width!==nb.width||d.height!==nb.height){
+    say('규격이 다릅니다. 불러온 파일 <b>'+d.width+'x'+d.height+'</b> / 몸통 시트 <b>'
+        +nb.width+'x'+nb.height+'</b>. 남녀를 잘못 골랐거나 시트 규격이 다릅니다.');
+    return false;
+  }
+  baseImg=nb;
+  itemData=new ImageData(new Uint8ClampedArray(d.data),d.width,d.height);
+  W=d.width;H=d.height;curItem=it;history.length=0;
+  const dir=$('dir'),n=Math.round(H/CH);
+  if(dir.options.length!==n){
+    dir.innerHTML='';
+    for(let r=0;r<n;r++){const o=document.createElement('option');
+      o.value=r;o.textContent=ROWS[r]||('행'+r);dir.appendChild(o);}
+    dir.onchange=()=>{cellR=+dir.value;clearSel();draw();};
+  }
+  cellR=Math.min(cellR,n-1);dir.value=cellR;
+  resize();clearSel();draw();buildPal();
+  return true;
+}
+
 async function pick(it,el){
   document.querySelectorAll('.card').forEach(c=>c.classList.remove('on'));
   if(el)el.classList.add('on');
   try{
-    baseImg=await loadPng(ROOT+'char/'+(it.body==='human_f'?'walk_female.png':'walk.png'));
     const d=await loadPng(ROOT+'char/items/'+it.id+'.png');
-    itemData=new ImageData(new Uint8ClampedArray(d.data),d.width,d.height);
-    W=d.width;H=d.height;curItem=it;history.length=0;
-    const dir=$('dir');
-    if(!dir.options.length){for(let r=0;r<Math.round(H/CH);r++){
-      const o=document.createElement('option');o.value=r;o.textContent=ROWS[r]||('행'+r);dir.appendChild(o);}
-      dir.onchange=()=>{cellR=+dir.value;clearSel();draw();};}
-    resize();clearSel();draw();buildPal();
-    say(it.name+' 을 불러왔습니다. 고칠 부분을 칠해주세요.');
+    if(await useItem(it,d)) say(it.name+' 을 불러왔습니다. 고칠 부분을 칠해주세요.');
   }catch(e){ $('gWarn').style.display='block'; say('불러오지 못했습니다. <b>retouch.bat</b> 으로 열어주세요.'); }
 }
+
+/* ── 파일에서 불러오기 (작업요청 폴더 등 저장소 밖 파일) ──────────────
+   서버가 못 읽는 위치라도 파일을 직접 고르면 열 수 있다. blob: 은 같은 출처라
+   getImageData 가 막히지 않는다. */
+async function openLocal(file){
+  if(!file) return;
+  if(!/\.png$/i.test(file.name)){ say('PNG 파일만 열 수 있습니다.'); return; }
+  const url=URL.createObjectURL(file);
+  try{
+    const d=await loadPng(url);
+    const id=file.name.replace(/\.png$/i,'');
+    // 파일명으로 남녀 추정. 단서가 없으면 지금 골라둔 값을 그대로 둔다(대표 선택 존중)
+    const guess=/(hair_f_|_f_|female|여자|여캐)/i.test(id) ? 'human_f'
+              : /(hair_m_|_m_|male|남자|남캐)/i.test(id) ? 'human'
+              : $('fileBody').value;
+    $('fileBody').value=guess;
+    document.querySelectorAll('.card').forEach(c=>c.classList.remove('on'));
+    if(await useItem({id:id,slot:'hair',body:guess,name:id,local:true},d))
+      say('<b>'+file.name+'</b> 을 열었습니다 ('+d.width+'x'+d.height+', '
+          +(guess==='human_f'?'여자':'남자')+' 몸통). 저장하면 같은 이름으로 내려받습니다.');
+  }catch(e){ say('열지 못했습니다: '+file.name); }
+  finally{ URL.revokeObjectURL(url); }
+}
+$('fileInp').onchange=e=>{openLocal(e.target.files[0]);e.target.value='';};
+$('drop').onclick=()=>$('fileInp').click();
+$('drop').addEventListener('dragover',e=>{e.preventDefault();$('drop').style.borderColor='#c8f542';});
+$('drop').addEventListener('dragleave',()=>{$('drop').style.borderColor='#3a3a3a';});
+$('drop').addEventListener('drop',e=>{e.preventDefault();$('drop').style.borderColor='#3a3a3a';
+  openLocal(e.dataTransfer.files[0]);});
+// 창 아무 데나 떨궈도 열리게 (기본 동작=브라우저가 이미지를 그냥 여는 것 방지)
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{e.preventDefault();
+  if(e.target.id!=='drop'&&e.dataTransfer.files.length) openLocal(e.dataTransfer.files[0]);});
+// 몸통을 바꾸면 지금 불러온 그림 그대로 base 만 갈아끼운다
+$('fileBody').onchange=async()=>{
+  if(!itemData){return;}
+  curItem={...curItem,body:$('fileBody').value};
+  const keep=new ImageData(new Uint8ClampedArray(itemData.data),W,H);
+  if(await useItem(curItem,keep))
+    say('몸통을 '+($('fileBody').value==='human_f'?'여자':'남자')+'로 바꿨습니다.');
+};
 $('slot').onchange=renderGal; renderGal();
 if(location.protocol==='file:') $('gWarn').style.display='block';
 
@@ -609,7 +683,9 @@ $('tSave').onclick=()=>{
   c.getContext('2d').putImageData(itemData,0,0);
   c.toBlob(bl=>{const fn=(curItem?curItem.id:'retouched')+'.png';
     const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=fn;a.click();
-    say('<b>'+fn+'</b> 저장했습니다. char/items/ 에 덮어쓰세요.');});
+    say('<b>'+fn+'</b> 저장했습니다. '+(curItem&&curItem.local
+      ? '<b>머피에셋스튜디오 수정본\\</b> 폴더에 넣어주시면 반영합니다.'
+      : 'char/items/ 에 덮어쓰세요.'));});
 };
 </script>
 </body>
