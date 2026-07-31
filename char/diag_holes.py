@@ -51,14 +51,19 @@ def analyze(name, body):
         hc = hair[r * CH:(r + 1) * CH, 0:CW]
         h = hc[:, :, 3] >= ALPHA_BIN
 
-        holes = ndimage.binary_fill_holes(h) & ~h            # 머리카락에 둘러싸인 구멍
-        must, _keep = base_regions(bc, r, base_name, 0)
+        allholes = ndimage.binary_fill_holes(h) & ~h         # 머리카락에 둘러싸인 빈 자리
+        must, keep = base_regions(bc, r, base_name, 0)
+        # ★프로필에서 머리카락이 귀를 둘러싸면 귀가 '내부 구멍'으로 잡힌다.
+        #   귀는 보여야 정상이다 — 메우면 귀가 사라진다. 반드시 갈라서 보여준다.
+        ear = allholes & keep
+        holes = allholes & ~keep                             # 진짜 메울 구멍
         bare = must & ~h                                     # 덮어야 하는데 비었다
 
         comp = over(bc, hc)
         vis = comp.copy()
         vis[bare] = [0, 220, 255, 255]
         vis[holes] = [255, 0, 255, 255]
+        vis[ear] = [255, 220, 0, 255]
         tiles.append((ROWS[r], vis))
 
         def report(mask, lbl):
@@ -78,7 +83,8 @@ def analyze(name, body):
                 parts.append(f"{s}px@x{int(xs.mean())},y{int(ys.mean())}")
             print(f"   {ROWS[r]:2s} {lbl}: {len(big)}곳 {int(mask.sum())}px  " + " · ".join(parts))
 
-        report(holes, "내부구멍")
+        report(holes, "메울 구멍")
+        report(ear, "귀 (메우지 말 것)")
         report(bare, "두상노출")
 
     pad, lbl = 8, 26
@@ -94,7 +100,8 @@ def analyze(name, body):
         font = ImageFont.load_default()
     for i, (t, _) in enumerate(tiles):
         d.text(((pad + i * (CW + pad)) * SCALE, 8), t, fill=(20, 20, 20), font=font)
-    d.text((10, (lbl + pad + CH) * SCALE - 34), "마젠타=내부구멍  시안=머리카락이 덮어야 하는데 빈 곳",
+    d.text((10, (lbl + pad + CH) * SCALE - 34),
+           "마젠타=메울 구멍   노랑=귀(메우지 말 것)   시안=머리카락이 덮어야 하는데 빈 곳",
            fill=(90, 90, 90), font=font)
     p = os.path.join(HERE, "_diag", f"holes_{name}")
     big.save(p)
