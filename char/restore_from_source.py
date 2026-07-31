@@ -39,6 +39,7 @@ BASEW = {"human": "walk.png", "human_f": "walk_female.png"}
 BALD = {"human": BALD_M, "human_f": BALD_F}
 GROW = 2          # 기존 헤어에서 이만큼 안에 붙어 있는 것만 되살린다
 CLOSE = 3         # 실루엣 안쪽으로 파인 자리만 (0이면 끔). --close 로 바꾼다
+ROWSEL = []       # 특정 방향만 (--rows 0,1). 비면 전 방향
 
 SOURCE = {
     "hair_f_long.png": os.path.join(NUKKI, "여자 검정생머리_clean-Photoroom.png"),
@@ -56,6 +57,18 @@ def is_skin(a):
     return (R >= SKIN_R) & (R > G + 20) & (G > B)
 
 
+def hair_lum_max(layer):
+    """'원본에서 무엇이 머리카락인가'를 **우리 레이어의 실제 색 분포**에서 유도한다.
+
+    ★살색만 빼는 방식(is_skin)은 옷·소품까지 머리카락으로 본다. 긴 생머리처럼 몸을 덮는
+      헤어에서 옷이 딸려 들어온다. 밝기 상한을 우리 레이어에서 재는 쪽이 안전하다.
+    """
+    m = layer[:, :, 3] >= ALPHA_BIN
+    if not m.any():
+        return 255.0
+    return float(np.percentile(layer[m][:, :3].mean(axis=1), 99)) + 10
+
+
 def run(name, body, apply=False, check=None):
     walk = np.asarray(Image.open(os.path.join(HERE, BASEW[body])).convert("RGBA")).astype(int)
     norm = Norm(load(BALD[body]))
@@ -66,12 +79,16 @@ def run(name, body, apply=False, check=None):
     a = np.asarray(Image.open(start).convert("RGBA")).astype(int)
     out = a.copy()
 
-    print(f"■ {name}  (시작 {os.path.basename(start)})")
+    lum_max = hair_lum_max(a)
+    rows = ROWSEL if ROWSEL else list(range(4))
+    print(f"■ {name}  (시작 {os.path.basename(start)})  머리색 밝기상한 {lum_max:.0f}"
+          f"  대상 방향 {[ROWS[r] for r in rows]}")
     total = 0
-    for r in range(4):
+    for r in rows:
         sc = 0 if name in FORCE_COL0 else 0        # 원본은 방향당 1프레임만 쓴다
         worn = binarize(norm.cell(src_pad, r, sc))
-        wm = (worn[:, :, 3] >= ALPHA_BIN) & ~is_skin(worn)
+        wm = ((worn[:, :, 3] >= ALPHA_BIN) & ~is_skin(worn)
+              & (worn[:, :, :3].mean(axis=2) < lum_max))
         got = 0
         for c in range(3):
             bc = walk[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
@@ -125,9 +142,11 @@ def main():
         print(__doc__)
         return
     check = sys.argv[sys.argv.index("--check") + 1] if "--check" in sys.argv else None
+    global CLOSE, ROWSEL
     if "--close" in sys.argv:
-        global CLOSE
         CLOSE = int(sys.argv[sys.argv.index("--close") + 1])
+    if "--rows" in sys.argv:
+        ROWSEL = [int(x) for x in sys.argv[sys.argv.index("--rows") + 1].split(",")]
     run(sys.argv[1], sys.argv[2], "--apply" in sys.argv, check)
 
 
