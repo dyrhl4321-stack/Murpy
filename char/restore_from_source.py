@@ -40,6 +40,10 @@ BALD = {"human": BALD_M, "human_f": BALD_F}
 GROW = 2          # 기존 헤어에서 이만큼 안에 붙어 있는 것만 되살린다
 CLOSE = 3         # 실루엣 안쪽으로 파인 자리만 (0이면 끔). --close 로 바꾼다
 ROWSEL = []       # 특정 방향만 (--rows 0,1). 비면 전 방향
+BASE_DARK = 70    # base 가 이보다 어두우면 외곽선·이목구비 → 손대지 않는다
+PASSES = 1        # 반복 횟수. 되살린 헤어에 붙은 다음 줄이 또 조건을 통과한다 (--passes)
+OPEN_KEEP = False  # 정면 앞머리처럼 KEEP 이 스타일을 막을 때 (--open-keep).
+#                    base_dark 가 눈·눈썹·입을 대신 지키므로 열어도 안전하다
 
 SOURCE = {
     "hair_f_long.png": os.path.join(NUKKI, "여자 검정생머리_clean-Photoroom.png"),
@@ -91,13 +95,22 @@ def run(name, body, apply=False, check=None):
               & (worn[:, :, :3].mean(axis=2) < lum_max))
         got = 0
         for c in range(3):
+          for _p in range(PASSES):
             bc = walk[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
             hc = out[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
             h = hc[:, :, 3] >= ALPHA_BIN
             _must, keep = base_regions(bc, r, BASEW[body], c)
+            if OPEN_KEEP:
+                keep = np.zeros_like(keep)         # base_dark 가 이목구비를 대신 지킨다
 
+            # ★★base 가 그 자리에 어두운 픽셀을 그린다면 건드리지 않는다.
+            #   원본 시트의 '몸 외곽선'도 검정이라 밝기 조건만으로는 머리카락과 구분이 안 된다
+            #   (실측: 남은 후보 2437px 중 1971px 이 팔·다리·발 윤곽선이었다).
+            #   이 조건 하나로 ①몸 윤곽선 오탐 ②눈·눈썹·입 훼손 을 동시에 막는다 —
+            #   base 가 이미 같은 자리에 그리므로 헤어가 다시 그릴 이유가 없다.
+            bdark = (bc[:, :, 3] >= ALPHA_BIN) & (bc[:, :, :3].mean(axis=2) < BASE_DARK)
             near = ndimage.binary_dilation(h, np.ones((3, 3), bool), iterations=GROW)
-            add = wm & ~h & ~keep & near           # 원본에 있고·우리엔 없고·얼굴귀 아니고·헤어에 붙음
+            add = wm & ~h & ~keep & near & ~bdark
             # ★'붙어 있음'만으론 머리 둘레가 통째로 부푼다(실측 과잉 3451~4670px).
             #   원본 머리는 base 두상보다 크게 그려져 있기 때문이다.
             #   닫힘(closing)으로 **실루엣 안쪽으로 파인 자리(노치·틈)** 만 남긴다.
@@ -142,11 +155,14 @@ def main():
         print(__doc__)
         return
     check = sys.argv[sys.argv.index("--check") + 1] if "--check" in sys.argv else None
-    global CLOSE, ROWSEL
+    global CLOSE, ROWSEL, PASSES, OPEN_KEEP
     if "--close" in sys.argv:
         CLOSE = int(sys.argv[sys.argv.index("--close") + 1])
     if "--rows" in sys.argv:
         ROWSEL = [int(x) for x in sys.argv[sys.argv.index("--rows") + 1].split(",")]
+    if "--passes" in sys.argv:
+        PASSES = int(sys.argv[sys.argv.index("--passes") + 1])
+    OPEN_KEEP = "--open-keep" in sys.argv
     run(sys.argv[1], sys.argv[2], "--apply" in sys.argv, check)
 
 
