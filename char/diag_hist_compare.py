@@ -30,15 +30,21 @@ def over(dst, src):
 
 
 def main():
-    shas = sys.argv[1:] or ["671c2c5", "43cbbeb", "a215d5b"]
+    args = sys.argv[1:]
+    row, col = 0, 0
+    if "--row" in args:
+        i = args.index("--row"); row = int(args[i + 1]); args = args[:i] + args[i + 2:]
+    if "--col" in args:
+        i = args.index("--col"); col = int(args[i + 1]); args = args[:i] + args[i + 2:]
+    shas = args or ["671c2c5", "43cbbeb", "a215d5b"]
     base = np.asarray(Image.open(os.path.join(HERE, "walk.png")).convert("RGBA")).astype(int)
-    bc = cell(base, 0, 0)
+    bc = cell(base, row, col)
 
     tiles = []
     for s in shas:
         p = os.path.join(HERE, "_diag", "hist", f"{s}.png")
         hs = np.asarray(Image.open(p).convert("RGBA")).astype(int)
-        hc = cell(hs, 0, 0)
+        hc = cell(hs, row, col)
         comp = over(bc, hc)[:HEAD_H]
         tiles.append((s, Image.fromarray(comp.astype(np.uint8), "RGBA").convert("RGB")))
 
