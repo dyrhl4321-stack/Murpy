@@ -51,7 +51,12 @@ def main():
         return
     rel, body = sys.argv[1], sys.argv[2]
     apply = "--apply" in sys.argv
+    # 대표가 밑그림 위에 그리면 파일명이 아이템 id 와 달라진다 → 대상 이름을 지정할 수 있게
     name = os.path.basename(rel)
+    if "--as" in sys.argv:
+        name = sys.argv[sys.argv.index("--as") + 1]
+        if not name.endswith(".png"):
+            name += ".png"
 
     src_p = os.path.join(STUDIO, rel.replace("/", os.sep))
     cur_p = os.path.join(ITEMS, name)
@@ -77,17 +82,19 @@ def main():
     out[out[:, :, 3] == 0] = 0                      # 투명 픽셀의 RGB 도 비운다
 
     if cur is not None:
-        print("  현재 배포본 대비:")
+        print("  현재 배포본 대비 (열별 — 한 열만 바뀌었으면 3열 복제가 필요하다):")
         for r in range(4):
-            da = dv = 0
+            per = []
             for c in range(3):
                 bc = cell(base, r, c)
                 a1 = cell(cur, r, c)[:, :, 3] >= ALPHA_BIN
                 a2 = cell(out, r, c)[:, :, 3] >= ALPHA_BIN
-                da += int((a1 ^ a2).sum())
                 c1, c2 = over(bc, cell(cur, r, c)), over(bc, cell(out, r, c))
-                dv += int((np.abs(c1[:, :, :3] - c2[:, :, :3]).sum(axis=2) > 24).sum())
-            print(f"    {ROWS[r]:2s}  알파 {da:5d}px   화면 {dv:5d}px")
+                dv = int((np.abs(c1[:, :, :3] - c2[:, :, :3]).sum(axis=2) > 24).sum())
+                per.append((int((a1 ^ a2).sum()), dv))
+            tot = (sum(p[0] for p in per), sum(p[1] for p in per))
+            detail = " ".join(f"col{c}(알파{p[0]}/화면{p[1]})" for c, p in enumerate(per))
+            print(f"    {ROWS[r]:2s}  합 알파 {tot[0]:5d} 화면 {tot[1]:5d}   {detail}")
 
     # 눈으로 볼 비교 렌더 (현재 위 / 수정본 아래)
     canvas = Image.new("RGB", (CW * 4, CH * 2 + 8), (250, 250, 250))
