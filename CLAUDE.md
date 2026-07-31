@@ -27,6 +27,7 @@
 | 센터 뱃지·도감 | `docs/superpowers/specs/2026-07-15-center-badge-dogam-design.md` |
 | 에셋 스튜디오 | `docs/superpowers/specs/2026-07-10-asset-studio-triage-and-pixel-tools-design.md` · `tools/asset-studio/README.md` |
 | 추출 파이프라인 | `docs/murpyworld-extraction-pipeline-reverse-engineered.md` · `tools/character-customizer/V2_DIFF_PIPELINE.md` |
+| **생성 AI 자체학습(B안)** | `docs/murpyworld-ai-generation-roadmap.md` — LoRA+ControlNet, 비용 실측, 착수 순서 |
 | 캐릭터 스프라이트 규격 | `docs/character-sprite-spec.md` · `docs/캐릭터-아이템-작업가이드.md` |
 | AI 이미지 프롬프트 | `docs/prompts/README.md` · `01-character-sprite.md` |
 | 로드맵 | `docs/murpyworld-roadmap.md` |
