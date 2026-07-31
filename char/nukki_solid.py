@@ -28,6 +28,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ITEMS = os.path.join(HERE, "items")
 DESK = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스터마이징 3차"
 DIV = 8
+EDGE_PX = 3        # 경계에서 이만큼 안쪽까지 밝은 잔여를 본다
+EDGE_SLACK = 30    # 본체 밝기 97퍼센타일 + 이만큼을 넘으면 잔여
 
 PRESET_THUMBS = [
     ("top_f_hoodzip", r"상의\여캐\썸네일\회색후드집업.png"),
@@ -92,6 +94,17 @@ def cut(arr, tol, ncolor=2):
     bgmask = np.isin(lab, list(edge_ids)) if edge_ids else np.zeros_like(close)
 
     keep = ~bgmask
+    # ★경계에 남는 밝은 테두리 제거 — 배경과 옷 사이 중간색(안티에일리어싱) 픽셀이
+    #   가늘게 살아남아 "흰색이 덜 따졌다"로 보인다(대표 지적, 레깅스 51px).
+    #   본체 밝기 분포 기준이라 흰 옷에도 안전하다.
+    if keep.any():
+        lum = arr[:, :, :3].mean(axis=2)
+        hi = np.percentile(lum[keep], 97) + EDGE_SLACK
+        near_bg = ndimage.binary_dilation(bgmask, np.ones((3, 3), bool), iterations=EDGE_PX)
+        halo = keep & near_bg & (lum > hi)
+        keep &= ~halo
+        bgmask = ~keep
+
     # ✦ 워터마크 같은 작은 고립 조각 제거 (옷 본체는 한 덩어리다)
     lab2, n2 = ndimage.label(keep, np.ones((3, 3), bool))
     if n2 > 1:

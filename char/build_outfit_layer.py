@@ -36,6 +36,7 @@ DIFF_T = 40        # RGB 변화 판정 (헤어 파이프라인과 같은 값)
 STRAY_MAX = 40     # 앱 셀 기준 고립조각 하한
 HOLE_MAX = 400     # 옷 안쪽 구멍은 메운다 (몸이 비쳐 보이면 안 된다)
 NECK_MARGIN = 8    # 목 끝에서 이만큼 위까지는 옷으로 인정 (후드 칼라 등)
+LUM_SLACK = 40     # 옷 밝기 97퍼센타일 + 이만큼을 넘으면 배경 잔여로 본다
 
 CONFIG = [
     dict(out="top_f_hoodzip", slot="top", name="회색 후드집업",
@@ -80,6 +81,16 @@ def extract_cell(src, bse):
         for i, s in enumerate(sizes, start=1):
             if s < STRAY_MAX:
                 m[lab == i] = False
+
+    # ★옷 색 분포에서 크게 벗어난 밝은 픽셀 제거 = 누끼 덜 된 배경 잔여.
+    #   차콜 레깅스 우측 발 근처에 흰색 9px(RGB 238)이 남아 있었다(대표 지적).
+    #   본체 밝기 분포 기준이라 흰 옷에도 안전하다 — '이 옷치고 지나치게 밝은' 것만 자른다.
+    if m.any():
+        lum = src[:, :, :3].mean(axis=2)
+        hi = np.percentile(lum[m], 97) + LUM_SLACK
+        stray = m & (lum > hi)
+        if 0 < stray.sum() <= m.sum() * 0.01:      # 1% 이하일 때만 (진짜 이물질)
+            m &= ~stray
 
     # 옷 안쪽 구멍 메움 (작은 것만 — 겨드랑이·팔 사이 큰 틈은 남긴다)
     holes = ndimage.binary_fill_holes(m) & ~m
