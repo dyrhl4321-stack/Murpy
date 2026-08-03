@@ -34,7 +34,7 @@ from PIL import Image
 from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from base_regions import regions as regions_of   # noqa: E402
+from base_regions import regions as regions_of, FACE_X   # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ITEMS = os.path.join(HERE, "items")
@@ -46,6 +46,8 @@ MIN_KEEP = 120      # 전체가 이보다 적으면 사실상 안 보인다 -> n
 # 방향별로 모자 밖으로 삐져나올 폭(px). 정면은 앞머리만 살짝, 후면은 뒷머리가 넉넉히.
 PEEK = {0: 0, 1: 0, 2: 0, 3: 0}    # 자동 생성은 안 한다(어색하다) — 대표가 직접 그린다
 HEM = True         # False 면 모자 위·옆으로 넘치는 머리를 남긴다(대표가 지울 때)
+NO_BANGS = True    # 앞머리는 빼고 옆머리·뒷머리만 남긴다
+FRONT_CUT = 0.35   # 측면에서 얼굴 쪽 끝을 이 비율만큼 지운다(앞머리)
 FRONT_TOP_KEEP = 6  # 정면에서 모자 최상단 아래 이만큼은 머리를 안 만든다(모자 위로 솟지 않게)
 BASEW = {"human": "walk.png", "human_f": "walk_female.png"}
 BODY_OF = {"hair_m_basic": "human", "hair_ivyleague": "human", "hair_m_semileaf": "human",
@@ -134,6 +136,25 @@ def main():
                                 # 모자가 없는 x(모자 폭 밖) — 밑단 평균선 아래만 인정
                                 below[hem_line(tm) + 1:, x] = True
                         keep &= below
+
+                    # ★앞머리는 빼고 **옆머리·뒷머리만** 삐져나오게 한다(대표 확정 2026-08-03).
+                    #   정면 = 얼굴 앞면 폭 안쪽을 지운다. 그 바깥(관자놀이·귀 옆)이 옆머리다.
+                    #   측면 = 얼굴이 향한 쪽 끝을 지운다(코·입 앞으로 내려온 앞머리).
+                    #   후면 = 전부 뒷머리라 그대로 둔다.
+                    if NO_BANGS:
+                        if r == 0:
+                            lo, hi = FACE_X[base_name]
+                            keep[:, lo:hi + 1] = False
+                        elif r in (2, 3):
+                            bm = base_cell[:, :, 3] >= ALPHA_BIN
+                            if bm.any():
+                                xs = np.where(bm.any(axis=0))[0]
+                                x0, x1 = int(xs.min()), int(xs.max())
+                                cut = int((x1 - x0) * FRONT_CUT)
+                                if r == 2:                      # 좌 = 얼굴이 왼쪽
+                                    keep[:, :x0 + cut] = False
+                                else:                           # 우 = 얼굴이 오른쪽
+                                    keep[:, x1 - cut + 1:] = False
 
                     # ★★1단계만으로는 화면이 안 바뀐다 — 어차피 모자가 헤어 위에 그려지므로
                     #   미리 자르나 마나 결과가 같다. 실제로 "쓴 것처럼" 보이려면
