@@ -30,6 +30,7 @@ CW, CH = 141, 224
 ALPHA_BIN = 128
 ROWS = ["정면", "후면", "좌", "우"]
 DEFAULT_CUT = [9, 6, 4, 2, 1]      # 맨 윗줄부터 좌우에서 깎을 px
+BG = np.array([255, 0, 255, 255])  # 형광 마젠타. --bg none 이면 투명 유지
 
 
 def outline_color(cell, m, top):
@@ -47,8 +48,14 @@ def outline_color(cell, m, top):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cut", default=",".join(map(str, DEFAULT_CUT)))
+    ap.add_argument("--bg", default="magenta",
+                    help="magenta | green | none (투명 유지)")
     args = ap.parse_args()
     cut = [int(x) for x in args.cut.split(",")]
+    global BG
+    BG = {"magenta": np.array([255, 0, 255, 255]),
+          "green": np.array([0, 255, 0, 255]),
+          "none": None}[args.bg]
 
     for name in ["walk.png", "walk_female.png"]:
         p = os.path.join(HERE, name)
@@ -83,9 +90,21 @@ def main():
                     m2 = cell[:, :, 3] >= ALPHA_BIN
                     w = [int(m2[top + d].sum()) for d in range(6) if top + d < CH]
                     print(f"   {ROWS[r]} col{c}  맨윗줄 폭 변화 {w}")
+        # ★AI 입력용은 배경을 형광 단색으로 채운다.
+        #   투명 PNG 를 넣으면 나노바나나가 배경을 검게 인식해 결과가 흐려진다(대표 확인).
+        #   캐릭터에 없는 색이어야 나중에 누끼가 깨끗하다 — 살색·검정·베이지와 안 겹치는 마젠타.
+        if BG is not None:
+            a2 = out.copy()
+            bg = a2[:, :, 3] < ALPHA_BIN
+            a2[bg] = BG
+            # 반투명(128~254)이 남으면 AI 가 경계를 흐리게 본다 → 전부 불투명으로 못 박는다.
+            a2[:, :, 3] = 255
+            out = a2
+
         q = os.path.join(HERE, name.replace(".png", "_round.png"))
         Image.fromarray(out.astype(np.uint8), "RGBA").save(q)
-        print(f"   -> {q}  (생성 입력 전용 · 앱에 등록하지 않음)")
+        print(f"   -> {q}  (생성 입력 전용 · 앱에 등록하지 않음"
+              f"{' · 배경 마젠타' if BG is not None else ''})")
 
 
 if __name__ == "__main__":

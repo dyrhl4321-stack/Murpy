@@ -44,7 +44,8 @@ ROWS = ["정면", "후면", "좌", "우"]
 MIN_PIECE = 12      # 이보다 작은 고립 조각은 버린다
 MIN_KEEP = 120      # 전체가 이보다 적으면 사실상 안 보인다 -> null 권장
 # 방향별로 모자 밖으로 삐져나올 폭(px). 정면은 앞머리만 살짝, 후면은 뒷머리가 넉넉히.
-PEEK = {0: 2, 1: 4, 2: 3, 3: 3}
+PEEK = {0: 0, 1: 0, 2: 0, 3: 0}    # 자동 생성은 안 한다(어색하다) — 대표가 직접 그린다
+HEM = True         # False 면 모자 위·옆으로 넘치는 머리를 남긴다(대표가 지울 때)
 FRONT_TOP_KEEP = 6  # 정면에서 모자 최상단 아래 이만큼은 머리를 안 만든다(모자 위로 솟지 않게)
 BASEW = {"human": "walk.png", "human_f": "walk_female.png"}
 BODY_OF = {"hair_m_basic": "human", "hair_ivyleague": "human", "hair_m_semileaf": "human",
@@ -81,7 +82,12 @@ def main():
     ap.add_argument("--hair")
     ap.add_argument("--hat")
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--no-hem", action="store_true",
+                    help="모자 위·옆으로 넘치는 머리를 남긴다(대표가 직접 지울 때)")
     args = ap.parse_args()
+    global HEM
+    if args.no_hem:
+        HEM = False
 
     hairs = [args.hair] if args.hair else HAIRS
     hats = [args.hat] if args.hat else HATS
@@ -115,15 +121,19 @@ def main():
                     #   그래서 x열마다 그 열의 모자 **최하단(hem)** 을 구하고 그 아래만 남긴다.
                     #   짧은 머리는 남는 게 거의 없어 자동으로 null 후보가 된다.
                     keep = hm & ~tm
-                    below = np.zeros_like(keep)
-                    for x in range(CW):
-                        col_hat = np.where(tm[:, x])[0]
-                        if len(col_hat):
-                            below[col_hat.max() + 1:, x] = True
-                        elif tm.any():
-                            # 모자가 없는 x(모자 폭 밖) — 밑단 평균선 아래만 인정
-                            below[hem_line(tm) + 1:, x] = True
-                    keep &= below
+                    # ★HEM 을 끄면 모자 위·옆으로 넘치는 머리를 **남긴다**.
+                    #   대표가 스튜디오에서 직접 지우겠다고 할 때는 꺼야 한다 —
+                    #   자동으로 잘라버리면 되살릴 수가 없다.
+                    if HEM:
+                        below = np.zeros_like(keep)
+                        for x in range(CW):
+                            col_hat = np.where(tm[:, x])[0]
+                            if len(col_hat):
+                                below[col_hat.max() + 1:, x] = True
+                            elif tm.any():
+                                # 모자가 없는 x(모자 폭 밖) — 밑단 평균선 아래만 인정
+                                below[hem_line(tm) + 1:, x] = True
+                        keep &= below
 
                     # ★★1단계만으로는 화면이 안 바뀐다 — 어차피 모자가 헤어 위에 그려지므로
                     #   미리 자르나 마나 결과가 같다. 실제로 "쓴 것처럼" 보이려면

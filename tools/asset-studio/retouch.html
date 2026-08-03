@@ -272,6 +272,20 @@ const ITEMS=[
  {id:'shoes_f_white',slot:'shoes',body:'human_f',name:'[여] 흰색 러닝화'},
  {id:'shoes_f_black',slot:'shoes',body:'human_f',name:'[여] 검정 러닝화'},
  {id:'acc_f_airpodsmax',slot:'acc',body:'human_f',name:'[여] 에어팟 맥스'},
+ // 헤어x모자 조합 시트 — overlay = 편집 대상은 아니고 **위에 겹쳐 보여줄** 아이템.
+ // 모자를 같이 안 보여주면 어디가 넘치는지 알 수 없다.
+ {id:'hair_m_basic__hat_beanie',slot:'hair',body:'human',name:'[조합] 기본헤어+비니',overlay:'hat_beanie'},
+ {id:'hair_m_basic__hat_ladodgers',slot:'hair',body:'human',name:'[조합] 기본헤어+볼캡',overlay:'hat_ladodgers'},
+ {id:'hair_ivyleague__hat_beanie',slot:'hair',body:'human',name:'[조합] 아이비+비니',overlay:'hat_beanie'},
+ {id:'hair_ivyleague__hat_ladodgers',slot:'hair',body:'human',name:'[조합] 아이비+볼캡',overlay:'hat_ladodgers'},
+ {id:'hair_m_semileaf__hat_beanie',slot:'hair',body:'human',name:'[조합] 세미리프+비니',overlay:'hat_beanie'},
+ {id:'hair_m_semileaf__hat_ladodgers',slot:'hair',body:'human',name:'[조합] 세미리프+볼캡',overlay:'hat_ladodgers'},
+ {id:'hair_f_basic__hat_beanie',slot:'hair',body:'human_f',name:'[여조합] 기본헤어+비니',overlay:'hat_beanie'},
+ {id:'hair_f_basic__hat_ladodgers',slot:'hair',body:'human_f',name:'[여조합] 기본헤어+볼캡',overlay:'hat_ladodgers'},
+ {id:'hair_f_bob_bang__hat_beanie',slot:'hair',body:'human_f',name:'[여조합] 단발+비니',overlay:'hat_beanie'},
+ {id:'hair_f_bob_bang__hat_ladodgers',slot:'hair',body:'human_f',name:'[여조합] 단발+볼캡',overlay:'hat_ladodgers'},
+ {id:'hair_f_long__hat_beanie',slot:'hair',body:'human_f',name:'[여조합] 긴생머리+비니',overlay:'hat_beanie'},
+ {id:'hair_f_long__hat_ladodgers',slot:'hair',body:'human_f',name:'[여조합] 긴생머리+볼캡',overlay:'hat_ladodgers'},
 ];
 const ROOT='../../';
 const OPS={
@@ -284,6 +298,7 @@ const OPS={
 
 let baseImg=null,itemData=null,W=0,H=0,cellR=0,Z=5,curItem=null,tool='brush',brush=6;
 let cellC=0;                       // 지금 보고 있는 걸음 프레임(열)
+let overlayData=null;              // 편집 대상 위에 겹쳐 보여줄 레이어(모자 등). 편집되지 않는다.
 const targetCols=()=>$('sync3').checked?[0,1,2]:[cellC];   // 편집이 닿을 열
 const history=[];
 const $=id=>document.getElementById(id);
@@ -320,6 +335,12 @@ async function useItem(it,d){
   baseImg=nb;
   itemData=new ImageData(new Uint8ClampedArray(d.data),d.width,d.height);
   W=d.width;H=d.height;curItem=it;history.length=0;
+  // 겹쳐 보여줄 레이어(모자 등). 실패해도 편집엔 지장 없다.
+  overlayData=null;
+  if(it.overlay){
+    try{ overlayData=await loadPng(ROOT+'char/items/'+it.overlay+'.png?t='+Date.now()); }
+    catch(e){ say('겹칠 레이어 <b>'+it.overlay+'</b> 를 못 불러왔습니다.'); }
+  }
   const dir=$('dir'),n=Math.round(H/CH);
   if(dir.options.length!==n){
     dir.innerHTML='';
@@ -402,6 +423,8 @@ function draw(){
     else{const chk=((x>>2)+(y>>2))&1?26:34;r=chk;g=chk;b=chk;}
     if(!hideBody&&baseImg.data[i+3]>=128){r=baseImg.data[i];g=baseImg.data[i+1];b=baseImg.data[i+2];}
     if(itemData.data[i+3]>=128){r=itemData.data[i];g=itemData.data[i+1];b=itemData.data[i+2];}
+    // ★모자는 앱과 같은 순서(헤어 위)로 겹친다. 이게 없으면 어디가 넘치는지 안 보인다.
+    if(overlayData&&overlayData.data[i+3]>=128){r=overlayData.data[i];g=overlayData.data[i+1];b=overlayData.data[i+2];}
     out.data[o]=r;out.data[o+1]=g;out.data[o+2]=b;out.data[o+3]=255;}
   const t=document.createElement('canvas');t.width=CW;t.height=CH;
   t.getContext('2d').putImageData(out,0,0);
