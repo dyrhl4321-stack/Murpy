@@ -6120,6 +6120,30 @@ function confirmCrop() {
 //   실제 인쇄는 공유 버튼을 누를 때 한 번만(submitFeedPost).
 window._mcamCaptionChanged = function () {};
 
+// 입력칸을 **실제로 글씨가 찍히는 자리·크기**에 맞춘다.
+// 캔버스 기준: 1080×1350, 필름바 bar=210, 머릿줄 x=40 / y=H-bar+62(중심) / font 42px.
+// 이 비율을 미리보기 크기로 환산해 얹으면 타이핑하는 글씨 = 찍히는 글씨가 된다.
+window._mcamFitCaption = function () {
+  try {
+    const el = document.getElementById('mcam-caption');
+    const box = el && el.parentElement;
+    if (!el || !box) return;
+    const W = box.clientWidth, H = box.clientHeight;
+    if (!W || !H) return;
+    const fs = W * 42 / 1080;                       // 글자 크기
+    const cy = H * (1350 - 210 + 62) / 1350;        // 머릿줄 중심 y
+    const lineH = fs * 1.2 + 4;                     // padding 2px 위아래 포함
+    el.style.fontSize = (Math.round(fs * 10) / 10) + 'px';
+    el.style.left = (Math.round(W * 40 / 1080 * 10) / 10) + 'px';
+    el.style.top = (Math.round((cy - lineH / 2) * 10) / 10) + 'px';
+    el.style.width = Math.round(W * 0.70) + 'px';   // 우측은 캐릭터 자리
+  } catch (e) {}
+};
+window.addEventListener('resize', function () {
+  const el = document.getElementById('mcam-caption');
+  if (el && el.style.display !== 'none' && window._mcamFitCaption) window._mcamFitCaption();
+});
+
 // 머피캠 필터 토글 — 켜면 원본에서 합성, 끄면 원본으로 되돌린다.
 // ★픽셀은 **사진 안에만** 들어간다. 홈탭 UI 는 건드리지 않는다(대표 확정 2026-08-03).
 window.toggleMurpyCam = async function (keepFocus) {
@@ -6137,11 +6161,7 @@ window.toggleMurpyCam = async function (keepFocus) {
     if (tg.checked) {
       if (body && !capIn.value && body.value) capIn.value = body.value.slice(0, 14);
       capIn.style.display = ''; capRow.style.display = 'none';
-      // 글자 크기를 사진 크기에 비례시킨다 — 캔버스 42px / 1080px 폭 기준
-      try {
-        const bw = capIn.parentElement ? capIn.parentElement.clientWidth : 0;
-        if (bw) capIn.style.fontSize = Math.max(8, Math.round(bw * 42 / 1080 * 10) / 10) + 'px';
-      } catch (e) {}
+      if (window._mcamFitCaption) requestAnimationFrame(window._mcamFitCaption);
     } else {
       if (body && capIn.value) body.value = capIn.value;
       capIn.style.display = 'none'; capRow.style.display = '';
@@ -12283,10 +12303,17 @@ window._mwBuildStamp = async function (photo, t, caption) {
   // ★도장에 이미 '오운완'이 찍히므로 여기까지 '오운완'이면 같은 말이 두 번이다(대표 지적).
   //   필터를 켜면 사진 한 장에 글까지 다 담기게 하는 것이 목적이라 캡션을 인쇄한다.
   //   단 **한 줄을 넘기면 안 된다** — 우측은 캐릭터 자리라 가용폭이 좁다. 넘치면 말줄임.
-  const _cap = (caption || '').trim().replace(/\s+/g, ' ');
-  const _head = t ? t.center.name : (_cap ? (_cap.length > 14 ? _cap.slice(0, 14) + '…' : _cap) : '오운완');
+  // ★caption 이 **빈 문자열이면 머릿줄을 아예 비운다.** 홈 피드 미리보기가 그 경우인데,
+  //   그 자리에 입력칸을 겹쳐 두기 때문에 '오운완' 폴백이 찍히면 글씨가 두 겹으로 보인다.
+  //   caption 을 안 넘긴 경우(undefined = 카메라 탭)는 기존대로 '오운완'.
+  const _cap = (caption == null) ? null : String(caption).trim().replace(/\s+/g, ' ');
+  let _head;
+  if (t) _head = t.center.name;
+  else if (_cap === null) _head = '오운완';
+  else if (_cap === '') _head = '';
+  else _head = _cap.length > 14 ? _cap.slice(0, 14) + '…' : _cap;
   x.font="42px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle='#fff';
-  x.fillText(_head, 40, H-bar+62);
+  if (_head) x.fillText(_head, 40, H-bar+62);
   x.font="30px 'Galmuri11',sans-serif"; x.fillStyle='#F5C24B';
   x.fillText(`${dstr}  ${tstr}`, 40, H-bar+118);
   x.font="24px 'Galmuri11',sans-serif"; x.fillStyle='#4a5266';
