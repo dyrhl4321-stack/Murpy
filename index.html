@@ -1216,8 +1216,9 @@
         <div id="mw-furn" style="position:absolute;inset:0;pointer-events:none"></div>
         <!-- 칩 버튼(꾸미기/이동/말풍선) 폐기 → 캐릭터 탭 = 링 커맨드 메뉴(mwCharMenu, 성검전설식). 대표 결정 7-23 -->
         <div id="charworld-avatar" onclick="window.mwCharMenu&&window.mwCharMenu()" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;image-rendering:auto;cursor:pointer"></div>
-        <div id="mw-ringcoach" style="position:absolute;bottom:13px;left:50%;transform:translateX(-50%);z-index:150;pointer-events:none;
-             font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#fff;background:rgba(13,19,34,.85);border:2px solid rgba(255,255,255,.22);padding:6px 11px;animation:mwCoachBob 1.6s ease-in-out infinite">캐릭터를 눌러보세요!</div>
+        <!-- ★#mw-ringcoach 제거(2026-08-03). 스포트라이트 코치마크(_COACH_MARKS.char, 황금 강조형)가
+             "내 캐릭터를 톡! 누르면 메뉴가 열려요"로 **같은 말을 이미 한다.** 둘 다 띄우니
+             자리까지 겹쳐서(bottom 13px) 안내가 서로를 가렸다. 강조형 하나로 통일한다. -->
         <div id="mw-dragjoy" oncontextmenu="return false">
           <i class="dj u">▲</i><i class="dj l">◀</i><i class="dj r">▶</i><i class="dj d">▼</i><b></b>
         </div>
@@ -2941,8 +2942,8 @@ window.charMove = function (dx, dy) {
     const room = document.getElementById('charworld-room');
     const host = document.getElementById('charworld-avatar');
     if (!room || !host) return;
-    try { localStorage.setItem('mw_ringcoach', '1'); } catch (e) {}
-    const rc = document.getElementById('mw-ringcoach'); if (rc) rc.remove();
+    // 캐릭터 메뉴를 열어봤으면 다음 안내(방 이동)를 띄운다 — 안내는 한 번에 하나만.
+    if (window._mwShowMoveCoach) setTimeout(window._mwShowMoveCoach, 300);
     const home = window._curField === 'home';
     const cx = host.offsetLeft + host.offsetWidth / 2;
     const cy = host.offsetTop + host.offsetHeight * 0.55;
@@ -2997,8 +2998,6 @@ window.charMove = function (dx, dy) {
   window._initRoomJoy = function () {
     const room = document.getElementById('charworld-room');
     if (!room || room._joyBound) return; room._joyBound = true;
-    // 링 메뉴를 한 번이라도 열어봤으면 안내 문구는 다시 안 보여준다
-    try { if (localStorage.getItem('mw_ringcoach')) { const rc0 = document.getElementById('mw-ringcoach'); if (rc0) rc0.remove(); } } catch (e) {}
     const joy = document.getElementById('mw-dragjoy');
     const DJ = { up:'u', down:'d', left:'l', right:'r' };
     let act = false, jx = 0, jy = 0;
@@ -3030,13 +3029,26 @@ window.charMove = function (dx, dy) {
     window.addEventListener('mousemove', (e)=>{ if (act) onM(e); });
     window.addEventListener('mouseup', (e)=>{ if (act) onE(e); });
     // 콜드스타터 코치: 조작법 1회 안내 (첫 드래그에 사라짐)
-    try {
-      if (!localStorage.getItem('mw_movecoach') && !document.getElementById('mw-movecoach')) {
+    // ★캐릭터 안내(#mw-ringcoach)와 자리가 같다(둘 다 bottom 12~13px, left 50%) →
+    //   동시에 뜨면 겹쳐서 둘 다 못 읽는다(대표 리포트 2026-08-03).
+    //   캐릭터 안내가 떠 있는 동안은 미루고, 그게 사라진 뒤에 띄운다.
+    window._mwShowMoveCoach = function () {
+      try {
+        const rm = document.getElementById('charworld-room');
+        if (!rm) return;
+        if (localStorage.getItem('mw_movecoach')) return;
+        if (document.getElementById('mw-movecoach')) return;
+        // 스포트라이트 코치(황금 강조형)가 떠 있으면 미룬다 — 안내는 한 번에 하나만
+        const ov = document.getElementById('coach-overlay');
+        if (ov && ov.style.display === 'block') return;
+        // 캐릭터 안내를 아직 안 봤으면 그게 먼저다
+        if (!localStorage.getItem('coach_char')) return;
         const c = document.createElement('div'); c.id='mw-movecoach'; c.className='mw-movecoach';
         c.innerHTML = '방을 꾹 잡고 미는 방향으로 <b style="color:#7aa4ff">드래그</b> 하면 움직여요';
-        room.appendChild(c);
-      }
-    } catch(e){}
+        rm.appendChild(c);
+      } catch(e){}
+    };
+    window._mwShowMoveCoach();
   };
   if (document.readyState !== 'loading') { window._initDragpad(); window._initRoomJoy(); }
   else document.addEventListener('DOMContentLoaded', () => { window._initDragpad(); window._initRoomJoy(); });
@@ -3529,7 +3541,7 @@ window.mwPortal = function () {
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
     </button>
     <button onclick="closeModal('photo-pick-sheet');window._pickPhoto(false)" style="width:100%;display:flex;align-items:center;gap:13px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:14px 15px;cursor:pointer;font-family:inherit;text-align:left">
-      <span style="width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
+      <span style="width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
       <span style="flex:1"><span style="display:block;font-size:15px;font-weight:700;color:#fff">앨범에서 선택</span><span style="display:block;font-size:11.5px;color:#888;margin-top:1px">저장된 사진 불러오기</span></span>
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
     </button>
@@ -4311,12 +4323,14 @@ window.mwPortal = function () {
       </div>
       <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
       <div class="mfg-row" style="display:flex;align-items:center;gap:13px;padding:13px 14px">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>
+        <!-- ★셋 다 테두리(stroke)로 통일. 아령은 획 5개짜리라 채울 수가 없어서
+             하트만 채우면 셋이 따로 논다. 구분은 색으로만 한다. -->
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#ff4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg>
         <div><div style="font-size:13.5px;font-weight:700;color:rgba(255,255,255,0.92)">매칭에서 먼저 다가가기</div><div style="font-size:11.5px;color:rgba(255,255,255,0.38);margin-top:1px">마음에 드는 사람에게 좋아요</div></div>
       </div>
       <div style="height:1px;background:rgba(255,255,255,0.06)"></div>
       <div class="mfg-row" style="display:flex;align-items:center;gap:13px;padding:13px 14px">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-9 10z"/><path d="M2 22c1.5-2 3-4 5-6"/></svg>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-9 10z"/><path d="M2 22c1.5-2 3-4 5-6"/></svg>
         <div><div style="font-size:13.5px;font-weight:700;color:rgba(255,255,255,0.92)">대숲에 익명으로 글쓰기</div><div style="font-size:11.5px;color:rgba(255,255,255,0.38);margin-top:1px">속마음 편하게 털어놓기</div></div>
       </div>
     </div>
@@ -7567,6 +7581,18 @@ window.murpyFirstGuide = function () {
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 };
 
+// 디자인 확인용 훅 — 첫 가입 때만 뜨는 화면을 다시 보려면 ?dev=guide / ?dev=photo
+// (가입을 새로 하지 않고도 색·여백을 눈으로 확인하려고 둔다. 무해한 안내 UI 뿐이다.)
+try {
+  const _dev = new URLSearchParams(location.search).get('dev');
+  if (_dev) window.addEventListener('load', function () {
+    setTimeout(function () {
+      if (_dev === 'guide' && window.murpyFirstGuide) window.murpyFirstGuide();
+      if (_dev === 'photo' && window.openModal) openModal('photo-pick-sheet');
+    }, 400);
+  });
+} catch (e) {}
+
 // ===== 머피월드 홍보 팝업 (재방문 세션에 슥, 광고식) =====
 // 정면 정지 프레임 스프라이트 미니 렌더(공용)
 window._charMiniHTML = function (bodyKey, H) {
@@ -7665,7 +7691,10 @@ window.dismissCoach = function () {
   try { document.documentElement.style.overflow = ''; document.body.style.overflow = ''; } catch (e) {}
   const hole = document.getElementById('coach-hole'); if (hole) hole.classList.remove('coach-neon');
   if (ov._key) { try { localStorage.setItem('coach_' + ov._key, '1'); } catch (e) {} }
+  const _wasChar = ov._key === 'char';
   ov._key = null;
+  // 캐릭터 안내가 끝나면 그때 방 이동 안내를 띄운다 — 안내는 한 번에 하나만 (자리가 겹친다)
+  if (_wasChar && window._mwShowMoveCoach) setTimeout(window._mwShowMoveCoach, 400);
 };
 // 콜드유저면 탭 첫 진입 때 자동 안내(탭별 1회). 관리자 리셋 버튼으로 재확인 가능.
 window._maybeCoach = function (name) {
