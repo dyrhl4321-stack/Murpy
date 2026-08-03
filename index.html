@@ -12491,7 +12491,7 @@ window.loadHomeTrending = async () => {
       const dressed = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
         .filter(u => u.uid !== _meU && u.character && u.nickname && (u.wardrobe || []).length > 0)
         .sort((a, b) => ((b.wardrobe || []).length) - ((a.wardrobe || []).length));
-      dressed.slice(0, 2).forEach(u => {
+      dressed.slice(0, 1).forEach(u => {
         let charHtml = '';
         try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
         if (!charHtml) return;
@@ -12503,6 +12503,28 @@ window.loadHomeTrending = async () => {
           meta: `<span>아이템 ${(u.wardrobe || []).length}개</span>`
         }));
       });
+
+      // 인기 룸 — ★캐릭터만 꾸미기 대상이 아니다. 방도 꾸미기 대상이다(대표 지적).
+      //   방 배경 위에 그 사람 캐릭터를 세워 "구경 가고 싶게" 만든다.
+      const nFurn = (r) => Array.isArray(r) ? r.length : (r && typeof r === 'object' ? Object.keys(r).length : 0);
+      const roomy = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
+        .filter(u => u.uid !== _meU && u.nickname && nFurn(u.room) > 0)
+        .sort((a, b) => nFurn(b.room) - nFurn(a.room));
+      if (roomy[0]) {
+        const u = roomy[0];
+        let ch = '';
+        try { ch = window.mwMiniCharHtml(u.character, 76) || ''; } catch (e) {}
+        cards.push(card({
+          click: `window.mwVisitRoom && mwVisitRoom('${u.uid}')`,
+          color: PURPLE, icon: icoStar, label: '인기 룸', aria: '인기 룸',
+          inner: `<div style="position:absolute;inset:0;overflow:hidden;background:#0d1018">`
+            + `<img src="char/fields/field_room.png" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated">`
+            + (ch ? `<div style="position:absolute;left:50%;bottom:46px;transform:translateX(-50%)">${ch}</div>` : '')
+            + `</div>`,
+          title: esc(u.nickname || '') + '님의 방',
+          meta: `<span>가구 ${nFurn(u.room)}개</span>`
+        }));
+      }
     }
 
     // 3. 지금 가장 많이 체크인된 센터 — B2B 노출 자리이기도 하다
