@@ -38,10 +38,26 @@ def skin_mask(arr: np.ndarray) -> np.ndarray:
             & (r >= g) & (g >= b) & ((r - b) > 25))
 
 
-def recolor(item: str, near: float = 3.0, max_px: int = 400, out: Path | None = None) -> Path:
+def tint_mask(arr: np.ndarray) -> np.ndarray:
+    """살색이 원단 어두운색과 **섞인** 중간톤(분홍빛). skin_mask 로는 안 잡힌다.
+
+    ★실측 (여캐 회색후드 밑단 y176, 대표가 "후드 하단 가로선"으로 지적):
+      (103,70,74) (131,103,103) (138,112,115) — 밝기가 140 아래라 skin_mask 의 r>140 에 걸리고,
+      B 가 G 보다 커서 g>=b 에도 걸린다. 그래서 '살색 오염 12px'로 통과했다.
+    무채색 원단(회색·검정)에서 **R 만 확실히 뜬 픽셀**을 잡는다.
+      정상 회색  R≈G≈B          → R-max(G,B) ≈ 0   안 걸림
+      밑단 외곽선 (12,0,17)      → R-max = -5      안 걸림
+      오염       (103,70,74)     → R-max = +29     걸림
+    """
+    r, g, b = arr[..., 0].astype(int), arr[..., 1].astype(int), arr[..., 2].astype(int)
+    return (r - np.maximum(g, b)) > 15
+
+
+def recolor(item: str, near: float = 3.0, max_px: int = 400, out: Path | None = None,
+            tint: bool = False) -> Path:
     arr = np.asarray(Image.open(ITEMS / f"{item}.png").convert("RGBA")).copy()
     opaque = arr[..., 3] > 200
-    target = opaque & skin_mask(arr)
+    target = opaque & (tint_mask(arr) if tint else skin_mask(arr))
     n = int(target.sum())
     print(f"{item}: 살색 오염 후보 {n}px")
     if n == 0:
@@ -76,8 +92,10 @@ def main() -> int:
     ap.add_argument("--near", type=float, default=3.0)
     ap.add_argument("--max", type=int, default=400, dest="max_px")
     ap.add_argument("-o", "--out", type=Path)
+    ap.add_argument("--tint", action="store_true",
+                    help="살색이 원단 어두운색과 섞인 중간톤(분홍빛)을 잡는다")
     a = ap.parse_args()
-    recolor(a.item, a.near, a.max_px, a.out)
+    recolor(a.item, a.near, a.max_px, a.out, a.tint)
     return 0
 
 
