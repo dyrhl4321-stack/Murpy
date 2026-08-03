@@ -176,6 +176,18 @@ def main():
                             cell0[ys2, xs2] = hc[idx[0][ys2, xs2], idx[1][ys2, xs2]]
                             cell0[ys2, xs2, 3] = 255
 
+                    # ★모자도 헤어도 안 덮는데 base 가 드러나는 자리를 메운다.
+                    #   앞머리를 빼면서 잘린 틈으로 귀·살색이 세로 조각처럼 비쳤다(여캐 후면 실측).
+                    #   base 영역지도의 MUST(머리카락이 반드시 덮어야 할 곳)만 대상으로 한다.
+                    must, kp = regions_of(base_cell, r, base_name, c)
+                    gap = must & ~tm & ~keep & ~kp
+                    if gap.any() and hm.any():
+                        _d2, idx2 = ndimage.distance_transform_edt(~hm, return_indices=True)
+                        ys3, xs3 = np.where(gap)
+                        cell1 = out[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW]
+                        cell1[ys3, xs3] = hc[idx2[0][ys3, xs3], idx2[1][ys3, xs3]]
+                        cell1[ys3, xs3, 3] = 255
+
                     lab, n = ndimage.label(keep, np.ones((3, 3), bool))
                     if n:
                         sizes = ndimage.sum(keep, lab, range(1, n + 1))
