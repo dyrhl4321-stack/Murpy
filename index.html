@@ -983,7 +983,9 @@
   </div>
 
   <!-- 크롭 모달 -->
-  <div id="crop-modal" style="display:none;position:fixed;top:0;left:0;right:0;height:100dvh;background:#000;z-index:9999;flex-direction:column">
+  <!-- ★height:100dvh 대신 inset:0 — 모바일에서 dvh 가 주소창 포함 높이로 잡혀 하단이 화면
+       밖으로 잘리고 "아래로 스크롤이 안 된다"는 버그가 났다(대표 리포트 2026-08-03). -->
+  <div id="crop-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:9999;flex-direction:column">
     <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">
       <button id="crop-left-btn" onclick="closeCropModal()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
       <span id="crop-title" style="font-size:14px;font-weight:700;letter-spacing:-0.2px">사진 조정</span>
@@ -1009,19 +1011,16 @@
     </div>
     <!-- 게시물 작성 (2단계): 사진+캡션 메인 / 태그 서브 (공유는 헤더). 단일 스크롤러 -->
     <div id="crop-step-2" style="display:none;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:14px 20px calc(18px + env(safe-area-inset-bottom))">
-      <!-- 사진 (메인) -->
-      <div style="width:100%;max-width:196px;aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
+      <!-- 사진(메인) + 머피캠 필터 토글. ★토글은 사진 위 오버레이 칩 한 줄 —
+           별도 카드로 아래에 쌓으면 세로가 길어져 "우다다 난잡"해진다(대표 리포트). -->
+      <div style="position:relative;width:100%;max-width:min(74vw,268px);aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
         <img id="compose-preview" style="width:100%;height:100%;object-fit:cover" draggable="false">
+        <label id="mcam-row" style="position:absolute;left:8px;right:8px;bottom:8px;display:flex;align-items:center;gap:7px;cursor:pointer;background:rgba(6,8,14,0.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:7px 9px">
+          <input type="checkbox" id="mcam-toggle" checked onchange="window.toggleMurpyCam && window.toggleMurpyCam()" style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;flex-shrink:0">
+          <span style="flex:1;min-width:0;font-size:12px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">머피캠 필터</span>
+          <span id="mcam-busy" style="display:none;font-size:11px;color:rgba(255,255,255,0.55)">적용 중…</span>
+        </label>
       </div>
-      <!-- 머피캠 필터 — 사진 안에만 픽셀이 들어간다(UI는 그대로). 기본 ON -->
-      <label id="mcam-row" style="display:flex;align-items:center;gap:10px;margin:12px auto 0;max-width:236px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 12px">
-        <input type="checkbox" id="mcam-toggle" checked onchange="window.toggleMurpyCam && window.toggleMurpyCam()" style="width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0">
-        <span style="flex:1;min-width:0">
-          <span style="display:block;font-size:13px;font-weight:700;letter-spacing:-0.2px">머피캠 필터</span>
-          <span style="display:block;font-size:11px;color:rgba(255,255,255,0.4);margin-top:1px">내 캐릭터 · 오운완 도장이 사진에 찍혀요</span>
-        </span>
-        <span id="mcam-busy" style="display:none;font-size:11px;color:rgba(255,255,255,0.4)">적용 중…</span>
-      </label>
       <!-- 캡션 (메인) -->
       <div style="margin-top:14px">
         <textarea id="feed-post-input" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
@@ -5869,8 +5868,14 @@ function gymPickerChoose(name) {
 window.cropData = { originalFile: null, croppedBlob: null };
 
 // iOS 안전 배경 스크롤 잠금 (position:fixed 방식 — 모달 내부 스크롤 안 깨짐)
+// ★중첩 호출 가드가 반드시 필요하다 — 잠긴 상태에서 다시 부르면 window.scrollY 가 0 이라
+//   _cropSavedScrollY 가 0 으로 덮어써지고, 풀 때 화면이 맨 위로 튀거나 아래로 끌려 내려간
+//   채 스크롤이 안 되는 버그가 났다(대표 리포트 2026-08-03).
 let _cropSavedScrollY = 0;
+let _bodyLocked = false;
 function lockBodyScroll() {
+  if (_bodyLocked) return;
+  _bodyLocked = true;
   _cropSavedScrollY = window.scrollY || window.pageYOffset || 0;
   document.body.style.position = 'fixed';
   document.body.style.top = '-' + _cropSavedScrollY + 'px';
@@ -5879,6 +5884,8 @@ function lockBodyScroll() {
   document.body.style.width = '100%';
 }
 function unlockBodyScroll() {
+  if (!_bodyLocked) return;          // 잠근 적 없는데 풀면서 스크롤을 옮기면 안 된다
+  _bodyLocked = false;
   document.body.style.position = '';
   document.body.style.top = '';
   document.body.style.left = '';
@@ -5888,11 +5895,25 @@ function unlockBodyScroll() {
 }
 
 function openCropModal(file) {
+  const modal = document.getElementById('crop-modal');
+  if (!file || !modal) return;
+  // 사진 선택 시트가 열린 채로 크롭 모달이 겹치면 스크롤·z-index 가 꼬인다 → 먼저 닫는다
+  if (window.closeModal) closeModal('photo-pick-sheet');
+  // ★실패 경로에서 반드시 잠금을 푼다. 안 그러면 모달은 안 뜨고 배경만 잠겨
+  //   "화면이 내려간 채 스크롤이 안 되는" 상태가 된다(대표 리포트 2026-08-03).
+  const fail = (e) => {
+    if (e) console.warn('사진 열기 실패', e);
+    modal.style.display = 'none';
+    unlockBodyScroll();
+    const inp = document.getElementById('feed-photo-input'); if (inp) inp.value = '';
+    if (window.showToast) showToast('사진을 불러오지 못했어요');
+  };
   window.cropData.originalFile = file;
   window.cropData.croppedBlob = file;
   const reader = new FileReader();
+  reader.onerror = fail;
   reader.onload = e => {
-    const modal = document.getElementById('crop-modal');
+   try {
     // 모달 먼저 열기
     modal.style.display = 'flex';
     modal.style.flexDirection = 'column';
@@ -5900,6 +5921,7 @@ function openCropModal(file) {
     _setCropStep(1);
 
     const img = document.getElementById('crop-image');
+    img.onerror = fail;
     img.style.transform = 'translate(0,0) scale(1)';
     img.src = e.target.result;
     img.onload = () => {
@@ -5911,6 +5933,7 @@ function openCropModal(file) {
       img.style.transform = `translate(0,0) scale(${fitScale})`;
       if (window.resetCropState) window.resetCropState(fitScale);
     };
+   } catch (err) { fail(err); }
   };
   reader.readAsDataURL(file);
 }
