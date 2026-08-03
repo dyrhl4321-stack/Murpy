@@ -583,7 +583,10 @@
   .mw-mypos b { position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px;
     border-radius:50%; background:rgba(61,126,255,.45); animation:mwPosPulse 1.8s ease-out infinite }
   @keyframes mwPosPulse { to { transform:scale(3.2); opacity:0 } }
-  .mw-movecoach { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:7;
+  /* 머피캠 캡션 — 사진 필름바 위에 겹쳐 바로 타이핑되는 칸. 박스가 아니라 '글씨'로 보여야 한다 */
+#mcam-caption::placeholder { color:rgba(255,255,255,0.42); }
+#mcam-caption:focus { outline:none; }
+.mw-movecoach { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:7;
     background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; padding:10px 14px;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; white-space:nowrap;
     animation:mwCoachBob 1.6s ease-in-out infinite }
@@ -1022,12 +1025,15 @@
           <span style="font-size:11.5px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">머피캠</span>
           <span id="mcam-busy" style="display:none;font-size:10.5px;color:rgba(255,255,255,0.55)">적용 중…</span>
         </label>
-        <!-- ★필터를 켜면 사진 하단(필름바 자리)에 직접 쓴다 — 보이는 그대로가 결과물이다.
-             아래 캡션칸은 숨긴다(같은 걸 두 군데 쓰면 헷갈린다). 대표 제안 2026-08-03. -->
+        <!-- ★필름바에 **글씨가 찍히는 바로 그 자리**에 겹쳐 둔다. 입력 박스를 얹는 게 아니라
+             (대표: "기존 UI 입력창 박스 줄여서 쳐넣으란 소리가 아니었다")
+             픽셀 도트 폰트로 **사진 위에 바로 타이핑**되는 것처럼 보여야 한다.
+             배경·테두리 없음. 위치·크기는 _mwBuildStamp 의 좌표(x=40, y=H-bar+62,
+             font 42px, 캔버스 1080×1350)를 비율로 옮긴 값. -->
         <input id="mcam-caption" type="text" maxlength="14" inputmode="text"
           placeholder="오늘 운동 어땠나요?"
           oninput="window._mcamCaptionChanged && window._mcamCaptionChanged()"
-          style="display:none;position:absolute;left:9px;right:9px;bottom:9px;box-sizing:border-box;background:rgba(6,8,14,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.18);border-radius:9px;color:#fff;font-family:'Galmuri11',inherit;font-size:12.5px;letter-spacing:-0.2px;padding:8px 10px;outline:none">
+          style="display:none;position:absolute;left:3.7%;top:84.6%;width:70%;box-sizing:border-box;background:transparent;border:none;border-radius:0;color:#fff;font-family:'Galmuri14','Galmuri11',sans-serif;font-size:10.5px;line-height:1.2;letter-spacing:0;padding:2px 0;outline:none;caret-color:#F5C24B">
       </div>
       <!-- 캡션 (메인) -->
       <div id="caption-row" style="margin-top:14px">
@@ -5913,8 +5919,13 @@ function unlockBodyScroll() {
   document.body.style.left = '';
   document.body.style.right = '';
   document.body.style.width = '';
+  // ★overflow 도 같이 푼다. 앱에 스크롤 잠금이 두 방식(position:fixed / overflow:hidden)
+  //   섞여 있어서, 다른 쪽이 걸어둔 hidden 이 남으면 모달을 닫아도 스크롤이 죽는다.
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
   window.scrollTo(0, _cropSavedScrollY);
 }
+window._isBodyLocked = function () { return _bodyLocked; };
 
 function openCropModal(file) {
   const modal = document.getElementById('crop-modal');
@@ -6103,17 +6114,11 @@ function confirmCrop() {
   }, 'image/jpeg', 0.85);
 }
 
-// ★사진 안에 쓴 글은 본문으로 내보내지 않는다 — 사진에 이미 찍혀 있어 중복이다.
+// ★사진 안에 쓴 글은 본문으로 내보내지 않는다 — 사진에 찍히므로 중복이다.
 //   저장은 camText 필드로만 하고(화면에 안 그림), 이미지 alt·검색에만 쓴다.
-// 매 타자마다 합성하면 무거우니 잠깐 멈췄을 때만 다시 그린다(디바운스).
-window._mcamCaptionChanged = function () {
-  const tg = document.getElementById('mcam-toggle');
-  if (!tg || !tg.checked) return;
-  clearTimeout(window._mcamCapT);
-  window._mcamCapT = setTimeout(function () {
-    if (window.toggleMurpyCam) window.toggleMurpyCam(true);   // 입력 중 포커스 유지
-  }, 500);
-};
+// ★재합성하지 않는다. 입력칸이 필름바 위에 겹쳐 있어 타이핑이 곧 미리보기다.
+//   실제 인쇄는 공유 버튼을 누를 때 한 번만(submitFeedPost).
+window._mcamCaptionChanged = function () {};
 
 // 머피캠 필터 토글 — 켜면 원본에서 합성, 끄면 원본으로 되돌린다.
 // ★픽셀은 **사진 안에만** 들어간다. 홈탭 UI 는 건드리지 않는다(대표 확정 2026-08-03).
@@ -6132,6 +6137,11 @@ window.toggleMurpyCam = async function (keepFocus) {
     if (tg.checked) {
       if (body && !capIn.value && body.value) capIn.value = body.value.slice(0, 14);
       capIn.style.display = ''; capRow.style.display = 'none';
+      // 글자 크기를 사진 크기에 비례시킨다 — 캔버스 42px / 1080px 폭 기준
+      try {
+        const bw = capIn.parentElement ? capIn.parentElement.clientWidth : 0;
+        if (bw) capIn.style.fontSize = Math.max(8, Math.round(bw * 42 / 1080 * 10) / 10) + 'px';
+      } catch (e) {}
     } else {
       if (body && capIn.value) body.value = capIn.value;
       capIn.style.display = 'none'; capRow.style.display = '';
@@ -6154,9 +6164,9 @@ window.toggleMurpyCam = async function (keepFocus) {
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
     });
-    // 홈 피드는 체크인 맥락이 아니라 자유 촬영 → target=null. 사진 안 입력칸의 글을 인쇄한다.
-    const capEl = document.getElementById('mcam-caption');
-    const dataUrl = await window._mwBuildStamp(img, null, capEl ? capEl.value : '');
+    // ★미리보기는 **글씨 없이** 합성한다. 글씨는 위에 겹쳐둔 입력칸이 보여주기 때문에,
+    //   여기서도 찍으면 두 겹으로 보인다. 실제 인쇄는 공유할 때 한 번만 한다(submitFeedPost).
+    const dataUrl = await window._mwBuildStamp(img, null, '');
     URL.revokeObjectURL(url);
     const blob = await (await fetch(dataUrl)).blob();
     show(blob);
@@ -9762,7 +9772,7 @@ window.googleLogin = async () => {
 window.submitFeedPost = async function() {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('먼저 로그인해주세요'); return; }
-  const file = window.cropData.croppedBlob;
+  let file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
   // ★머피캠 필터를 켰으면 글이 **사진 안에 이미 찍혀 있다.** 본문으로 또 내보내면
   //   피드에 같은 말이 두 번 나와 난잡해진다(대표 지적) → 본문은 비우고 camText 로만 남긴다.
@@ -9777,6 +9787,17 @@ window.submitFeedPost = async function() {
   const restore = () => { if (shareBtn) { shareBtn.textContent = '공유'; shareBtn.style.pointerEvents = ''; shareBtn.style.opacity = ''; } };
   if (shareBtn) { shareBtn.textContent = '공유 중...'; shareBtn.style.pointerEvents = 'none'; shareBtn.style.opacity = '0.5'; }
   try {
+    // ★머피캠이 켜져 있으면 여기서 **글씨까지 넣어 한 번 더 합성**한다.
+    //   미리보기는 글씨 없이 만들었고(입력칸이 그 자리를 보여줌), 실제 인쇄는 여기 한 번뿐이다.
+    if (_mcamOn && camText && window.cropData.plainBlob && window._mwBuildStamp) {
+      try {
+        const _u = URL.createObjectURL(window.cropData.plainBlob);
+        const _im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = _u; });
+        const _d = await window._mwBuildStamp(_im, null, camText);
+        URL.revokeObjectURL(_u);
+        file = await (await fetch(_d)).blob();
+      } catch (e) { console.warn('머피캠 최종 합성 실패, 미리보기본으로 올림', e); }
+    }
     // users 컬렉션에서 최신 닉네임 + 프로필 사진
     let nickname = user.displayName || '익명';
     let userPhoto = user.photoURL || '';
@@ -9809,8 +9830,10 @@ window.submitFeedPost = async function() {
     if (window.mwBumpMonthly) window.mwBumpMonthly('feed');
     const _earned = window.grantDailyCreditOnVerify ? await window.grantDailyCreditOnVerify(user.uid) : false;
     closeCropModal();
-    window.cropData = { originalFile: null, croppedBlob: null };
+    window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
     document.getElementById('feed-photo-input').value = '';
+    // 잠금이 어떤 경로로든 남아 있으면 여기서 확실히 푼다(글 올린 뒤 스크롤이 죽던 것)
+    try { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; } catch (e) {}
     if (_earned) {
       window.celebrateMurpy(window.getCredits ? window.getCredits() : undefined);
       if (!localStorage.getItem('murpy_credit_intro')) {
@@ -11577,6 +11600,10 @@ window._mwDogamBonusCheck = async function () {
 };
 // 풀스크린 패널/카메라/오버레이가 열려 있는 동안 뒤 페이지 스크롤 잠금 (집중 방해 제거)
 window._mwScrollLockCheck = function () {
+  // ★크롭 모달이 position:fixed 방식으로 이미 잠가둔 상태면 손대지 않는다.
+  //   이 옵저버가 body 변화마다 overflow 를 덮어써서 두 잠금이 서로 간섭했다
+  //   (게시글 올린 뒤 홈 상단으로 스크롤이 안 되던 원인, 대표 리포트 2026-08-03).
+  if (window._isBodyLocked && window._isBodyLocked()) return;
   const ov = document.getElementById('mw-ck-overlay');
   const open = document.getElementById('mw-wpanel') || document.getElementById('mw-cam')
     || (ov && ov.style.display && ov.style.display !== 'none');
