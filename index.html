@@ -6072,6 +6072,20 @@ window.openMilestoneInfo = function(){ if(window.openModal) openModal('milestone
 
 function confirmCrop() {
   if (!window.cropData.originalFile) { showToast('사진을 먼저 선택해주세요'); return; }
+  // ★화면 전환과 포커스를 **클릭 제스처가 살아 있는 지금** 처리한다.
+  //   모바일은 제스처 밖(toBlob 콜백·setTimeout)에서 focus() 하면 키보드를 안 띄운다.
+  //   display:none 인 부모 안에서는 포커스가 안 되므로 2단계 전환이 먼저다.
+  try {
+    _setCropStep(2);
+    const _tg = document.getElementById('mcam-toggle');
+    const _ci = document.getElementById('mcam-caption');
+    const _cr = document.getElementById('caption-row');
+    if (_tg && _tg.checked && _ci && _cr) {
+      _ci.style.display = ''; _cr.style.display = 'none';
+      if (window._mcamFitCaption) window._mcamFitCaption();
+      _ci.focus();
+    }
+  } catch (e) {}
   const img = document.getElementById('crop-image');
   const container = document.getElementById('crop-container');
   const cw = container.offsetWidth || window.innerWidth;
@@ -6134,15 +6148,16 @@ window._mcamFitCaption = function () {
     if (!W) return;
     const fs = W * 42 / 1080;                       // 글자 크기
     const cy = H * (1350 - 210 + 62) / 1350;        // 머릿줄 중심 y
-    // ★박스 높이를 글자 크기와 똑같이 만든다(padding 0, line-height 1).
-    //   여백이 붙으면 아래 날짜 줄(y=1258)과 맞닿아 버린다(대표 지적).
-    const lineH = fs;
+    // ★박스 높이 = 글자 크기 × 1.4. 딱 글자 크기로 맞췄더니 폰트의 위아래 여백(ascender)
+    //   때문에 글씨 윗부분이 잘렸다(대표 지적). line-height 를 높이와 같게 줘서 세로 중앙에 놓고,
+    //   중심(cy)은 그대로라 아래 날짜 줄과도 안 붙는다.
+    const boxH = fs * 1.4;
     el.style.fontSize = (Math.round(fs * 10) / 10) + 'px';
-    el.style.lineHeight = (Math.round(fs * 10) / 10) + 'px';
+    el.style.lineHeight = (Math.round(boxH * 10) / 10) + 'px';
     el.style.padding = '0';
-    el.style.height = (Math.round(lineH * 10) / 10) + 'px';
+    el.style.height = (Math.round(boxH * 10) / 10) + 'px';
     el.style.left = (Math.round(W * 40 / 1080 * 10) / 10) + 'px';
-    el.style.top = (Math.round((cy - lineH / 2) * 10) / 10) + 'px';
+    el.style.top = (Math.round((cy - boxH / 2) * 10) / 10) + 'px';
     el.style.width = Math.round(W * 0.70) + 'px';   // 우측은 캐릭터 자리
   } catch (e) {}
 };
@@ -7213,7 +7228,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '305';
+window._SW_V = '306';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // updateViaCache:'none' = sw.js 업데이트 확인 시 브라우저 HTTP 캐시를 무시하고 항상 새로 받는다.
