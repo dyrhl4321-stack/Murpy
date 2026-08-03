@@ -6089,12 +6089,10 @@ function confirmCrop() {
   }, 'image/jpeg', 0.85);
 }
 
-// 사진 안에 쓴 글은 실제 게시글 본문으로도 나가야 한다(검색·접근성). 값을 같이 맞춘다.
+// ★사진 안에 쓴 글은 본문으로 내보내지 않는다 — 사진에 이미 찍혀 있어 중복이다.
+//   저장은 camText 필드로만 하고(화면에 안 그림), 이미지 alt·검색에만 쓴다.
 // 매 타자마다 합성하면 무거우니 잠깐 멈췄을 때만 다시 그린다(디바운스).
 window._mcamCaptionChanged = function () {
-  const cap = document.getElementById('mcam-caption');
-  const body = document.getElementById('feed-post-input');
-  if (cap && body) body.value = cap.value;
   const tg = document.getElementById('mcam-toggle');
   if (!tg || !tg.checked) return;
   clearTimeout(window._mcamCapT);
@@ -7745,7 +7743,7 @@ function buildPostHTML(p) {
           : `<button onclick="event.stopPropagation();window.feedInvite('${p.userId||''}','${(p.userName||'익명').replace(/'/g,"\\'")}','${displayPhoto}')" class="feed-invite-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>같이 운동해요</button>`}
       </div>
       ${tagRow}
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
       <div style="padding:5px 9px 5px;display:flex;gap:4px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:9px 11px;display:flex;align-items:center;gap:6px;color:${likeColor};font-size:14px;font-weight:600;font-family:inherit;border-radius:10px;-webkit-tap-highlight-color:transparent">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -9737,8 +9735,15 @@ window.submitFeedPost = async function() {
   if (!user) { showToast('먼저 로그인해주세요'); return; }
   const file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
-  const text = (document.getElementById('feed-post-input').value || '').trim();
-  if (window._hasContact && window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
+  // ★머피캠 필터를 켰으면 글이 **사진 안에 이미 찍혀 있다.** 본문으로 또 내보내면
+  //   피드에 같은 말이 두 번 나와 난잡해진다(대표 지적) → 본문은 비우고 camText 로만 남긴다.
+  //   camText 는 화면에 안 그리고, 이미지 alt(스크린리더)와 나중 검색에 쓴다.
+  const _mcamOn = !!(document.getElementById('mcam-toggle') || {}).checked
+    && (document.getElementById('mcam-caption') || {}).style
+    && document.getElementById('mcam-caption').style.display !== 'none';
+  const camText = _mcamOn ? ((document.getElementById('mcam-caption').value || '').trim()) : '';
+  const text = _mcamOn ? '' : (document.getElementById('feed-post-input').value || '').trim();
+  if (window._hasContact && window._hasContact(text + ' ' + camText)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
   const shareBtn = document.getElementById('crop-right-btn');
   const restore = () => { if (shareBtn) { shareBtn.textContent = '공유'; shareBtn.style.pointerEvents = ''; shareBtn.style.opacity = ''; } };
   if (shareBtn) { shareBtn.textContent = '공유 중...'; shareBtn.style.pointerEvents = 'none'; shareBtn.style.opacity = '0.5'; }
@@ -9764,7 +9769,7 @@ window.submitFeedPost = async function() {
     let _totalCount = 0;
     try { const _fc = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid))); _totalCount = _fc.size + 1; } catch (e) {}
     await addDoc(collection(db, 'feed'), {
-      text, photoURL: json.data.url,
+      text, camText, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
       tags: Array.from(window._composeTags || []),
