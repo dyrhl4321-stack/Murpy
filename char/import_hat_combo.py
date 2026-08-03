@@ -111,6 +111,10 @@ def largest_blobs(m: np.ndarray, keep: int = 40) -> np.ndarray:
 
 
 HAT_BAND = 58        # 머리 최상단부터 이 높이까지는 모자 구간 — 얼굴 보호를 적용하지 않는다
+# 머리 최상단부터 이만큼 아래 = 목. 그 위는 통째로 가져온다(파먹기 금지).
+# ★100 으로 잡았더니 가슴까지 내려가 턱 밑·어깨에 AI 드리프트 조각이 통째로 들어왔다.
+#   base 실측: 머리 y11~85, 목 y85~95. 머리 끝에 맞춘다.
+NECK_FROM_TOP = 80
 
 
 def head_layer(sheet: np.ndarray, base: np.ndarray, base_name: str) -> np.ndarray:
@@ -123,30 +127,26 @@ def head_layer(sheet: np.ndarray, base: np.ndarray, base_name: str) -> np.ndarra
             sa = s[:, :, 3] >= ALPHA_BIN
             ba = b[:, :, 3] >= ALPHA_BIN
             diff = np.abs(s[:, :, :3].astype(int) - b[:, :, :3].astype(int)).max(axis=2)
-            m = sa & (~ba | (diff > 24))
+            # ★★목 위는 **색 판정 없이 통째로** 가져온다 (2026-08-03 재설계).
+            #   앞서 'base 와 색이 비슷하면 버린다'로 오려냈다가 검은 머리카락을 base 의
+            #   어두운 부분으로 착각해 머리 속을 숭숭 뚫었다 — 대표 실앱 판정
+            #   "다 투명하고 머리가 비어 보인다"(cd62fc7 롤백). 버리는 판정을 아예 없앤다.
+            #   목 아래(몸통)만 diff 로 거른다. 거기서 남길 것은 등으로 흐르는 긴 머리뿐이다.
+            bys0 = np.nonzero(ba.any(axis=1))[0]
+            neck = (int(bys0.min()) + NECK_FROM_TOP) if len(bys0) else 0
+            above = np.zeros(sa.shape, bool)
+            above[:neck] = True
+            m = (sa & above) | (sa & ~above & (~ba | (diff > 24)))
             # ★머리 길이로 자르지 않는다 — 긴 생머리는 허리까지 내려온다(+120 으로 잘랐다가
             #   정면에서 긴 머리가 통째로 없어졌다). 대신 몸통 AI 드리프트는 아래에서 거른다.
             # 몸통에서 base 와 살짝 어긋난 윤곽선이 '머리'로 잡히는 것을 막는다:
             # base 실루엣 안쪽이면서 base 와 밝기가 비슷한 픽셀은 버린다.
+            # ★목 위에는 어떤 제거 규칙도 걸지 않는다. 아래 정리는 **몸통에만** 적용한다.
             inside = ba & ndimage.binary_erosion(ba, np.ones((3, 3), bool))
             lum_s = s[:, :, :3].astype(int).mean(axis=2)
             lum_b = b[:, :, :3].astype(int).mean(axis=2)
-            m &= ~(inside & (np.abs(lum_s - lum_b) < 60))
-
-            # ★얼굴·귀(base_regions 의 KEEP)에 남은 AI 드리프트 조각을 걷어낸다.
-            #   세미리프 시트에서 눈 옆에 흰 픽셀·살색 조각이 남아 앱에서 얼굴 위에 겹친다.
-            #   ★단 모자 구간은 예외 — 모자 밑단이 눈썹 근처까지 내려와서(실측 y65 vs 눈썹 y64)
-            #     그대로 걸면 모자 밑단이 깎인다.
-            _must, keep = regions(b.astype(int), r, base_name, c)
-            bys = np.nonzero(ba.any(axis=1))[0]
-            band = np.zeros_like(m)
-            if len(bys):
-                band[int(bys.min()):int(bys.min()) + HAT_BAND] = True
-            m &= ~(keep & ~band)
-
-            m = ndimage.binary_opening(m, np.ones((2, 2), bool)) | (
-                m & ndimage.binary_dilation(m, np.ones((3, 3), bool)))
-            m = largest_blobs(m)
+            m &= above | ~(inside & (np.abs(lum_s - lum_b) < 60))
+            m = (m & above) | largest_blobs(m & ~above)
             cell = np.zeros_like(s)
             cell[m] = s[m]
             out[ys, xs] = cell
