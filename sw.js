@@ -1,7 +1,7 @@
 ﻿// 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v301';
-const STATIC_CACHE = 'murpy-static-v301';
-const CDN_CACHE = 'murpy-cdn-v301';
+const CACHE_NAME = 'murpy-v302';
+const STATIC_CACHE = 'murpy-static-v302';
+const CDN_CACHE = 'murpy-cdn-v302';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
@@ -84,13 +84,16 @@ self.addEventListener('fetch', e => {
   }
 
   // HTML 파일 → 네트워크 우선 (항상 최신 버전)
+  // ★cache:'no-store' 로 받는다. 그냥 fetch 하면 브라우저 HTTP 캐시와 GitHub Pages CDN 이
+  //   옛 index.html 을 그대로 주기 때문에, sw 버전을 올려도 화면이 늦게 바뀌었다
+  //   (대표: "푸시한 게 계속 늦게 반영된다"). no-store 면 매번 원본까지 간다.
   if (url.origin === self.location.origin && (url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/')) {
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, { cache: 'no-store' }).then(res => {
         const clone = res.clone();
         caches.open(STATIC_CACHE).then(c => c.put(e.request, clone));
         return res;
-      }).catch(() => caches.match(e.request))
+      }).catch(() => fetch(e.request).catch(() => caches.match(e.request)))
     );
     return;
   }
