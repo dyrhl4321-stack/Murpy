@@ -12406,13 +12406,14 @@ window.loadHomeTrending = async () => {
   try {
     const cards = [];
 
-    // 크루(캐시 재사용)·대숲·유저 병렬 조회 → 트렌딩 슬라이드 카드
-    const [crewsResult, bambooSnap, usersSnap] = await Promise.all([
-      (Array.isArray(window.crewsData) && window.crewsData.length)
-        ? Promise.resolve(window.crewsData)
-        : getDocs(query(collection(db, 'crews'), limit(10))).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))),
-      getDocs(query(collection(db, 'bamboo'), limit(10))),
-      getDocs(query(collection(db, 'users'), limit(12)))
+    // ★크루 → 스쿼드로 교체(크루는 휴면). 캐릭터·센터 체크인 카드 추가 (대표 지시 2026-08-03).
+    //   실패해도 나머지 카드는 뜨게 각각 catch 로 감싼다.
+    const safe = (p) => p.then(s => s).catch(() => null);
+    const [squadSnap, bambooSnap, usersSnap, ckSnap] = await Promise.all([
+      safe(getDocs(query(collection(db, 'squads'), limit(12)))),
+      safe(getDocs(query(collection(db, 'bamboo'), limit(10)))),
+      safe(getDocs(query(collection(db, 'users'), limit(20)))),
+      safe(getDocs(query(collection(db, 'checkins'), limit(80))))
     ]);
 
     const BLUE = '#3D7EFF', GREEN = '#4ADE80';
@@ -12426,9 +12427,10 @@ window.loadHomeTrending = async () => {
     const icoUser = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6.5 8-6.5s8 2.5 8 6.5"/></svg>`;
 
     const card = (o) => {
-      const bg = o.img
+      // o.inner = 사진 대신 직접 그리는 배경(캐릭터 카드 등)
+      const bg = o.inner ? o.inner : (o.img
         ? `<img src="${cdn(o.img, 400)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">`
-        : `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#1b1c22,#101116)"></div>`;
+        : `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#1b1c22,#101116)"></div>`);
       return `<button onclick="${o.click}" aria-label="${esc(o.aria || o.title)}" style="flex:none;width:152px;height:162px;position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--border-subtle);background:#111;padding:0;text-align:left;cursor:pointer;font-family:inherit;transition:transform .15s ease" onmouseenter="this.style.transform='translateY(-3px)'" onmouseleave="this.style.transform='none'">
         ${bg}
         <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,0.9) 4%,rgba(0,0,0,0.28) 50%,rgba(0,0,0,0.04) 100%)"></div>
@@ -12440,19 +12442,68 @@ window.loadHomeTrending = async () => {
       </button>`;
     };
 
-    // 1. 인기 크루 (멤버 수 많은 순) — 크루 커버 사진
-    const crews = [...crewsResult].sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0));
-    if (crews[0]) {
-      const c = crews[0];
-      cards.push(card({
-        click: `openCrewDetail('${c.id}')`, color: BLUE, icon: icoCrew, label: '인기 크루',
-        img: c.img || '', title: c.name || '크루',
-        meta: `${c.loc ? mPin + '<span>' + esc(c.loc) + '</span><span style="opacity:.45">·</span>' : ''}<span>${c.memberCount || 0}명</span>`
-      }));
+    // 1. 인기 스쿼드 (모집 중 · 참가자 많은 순) — 크루를 대체한다
+    if (squadSnap) {
+      const now = Date.now();
+      const squads = squadSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => {
+          const t = s.startAt && s.startAt.seconds ? s.startAt.seconds * 1000 : 0;
+          return !t || t > now - 6 * 3600 * 1000;          // 지난 벙은 뺀다
+        })
+        .sort((a, b) => ((b.members || []).length) - ((a.members || []).length));
+      if (squads[0]) {
+        const s = squads[0];
+        const n = (s.members || []).length;
+        cards.push(card({
+          click: `goPage('squad')`, color: BLUE, icon: icoCrew, label: '인기 스쿼드',
+          img: s.img || '', title: s.title || s.name || '같이 운동해요',
+          meta: `${s.place ? mPin + '<span>' + esc(s.place) + '</span><span style="opacity:.45">·</span>' : ''}<span>${n}명</span>`
+        }));
+      }
     }
 
-    // 2. 인기 대숲 글 (좋아요 많은 순) — 다크 카드(초록은 칩 아이콘만)
-    const bambooPosts = bambooSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.likedBy || []).length) - ((a.likedBy || []).length));
+    // 2. 인기 머피월드 캐릭터 — ★"내 캐릭터도 저기 걸릴 수 있다"가 꾸미기 결제 엔진이다.
+    //    사진이 아니라 캐릭터를 그린다(mwMiniCharHtml 재사용).
+    const PURPLE = '#A78BFA';
+    const icoStar = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+    if (usersSnap && window.mwMiniCharHtml) {
+      const _meU = window.currentUser && window.currentUser.uid;
+      const dressed = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
+        .filter(u => u.uid !== _meU && u.character && u.nickname && (u.wardrobe || []).length > 0)
+        .sort((a, b) => ((b.wardrobe || []).length) - ((a.wardrobe || []).length));
+      dressed.slice(0, 2).forEach(u => {
+        let charHtml = '';
+        try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
+        if (!charHtml) return;
+        cards.push(card({
+          click: `window.mwVisitRoom && mwVisitRoom('${u.uid}')`,
+          color: PURPLE, icon: icoStar, label: '인기 캐릭터', aria: '인기 캐릭터',
+          inner: `<div style="position:absolute;inset:0;background:linear-gradient(165deg,#232a3d,#0d1018);display:flex;align-items:flex-end;justify-content:center;padding-bottom:38px">${charHtml}</div>`,
+          title: esc(u.nickname || ''),
+          meta: `<span>아이템 ${(u.wardrobe || []).length}개</span>`
+        }));
+      });
+    }
+
+    // 3. 지금 가장 많이 체크인된 센터 — B2B 노출 자리이기도 하다
+    if (ckSnap) {
+      const cnt = {};
+      ckSnap.docs.forEach(d => { const c = (d.data() || {}).centerId; if (c) cnt[c] = (cnt[c] || 0) + 1; });
+      const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+      if (top) {
+        const list = Array.isArray(window.centersData) ? window.centersData : [];
+        const ct = list.find(c => String(c.id) === String(top));
+        cards.push(card({
+          click: `window.mwCenterField && mwCenterField('${top}')`,
+          color: GREEN, icon: icoPin, label: '체크인 급상승', aria: '체크인이 많은 센터',
+          img: (ct && ct.pixelLogo) || '', title: (ct && ct.name) ? esc(ct.name) : '우리 동네 센터',
+          meta: `<span>오늘 ${cnt[top]}명 다녀감</span>`
+        }));
+      }
+    }
+
+    // 4. 인기 대숲 글 (좋아요 많은 순) — 다크 카드(초록은 칩 아이콘만)
+    const bambooPosts = !bambooSnap ? [] : bambooSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.likedBy || []).length) - ((a.likedBy || []).length));
     if (bambooPosts[0]) {
       const p = bambooPosts[0];
       const txt = (p.text || '').trim();
@@ -12468,10 +12519,10 @@ window.loadHomeTrending = async () => {
     const icoFlame = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`;
     const mFlame = '<span style="color:#F5C24B;display:inline-flex;flex-shrink:0"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>';
     const _me = window.currentUser && window.currentUser.uid;
-    const runners = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
+    const runners = !usersSnap ? [] : usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
       .filter(u => u.uid !== _me && (u.photoURL || u.firestorePhotoURL) && u.nickname && (u.streak || 0) >= 2)
       .sort((a, b) => (b.streak || 0) - (a.streak || 0));
-    runners.slice(0, 4).forEach(u => {
+    runners.slice(0, 2).forEach(u => {   // 카드가 늘어서(스쿼드·캐릭터·센터 추가) 4→2로 줄임
       const photo = u.photoURL || u.firestorePhotoURL || '';
       const nick = (u.nickname || '').replace(/'/g, '');
       cards.push(card({
