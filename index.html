@@ -1013,6 +1013,15 @@
       <div style="width:100%;max-width:196px;aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
         <img id="compose-preview" style="width:100%;height:100%;object-fit:cover" draggable="false">
       </div>
+      <!-- 머피캠 필터 — 사진 안에만 픽셀이 들어간다(UI는 그대로). 기본 ON -->
+      <label id="mcam-row" style="display:flex;align-items:center;gap:10px;margin:12px auto 0;max-width:236px;cursor:pointer;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 12px">
+        <input type="checkbox" id="mcam-toggle" checked onchange="window.toggleMurpyCam && window.toggleMurpyCam()" style="width:17px;height:17px;accent-color:var(--accent);cursor:pointer;flex-shrink:0">
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-size:13px;font-weight:700;letter-spacing:-0.2px">머피캠 필터</span>
+          <span style="display:block;font-size:11px;color:rgba(255,255,255,0.4);margin-top:1px">내 캐릭터 · 오운완 도장이 사진에 찍혀요</span>
+        </span>
+        <span id="mcam-busy" style="display:none;font-size:11px;color:rgba(255,255,255,0.4)">적용 중…</span>
+      </label>
       <!-- 캡션 (메인) -->
       <div style="margin-top:14px">
         <textarea id="feed-post-input" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
@@ -5912,7 +5921,7 @@ function closeCropModal() {
   document.getElementById('feed-photo-input').value = '';
   document.getElementById('feed-post-input').value = '';
   if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
-  window.cropData = { originalFile: null, croppedBlob: null };
+  window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
 }
 
 // 크롭 모달 단계 전환 (1: 크롭 / 2: 캡션 작성) — 헤더 버튼·타이틀 함께 바꿈
@@ -6027,6 +6036,9 @@ function confirmCrop() {
   );
   canvas.toBlob(blob => {
     if (blob) {
+      // ★필터 없는 원본을 따로 보관한다 — 토글을 껐다 켤 때 원본에서 다시 합성해야
+      //   필터가 두 번 겹치지 않는다(합성본 위에 또 합성하면 도장이 두 개가 된다).
+      window.cropData.plainBlob = blob;
       window.cropData.croppedBlob = blob;
       // 크롭한 사진을 미리보기로 표시
       if (window._composePreviewUrl) URL.revokeObjectURL(window._composePreviewUrl);
@@ -6035,8 +6047,52 @@ function confirmCrop() {
     }
     _setCropStep(2);
     if (window.initCompose) initCompose();   // 타입/태그 초기화 + 배지 계산
+    // 머피캠 필터는 기본 ON — 켜진 상태로 바로 합성해서 보여준다
+    const tg = document.getElementById('mcam-toggle');
+    if (tg) { tg.checked = true; if (window.toggleMurpyCam) window.toggleMurpyCam(); }
   }, 'image/jpeg', 0.85);
 }
+
+// 머피캠 필터 토글 — 켜면 원본에서 합성, 끄면 원본으로 되돌린다.
+// ★픽셀은 **사진 안에만** 들어간다. 홈탭 UI 는 건드리지 않는다(대표 확정 2026-08-03).
+window.toggleMurpyCam = async function () {
+  const tg = document.getElementById('mcam-toggle');
+  const busy = document.getElementById('mcam-busy');
+  const prev = document.getElementById('compose-preview');
+  const plain = window.cropData && window.cropData.plainBlob;
+  if (!tg || !prev || !plain) return;
+
+  const show = (blob) => {
+    if (window._composePreviewUrl) URL.revokeObjectURL(window._composePreviewUrl);
+    window._composePreviewUrl = URL.createObjectURL(blob);
+    prev.src = window._composePreviewUrl;
+    window.cropData.croppedBlob = blob;      // 업로드되는 것도 같이 바뀐다
+  };
+
+  if (!tg.checked) { show(plain); return; }
+
+  if (busy) busy.style.display = '';
+  tg.disabled = true;
+  try {
+    const url = URL.createObjectURL(plain);
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
+    });
+    // 홈 피드는 체크인 맥락이 아니라 자유 촬영이다 → target=null ('오운완'으로 찍힘)
+    const dataUrl = await window._mwBuildStamp(img, null);
+    URL.revokeObjectURL(url);
+    const blob = await (await fetch(dataUrl)).blob();
+    show(blob);
+  } catch (e) {
+    console.warn('머피캠 필터 실패', e);
+    tg.checked = false;
+    show(plain);
+    if (window.showToast) showToast('머피캠 필터를 적용하지 못했어요');
+  } finally {
+    if (busy) busy.style.display = 'none';
+    tg.disabled = false;
+  }
+};
 
 // 드래그/핀치 이동
 function initCropDrag() {
@@ -12080,9 +12136,9 @@ window.mwShot = function () {
   const img=new Image(); img.onload=()=>window.mwCompose(img); img.src=c.toDataURL('image/jpeg',0.92);
 };
 // ---------- 스탬프 합성 ----------
-window.mwCompose = async function (photo) {
-  window.mwCloseCam();
-  const t = window._mwCkTarget;   // null = 자유 촬영(도장 저장 없음)
+// ★합성만 하는 순수 함수로 분리했다 — 카메라 탭(mwCompose)과 **홈 피드 머피캠 필터**가 같이 쓴다.
+//   t = 체크인 대상 센터. null 이면 자유 촬영(센터명 대신 '오운완').
+window._mwBuildStamp = async function (photo, t) {
   try { await document.fonts.load("16px 'Galmuri11'"); await document.fonts.load("16px 'Galmuri14'"); } catch(e){}
   const W=1080, H=1350;                                     // 4:5 (인스타 최적)
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -12132,7 +12188,11 @@ window.mwCompose = async function (photo) {
   x.font="24px 'Galmuri11',sans-serif"; x.fillText(dstr, 0, 68);
   x.globalAlpha=0.35; x.fillRect(-90,-4,26,7); x.fillRect(58,-52,18,6);   // 잉크 빠짐 질감
   x.restore(); x.textAlign='start';
-  window._mwStampData = cv.toDataURL('image/jpeg',0.9);
+  return cv.toDataURL('image/jpeg',0.9);
+};
+window.mwCompose = async function (photo) {
+  window.mwCloseCam();
+  window._mwStampData = await window._mwBuildStamp(photo, window._mwCkTarget);
   window.mwShowStampResult();
 };
 // 브랜드 아이콘(인라인 SVG — 이모지·PNG 금지, 공식 컬러). 카톡=브라운 말풍선, 인스타=그라데이션 렌즈.
