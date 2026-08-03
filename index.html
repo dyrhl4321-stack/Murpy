@@ -584,7 +584,8 @@
     border-radius:50%; background:rgba(61,126,255,.45); animation:mwPosPulse 1.8s ease-out infinite }
   @keyframes mwPosPulse { to { transform:scale(3.2); opacity:0 } }
   /* 머피캠 캡션 — 사진 필름바 위에 겹쳐 바로 타이핑되는 칸. 박스가 아니라 '글씨'로 보여야 한다 */
-#mcam-caption::placeholder { color:rgba(255,255,255,0.42); }
+/* placeholder 는 실제 글씨보다 한 단계 작게 — 안내문이 인쇄될 글씨보다 커 보이면 안 된다 */
+#mcam-caption::placeholder { color:rgba(255,255,255,0.4); font-size:0.82em; }
 #mcam-caption:focus { outline:none; }
 .mw-movecoach { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); z-index:7;
     background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; padding:10px 14px;
@@ -1031,7 +1032,7 @@
              배경·테두리 없음. 위치·크기는 _mwBuildStamp 의 좌표(x=40, y=H-bar+62,
              font 42px, 캔버스 1080×1350)를 비율로 옮긴 값. -->
         <input id="mcam-caption" type="text" maxlength="14" inputmode="text"
-          placeholder="오늘 운동 어땠나요?"
+          placeholder="한마디 남기기"
           oninput="window._mcamCaptionChanged && window._mcamCaptionChanged()"
           style="display:none;position:absolute;left:3.7%;top:84.6%;width:70%;box-sizing:border-box;background:transparent;border:none;border-radius:0;color:#fff;font-family:'Galmuri14','Galmuri11',sans-serif;font-size:10.5px;line-height:1.2;letter-spacing:0;padding:2px 0;outline:none;caret-color:#F5C24B">
       </div>
@@ -6128,8 +6129,9 @@ window._mcamFitCaption = function () {
     const el = document.getElementById('mcam-caption');
     const box = el && el.parentElement;
     if (!el || !box) return;
-    const W = box.clientWidth, H = box.clientHeight;
-    if (!W || !H) return;
+    const W = box.clientWidth;
+    const H = box.clientHeight || (W * 1.25);   // 4:5 — 높이가 아직 0이면 비율로 계산한다
+    if (!W) return;
     const fs = W * 42 / 1080;                       // 글자 크기
     const cy = H * (1350 - 210 + 62) / 1350;        // 머릿줄 중심 y
     const lineH = fs * 1.2 + 4;                     // padding 2px 위아래 포함
@@ -6161,7 +6163,12 @@ window.toggleMurpyCam = async function (keepFocus) {
     if (tg.checked) {
       if (body && !capIn.value && body.value) capIn.value = body.value.slice(0, 14);
       capIn.style.display = ''; capRow.style.display = 'none';
-      if (window._mcamFitCaption) requestAnimationFrame(window._mcamFitCaption);
+      // ★두 번 부른다. rAF 시점엔 aspect-ratio 로 정해지는 높이가 아직 0일 때가 있어
+      //   계산이 통째로 건너뛰고 CSS 기본값이 남는다(글씨가 커 보이던 원인).
+      if (window._mcamFitCaption) {
+        requestAnimationFrame(window._mcamFitCaption);
+        setTimeout(window._mcamFitCaption, 120);
+      }
     } else {
       if (body && capIn.value) body.value = capIn.value;
       capIn.style.display = 'none'; capRow.style.display = '';
@@ -7199,7 +7206,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '302';
+window._SW_V = '303';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // updateViaCache:'none' = sw.js 업데이트 확인 시 브라우저 HTTP 캐시를 무시하고 항상 새로 받는다.
