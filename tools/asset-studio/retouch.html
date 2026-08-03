@@ -214,6 +214,16 @@ button.go:hover{background:#5590ff}
         <input type="checkbox" id="showOverlay" checked style="width:15px;height:15px;accent-color:#c8f542">
         모자 겹쳐 보기
       </label>
+      <div id="tgtWrap" style="display:none;margin-top:9px">
+        <h2 style="margin-bottom:4px">지금 고칠 레이어</h2>
+        <select id="editTgt">
+          <option value="item">헤어 (이 조합 전용)</option>
+          <option value="overlay">모자 (모든 조합에 반영)</option>
+        </select>
+        <div class="note" style="margin-top:5px;color:var(--gold)">
+          모자를 고치면 그 모자를 쓰는 <b>모든 조합</b>이 같이 바뀝니다.
+        </div>
+      </div>
       <div class="note" style="margin-top:6px">
         조합 시트는 모자가 위에 덮입니다. <b style="color:var(--gold)">칠했는데 안 보이면</b>
         모자에 가려진 것이니 이 체크를 꺼서 확인하세요.
@@ -308,6 +318,11 @@ let baseImg=null,itemData=null,W=0,H=0,cellR=0,Z=5,curItem=null,tool='pen',brush
 let cellC=0;                       // 지금 보고 있는 걸음 프레임(열)
 let overlayData=null;              // 편집 대상 위에 겹쳐 보여줄 레이어(모자 등). 편집되지 않는다.
 let palSource=null;                // 팔레트를 뽑을 원본 시트(조합 시트일 때 원래 헤어)
+/* ★편집 대상 — 겹쳐 보이는 화면에서 **무엇이든** 지우고 칠할 수 있어야 한다(대표 요구).
+   'item' = 헤어(조합 시트), 'overlay' = 모자. 화면은 늘 둘 다 겹쳐 보여주고,
+   실제로 손대는 레이어만 이 값으로 고른다. */
+let editTarget='item';
+const T=()=>(editTarget==='overlay'&&overlayData)?overlayData:itemData;
 const targetCols=()=>$('sync3').checked?[0,1,2]:[cellC];   // 편집이 닿을 열
 const history=[];
 const $=id=>document.getElementById(id);
@@ -356,6 +371,10 @@ async function useItem(it,d){
     try{ palSource=await loadPng(ROOT+'char/items/'+it.id.split('__')[0]+'.png?t='+Date.now()); }
     catch(e){}
   }
+  // 겹친 레이어가 있으면 '지금 고칠 레이어' 선택을 띄운다
+  editTarget='item';
+  const tw=$('tgtWrap');
+  if(tw){ tw.style.display=overlayData?'block':'none'; $('editTgt').value='item'; }
   const dir=$('dir'),n=Math.round(H/CH);
   if(dir.options.length!==n){
     dir.innerHTML='';
@@ -471,7 +490,7 @@ function buildPal(){
   // ★색은 **원본 시트**에서 뽑는다. 조합 시트(헤어×모자)는 모자에 잘려 남은 색이 거의 없고,
   //   그러면 팔레트가 비어 잉크가 초기값(거의 검정)에 머문다 → 검은 비니 위에 칠해도 안 보인다.
   //   보이는 프레임에 색이 없으면 시트 전체에서라도 뽑는다.
-  const srcData=palSource||itemData;
+  const srcData=(editTarget==='overlay'&&overlayData)?overlayData:(palSource||itemData);
   const scan=(cols)=>{for(const c of cols)for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
     const i=((cellR*CH+y)*W+(c*CW+x))*4;
     if(srcData.data[i+3]>=128){const k=srcData.data[i]+','+srcData.data[i+1]+','+srcData.data[i+2];
@@ -502,9 +521,9 @@ function pixel(x,y,mode){          // mode: 'pen' | 'del'
       const px=x+i2+dx,py=y+j+dy;
       if(px<0||px>=CW||py<0||py>=CH)continue;
       const i=((cellR*CH+py)*W+(c*CW+px))*4;
-      if(mode==='del'){itemData.data[i+3]=0;}
-      else{itemData.data[i]=ink[0];itemData.data[i+1]=ink[1];itemData.data[i+2]=ink[2];
-           itemData.data[i+3]=255;}
+      const D=T().data;                       // 헤어든 모자든 지금 고른 레이어에 그대로 쓴다
+      if(mode==='del'){D[i+3]=0;}
+      else{D[i]=ink[0];D[i+1]=ink[1];D[i+2]=ink[2];D[i+3]=255;}
       n++;}
   }
   return n;
@@ -551,6 +570,12 @@ $('tNone').onclick=clearSel;
 $('bgMode').onchange=draw;
 $('hideBody').onchange=draw;
 $('showOverlay').onchange=draw;
+$('editTgt').onchange=e=>{
+  editTarget=e.target.value; history.length=0; future.length=0; buildPal();
+  say(editTarget==='overlay'
+    ? '이제 <b>모자</b>를 고칩니다. 저장하면 모자 파일로 내려받아지고, 그 모자를 쓰는 모든 조합에 반영됩니다.'
+    : '이제 <b>헤어</b>를 고칩니다. 이 조합에만 반영됩니다.');
+};
 $('frm').onchange=e=>{cellC=+e.target.value;clearSel();draw();buildPal();};
 $('sync3').onchange=()=>say($('sync3').checked
   ? '걸음 3프레임에 <b>같이</b> 반영합니다.'
@@ -569,14 +594,19 @@ addEventListener('keydown',e=>{
 
 /* ── 보정 ─────────────────────────────────────────────── */
 const future=[];
-function snap(){history.push(new Uint8ClampedArray(itemData.data));
+// 되돌리기는 **어느 레이어를 고쳤는지**까지 같이 기억해야 한다(헤어/모자를 오가며 작업한다).
+function snap(){history.push([editTarget,new Uint8ClampedArray(T().data)]);
   if(history.length>40)history.shift(); future.length=0;}   // 새 작업 = 앞으로가기 초기화
+function restore(rec,stack){
+  const [tgt,data]=rec;
+  const D=(tgt==='overlay'&&overlayData)?overlayData:itemData;
+  stack.push([tgt,new Uint8ClampedArray(D.data)]);
+  D.data.set(data);draw();buildPal();
+}
 $('tUndo').onclick=()=>{if(!history.length)return;
-  future.push(new Uint8ClampedArray(itemData.data));
-  itemData.data.set(history.pop());draw();buildPal();say('되돌렸습니다.');};
+  restore(history.pop(),future);say('되돌렸습니다.');};
 $('tRedo').onclick=()=>{if(!future.length)return;
-  history.push(new Uint8ClampedArray(itemData.data));
-  itemData.data.set(future.pop());draw();buildPal();say('앞으로 갔습니다.');};
+  restore(future.pop(),history);say('앞으로 갔습니다.');};
 
 /* ── API 없이 쓰는 선택 도구들 ─────────────────────────── */
 function growSel(n){const o=new Uint8Array(M);
@@ -685,6 +715,9 @@ function apply(cmd,opt){
   draw();return n;
 }
 function cell(cmd,opt,col,dx,dy){
+  // ★지역 변수로 전역 itemData 를 가린다 — 이 함수 안의 모든 접근이 자동으로
+  //   '지금 고른 레이어'(헤어 또는 모자)를 향한다. 본문을 한 줄도 안 고쳐도 된다.
+  const itemData=T();
   const idx=(x,y)=>(((cellR*CH+y)*W+(col*CW+x))*4);
   const pal=[];
   for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){const i=idx(x,y);
@@ -813,8 +846,9 @@ document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>send(b.dataset.q)
 $('tSave').onclick=()=>{
   if(!itemData){say('먼저 아이템을 골라주세요.');return;}
   const c=document.createElement('canvas');c.width=W;c.height=H;
-  c.getContext('2d').putImageData(itemData,0,0);
-  c.toBlob(bl=>{const fn=(curItem?curItem.id:'retouched')+'.png';
+  c.getContext('2d').putImageData(T(),0,0);          // 지금 고른 레이어를 저장한다
+  c.toBlob(bl=>{const fn=((editTarget==='overlay'&&curItem&&curItem.overlay)
+      ? curItem.overlay : (curItem?curItem.id:'retouched'))+'.png';
     const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=fn;a.click();
     say('<b>'+fn+'</b> 저장했습니다. '+(curItem&&curItem.local
       ? '<b>머피에셋스튜디오 수정본\\</b> 폴더에 넣어주시면 반영합니다.'
@@ -823,4 +857,6 @@ $('tSave').onclick=()=>{
 </script>
 </body>
 </html>
+
+
 
