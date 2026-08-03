@@ -1025,7 +1025,7 @@
       </div>
       <!-- 캡션 (메인) -->
       <div style="margin-top:14px">
-        <textarea id="feed-post-input" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
+        <textarea id="feed-post-input" oninput="window._mcamCaptionChanged && window._mcamCaptionChanged()" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
       </div>
       <!-- 구분선 -->
       <div style="height:1px;background:rgba(255,255,255,0.07);margin:16px 0 13px"></div>
@@ -6078,6 +6078,17 @@ function confirmCrop() {
   }, 'image/jpeg', 0.85);
 }
 
+// 캡션을 고치면 사진에 인쇄된 글자도 따라 바뀌어야 한다. 매 타자마다 합성하면 무거우니
+// 잠깐 멈췄을 때만 다시 그린다(디바운스). 필터가 꺼져 있으면 아무것도 안 한다.
+window._mcamCaptionChanged = function () {
+  const tg = document.getElementById('mcam-toggle');
+  if (!tg || !tg.checked) return;
+  clearTimeout(window._mcamCapT);
+  window._mcamCapT = setTimeout(function () {
+    if (window.toggleMurpyCam) window.toggleMurpyCam();
+  }, 500);
+};
+
 // 머피캠 필터 토글 — 켜면 원본에서 합성, 끄면 원본으로 되돌린다.
 // ★픽셀은 **사진 안에만** 들어간다. 홈탭 UI 는 건드리지 않는다(대표 확정 2026-08-03).
 window.toggleMurpyCam = async function () {
@@ -6103,8 +6114,9 @@ window.toggleMurpyCam = async function () {
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
     });
-    // 홈 피드는 체크인 맥락이 아니라 자유 촬영이다 → target=null ('오운완'으로 찍힘)
-    const dataUrl = await window._mwBuildStamp(img, null);
+    // 홈 피드는 체크인 맥락이 아니라 자유 촬영 → target=null. 대신 캡션을 사진에 인쇄한다.
+    const capEl = document.getElementById('feed-post-input');
+    const dataUrl = await window._mwBuildStamp(img, null, capEl ? capEl.value : '');
     URL.revokeObjectURL(url);
     const blob = await (await fetch(dataUrl)).blob();
     show(blob);
@@ -12163,7 +12175,7 @@ window.mwShot = function () {
 // ---------- 스탬프 합성 ----------
 // ★합성만 하는 순수 함수로 분리했다 — 카메라 탭(mwCompose)과 **홈 피드 머피캠 필터**가 같이 쓴다.
 //   t = 체크인 대상 센터. null 이면 자유 촬영(센터명 대신 '오운완').
-window._mwBuildStamp = async function (photo, t) {
+window._mwBuildStamp = async function (photo, t, caption) {
   try { await document.fonts.load("16px 'Galmuri11'"); await document.fonts.load("16px 'Galmuri14'"); } catch(e){}
   const W=1080, H=1350;                                     // 4:5 (인스타 최적)
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -12178,8 +12190,14 @@ window._mwBuildStamp = async function (photo, t) {
   const dstr=`${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
   const tstr=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   x.textBaseline='middle';
+  // 필름바 머릿줄 — 체크인이면 센터명, 아니면 **캡션**을 넣는다.
+  // ★도장에 이미 '오운완'이 찍히므로 여기까지 '오운완'이면 같은 말이 두 번이다(대표 지적).
+  //   필터를 켜면 사진 한 장에 글까지 다 담기게 하는 것이 목적이라 캡션을 인쇄한다.
+  //   단 **한 줄을 넘기면 안 된다** — 우측은 캐릭터 자리라 가용폭이 좁다. 넘치면 말줄임.
+  const _cap = (caption || '').trim().replace(/\s+/g, ' ');
+  const _head = t ? t.center.name : (_cap ? (_cap.length > 14 ? _cap.slice(0, 14) + '…' : _cap) : '오운완');
   x.font="42px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle='#fff';
-  x.fillText(t ? t.center.name : '오운완', 40, H-bar+62);
+  x.fillText(_head, 40, H-bar+62);
   x.font="30px 'Galmuri11',sans-serif"; x.fillStyle='#F5C24B';
   x.fillText(`${dstr}  ${tstr}`, 40, H-bar+118);
   x.font="24px 'Galmuri11',sans-serif"; x.fillStyle='#4a5266';
