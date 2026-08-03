@@ -307,6 +307,7 @@ const OPS={
 let baseImg=null,itemData=null,W=0,H=0,cellR=0,Z=5,curItem=null,tool='pen',brush=6;
 let cellC=0;                       // 지금 보고 있는 걸음 프레임(열)
 let overlayData=null;              // 편집 대상 위에 겹쳐 보여줄 레이어(모자 등). 편집되지 않는다.
+let palSource=null;                // 팔레트를 뽑을 원본 시트(조합 시트일 때 원래 헤어)
 const targetCols=()=>$('sync3').checked?[0,1,2]:[cellC];   // 편집이 닿을 열
 const history=[];
 const $=id=>document.getElementById(id);
@@ -348,6 +349,12 @@ async function useItem(it,d){
   if(it.overlay){
     try{ overlayData=await loadPng(ROOT+'char/items/'+it.overlay+'.png?t='+Date.now()); }
     catch(e){ say('겹칠 레이어 <b>'+it.overlay+'</b> 를 못 불러왔습니다.'); }
+  }
+  // 조합 시트(<헤어>__<모자>)는 원래 헤어에서 색을 뽑는다 — 잘린 시트엔 색이 거의 없다.
+  palSource=null;
+  if(it.id&&it.id.indexOf('__')>0){
+    try{ palSource=await loadPng(ROOT+'char/items/'+it.id.split('__')[0]+'.png?t='+Date.now()); }
+    catch(e){}
   }
   const dir=$('dir'),n=Math.round(H/CH);
   if(dir.options.length!==n){
@@ -461,9 +468,21 @@ function setInk(c){ink=c;$('sw').style.background='rgb('+c.join(',')+')';}
 function buildPal(){
   if(!itemData)return;
   const cnt={},p=$('pal');
-  for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){const i=((cellR*CH+y)*W+(cellC*CW+x))*4;
-    if(itemData.data[i+3]>=128){const k=itemData.data[i]+','+itemData.data[i+1]+','+itemData.data[i+2];
-      cnt[k]=(cnt[k]||0)+1;}}
+  // ★색은 **원본 시트**에서 뽑는다. 조합 시트(헤어×모자)는 모자에 잘려 남은 색이 거의 없고,
+  //   그러면 팔레트가 비어 잉크가 초기값(거의 검정)에 머문다 → 검은 비니 위에 칠해도 안 보인다.
+  //   보이는 프레임에 색이 없으면 시트 전체에서라도 뽑는다.
+  const srcData=palSource||itemData;
+  const scan=(cols)=>{for(const c of cols)for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+    const i=((cellR*CH+y)*W+(c*CW+x))*4;
+    if(srcData.data[i+3]>=128){const k=srcData.data[i]+','+srcData.data[i+1]+','+srcData.data[i+2];
+      cnt[k]=(cnt[k]||0)+1;}}};
+  scan([cellC]);
+  if(!Object.keys(cnt).length)scan([0,1,2]);
+  if(!Object.keys(cnt).length){                 // 그래도 없으면 다른 방향에서라도
+    for(let r=0;r<Math.round(H/CH);r++)for(let c=0;c<3;c++)for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
+      const i=((r*CH+y)*W+(c*CW+x))*4;
+      if(srcData.data[i+3]>=128){const k=srcData.data[i]+','+srcData.data[i+1]+','+srcData.data[i+2];
+        cnt[k]=(cnt[k]||0)+1;}}}
   const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,10);
   p.innerHTML='';
   top.forEach(([k])=>{const c=k.split(',').map(Number);
