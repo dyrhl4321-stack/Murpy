@@ -210,6 +210,14 @@ button.go:hover{background:#5590ff}
         <input type="checkbox" id="hideBody" style="width:15px;height:15px;accent-color:#c8f542">
         몸통 숨기기 (헤어만 보기)
       </label>
+      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;font-size:11px">
+        <input type="checkbox" id="showOverlay" checked style="width:15px;height:15px;accent-color:#c8f542">
+        모자 겹쳐 보기
+      </label>
+      <div class="note" style="margin-top:6px">
+        조합 시트는 모자가 위에 덮입니다. <b style="color:var(--gold)">칠했는데 안 보이면</b>
+        모자에 가려진 것이니 이 체크를 꺼서 확인하세요.
+      </div>
       <div class="note" style="margin-top:6px">
         검은 머리는 체크무늬가 어두워 경계가 안 보입니다.
         <b style="color:var(--gold)">형광 배경 + 몸통 숨기기</b>로 보면 빈 구멍이 그대로 드러납니다.
@@ -416,6 +424,7 @@ function draw(){
   if(!itemData)return;
   const out=vctx.createImageData(CW,CH);
   const bg=BG[$('bgMode').value], hideBody=$('hideBody').checked;   // 루프 밖에서 한 번만 읽는다
+  const showOv=$('showOverlay').checked;
   for(let y=0;y<CH;y++)for(let x=0;x<CW;x++){
     const i=((cellR*CH+y)*W+(cellC*CW+x))*4,o=(y*CW+x)*4;
     let r,g,b;
@@ -424,7 +433,7 @@ function draw(){
     if(!hideBody&&baseImg.data[i+3]>=128){r=baseImg.data[i];g=baseImg.data[i+1];b=baseImg.data[i+2];}
     if(itemData.data[i+3]>=128){r=itemData.data[i];g=itemData.data[i+1];b=itemData.data[i+2];}
     // ★모자는 앱과 같은 순서(헤어 위)로 겹친다. 이게 없으면 어디가 넘치는지 안 보인다.
-    if(overlayData&&overlayData.data[i+3]>=128){r=overlayData.data[i];g=overlayData.data[i+1];b=overlayData.data[i+2];}
+    if(showOv&&overlayData&&overlayData.data[i+3]>=128){r=overlayData.data[i];g=overlayData.data[i+1];b=overlayData.data[i+2];}
     out.data[o]=r;out.data[o+1]=g;out.data[o+2]=b;out.data[o+3]=255;}
   const t=document.createElement('canvas');t.width=CW;t.height=CH;
   t.getContext('2d').putImageData(out,0,0);
@@ -486,7 +495,7 @@ function pickColor(x,y){
   //   이게 없으면 모자 위를 찍었는데 그 아래 헤어/몸통 색이 찍힌다(대표 지적).
   const i=((cellR*CH+y)*W+(cellC*CW+x))*4;
   const hideBody=$('hideBody').checked;
-  if(overlayData&&overlayData.data[i+3]>=128)
+  if($('showOverlay').checked&&overlayData&&overlayData.data[i+3]>=128)
     setInk([overlayData.data[i],overlayData.data[i+1],overlayData.data[i+2]]);
   else if(itemData.data[i+3]>=128)
     setInk([itemData.data[i],itemData.data[i+1],itemData.data[i+2]]);
@@ -522,6 +531,7 @@ $('tAll').onclick=()=>{M.fill(1);paintSel();};
 $('tNone').onclick=clearSel;
 $('bgMode').onchange=draw;
 $('hideBody').onchange=draw;
+$('showOverlay').onchange=draw;
 $('frm').onchange=e=>{cellC=+e.target.value;clearSel();draw();buildPal();};
 $('sync3').onchange=()=>say($('sync3').checked
   ? '걸음 3프레임에 <b>같이</b> 반영합니다.'
