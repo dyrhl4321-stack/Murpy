@@ -1022,10 +1022,16 @@
           <span style="font-size:11.5px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">머피캠</span>
           <span id="mcam-busy" style="display:none;font-size:10.5px;color:rgba(255,255,255,0.55)">적용 중…</span>
         </label>
+        <!-- ★필터를 켜면 사진 하단(필름바 자리)에 직접 쓴다 — 보이는 그대로가 결과물이다.
+             아래 캡션칸은 숨긴다(같은 걸 두 군데 쓰면 헷갈린다). 대표 제안 2026-08-03. -->
+        <input id="mcam-caption" type="text" maxlength="14" inputmode="text"
+          placeholder="오늘 운동 어땠나요?"
+          oninput="window._mcamCaptionChanged && window._mcamCaptionChanged()"
+          style="display:none;position:absolute;left:9px;right:9px;bottom:9px;box-sizing:border-box;background:rgba(6,8,14,0.78);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.18);border-radius:9px;color:#fff;font-family:'Galmuri11',inherit;font-size:12.5px;letter-spacing:-0.2px;padding:8px 10px;outline:none">
       </div>
       <!-- 캡션 (메인) -->
-      <div style="margin-top:14px">
-        <textarea id="feed-post-input" oninput="window._mcamCaptionChanged && window._mcamCaptionChanged()" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
+      <div id="caption-row" style="margin-top:14px">
+        <textarea id="feed-post-input" placeholder="오늘 운동, 어땠나요? 한마디 남겨보세요" style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;color:#fff;font-size:16px;line-height:1.6;resize:none;outline:none;min-height:84px;padding:14px;font-family:inherit;letter-spacing:-0.2px;box-sizing:border-box"></textarea>
       </div>
       <!-- 구분선 -->
       <div style="height:1px;background:rgba(255,255,255,0.07);margin:16px 0 13px"></div>
@@ -5945,6 +5951,11 @@ function closeCropModal() {
   unlockBodyScroll();   // 배경 스크롤 잠금 해제 + 위치 복원
   document.getElementById('feed-photo-input').value = '';
   document.getElementById('feed-post-input').value = '';
+  const _capIn = document.getElementById('mcam-caption');
+  const _capRow = document.getElementById('caption-row');
+  if (_capIn) { _capIn.value = ''; _capIn.style.display = 'none'; }
+  if (_capRow) _capRow.style.display = '';
+  clearTimeout(window._mcamCapT);
   if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
   window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
 }
@@ -6078,25 +6089,42 @@ function confirmCrop() {
   }, 'image/jpeg', 0.85);
 }
 
-// 캡션을 고치면 사진에 인쇄된 글자도 따라 바뀌어야 한다. 매 타자마다 합성하면 무거우니
-// 잠깐 멈췄을 때만 다시 그린다(디바운스). 필터가 꺼져 있으면 아무것도 안 한다.
+// 사진 안에 쓴 글은 실제 게시글 본문으로도 나가야 한다(검색·접근성). 값을 같이 맞춘다.
+// 매 타자마다 합성하면 무거우니 잠깐 멈췄을 때만 다시 그린다(디바운스).
 window._mcamCaptionChanged = function () {
+  const cap = document.getElementById('mcam-caption');
+  const body = document.getElementById('feed-post-input');
+  if (cap && body) body.value = cap.value;
   const tg = document.getElementById('mcam-toggle');
   if (!tg || !tg.checked) return;
   clearTimeout(window._mcamCapT);
   window._mcamCapT = setTimeout(function () {
-    if (window.toggleMurpyCam) window.toggleMurpyCam();
+    if (window.toggleMurpyCam) window.toggleMurpyCam(true);   // 입력 중 포커스 유지
   }, 500);
 };
 
 // 머피캠 필터 토글 — 켜면 원본에서 합성, 끄면 원본으로 되돌린다.
 // ★픽셀은 **사진 안에만** 들어간다. 홈탭 UI 는 건드리지 않는다(대표 확정 2026-08-03).
-window.toggleMurpyCam = async function () {
+window.toggleMurpyCam = async function (keepFocus) {
   const tg = document.getElementById('mcam-toggle');
   const busy = document.getElementById('mcam-busy');
   const prev = document.getElementById('compose-preview');
   const plain = window.cropData && window.cropData.plainBlob;
   if (!tg || !prev || !plain) return;
+
+  // 필터 ON → 사진 안 입력칸을 쓰고 아래 캡션칸은 감춘다. OFF → 반대로 되돌린다.
+  const capIn = document.getElementById('mcam-caption');
+  const capRow = document.getElementById('caption-row');
+  const body = document.getElementById('feed-post-input');
+  if (capIn && capRow) {
+    if (tg.checked) {
+      if (body && !capIn.value && body.value) capIn.value = body.value.slice(0, 14);
+      capIn.style.display = ''; capRow.style.display = 'none';
+    } else {
+      if (body && capIn.value) body.value = capIn.value;
+      capIn.style.display = 'none'; capRow.style.display = '';
+    }
+  }
 
   const show = (blob) => {
     if (window._composePreviewUrl) URL.revokeObjectURL(window._composePreviewUrl);
@@ -6114,8 +6142,8 @@ window.toggleMurpyCam = async function () {
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
     });
-    // 홈 피드는 체크인 맥락이 아니라 자유 촬영 → target=null. 대신 캡션을 사진에 인쇄한다.
-    const capEl = document.getElementById('feed-post-input');
+    // 홈 피드는 체크인 맥락이 아니라 자유 촬영 → target=null. 사진 안 입력칸의 글을 인쇄한다.
+    const capEl = document.getElementById('mcam-caption');
     const dataUrl = await window._mwBuildStamp(img, null, capEl ? capEl.value : '');
     URL.revokeObjectURL(url);
     const blob = await (await fetch(dataUrl)).blob();
