@@ -5751,9 +5751,6 @@ window.renderMyMurpy = function () {
     .map(s => items.find(x => x.id === cfg[s] && x.slot === s))
     .filter(Boolean);
 
-  let charHtml = '';
-  try { charHtml = (window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, 132) : '') || ''; } catch (e) {}
-
   const credits = window._creditState ? (window._creditState.credits || 0) : 0;
   const title = (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '';
 
@@ -5767,14 +5764,12 @@ window.renderMyMurpy = function () {
 
   el.innerHTML =
     // ── 방 미리보기 (정사각이어야 가구 좌표가 안 틀어진다)
-    '<div style="position:relative;width:100%;max-width:300px;margin:2px auto 0;aspect-ratio:1/1;'
+    '<div id="my-mw-stage" style="position:relative;width:100%;max-width:300px;margin:2px auto 0;aspect-ratio:1/1;'
     +   'border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);'
     +   'background:#0e0f14 center/cover no-repeat url(\'char/fields/field_room.png?v=1\');'
     +   'image-rendering:pixelated;box-shadow:0 8px 26px rgba(0,0,0,0.45)">'
     +   furn
-    +   '<div style="position:absolute;left:50%;bottom:11%;transform:translateX(-50%);z-index:200;text-align:center">'
-    +     charHtml
-    +   '</div>'
+    //    ★캐릭터는 여기서 넣지 않는다 — 크기가 무대 실측 폭에 달려 있어서(아래 참조)
     //    코인 HUD (좌상단) — 머피월드와 같은 자리
     +   '<div style="position:absolute;top:9px;left:9px;display:inline-flex;align-items:center;gap:5px;'
     +     'background:rgba(6,8,14,0.76);border:1px solid rgba(245,194,75,0.38);border-radius:20px;'
@@ -5793,6 +5788,16 @@ window.renderMyMurpy = function () {
     +   'style="width:100%;max-width:300px;display:block;margin:12px auto 0;background:var(--accent);'
     +   'border:none;color:#fff;border-radius:13px;padding:13px;font-size:14px;font-weight:800;'
     +   'cursor:pointer;font-family:inherit;letter-spacing:-0.2px">머피월드에서 꾸미기</button>'
+    // ── 오늘 방문수 + 방명록 (남의 방 구경 화면과 같은 내용을 내 프로필에서도 본다)
+    + '<div style="height:1px;background:rgba(255,255,255,0.07);margin:18px 0 13px"></div>'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">'
+    +   '<span style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4)">방명록</span>'
+    +   '<span style="font-size:11.5px;color:rgba(255,255,255,0.32);font-family:\'Galmuri11\',inherit">'
+    +     '오늘 방문 <b id="my-mw-today" style="color:#F5C24B">-</b></span>'
+    + '</div>'
+    + '<div id="my-mw-gb" style="display:flex;flex-direction:column;gap:8px">'
+    +   '<div style="color:rgba(255,255,255,0.25);font-size:12px;text-align:center;padding:10px">불러오는 중…</div>'
+    + '</div>'
     // ── 착용 중 (슬롯 아이콘 + 이름)
     + '<div style="height:1px;background:rgba(255,255,255,0.07);margin:18px 0 13px"></div>'
     + '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:10px">착용 중</div>'
@@ -5811,6 +5816,38 @@ window.renderMyMurpy = function () {
           + '</div>'
         : '<div style="text-align:center;padding:24px 10px;color:rgba(255,255,255,0.3);font-size:12.5px">'
           + '아직 착용한 아이템이 없어요</div>');
+
+  // ── 캐릭터: **실제 머피월드 방과 같은 축척**으로 그린다.
+  //   남의 방 구경(mwVisitRoom)이 쓰는 공식 그대로: 캐릭터 키 = 무대폭 × 3.3 ÷ 16타일.
+  //   300px 무대면 62px 다. 예전엔 132px 을 넣어 방보다 캐릭터가 커 보였다.
+  //   ★aspect-ratio 로 잡은 무대라 innerHTML 직후엔 폭이 0일 수 있다 → 실측 후에 꽂는다.
+  const stage = document.getElementById('my-mw-stage');
+  if (stage) {
+    const place = function () {
+      if (stage.querySelector('.my-mw-char')) return;
+      const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
+      const W = stage.clientWidth || 300;
+      const hpx = Math.round(W * 3.3 / N);
+      const rp = window._myRoomPos || { tc: 7, tr: 8, face: 'down' };
+      const tr = Math.max(3, rp.tr);   // 벽 3타일 이전에 저장된 옛 좌표 보정(벽에 박혀 보인다)
+      let ch = '';
+      try { ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, hpx, rp.face) : '') || ''; } catch (e) {}
+      const msg = String(window._myRoomMsg || '').slice(0, 30);
+      const bubble = msg
+        ? '<div style="max-width:120px;text-align:center;line-height:1.45;background:#fff;color:#10131c;'
+          + 'border:2px solid #05070c;padding:2px 6px;font-size:9.5px;font-weight:600;margin-bottom:3px">'
+          + esc(msg) + '</div>'
+        : '';
+      stage.insertAdjacentHTML('beforeend',
+        '<div class="my-mw-char" style="position:absolute;left:' + ((rp.tc + 0.5) / N * 100).toFixed(2) + '%;'
+        + 'top:' + ((tr + 1) / N * 100).toFixed(2) + '%;transform:translate(-50%,-100%);'
+        + 'z-index:' + (10 + tr * 10 + 5) + ';display:flex;flex-direction:column;align-items:center">'
+        + bubble + ch + '</div>');
+    };
+    if (stage.clientWidth) place(); else requestAnimationFrame(place);
+  }
+
+  if (window.mwMyRoomStat) window.mwMyRoomStat();
 };
 
 function renderMyCrews() {
@@ -7608,7 +7645,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '329';
+window._SW_V = '330';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8977,6 +9014,8 @@ window.ensureCreditsInit = async (uid) => {
       }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
+    window._myRoomPos = (d.roomPos && typeof d.roomPos.tc === 'number') ? d.roomPos : null;
     // ★카탈로그에서 사라진 옛 가구를 불러오는 즉시 걷어낸다.
     // 렌더는 정의 없는 id를 건너뛰지만 배열에는 남아 15개 상한을 잡아먹는다
     // ("방은 비었는데 더 못 놓는" 상태). 편집기를 열 때만 정리하면 늦다 — 여기서 처리해야
@@ -12537,8 +12576,10 @@ window.mwVisitRoom = async function (uid) {
   } catch(e){ const t=document.getElementById('mw-rm-today'); if (t) t.textContent='0'; }
   window.mwGbLoad(uid);
 };
-window.mwGbLoad = async function (uid) {
-  const list = document.getElementById('mw-gb-list'); if (!list) return;
+// listId: 방명록을 그릴 곳. 기본은 남의 방 패널이고, 프로필 머피 탭은 자기 id를 넘긴다
+// (두 곳이 동시에 떠 있어도 서로 덮어쓰지 않게 하려고 인자로 뺐다)
+window.mwGbLoad = async function (uid, listId) {
+  const list = document.getElementById(listId || 'mw-gb-list'); if (!list) return;
   try {
     const qs = await getDocs(query(collection(db,'users',uid,'guestbook'), orderBy('at','desc'), limit(30)));
     const items = qs.docs.map(d=>d.data());
@@ -12569,6 +12610,16 @@ window.mwGbLoad = async function (uid) {
       </div>`).join('')
       : '<div style="color:#4a5266;font-size:12px;text-align:center;padding:10px">첫 방명록의 주인공이 되어보세요!</div>';
   } catch(e){ list.innerHTML='<div style="color:#4a5266;font-size:12px;text-align:center;padding:10px">방명록을 불러오지 못했어요</div>'; }
+};
+// 프로필 머피 탭용 — 내 방의 TODAY 방문수 + 내가 받은 방명록
+window.mwMyRoomStat = async function () {
+  const me = auth.currentUser || window.currentUser; if (!me) return;
+  const t = document.getElementById('my-mw-today');
+  try {
+    const rs = await getDoc(doc(db, 'users', me.uid, 'roomstat', mwTodayKey()));
+    if (t) t.textContent = rs.exists() ? (rs.data().count || 0) : 0;
+  } catch (e) { if (t) t.textContent = '0'; }
+  window.mwGbLoad(me.uid, 'my-mw-gb');
 };
 window.mwGbWrite = async function (uid) {
   const me = auth.currentUser || window.currentUser;
