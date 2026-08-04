@@ -3140,16 +3140,27 @@ window.charSlot = function (slot, btn) {
     grid.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#8a93a8">헤어 색</div>' + window.CHAR_COLORS.hair.map(c => sw('hairColor', c)).join('') + '<div style="grid-column:1/-1;font-size:11px;color:#8a93a8;margin-top:4px">상의 색</div>' + window.CHAR_COLORS.top.map(c => sw('topColor', c)).join('');
     return;
   }
+  // 증명형 진행률(체크인 수)이 아직 없으면 지금 읽어오고, 오면 다시 그린다
+  if (!window._mwReqReady && window.mwReqRefresh) window.mwReqRefresh(true);
   // 내 몸통 전용 + 공용 아이템만 보여준다 (여캐에 남캐 옷이 뜨면 안 맞는다)
   const myBody = window._charDraft.body || 'human';
   const items = window.CHAR_ITEMS.filter(i => i.slot === slot && (!i.body || i.body === myBody));
   grid.innerHTML = items.map(i => {
-    const has = i.price === 0 || owned.includes(i.id);
+    // ★require 가 붙은 아이템은 price 0 이어도 보유가 아니다 — 조건을 채워야 열린다
+    const has = owned.includes(i.id) || (i.price === 0 && !i.require);
     const equipped = window._charDraft[slot] === i.id;
     const preview = i.thumb
       ? ("<img src='" + window._iv(i.thumb) + "' alt='' style=\"width:54px;height:54px;object-fit:contain;image-rendering:pixelated\">")
       : window.renderCharacter({ ...window.CHAR_DEFAULT, [slot]: i.id, mask: slot === 'mask' ? i.id : null }, { size: 54, masked: slot === 'mask' });
-    const sub = has ? (equipped ? '<span class="mw-sub on">착용중</span>' : '<span class="mw-sub">보유</span>') : ('<span class="mw-sub gold">' + window._mwCoinImg + i.price + '</span>');
+    let sub;
+    if (has) sub = equipped ? '<span class="mw-sub on">착용중</span>' : '<span class="mw-sub">보유</span>';
+    else if (i.require) {
+      // 가격 대신 진행률을 보여준다 — "얼마"가 아니라 "얼마나 남았나"가 움직이게 만든다
+      const inf = window.mwReqInfo(i.require);
+      sub = inf
+        ? '<span class="mw-sub gold">' + inf.now + '/' + inf.need + '</span>'
+        : '<span class="mw-sub gold">조건</span>';
+    } else sub = '<span class="mw-sub gold">' + window._mwCoinImg + i.price + '</span>';
     return `<button class="mw-card${equipped ? ' equipped' : ''}" onclick="window.charPick('${i.id}')"><div style="width:54px;height:54px">${preview}</div><span class="mw-name">${i.name}</span>${sub}</button>`;
   }).join('');
   if (['hair', 'top', 'bottom', 'shoes', 'acc', 'hat', 'mask'].includes(slot)) {
@@ -3167,11 +3178,73 @@ window.charClearSlot = function (slot) {
   window.charSlot(slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
 window.charPickColor = function (kind, c) { if (!window._charDraft) return; window._charDraft[kind] = c; window._charRenderAvatar(); };
+// 증명형 아이템 안내 — 머피월드 홍보 팝업과 같은 결(아이템을 크게 보여주고 남은 횟수를 말한다)
+window.mwQuestPopup = function (item, info) {
+  const old = document.getElementById('mw-quest'); if (old) old.remove();
+  const left = info ? Math.max(0, info.need - info.now) : 0;
+  const pct = info ? Math.round(info.now / info.need * 100) : 0;
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const el = document.createElement('div'); el.id = 'mw-quest';
+  el.style.cssText = 'position:fixed;inset:0;z-index:1250;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(5,7,12,.74)';
+  el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:20px 18px;text-align:center">'
+    + '<div style="display:inline-block;font-family:\'Galmuri11\',sans-serif;font-size:10px;color:#F5C24B;'
+    + 'border:2px solid rgba(245,194,75,.5);padding:3px 9px;margin-bottom:14px">운동으로만 얻는 아이템</div>'
+    + (item.thumb ? '<div style="display:flex;justify-content:center;margin-bottom:12px"><img src="' + window._iv(item.thumb)
+        + '" alt="" style="width:86px;height:86px;object-fit:contain;image-rendering:pixelated"></div>' : '')
+    + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:15px;color:#fff;margin-bottom:6px">' + esc(item.name) + '</div>'
+    + '<div style="font-size:12px;color:#8a93a8;line-height:1.7;margin-bottom:16px">'
+    + '<b style="color:#F5C24B">' + left + '번</b> 더 체크인하면 받아가요<br>'
+    + '<span style="font-size:11px;color:#4a5266">머피로는 살 수 없어요</span></div>'
+    + '<div style="height:12px;background:#0a0c12;border:2px solid #05070c;position:relative;margin-bottom:7px">'
+    + '<div style="position:absolute;inset:0;width:' + pct + '%;background:#F5C24B"></div></div>'
+    + '<div style="font-family:\'Galmuri11\',sans-serif;font-size:11px;color:#cfd6e6;margin-bottom:16px">'
+    + (info ? info.label + ' ' + info.now + ' / ' + info.need : '') + '</div>'
+    + '<button class="mw-btn" style="width:100%" onclick="var m=document.getElementById(\'mw-quest\');if(m)m.remove();'
+    + 'if(window.mwWorldPanel)mwWorldPanel(\'map\')">체크인하러 가기</button>'
+    + '<button class="mw-btn mw-btn-ghost" style="width:100%;margin-top:9px" '
+    + 'onclick="var m=document.getElementById(\'mw-quest\');if(m)m.remove()">나중에</button></div>';
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  document.body.appendChild(el);
+};
+// ===== 증명형 아이템 (require) — 돈으로 못 사고 조건 달성으로만 열린다 =====
+// ★희소성의 진짜 축이다. 남이 보고 "저건 어떻게 얻지?"의 답이 '돈'이면 공정성 하드룰이
+//   무너지고 머피월드가 운동 앱이 아니게 된다. 그래서 답은 반드시 '운동'이어야 한다.
+window._mwReqCount = { checkins: 0 };
+window._mwReqReady = false;
+window.mwReqRefresh = async function (rerender) {
+  try {
+    const ck = (window.mwLoadCheckinsPublic ? await window.mwLoadCheckinsPublic() : null) || [];
+    window._mwReqCount.checkins = ck.length;
+    window._mwReqReady = true;
+    // 진행률을 0/30 으로 그려놓고 끝나면 안 되니 준비되면 목록을 다시 그린다
+    if (rerender && window._charSlot && document.getElementById('charworld-items')) {
+      window.charSlot(window._charSlot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
+    }
+  } catch (e) {}
+};
+// { checkins: 30 } → { now, need, label, done }
+window.mwReqInfo = function (req) {
+  if (!req) return null;
+  if (typeof req.checkins === 'number') {
+    const now = window._mwReqCount.checkins || 0;
+    return { now: Math.min(now, req.checkins), need: req.checkins, done: now >= req.checkins, label: '헬스장 체크인' };
+  }
+  return null;
+};
 window.charPick = async function (id) {
   const item = window.CHAR_ITEMS.find(x => x.id === id); if (!item || !window._charDraft) return;
   const owned = (window._charState && window._charState.wardrobe) || [];
-  const has = item.price === 0 || owned.includes(id);
-  if (!has) {
+  // ★require 가 있으면 price 0 이어도 자동 보유가 아니다(그냥 두면 조건 없이 입혀진다)
+  const has = owned.includes(id) || (item.price === 0 && !item.require);
+  if (!has && item.require) {
+    const info = window.mwReqInfo(item.require);
+    if (!info || !info.done) { window.mwQuestPopup(item, info); return; }
+    // 달성 → 지급
+    window._charState.wardrobe = [...owned, id];
+    if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+    if (window.celebrateMurpy) window.celebrateMurpy(0, { amount: 0, title: "'" + item.name + "' 획득!" });
+    else window.showToast && showToast("'" + item.name + "' 획득!");
+  } else if (!has) {
     const uid = window.currentUser && window.currentUser.uid;
     if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
       const ok = await window.murpyConfirm({ title: "'" + item.name + "' 구매", desc: '<b style="color:#F5C24B">' + item.price + '머피</b>로 구매해요', cost: true, confirmText: '구매' });
@@ -7580,7 +7653,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '343';
+window._SW_V = '344';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -11866,6 +11939,8 @@ async function mwLoadCheckins(force) {
   window._mwCheckins = qs.docs.map(d=>({ id:d.id, ...d.data() }));
   return window._mwCheckins;
 }
+// 모듈 밖(꾸미기 화면의 증명형 판정)에서도 써야 해서 브릿지로 노출한다
+window.mwLoadCheckinsPublic = mwLoadCheckins;
 // 히든 캐릭터 판정(순수함수). 체크인만으로 계산. 조건 충족분만 배열로.
 // 검증: tools/test/test_eval_hidden.mjs (여기 로직 바꾸면 그 ref도 같이 맞출 것). 설계: specs/2026-07-27-hidden-characters-design.md
 window.mwEvalHidden = function (checkins, now) {
@@ -13428,6 +13503,7 @@ window.mwSealCheckin = async function (btn) {
   // 같은 센터 같은 날 재도장은 위에서 이미 막혀 있어 하루 여러 번 안 쌓인다.
   if (_isNewCheckin && window.earnCredit) window.earnCredit(CREDIT_CHECKIN, '체크인');
   window._mwCheckins = null; window._mwTodayCk = null;   // 캐시 무효화 — 방금 도장이 바로 반영되게
+  window._mwReqReady = false;   // 증명형 진행률도 다시 세게 한다(방금 1 늘었다)
   if (navigator.vibrate) navigator.vibrate([15,40,35]);
   // 도장 쾅 연출
   const slam=document.createElement('div'); slam.className='mw-slamwrap';
