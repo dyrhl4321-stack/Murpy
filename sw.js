@@ -1,7 +1,7 @@
 ﻿// 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v333';
-const STATIC_CACHE = 'murpy-static-v333';
-const CDN_CACHE = 'murpy-cdn-v333';
+const CACHE_NAME = 'murpy-v334';
+const STATIC_CACHE = 'murpy-static-v334';
+const CDN_CACHE = 'murpy-cdn-v334';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 

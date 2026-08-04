@@ -7572,7 +7572,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '333';
+window._SW_V = '334';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -9344,6 +9344,35 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
          </div>
        </div>`;
 
+  // ===== 머피 룸 =====
+  // ★매칭된 사이에서만 연다(대표 확정 2026-08-04). 방은 그 사람이 오래 꾸민 사적인 공간이고,
+  //   운동 인증 피드·센터와 같은 등급의 정보다. 잠금 문구도 피드와 같은 언어를 쓴다.
+  const _rTitle = (window.mwValidTitle && window.mwValidTitle(d.title || '')) || '';
+  const _rTColor = (_rTitle && window.mwTitleColor) ? window.mwTitleColor(_rTitle) : '#F5C24B';
+  const I_ROOM = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7aa4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg>';
+  let roomFurn = '';
+  try { roomFurn = (window.mwFurnHtml && d.room) ? (window.mwFurnHtml(d.room, false) || '') : ''; } catch (e) {}
+  const roomSection = matched
+    ? `<div style="padding:0 16px 18px">
+         <div style="font-size:13px;font-weight:800;margin-bottom:11px;display:flex;align-items:center;gap:5px">${I_ROOM}머피 룸
+           ${_rTitle ? `<span style="font-family:'Galmuri11',inherit;font-size:10.5px;font-weight:700;color:${_rTColor};margin-left:2px">&lt;${_rTitle}&gt;</span>` : ''}
+         </div>
+         <div id="up-room" onclick="window.mwVisitRoom&&window.mwVisitRoom('${userId}')"
+           style="position:relative;width:100%;aspect-ratio:1/1;border-radius:16px;overflow:hidden;cursor:pointer;
+             border:1px solid rgba(255,255,255,0.08);image-rendering:pixelated;box-shadow:0 8px 26px rgba(0,0,0,0.45);
+             background:#0e0f14 center/cover no-repeat url('char/fields/field_room.png?v=1')">${roomFurn}</div>
+         <div style="text-align:center;font-size:12px;color:rgba(255,255,255,0.32);margin-top:9px">눌러서 놀러가고 방명록 남기기</div>
+       </div>`
+    : `<div style="padding:0 16px 18px;position:relative">
+         <div style="filter:blur(9px);pointer-events:none;width:100%;aspect-ratio:1/1;border-radius:16px;
+           background:#0e0f14 center/cover no-repeat url('char/fields/field_room.png?v=1')">${roomFurn}</div>
+         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px">
+           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+           <div style="font-size:13px;font-weight:700;color:#fff;margin-top:10px">매칭되면 머피 룸에 놀러갈 수 있어요</div>
+           <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px;line-height:1.5">방을 구경하고 방명록도 남길 수 있어요</div>
+         </div>
+       </div>`;
+
   const actionHTML = isSelf
     ? `<button onclick="closePanel('user-profile-panel');openPanel('mypage-panel')" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;border-radius:12px;padding:15px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">프로필 수정</button>`
     : matched
@@ -9366,7 +9395,33 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     ${d.bio ? `<div style="padding:16px 16px 2px"><div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;font-size:14px;color:rgba(255,255,255,0.88);line-height:1.6">"${d.bio}"</div></div>` : ''}
     <div style="height:1px;background:rgba(255,255,255,0.06);margin:18px 16px"></div>
     ${feedSection}
+    ${roomSection}
     <div style="padding:4px 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
+
+  // 방 주인 캐릭터 — 실제 방과 같은 축척(무대폭 × 3.3 ÷ 16타일). 무대 폭을 실측한 뒤 꽂는다.
+  // 잠금 상태에선 캐릭터를 넣지 않는다(블러 뒤로 실루엣이 비치면 잠금의 의미가 없다).
+  if (matched) {
+    const rs = document.getElementById('up-room');
+    if (rs) {
+      const put = function () {
+        if (!rs.isConnected || rs.querySelector('.up-room-char')) return;
+        const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
+        const hpx = Math.round((rs.clientWidth || 320) * 3.3 / N);
+        const rp = (d.roomPos && typeof d.roomPos.tc === 'number') ? d.roomPos : { tc: 7, tr: 8, face: 'down' };
+        const tr = Math.max(3, rp.tr);   // 벽 3타일 이전에 저장된 옛 좌표 보정
+        let ch = '';
+        try { ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(d.character, hpx, rp.face) : '') || ''; } catch (e) {}
+        // roomMsg 는 남의 자유 입력이라 반드시 이스케이프한다
+        const msg = String(d.roomMsg || '').slice(0, 30).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const bubble = msg
+          ? `<div style="max-width:120px;text-align:center;line-height:1.45;background:#fff;color:#10131c;border:2px solid #05070c;padding:2px 6px;font-size:9.5px;font-weight:600;margin-bottom:3px">${msg}</div>`
+          : '';
+        rs.insertAdjacentHTML('beforeend',
+          `<div class="up-room-char" style="position:absolute;left:${((rp.tc + 0.5) / N * 100).toFixed(2)}%;top:${((tr + 1) / N * 100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10 + tr * 10 + 5};display:flex;flex-direction:column;align-items:center;pointer-events:none">${bubble}${ch}</div>`);
+      };
+      if (rs.clientWidth) put(); else requestAnimationFrame(put);
+    }
+  }
 
   _initProfileSwiper(cards.length);
 };
