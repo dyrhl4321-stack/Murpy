@@ -2947,9 +2947,7 @@ window.charMove = function (dx, dy) {
     edit:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 13l1-4 8-8 3 3-8 8z"/><path fill="#F5C24B" d="M11 1l3 3-1.5 1.5-3-3z"/></svg>',
     bub:   '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/></svg>',
     title: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M2 12h12v2H2zM2 5l3 3 3-5 3 5 3-3v6H2z"/></svg>',
-    // 남의 캐릭터를 눌렀을 때 (mwOtherMenu)
-    room:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M8 1l7 6h-2v7H3V7H1zM6 14v-4h4v4z"/></svg>',
-    gb:    '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/><path fill="#141a28" d="M4 5h8v1H4zM4 7h5v1H4z"/></svg>',
+    // 방 주인 캐릭터를 눌렀을 때 (mwOtherMenu) — 방 안에서 **못 하던 것만** 둔다
     squad: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M5 2h3v3H5zM1 6h11v3H1zM1 10h4v4H1zM8 10h4v4H8z"/><path fill="#3D7EFF" d="M12 1h2v6h-2z"/></svg>',
     face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M1 8s2.5-4 7-4 7 4 7 4-2.5 4-7 4-7-4-7-4z"/><path fill="#141a28" d="M6 6h4v4H6z"/></svg>',
   };
@@ -7577,7 +7575,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '337';
+window._SW_V = '338';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8175,10 +8173,27 @@ window._maybeCoachChar = function () {
     window.showCoach(Object.assign({ key: 'char' }, window._COACH_MARKS.char));
   } catch (e) {}
 };
+// 남의 방에 처음 들어갔을 때: 방 주인 캐릭터를 누르면 뭐가 되는지 알려준다.
+// ★coach_on(콜드유저)에 안 걸어둔다 — 기존 유저도 이 상호작용은 처음 보기 때문이다.
+//   내 캐릭터 코치(char)와 같은 골드 네온이라 "캐릭터는 누르는 것"이라는 규칙이 이어진다.
+window._mwRoomCoach = function (nick) {
+  try {
+    if (localStorage.getItem('coach_room_char')) return;
+    if (!document.getElementById('mw-wpanel')) return;          // 그 사이 방을 닫았으면 취소
+    if (!document.getElementById('mw-vroom-owner')) return;
+    const ov = document.getElementById('coach-overlay');
+    if (ov && ov.style.display === 'block') return;             // 안내는 한 번에 하나만
+    const safe = String(nick || '머피').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    window.showCoach({
+      key: 'room_char', color: 'gold', spotlightSel: '#mw-vroom-owner',
+      text: '<b style="color:#C9902A">' + safe + '</b>을 톡! 누르면<br><b style="color:#C9902A">채팅 신청 · 스쿼드 초대</b>를 할 수 있어요'
+    });
+  } catch (e) {}
+};
 // 관리자 테스트: 모든 코치마크 초기화 + 콜드유저로 표시
 window.resetCoachMarks = function () {
   try {
-    ['home', 'match', 'bamboo', 'char'].forEach(function (k) { localStorage.removeItem('coach_' + k); });
+    ['home', 'match', 'bamboo', 'char', 'room_char'].forEach(function (k) { localStorage.removeItem('coach_' + k); });
     localStorage.setItem('coach_on', '1');
     if (typeof closePanel === 'function') closePanel('mypage-panel');
     if (window.showToast) showToast('코치마크 초기화 · 홈/매칭/대숲/머피월드 탭을 눌러보세요');
@@ -12216,7 +12231,7 @@ window.mwRenderTodayMurpys = async function () {
     const g = byCenter[cid];
     const murpys = g.list.map(k => {
       const p = profiles[k.uid] || {};
-      return `<div onclick="window.mwOtherMenu('${k.uid}','${String(p.nickname||'머피').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}',event)" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
+      return `<div onclick="window.mwVisitRoom('${k.uid}')" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
         ${window.mwMiniCharHtml(p.character, 58)}
         <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nickname||'머피'}</span></div>`;
     }).join('');
@@ -12421,7 +12436,7 @@ window.mwCenterField = async function (centerId) {
     const p = profiles[uid] || {}; const s = spots[uid] || { x: 50, y: 70 };
     const wd = (((s.x * 7) | 0) % 9) / 10;   // 걷기 위상 스태거
     const vt = window.mwValidTitle ? window.mwValidTitle(p.title || '') : '';   // 카탈로그 검증(주입 방지)
-    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window.mwOtherMenu('${uid}','${String(p.nickname||'머피').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}',event)">
+    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window._mwCtalkStop&&window._mwCtalkStop();window.mwVisitRoom('${uid}')">
       ${vt ? `<span class="mw-cfd-title" style="color:${window.mwTitleColor(vt)}">&lt;${vt}&gt;</span>` : ''}
       <div class="mw-cfd-walk" style="--wd:-${wd}s">${window.mwMiniCharHtml(p.character, 44)}</div>
       <span class="mw-cfd-nick">${p.nickname || '머피'}</span>
@@ -12525,15 +12540,18 @@ window._mwSaveRoomPos = async function () {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && window._mwSaveRoomPos) window._mwSaveRoomPos();
 });
-// ---------- 남의 캐릭터 탭 → 링 커맨드 메뉴 ----------
-// ★내 캐릭터(mwCharMenu)와 **같은 UX 언어**다. 예전엔 캐릭터를 누르면 곧장 방이 열려서
-//   "채팅하고 싶다 / 스쿼드 부르고 싶다"는 갈 곳이 없었다. 사람을 누르면 뭘 할지 고르게 한다.
-//   내 메뉴는 방 안(#charworld-room) 기준 absolute 지만, 여긴 지도·센터필드 어디서든 열려야 해서
-//   화면 좌표(fixed) 로 띄운다.
+// ---------- 방 주인 캐릭터 탭 → 링 커맨드 메뉴 ----------
+// ★내 캐릭터(mwCharMenu)와 같은 UX 언어. **방 안에서만** 뜬다.
+//   지도·센터필드에서 캐릭터를 누르면 그냥 방으로 간다 — 거기서 할 수 있는 건 그것뿐이라
+//   메뉴를 달면 항목이 전부 같은 화면으로 간다(한 번 그렇게 만들었다가 걷어냈다).
+//   그래서 항목은 **방 안에서 못 하던 것만** 둔다: 실명 연결 / 스쿼드 초대.
+//   내 메뉴는 방(#charworld-room) 기준 absolute 지만, 여긴 패널 위라 화면 좌표(fixed)로 띄운다.
 window.mwOtherMenu = async function (uid, nick, ev) {
   const old = document.getElementById('mw-othermenu'); if (old) old.remove();
   const me = window.currentUser;
-  if (!me || me.uid === uid) { window.mwVisitRoom(uid); return; }   // 내 캐릭터면 그냥 방으로
+  if (!me) { showToast('로그인이 필요해요'); return; }
+  if (me.uid === uid) return;
+  if (ev && ev.stopPropagation) ev.stopPropagation();
 
   const src = (ev && (ev.currentTarget || ev.target)) || null;
   const r = src ? src.getBoundingClientRect() : null;
@@ -12542,17 +12560,18 @@ window.mwOtherMenu = async function (uid, nick, ev) {
 
   const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const U = js(uid), N = js(nick || '머피');
-  let matched = false;
+  let matched = false, sent = false;
   try { matched = await window.isMatched(uid); } catch (e) {}
+  if (!matched) { try { sent = (await getDoc(doc(db, 'likes', me.uid + '_' + uid))).exists(); } catch (e) {} }
 
-  const R = 66;
+  const R = 62;
   const acts = [
-    { k: 'room',  t: '방 구경',  dx: 0, dy: -R - 14, fn: "window.mwVisitRoom('" + U + "')" },
-    { k: 'gb',    t: '방명록',   dx: -R - 8, dy: 4,  fn: "window.mwVisitRoom('" + U + "',1)" },
-    { k: 'squad', t: '스쿼드 초대', dx: R + 8, dy: 4, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
     matched
-      ? { k: 'face', t: '채팅하기', dx: 0, dy: R + 22, fn: "window.openChatWith('" + U + "','" + N + "','')" }
-      : { k: 'face', t: '프로필',   dx: 0, dy: R + 22, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
+      ? { k: 'face', t: '채팅하기', dx: 0, dy: -R - 14, fn: "window._mwRoomClose();window.openChatWith('" + U + "','" + N + "','')" }
+      : sent
+      ? { k: 'face', t: '수락 대기중', dx: 0, dy: -R - 14, fn: "window.showToast('상대가 수락하면 얼굴과 톡이 열려요')" }
+      : { k: 'face', t: '프로필 신청', dx: 0, dy: -R - 14, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
+    { k: 'squad', t: '스쿼드 초대', dx: 0, dy: R + 22, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
   ];
 
   const el = document.createElement('div');
@@ -12594,8 +12613,7 @@ window.mwAskProfile = async function (uid, nick) {
 };
 
 // ---------- 남의 방 구경 (TODAY + 방명록) ----------
-// focusGb: 링 메뉴의 '방명록'으로 들어왔으면 입력칸까지 스크롤한다
-window.mwVisitRoom = async function (uid, focusGb) {
+window.mwVisitRoom = async function (uid) {
   window._mwCtalkStop && window._mwCtalkStop();
   const me = auth.currentUser || window.currentUser;
   let p = {}; try { const us = await getDoc(doc(db,'users',uid)); p = us.exists()?us.data():{}; } catch(e){}
@@ -12618,9 +12636,9 @@ window.mwVisitRoom = async function (uid, focusGb) {
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
         <div style="position:absolute;top:8px;left:8px;z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:3px 8px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#8a93a8;pointer-events:none">TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></div>
       </div>
-      <!-- 머피월드 -> 현실로 나가는 문. 방을 보고 **바로 다음 동작**이 오도록 방 밑 전체폭에 둔다.
-           TODAY 는 방 위 오버레이로 올려 이 자리를 비웠다. -->
-      <div id="mw-rm-connect" style="margin-bottom:16px"></div>
+      <!-- 실명 연결·스쿼드 초대는 **캐릭터를 눌러야** 나온다(링 메뉴). 여기 버튼을 따로 두면
+           방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
+      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:2px 0 15px;font-family:'Galmuri11',sans-serif">${nick}를 눌러보세요</div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -12645,8 +12663,13 @@ window.mwVisitRoom = async function (uid, focusGb) {
     const vTitleHtml = _title
       ? `<div style="font-family:'Galmuri11',sans-serif;font-size:8.5px;color:${_tColor};white-space:nowrap;text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c;margin-bottom:1px">&lt;${_title}&gt;</div>`
       : '';
+    // ★방 주인을 누르면 링 메뉴(채팅/스쿼드 초대). 내 방이면 안 붙인다.
+    const _nickJs = String(nick).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const _mine = me && me.uid === uid;
     vstage.insertAdjacentHTML('beforeend',
-      `<div style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}</div>`);
+      `<div id="mw-vroom-owner"${_mine ? '' : ` onclick="window.mwOtherMenu('${uid}','${_nickJs}',event)"`}
+        style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}</div>`);
+    if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(nick); }, 520);
   }
   // TODAY 카운트 (본인 방문은 카운트 제외)
   const dayId = mwTodayKey();
@@ -12670,11 +12693,6 @@ window.mwVisitRoom = async function (uid, focusGb) {
     } catch (e) {}
   }
   window.mwGbLoad(uid);
-  window._mwRoomConnect(uid, p);
-  if (focusGb) {
-    const gi = document.getElementById('mw-gb-input');
-    if (gi) gi.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
 };
 
 // 링 메뉴 > 스쿼드 초대 — 내가 속한 열린 스쿼드로 부른다
@@ -12728,56 +12746,6 @@ window._mwSqInvSend = async function (uid, nick, sid, title) {
   } catch (e) { showToast('초대에 실패했어요'); }
 };
 
-// 방 패널의 '실제 프로필 보기' 버튼.
-// ★새 관계 컬렉션을 만들지 않는다 — 매칭(likes/matches)이 이미 **상호 수락 후 공개**라는
-//   똑같은 규칙으로 돌아간다. 여기선 얼굴 대신 캐릭터를 보고 누른다는 것만 다르다.
-//   범프한 사이는 이미 실제로 만난 사이라 골드로 구분해 준다(캐릭터 본체 채색 아님).
-window._mwRoomConnect = async function (uid, p) {
-  const el = document.getElementById('mw-rm-connect'); if (!el) return;
-  const me = auth.currentUser || window.currentUser;
-  if (!me || me.uid === uid) { el.innerHTML = ''; return; }   // 내 방엔 안 띄운다
-  const nick = (p && p.nickname) || '머피';
-  const photo = (p && p.photoURL) || '';
-  const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  // ★버튼은 반드시 머피월드 언어(.mw-btn = 사각 픽셀 입체)로. 바로 옆 방명록 '남기기'가
-  //   mw-btn-sm 인데 여기만 라운드 반투명 칩이라 따로 놀았다(대표 지적 2026-08-04).
-  const btn = (cls, label, onclick, sub, subColor) =>
-    '<button class="mw-btn ' + cls + '" ' + (onclick ? 'onclick="' + onclick + '"' : 'disabled')
-    + ' style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px">' + label + '</button>'
-    + (sub ? '<div style="font-size:10.5px;color:' + subColor + ';text-align:center;margin-top:7px;line-height:1.6">' + sub + '</div>' : '');
-  const I_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12S5.5 5 12 5s10.2 7 10.2 7-3.7 7-10.2 7S1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/></svg>';
-  const I_CHAT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
-
-  try {
-    if (await window.isMatched(uid)) {
-      el.innerHTML = btn('', I_CHAT + '채팅하기',
-        "window._mwRoomClose();window.openChatWith('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')");
-      return;
-    }
-    // 내가 이미 보냈나 (likes/{나}_{상대})
-    const sent = await getDoc(doc(db, 'likes', me.uid + '_' + uid));
-    if (sent.exists()) {
-      el.innerHTML = btn('mw-btn-ghost', '수락 기다리는 중', '');
-      return;
-    }
-    // 범프한 사이인가 — 실제로 만난 사이라 골드로 구분(캐릭터 본체는 안 물들인다)
-    let bump = null;
-    try {
-      const ms = await getDoc(doc(db, 'users', me.uid));
-      bump = (ms.exists() && (ms.data().bumpers || {})[uid]) || null;
-    } catch (e) {}
-    const go = "window._mwRoomLike('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')";
-    if (bump) {
-      const w = bump.firstAt ? new Date(bump.firstAt) : null;
-      const when = w ? (w.getMonth() + 1) + '.' + String(w.getDate()).padStart(2, '0') : '';
-      const where = String(bump.place || '').replace(/</g, '&lt;').slice(0, 18);
-      el.innerHTML = btn('mw-btn-gold', I_EYE + '실제 프로필 보기', go,
-        (when ? when + ' ' : '') + (where || '') + (when || where ? '에서 ' : '') + '범프한 사이', '#F5C24B');
-    } else {
-      el.innerHTML = btn('', I_EYE + '실제 프로필 보기', go, '서로 눌러야 얼굴이 열려요', '#4a5266');
-    }
-  } catch (e) { el.innerHTML = ''; }
-};
 window._mwRoomClose = function () {
   const w = document.getElementById('mw-wpanel'); if (w) w.remove();
 };
@@ -12785,8 +12753,7 @@ window._mwRoomClose = function () {
 //   방 패널을 안 치우면 **그 밑에 깔려서 안 보인다.** 그래서 결과를 보고 방을 닫는다.
 window._mwRoomLike = async function (uid, nick, photo) {
   await window.sendLike(uid, nick, photo);
-  if (await window.isMatched(uid)) window._mwRoomClose();
-  else window._mwRoomConnect(uid, { nickname: nick, photoURL: photo });   // '수락 기다리는 중'으로 갱신
+  if (await window.isMatched(uid)) window._mwRoomClose();   // 성사되면 방을 치우고 프로필을 보여준다
 };
 // listId: 방명록을 그릴 곳. 기본은 남의 방 패널이고, 프로필 머피 탭은 자기 id를 넘긴다
 // (두 곳이 동시에 떠 있어도 서로 덮어쓰지 않게 하려고 인자로 뺐다)
