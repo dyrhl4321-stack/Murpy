@@ -5689,33 +5689,60 @@ window.renderMyMurpy = function () {
   const credits = window._creditState ? (window._creditState.credits || 0) : 0;
   const title = (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '';
 
+  // ★상단은 **실제 머피월드 화면 그대로** — 내 방 배경 + 내 가구 + 내 캐릭터.
+  //   설명 텍스트로 때우지 않고 진짜 화면을 보여준다(대표 요구).
+  //   아래 목록·버튼은 일반 UI 로 둔다 — 픽셀은 콘텐츠에만 쓴다는 규칙.
+  let furn = '';
+  try { furn = (window.mwFurnHtml && window._myRoom) ? (window.mwFurnHtml(window._myRoom, false) || '') : ''; } catch (e) {}
+
+  const SLOT_ICON = { hair: 'hair', hat: 'hat', top: 'top', bottom: 'bottom', shoes: 'shoes', acc: 'acc' };
+
   el.innerHTML =
-    '<div style="display:flex;gap:14px;align-items:flex-end;padding:6px 2px 14px">'
-    +   '<div style="flex-shrink:0">' + charHtml + '</div>'
-    +   '<div style="flex:1;min-width:0;padding-bottom:4px">'
-    +     (title ? '<div style="display:inline-block;font-size:11px;font-weight:700;color:#F5C24B;'
-    +       'border:1px solid rgba(245,194,75,0.4);border-radius:20px;padding:3px 9px;margin-bottom:8px">'
-    +       esc(title) + '</div>' : '')
-    +     '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:rgba(255,255,255,0.75)">'
-    +       '<img src="char/ui/coin_big.png" alt="" style="width:15px;height:15px;image-rendering:pixelated">'
-    +       '<b style="color:#F5C24B">' + credits + '</b> 머피</div>'
-    +     '<button onclick="closePanel(\'mypage-panel\');goPage(\'char\')" '
-    +       'style="margin-top:10px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.13);'
-    +       'color:#fff;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;'
-    +       'font-family:inherit">머피월드에서 꾸미기</button>'
+    // ── 방 미리보기 (정사각이어야 가구 좌표가 안 틀어진다)
+    '<div style="position:relative;width:100%;max-width:300px;margin:2px auto 0;aspect-ratio:1/1;'
+    +   'border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);'
+    +   'background:#0e0f14 center/cover no-repeat url(\'char/fields/field_room.png?v=1\');'
+    +   'image-rendering:pixelated;box-shadow:0 8px 26px rgba(0,0,0,0.45)">'
+    +   furn
+    +   '<div style="position:absolute;left:50%;bottom:11%;transform:translateX(-50%);z-index:200;text-align:center">'
+    +     charHtml
     +   '</div>'
+    //    코인 HUD (좌상단) — 머피월드와 같은 자리
+    +   '<div style="position:absolute;top:9px;left:9px;display:inline-flex;align-items:center;gap:5px;'
+    +     'background:rgba(6,8,14,0.76);border:1px solid rgba(245,194,75,0.38);border-radius:20px;'
+    +     'padding:4px 10px 4px 6px;z-index:210">'
+    +     '<img src="char/ui/coin_big.png" alt="" style="width:13px;height:13px;image-rendering:pixelated">'
+    +     '<span style="font-size:11px;font-weight:800;color:#F5C24B;font-family:\'Galmuri11\',inherit">'
+    +       credits + '</span></div>'
+    //    칭호 (우상단)
+    +   (title ? '<div style="position:absolute;top:9px;right:9px;background:rgba(6,8,14,0.76);'
+    +     'border:1px solid rgba(255,255,255,0.16);border-radius:20px;padding:4px 9px;font-size:10px;'
+    +     'font-weight:700;color:rgba(255,255,255,0.85);font-family:\'Galmuri11\',inherit;z-index:210">'
+    +     esc(title) + '</div>' : '')
     + '</div>'
-    + '<div style="height:1px;background:rgba(255,255,255,0.07);margin:0 0 12px"></div>'
-    + '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:9px">착용 중</div>'
+    // ── 꾸미기 버튼
+    + '<button onclick="closePanel(\'mypage-panel\');goPage(\'char\')" '
+    +   'style="width:100%;max-width:300px;display:block;margin:12px auto 0;background:var(--accent);'
+    +   'border:none;color:#fff;border-radius:13px;padding:13px;font-size:14px;font-weight:800;'
+    +   'cursor:pointer;font-family:inherit;letter-spacing:-0.2px">머피월드에서 꾸미기</button>'
+    // ── 착용 중 (슬롯 아이콘 + 이름)
+    + '<div style="height:1px;background:rgba(255,255,255,0.07);margin:18px 0 13px"></div>'
+    + '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:10px">착용 중</div>'
     + (worn.length
-        ? '<div style="display:flex;flex-wrap:wrap;gap:6px">'
+        ? '<div style="display:flex;flex-direction:column;gap:7px">'
           + worn.map(function (w) {
-              return '<span style="font-size:12px;color:rgba(255,255,255,0.8);background:rgba(255,255,255,0.05);'
-                + 'border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:6px 10px">'
-                + esc(w.name) + '</span>';
+              const ic = SLOT_ICON[w.slot];
+              return '<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.04);'
+                + 'border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:8px 11px">'
+                + (ic ? '<img src="char/ui/ui_slot_' + ic + '.png" alt="" style="width:26px;height:26px;'
+                    + 'flex-shrink:0;image-rendering:pixelated">' : '')
+                + '<span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:rgba(255,255,255,0.86);'
+                + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(w.name) + '</span>'
+                + '</div>';
             }).join('')
           + '</div>'
-        : '<div style="font-size:12.5px;color:rgba(255,255,255,0.3)">아직 착용한 아이템이 없어요</div>');
+        : '<div style="text-align:center;padding:24px 10px;color:rgba(255,255,255,0.3);font-size:12.5px">'
+          + '아직 착용한 아이템이 없어요</div>');
 };
 
 function renderMyCrews() {
@@ -7513,7 +7540,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '324';
+window._SW_V = '325';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
