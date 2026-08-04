@@ -2951,6 +2951,8 @@ window.charMove = function (dx, dy) {
     // ★전부 16×16 격자에 딱 떨어지는 사각 픽셀로 그린다(다른 링 아이콘과 같은 문법).
     //   곡선/사선을 섞으면 crispEdges 에서 지저분해진다.
     squad: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M9 1H5L3 8h3l-1 7 6-9H7z"/></svg>',
+    info:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 1h12v14H2z"/><path fill="#141a28" d="M4 3h4v4H4zM9 3h3v1H9zM9 5h3v1H9zM4 9h8v1H4zM4 11h8v1H4z"/></svg>',
+    poke:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M7 2h2v6h2v2h1v3H6v-1H4v-2H3V8h2v2h2z"/></svg>',
     chat:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/><path fill="#141a28" d="M4 5h2v2H4zM7 5h2v2H7zM10 5h2v2h-2z"/></svg>',
     face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M6 2h4v4H6zM4 8h8v6H4z"/></svg>',
   };
@@ -7578,7 +7580,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '340';
+window._SW_V = '341';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -10878,6 +10880,18 @@ window.loadNotificationsFirestore = async () => {
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#4ADE80;flex-shrink:0"></div>' : ''}
         </div>`;
       }
+      if (n.type === 'poke') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.mwVisitRoom&&window.mwVisitRoom('${safeFromUid}')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v9M8 9l3 3 3-3M6 14v4a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-4"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 콕 찔렀어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'squad_invite') {
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('crew')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -12575,6 +12589,9 @@ window.mwOtherMenu = async function (uid, nick, ev) {
       : sent
       ? { k: 'chat', t: '수락 대기중', dx: 0, dy: -R - 14, fn: "window.showToast('상대가 수락하면 얼굴과 톡이 열려요')" }
       : { k: 'face', t: '프로필 확인', dx: 0, dy: -R - 14, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
+    // 세로 = 현실로 나가는 길, 가로 = 머피월드 안에 남는 행동. 축을 갈라야 읽힌다.
+    { k: 'info',  t: '캐릭터 정보', dx: -R - 12, dy: 4, fn: "window.mwCharInfo('" + U + "','" + N + "')" },
+    { k: 'poke',  t: '콕 찌르기',   dx: R + 12,  dy: 4, fn: "window.mwPoke('" + U + "','" + N + "')" },
     { k: 'squad', t: '스쿼드 초대', dx: 0, dy: R + 22, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
   ];
 
@@ -12640,7 +12657,10 @@ window.mwVisitRoom = async function (uid) {
       </div>
       <!-- 실명 연결·스쿼드 초대는 **캐릭터를 눌러야** 나온다(링 메뉴). 여기 버튼을 따로 두면
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
-      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:2px 0 15px;font-family:'Galmuri11',sans-serif">캐릭터를 눌러보세요</div>
+      <!-- 방 좋아요는 **방을 보고 있는 여기서** 누른다. 캐릭터 정보 창까지 들어가서 누르면
+           한 바퀴 돌아가는 셈이라 대상과 버튼이 어긋난다(캐릭터 좋아요는 정보 창 안에 있다). -->
+      <div id="mw-rm-like" style="display:flex;justify-content:center;margin:2px 0 9px"></div>
+      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:0 0 15px;font-family:'Galmuri11',sans-serif">캐릭터를 눌러보세요</div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -12710,6 +12730,116 @@ window.mwVisitRoom = async function (uid) {
     } catch (e) {}
   }
   window.mwGbLoad(uid);
+  window.mwLikeBtn('mw-rm-like', uid, 'room', '이 방 좋아요');
+};
+
+// ===== 좋아요 (캐릭터 / 방) =====
+// kind: 'char' | 'room'.  users/{주인}/likestat/{kind}.count 가 총합,
+// .../by/{누른사람} 이 토글 표식. 카운터를 users 본문에 못 두는 이유는 규칙 주석 참고.
+window.mwLikeToggle = async function (uid, kind) {
+  const me = window.currentUser;
+  if (!me) { requireLogin('좋아요를 누르려면 로그인이 필요해요'); return null; }
+  if (me.uid === uid) { showToast('내 것에는 못 눌러요'); return null; }
+  const statRef = doc(db, 'users', uid, 'likestat', kind);
+  const byRef = doc(db, 'users', uid, 'likestat', kind, 'by', me.uid);
+  try {
+    // ★표식과 카운터를 한 트랜잭션으로 — 따로 하면 취소했는데 숫자가 안 줄거나 그 반대가 된다
+    return await runTransaction(db, async tx => {
+      const b = await tx.get(byRef);
+      const on = !b.exists();
+      if (on) { tx.set(byRef, { at: serverTimestamp() }); tx.set(statRef, { count: increment(1) }, { merge: true }); }
+      else { tx.delete(byRef); tx.set(statRef, { count: increment(-1) }, { merge: true }); }
+      return on;
+    });
+  } catch (e) { showToast('잠시 후 다시 시도해주세요'); return null; }
+};
+window.mwLikeState = async function (uid, kind) {
+  const me = window.currentUser;
+  let count = 0, on = false;
+  try {
+    const s = await getDoc(doc(db, 'users', uid, 'likestat', kind));
+    count = Math.max(0, (s.exists() && s.data().count) || 0);
+  } catch (e) {}
+  if (me && me.uid !== uid) {
+    try { on = (await getDoc(doc(db, 'users', uid, 'likestat', kind, 'by', me.uid))).exists(); } catch (e) {}
+  }
+  return { count, on };
+};
+// 하트 버튼 하나를 그려 넣는다(방 좋아요·캐릭터 좋아요 공용)
+window.mwLikeBtn = async function (elId, uid, kind, label) {
+  const el = document.getElementById(elId); if (!el) return;
+  const st = await window.mwLikeState(uid, kind);
+  const mine = window.currentUser && window.currentUser.uid === uid;
+  const c = st.on ? '#FF6B6B' : '#8a93a8';
+  el.innerHTML = '<button ' + (mine ? 'disabled' : 'onclick="window._mwLikeTap(\'' + elId + '\',\'' + uid + '\',\'' + kind + '\',\'' + label + '\')"')
+    + ' style="display:inline-flex;align-items:center;gap:6px;background:#141a28;border:3px solid #05070c;'
+    + 'box-shadow:0 0 0 2px ' + (st.on ? 'rgba(255,107,107,.5)' : '#2b3350') + ';color:' + c + ';'
+    + "font-family:'Galmuri11',sans-serif;font-size:11.5px;padding:8px 12px;" + (mine ? 'opacity:.5' : 'cursor:pointer') + '">'
+    + '<svg width="13" height="13" viewBox="0 0 16 16" shape-rendering="crispEdges">'
+    + '<path fill="' + c + '" d="M3 2h3v1h1V2h3v1h1v1h1v3h-1v2h-1v1H9v1H8v1H7v1H6v-1H5v-1H4v-1H3V9H2V7H1V4h1V3h1z"/></svg>'
+    + label + ' <b style="color:' + (st.on ? '#FF6B6B' : '#cfd6e6') + '">' + st.count + '</b></button>';
+};
+window._mwLikeTap = async function (elId, uid, kind, label) {
+  const on = await window.mwLikeToggle(uid, kind);
+  if (on === null) return;
+  await window.mwLikeBtn(elId, uid, kind, label);
+  if (on) { if (navigator.vibrate) navigator.vibrate(8); }
+};
+
+// ===== 링 메뉴 > 캐릭터 정보 (메이플식 장비창) =====
+window.mwCharInfo = async function (uid, nick) {
+  let p = {};
+  try { const us = await getDoc(doc(db, 'users', uid)); p = us.exists() ? us.data() : {}; } catch (e) {}
+  const cfg = p.character || {};
+  const items = window.CHAR_ITEMS || [];
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // 파츠 순서 = 위에서 아래로 입는 순서. 비어 있는 칸도 **그대로 보여준다**(뭘 안 꼈는지가 정보다)
+  const SLOTS = [
+    ['hat', '모자'], ['hair', '헤어'], ['acc', '악세서리'],
+    ['top', '상의'], ['bottom', '하의'], ['shoes', '신발'],
+  ];
+  const cell = ([slot, ko]) => {
+    const it = items.find(x => x.id === cfg[slot] && x.slot === slot);
+    return '<div style="display:flex;align-items:center;gap:9px;background:#101624;border:2px solid #05070c;padding:8px 10px">'
+      + '<img src="char/ui/ui_slot_' + slot + '.png" alt="" style="width:26px;height:26px;flex-shrink:0;image-rendering:pixelated;'
+      + (it ? '' : 'opacity:.28') + '">'
+      + '<div style="min-width:0;flex:1">'
+      + '<div style="font-size:9px;color:#4a5266;line-height:1.4">' + ko + '</div>'
+      + '<div style="font-size:11.5px;color:' + (it ? '#fff' : '#4a5266') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+      + (it ? esc(it.name) : '비어 있음') + '</div></div></div>';
+  };
+  let big = '';
+  try { big = (window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, 150) : '') || ''; } catch (e) {}
+
+  const el = document.createElement('div'); el.id = 'mw-charinfo';
+  el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(5,7,12,.72)';
+  el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:330px;padding:15px;max-height:88vh;overflow-y:auto">'
+    + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">'
+    + esc(nick) + ' 캐릭터 정보</div>'
+    + '<div style="display:flex;justify-content:center;background:#0a0c12;border:2px solid #05070c;padding:10px 0 6px;margin-bottom:11px">' + big + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:13px">' + SLOTS.map(cell).join('') + '</div>'
+    + '<div id="mw-charinfo-like" style="display:flex;justify-content:center"></div>'
+    + '<button class="mw-btn mw-btn-ghost" style="width:100%;margin-top:12px" '
+    + 'onclick="var m=document.getElementById(\'mw-charinfo\');if(m)m.remove()">닫기</button></div>';
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  document.body.appendChild(el);
+  window.mwLikeBtn('mw-charinfo-like', uid, 'char', '이 코디 좋아요');
+};
+
+// ===== 링 메뉴 > 콕 찌르기 =====
+// ★하루 1회. 문서 id 를 (받는사람_보낸사람_날짜)로 고정해 여러 번 눌러도 알림은 하나다.
+window.mwPoke = async function (uid, nick) {
+  const me = window.currentUser; if (!me) { requireLogin('로그인이 필요해요'); return; }
+  const day = mwTodayKey();
+  try {
+    const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
+    await setDoc(doc(db, 'notifications', 'pk_' + uid + '_' + me.uid + '_' + day), {
+      toUid: uid, fromUid: me.uid, fromNickname: myNick, type: 'poke',
+      postId: day, read: false, createdAt: serverTimestamp()
+    });
+    showToast(nick + '님을 콕 찔렀어요!');
+    if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
+  } catch (e) { showToast('잠시 후 다시 시도해주세요'); }
 };
 
 // 링 메뉴 > 스쿼드 초대 — 내가 속한 열린 스쿼드로 부른다

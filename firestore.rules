@@ -40,6 +40,18 @@ service cloud.firestore {
           allow create: if isOwner(visitorId);
         }
       }
+      // 캐릭터/방 좋아요. kind = 'char' | 'room'
+      // ★카운터를 users/{userId} 본문에 못 둔다 — 그 문서는 본인만 쓸 수 있어서(위 write 규칙)
+      //   남이 누른 좋아요를 반영할 수가 없다. 그래서 하위 컬렉션에 센다.
+      match /likestat/{kind} {
+        allow read: if true;
+        allow write: if signedIn();
+        // 누가 눌렀는지 — 토글용. 자기 표식만 만들고 지울 수 있다(남의 좋아요 취소 방지)
+        match /by/{fromId} {
+          allow read: if true;
+          allow create, delete: if isOwner(fromId);
+        }
+      }
     }
 
     // ===== 피드 =====
