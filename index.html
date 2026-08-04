@@ -2021,15 +2021,15 @@ window.collapseBambooCompose = function () {
 
 // ===== 머피 캐릭터 (Phase 1): 카탈로그 · 도트 파츠 · 렌더 =====
 window.CHAR_COLORS = { skin: ['#F0C9A0', '#E0A878', '#C68642'], hair: ['#2B2B2B', '#6B4226', '#C9A227', '#7C3AED'], top: ['#3D7EFF', '#4ADE80', '#F5C24B', '#FF6B6B', '#E5E7EB'] };
-window.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_m_basic', hairColor: '#2B2B2B', top: 'top_tee', topColor: '#3D7EFF', bottom: null, shoes: null, acc: null, hat: null, mask: null, body: 'human' };
+// ★기본값 = 무료 기본 의상. 'top_tee' 는 옛 SVG 도형 이름이라 실제 카탈로그에 없었다\n//   (=상의가 안 입혀진 채로 시작했다). 하의도 null 이라 반바지 없이 시작했다.\n//   신발은 의도적으로 null — 맨발이 기본이고 러닝화가 첫 구매 대상이다.\nwindow.CHAR_DEFAULT = { skin: '#F0C9A0', hair: 'hair_m_basic', hairColor: '#2B2B2B', top: 'top_basic_tee', topColor: '#3D7EFF', bottom: 'bottom_basic_shorts', shoes: null, acc: null, hat: null, mask: null, body: 'human' };
 // 오버월드 몸통(캐릭터) 종류. 표시높이 고정, 폭은 셀 비율대로 자동. heltori=근방단 한정(코드 해금).
 window._CHAR_DISPLAY_H = 88;
 window._CHAR_BODIES = {
   // thumb = 캐릭터 선택 카드에 쓰는 그림. src(빡빡이 base)를 그대로 쓰면 민머리로 보여서
   //         기본헤어를 씌운 미리보기 시트를 따로 만든다 (char/build_body_preview.py).
-  // defaultHair = 이 몸통을 고르면 자동으로 씌우는 헤어. 빡빡이 base 가 그대로 보이면 안 된다.
-  human:   { name: '기본 남성', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   defaultHair: 'hair_m_basic', cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
-  human_f: { name: '기본 여성', src: "char/walk_female.png?v=4", thumb: "char/preview_human_f.png?v=1", defaultHair: 'hair_f_basic', cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
+  // defaultHair/Top/Bottom = 이 몸통을 고르면 자동으로 입히는 기본형.\n  // ★성별이 다른 아이템은 자동으로 벗겨지므로(아래 charPickBody), 몸통마다 짝을 지정해야\n  //   여성 유저가 벌거벗은 채로 시작하지 않는다. 신발은 일부러 없다(맨발 = 첫 구매 유도).
+  human:   { name: '기본 남성', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   defaultHair: 'hair_m_basic', defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
+  human_f: { name: '기본 여성', src: "char/walk_female.png?v=4", thumb: "char/preview_human_f.png?v=1", defaultHair: 'hair_f_basic', defaultTop: 'top_f_basic_tee', defaultBottom: 'bottom_f_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
   heltori: { name: '헬토리', src: "char/heltori.png?v=4", cw: 150, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정' },
   // 히든 3종(고정 캐릭터). 해금=users.hiddenChars, 소유 판정은 mwHasHidden. 실제 발동/연출은 mwEvalHidden/mwHiddenReveal.
   cult:   { name: '요일교 교주',   src: "char/hidden_cult.png?v=1",   cw: 135, ch: 224, hidden: true, limited: true, tag: '히든' },
@@ -2072,21 +2072,29 @@ window.CHAR_ITEMS = [
   //   헤어의 hatVariants 가 살아 있어서 모자를 되살리는 순간 조합 시트가 다시 발동한다.
   // { id: 'hat_beanie', slot: 'hat', body: 'human', name: 'GBD 비니', price: 0, sheet: 'char/items/hat_beanie.png', thumb: 'char/items/hat_beanie_thumb.png', hairVariants: { hair_m_basic: null, hair_ivyleague: null, hair_m_semileaf: null } },
   // { id: 'hat_ladodgers', slot: 'hat', body: 'human', name: 'LA 볼캡', price: 0, sheet: 'char/items/hat_ladodgers.png', thumb: 'char/items/hat_ladodgers_thumb.png', hairVariants: { hair_m_basic: null, hair_ivyleague: null, hair_m_semileaf: null } },
+  // 기본 의상 — **가입 시 지급되는 무료 기본형**. 각 슬롯에 하나씩만 둔다(벌거벗지 않게).
+  //   char/build_basic_tee.py / build_basic_shorts.py 로 차분 추출(2026-08-04).
+  //   ★신발은 무료가 없다 — 샌들이 도트로 표현이 안 돼 폐기(대표 결정). 맨발이 기본이고
+  //     그래서 러닝화가 첫 구매 대상이 된다.
+  { id: 'top_basic_tee', slot: 'top', body: 'human', name: '기본 흰티', price: 0, sheet: 'char/items/top_basic_tee.png', thumb: 'char/items/top_basic_tee_thumb.png' },
+  { id: 'top_f_basic_tee', slot: 'top', body: 'human_f', name: '기본 흰티', price: 0, sheet: 'char/items/top_f_basic_tee.png', thumb: 'char/items/top_f_basic_tee_thumb.png' },
+  { id: 'bottom_basic_shorts', slot: 'bottom', body: 'human', name: '기본 반바지', price: 0, sheet: 'char/items/bottom_basic_shorts.png', thumb: 'char/items/bottom_basic_shorts_thumb.png' },
+  { id: 'bottom_f_basic_shorts', slot: 'bottom', body: 'human_f', name: '기본 반바지', price: 0, sheet: 'char/items/bottom_f_basic_shorts.png', thumb: 'char/items/bottom_basic_shorts_thumb.png' },
   { id: 'acc_airpodsmax', slot: 'acc', body: 'human', name: '에어팟 맥스', price: 0, sheet: 'char/items/acc_airpodsmax.png', thumb: 'char/items/acc_airpodsmax_thumb.png', require: { checkins: 30 } },
   { id: 'top_redhood', slot: 'top', body: 'human', name: '레드 후디', price: 40, sheet: 'char/items/top_redhood.png', thumb: 'char/items/top_redhood_thumb.png' },
-  { id: 'top_ringer', slot: 'top', body: 'human', name: 'ART 링거티', price: 0, sheet: 'char/items/top_ringer.png', thumb: 'char/items/top_ringer_thumb.png' },
+  { id: 'top_ringer', slot: 'top', body: 'human', name: 'ART 링거티', price: 35, sheet: 'char/items/top_ringer.png', thumb: 'char/items/top_ringer_thumb.png' },
   { id: 'bottom_bermuda', slot: 'bottom', body: 'human', name: '회색 버뮤다', price: 35, sheet: 'char/items/bottom_bermuda.png', thumb: 'char/items/bottom_bermuda_thumb.png', overShoes: true },
-  { id: 'bottom_trainpt', slot: 'bottom', body: 'human', name: '검정 트레이닝', price: 0, sheet: 'char/items/bottom_trainpt.png', thumb: 'char/items/bottom_trainpt_thumb.png' },
-  { id: 'shoes_white', slot: 'shoes', body: 'human', name: '흰색 러닝화', price: 0, sheet: 'char/items/shoes_white.png', thumb: 'char/items/shoes_white_thumb.png' },
+  { id: 'bottom_trainpt', slot: 'bottom', body: 'human', name: '검정 트레이닝', price: 35, sheet: 'char/items/bottom_trainpt.png', thumb: 'char/items/bottom_trainpt_thumb.png' },
+  { id: 'shoes_white', slot: 'shoes', body: 'human', name: '흰색 러닝화', price: 25, sheet: 'char/items/shoes_white.png', thumb: 'char/items/shoes_white_thumb.png' },
   { id: 'shoes_black', slot: 'shoes', body: 'human', name: '검정 러닝화', price: 25, sheet: 'char/items/shoes_black.png', thumb: 'char/items/shoes_black_thumb.png' },
   // 여캐 의상 — 차분 추출(char/build_outfit_layer.py). 옷은 몸을 따라가야 해서 12프레임 개별 추출.
-  { id: 'top_f_hoodzip', slot: 'top', body: 'human_f', name: '회색 후드집업', price: 0, sheet: 'char/items/top_f_hoodzip.png', thumb: 'char/items/top_f_hoodzip_thumb.png' },
+  { id: 'top_f_hoodzip', slot: 'top', body: 'human_f', name: '회색 후드집업', price: 45, sheet: 'char/items/top_f_hoodzip.png', thumb: 'char/items/top_f_hoodzip_thumb.png' },
   { id: 'top_f_zipup', slot: 'top', body: 'human_f', name: '보라 트레이닝 집업', price: 40, sheet: 'char/items/top_f_zipup.png', thumb: 'char/items/top_f_zipup_thumb.png' },
   { id: 'bottom_f_leggings', slot: 'bottom', body: 'human_f', name: '차콜 레깅스', price: 35, sheet: 'char/items/bottom_f_leggings.png', thumb: 'char/items/bottom_f_leggings_thumb.png' },
-  { id: 'bottom_f_sweatpants', slot: 'bottom', body: 'human_f', name: '회색 츄리닝', price: 0, sheet: 'char/items/bottom_f_sweatpants.png', thumb: 'char/items/bottom_f_sweatpants_thumb.png' },
+  { id: 'bottom_f_sweatpants', slot: 'bottom', body: 'human_f', name: '회색 츄리닝', price: 35, sheet: 'char/items/bottom_f_sweatpants.png', thumb: 'char/items/bottom_f_sweatpants_thumb.png' },
   // 여캐 신발·액세서리 — 여캐 전용 원본이 없어 남캐 레이어를 여캐 몸 기준점으로 옮겼다
   // (char/adapt_item_to_body.py). 아이템이 같으므로 썸네일은 남캐 것을 그대로 쓴다.
-  { id: 'shoes_f_white', slot: 'shoes', body: 'human_f', name: '흰색 러닝화', price: 0, sheet: 'char/items/shoes_f_white.png', thumb: 'char/items/shoes_white_thumb.png' },
+  { id: 'shoes_f_white', slot: 'shoes', body: 'human_f', name: '흰색 러닝화', price: 25, sheet: 'char/items/shoes_f_white.png', thumb: 'char/items/shoes_white_thumb.png' },
   { id: 'shoes_f_black', slot: 'shoes', body: 'human_f', name: '검정 러닝화', price: 25, sheet: 'char/items/shoes_f_black.png', thumb: 'char/items/shoes_black_thumb.png' },
   { id: 'acc_f_airpodsmax', slot: 'acc', body: 'human_f', name: '에어팟 맥스', price: 0, sheet: 'char/items/acc_f_airpodsmax.png', thumb: 'char/items/acc_airpodsmax_thumb.png', require: { checkins: 30 } }
   // 여캐 모자 — 남캐 모자를 여캐 몸 기준점으로 옮긴 것(char/adapt_item_to_body.py).
@@ -2096,7 +2104,7 @@ window.CHAR_ITEMS = [
   // { id: 'hat_f_ladodgers', slot: 'hat', body: 'human_f', name: 'LA 볼캡', price: 0, sheet: 'char/items/hat_f_ladodgers.png', thumb: 'char/items/hat_ladodgers_thumb.png', hairVariants: { hair_f_basic: null, hair_f_bob_bang: null, hair_f_long: null } }
 ];
 // 아이템 이미지 캐시버전 — 아이템 시트/썸네일 바꿀 때마다 올리면 SW 캐시 무시하고 새로 받음
-window._ITEM_V = 103;
+window._ITEM_V = 104;
 window._iv = function (u) { return u ? (u + (u.indexOf('?') < 0 ? '?v=' : '&v=') + (window._ITEM_V || 1)) : u; };
 window.CHAR_FREE = ['hair_short', 'top_tee', 'mask_simple'];
 window.CHAR_SHAPES = {
@@ -3078,13 +3086,17 @@ window.renderCharSpace = function () {
   // ★없어진 헤어 id(옛 'hair_short' 등)를 들고 있으면 빡빡이로 보인다 → 몸통 기본헤어로 보정
   {
     const d = window._charDraft;
-    const valid = d.hair && (window.CHAR_ITEMS || []).some(function (x) {
-      return x.id === d.hair && (!x.body || x.body === d.body);
+    // 헤어·상의·하의: 지금 몸통에 안 맞는 아이템이면 그 몸통의 기본형으로 갈아입힌다.
+    // (옛 계정은 top:'top_tee' 처럼 카탈로그에 없는 값을 들고 있어 상의가 비어 보였다)
+    const _bd = window._CHAR_BODIES[d.body] || {};
+    [['hair', _bd.defaultHair], ['top', _bd.defaultTop], ['bottom', _bd.defaultBottom]].forEach(function (p) {
+      const slot = p[0], def = p[1];
+      const ok = d[slot] && (window.CHAR_ITEMS || []).some(function (x) {
+        return x.id === d[slot] && (!x.body || x.body === d.body);
+      });
+      if (ok) return;
+      d[slot] = (def && (window.CHAR_ITEMS || []).some(function (x) { return x.id === def; })) ? def : null;
     });
-    if (!valid) {
-      const dh = (window._CHAR_BODIES[d.body] || {}).defaultHair;
-      d.hair = (dh && (window.CHAR_ITEMS || []).some(function (x) { return x.id === dh; })) ? dh : null;
-    }
   }
   const room = document.getElementById('charworld-room');
   const f = window._FIELDS[window._curField];
@@ -3279,12 +3291,14 @@ window.charPickBody = function (key) {
   });
   // ★헤어는 빈 채로 두지 않는다 — 빡빡이 base 가 그대로 보이기 때문이다.
   //   위에서 다른 성별 헤어를 벗겼거나 애초에 없으면 그 몸통의 기본헤어를 씌운다.
-  if (!window._charDraft.hair) {
-    const dh = (window._CHAR_BODIES[key] || {}).defaultHair;
-    if (dh && (window.CHAR_ITEMS || []).some(function (x) { return x.id === dh; })) {
-      window._charDraft.hair = dh;
-    }
-  }
+  const _bd = window._CHAR_BODIES[key] || {};
+  const _fill = function (slot, id) {
+    if (window._charDraft[slot] || !id) return;
+    if ((window.CHAR_ITEMS || []).some(function (x) { return x.id === id; })) window._charDraft[slot] = id;
+  };
+  _fill('hair', _bd.defaultHair);
+  _fill('top', _bd.defaultTop);        // 성별 바꿀 때 상·하의도 같이 채운다(안 그러면 벌거벗는다)
+  _fill('bottom', _bd.defaultBottom);
   window._charApplySprite(key);
   window._charPos.face = 'down'; window._charPos.frame = 0;
   window._charApplyPos();
@@ -7653,7 +7667,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '344';
+window._SW_V = '345';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
