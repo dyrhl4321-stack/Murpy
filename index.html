@@ -2947,9 +2947,12 @@ window.charMove = function (dx, dy) {
     edit:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 13l1-4 8-8 3 3-8 8z"/><path fill="#F5C24B" d="M11 1l3 3-1.5 1.5-3-3z"/></svg>',
     bub:   '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/></svg>',
     title: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M2 12h12v2H2zM2 5l3 3 3-5 3 5 3-3v6H2z"/></svg>',
-    // 방 주인 캐릭터를 눌렀을 때 (mwOtherMenu) — 방 안에서 **못 하던 것만** 둔다
-    squad: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M5 2h3v3H5zM1 6h11v3H1zM1 10h4v4H1zM8 10h4v4H8z"/><path fill="#3D7EFF" d="M12 1h2v6h-2z"/></svg>',
-    face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M1 8s2.5-4 7-4 7 4 7 4-2.5 4-7 4-7-4-7-4z"/><path fill="#141a28" d="M6 6h4v4H6z"/></svg>',
+    // 방 주인 캐릭터를 눌렀을 때 (mwOtherMenu) — 방 안에서 **못 하던 것만** 둔다.
+    // ★전부 16×16 격자에 딱 떨어지는 사각 픽셀로 그린다(다른 링 아이콘과 같은 문법).
+    //   곡선/사선을 섞으면 crispEdges 에서 지저분해진다.
+    squad: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M9 1H5L3 8h3l-1 7 6-9H7z"/></svg>',
+    chat:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/><path fill="#141a28" d="M4 5h2v2H4zM7 5h2v2H7zM10 5h2v2h-2z"/></svg>',
+    face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M6 2h4v4H6zM4 8h8v6H4z"/></svg>',
   };
   window.mwCharMenu = function () {
     const old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
@@ -7575,7 +7578,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '338';
+window._SW_V = '339';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8176,17 +8179,18 @@ window._maybeCoachChar = function () {
 // 남의 방에 처음 들어갔을 때: 방 주인 캐릭터를 누르면 뭐가 되는지 알려준다.
 // ★coach_on(콜드유저)에 안 걸어둔다 — 기존 유저도 이 상호작용은 처음 보기 때문이다.
 //   내 캐릭터 코치(char)와 같은 골드 네온이라 "캐릭터는 누르는 것"이라는 규칙이 이어진다.
-window._mwRoomCoach = function (nick) {
+window._mwRoomCoach = function () {
   try {
     if (localStorage.getItem('coach_room_char')) return;
     if (!document.getElementById('mw-wpanel')) return;          // 그 사이 방을 닫았으면 취소
     if (!document.getElementById('mw-vroom-owner')) return;
     const ov = document.getElementById('coach-overlay');
     if (ov && ov.style.display === 'block') return;             // 안내는 한 번에 하나만
-    const safe = String(nick || '머피').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    // ★닉네임을 넣지 않는다 — 한글 이름마다 조사(을/를)가 갈려서 "김현수을"처럼 틀린다.
+    //   내 캐릭터 코치와 같은 문장 구조("캐릭터를 톡! 누르면")로 맞춰 규칙을 잇는다.
     window.showCoach({
       key: 'room_char', color: 'gold', spotlightSel: '#mw-vroom-owner',
-      text: '<b style="color:#C9902A">' + safe + '</b>을 톡! 누르면<br><b style="color:#C9902A">채팅 신청 · 스쿼드 초대</b>를 할 수 있어요'
+      text: '<b style="color:#C9902A">캐릭터</b>를 톡! 누르면<br><b style="color:#C9902A">채팅 신청 · 스쿼드 초대</b>를 할 수 있어요'
     });
   } catch (e) {}
 };
@@ -12567,22 +12571,20 @@ window.mwOtherMenu = async function (uid, nick, ev) {
   const R = 62;
   const acts = [
     matched
-      ? { k: 'face', t: '채팅하기', dx: 0, dy: -R - 14, fn: "window._mwRoomClose();window.openChatWith('" + U + "','" + N + "','')" }
+      ? { k: 'chat', t: '채팅하기', dx: 0, dy: -R - 14, fn: "window._mwRoomClose();window.openChatWith('" + U + "','" + N + "','')" }
       : sent
-      ? { k: 'face', t: '수락 대기중', dx: 0, dy: -R - 14, fn: "window.showToast('상대가 수락하면 얼굴과 톡이 열려요')" }
-      : { k: 'face', t: '프로필 신청', dx: 0, dy: -R - 14, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
+      ? { k: 'chat', t: '수락 대기중', dx: 0, dy: -R - 14, fn: "window.showToast('상대가 수락하면 얼굴과 톡이 열려요')" }
+      : { k: 'face', t: '프로필 확인', dx: 0, dy: -R - 14, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
     { k: 'squad', t: '스쿼드 초대', dx: 0, dy: R + 22, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
   ];
 
+  // ★닉네임 라벨을 여기서 띄우지 않는다 — 방 안 캐릭터는 이미 **칭호=머리 위 / 닉네임=발밑**으로
+  //   떠 있다(오버월드·센터필드와 같은 문법). 메뉴가 하나 더 띄우면 이름이 두 번 보인다.
   const el = document.createElement('div');
   el.id = 'mw-othermenu';
   el.style.cssText = 'position:fixed;inset:0;z-index:1000;background:rgba(5,7,12,.42)';
   el.innerHTML =
-    '<div style="position:absolute;left:' + cx + 'px;top:' + (cy - R - 52) + 'px;transform:translateX(-50%);'
-    + "font-family:'Galmuri11',sans-serif;font-size:11px;color:#cfd6e6;background:rgba(5,7,12,.85);"
-    + 'border:2px solid rgba(255,255,255,.22);padding:3px 9px;white-space:nowrap;z-index:902">'
-    + String(nick || '머피').replace(/</g, '&lt;') + '</div>'
-    + acts.map(function (a, i) {
+    acts.map(function (a, i) {
         // 화면 밖으로 안 나가게 가둔다(가장자리 캐릭터를 눌렀을 때)
         const x = Math.max(38, Math.min(window.innerWidth - 38, cx + a.dx));
         const y = Math.max(46, Math.min(window.innerHeight - 46, cy + a.dy));
@@ -12638,7 +12640,7 @@ window.mwVisitRoom = async function (uid) {
       </div>
       <!-- 실명 연결·스쿼드 초대는 **캐릭터를 눌러야** 나온다(링 메뉴). 여기 버튼을 따로 두면
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
-      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:2px 0 15px;font-family:'Galmuri11',sans-serif">${nick}를 눌러보세요</div>
+      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:2px 0 15px;font-family:'Galmuri11',sans-serif">캐릭터를 눌러보세요</div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -12663,13 +12665,15 @@ window.mwVisitRoom = async function (uid) {
     const vTitleHtml = _title
       ? `<div style="font-family:'Galmuri11',sans-serif;font-size:8.5px;color:${_tColor};white-space:nowrap;text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c;margin-bottom:1px">&lt;${_title}&gt;</div>`
       : '';
+    // 발밑 닉네임 — 오버월드·센터필드(.mw-cfd-nick)와 같은 문법. 칭호는 머리 위, 이름은 발밑.
+    const vNick = `<span class="mw-cfd-nick">${String(nick).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`;
     // ★방 주인을 누르면 링 메뉴(채팅/스쿼드 초대). 내 방이면 안 붙인다.
     const _nickJs = String(nick).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const _mine = me && me.uid === uid;
     vstage.insertAdjacentHTML('beforeend',
       `<div id="mw-vroom-owner"${_mine ? '' : ` onclick="window.mwOtherMenu('${uid}','${_nickJs}',event)"`}
-        style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}</div>`);
-    if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(nick); }, 520);
+        style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}${vNick}</div>`);
+    if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(); }, 520);
   }
   // TODAY 카운트 (본인 방문은 카운트 제외)
   const dayId = mwTodayKey();
