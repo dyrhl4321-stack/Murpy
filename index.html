@@ -7578,7 +7578,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '339';
+window._SW_V = '340';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -12675,18 +12675,31 @@ window.mwVisitRoom = async function (uid) {
         style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}${vNick}</div>`);
     if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(); }, 520);
   }
-  // TODAY 카운트 (본인 방문은 카운트 제외)
+  // TODAY 카운트 — ★**1인 1일 1회**. 예전엔 방을 열 때마다 increment 해서, 같은 사람이
+  //   새로고침만 해도 숫자가 올랐다(대표 지적 2026-08-04). 방문 표식 문서를 만들 때만 센다.
+  //   표식 생성과 카운트 증가는 **한 트랜잭션**이어야 한다 — 따로 하면 중간에 끊겼을 때
+  //   표식만 남고 카운트가 안 오르거나(영영 못 셈) 그 반대가 된다.
   const dayId = mwTodayKey();
+  let firstToday = false;
   try {
-    if (me && me.uid !== uid) await setDoc(doc(db,'users',uid,'roomstat',dayId), { count: increment(1) }, { merge:true });
+    if (me && me.uid !== uid) {
+      const dayRef = doc(db, 'users', uid, 'roomstat', dayId);
+      const markRef = doc(db, 'users', uid, 'roomstat', dayId, 'visitors', me.uid);
+      firstToday = await runTransaction(db, async tx => {
+        const m = await tx.get(markRef);
+        if (m.exists()) return false;
+        tx.set(markRef, { at: serverTimestamp() });
+        tx.set(dayRef, { count: increment(1) }, { merge: true });
+        return true;
+      });
+    }
     const rs = await getDoc(doc(db,'users',uid,'roomstat',dayId));
     const n = rs.exists() ? (rs.data().count||0) : 0;
     const t = document.getElementById('mw-rm-today'); if (t) t.textContent = n;
   } catch(e){ const t=document.getElementById('mw-rm-today'); if (t) t.textContent='0'; }
-  // 방 주인에게 "누가 놀러왔어요" 알림 — 돌아올 이유를 만드는 고리다.
-  // ★같은 사람이 하루에 몇 번을 들어오든 **한 번만** 간다: 문서 id 를 (주인_방문자_날짜)로
-  //   고정해 setDoc 하므로 두 번째부터는 같은 문서를 덮어쓴다. addDoc 이면 새로고침마다 쌓인다.
-  if (me && me.uid !== uid) {
+  // 방 주인에게 "누가 놀러왔어요" 알림 — 오늘 첫 방문일 때만. 문서 id 도 (주인_방문자_날짜)로
+  // 고정해 두 번 안 가게 이중으로 막는다(트랜잭션이 실패해도 알림은 안 쌓인다).
+  if (firstToday) {
     try {
       const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
       await setDoc(doc(db, 'notifications', 'rv_' + uid + '_' + me.uid + '_' + dayId), {
