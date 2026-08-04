@@ -3429,17 +3429,18 @@ window._mwFxRestoreSync = function () {
 };
 window._mwFxRestore = function () {
   try { localStorage.removeItem('mw_intro_off'); localStorage.removeItem('mw_portal_off'); } catch (e) {}
-  try { sessionStorage.removeItem('mw_visited'); } catch (e) {}   // 이번 세션부터 바로 다시 보이게
   window._mwFxRestoreSync();
   if (window.showToast) showToast('머피월드 입장 연출을 다시 켰어요');
 };
 window.mwEnterFx = function () {
   const always = window._mwAlwaysFx();
-  let first = false; try { first = !sessionStorage.getItem('mw_visited'); } catch (e) {}  // B: 세션당(앱 켤 때마다) 1회
+  // ★안내씬은 **'다시 보지 않기'를 누를 때까지 매번** 뜬다(대표 확정 2026-08-04).
+  //   원래는 sessionStorage('mw_visited')로 세션당 1회였는데, 앱을 껐다 켜야만 다시 보여서
+  //   "안 뜬다"고 느껴졌다. 끄는 건 사용자가 직접 고르게 하고 앱은 조용히 판단하지 않는다.
   let off = false; try { off = localStorage.getItem('mw_intro_off') === '1'; } catch (e) {}
-  if (always) { first = true; off = false; }
+  if (always) off = false;
   const intro = document.getElementById('mw-intro');
-  if (first && !off && intro) {
+  if (!off && intro) {
     window._mwHeroBg(document.getElementById('mw-intro-hero'), 150);
     const b = document.getElementById('mw-intro-off');
     if (b) b.style.display = always ? 'none' : '';   // 관리자에겐 무의미한 버튼이라 숨긴다
@@ -3450,7 +3451,6 @@ window.mwEnterFx = function () {
   window.mwPortal();
 };
 window._mwEnterConfirm = function () {
-  try { sessionStorage.setItem('mw_visited', '1'); } catch (e) {}
   const intro = document.getElementById('mw-intro');
   if (intro) {
     if (intro.animate) { const a = intro.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease' }); a.onfinish = function () { intro.style.display = 'none'; }; }
@@ -7608,7 +7608,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '328';
+window._SW_V = '329';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
