@@ -1353,6 +1353,11 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 8.5l5 3.5-5 3.5z"/></svg>
         앱 소개 다시 보기
       </button>
+      <!-- 머피월드 연출을 끈 사람에게만 보이는 되돌리기(끄고 나면 되살릴 길이 없으면 안 된다) -->
+      <button id="mw-fx-restore-btn" onclick="window._mwFxRestore()" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/></svg>
+        머피월드 입장 연출 다시 켜기
+      </button>
       <button id="test-ob-btn" onclick="testOnboarding()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
         온보딩 화면 테스트 (관리자)
@@ -3399,14 +3404,45 @@ window._mwHeroBg = function (el, h) {
   el.style.backgroundImage = 'none';
   el.innerHTML = window._mwSpriteLayers(cfg, w, h);   // row0/col0 = 정면 정지
 };
-// ⚠️ 개발용: 배포(뿌리기) 전엔 true → 인트로/연출 매번 표시(계속 확인 가능). 배포 시 false로!
-window.MW_DEV_ALWAYS = true;
+// ⚠️ 개발용 강제 표시. 원래 이 값이 true 로 박혀 있어서 **모든 유저가** 인트로+입장씬을
+//    매번 봤다. 이제 false 로 두고, 관리자(대표)만 _mwAlwaysFx 로 매번 보게 한다.
+window.MW_DEV_ALWAYS = false;
+// ★isAdmin 은 이 스크립트 블록보다 아래에서 정의된다 → **호출 시점에** 평가해야 한다
+//   (상수로 미리 굳히면 항상 false 가 된다).
+window._mwAlwaysFx = function () {
+  if (window.MW_DEV_ALWAYS) return true;
+  try { return (typeof isAdmin === 'function') && !!isAdmin(); } catch (e) { return false; }
+};
+window._mwIntroOff = function () {
+  try { localStorage.setItem('mw_intro_off', '1'); } catch (e) {}
+  if (window._mwFxRestoreSync) window._mwFxRestoreSync();
+  window._mwEnterConfirm();
+};
+// 마이페이지의 '다시 켜기' 버튼은 **끈 사람에게만** 보인다
+window._mwFxRestoreSync = function () {
+  const b = document.getElementById('mw-fx-restore-btn'); if (!b) return;
+  let off = false;
+  try {
+    off = localStorage.getItem('mw_intro_off') === '1' || localStorage.getItem('mw_portal_off') === '1';
+  } catch (e) {}
+  b.style.display = off ? 'flex' : 'none';
+};
+window._mwFxRestore = function () {
+  try { localStorage.removeItem('mw_intro_off'); localStorage.removeItem('mw_portal_off'); } catch (e) {}
+  try { sessionStorage.removeItem('mw_visited'); } catch (e) {}   // 이번 세션부터 바로 다시 보이게
+  window._mwFxRestoreSync();
+  if (window.showToast) showToast('머피월드 입장 연출을 다시 켰어요');
+};
 window.mwEnterFx = function () {
+  const always = window._mwAlwaysFx();
   let first = false; try { first = !sessionStorage.getItem('mw_visited'); } catch (e) {}  // B: 세션당(앱 켤 때마다) 1회
-  if (window.MW_DEV_ALWAYS) first = true;
+  let off = false; try { off = localStorage.getItem('mw_intro_off') === '1'; } catch (e) {}
+  if (always) { first = true; off = false; }
   const intro = document.getElementById('mw-intro');
-  if (first && intro) {
+  if (first && !off && intro) {
     window._mwHeroBg(document.getElementById('mw-intro-hero'), 150);
+    const b = document.getElementById('mw-intro-off');
+    if (b) b.style.display = always ? 'none' : '';   // 관리자에겐 무의미한 버튼이라 숨긴다
     intro.style.display = 'flex';
     if (intro.animate) intro.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease' });
     return;
@@ -3423,8 +3459,33 @@ window._mwEnterConfirm = function () {
   window.mwPortal();
 };
 window._MW_PORTAL_FRAMES = 12;   // portal_anim.png = 12프레임 가로 스트립(차원문 회전)
+// 입장씬을 지금 즉시 끝내고 머피월드를 보여준다(다시 보지 않기 / 스킵 공용)
+window._mwPortalSkip = function () {
+  try { clearInterval(window._mwWalkI); clearInterval(window._mwPortalI); clearTimeout(window._mwPortalT); } catch (e) {}
+  // ★walk 애니메이션의 onfinish 안에 플래시·정리 로직이 있다. 먼저 떼고 취소해야 두 번 안 돈다
+  try { if (window._mwWalkA) { window._mwWalkA.onfinish = null; window._mwWalkA.cancel(); window._mwWalkA = null; } } catch (e) {}
+  const p = document.getElementById('mw-portal'); if (p) p.style.display = 'none';
+  const F = document.getElementById('mw-flash'); if (F) { F.style.display = 'none'; F.style.opacity = ''; }
+  if (window._mwWorldReveal) window._mwWorldReveal();
+};
+window._mwPortalOff = function () {
+  try { localStorage.setItem('mw_portal_off', '1'); } catch (e) {}
+  if (window._mwFxRestoreSync) window._mwFxRestoreSync();
+  window._mwPortalSkip();
+  if (window.showToast) showToast('입장씬을 껐어요. 내 정보에서 다시 켤 수 있어요');
+};
 window.mwPortal = function () {
   const p = document.getElementById('mw-portal'); if (!p) return;
+  const always = window._mwAlwaysFx();
+  let poff = false; try { poff = localStorage.getItem('mw_portal_off') === '1'; } catch (e) {}
+  if (poff && !always) {
+    // ★코치마크는 원래 아래 연출 안에서 예약된다. 연출을 건너뛰면 같이 사라져 버리므로 여기서 챙긴다
+    try { clearTimeout(window._mwCoachT); window._mwCoachT = setTimeout(function () { if (window._maybeCoachChar) window._maybeCoachChar(); }, 700); } catch (e) {}
+    if (window._mwWorldReveal) window._mwWorldReveal();
+    return;
+  }
+  const offBtn = document.getElementById('mw-portal-off');
+  if (offBtn) offBtn.style.display = always ? 'none' : '';
   const stage = document.getElementById('mw-portal-stage');
   if (stage) {
     stage.style.backgroundImage = "url('char/fields/portal_anim.png?v=2')";
@@ -3464,6 +3525,7 @@ window.mwPortal = function () {
     { transform: 'translate(-50%,' + (-dist) + 'px) scale(1)', opacity: 1, offset: 0.78 },
     { transform: 'translate(-50%,' + (-dist) + 'px) scale(1)', opacity: 0, offset: 1 }
   ], { duration: DUR, easing: 'cubic-bezier(.3,0,.5,1)', fill: 'forwards' });   // fill=사라진 상태 유지(중앙 스냅백 버그 방지)
+  window._mwWalkA = walk;   // '다시 보지 않기'로 중간에 끊을 수 있게 참조를 남긴다
   walk.onfinish = function () {
     clearInterval(window._mwWalkI); clearInterval(window._mwPortalI);
     ch.style.opacity = '0';
@@ -3510,13 +3572,16 @@ window.mwPortal = function () {
   <div id="mw-intro-hero" class="mw-pixelate" style="margin-bottom:10px;filter:drop-shadow(0 6px 0 rgba(0,0,0,0.4))"></div>
   <div style="font-family:'Galmuri14',sans-serif;font-size:21px;color:#fff;letter-spacing:1px;margin-bottom:6px">머피월드</div>
   <div style="font-size:12px;color:#8a93a8;margin-bottom:22px">운동이 캐릭터가 되는, 나만의 평행우주</div>
-  <div style="text-align:left;display:flex;flex-direction:column;gap:13px;margin-bottom:28px;font-size:13px;color:#cfd6e6">
-    <div style="display:flex;align-items:center;gap:11px"><img src="char/coin.png?v=2" style="width:18px;height:18px;image-rendering:pixelated;flex-shrink:0">운동하면 <b style="color:#F5C24B">머피</b>가 쌓이고</div>
-    <div style="display:flex;align-items:center;gap:11px"><img src="char/ic_dress.png?v=2" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0">머피로 <b style="color:#7aa4ff">내 캐릭터</b>를 꾸미고</div>
-    <div style="display:flex;align-items:center;gap:11px"><img src="char/ic_bamboo.png?v=1" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0"><b style="color:#86efac">대숲</b>에선 이 모습으로 놀고</div>
-    <div style="display:flex;align-items:center;gap:11px"><img src="char/ic_map.png?v=1" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0">곧, <b style="color:#fff">지도</b>에서 진짜로 만나요</div>
+  <!-- ★안내 4줄은 **이미 배포된 기능만** 적는다. "곧 지도에서"는 체크인 도장이 나오기 전 문구였다.
+       미구현 기능(대숲 캐릭터 등)을 여기 넣으면 들어가서 못 찾는다. -->
+  <div style="text-align:left;display:flex;flex-direction:column;gap:13px;margin-bottom:26px;font-size:13px;color:#cfd6e6">
+    <div style="display:flex;align-items:center;gap:11px"><img src="char/coin.png?v=2" style="width:18px;height:18px;image-rendering:pixelated;flex-shrink:0">운동을 인증하면 <b style="color:#F5C24B">머피</b>가 쌓이고</div>
+    <div style="display:flex;align-items:center;gap:11px"><img src="char/ic_dress.png?v=2" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0">머피로 <b style="color:#7aa4ff">내 캐릭터와 방</b>을 꾸며요</div>
+    <div style="display:flex;align-items:center;gap:11px"><img src="char/ui/ui_ic_stamp.png?v=1" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0">헬스장에서 <b style="color:#fff">체크인</b>하면 도장이 찍히고</div>
+    <div style="display:flex;align-items:center;gap:11px"><img src="char/ic_map.png?v=1" style="width:20px;height:20px;image-rendering:pixelated;flex-shrink:0"><b style="color:#fff">지도</b> 위에 내 캐릭터가 그대로 남아요</div>
   </div>
   <button class="mw-btn" style="min-width:200px" onclick="window._mwEnterConfirm()">입장하기</button>
+  <button id="mw-intro-off" onclick="window._mwIntroOff()" style="background:none;border:none;color:rgba(255,255,255,0.32);font-size:12px;font-family:inherit;cursor:pointer;margin-top:12px;padding:6px 10px">다시 보지 않기</button>
 </div>
 
 <!-- 머피월드 입장 포털 (매번) — 대숲 길 → 내 캐릭터가 문으로 걸어 들어감 -->
@@ -3525,6 +3590,8 @@ window.mwPortal = function () {
     <div id="mw-portal-char" class="mw-pixelate" style="position:absolute;left:50%;top:70%;transform:translate(-50%,0);background-repeat:no-repeat;filter:drop-shadow(0 4px 0 rgba(0,0,0,0.45))"></div>
     <div style="position:absolute;left:0;right:0;bottom:20px;text-align:center;font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;letter-spacing:2px;text-shadow:0 2px 0 #000">머피월드</div>
   </div>
+  <!-- 입장씬은 매번 뜬다 → 지겨워지는 시점을 사용자가 직접 끊게 한다(관리자에겐 숨긴다) -->
+  <button id="mw-portal-off" onclick="window._mwPortalOff()" style="position:absolute;right:14px;bottom:14px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.16);border-radius:9px;color:rgba(255,255,255,0.5);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px;z-index:3">입장씬 다시 보지 않기</button>
   <div id="mw-portal-flash" style="position:absolute;inset:0;background:#eaf4ff;opacity:0;pointer-events:none"></div>
 </div>
 <!-- 전체화면 입장 플래시 (포털 밖·최상위, 깔끔한 전환용) -->
@@ -4490,7 +4557,8 @@ window.mwPortal = function () {
       <div id="mw-promo-hero" style="position:relative;padding-bottom:4px"></div>
     </div>
     <div style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">내 캐릭터로 노는 머피월드</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">운동해서 모은 머피로 <b style="color:#fff">내 캐릭터를 꾸미고</b>,<br>곧 <b style="color:#fff">지도에서 내가 운동한 곳</b>에<br>내 캐릭터가 도장처럼 찍혀요</div>
+    <!-- ★"곧 ~ 찍혀요"는 체크인 도장·지도가 나오기 전 문구였다. 이미 다 되는 기능으로 바꾼다 -->
+    <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">운동해서 모은 머피로 <b style="color:#fff">캐릭터와 내 방</b>을 꾸미고,<br>헬스장에서 <b style="color:#fff">체크인</b>하면 <b style="color:#fff">지도</b> 위에<br>내 캐릭터가 도장처럼 남아요</div>
     <button class="mfg-btn" onclick="window.mwPromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">머피월드 구경하기</button>
     <button onclick="window.closeMwPromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
   </div>
@@ -7540,7 +7608,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '326';
+window._SW_V = '327';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -7667,6 +7735,7 @@ window.updateUI = function(user) {
     if (testMwBtn) testMwBtn.style.display = _adm ? 'flex' : 'none';
     const testCoachBtn = document.getElementById('test-coach-btn');
     if (testCoachBtn) testCoachBtn.style.display = _adm ? 'flex' : 'none';
+    if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
     if (window.renderCreditUI) window.renderCreditUI();
