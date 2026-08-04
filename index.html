@@ -1380,6 +1380,23 @@
     <div id="my-crews" style="display:none">
       <div id="my-crews-list"></div>
     </div>
+    <!-- 앱 정보 / 저작권.
+         ★사업자·통신판매업 정보는 **아직 넣지 않는다** — 사업자등록 전이고,
+           통신판매업 신고번호는 유료 거래가 시작될 때 생기는 의무다.
+           빈 항목을 보여주면 미완성으로 보이므로, 그때 아래 주석을 풀어 값만 채운다. -->
+    <div id="app-legal" style="margin-top:34px;padding:18px 0 6px;border-top:1px solid rgba(255,255,255,0.06);text-align:center">
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.3);letter-spacing:-0.1px">
+        Murpy <span id="app-legal-ver"></span>
+      </div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.3);margin-top:4px;letter-spacing:-0.1px">
+        © 2026 김현수. All rights reserved.
+      </div>
+      <!-- 결제 붙일 때 여기를 켠다:
+      <div style="font-size:11px;color:rgba(255,255,255,0.24);margin-top:7px;line-height:1.7">
+        상호 · 대표자 · 사업자등록번호<br>통신판매업 신고번호 · 주소 · 연락처
+      </div>
+      -->
+    </div>
   </div>
 </div>
 
@@ -7245,7 +7262,14 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '312';
+window._SW_V = '313';
+// 마이페이지 하단 앱 정보에 현재 버전 표시
+try {
+  window.addEventListener('load', function () {
+    const _lv = document.getElementById('app-legal-ver');
+    if (_lv) _lv.textContent = 'v' + (window._SW_V || '');
+  });
+} catch (e) {}
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // updateViaCache:'none' = sw.js 업데이트 확인 시 브라우저 HTTP 캐시를 무시하고 항상 새로 받는다.
@@ -12697,22 +12721,29 @@ window.loadHomeTrending = async () => {
       });
 
       // 인기 룸 — ★캐릭터만 꾸미기 대상이 아니다. 방도 꾸미기 대상이다(대표 지적).
-      //   방 배경 위에 그 사람 캐릭터를 세워 "구경 가고 싶게" 만든다.
-      const nFurn = (r) => Array.isArray(r) ? r.length : (r && typeof r === 'object' ? Object.keys(r).length : 0);
+      //   ★그 사람 캐릭터를 보여주는 게 아니라 **실제 방을 축소해 미리보기**로 띄운다
+      //     (배경 + 배치한 가구 + 작은 캐릭터). 가구 렌더는 mwFurnHtml 재사용.
+      //   room 은 { f: [...] } 구조다.
+      const nFurn = (r) => (r && Array.isArray(r.f)) ? r.f.length : 0;
       const roomy = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
         .filter(u => u.uid !== _meU && u.nickname && nFurn(u.room) > 0)
         .sort((a, b) => nFurn(b.room) - nFurn(a.room));
       if (roomy[0]) {
         const u = roomy[0];
-        let ch = '';
-        try { ch = window.mwMiniCharHtml(u.character, 76) || ''; } catch (e) {}
+        let ch = '', furn = '';
+        try { ch = window.mwMiniCharHtml(u.character, 34) || ''; } catch (e) {}
+        try { furn = window.mwFurnHtml ? (window.mwFurnHtml(u.room, false) || '') : ''; } catch (e) {}
+        // 방은 1:1 이고 카드는 152×162 → 카드 높이에 맞춘 정사각을 가운데 두고 넘치는 건 자른다.
+        // 가구 좌표가 방 크기 기준 %라 컨테이너가 정사각이어야 배치가 안 틀어진다.
         cards.push(card({
           click: `window.mwVisitRoom && mwVisitRoom('${u.uid}')`,
           color: PURPLE, icon: icoStar, label: '인기 룸', aria: '인기 룸',
-          inner: `<div style="position:absolute;inset:0;overflow:hidden;background:#0d1018">`
-            + `<img src="char/fields/field_room.png" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated">`
-            + (ch ? `<div style="position:absolute;left:50%;bottom:46px;transform:translateX(-50%)">${ch}</div>` : '')
-            + `</div>`,
+          inner: `<div style="position:absolute;inset:0;overflow:hidden;background:#0e0f14">`
+            + `<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:162px;height:162px;`
+            + `background:#0e0f14 center/cover no-repeat url('char/fields/field_room.png?v=1');image-rendering:pixelated">`
+            + furn
+            + (ch ? `<div style="position:absolute;left:50%;top:62%;transform:translate(-50%,-50%)">${ch}</div>` : '')
+            + `</div></div>`,
           title: esc(u.nickname || '') + '님의 방',
           meta: `<span>가구 ${nFurn(u.room)}개</span>`
         }));
