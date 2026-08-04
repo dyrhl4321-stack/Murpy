@@ -7572,7 +7572,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '335';
+window._SW_V = '336';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -12531,8 +12531,10 @@ window.mwVisitRoom = async function (uid) {
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
       </div>
-      <div style="display:flex;justify-content:center;gap:16px;font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;margin-bottom:14px">
-        <span>TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;min-height:32px">
+        <span style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;flex-shrink:0">TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
+        <!-- 머피월드 -> 현실로 나가는 문. 캐릭터만 보고 신청하고, 서로 눌러야 얼굴이 열린다 -->
+        <div id="mw-rm-connect" style="flex-shrink:0"></div>
       </div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
@@ -12583,6 +12585,65 @@ window.mwVisitRoom = async function (uid) {
     } catch (e) {}
   }
   window.mwGbLoad(uid);
+  window._mwRoomConnect(uid, p);
+};
+
+// 방 패널의 '실제 프로필 보기' 버튼.
+// ★새 관계 컬렉션을 만들지 않는다 — 매칭(likes/matches)이 이미 **상호 수락 후 공개**라는
+//   똑같은 규칙으로 돌아간다. 여기선 얼굴 대신 캐릭터를 보고 누른다는 것만 다르다.
+//   범프한 사이는 이미 실제로 만난 사이라 골드로 구분해 준다(캐릭터 본체 채색 아님).
+window._mwRoomConnect = async function (uid, p) {
+  const el = document.getElementById('mw-rm-connect'); if (!el) return;
+  const me = auth.currentUser || window.currentUser;
+  if (!me || me.uid === uid) { el.innerHTML = ''; return; }   // 내 방엔 안 띄운다
+  const nick = (p && p.nickname) || '머피';
+  const photo = (p && p.photoURL) || '';
+  const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const btn = (bg, border, color, label, onclick, disabled) =>
+    '<button ' + (disabled ? 'disabled ' : 'onclick="' + onclick + '" ')
+    + 'style="display:inline-flex;align-items:center;gap:6px;background:' + bg + ';border:' + border
+    + ';color:' + color + ';border-radius:11px;padding:8px 13px;font-size:12px;font-weight:800;'
+    + 'font-family:inherit;white-space:nowrap;' + (disabled ? 'opacity:.45' : 'cursor:pointer') + '">'
+    + label + '</button>';
+  const I_EYE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12S5.5 5 12 5s10.2 7 10.2 7-3.7 7-10.2 7S1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+  try {
+    if (await window.isMatched(uid)) {
+      el.innerHTML = btn('#3D7EFF', 'none', '#fff', '채팅하기',
+        "window._mwRoomClose();window.openChatWith('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')");
+      return;
+    }
+    // 내가 이미 보냈나 (likes/{나}_{상대})
+    const sent = await getDoc(doc(db, 'likes', me.uid + '_' + uid));
+    if (sent.exists()) {
+      el.innerHTML = btn('rgba(255,255,255,0.05)', '1px solid rgba(255,255,255,0.12)',
+        'rgba(255,255,255,0.5)', '수락 기다리는 중', '', true);
+      return;
+    }
+    // 범프한 사이인가 — 실제로 만난 사이라 골드로 구분
+    let bumped = false;
+    try {
+      const ms = await getDoc(doc(db, 'users', me.uid));
+      bumped = !!(ms.exists() && (ms.data().bumpers || {})[uid]);
+    } catch (e) {}
+    const go = "window._mwRoomLike('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')";
+    el.innerHTML = bumped
+      ? btn('rgba(245,194,75,0.14)', '1px solid rgba(245,194,75,0.5)', '#F5C24B',
+            I_EYE + '실제 프로필 보기', go)
+        + '<div style="font-size:9.5px;color:#F5C24B;text-align:right;margin-top:3px;font-family:\'Galmuri11\',inherit">범프한 사이</div>'
+      : btn('rgba(61,126,255,0.14)', '1px solid rgba(61,126,255,0.4)', '#7aa8ff',
+            I_EYE + '실제 프로필 보기', go);
+  } catch (e) { el.innerHTML = ''; }
+};
+window._mwRoomClose = function () {
+  const w = document.getElementById('mw-wpanel'); if (w) w.remove();
+};
+// ★방 패널은 z-index 880, 프로필·채팅 패널은 100 이다. sendLike 가 매칭 성사 시 프로필을 여는데
+//   방 패널을 안 치우면 **그 밑에 깔려서 안 보인다.** 그래서 결과를 보고 방을 닫는다.
+window._mwRoomLike = async function (uid, nick, photo) {
+  await window.sendLike(uid, nick, photo);
+  if (await window.isMatched(uid)) window._mwRoomClose();
+  else window._mwRoomConnect(uid, { nickname: nick, photoURL: photo });   // '수락 기다리는 중'으로 갱신
 };
 // listId: 방명록을 그릴 곳. 기본은 남의 방 패널이고, 프로필 머피 탭은 자기 id를 넘긴다
 // (두 곳이 동시에 떠 있어도 서로 덮어쓰지 않게 하려고 인자로 뺐다)
