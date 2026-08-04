@@ -175,6 +175,13 @@
 
   .match-card { border-radius: 20px; overflow: hidden; position: relative; height: 490px; transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94); box-shadow: 0 12px 40px rgba(0,0,0,0.5); animation: cardIn 0.4s cubic-bezier(0.34,1.2,0.64,1); touch-action: pan-y; user-select: none; cursor: pointer; }
   .match-card:active { transform: scale(0.992); }
+  /* 후보를 불러오는 동안 자리만 잡아 두는 뼈대. 가짜 프로필을 보여주는 것보다 정직하다 */
+  .match-skel { background: rgba(255,255,255,0.05); position: relative; overflow: hidden; }
+  .match-skel::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.055), transparent);
+    animation: matchSkel 1.25s ease-in-out infinite; }
+  @keyframes matchSkel { to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .match-skel::after { animation: none; } }
   #match-more::-webkit-scrollbar { display: none; }
   .match-loc-chip { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 5px 11px; font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 500; z-index: 2; }
   .swipe-hint { position: absolute; top: 22px; padding: 7px 15px; border-radius: 11px; font-size: 17px; font-weight: 900; letter-spacing: 0.5px; opacity: 0; pointer-events: none; z-index: 3; }
@@ -1075,22 +1082,25 @@
     <span class="ph-ic"><img src="char/dumbbell_blue.png?v=2" style="width:24px;height:auto;display:block" alt="덤벨"></span>
     <div><div class="ph-title">오늘의 매칭</div><div class="ph-sub">같이 운동할 메이트를 찾아요</div></div>
   </div>
-  <div class="match-card" id="match-card" onclick="openMatchDetail()">
-    <img id="match-img" src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80" draggable="false">
+  <!-- ★마크업에 **더미 값을 넣지 않는다.** 예전엔 여기에 남의 스톡 사진 + "지수 26 · 마포"가
+       박혀 있어서, 탭에 들어올 때마다 그 가짜 카드가 한 번 번쩍이고 진짜 후보로 바뀌었다.
+       카드는 기본 숨김이고 renderMatch 가 실제 데이터를 채운 뒤에만 보여준다. -->
+  <div class="match-card" id="match-card" onclick="openMatchDetail()" style="display:none">
+    <img id="match-img" alt="" draggable="false">
     <div class="match-grad"></div>
     <!-- 위치 칩 (좌상단) -->
-    <div class="match-loc-chip" id="match-loc">
+    <div class="match-loc-chip" id="match-loc" style="display:none">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-      <span id="match-loc-text">마포</span>
+      <span id="match-loc-text"></span>
     </div>
-    <div class="verified-badge" id="match-verified-badge" style="display:flex;align-items:center;gap:4px;font-size:10px;letter-spacing:0.5px;font-weight:600;color:var(--gold)">
+    <div class="verified-badge" id="match-verified-badge" style="display:none;align-items:center;gap:4px;font-size:10px;letter-spacing:0.5px;font-weight:600;color:var(--gold)">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
       인증완료
     </div>
     <div class="match-info">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:28px;font-weight:800;letter-spacing:-0.6px;line-height:1" id="match-name">지수</span>
-        <span style="font-size:16px;color:rgba(255,255,255,0.6);font-weight:500" id="match-age">26</span>
+        <span style="font-size:28px;font-weight:800;letter-spacing:-0.6px;line-height:1" id="match-name"></span>
+        <span style="font-size:16px;color:rgba(255,255,255,0.6);font-weight:500" id="match-age"></span>
         <span id="match-month-badge" style="display:none;align-items:center;gap:4px;color:#D6A06A">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l1.7 6.1L20 9.8l-6.3 1.7L12 18l-1.7-6.5L4 9.8l6.3-1.7z"/></svg>
           <span style="font-size:11.5px;font-weight:700">이번달 <span id="match-month-num"></span>회 인증</span>
@@ -1117,8 +1127,8 @@
     <div id="match-bio" style="font-size:14px;color:rgba(255,255,255,0.78);line-height:1.65;letter-spacing:-0.2px;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden"></div>
   </div>
 
-  <!-- 버튼 (맨 아래) -->
-  <div id="match-actions" style="display:flex;gap:10px;margin-top:18px">
+  <!-- 버튼 (맨 아래) — 카드와 같이 숨겼다가 실제 후보가 뜰 때 같이 나온다 -->
+  <div id="match-actions" style="display:none;gap:10px;margin-top:18px">
     <button onclick="handlePass()" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;color:rgba(255,255,255,0.45);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:all 0.15s" onmouseenter="this.style.background='rgba(255,255,255,0.08)'" onmouseleave="this.style.background='rgba(255,255,255,0.05)'">패스</button>
     <button id="match-like-btn" onclick="handleLike()" style="flex:2;background:var(--accent);border:none;border-radius:12px;padding:16px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;box-shadow:0 6px 20px rgba(61,126,255,0.3);transition:all 0.15s" onmouseenter="this.style.opacity='0.88'" onmouseleave="this.style.opacity='1'">같이 운동해요</button>
   </div>
@@ -4907,10 +4917,28 @@ function renderMatch() {
 
   const list = window._matchList;
   // 아직 로드 전 → 후보 로드(게스트 포함, users 읽기는 공개)
+  // ★로드 중엔 카드를 **비워두는 게 아니라 감춘다.** 안 그러면 직전 후보나 마크업 기본값이
+  //   그대로 보이다가 바뀌어서 "가짜가 한 번 뜬다"고 느껴진다.
   if (!list) {
+    card.style.display = 'none';
+    if (actions) actions.style.display = 'none';
+    if (moreWrap) moreWrap.style.display = 'none';
+    const _det = document.getElementById('match-detail'); if (_det) _det.style.display = 'none';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = '<div class="match-skel" style="width:100%;height:490px;border-radius:20px"></div>'
+        + '<div style="display:flex;gap:10px;margin-top:18px">'
+        +   '<div class="match-skel" style="flex:1;height:52px;border-radius:12px"></div>'
+        +   '<div class="match-skel" style="flex:2;height:52px;border-radius:12px"></div>'
+        + '</div>';
+      empty.style.padding = '0';
+    }
     if (window.loadMatchCandidates) window.loadMatchCandidates();
     return;
   }
+  // 스켈레톤이 0으로 만든 여백 복구. ★''(빈 문자열)로 두면 인라인 값이 통째로 지워져
+  //   "다 봤어요" 문구가 가장자리에 붙는다 — 원래 값을 그대로 되돌린다
+  if (empty) empty.style.padding = '60px 24px';
 
   let idx = window._matchIdx || 0;
   // 썸네일에서 이미 좋아요 보낸 사람이 히어로 차례가 되면 건너뜀 (앞으로만 이동 → 안전)
@@ -4940,7 +4968,14 @@ function renderMatch() {
   if (empty) empty.style.display = 'none';
   const _det1 = document.getElementById('match-detail'); if (_det1) _det1.style.display = 'block';
 
-  document.getElementById('match-img').src = _mImg(p.photoURL || (p.photos && p.photos[0]) || '', 720);
+  // ★사진 없는 후보: 예전엔 마크업의 스톡 사진이 그대로 남아 **남의 얼굴**이 그 사람인 양 보였다.
+  //   이제 기본 src 가 없으므로 빈 문자열이면 이미지를 감추고 카드 배경만 둔다.
+  const _psrc = _mImg(p.photoURL || (p.photos && p.photos[0]) || '', 720);
+  if (mImg) {
+    if (_psrc) { mImg.src = _psrc; mImg.style.display = ''; }
+    else { mImg.removeAttribute('src'); mImg.style.display = 'none'; }
+  }
+  card.style.background = _psrc ? '' : '#181b23';
   document.getElementById('match-name').textContent = p.nickname || '익명';
   document.getElementById('match-age').textContent = p.age || '';
 
@@ -7645,7 +7680,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '330';
+window._SW_V = '331';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
