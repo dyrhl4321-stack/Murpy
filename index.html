@@ -2947,6 +2947,11 @@ window.charMove = function (dx, dy) {
     edit:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 13l1-4 8-8 3 3-8 8z"/><path fill="#F5C24B" d="M11 1l3 3-1.5 1.5-3-3z"/></svg>',
     bub:   '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/></svg>',
     title: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M2 12h12v2H2zM2 5l3 3 3-5 3 5 3-3v6H2z"/></svg>',
+    // 남의 캐릭터를 눌렀을 때 (mwOtherMenu)
+    room:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M8 1l7 6h-2v7H3V7H1zM6 14v-4h4v4z"/></svg>',
+    gb:    '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/><path fill="#141a28" d="M4 5h8v1H4zM4 7h5v1H4z"/></svg>',
+    squad: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M5 2h3v3H5zM1 6h11v3H1zM1 10h4v4H1zM8 10h4v4H8z"/><path fill="#3D7EFF" d="M12 1h2v6h-2z"/></svg>',
+    face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M1 8s2.5-4 7-4 7 4 7 4-2.5 4-7 4-7-4-7-4z"/><path fill="#141a28" d="M6 6h4v4H6z"/></svg>',
   };
   window.mwCharMenu = function () {
     const old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
@@ -7572,7 +7577,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '336';
+window._SW_V = '337';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -10854,6 +10859,18 @@ window.loadNotificationsFirestore = async () => {
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#4ADE80;flex-shrink:0"></div>' : ''}
         </div>`;
       }
+      if (n.type === 'squad_invite') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('crew')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5h5L11 22l8.5-11.5h-5z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 <b>${safeText}</b>에 초대했어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'room_visit') {
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.openUserProfile&&window.openUserProfile('${safeFromUid}','${safeNickJs}','')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -12199,7 +12216,7 @@ window.mwRenderTodayMurpys = async function () {
     const g = byCenter[cid];
     const murpys = g.list.map(k => {
       const p = profiles[k.uid] || {};
-      return `<div onclick="window.mwVisitRoom('${k.uid}')" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
+      return `<div onclick="window.mwOtherMenu('${k.uid}','${String(p.nickname||'머피').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}',event)" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
         ${window.mwMiniCharHtml(p.character, 58)}
         <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nickname||'머피'}</span></div>`;
     }).join('');
@@ -12404,7 +12421,7 @@ window.mwCenterField = async function (centerId) {
     const p = profiles[uid] || {}; const s = spots[uid] || { x: 50, y: 70 };
     const wd = (((s.x * 7) | 0) % 9) / 10;   // 걷기 위상 스태거
     const vt = window.mwValidTitle ? window.mwValidTitle(p.title || '') : '';   // 카탈로그 검증(주입 방지)
-    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window._mwCtalkStop&&window._mwCtalkStop();window.mwVisitRoom('${uid}')">
+    return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window.mwOtherMenu('${uid}','${String(p.nickname||'머피').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}',event)">
       ${vt ? `<span class="mw-cfd-title" style="color:${window.mwTitleColor(vt)}">&lt;${vt}&gt;</span>` : ''}
       <div class="mw-cfd-walk" style="--wd:-${wd}s">${window.mwMiniCharHtml(p.character, 44)}</div>
       <span class="mw-cfd-nick">${p.nickname || '머피'}</span>
@@ -12508,8 +12525,77 @@ window._mwSaveRoomPos = async function () {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && window._mwSaveRoomPos) window._mwSaveRoomPos();
 });
+// ---------- 남의 캐릭터 탭 → 링 커맨드 메뉴 ----------
+// ★내 캐릭터(mwCharMenu)와 **같은 UX 언어**다. 예전엔 캐릭터를 누르면 곧장 방이 열려서
+//   "채팅하고 싶다 / 스쿼드 부르고 싶다"는 갈 곳이 없었다. 사람을 누르면 뭘 할지 고르게 한다.
+//   내 메뉴는 방 안(#charworld-room) 기준 absolute 지만, 여긴 지도·센터필드 어디서든 열려야 해서
+//   화면 좌표(fixed) 로 띄운다.
+window.mwOtherMenu = async function (uid, nick, ev) {
+  const old = document.getElementById('mw-othermenu'); if (old) old.remove();
+  const me = window.currentUser;
+  if (!me || me.uid === uid) { window.mwVisitRoom(uid); return; }   // 내 캐릭터면 그냥 방으로
+
+  const src = (ev && (ev.currentTarget || ev.target)) || null;
+  const r = src ? src.getBoundingClientRect() : null;
+  const cx = r ? r.left + r.width / 2 : window.innerWidth / 2;
+  const cy = r ? r.top + r.height * 0.5 : window.innerHeight / 2;
+
+  const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const U = js(uid), N = js(nick || '머피');
+  let matched = false;
+  try { matched = await window.isMatched(uid); } catch (e) {}
+
+  const R = 66;
+  const acts = [
+    { k: 'room',  t: '방 구경',  dx: 0, dy: -R - 14, fn: "window.mwVisitRoom('" + U + "')" },
+    { k: 'gb',    t: '방명록',   dx: -R - 8, dy: 4,  fn: "window.mwVisitRoom('" + U + "',1)" },
+    { k: 'squad', t: '스쿼드 초대', dx: R + 8, dy: 4, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
+    matched
+      ? { k: 'face', t: '채팅하기', dx: 0, dy: R + 22, fn: "window.openChatWith('" + U + "','" + N + "','')" }
+      : { k: 'face', t: '프로필',   dx: 0, dy: R + 22, fn: "window.mwAskProfile('" + U + "','" + N + "')" },
+  ];
+
+  const el = document.createElement('div');
+  el.id = 'mw-othermenu';
+  el.style.cssText = 'position:fixed;inset:0;z-index:1000;background:rgba(5,7,12,.42)';
+  el.innerHTML =
+    '<div style="position:absolute;left:' + cx + 'px;top:' + (cy - R - 52) + 'px;transform:translateX(-50%);'
+    + "font-family:'Galmuri11',sans-serif;font-size:11px;color:#cfd6e6;background:rgba(5,7,12,.85);"
+    + 'border:2px solid rgba(255,255,255,.22);padding:3px 9px;white-space:nowrap;z-index:902">'
+    + String(nick || '머피').replace(/</g, '&lt;') + '</div>'
+    + acts.map(function (a, i) {
+        // 화면 밖으로 안 나가게 가둔다(가장자리 캐릭터를 눌렀을 때)
+        const x = Math.max(38, Math.min(window.innerWidth - 38, cx + a.dx));
+        const y = Math.max(46, Math.min(window.innerHeight - 46, cy + a.dy));
+        return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:' + (i * 30) + 'ms" '
+          + 'onclick="var m=document.getElementById(\'mw-othermenu\');if(m)m.remove();' + a.fn + '">'
+          + window._RING_ICONS[a.k] + '<span>' + a.t + '</span></button>';
+      }).join('');
+  el.addEventListener('pointerdown', function (e) { if (e.target === el) { el.remove(); if (e.cancelable) e.preventDefault(); } });
+  document.body.appendChild(el);
+  if (navigator.vibrate) navigator.vibrate(8);
+};
+
+// 링 메뉴 > 프로필 — 매칭 전이라 얼굴이 잠겨 있다. 신청할지 먼저 묻는다.
+window.mwAskProfile = async function (uid, nick) {
+  let bumped = false;
+  try {
+    const ms = await getDoc(doc(db, 'users', window.currentUser.uid));
+    bumped = !!(ms.exists() && (ms.data().bumpers || {})[uid]);
+  } catch (e) {}
+  const ok = await window.murpyConfirm({
+    title: nick + '님 프로필 보기',
+    desc: (bumped ? '<b style="color:#F5C24B">범프한 사이</b>예요.<br>' : '')
+      + '<b style="color:#7aa4ff">서로</b> 눌러야 얼굴과 1:1 톡이 열려요',
+    confirmText: '신청하기'
+  });
+  // skipConfirm=true — 여기서 이미 물었다. 안 넘기면 머피 확인창이 한 번 더 뜬다
+  if (ok) window.sendLike(uid, nick, '', true);
+};
+
 // ---------- 남의 방 구경 (TODAY + 방명록) ----------
-window.mwVisitRoom = async function (uid) {
+// focusGb: 링 메뉴의 '방명록'으로 들어왔으면 입력칸까지 스크롤한다
+window.mwVisitRoom = async function (uid, focusGb) {
   window._mwCtalkStop && window._mwCtalkStop();
   const me = auth.currentUser || window.currentUser;
   let p = {}; try { const us = await getDoc(doc(db,'users',uid)); p = us.exists()?us.data():{}; } catch(e){}
@@ -12530,12 +12616,11 @@ window.mwVisitRoom = async function (uid) {
     <div class="mw-wpanel-body">
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
+        <div style="position:absolute;top:8px;left:8px;z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:3px 8px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#8a93a8;pointer-events:none">TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;min-height:32px">
-        <span style="font-family:'Galmuri11',sans-serif;font-size:11.5px;color:#8a93a8;flex-shrink:0">TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></span>
-        <!-- 머피월드 -> 현실로 나가는 문. 캐릭터만 보고 신청하고, 서로 눌러야 얼굴이 열린다 -->
-        <div id="mw-rm-connect" style="flex-shrink:0"></div>
-      </div>
+      <!-- 머피월드 -> 현실로 나가는 문. 방을 보고 **바로 다음 동작**이 오도록 방 밑 전체폭에 둔다.
+           TODAY 는 방 위 오버레이로 올려 이 자리를 비웠다. -->
+      <div id="mw-rm-connect" style="margin-bottom:16px"></div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -12586,6 +12671,61 @@ window.mwVisitRoom = async function (uid) {
   }
   window.mwGbLoad(uid);
   window._mwRoomConnect(uid, p);
+  if (focusGb) {
+    const gi = document.getElementById('mw-gb-input');
+    if (gi) gi.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+};
+
+// 링 메뉴 > 스쿼드 초대 — 내가 속한 열린 스쿼드로 부른다
+window.mwSquadInvite = async function (uid, nick) {
+  const me = window.currentUser; if (!me) { showToast('로그인이 필요해요'); return; }
+  let mine = [];
+  try {
+    const qs = await getDocs(query(collection(db, 'squads'), orderBy('scheduledAt', 'asc'), limit(40)));
+    const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    // 내가 연 것 + 아직 모집 중 + 안 지난 것. (멤버로 참여만 한 스쿼드까지 보려면 문서를 40번
+    //  더 읽어야 해서 호스트 기준으로 둔다 — 초대는 보통 벙주가 한다)
+    // ★scheduledAt 은 serverTimestamp 가 아니라 **일반 숫자(ms)** 다(_sqSubmitCreate 참고)
+    const now = Date.now();
+    mine = rows.filter(s => s.hostUid === me.uid && s.status === 'recruiting'
+      && (!s.scheduledAt || s.scheduledAt > now));
+  } catch (e) {}
+  const el = document.createElement('div');
+  el.id = 'mw-sqinv';
+  el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(5,7,12,.7)';
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const body = mine.length
+    ? '<div style="display:flex;flex-direction:column;gap:7px">'
+      + mine.slice(0, 6).map(s =>
+          '<button onclick="window._mwSqInvSend(\'' + js(uid) + '\',\'' + js(nick) + '\',\'' + js(s.id) + '\',\'' + js(s.title || '스쿼드') + '\')" '
+          + "style=\"font-family:'Galmuri11',sans-serif;font-size:12px;cursor:pointer;padding:11px 12px;"
+          + 'border:2px solid #05070c;background:#141a28;color:#fff;text-align:left">'
+          + esc(s.title || '스쿼드')
+          + (s.location ? '<span style="color:#8a93a8;font-size:10.5px"> · ' + esc(s.location) + '</span>' : '')
+          + '</button>').join('')
+      + '</div>'
+    : '<div style="font-size:12px;color:#8a93a8;line-height:1.8;text-align:center;padding:8px 0 4px">'
+      + '내가 만든 스쿼드가 없어요.<br>스쿼드를 먼저 만들면 여기로 부를 수 있어요!</div>';
+  el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">'
+    + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">'
+    + esc(nick) + '님 초대할 스쿼드</div>' + body + '</div>';
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  document.body.appendChild(el);
+};
+window._mwSqInvSend = async function (uid, nick, sid, title) {
+  const me = window.currentUser; if (!me) return;
+  const m = document.getElementById('mw-sqinv'); if (m) m.remove();
+  try {
+    const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
+    // ★같은 스쿼드에 같은 사람을 여러 번 부르면 알림이 쌓인다 → 문서 id 고정해서 한 번만
+    await setDoc(doc(db, 'notifications', 'sqi_' + uid + '_' + me.uid + '_' + sid), {
+      toUid: uid, fromUid: me.uid, fromNickname: myNick, type: 'squad_invite',
+      postId: sid, postText: title, read: false, createdAt: serverTimestamp()
+    });
+    showToast(nick + '님을 초대했어요!');
+  } catch (e) { showToast('초대에 실패했어요'); }
 };
 
 // 방 패널의 '실제 프로필 보기' 버튼.
@@ -12599,40 +12739,43 @@ window._mwRoomConnect = async function (uid, p) {
   const nick = (p && p.nickname) || '머피';
   const photo = (p && p.photoURL) || '';
   const js = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const btn = (bg, border, color, label, onclick, disabled) =>
-    '<button ' + (disabled ? 'disabled ' : 'onclick="' + onclick + '" ')
-    + 'style="display:inline-flex;align-items:center;gap:6px;background:' + bg + ';border:' + border
-    + ';color:' + color + ';border-radius:11px;padding:8px 13px;font-size:12px;font-weight:800;'
-    + 'font-family:inherit;white-space:nowrap;' + (disabled ? 'opacity:.45' : 'cursor:pointer') + '">'
-    + label + '</button>';
-  const I_EYE = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12S5.5 5 12 5s10.2 7 10.2 7-3.7 7-10.2 7S1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  // ★버튼은 반드시 머피월드 언어(.mw-btn = 사각 픽셀 입체)로. 바로 옆 방명록 '남기기'가
+  //   mw-btn-sm 인데 여기만 라운드 반투명 칩이라 따로 놀았다(대표 지적 2026-08-04).
+  const btn = (cls, label, onclick, sub, subColor) =>
+    '<button class="mw-btn ' + cls + '" ' + (onclick ? 'onclick="' + onclick + '"' : 'disabled')
+    + ' style="width:100%;display:flex;align-items:center;justify-content:center;gap:7px">' + label + '</button>'
+    + (sub ? '<div style="font-size:10.5px;color:' + subColor + ';text-align:center;margin-top:7px;line-height:1.6">' + sub + '</div>' : '');
+  const I_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 12S5.5 5 12 5s10.2 7 10.2 7-3.7 7-10.2 7S1.8 12 1.8 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const I_CHAT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 
   try {
     if (await window.isMatched(uid)) {
-      el.innerHTML = btn('#3D7EFF', 'none', '#fff', '채팅하기',
+      el.innerHTML = btn('', I_CHAT + '채팅하기',
         "window._mwRoomClose();window.openChatWith('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')");
       return;
     }
     // 내가 이미 보냈나 (likes/{나}_{상대})
     const sent = await getDoc(doc(db, 'likes', me.uid + '_' + uid));
     if (sent.exists()) {
-      el.innerHTML = btn('rgba(255,255,255,0.05)', '1px solid rgba(255,255,255,0.12)',
-        'rgba(255,255,255,0.5)', '수락 기다리는 중', '', true);
+      el.innerHTML = btn('mw-btn-ghost', '수락 기다리는 중', '');
       return;
     }
-    // 범프한 사이인가 — 실제로 만난 사이라 골드로 구분
-    let bumped = false;
+    // 범프한 사이인가 — 실제로 만난 사이라 골드로 구분(캐릭터 본체는 안 물들인다)
+    let bump = null;
     try {
       const ms = await getDoc(doc(db, 'users', me.uid));
-      bumped = !!(ms.exists() && (ms.data().bumpers || {})[uid]);
+      bump = (ms.exists() && (ms.data().bumpers || {})[uid]) || null;
     } catch (e) {}
     const go = "window._mwRoomLike('" + js(uid) + "','" + js(nick) + "','" + js(photo) + "')";
-    el.innerHTML = bumped
-      ? btn('rgba(245,194,75,0.14)', '1px solid rgba(245,194,75,0.5)', '#F5C24B',
-            I_EYE + '실제 프로필 보기', go)
-        + '<div style="font-size:9.5px;color:#F5C24B;text-align:right;margin-top:3px;font-family:\'Galmuri11\',inherit">범프한 사이</div>'
-      : btn('rgba(61,126,255,0.14)', '1px solid rgba(61,126,255,0.4)', '#7aa8ff',
-            I_EYE + '실제 프로필 보기', go);
+    if (bump) {
+      const w = bump.firstAt ? new Date(bump.firstAt) : null;
+      const when = w ? (w.getMonth() + 1) + '.' + String(w.getDate()).padStart(2, '0') : '';
+      const where = String(bump.place || '').replace(/</g, '&lt;').slice(0, 18);
+      el.innerHTML = btn('mw-btn-gold', I_EYE + '실제 프로필 보기', go,
+        (when ? when + ' ' : '') + (where || '') + (when || where ? '에서 ' : '') + '범프한 사이', '#F5C24B');
+    } else {
+      el.innerHTML = btn('', I_EYE + '실제 프로필 보기', go, '서로 눌러야 얼굴이 열려요', '#4a5266');
+    }
   } catch (e) { el.innerHTML = ''; }
 };
 window._mwRoomClose = function () {
