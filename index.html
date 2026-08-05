@@ -2109,7 +2109,7 @@ window.CHAR_ITEMS = [
   // { id: 'hat_f_ladodgers', slot: 'hat', body: 'human_f', name: 'LA 볼캡', price: 0, sheet: 'char/items/hat_f_ladodgers.png', thumb: 'char/items/hat_ladodgers_thumb.png', hairVariants: { hair_f_basic: null, hair_f_bob_bang: null, hair_f_long: null } }
 ];
 // 아이템 이미지 캐시버전 — 아이템 시트/썸네일 바꿀 때마다 올리면 SW 캐시 무시하고 새로 받음
-window._ITEM_V = 118;
+window._ITEM_V = 119;
 window._iv = function (u) { return u ? (u + (u.indexOf('?') < 0 ? '?v=' : '&v=') + (window._ITEM_V || 1)) : u; };
 window.CHAR_FREE = ['hair_short', 'top_tee', 'mask_simple'];
 window.CHAR_SHAPES = {
@@ -7802,7 +7802,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '361';
+window._SW_V = '362';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8645,7 +8645,11 @@ window._isConnected = async (otherUid) => {
 };
 
 // ===== 운동 크레딧 (Proof of Workout) =====
-window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트). 사용자 충분히 모이면 'enforced'.
+// ★2026-08-05 'enforced' 로 전환 (대표 결정, 출시 대비).
+//   그동안 beta 라 표시·적립만 되고 **차감이 아예 안 됐다**(러그를 사도 머피가 안 줄었다).
+//   켜도 되는 근거: 무료 가구 6종 · 무료 의상(흰티/반바지/기본헤어) · 적립 경로 5개 ·
+//   가입 선물 30머피 · 스쿼드 참가 무료. 즉 돈을 안 써도 앱이 돌아간다.
+window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced'(차감·게이트)
 // ★★경제 밸런스 (2026-08-04 재설계) — 결제 붙이기 **전에도** 매칭·대숲·스쿼드·꾸미기를
 //   전부 쓸 수 있는 중간점을 잡는다.
 //
@@ -9227,6 +9231,19 @@ window.ensureCreditsInit = async (uid) => {
       window._charState.wardrobe = [...window.CHAR_FREE];
       window._charState.hidden = {};
     } else {
+      // ★enforced 전환 보정 (2026-08-05, 1회).
+      //   기존 계정은 가입 선물이 10머피이던 시절에 만들어졌고, 그동안 beta 라 차감이
+      //   없어서 잔액을 신경 쓸 일도 없었다. 차감을 켜는 날 잔액이 바닥이면 매칭도
+      //   대숲도 막혀 앱이 멈춘 것처럼 보인다 — **신규 가입자보다 불리해지면 안 된다.**
+      //   그래서 신규와 같은 출발선(30머피)까지만 올려준다. 이미 그 이상이면 손대지 않는다.
+      if (d.creditsMigrated !== true && d.credits < CREDIT_WELCOME) {
+        try {
+          await updateDoc(ref, { credits: CREDIT_WELCOME, creditsMigrated: true });
+          d.credits = CREDIT_WELCOME;
+        } catch (e) {}
+      } else if (d.creditsMigrated !== true) {
+        try { await updateDoc(ref, { creditsMigrated: true }); } catch (e) {}
+      }
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
       window._creditState.streak = (typeof d.streak === 'number') ? d.streak : 0;
