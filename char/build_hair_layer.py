@@ -96,6 +96,16 @@ CONFIG = [
          hair=os.path.join(NUKKI, "여자 검정생머리_clean-Photoroom.png"),
          # 긴 머리는 몸을 넓게 덮어 유령이 묻힌다. 유령 배제를 켜면 목 부근에서 머리가 끊긴다.
          ghost=False),
+    # ★포니테일 (2026-08-05). 소스는 마젠타 배경 원본을 우리 도구로 정리한 것 —
+    #   nukki_solid(마젠타 flood fill) → strip_wm_r3c2(제미나이 ✦) → despill_magenta(분홍 테두리).
+    #   긴 생머리와 같은 이유로 ghost=False: 묶은 머리가 등·어깨를 넓게 덮어서
+    #   유령 배제를 켜면 목 부근에서 머리가 끊긴다.
+    dict(out="hair_f_ponytail", label="포니테일", walk="walk_female.png",
+         base=BALD_F, ref=os.path.join(FBASIC, "여자기본머리_clean-Photoroom.png"),
+    #   ★_fit = 소스 해상도가 달라(1408×2986) 기준 시트(1123×2400)에 맞춰 리샘플한 것.
+    #     hair_mask 는 base 와 **같은 크기**에서 픽셀 차분을 하므로 크기가 다르면 아예 안 돈다.
+         hair=os.path.join(DESK, "헤어", "여자", "여자 포니테일_fit.png"),
+         ghost=False),
 ]
 
 
