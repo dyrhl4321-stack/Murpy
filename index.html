@@ -2109,7 +2109,7 @@ window.CHAR_ITEMS = [
   // { id: 'hat_f_ladodgers', slot: 'hat', body: 'human_f', name: 'LA 볼캡', price: 0, sheet: 'char/items/hat_f_ladodgers.png', thumb: 'char/items/hat_ladodgers_thumb.png', hairVariants: { hair_f_basic: null, hair_f_bob_bang: null, hair_f_long: null } }
 ];
 // 아이템 이미지 캐시버전 — 아이템 시트/썸네일 바꿀 때마다 올리면 SW 캐시 무시하고 새로 받음
-window._ITEM_V = 117;
+window._ITEM_V = 118;
 window._iv = function (u) { return u ? (u + (u.indexOf('?') < 0 ? '?v=' : '&v=') + (window._ITEM_V || 1)) : u; };
 window.CHAR_FREE = ['hair_short', 'top_tee', 'mask_simple'];
 window.CHAR_SHAPES = {
@@ -2504,10 +2504,48 @@ window._reditPaint = function () {
   const hint = document.getElementById('mw-redit-hint');
   if (hint) {
     const n = window._reditDraft ? window._reditDraft.f.length : 0;
-    hint.innerHTML = n >= 15
-      ? '<span style="color:#F5C24B">가득 찼어요 ' + n + '/15</span>'
-      : '가구 ' + n + '/15';
+    const cap = window.mwRoomCap();
+    const more = cap < MW_SLOT_MAX
+      ? ' <button onclick="window.mwBuyRoomSlot()" style="background:none;border:none;color:#F5C24B;'
+        + 'font-family:inherit;font-size:11px;text-decoration:underline;cursor:pointer;padding:0 0 0 4px">칸 늘리기</button>'
+      : '';
+    hint.innerHTML = (n >= cap
+      ? '<span style="color:#F5C24B">가득 찼어요 ' + n + '/' + cap + '</span>'
+      : '가구 ' + n + '/' + cap) + more;
   }
+};
+// ===== 인테리어 슬롯 확장권 =====
+// 방을 넓히는 게 아니라 **놓을 수 있는 개수**를 늘린다. 반복 구매되는 소모 축이라
+// 옷(한 벌 사면 끝)과 달리 계속 값이 나온다. 다만 상한을 둬야 방이 잡동사니가 안 된다.
+// ★상수를 여기 두는 이유 — 이 블록은 모듈이 아니다. 경제 상수들이 모여 있는 module 쪽에
+//   두면 여기서 못 읽어 ReferenceError 가 난다.
+const COST_SLOT_EXT = 40;                                       // 확장권 1장
+const MW_SLOT_BASE = 15, MW_SLOT_STEP = 10, MW_SLOT_MAX = 35;   // 15 → 25 → 35 (2장까지)
+window.mwRoomCap = function () {
+  const ext = (window._roomSlotExt | 0);
+  return Math.min(MW_SLOT_MAX, MW_SLOT_BASE + ext * MW_SLOT_STEP);
+};
+window.mwBuyRoomSlot = async function () {
+  const uid = window.currentUser && window.currentUser.uid;
+  if (!uid) { requireLogin('로그인이 필요해요'); return; }
+  const cap = window.mwRoomCap();
+  if (cap >= MW_SLOT_MAX) { showToast('더는 늘릴 수 없어요 (최대 ' + MW_SLOT_MAX + '칸)'); return; }
+  if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
+    const ok = await window.murpyConfirm({
+      title: '인테리어 슬롯 확장권',
+      desc: '가구를 <b style="color:#7aa4ff">' + MW_SLOT_STEP + '개</b> 더 놓을 수 있어요<br>'
+        + '<b style="color:#F5C24B">' + COST_SLOT_EXT + '머피</b>를 사용해요 · '
+        + cap + '칸 → ' + Math.min(MW_SLOT_MAX, cap + MW_SLOT_STEP) + '칸',
+      cost: true, confirmText: '확장'
+    });
+    if (!ok) return;
+  }
+  if (!(await window.spendCredit(uid, COST_SLOT_EXT))) {
+    showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return;
+  }
+  if (window._mwGrantRoomSlot) await window._mwGrantRoomSlot();
+  showToast('가구를 ' + window.mwRoomCap() + '개까지 놓을 수 있어요!');
+  window._reditPaint();
 };
 // 내가 가진 방 오브젝트인가. roomInv 는 원래 시즌 한정 보관함인데
 // "방에 놓을 수 있는 내 소유물"이라는 뜻이 같아서 구매 가구도 여기 담는다.
@@ -2521,7 +2559,13 @@ window.mwFurnOwned = function (id) {
 window._reditAdd = async function (id) {
   const def = window.mwItemDef(id); if (!def) return;
   const f = window._reditDraft.f;
-  if (f.length >= 15) { showToast('가구는 15개까지 놓을 수 있어요'); return; }
+  const cap = window.mwRoomCap();
+  if (f.length >= cap) {
+    // ★막기만 하고 끝내면 왜 못 놓는지·어떻게 푸는지를 모른다. 확장권을 바로 제안한다
+    if (cap < MW_SLOT_MAX) { showToast('가구는 ' + cap + '개까지예요 · 확장권으로 늘릴 수 있어요'); }
+    else showToast('가구는 ' + cap + '개까지 놓을 수 있어요');
+    return;
+  }
   // ★가격 검사가 아예 없어서 유료 가구도 그냥 놓을 수 있었다(2026-08-05).
   //   시즌 한정은 획득해야 목록에 뜨니 문제가 안 났고, 기본 가구는 전부 무료라 안 드러났다.
   if (!window.mwFurnOwned(id)) {
@@ -7758,7 +7802,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '360';
+window._SW_V = '361';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8645,6 +8689,8 @@ window.CREDITS_MODE = 'beta'; // 'beta'(표시+적립+무제한) | 'enforced'(�
 //       + 대숲 15회(-15) + '저에요' 4회(-12) = -97 → 남는 60으로 옷 1~2벌.
 //       즉 **하루 한 번꼴 매칭은 무료로 되고, 그 이상 적극적으로 쓰려면 충전**한다.
 const CREDIT_WELCOME = 30, CREDIT_DAILY = 1, COST_MATCH = 5, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+//   ※ 인테리어 슬롯 확장권 상수(COST_SLOT_EXT / MW_SLOT_*)는 **꾸미기 편집기 쪽**에 있다.
+//     편집기는 모듈 밖 스크립트라 여기(module) 의 const 를 못 본다.
 const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKED = 1,
       CREDIT_SQUAD_HOST = 5, CREDIT_SQUAD_ATTEND = 2, CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
 // 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기)을 막는 상한
@@ -8658,6 +8704,15 @@ window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; 
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
 window._charPersistHidden = async (map) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); } catch (e) { console.error('hidden save', e); } };
 window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
+// 슬롯 확장권 사용 저장 (모듈 밖 편집기에서 부른다)
+window._mwGrantRoomSlot = async () => {
+  const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
+  try {
+    await updateDoc(doc(db, 'users', uid), { roomSlotExt: increment(1) });
+    window._roomSlotExt = (window._roomSlotExt | 0) + 1;
+    return true;
+  } catch (e) { console.error('roomSlotExt', e); return false; }
+};
 // 방 오브젝트 획득 저장 — 꾸미기 편집기(_reditAdd)는 모듈 밖이라 여기로 부른다
 window._mwGrantRoomItem = async (id) => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
@@ -9207,6 +9262,7 @@ window.ensureCreditsInit = async (uid) => {
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
     window._myRoomPos = (d.roomPos && typeof d.roomPos.tc === 'number') ? d.roomPos : null;
+    window._roomSlotExt = d.roomSlotExt | 0;   // 산 슬롯 확장권 수
     // ★카탈로그에서 사라진 옛 가구를 불러오는 즉시 걷어낸다.
     // 렌더는 정의 없는 id를 건너뛰지만 배열에는 남아 15개 상한을 잡아먹는다
     // ("방은 비었는데 더 못 놓는" 상태). 편집기를 열 때만 정리하면 늦다 — 여기서 처리해야
