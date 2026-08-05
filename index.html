@@ -7846,7 +7846,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '372';
+window._SW_V = '373';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -13780,12 +13780,21 @@ window._mwKakaoPrep = function () {
     const b = document.getElementById('mw-kkbtn'); if (b) b.classList.remove('prep');
   };
   if (!data) { window._mwKakaoReady = true; return; }
+  // ★타임아웃이 없으면 imgBB 가 응답 없이 매달릴 때 done() 이 영영 안 불려서
+  //   버튼이 계속 흐린 채로 남는다(대표 지적 2026-08-05: "하루종일 핑그르르").
+  //   fetch 는 기본 타임아웃이 없다 — 우리가 끊어줘야 한다.
+  //   끊긴 경우 url 없이 준비완료로 두면 mwShareKakao 가 시스템 공유시트로 폴백한다.
+  const bail = setTimeout(function () {
+    console.warn('kakao prep 타임아웃 — 공유시트로 폴백');
+    done(null);
+  }, 12000);
   (async () => {
     try {
       const blob = await (await fetch(data)).blob();
       const url = await window.uploadImgbb(new File([blob], 'stamp.jpg', { type: 'image/jpeg' }));
+      clearTimeout(bail);
       done(url);
-    } catch (e) { console.warn('kakao prep', e); done(null); }   // 실패해도 준비완료(누르면 시트 폴백)
+    } catch (e) { clearTimeout(bail); console.warn('kakao prep', e); done(null); }   // 실패해도 준비완료(누르면 시트 폴백)
   })();
 };
 // 카카오톡: ★항상 '카톡 바로 열기'로 통일(대표: 시트↔바로 와리가리 싫음). 업로드 완료 전엔 버튼이
@@ -13795,7 +13804,11 @@ window.mwShareKakao = function (btn) {
   const ok = window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized();
   // SDK 불가 또는 업로드 실패(URL 없음)일 때만 시스템 공유시트로 폴백
   if (!ok || !window._mwStampUrl) { window.mwShareSheet(); return; }
-  const APP = 'https://dyrhl4321-stack.github.io/Murpy/';
+  // ★공유 링크는 **항상 정식 주소**로 보낸다. 지금 앱을 어디서 열었든(옛 github.io 포함)
+  //   남에게 나가는 링크는 murpy.app 이어야 한다 — 카톡에 옛 주소가 찍혀 퍼지면 나중에
+  //   옛 주소를 정리하는 순간 그 카드들이 전부 죽는다.
+  //   ※ 이 도메인은 카카오 개발자센터 플랫폼(Web 사이트 도메인)에 등록돼 있어야 한다.
+  const APP = 'https://murpy.app/';
   try {
     Kakao.Share.sendDefault({
       objectType: 'feed',

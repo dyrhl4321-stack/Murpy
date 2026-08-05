@@ -57,8 +57,10 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
     },
     notification: { title, body },
     webpush: {
-      notification: { icon: "https://dyrhl4321-stack.github.io/Murpy/icon.svg" },
-      fcmOptions: { link: "https://dyrhl4321-stack.github.io/Murpy/" },
+      // ★정식 도메인으로. 푸시를 누르면 열리는 주소이자 알림에 뜨는 아이콘이다.
+      //   아이콘도 SVG -> PNG 로 바꾼다 — 안드로이드 알림은 SVG 를 안 그리는 경우가 있다.
+      notification: { icon: "https://murpy.app/icon-192.png" },
+      fcmOptions: { link: "https://murpy.app/" },
     },
   };
 
