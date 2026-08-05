@@ -7878,7 +7878,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '378';
+window._SW_V = '379';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8222,7 +8222,21 @@ window._compressImg = async (file, maxW = 1280, quality = 0.82) => {
   try {
     if (!file || !file.type || !file.type.startsWith('image/') || file.type === 'image/gif') return file;
     if (file.size && file.size < 200 * 1024) return file; // 200KB 미만은 그대로
-    const bitmap = await createImageBitmap(file).catch(() => null);
+    // ★createImageBitmap 이 실패하면 <img> 로 다시 시도한다.
+    //   아이폰 사진은 HEIC 인데 Safari 의 createImageBitmap 이 HEIC 를 못 여는 경우가 있다.
+    //   예전엔 그냥 원본을 반환해서, 압축 안 된 8~12MB 짜리가 그대로 업로드로 넘어갔고
+    //   모바일 회선에서 끊겨 'Load failed' 가 났다(대표 지적 2026-08-05).
+    //   <img> 경로는 Safari 가 HEIC 를 디코딩해 주므로 여기서 대부분 살아난다.
+    let bitmap = await createImageBitmap(file).catch(() => null);
+    if (!bitmap) {
+      bitmap = await new Promise(res => {
+        const u = URL.createObjectURL(file);
+        const im = new Image();
+        im.onload = () => { URL.revokeObjectURL(u); res(im); };
+        im.onerror = () => { URL.revokeObjectURL(u); res(null); };
+        im.src = u;
+      });
+    }
     if (!bitmap) return file;
     const scale = Math.min(1, maxW / bitmap.width);
     const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -13044,9 +13058,32 @@ window._mwAddLocateBtn = function (map, mapEl, centers) {
       }
     }, err => {
       btn.classList.remove('busy');
-      showToast(err.code === 1 ? '위치 권한을 허용해 주세요' : '위치를 가져오지 못했어요');
+      if (err.code === 1) window.mwGeoDeniedHelp();
+      else showToast('위치를 가져오지 못했어요 · 실외에서 다시 시도해 주세요');
     }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
   });
+};
+// ★위치 권한이 거부된 사람에게 '켜는 법'을 알려준다.
+//   브라우저는 한 번 거부되면 **다시는 팝업을 안 띄운다.** 그래서 토스트로 "허용해 주세요"만
+//   띄우면 사용자는 영영 방법을 못 찾는다(대표 지적 2026-08-05: 폰에 따라 아예 막혀 있다).
+//   기기별로 경로가 달라서 둘 다 적어준다.
+window.mwGeoDeniedHelp = function () {
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const steps = ios
+    ? '설정 → Safari → 위치 → <b style="color:#fff">확인 후 허용</b><br>'
+      + '설정 → 개인정보 보호 → 위치 서비스 → <b style="color:#fff">Safari 웹사이트</b> 켜기'
+    : '주소창 왼쪽 <b style="color:#fff">자물쇠(또는 ⓘ)</b> 탭 → 권한 → <b style="color:#fff">위치 허용</b><br>'
+      + '안 보이면 설정 → 사이트 설정 → 위치 → murpy.app 허용';
+  if (window._mwOverlay) {
+    window._mwOverlay(
+      '<div style="font-family:\'Galmuri14\',sans-serif;font-size:14px;color:#F5C24B;margin-bottom:12px">위치 권한이 꺼져 있어요</div>'
+      + '<div style="font-size:12px;color:#8a93a8;line-height:1.9;text-align:center">'
+      + '체크인은 <b style="color:#cfd6e6">정말 그 헬스장에 갔는지</b> 확인하려고 위치를 씁니다.<br>'
+      + '위치는 저장하지 않고 거리 계산에만 써요.<br><br>' + steps + '</div>'
+      + '<button onclick="window._mwOverlayClose()" style="display:block;margin:18px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>');
+  } else if (window.showToast) {
+    showToast('위치 권한이 꺼져 있어요 · 브라우저 설정에서 허용해 주세요');
+  }
 };
 // ---------- 우리 센터 머피들 (센터 필드 화면) ----------
 window.centerFieldSrc = function (center) {
@@ -13737,7 +13774,8 @@ window.mwCheckin = function () {
     }
   }, err => {
     window._mwOverlayClose();
-    showToast(err.code===1?'위치 권한을 허용해 주세요':'위치를 가져오지 못했어요');
+    if (err.code === 1) window.mwGeoDeniedHelp();
+    else showToast('위치를 가져오지 못했어요 · 실외에서 다시 시도해 주세요');
   }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
 };
 window.mwConfirmCheckin = async function (center, dist, lat, lng) {
