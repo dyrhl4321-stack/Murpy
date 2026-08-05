@@ -190,14 +190,9 @@ button.go:hover{background:#5590ff}
         <option value="1">걸음 1</option>
         <option value="2">걸음 2</option>
       </select>
-      <label style="display:flex;align-items:center;gap:7px;margin-top:7px;cursor:pointer;font-size:11px">
-        <input type="checkbox" id="sync3" checked style="width:15px;height:15px;accent-color:#c8f542">
-        3프레임 같이 고치기
-      </label>
-      <div class="note" style="margin-top:6px">
-        켜두면 걸음 3프레임에 같이 반영됩니다(권장 — 한 프레임만 고치면 걸을 때 깜빡임).
-        <b style="color:var(--gold)">끄면 지금 보고 있는 프레임만</b> 고칩니다.
-      </div>
+      <!-- '3프레임 같이 고치기' 체크박스 폐기(대표 요청 2026-08-05).
+           걸음 프레임은 팔·다리 위치가 서로 달라서 같은 자리를 함께 칠하면 오히려 어긋난다.
+           이제 항상 **지금 보고 있는 프레임만** 고친다. -->
     </div>
     <div class="grp">
       <h2>배경</h2>
@@ -327,7 +322,7 @@ let palSource=null;                // 팔레트를 뽑을 원본 시트(조합 �
    실제로 손대는 레이어만 이 값으로 고른다. */
 let editTarget='item';
 const T=()=>(editTarget==='overlay'&&overlayData)?overlayData:itemData;
-const targetCols=()=>$('sync3').checked?[0,1,2]:[cellC];   // 편집이 닿을 열
+const targetCols=()=>[cellC];   // 편집이 닿을 열 — 항상 지금 보고 있는 프레임만
 const history=[];
 const $=id=>document.getElementById(id);
 const view=$('view'),sel=$('sel'),vctx=view.getContext('2d'),sctx=sel.getContext('2d');
@@ -352,6 +347,7 @@ function renderGal(){
 }
 /* 갤러리·파일 어느 쪽으로 불러오든 여기로 모인다 */
 async function useItem(it,d){
+  inkPicked=false;   // 새 아이템이면 잉크를 그 아이템 대표색으로 다시 잡는다
   // ★baseImg 는 검사를 통과한 뒤에 갈아끼운다. 먼저 바꾸면 규격이 안 맞아 되돌아갈 때
   //   몸통만 바뀐 채로 남아 그리기가 어긋난다.
   // ★몸통에도 캐시버스터를 붙인다. 아이템 시트에만 ?t= 가 있어서, base(walk_female.png)를
@@ -489,7 +485,9 @@ function dab(x,y,on){const h=brush>>1;
 /* ── 픽셀 직접 그리기 (연필·지우개·스포이드) ─────────────── */
 // ★그리기도 걸음 3프레임에 같이 반영한다. 한 프레임만 찍으면 걸을 때 깜빡인다.
 let ink=[40,36,42];
-function setInk(c){ink=c;$('sw').style.background='rgb('+c.join(',')+')';}
+// 사용자가 팔레트/스포이드로 **직접 고른 적이 있는가**. 있으면 buildPal 이 함부로 안 바꾼다.
+let inkPicked=false;
+function setInk(c,byUser){ink=c;if(byUser)inkPicked=true;$('sw').style.background='rgb('+c.join(',')+')';}
 function buildPal(){
   if(!itemData)return;
   const cnt={},p=$('pal');
@@ -514,8 +512,12 @@ function buildPal(){
     const d=document.createElement('div');
     d.style.cssText='width:14px;height:14px;border-radius:3px;cursor:pointer;'+
       'border:1px solid #444;background:rgb('+k+')';
-    d.onclick=()=>setInk(c);p.appendChild(d);});
-  if(top.length)setInk(top[0][0].split(',').map(Number));
+    d.onclick=()=>setInk(c,true);p.appendChild(d);});
+  // ★잉크를 **매번 팔레트 1번으로 되돌리지 않는다.**
+  //   되돌리기(restore)가 buildPal 을 부르는데, 여기서 무조건 setInk 를 하면
+  //   스포이드로 고른 색이 흰색(가장 많은 색)으로 리셋됐다(대표 지적 2026-08-05).
+  //   아직 잉크가 없을 때만 기본값을 잡는다.
+  if(top.length&&!inkPicked)setInk(top[0][0].split(',').map(Number));
 }
 function pixel(x,y,mode){          // mode: 'pen' | 'del'
   // ★좌표는 지금 보고 있는 프레임(cellC) 기준이다. 다른 열에는 bbox 차이만큼 밀어서 찍는다.
@@ -540,11 +542,11 @@ function pickColor(x,y){
   const i=((cellR*CH+y)*W+(cellC*CW+x))*4;
   const hideBody=$('hideBody').checked;
   if($('showOverlay').checked&&overlayData&&overlayData.data[i+3]>=128)
-    setInk([overlayData.data[i],overlayData.data[i+1],overlayData.data[i+2]]);
+    setInk([overlayData.data[i],overlayData.data[i+1],overlayData.data[i+2]],true);
   else if(itemData.data[i+3]>=128)
-    setInk([itemData.data[i],itemData.data[i+1],itemData.data[i+2]]);
+    setInk([itemData.data[i],itemData.data[i+1],itemData.data[i+2]],true);
   else if(!hideBody&&baseImg.data[i+3]>=128)
-    setInk([baseImg.data[i],baseImg.data[i+1],baseImg.data[i+2]]);
+    setInk([baseImg.data[i],baseImg.data[i+1],baseImg.data[i+2]],true);
 }
 
 let down=false,rect=null,drew=false;
@@ -583,9 +585,6 @@ $('editTgt').onchange=e=>{
     : '이제 <b>헤어</b>를 고칩니다. 이 조합에만 반영됩니다.');
 };
 $('frm').onchange=e=>{cellC=+e.target.value;clearSel();draw();buildPal();};
-$('sync3').onchange=()=>say($('sync3').checked
-  ? '걸음 3프레임에 <b>같이</b> 반영합니다.'
-  : '지금 보고 있는 <b>프레임만</b> 고칩니다. (다 고친 뒤 3프레임이 서로 맞는지 확인하세요)');
 $('brush').oninput=e=>{brush=+e.target.value;$('bsz').textContent=brush;};
 $('zoom').oninput=e=>{Z=+e.target.value;$('zl').textContent=Z;resize();draw();paintSel();};
 addEventListener('keydown',e=>{
