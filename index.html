@@ -7667,7 +7667,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '353';
+window._SW_V = '354';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -11082,8 +11082,9 @@ window.loadNotificationsFirestore = async () => {
       if (n.type === 'poke') {
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.mwVisitRoom&&window.mwVisitRoom('${safeFromUid}')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <!-- 콕 찌르는 손 — 검지를 편 손 모양. 예전엔 다운로드 화살표처럼 생겨서 뜻이 안 통했다 -->
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V6a1.5 1.5 0 0 1 3 0v5"/><path d="M15 11.5V8a1.5 1.5 0 0 1 3 0v6.5a6 6 0 0 1-6 6h-1.4a4 4 0 0 1-2.83-1.17l-3.6-3.6a1.6 1.6 0 0 1 2.26-2.26L9 15"/></svg>
+            <!-- 콕! — 사방으로 튀는 스파크. 손 모양보다 "톡 건드렸다"는 순간이 바로 읽힌다.
+                 8방향 선 길이를 번갈아 다르게 둬야 별처럼 보인다(다 같으면 바퀴처럼 보인다) -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round"><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/><path d="M5.3 5.3 8.5 8.5M15.5 15.5l3.2 3.2M18.7 5.3 15.5 8.5M8.5 15.5l-3.2 3.2"/></svg>
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 콕 찔렀어요</div>
@@ -15075,8 +15076,15 @@ window.acceptSquadInvite = async function (sid, title, notifId) {
   let already = false;
   try {
     const s = await getDoc(doc(db, 'squads', sid));
-    if (!s.exists()) { showToast('이미 끝났거나 사라진 스쿼드예요'); return; }
-    already = (s.data().memberUids || []).includes(user.uid);
+    if (!s.exists()) { showToast('사라진 스쿼드입니다'); return; }
+    const d = s.data();
+    // ★끝난 벙에 참가시키면 안 된다. 상태를 먼저 본다.
+    //   status: recruiting(모집중) / active(진행중) / done(종료) / expired(시간지남)
+    if (d.status === 'done' || d.status === 'expired') { showToast('종료된 스쿼드입니다'); return; }
+    // 상태가 안 바뀐 채 시간만 지난 경우도 종료로 본다(만료 처리는 목록을 열 때 도는 배치라 늦다)
+    const when = (d.expiresAt || d.scheduledAt) || 0;
+    if (when && when < Date.now()) { showToast('종료된 스쿼드입니다'); return; }
+    already = (d.memberUids || []).includes(user.uid);
   } catch (e) {}
   if (!already) {
     const ok = await window.murpyConfirm({
