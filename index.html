@@ -154,7 +154,11 @@
   .modal-overlay.open .modal-sheet { transform: translateY(0); }
 
   /* Panel (full screen overlay) */
-  .panel { position: fixed; inset: 0; background: #0a0a0a; z-index: 100; display: flex; flex-direction: column; max-width: 390px; margin: 0 auto; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); pointer-events: none; }
+  /* ★height:100dvh — inset:0 만 쓰면 모바일에서 주소창·키보드가 뜰 때 실제 보이는 높이보다
+     짧아져 **아래가 벌어지고 그 틈으로 뒷화면이 보이며 스크롤까지 된다**(대표 지적 2026-08-05,
+     대숲 댓글 입력에서 발견). .mw-wpanel 이 이미 같은 이유로 100dvh 를 쓰고 있다.
+     overscroll-behavior:contain 은 패널 끝까지 스크롤했을 때 뒷화면으로 넘어가는 것을 막는다. */
+  .panel { position: fixed; inset: 0; height: 100dvh; overscroll-behavior: contain; background: #0a0a0a; z-index: 100; display: flex; flex-direction: column; max-width: 390px; margin: 0 auto; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1); pointer-events: none; }
   .panel.open { transform: translateX(0); pointer-events: all; }
   .panel-header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 12px; }
   .back-btn { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; }
@@ -923,6 +927,13 @@
   #murpy-celebrate.show .mc-glow{animation:mc-glow 1s ease-out both}
   #murpy-celebrate.show .mc-amt{animation:mc-amtpop .5s .46s cubic-bezier(0.34,1.5,0.5,1) both}
   #murpy-celebrate.show .mc-title{animation:mc-fadeup .45s .6s both}
+/* 소소한 적립(+1~2)용 — 같은 연출을 크기만 줄여 쓴다.
+   운동 인증과 같은 크기로 터뜨리면 +1 이 과장돼 보이고, 그렇다고 토스트로만 두면
+   왜 받았는지가 안 남는다(대표 지적 2026-08-05). 가운데 지점을 잡은 것. */
+#murpy-celebrate.mc-mini{background:rgba(0,0,0,0.34)}
+#murpy-celebrate.mc-mini .mc-amt{font-size:26px;margin-top:14px;letter-spacing:-0.6px}
+#murpy-celebrate.mc-mini .mc-title{font-size:13px;margin-top:5px;color:rgba(255,255,255,0.72)}
+#murpy-celebrate.mc-mini .mc-glow{transform:scale(0.55)}
   #murpy-celebrate .mc-spark{position:absolute;animation:mc-spark .9s ease-out both}
   @keyframes mc-coin{0%{transform:perspective(700px) rotateY(-720deg) scale(0.25);opacity:0}55%{opacity:1}100%{transform:perspective(700px) rotateY(0deg) scale(1);opacity:1}}
   @keyframes mc-amtpop{0%{transform:scale(0.4);opacity:0}100%{transform:scale(1);opacity:1}}
@@ -4994,6 +5005,11 @@ window._mwWorldReveal = function () {
 
 function openPanel(id) {
   document.getElementById(id).classList.add('open');
+  // ★패널이 열려도 배경(홈 피드 등)이 그대로 스크롤됐다. 패널은 fixed 라 안 가려질 것 같지만,
+  //   모바일에서 아래가 조금 벌어지면 그 틈으로 뒷화면이 움직이는 게 보인다.
+  //   여러 패널이 겹쳐 열릴 수 있으므로 **몇 개 열렸는지 세어** 마지막 하나가 닫힐 때만 푼다.
+  window._panelDepth = (window._panelDepth || 0) + 1;
+  if (window._panelDepth === 1 && typeof lockBodyScroll === 'function') lockBodyScroll();
   if (id==='notif-panel') { if (window.loadNotificationsFirestore) window.loadNotificationsFirestore(); else renderNotifs(); }
   if (id==='interest-panel') { window._loadInterestPanel && window._loadInterestPanel(); }
   if (id==='chat-panel') { if (window.loadChatListFirestore) window.loadChatListFirestore(); else renderChatList(); }
@@ -5001,7 +5017,15 @@ function openPanel(id) {
   if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile();
 }
 function closePanel(id) {
-  document.getElementById(id).classList.remove('open');
+  const _el = document.getElementById(id);
+  const _wasOpen = _el && _el.classList.contains('open');
+  if (_el) _el.classList.remove('open');
+  // 열려 있던 것만 센다 — 안 열린 패널에 closePanel 을 부르는 곳이 있어서
+  // 그냥 빼면 카운트가 음수가 되고 스크롤이 영영 잠긴다
+  if (_wasOpen) {
+    window._panelDepth = Math.max(0, (window._panelDepth || 0) - 1);
+    if (window._panelDepth === 0 && typeof unlockBodyScroll === 'function') unlockBodyScroll();
+  }
   if (id === 'chat-detail-panel' && window._chatUnsubscribe) {
     window._chatUnsubscribe(); window._chatUnsubscribe = null; window._currentChatId = null;
   }
@@ -6476,6 +6500,9 @@ function lockBodyScroll() {
 }
 function unlockBodyScroll() {
   if (!_bodyLocked) return;          // 잠근 적 없는데 풀면서 스크롤을 옮기면 안 된다
+  // ★패널이 아직 열려 있으면 풀지 않는다. 크롭 모달과 패널이 같은 잠금을 공유해서,
+  //   모달만 닫았는데 뒤에 남은 패널의 배경이 스크롤되는 일이 있었다.
+  if ((window._panelDepth || 0) > 0) return;
   _bodyLocked = false;
   document.body.style.position = '';
   document.body.style.top = '';
@@ -7261,12 +7288,14 @@ function isAdmin() {
   const u = window.currentUser;
   return !!(u && u.email && ADMIN_EMAILS.includes(u.email));
 }
-// [테스트] 김현수(카카오) 등 — 매칭 후보 전체 노출 + 크레딧 강제(확인 팝업 테스트). 정식 출시 전 제거.
-window.TEST_UIDS = ['h0I8ms36owTByTACh6gSw3sgCrf1'];
+// [테스트] 매칭 후보를 다 보여주고 좋아요를 보내도 카드가 안 넘어가게 하는 예외.
+// ★2026-08-05 출시 준비로 **비웠다.** 김현수(카카오)·관리자 둘 다 테스터로 잡혀 있어서
+//   좋아요를 보내도 상대가 목록에 계속 남았다(대표 지적). 이제 실사용자와 똑같이 동작한다.
+//   다시 반복 실험이 필요하면 아래 배열에 uid 를 넣거나 isAdmin 조건을 되살린다.
+window.TEST_UIDS = [];
 window.isMatchTester = function () {
   const u = window.currentUser;
   if (!u) return false;
-  if (typeof isAdmin === 'function' && isAdmin()) return true;
   return !!(u.uid && window.TEST_UIDS.includes(u.uid));
 };
 
@@ -7802,7 +7831,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '362';
+window._SW_V = '363';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -8051,7 +8080,7 @@ onAuthStateChanged(auth, async (user) => {
     await checkAndSetNickname(user);
     if (window.ensureCreditsInit) window.ensureCreditsInit(user.uid);
     // 어제·오늘 내 방에 다녀갔거나 좋아요 누른 게 있으면 여기서 정산한다(내 문서만 쓸 수 있어서)
-    if (window.mwClaimSocialCredits) setTimeout(window.mwClaimSocialCredits, 2500);
+    // (소셜 보상은 이제 행동하는 그 자리에서 준다 — 로그인 시 지연정산이 필요 없다)
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
     if (window.loadCentersFirestore) window.loadCentersFirestore();
@@ -8216,7 +8245,22 @@ window.celebrateMurpy = function (balance, opts) {
     el.removeEventListener('click', close);
   };
   el.addEventListener('click', close);
-  el._t = setTimeout(close, 2400);
+  el._t = setTimeout(close, opts.small ? 1500 : 2400);
+};
+// 소소한 적립(+1~2) 전용 — 같은 연출을 **작게, 짧게** 쓴다.
+// ★토스트만 띄우면 "왜 받았는지"가 안 남는다(대표 지적 2026-08-05). 이유를 제목에 박는다.
+//   그렇다고 운동 인증과 같은 크기로 터뜨리면 소소한 적립이 과장돼 보인다 → 크기만 줄인다.
+window.murpyMini = function (amount, reason) {
+  const el = document.getElementById('murpy-celebrate');
+  if (!el || !window.celebrateMurpy) return;
+  el.classList.add('mc-mini');
+  window.celebrateMurpy(0, {
+    amount: amount, title: reason, small: true,
+    iconHtml: window.murpyTokenSVG ? window.murpyTokenSVG(64) : ''
+  });
+  // 다음 축하가 큰 연출이면 다시 원래 크기로 돌아가야 한다
+  clearTimeout(window._mcMiniT);
+  window._mcMiniT = setTimeout(function () { el.classList.remove('mc-mini'); }, 1900);
 };
 
 // 머피 첫 적립 안내 카드 (평생 1회). 콘솔 미리보기 가능하도록 window 노출.
@@ -8673,12 +8717,18 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //   | 하루 첫 운동 인증 |  +1  | 하루 1회    |   30   |
 //   | 센터 체크인(GPS)  |  +2  | 하루 1회    |   30   |  ← 실제로 가야 하니 인증보다 무겁다
 //   | 스트릭 7일 달성   |  +5  | 7일마다     |   20   |
-//   | 내 방 방문자      |  +1  | 하루 2회    |   20   |
-//   | 좋아요 받음       |  +1  | 하루 2회    |   20   |
-//   | 스쿼드 벙 완료    |  +5  | 회당(호스트)|   10   |
+//   | 남의 방 구경      |  +1  | 하루 2회    |   20   |  ← ★내가 '가면' 받는다(아래 참고)
+//   | 좋아요 누르기     |  +1  | 하루 2회    |   20   |  ← ★내가 '누르면' 받는다
+//   | 스쿼드 벙 완료    | +10  | 회당(호스트)|   20   |
 //   | 스쿼드 출석       |  +2  | 회당        |    8   |
 //   | 새 센터 도감 등록 |  +3  | 센터당 1회  |    9   |
 //   | 시즌 오브젝트     | +10  | 획득 시     |   10   |
+//   | 범프(첫/새 만남)  |+10/+5| 하루 3명    |   30   |  ← 같은 사람 반복은 제외
+//
+//   ★소셜 보상의 방향 (대표 결정 2026-08-05): **받는 쪽이 아니라 하는 쪽**이 받는다.
+//     받는 쪽에 주면 (a) 보상과 내 행동이 연결되지 않고 (b) 남이 안 와주면 영영 못 받아
+//     신규 유저일수록 불리한 역진적 구조가 된다. 하는 쪽에 주면 돌아다닐 이유가 생기고,
+//     방 주인은 방문수·좋아요(인기)로 보상받으므로 양쪽 다 남는다.
 //
 //   ★가입 선물을 10 → 30 으로 올린다. 첫 주에 과금 벽을 만나면 안 된다(구간별 과금 배치:
 //     0~3일은 과금 금지, 연료만 준다). 10이면 매칭 5번에 끝난다.
@@ -8695,10 +8745,14 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 const CREDIT_WELCOME = 30, CREDIT_DAILY = 1, COST_MATCH = 5, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
 //   ※ 인테리어 슬롯 확장권 상수(COST_SLOT_EXT / MW_SLOT_*)는 **꾸미기 편집기 쪽**에 있다.
 //     편집기는 모듈 밖 스크립트라 여기(module) 의 const 를 못 본다.
-const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKED = 1,
-      CREDIT_SQUAD_HOST = 5, CREDIT_SQUAD_ATTEND = 2, CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
-// 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기)을 막는 상한
-const CAP_VISIT_DAY = 2, CAP_LIKED_DAY = 2;
+const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKE = 1,
+      CREDIT_SQUAD_HOST = 10, CREDIT_SQUAD_ATTEND = 2, CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
+// 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기·껐다켜기)을 막는 상한
+const CAP_VISIT_DAY = 2, CAP_LIKE_DAY = 2;
+// ★범프 보상 — 아는 사람끼리 계속 부딪혀 파밍하는 걸 막는 게 핵심이다(대표 지적 2026-08-05).
+//   같은 상대라도 **다른 스쿼드 / 다른 날**이면 새 만남으로 친다. 같은 스쿼드·같은 날에
+//   같은 사람과 몇 번을 부딪혀도 처음 1회만 인정된다. 판정키 = {sid}_{날짜}_{상대uid}
+const CREDIT_BUMP_FIRST = 10, CREDIT_BUMP = 5, CAP_BUMP_DAY = 3;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
@@ -8815,6 +8869,9 @@ window._mwSeasonModalNext = function () {
       </div>
       <div style="font-family:'Galmuri14',sans-serif;font-size:16px;color:#fff;margin-bottom:${it.title ? '7px' : '16px'}">${it.name}</div>
       ${it.title ? `<div style="font-size:11.5px;color:${it.kind === 'hidden' ? '#C9A8FF' : '#F5C24B'};margin-bottom:16px">칭호 · ${it.title}</div>` : ''}
+      ${it._earned ? `<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;background:rgba(245,194,75,.1);
+        border:1px solid rgba(245,194,75,.35);padding:6px 12px">${window.murpyTokenSVG ? window.murpyTokenSVG(14) : ''}
+        <span style="font-size:12px;color:#F5C24B;font-weight:800">한정 획득 보너스 +${it._earned} 머피</span></div>` : ''}
       <button onclick="window.mwSeasonModalGoRoom()" style="width:100%;font-family:inherit;cursor:pointer;
               border:2px solid #05070c;background:#3D7EFF;color:#fff;font-size:13px;padding:11px;margin-bottom:7px">방에 놓으러 가기</button>
       <button onclick="window._mwSeasonModalNext()" style="width:100%;font-family:inherit;cursor:pointer;
@@ -8872,8 +8929,18 @@ window.mwSeasonCheck = async function () {
       finally { _seasonBusy.delete(it.id); }
     }
   }
+  // 한정 오브젝트 획득 보너스 — 머피는 **조용히** 넣고 모달 안에 한 줄로 보여준다.
+  // 획득 모달이 이미 축하 화면이라, 그 위에 코인 연출을 또 덮으면 정작 아이템이 안 보인다.
+  // 관리자 시즌 실험실(_seasonLab.on)에서는 실계정에 머피가 들어가면 안 된다.
+  // ★SEASON_ITEMS 원본을 건드리면 안 된다(카탈로그라 앱 내내 재사용된다) — 복사본에만 표시한다
+  const _shown = _granted.map(function (it) { return Object.assign({}, it); });
+  if (!window._seasonLab.on) {
+    for (const it of _shown) {
+      if (await window.earnCredit(CREDIT_SEASON, '')) it._earned = CREDIT_SEASON;
+    }
+  }
   // 전용 모달이라 기존 축하와 DOM이 겹치지 않는다 — 지연 없이 바로 띄운다
-  _granted.forEach(function (it) { window.mwSeasonCelebrate(it); });
+  _shown.forEach(function (it) { window.mwSeasonCelebrate(it); });
 };
 // 미개봉 상자 렌더 (방 구석 — mwBoxSpot). clickable=true면 본인 방 → 탭해서 개봉.
 // opts={room,uid} 를 주면 그 방 기준으로 자리를 잡는다(남의 방 구경).
@@ -9352,60 +9419,55 @@ window.earnCredit = async function (amount, reason) {
     await updateDoc(doc(db, 'users', uid), { credits: increment(amount) });
     window._creditState.credits += amount;
     if (window.renderCreditUI) window.renderCreditUI();
-    if (reason && window.showToast) showToast(reason + ' +' + amount + '머피');
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    // ★사유를 보여주는 게 핵심이다. 토스트는 스쳐 지나가서 왜 받았는지가 안 남았다(대표 지적).
+    if (reason && window.murpyMini) window.murpyMini(amount, reason);
+    else if (reason && window.showToast) showToast(reason + ' +' + amount + '머피');
     return true;
   } catch (e) { return false; }
 };
 
-// ★소셜 보상(방 방문·좋아요)은 **받는 사람이 직접 정산한다.**
-//   방문자가 내 credits 를 올려줄 수가 없다 — users/{uid} 는 본인만 쓸 수 있기 때문(보안규칙).
-//   그래서 앱을 열 때 오늘 쌓인 방문수·좋아요를 읽어 아직 안 받은 만큼만 적립한다.
-//   socialEarn = { d: 날짜, visit: 오늘받은수, liked: 오늘받은수, likeSeen: 마지막확인 총좋아요 }
-//   → 여러 번 실행해도 같은 결과(멱등). 하루 한도로 서로 눌러주기 어뷰징도 막는다.
-window.mwClaimSocialCredits = async function () {
+// ★소셜 보상은 **행동한 사람이 그 자리에서 받는다** (대표 결정 2026-08-05).
+//   예전엔 "내 방이 방문받으면 / 내가 좋아요받으면" 주는 방식이었다. 두 가지가 문제였다.
+//     1) 받는 쪽은 자기가 뭘 해서 받은 게 아니라 보상과 행동이 연결되지 않는다
+//     2) 남이 안 와주면 영영 못 받는다 — 신규 유저일수록 못 받는 역진적 구조
+//   이제 **내가 남의 방에 가면 / 내가 좋아요를 누르면** 받는다. 돌아다닐 이유가 생기고,
+//   방 주인은 방문수·좋아요(인기)로 보상받으므로 양쪽 다 남는다.
+//
+//   socialEarn = { d: 날짜, visit: 오늘받은횟수, like: 오늘받은횟수 }
+//   users/{uid} 는 본인만 쓸 수 있는데 이제 쓰는 주체가 본인이라 규칙에 걸릴 일도 없다.
+//   하루 한도(CAP_*)로 상한을 둔다 — 좋아요는 껐다 켜기를 반복할 수 있어 한도가 유일한 방벽이다.
+window.mwEarnSocial = async function (kind, reason) {   // kind: 'visit' | 'like'
   const uid = window.currentUser && window.currentUser.uid;
-  if (!uid) return;
+  if (!uid) return false;
   const day = _creditToday();
+  const cap = (kind === 'visit') ? CAP_VISIT_DAY : CAP_LIKE_DAY;
+  const amount = (kind === 'visit') ? CREDIT_VISIT : CREDIT_LIKE;
   try {
-    const meSnap = await getDoc(doc(db, 'users', uid));
-    const se = (meSnap.exists() && meSnap.data().socialEarn) || {};
-    const sameDay = se.d === day;
-    const gotV = sameDay ? (se.visit || 0) : 0;
-    const gotL = sameDay ? (se.liked || 0) : 0;
-    const seen = se.likeSeen || 0;
-
-    let visits = 0;
-    try {
-      const rs = await getDoc(doc(db, 'users', uid, 'roomstat', day));
-      visits = Math.max(0, (rs.exists() && rs.data().count) || 0);
-    } catch (e) {}
-    const wantV = Math.min(visits, CAP_VISIT_DAY);
-    const addV = Math.max(0, wantV - gotV);
-
-    let total = 0;
-    for (const k of ['char', 'room']) {
-      try {
-        const s = await getDoc(doc(db, 'users', uid, 'likestat', k));
-        total += Math.max(0, (s.exists() && s.data().count) || 0);
-      } catch (e) {}
-    }
-    // 좋아요는 누적값이라 **증가분**만 본다. 취소로 줄었으면 기준선만 낮춘다(음수 적립 없음).
-    const delta = Math.max(0, total - seen);
-    const addL = Math.max(0, Math.min(delta, CAP_LIKED_DAY - gotL));
-
-    if (!addV && !addL && seen === total) return;
-    const amount = addV * CREDIT_VISIT + addL * CREDIT_LIKED;
-    await updateDoc(doc(db, 'users', uid), {
-      credits: increment(amount),
-      socialEarn: { d: day, visit: gotV + addV, liked: gotL + addL, likeSeen: total }
+    // 읽고-쓰기라 트랜잭션이어야 한다. 방을 빠르게 여러 개 열면 겹칠 수 있다.
+    const paid = await runTransaction(db, async tx => {
+      const meRef = doc(db, 'users', uid);
+      const s = await tx.get(meRef);
+      if (!s.exists()) return false;
+      const se = s.data().socialEarn || {};
+      const same = se.d === day;
+      const n = same ? (se[kind] | 0) : 0;
+      if (n >= cap) return false;
+      const next = same ? Object.assign({}, se) : { d: day };
+      next.d = day;
+      next[kind] = n + 1;
+      tx.update(meRef, { credits: increment(amount), socialEarn: next });
+      return true;
     });
-    if (amount) {
-      window._creditState.credits += amount;
-      if (window.renderCreditUI) window.renderCreditUI();
-      const what = addV && addL ? '방문·좋아요' : (addV ? '내 방 방문' : '좋아요');
-      if (window.showToast) showToast(what + ' +' + amount + '머피');
-    }
-  } catch (e) {}
+    if (!paid) return false;
+    window._creditState.credits += amount;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    // ★토스트로만 띄우면 왜 받았는지가 안 남는다(대표 지적). 축하 연출을 작게 재사용한다.
+    if (window.murpyMini) window.murpyMini(amount, reason);
+    else if (window.showToast) showToast(reason + ' +' + amount + '머피');
+    return true;
+  } catch (e) { return false; }
 };
 
 window.renderCreditUI = function () {
@@ -13119,6 +13181,9 @@ window.mwVisitRoom = async function (uid) {
       });
     } catch (e) {}
   }
+  // ★방문 보상은 **오늘 처음 온 방**일 때만. 같은 방을 새로고침해도 firstToday 가 false 라
+  //   중복 적립이 안 된다 — TODAY 카운트와 판정을 공유하는 게 핵심이다.
+  if (firstToday && window.mwEarnSocial) window.mwEarnSocial('visit', nick + '님 방 구경');
   window.mwGbLoad(uid);
   window.mwLikeBtn('mw-rm-like', uid, 'room', '이 방 좋아요');
 };
@@ -13173,7 +13238,11 @@ window._mwLikeTap = async function (elId, uid, kind, label) {
   const on = await window.mwLikeToggle(uid, kind);
   if (on === null) return;
   await window.mwLikeBtn(elId, uid, kind, label);
-  if (on) { if (navigator.vibrate) navigator.vibrate(8); }
+  if (on) {
+    if (navigator.vibrate) navigator.vibrate(8);
+    // 켤 때만 적립한다. 껐다 켜기를 반복해도 하루 한도(CAP_LIKE_DAY)에서 막힌다.
+    if (window.mwEarnSocial) window.mwEarnSocial('like', (kind === 'room' ? '방' : '캐릭터') + ' 좋아요');
+  }
 };
 
 // ===== 링 메뉴 > 캐릭터 정보 (메이플식 장비창) =====
@@ -13694,6 +13763,13 @@ window.mwSealCheckin = async function (btn) {
   // 같은 센터·같은 날 재도장은 같은 문서를 덮어쓰므로, 처음 찍는 경우에만 월간 카운터를 올린다
   let _isNewCheckin = true;
   try { const _prevCk = await getDoc(doc(db, 'checkins', id)); _isNewCheckin = !_prevCk.exists(); } catch (e) {}
+  // ★"처음 가 본 센터인가"는 **저장 전에** 판정해야 한다. 저장 뒤에 조회하면 방금 찍은 도장이
+  //   섞여 들어와 항상 '이미 가봤음'이 되고 보너스가 영영 안 나간다.
+  let _isNewCenter = false;
+  try {
+    const _hist = await mwLoadCheckins();
+    _isNewCenter = Array.isArray(_hist) && !_hist.some(k => String(k.centerId) === String(t.center.id));
+  } catch (e) {}
   try {
     await setDoc(doc(db,'checkins',id), {
       uid:user.uid, centerId:String(t.center.id), centerName:t.center.name, day:mwTodayKey(),
@@ -13708,7 +13784,16 @@ window.mwSealCheckin = async function (btn) {
   window._mwOverlayClose();
   // 체크인 적립 — 실제로 그 헬스장에 가야(GPS 200m) 찍히므로 홈에서 하는 인증(+1)보다 무겁다.
   // 같은 센터 같은 날 재도장은 위에서 이미 막혀 있어 하루 여러 번 안 쌓인다.
-  if (_isNewCheckin && window.earnCredit) window.earnCredit(CREDIT_CHECKIN, '체크인');
+  // 처음 가 보는 센터면 보너스를 얹는다 — 늘 가던 곳만 찍는 것보다 새 헬스장을 뚫는 게 도감의 목적이다.
+  // ★한 번에 합쳐서 준다. 따로 두 번 부르면 축하 연출이 같은 DOM을 덮어써서 뒷것만 보인다.
+  // ★적립은 지금 하되 **보여주는 건 도장 쾅 연출이 끝난 뒤**(1500ms). 바로 띄우면 반투명 축하가
+  //   도장 연출을 덮어버린다. 아래 도감 보너스·히든 판정도 이 뒤로 밀어 축하가 겹치지 않게 줄 세운다.
+  if (_isNewCheckin && window.earnCredit) {
+    const _amt = _isNewCenter ? CREDIT_CHECKIN + CREDIT_NEW_CENTER : CREDIT_CHECKIN;
+    const _why = _isNewCenter ? '새 센터 · ' + t.center.name : '체크인';
+    window.earnCredit(_amt, '');
+    setTimeout(function () { if (window.murpyMini) window.murpyMini(_amt, _why); }, 1520);
+  }
   window._mwCheckins = null; window._mwTodayCk = null;   // 캐시 무효화 — 방금 도장이 바로 반영되게
   window._mwReqReady = false;   // 증명형 진행률도 다시 세게 한다(방금 1 늘었다)
   if (navigator.vibrate) navigator.vibrate([15,40,35]);
@@ -13725,9 +13810,10 @@ window.mwSealCheckin = async function (btn) {
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
   if (_isNewCheckin && window.mwBumpMonthly) window.mwBumpMonthly('checkin');
   // 도감 보너스 판정 (도장 쾅 연출 끝난 뒤 축하가 이어지도록)
-  setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 1700);
+  // (적립 축하가 1520~3020ms 를 쓰므로 그 뒤로 민다 — 셋이 같은 DOM을 쓴다)
+  setTimeout(()=>{ if (window._mwDogamBonusCheck) window._mwDogamBonusCheck(); }, 3200);
   // 히든 캐릭터 판정 (방금 체크인 반영 — 도감 보너스 축하 뒤에 이어지도록 더 늦게)
-  setTimeout(()=>{ if (window.mwCheckHidden) window.mwCheckHidden(); }, 2600);
+  setTimeout(()=>{ if (window.mwCheckHidden) window.mwCheckHidden(); }, 5900);
 };
 
 window.joinCrewFirestore = async (crewId) => {
@@ -15700,6 +15786,8 @@ window.sqSubmitCode = async function (sid, codeArg) {
     if (mSnap.data().checkedIn) { showToast('이미 도장 찍었어요'); return; }
     const late = Date.now() > s.scheduledAt + 5 * 60 * 1000;
     await updateDoc(mRef, { checkedIn: true, checkinTime: serverTimestamp(), checkinType: late ? 'late' : 'present', status: 'checkedIn' });
+    // 출석 적립 — 위에서 checkedIn 을 이미 걸러내므로 스쿼드당 1회만 들어온다
+    if (window.earnCredit) window.earnCredit(CREDIT_SQUAD_ATTEND, '스쿼드 출석');
     if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     const el = document.getElementById('sq-attend'); if (el) el.remove();
     showToast(late ? '지각 도장 찍었어요' : '오운완 도장 쾅!');
@@ -15731,12 +15819,16 @@ window.sqComplete = async function (sid) {
     await updateDoc(doc(db,'squads',sid), { status:'completed', endedAt: serverTimestamp(), hostRewarded: s.hostRewarded || reward });
     for (const u of checkedIn) { try { await updateDoc(doc(db,'squads',sid,'members',u), { status:'completed' }); } catch(e) {} }
     try { await updateDoc(doc(db,'users',me), reward
-      ? { 'hostStats.completed': increment(1), credits: increment(10) }
+      ? { 'hostStats.completed': increment(1), credits: increment(CREDIT_SQUAD_HOST) }
       : { 'hostStats.completed': increment(1) }); } catch(e) {}
     window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
     if (reward) {
-      showToast('스쿼드 완주! +10 머피 적립');
+      // 로컬 잔액도 맞춰준다 — 예전엔 서버만 올려서 화면 숫자가 새로고침 전까지 안 맞았다
+      window._creditState.credits += CREDIT_SQUAD_HOST;
+      if (window.renderCreditUI) window.renderCreditUI();
       window.mwUpdateCoin && window.mwUpdateCoin();
+      if (window.murpyMini) window.murpyMini(CREDIT_SQUAD_HOST, '스쿼드 완주');
+      else showToast('스쿼드 완주! +' + CREDIT_SQUAD_HOST + ' 머피 적립');
     } else showToast('스쿼드를 종료했어요');
   } catch(e) { console.error(e); showToast('종료 실패'); }
 };
@@ -15775,6 +15867,8 @@ window.bumpIconHtml = function (sz) {
       image-rendering:pixelated;filter:drop-shadow(0 1px 0 rgba(0,0,0,.35))"></span>
     ${line(3, -4, 6, -30)}${line(11, -6, 7, 0)}${line(19, -4, 6, 30)}</span>`;
 };
+// 이번 범프에서 출석으로 받은 머피 — 완료 화면 합계에 얹으려고 잠깐 들고 있는다
+let bpAttendCredit = 0;
 let bpBuf = [], bpSid = null, bpRole = 'guest', bpMeRef = null, bpUnsub = null,
     bpLastPeak = 0, bpUsed = {}, bpDone = false, bpOri = null, bpOff = 0, bpMotion = null,
     bpMyChar = null, bpArrivedAt = 0;
@@ -15908,8 +16002,11 @@ async function bpSucceed(other, dt) {
     return;
   }
   await bpScene(await charP);
-  await bpSaveBumper(other, place);
-  bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already' });
+  const bk = await bpSaveBumper(other, place);
+  const _att = bpAttendCredit; bpAttendCredit = 0;
+  const earned = (await bpEarn(bk.stacked, bk.first)) + _att;
+  bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already',
+                      stacked: bk.stacked, first: bk.first, earned: earned, attend: !!_att });
   if (window._rt && bpSid) {
     try { window._rt.update(window._rt.ref(window._rt.db, 'squadRooms/' + bpSid + '/players/' + user.uid), { stamp: Date.now() }); } catch (e) {}
   }
@@ -15952,6 +16049,9 @@ async function bpAttend(sid, otherUid) {
       checkinType: late ? 'late' : 'present', checkinVia: 'bump',
       verifiedBy: otherUid || null, status: 'checkedIn'
     });
+    // 출석 적립 — 여기서는 **조용히** 준다(reason 없음). 곧바로 범프 완료 화면이 뜨는데
+    // 그 위에 코인 연출을 겹치면 상대·시각차를 가린다. 대신 완료 화면의 합계에 얹는다.
+    if (window.earnCredit) { await window.earnCredit(CREDIT_SQUAD_ATTEND, ''); bpAttendCredit = CREDIT_SQUAD_ATTEND; }
     if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     window._sqStampPop && window._sqStampPop(user.uid);
     window.sqChatSys && window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 범프 출석!' + (late ? ' (지각)' : ''));
@@ -15961,12 +16061,26 @@ async function bpAttend(sid, otherUid) {
 
 // 범퍼 = 실제로 만나 범프한 사람. users 문서의 맵으로 저장해 보안규칙 수정이 필요 없다.
 // 캐릭터는 '그때 그 차림'으로 스냅샷해 둔다 — 나중에 옷을 갈아입어도 그날이 남는다.
+//
+// ★스택(count)은 **스쿼드마다 상대별 최초 1범프**에만 쌓인다 (대표 지시 2026-08-05).
+//   예전엔 맞댈 때마다 count 가 올라서, 아는 사람 둘이 계속 부딪히면 도감이 무한히 부풀었다.
+//   출석은 어차피 1회로 끝나므로(bpAttend 가 'already' 반환) 재범프는 **연출만 다시 보는 것**이
+//   되어야 맞다. 판정키 = {스쿼드}_{날짜}_{상대uid} 를 상대별로 기억해 두고 비교한다.
+//     같은 스쿼드·같은 날 재범프 → 키가 같다 → 스택 X, 보상 X, 연출만
+//     다른 스쿼드 또는 다른 날   → 키가 다르다 → 새 만남으로 인정 → 스택 O, 보상 O
+//   키 하나만 들고 있으면 되므로(직전 것과 비교) 배열이 무한히 늘지 않는다.
+// 반환: { stacked: 스택이 올랐나, first: 내 인생 첫 범프였나 }
 async function bpSaveBumper(other, place) {
-  const user = auth.currentUser; if (!user || !other) return;
+  const user = auth.currentUser; if (!user || !other) return { stacked: false, first: false };
   try {
     const meSnap = await getDoc(doc(db, 'users', user.uid));
     const prev = (meSnap.exists() && meSnap.data().bumpers) || {};
     const was = prev[other.uid] || {};
+    const d = new Date();
+    const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const key = (bpSid || 'free') + '_' + day + '_' + other.uid;
+    const stacked = was.key !== key;
+    const first = Object.keys(prev).length === 0;
     let ch = null;
     try { const os = await getDoc(doc(db, 'users', other.uid)); if (os.exists()) ch = os.data().character || null; } catch (e) {}
     await setDoc(doc(db, 'users', user.uid), {
@@ -15976,12 +16090,45 @@ async function bpSaveBumper(other, place) {
           character: was.character || ch,
           firstAt: was.firstAt || Date.now(),
           lastAt: Date.now(),
-          count: (was.count || 0) + 1,
+          count: (was.count || 0) + (stacked ? 1 : 0),
+          key: key,
           place: place || was.place || ''
         }
       })
     }, { merge: true });
-  } catch (e) { console.error('bumper save', e); }
+    return { stacked, first };
+  } catch (e) { console.error('bumper save', e); return { stacked: false, first: false }; }
+}
+
+// 범프 보상 — 스택이 오른 범프(= 새 만남)에만 준다. 하루 CAP_BUMP_DAY 명까지.
+// 상한을 두는 이유: 새 사람이면 주는 규칙이라 단체방에서 한 바퀴 돌면 인원수만큼 벌 수 있다.
+// 반환: 적립한 머피(0이면 안 준 것)
+async function bpEarn(stacked, first) {
+  const user = auth.currentUser;
+  if (!user || !stacked) return 0;
+  const day = _creditToday();
+  const amount = first ? CREDIT_BUMP_FIRST : CREDIT_BUMP;
+  try {
+    const got = await runTransaction(db, async tx => {
+      const meRef = doc(db, 'users', user.uid);
+      const s = await tx.get(meRef);
+      if (!s.exists()) return 0;
+      const se = s.data().socialEarn || {};
+      const same = se.d === day;
+      const n = same ? (se.bump | 0) : 0;
+      if (n >= CAP_BUMP_DAY) return 0;
+      const next = same ? Object.assign({}, se) : { d: day };
+      next.d = day; next.bump = n + 1;
+      tx.update(meRef, { credits: increment(amount), socialEarn: next });
+      return amount;
+    });
+    if (got) {
+      window._creditState.credits += got;
+      if (window.renderCreditUI) window.renderCreditUI();
+      if (window.mwUpdateCoin) window.mwUpdateCoin();
+    }
+    return got;
+  } catch (e) { return 0; }
 }
 
 // ---------- 오버레이 ----------
@@ -16056,12 +16203,24 @@ function bpOverlay(mode, data) {
         font-size:13px;padding:8px;cursor:pointer;font-family:inherit">닫기</button>`;
   } else {
     const o = data.other;
+    // ★적립을 별도 토스트로 띄우지 않고 **여기 안에** 넣는다. 범프는 이미 제 축하 화면을 갖고 있어서
+    //   그 위에 코인 연출을 또 덮으면 정작 상대·시각차라는 핵심을 가린다.
+    //   대신 왜 받았는지가 한 줄로 남는다 — 토스트가 스쳐 지나가던 문제(대표 지적)는 해결된다.
+    const coin = window.murpyTokenSVG ? window.murpyTokenSVG(15) : '';
+    const earnHtml = data.earned
+      ? `<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;background:rgba(245,194,75,.1);
+           border:1px solid rgba(245,194,75,.35);border-radius:10px;padding:7px 13px">${coin}
+           <span style="font-size:12.5px;color:#F5C24B;font-weight:800">
+           ${data.attend ? '출석' + (data.stacked ? ' · ' : '') : ''}${data.stacked ? (data.first ? '첫 범프' : '새 만남') : ''} +${data.earned} 머피</span></div>`
+      : (data.stacked ? '' : `<div style="font-size:11.5px;color:#4a5266;margin-bottom:16px">
+           이 스쿼드에서 이미 만난 사이예요 · 기록은 그대로예요</div>`);
     el.innerHTML = `
       <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:${c};margin-bottom:6px">범프 성공</div>
       <div style="font-family:'Galmuri14',sans-serif;font-size:22px;color:#fff;margin-bottom:4px">${(o.nick || '머피')}</div>
-      <div style="font-size:12.5px;color:#8a93a8;margin-bottom:18px">
+      <div style="font-size:12.5px;color:#8a93a8;margin-bottom:14px">
         ${data.place ? data.place + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
-        <span style="color:${c}">범퍼로 등록됐어요</span></div>
+        <span style="color:${c}">${data.stacked ? '범퍼로 등록됐어요' : '다시 만났어요'}</span></div>
+      ${earnHtml}
       <div style="font-size:12.5px;color:${data.late ? '#F5C24B' : '#4ade80'};margin-bottom:6px">
         ${data.already ? '이미 도장이 있어요' : (data.late ? '지각 도장 찍었어요' : '오운완 도장 쾅!')}</div>
       <div style="font-size:11.5px;color:#4a5266;margin-bottom:20px">이제 아직 안 찍은 사람에게<br>도장을 찍어줄 수 있어요</div>
