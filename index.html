@@ -7846,7 +7846,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '373';
+window._SW_V = '374';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -10554,18 +10554,22 @@ const _KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
 //   동작은 했지만 옛 주소를 정리하는 순간 로그인이 통째로 죽는다.
 //   ※ 여기 값은 카카오 개발자센터의 Redirect URI 에 **똑같이 등록돼 있어야** 한다.
 //     그리고 Worker 가 토큰 교환할 때 쓰는 값과도 같아야 한다(아래에서 함께 보낸다).
-const _KAKAO_REDIRECT_URI = (function () {
+// ★반드시 **함수**여야 한다. const 로 두면 안 된다 —
+//   리다이렉트 복귀 처리(_kakaoCodeToAuth 를 부르는 IIFE)가 이 파일 **위쪽**에서 먼저 돌아서,
+//   const 는 아직 초기화 전이라 "Cannot access before initialization" 으로 로그인이 통째로 깨진다
+//   (2026-08-05 실제로 냈던 사고). 함수 선언은 호이스팅돼서 어디서 불러도 안전하다.
+function _kakaoRedirectUri() {
   const h = location.hostname;
   if (h === 'murpy.app' || h === 'www.murpy.app') return 'https://murpy.app';
   return 'https://dyrhl4321-stack.github.io/Murpy';
-})();
+}
 
 async function _kakaoCodeToAuth(code) {
   const resp = await fetch('https://murpy-kakao.dyrhl2356.workers.dev', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // redirect_uri 를 함께 보낸다 — 카카오는 authorize 때와 **같은 값**으로 교환해야 통과시킨다.
-    body: JSON.stringify({ code, redirect_uri: _KAKAO_REDIRECT_URI })
+    body: JSON.stringify({ code, redirect_uri: _kakaoRedirectUri() })
   });
   const data = await resp.json();
   if (!data.access_token) throw new Error(data.error_description || data.error || '토큰 교환 실패');
@@ -10608,14 +10612,14 @@ window.kakaoLogin = async () => {
   // 모바일: Kakao SDK 공식 메서드로 리다이렉트 → 카카오톡 앱 간편로그인
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
-    Kakao.Auth.authorize({ redirectUri: _KAKAO_REDIRECT_URI, throughTalk: true });
+    Kakao.Auth.authorize({ redirectUri: _kakaoRedirectUri(), throughTalk: true });
     return;
   }
 
   // PC: 팝업 + 인가코드(code) flow.
   // ※ 예전 response_type=token(implicit)은 카카오가 KOE202로 차단함(OAUTH_IMPLICIT_GRANT_SUPPORTED 권한 필요).
   //   되돌리지 말 것 — 모바일과 동일하게 code를 받아 Worker에서 교환한다.
-  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_KAKAO_REDIRECT_URI)}&response_type=code`;
+  const authUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${_KAKAO_JS_KEY}&redirect_uri=${encodeURIComponent(_kakaoRedirectUri())}&response_type=code`;
   const popup = window.open(authUrl, 'kakaoLogin', 'width=500,height=700,scrollbars=yes,resizable=yes');
   if (!popup) { showToast('팝업이 차단됐어요. 팝업 허용 후 다시 시도해주세요'); return; }
 
