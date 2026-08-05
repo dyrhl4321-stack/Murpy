@@ -7831,7 +7831,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '364';
+window._SW_V = '365';
 // 마이페이지 하단 앱 정보에 현재 버전 표시
 try {
   window.addEventListener('load', function () {
@@ -13112,13 +13112,17 @@ window.mwVisitRoom = async function (uid) {
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
         <div style="position:absolute;top:8px;left:8px;z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:3px 8px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#8a93a8;pointer-events:none">TODAY <b id="mw-rm-today" style="color:#F5C24B">-</b></div>
+        <!-- ★안내 문구는 **방 안**에 둔다. 예전엔 스테이지 아래에 좋아요 버튼과 세로로 겹쳐 있어서
+             가운데 정렬된 가로줄이 두 개 쌓였다(대표 지적 2026-08-05). 여기로 내리면 밑이 한 줄로
+             정리되고, 문구가 가리키는 대상(캐릭터) 바로 옆에 붙어 뭘 누르라는 건지도 바로 읽힌다.
+             pointer-events:none — 이 칩이 캐릭터 탭을 가로채면 안 된다. -->
+        <div id="mw-rm-hint" style="position:absolute;left:50%;bottom:7px;transform:translateX(-50%);z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:4px 10px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#8a93a8;white-space:nowrap;pointer-events:none">캐릭터를 눌러보세요</div>
       </div>
       <!-- 실명 연결·스쿼드 초대는 **캐릭터를 눌러야** 나온다(링 메뉴). 여기 버튼을 따로 두면
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
       <!-- 방 좋아요는 **방을 보고 있는 여기서** 누른다. 캐릭터 정보 창까지 들어가서 누르면
            한 바퀴 돌아가는 셈이라 대상과 버튼이 어긋난다(캐릭터 좋아요는 정보 창 안에 있다). -->
-      <div id="mw-rm-like" style="display:flex;justify-content:center;margin:2px 0 9px"></div>
-      <div id="mw-rm-hint" style="text-align:center;font-size:11px;color:#4a5266;margin:0 0 15px;font-family:'Galmuri11',sans-serif">캐릭터를 눌러보세요</div>
+      <div id="mw-rm-like" style="display:flex;justify-content:center;margin:2px 0 15px"></div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -13151,6 +13155,15 @@ window.mwVisitRoom = async function (uid) {
     vstage.insertAdjacentHTML('beforeend',
       `<div id="mw-vroom-owner"${_mine ? '' : ` onclick="window.mwOtherMenu('${uid}','${_nickJs}',event)"`}
         style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}${vNick}</div>`);
+    // 힌트 칩은 방 안 하단 중앙에 있다. 방 주인이 아래쪽에 서 있으면 발밑 닉네임과 겹치므로
+    // 그럴 때만 우상단으로 피한다(좌상단은 TODAY 가 쓰고 있다).
+    const _hint = el.querySelector('#mw-rm-hint');
+    if (_hint && rp.tr >= N - 4) {
+      _hint.style.bottom = 'auto'; _hint.style.left = 'auto'; _hint.style.transform = 'none';
+      _hint.style.top = '8px'; _hint.style.right = '8px';
+    }
+    // 내 방에서는 안내가 필요 없다 — 나한테 링 메뉴가 안 뜬다
+    if (_mine && _hint) _hint.remove();
     if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(); }, 520);
   }
   // TODAY 카운트 — ★**1인 1일 1회**. 예전엔 방을 열 때마다 increment 해서, 같은 사람이
