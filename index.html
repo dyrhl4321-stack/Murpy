@@ -7895,7 +7895,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '381';
+window._SW_V = '382';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -12782,7 +12782,8 @@ window.mwRenderDogam = async function () {
         <span style="font-size:11px;color:#4a5266;flex-shrink:0">발견 <b style="color:#cfd6e6">${expDiscovered}</b>/${expTotal}</span>
       </div>
       ${passport||'<div style="color:#4a5266;font-size:12px;text-align:center;padding:14px">등록된 센터가 없어요</div>'}
-    </div>`;
+    </div>
+    <div style="margin-top:14px">${window._mwAddCenterBtn()}</div>`;
   window._mwRenderBadges && window._mwRenderBadges();
 };
 // 로고 → 8비트 픽셀화 (12px로 줄였다 NEAREST 확대)
@@ -12957,6 +12958,115 @@ async function mwLoadLeaflet() {
     const s=document.createElement('script'); s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s);
   });
 }
+// ===== 내 헬스장 등록 (현재 위치로) =====
+// ★주소를 좌표로 바꾸는 API 를 붙이지 않는다. 그 헬스장에 서 있을 때 등록하면
+//   현재 위치가 곧 센터 좌표다. 체크인 반경이 200m 라 현장 좌표면 충분히 정확하고,
+//   현장에 있는 사람만 등록할 수 있어서 장난·중복 데이터도 줄어든다.
+// ★옛 등록 폼(registerCenter, 센터 탭)은 쓰지 않는다 — 좌표를 안 받아서 반쪽짜리 센터가 된다.
+//   좌표가 없으면 GPS 체크인도 지도 핀도 동작하지 않는다.
+window._mwAddCenterBtn = function () {
+  return `<button onclick="window.mwAddCenterHere()" style="width:100%;margin-top:4px;padding:13px;
+    background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.38);border-radius:12px;
+    color:#86efac;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+    display:flex;align-items:center;justify-content:center;gap:7px">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    내가 다니는 헬스장이 없어요</button>`;
+};
+
+window.mwAddCenterHere = async function () {
+  if (!window.currentUser) { if (window.requireLogin) requireLogin('헬스장을 등록하려면 로그인이 필요해요'); return; }
+  if (!navigator.geolocation) { showToast('이 기기는 위치를 지원하지 않아요'); return; }
+  showToast('현재 위치 확인 중…');
+  let pos;
+  try {
+    pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(
+      res, rej, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }));
+  } catch (e) {
+    // ★조용히 실패시키지 않는다 — 왜 안 되는지 화면에서 알 수 있어야 한다
+    showToast(e && e.code === 1 ? '위치 권한을 켜주셔야 등록할 수 있어요' : '위치를 못 잡았어요. 야외에서 다시 시도해 주세요');
+    return;
+  }
+  const lat = pos.coords.latitude, lng = pos.coords.longitude;
+  const acc = Math.round(pos.coords.accuracy || 0);
+
+  // 근처에 이미 있는 센터 — 중복 등록을 막는 유일한 장치다
+  const near = (window.centersData || [])
+    .filter(c => typeof c.lat === 'number' && typeof c.lng === 'number')
+    .map(c => ({ c, d: mwHaversine(lat, lng, c.lat, c.lng) }))
+    .filter(x => x.d <= 200).sort((a, b) => a.d - b.d);
+
+  const TYPES = ['헬스', '요가', '필라테스', '크로스핏', '클라이밍', '기타'];
+  const ov = document.createElement('div');
+  ov.id = 'mw-addcenter';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9600;background:rgba(4,6,11,.86);' +
+    'display:flex;align-items:flex-end;justify-content:center';
+  ov.innerHTML = `
+    <div class="mw-panel" style="width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 18px 26px">
+      <div style="font-size:16px;font-weight:800;margin-bottom:5px">여기 헬스장 등록하기</div>
+      <div style="font-size:11.5px;color:#8a93a8;line-height:1.6;margin-bottom:14px">
+        지금 계신 위치를 그 헬스장 자리로 저장해요. 그래야 도장이 찍힙니다.<br>
+        <span style="color:#6b7488">위치 정확도 약 ${acc}m</span>
+      </div>
+      ${near.length ? `<div style="background:rgba(245,194,75,.1);border:1px solid rgba(245,194,75,.34);
+        border-radius:10px;padding:10px 12px;margin-bottom:13px;font-size:11.5px;color:#F5C24B;line-height:1.6">
+        근처에 이미 <b>${near[0].c.name}</b>(${Math.round(near[0].d)}m)가 있어요. 같은 곳이면 등록하지 마세요.</div>` : ''}
+      <input id="mw-ac-name" type="text" maxlength="40" placeholder="헬스장 이름 (예: 짐박스피트니스 구로디지털단지점)"
+        style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);
+          border-radius:12px;padding:14px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
+      <div id="mw-ac-types" style="display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 16px">
+        ${TYPES.map((t, i) => `<button data-t="${t}" style="font-family:inherit;font-size:12.5px;
+          padding:8px 13px;border-radius:16px;cursor:pointer;
+          background:${i ? 'rgba(255,255,255,.05)' : 'rgba(61,126,255,.16)'};
+          border:1px solid ${i ? 'rgba(255,255,255,.1)' : 'rgba(61,126,255,.6)'};
+          color:${i ? 'rgba(255,255,255,.6)' : '#a9c5ff'}">${t}</button>`).join('')}
+      </div>
+      <button id="mw-ac-go" class="mw-btn" style="width:100%;padding:15px;font-size:15px">등록하기</button>
+      <button onclick="document.getElementById('mw-addcenter').remove()"
+        style="width:100%;background:none;border:none;color:#6b7488;font-size:13px;
+               cursor:pointer;margin-top:8px;padding:8px;font-family:inherit">취소</button>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+  let type = TYPES[0];
+  ov.querySelector('#mw-ac-types').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    type = b.dataset.t;
+    [...e.currentTarget.children].forEach(c => {
+      const on = c === b;
+      c.style.background = on ? 'rgba(61,126,255,.16)' : 'rgba(255,255,255,.05)';
+      c.style.borderColor = on ? 'rgba(61,126,255,.6)' : 'rgba(255,255,255,.1)';
+      c.style.color = on ? '#a9c5ff' : 'rgba(255,255,255,.6)';
+    });
+  });
+
+  ov.querySelector('#mw-ac-go').addEventListener('click', async () => {
+    const name = (ov.querySelector('#mw-ac-name').value || '').trim();
+    if (name.length < 2) { showToast('헬스장 이름을 적어주세요'); return; }
+    const dup = (window.centersData || []).some(c => (c.name || '').replace(/\s/g, '') === name.replace(/\s/g, ''));
+    if (dup) { showToast('같은 이름의 센터가 이미 있어요'); return; }
+    const btn = ov.querySelector('#mw-ac-go');
+    btn.disabled = true; btn.textContent = '등록 중…';
+    try {
+      await window.registerCenterToFirestore({
+        name, type, loc: '', addr: '',
+        lat, lng, accuracy: acc,
+        rating: 0, reviews: 0, members: 1, partner: false,
+        partnerPosts: [], reviewList: []
+      });
+      ov.remove();
+      showToast('등록했어요! 이제 여기서 도장을 찍을 수 있어요');
+      if (window.mwRenderDogam && document.getElementById('mw-dogam-root')) window.mwRenderDogam();
+      if (window.mwRenderTodayMurpys && document.getElementById('mw-map-root')) window.mwRenderTodayMurpys();
+    } catch (e) {
+      console.error('센터 등록 실패:', e && e.code, e && e.message);
+      btn.disabled = false; btn.textContent = '등록하기';
+      showToast('등록 실패 (' + ((e && e.code) || '알 수 없음') + ')');
+    }
+  });
+};
+
 window.mwRenderTodayMurpys = async function () {
   const root = document.getElementById('mw-map-root'); if (!root) return;
   const today = mwTodayKey();
@@ -12998,7 +13108,8 @@ window.mwRenderTodayMurpys = async function () {
     <div style="font-size:12px;color:#8a93a8;margin:2px 2px 10px">오늘 체크인한 머피들 <span style="color:#4a5266">— 도장 찍으면 여기 떠요</span></div>
     ${groups || `<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">
       <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;margin-bottom:8px">아직 아무도 없어요</div>
-      <div style="font-size:12px;line-height:1.7">오늘 첫 도장의 주인공이 되어보세요!<br>도감 → 체크인</div></div>`}`;
+      <div style="font-size:12px;line-height:1.7">오늘 첫 도장의 주인공이 되어보세요!<br>도감 → 체크인</div></div>`}
+    ${window._mwAddCenterBtn()}`;
   // ---- 리얼 지도 (Leaflet) : 좌표 있는 센터 + 오늘 인원 배지 ----
   // 타일은 MapTiler streets-v2(밝은 지도, CARTO Voyager와 가장 비슷). 바꾼 이유(7-24):
   //   ① CARTO는 상업 무료 사용이 약관상 금지라 출시 시 위반 → MapTiler(상업 무료 월10만)로 교체.
