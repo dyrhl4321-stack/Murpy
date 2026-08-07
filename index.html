@@ -4424,6 +4424,12 @@ window.mwPortal = function () {
       <div style="font-size:13px;font-weight:500;letter-spacing:4px;color:rgba(255,255,255,0.4);text-transform:uppercase">Move together</div>
     </div>
     <div class="lg-btns" style="position:absolute;bottom:60px;left:0;right:0;padding:0 32px;display:flex;flex-direction:column;gap:10px;z-index:1;box-sizing:border-box">
+      <!-- 카톡 등 인앱브라우저 안내 (유저 피드백 #2). 인앱일 때만 JS 가 켠다. -->
+      <div id="inapp-notice" style="display:none;background:rgba(245,194,75,0.12);border:1px solid rgba(245,194,75,0.42);border-radius:12px;padding:12px 14px;margin-bottom:4px">
+        <div style="font-size:12.5px;color:#F5C24B;font-weight:700;margin-bottom:4px">카카오톡 안에서는 로그인이 막혀요</div>
+        <div style="font-size:11.5px;color:rgba(255,255,255,0.6);line-height:1.6;margin-bottom:10px">아래 버튼으로 기본 브라우저에서 열어주세요. 홈 화면에 추가하면 앱처럼 쓸 수 있어요.</div>
+        <button onclick="window.openInExternalBrowser()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:12px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">기본 브라우저로 열기</button>
+      </div>
       <button onclick="window.kakaoLogin()" style="width:100%;background:#FEE500;color:#000;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#000"><path d="M12 3C6.48 3 2 6.48 2 10.8c0 2.7 1.55 5.08 3.9 6.5l-.97 3.6 4.18-2.77c.93.18 1.89.27 2.89.27 5.52 0 10-3.48 10-7.8S17.52 3 12 3z"/></svg>
         카카오로 시작하기
@@ -11038,11 +11044,44 @@ async function _kakaoFirebaseAuth(accessToken) {
   showToast(`✓ ${nickname}님, 환영해요!`);
 }
 
+// ===== 인앱브라우저 (카카오톡 등) 감지 =====
+// ★유저 피드백 #2 (2026-08-07): "카톡 링크로 들어가면 로그인이 안 된다".
+//   원인 = 카톡 **인앱브라우저 안에서** throughTalk:true 로 다시 카카오톡을 열려고 하기 때문.
+//   이미 카톡 안인데 또 카톡을 부르니 되돌아오지 못한다.
+//   대응 2단계: ①인앱이면 throughTalk 를 끈다(웹뷰 안에서 웹 인증) ②기본 브라우저로 열 길을 준다.
+//   ★기본 브라우저로 내보내는 게 근본이다 — 인앱브라우저는 홈 화면 추가(PWA)도 안 되고
+//     세션 유지도 불안하다. 우리는 설치형처럼 쓰게 하는 게 목표다.
+window._isInApp = function () {
+  const ua = navigator.userAgent || '';
+  return /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(ua);
+};
+// 인앱브라우저면 로그인 화면에 안내를 켠다 (평소엔 안 보인다)
+try {
+  window.addEventListener('load', function () {
+    if (window._isInApp && window._isInApp()) {
+      const n = document.getElementById('inapp-notice');
+      if (n) n.style.display = 'block';
+    }
+  });
+} catch (e) {}
+window.openInExternalBrowser = function () {
+  const url = location.href;
+  if (/Android/i.test(navigator.userAgent)) {
+    // 안드로이드는 intent 로 크롬을 직접 지정할 수 있다
+    location.href = 'intent://' + url.replace(/^https?:\/\//, '')
+      + '#Intent;scheme=https;package=com.android.chrome;end';
+  } else {
+    // iOS 는 카카오 전용 스킴이 가장 확실하다
+    location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url);
+  }
+};
+
 window.kakaoLogin = async () => {
   // 모바일: Kakao SDK 공식 메서드로 리다이렉트 → 카카오톡 앱 간편로그인
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
-    Kakao.Auth.authorize({ redirectUri: _kakaoRedirectUri(), throughTalk: true });
+    // ★인앱브라우저면 throughTalk 를 끈다. 켜두면 카톡 안에서 카톡을 또 부르다 멈춘다.
+    Kakao.Auth.authorize({ redirectUri: _kakaoRedirectUri(), throughTalk: !window._isInApp() });
     return;
   }
 
