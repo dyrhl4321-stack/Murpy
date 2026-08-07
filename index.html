@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <!-- cache-bust: v20260803005 -->
 <html lang="ko">
 <head>
@@ -2412,22 +2412,22 @@ window._SURFACE_TOP = 10;
 window.SEASON_ITEMS = [
   { id:'s2608_dumbbell', name:'대왕 덤벨', src:'char/rooms/s2608_dumbbell.png?v=2', w:208, h:130, wallY:72,
     hd:'char/rooms/hd/s2608_dumbbell.webp?v=1', hdMax:180,
-    season:'2026-10', kind:'open', axis:'feed',
+    season:'2026-08', until:'2026-11', kind:'open', axis:'feed',
     hint:'헬스장 지박령의 기운이 느껴지는 자에게', title:'헬스장 지박령', cond:{ feed:8 } },
   { id:'s2608_lamp', name:'숲 요정 램프', src:'char/rooms/s2608_lamp.png?v=2', w:56, h:164, sbw:32,
     hd:'char/rooms/hd/s2608_lamp.webp?v=1',
-    season:'2026-10', kind:'open', axis:'bamboo',
+    season:'2026-08', until:'2026-11', kind:'open', axis:'bamboo',
     hint:'숲의 요정들에게만 배달되는 선물입니다', title:'숲의 요정', cond:{ bamboo:5 } },
   { id:'s2608_campfire', name:'스쿼드 캠프파이어', src:'char/rooms/s2608_campfire.png?v=10', w:152, h:116,
     hd:'char/rooms/hd/s2608_campfire.webp?v=1', hdMax:160, still:'char/rooms/s2608_campfire_still.png?v=1',
-    season:'2026-10', kind:'open', axis:'squad', noShadow:true, blockBand:0.72,
+    season:'2026-08', until:'2026-11', kind:'open', axis:'squad', noShadow:true, blockBand:0.72,
     hint:'혼자 온 자는 받을 수 없습니다', title:'스쿼드의 심장', cond:{ squad:2 } },
   // w/h 94x105 = APNG 캔버스. 얼굴은 리지드로 두고 배만 눌러 둥가둥가(7-24: 눈 흔들림·뿔 잘림
   // 수정). 가로 스케일을 없애 원폭(94) 유지, 위 1px만 여백. 캔버스 크기는 진폭 따라 바뀜.
   // 정적 원본은 s2608_dino_still.png, 재생성은 char/animate_dino.py.
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105,
     hd:'char/rooms/hd/s2608_dino.webp?v=1', hdMax:200, still:'char/rooms/s2608_dino_still.png?v=1',
-    season:'2026-10', kind:'hidden', axis:'',
+    season:'2026-08', until:'2026-11', kind:'hidden', axis:'',
     hint:'', title:'공룡의 친구', cond:{ feed:5, bamboo:3, checkin:3 } },
 ];
 // 퀘스트형 해금 캐릭터 (상시 — 기한 없음).
@@ -2448,11 +2448,27 @@ window.mwSeasonKey = function (d) {
   d = d || new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 };
-// 이번 달 남은 일수 (오늘 포함)
-window.mwSeasonDaysLeft = function () {
+// ★한 달을 넘겨 여는 시즌 (2026-08-07 대표 지시 — "오픈 단계니까 기간은 넉넉하게 11월까지").
+//   원래 시즌은 '그 달 한 달'이 전부였다. `until:'YYYY-MM'` 을 주면 season~until 이 전부 이번 시즌이다.
+//   'always'(기한 없음)와는 다르다 — until 이 지나면 아카이브로 내려간다.
+window.mwSeasonActive = function (it, key) {
+  if (!it) return false;
+  if (it.season === 'always') return true;
+  if (it.until) return key >= it.season && key <= it.until;
+  return it.season === key;
+};
+// 아카이브(끝난 시즌)인가
+window.mwSeasonPast = function (it, key) {
+  if (!it || it.season === 'always') return false;
+  return (it.until ? it.until : it.season) < key;
+};
+// 시즌이 끝나기까지 남은 일수 (until 이 있으면 그 달 말일까지)
+window.mwSeasonDaysLeft = function (it) {
   const n = new Date();
-  const last = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate();
-  return last - n.getDate() + 1;
+  let y = n.getFullYear(), m = n.getMonth();      // 0-based
+  if (it && it.until) { const p = it.until.split('-'); y = +p[0]; m = +p[1] - 1; }
+  const end = new Date(y, m + 1, 0);              // 그 달의 말일
+  return Math.max(0, Math.ceil((end - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000) + 1);
 };
 // 방에 놓을 수 있는 모든 아이템 통합 조회 (기본 카탈로그 + 한정)
 window.mwItemDef = function (id) {
@@ -4549,6 +4565,27 @@ window.mwPortal = function () {
       플레이스토어·앱스토어 출시 후에는 앱을 설치하시면 됩니다.</div>
     </div>
 
+  </div>
+</div>
+
+<!-- 히든 시즌 시작 안내 (2026-08-07 재홍보). 계정당 1회만 뜬다. -->
+<div class="modal-overlay" id="season-kickoff-modal" onclick="if(event.target===this)window.closeSeasonKickoff()" style="z-index:20050">
+  <div class="modal-sheet" style="max-width:390px">
+    <div style="text-align:center">
+      <div style="font-family:'Galmuri14','Galmuri11',sans-serif;font-size:11px;letter-spacing:3px;color:#C9A8FF;margin-bottom:12px">SEASON OPEN</div>
+      <div style="font-size:21px;font-weight:800;letter-spacing:-0.6px;line-height:1.35;margin-bottom:8px">히든 시즌이 열렸어요</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.45);line-height:1.65;margin-bottom:22px">운동하고 기록을 남기면<br>숨어 있던 캐릭터와 인테리어가 열려요</div>
+    </div>
+    <div style="background:rgba(201,168,255,0.07);border:1px solid rgba(201,168,255,0.28);border-radius:14px;padding:15px 16px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:800;color:#C9A8FF;margin-bottom:5px">히든 캐릭터 · 오늘부터 시작</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.5);line-height:1.65">헬스장 체크인 기록으로 열려요. <b style="color:rgba(255,255,255,0.75)">오늘부터 쌓는 기록만</b> 세니까 지금 시작해도 늦지 않아요.</div>
+    </div>
+    <div style="background:rgba(245,194,75,0.07);border:1px solid rgba(245,194,75,0.28);border-radius:14px;padding:15px 16px;margin-bottom:20px">
+      <div style="font-size:13px;font-weight:800;color:#F5C24B;margin-bottom:5px">히든 인테리어 · 11월까지</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,0.5);line-height:1.65">내 방을 꾸미는 한정 오브젝트예요. 기간이 끝나면 다시 만날 수 없어요.</div>
+    </div>
+    <button onclick="window.closeSeasonKickoff(); if(window.goPage) goPage('char')" style="width:100%;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px">머피월드에서 보기</button>
+    <button onclick="window.closeSeasonKickoff()" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.32);font-size:13px;cursor:pointer;margin-top:8px;padding:8px;font-family:inherit">나중에</button>
   </div>
 </div>
 
@@ -9181,7 +9218,7 @@ window.mwSeasonCheck = async function () {
   const st = window._seasonState;
   const counts = st.counts || {};
   // 이번 달 것 + 기한 없는 상시 해금물을 함께 판정한다
-  const items = window.SEASON_ITEMS.filter(it => it.season === season || it.season === 'always');
+  const items = window.SEASON_ITEMS.filter(it => window.mwSeasonActive(it, season));
   const _granted = [];
   for (const it of items) {
     if (st.inv.includes(it.id) || st.box.includes(it.id) || _seasonBusy.has(it.id)) continue;
@@ -9297,11 +9334,15 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
     // 합집합을 다시 _seasonState.inv에 반영 — 방 편집기(mwRoomEdit, ~line 2081)는 서버 재조회 없이 이 상태만 읽으므로,
     // 여기서 갱신해두지 않으면 도감에는 보이는데 편집기에서는 새로고침 전까지 배치할 수 없다
     if (window._seasonState) window._seasonState.inv = inv;
-    const cur = window.SEASON_ITEMS.filter(it => it.season === season);
+    const cur = window.SEASON_ITEMS.filter(it => it.season !== 'always' && window.mwSeasonActive(it, season));
     // 지난 시즌: 종류 무관 전부 노출(미보유는 실루엣) — 지난 시즌 히든템도 동기부여용으로 다시 공개
-    const past = window.SEASON_ITEMS.filter(it => it.season < season);
-    const days = window.mwSeasonDaysLeft();
-    const mLabel = Number(season.split('-')[1]) + '월';
+    const past = window.SEASON_ITEMS.filter(it => window.mwSeasonPast(it, season));
+    // 기간이 여러 달인 시즌이면 마감 달을 기준으로 남은 일수·이름을 잡는다
+    const _ranged = cur.find(it => it.until);
+    const days = window.mwSeasonDaysLeft(_ranged);
+    const mLabel = _ranged
+      ? Number(_ranged.until.split('-')[1]) + '월까지'
+      : Number(season.split('-')[1]) + '월';
 
     // 조건에 얼마나 다가섰는지(0~1). 가장 덜 채운 축이 곧 진행도다.
     // 숫자로는 절대 보여주지 않는다 — 해금 조건 체크리스트화는 제품 하드룰 위반.
@@ -9366,7 +9407,7 @@ window.mwSeasonSectionHtml = function (fallbackInv) {
         <span style="font-size:11px;color:#8a93a8">${days}일 남음</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${cells}</div>
-      <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">이번 달이 지나면 다시 만날 수 없어요</div>` : ''}
+      <div style="font-size:10.5px;color:#4a5266;text-align:center;margin-top:9px;line-height:1.6">${_ranged ? '기간이 끝나면 다시 만날 수 없어요' : '이번 달이 지나면 다시 만날 수 없어요'}</div>` : ''}
       ${alwaysCells ? `
         <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#cfd6e6;letter-spacing:1px;margin:22px 2px 10px">상시 해금</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">${alwaysCells}</div>
@@ -9410,7 +9451,7 @@ window.mwLabHtml = function () {
       <button onclick="window.mwLabCount('${k}',1)" style="${bs};padding:3px 9px">+</button>
     </div>`).join('');
 
-  const items = window.SEASON_ITEMS.filter(it => it.season === cur || it.season === 'always');
+  const items = window.SEASON_ITEMS.filter(it => window.mwSeasonActive(it, cur));
   const itemRows = items.length ? items.map(it => {
     const got = st.inv.includes(it.id);
     const boxed = st.box.includes(it.id);
@@ -9995,6 +10036,60 @@ window.showGrowthStats = async function () {
     + 'style="width:100%;margin-top:22px;background:#3D7EFF;border:none;color:#fff;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">CSV 복사</button>';
 };
 
+// ===== 히든 시즌 시작 안내 (2026-08-07 재홍보) =====
+// 계정당 1회. 열쇠에 날짜를 넣어 뒀으니 다음 시즌엔 키만 바꾸면 다시 한 번 뜬다.
+window._SEASON_KICKOFF_KEY = 'murpy_season_kickoff_20260807';
+window.showSeasonKickoff = function (force, tries) {
+  if (!window.currentUser) return;
+  if (!force && localStorage.getItem(window._SEASON_KICKOFF_KEY)) return;
+  const el = document.getElementById('season-kickoff-modal');
+  if (!el) return;
+  // 온보딩 중이거나 다른 팝업(선물 축하 등)이 떠 있으면 끼어들지 않고 미룬다.
+  // 무한 대기는 막는다 — 5번(약 30초) 시도하고 포기하면 다음 접속 때 다시 뜬다.
+  const ob = document.getElementById('onboarding-modal');
+  const busy = (ob && ob.style.display !== 'none' && ob.style.display !== '')
+    || document.querySelector('.modal-overlay.open')
+    || document.querySelector('#murpy-celebrate[style*="flex"]');
+  if (busy) {
+    const n = (tries || 0) + 1;
+    if (n <= 5) setTimeout(() => window.showSeasonKickoff(force, n), 6000);
+    return;
+  }
+  try { localStorage.setItem(window._SEASON_KICKOFF_KEY, '1'); } catch (e) {}
+  el.classList.add('open');
+};
+window.closeSeasonKickoff = function () {
+  const el = document.getElementById('season-kickoff-modal');
+  if (el) el.classList.remove('open');
+};
+
+// ===== 베타테스터 선물 300머피 (2026-08-07 재홍보) =====
+// 두 갈래로 들어온다. 어느 쪽이든 이 함수 하나를 거치고, BETA_GRANT_KEY 플래그로 **1회만** 지급된다.
+//   ① 기존 계정 = 접속하면 홈에서 바로 (ensureCreditsInit 에서 호출)
+//   ② 신규 가입 = 첫 피드를 올리는 순간 (submitFeedPost 에서 호출)
+// ★더해주는 게 아니라 300까지 채운다 — 이미 300 이상 모은 사람의 잔액을 건드리지 않기 위해서다.
+window.grantBetaGift = async function () {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return false;
+  try {
+    const ref = doc(db, 'users', user.uid);
+    const us = await getDoc(ref);
+    if (!us.exists()) return false;
+    const d = us.data();
+    if (d[BETA_GRANT_KEY] === true) return false;          // 이미 받았다
+    const next = Math.max(d.credits | 0, CREDIT_WELCOME);
+    await updateDoc(ref, { credits: next, [BETA_GRANT_KEY]: true, betaGrantPending: false });
+    window._creditState.credits = next;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    window.celebrateMurpy && window.celebrateMurpy(next, {
+      amount: CREDIT_WELCOME,
+      title: '베타테스터 선물이에요!'
+    });
+    return true;
+  } catch (e) { console.warn('beta gift', e); return false; }
+};
+
 // 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
 window.ensureCreditsInit = async (uid) => {
   if (!uid) return;
@@ -10005,8 +10100,12 @@ window.ensureCreditsInit = async (uid) => {
     if (typeof d.credits !== 'number') {
       // 몸통은 가입 성별에서 정해진다 ('여성'→human_f, 그 외→human).
       const _newChar = { ...window.CHAR_DEFAULT, body: window._charBodyForGender(d.gender) };
-      await setDoc(ref, { credits: CREDIT_WELCOME, creditsLastEarned: '', character: _newChar, wardrobe: [...window.CHAR_FREE] }, { merge: true });
-      window._creditState.credits = CREDIT_WELCOME;
+      // ★신규 가입자는 여기서 주지 않는다 (대표 결정 2026-08-07).
+      //   **첫 피드를 올리는 순간** 300머피가 들어오면서 선물 팝업이 뜬다.
+      //   선물이 '보상'이 되어 첫 인증사진 작성을 밀어준다 — 조용히 넣어두면 받은 줄도 모른다.
+      //   betaGrantPending 이 그 표시다. 이게 true 면 접속 시 지급 로직은 건너뛴다.
+      await setDoc(ref, { credits: 0, creditsLastEarned: '', betaGrantPending: true, character: _newChar, wardrobe: [...window.CHAR_FREE] }, { merge: true });
+      window._creditState.credits = 0;
       window._creditState.lastEarned = '';
       window._creditState.streak = 0;
       window._charState.character = _newChar;
@@ -10031,16 +10130,9 @@ window.ensureCreditsInit = async (uid) => {
       //   300으로 올렸으니 **먼저 가입한 베타테스터가 나중에 온 사람보다 불리해진다.**
       //   대표가 약속한 대상은 '베타테스터'이므로 기존 계정도 같은 출발선까지 올린다.
       //   ※ 더해주는 게 아니라 **300까지 채운다** — 이미 300 이상이면 손대지 않는다.
-      if (d[BETA_GRANT_KEY] !== true) {
-        try {
-          if ((d.credits | 0) < CREDIT_WELCOME) {
-            await updateDoc(ref, { credits: CREDIT_WELCOME, [BETA_GRANT_KEY]: true });
-            d.credits = CREDIT_WELCOME;
-            if (window.showToast) setTimeout(() => showToast('베타테스터 선물 · 머피 300개를 넣어드렸어요'), 1200);
-          } else {
-            await updateDoc(ref, { [BETA_GRANT_KEY]: true });
-          }
-        } catch (e) {}
+      //   ※ betaGrantPending 인 계정(=오늘 이후 신규 가입)은 **첫 피드 때** 받으므로 여기선 건너뛴다.
+      if (d[BETA_GRANT_KEY] !== true && d.betaGrantPending !== true) {
+        setTimeout(() => { window.grantBetaGift && window.grantBetaGift(); }, 1400);
       }
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
@@ -10119,6 +10211,9 @@ window.ensureCreditsInit = async (uid) => {
     window._charState.ready = true;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.renderStreakUI) window.renderStreakUI();
+    // 히든 시즌 시작 안내 — 선물 축하(1.4s 뒤 시작, 약 2.4s)가 끝난 뒤에 뜨게 미뤄 둔다.
+    // 겹치면 알아서 더 기다린다(showSeasonKickoff 안의 busy 판정).
+    setTimeout(() => { window.showSeasonKickoff && window.showSeasonKickoff(); }, 4200);
   } catch (e) {}
 };
 
@@ -11661,7 +11756,14 @@ window.submitFeedPost = async function() {
     document.getElementById('feed-photo-input').value = '';
     // 잠금이 어떤 경로로든 남아 있으면 여기서 확실히 푼다(글 올린 뒤 스크롤이 죽던 것)
     try { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; } catch (e) {}
-    if (_earned) {
+    // ★베타테스터 선물 300머피 — 신규 가입자는 **첫 피드를 올리는 이 순간** 받는다(대표 결정).
+    //   조용히 넣어두면 받은 줄도 모르니, 선물이 첫 인증사진의 보상이 되게 붙였다.
+    //   이미 받은 계정이면 false 만 돌아오고 아무 일도 안 일어난다.
+    const _gift = window.grantBetaGift ? await window.grantBetaGift() : false;
+    if (_gift) {
+      // 선물 축하가 이미 떴다 — 일일 적립 축하까지 겹쳐 띄우면 연출이 뭉갠다
+      if (_earned) setTimeout(() => showToast('오늘 운동 인증 +1 머피'), 2800);
+    } else if (_earned) {
       window.celebrateMurpy(window.getCredits ? window.getCredits() : undefined);
       if (!localStorage.getItem('murpy_credit_intro')) {
         localStorage.setItem('murpy_credit_intro', '1');
