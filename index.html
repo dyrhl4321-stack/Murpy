@@ -1436,6 +1436,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         사용 기록 보기 (관리자)
       </button>
+      <button id="growth-stats-btn" onclick="window.showGrowthStats && window.showGrowthStats()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
+        성장 지표 · CC (관리자)
+      </button>
     </div>
     <div id="my-photos" style="display:none">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 프로필 인증에도 쓰여요.</div>
@@ -7899,7 +7903,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '383';
+window._SW_V = '384';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -8039,6 +8043,8 @@ window.updateUI = function(user) {
     if (testCoachBtn) testCoachBtn.style.display = _adm ? 'flex' : 'none';
     const usageBtn = document.getElementById('usage-stats-btn');
     if (usageBtn) usageBtn.style.display = _adm ? 'flex' : 'none';
+    const growthBtn = document.getElementById('growth-stats-btn');
+    if (growthBtn) growthBtn.style.display = _adm ? 'flex' : 'none';
     if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
@@ -9542,6 +9548,194 @@ window.showUsageStats = async function () {
     + '</div>'
     + '<button onclick="navigator.clipboard.writeText(window._usageCsv).then(function(){showToast(\'CSV 복사됨\')})" '
     + 'style="width:100%;background:#3D7EFF;border:none;color:#fff;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">CSV 복사 (엑셀/신청서용)</button>';
+};
+
+// ===== 성장 지표 (Carrying Capacity · 리텐션 · 아하 모먼트) =====
+// 토스 PO세션 프레임워크를 그대로 계산한다 (docs 정리본 기준).
+//   CC = Inflow ÷ Churn.  서비스가 도달할 수 있는 최대 유저 수.
+//   ★과금 심사 기준이 "얼마 버나"가 아니라 "Churn 을 얼마나 올리나"가 되는 근거가 이 식이다.
+//   7d Trailing(빨리 반응) 과 30d Trailing(느리지만 안정) 을 나란히 본다.
+//
+// 원본 데이터는 이미 쌓이고 있던 것만 쓴다 — 새 컬렉션도, 보안규칙 변경도 없다.
+//   users.activity.first  = 최초 접속일(=가입일로 취급)
+//   users.visits{날짜}     = 그날 앱을 열었나
+//   feed / checkins        = 인증·체크인 (아하 모먼트 후보 판정용)
+window._growthDays = function (n, endOffset) {
+  const out = [];
+  for (let i = n - 1 + (endOffset | 0); i >= (endOffset | 0); i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    out.push(_creditDateStr(d));
+  }
+  return out;
+};
+
+window.showGrowthStats = async function () {
+  if (typeof isAdmin !== 'function' || !isAdmin()) return;
+  const el = document.createElement('div');
+  el.id = 'growth-stats';
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-y:auto;padding:20px 16px 60px';
+  el.innerHTML = '<div style="color:#8a93a8;font-size:13px">불러오는 중…</div>';
+  document.body.appendChild(el);
+
+  let users = [], acts = {};
+  try {
+    const qs = await getDocs(collection(db, 'users'));
+    qs.forEach(d => users.push(Object.assign({ uid: d.id }, d.data() || {})));
+    // 인증(피드)·체크인 날짜를 유저별로 모은다 — 아하 모먼트 판정에 쓴다
+    try {
+      const fs = await getDocs(query(collection(db, 'feed'), orderBy('createdAt', 'desc'), limit(2000)));
+      fs.forEach(d => {
+        const v = d.data() || {}; const t = v.createdAt && v.createdAt.toDate ? v.createdAt.toDate() : null;
+        if (v.userId && t) (acts[v.userId] = acts[v.userId] || new Set()).add(_creditDateStr(t));
+      });
+    } catch (e) { console.warn('feed', e); }
+    try {
+      const cs = await getDocs(collection(db, 'checkins'));
+      cs.forEach(d => {
+        const v = d.data() || {};
+        if (v.uid && v.day) {
+          const s = String(v.day);
+          (acts[v.uid] = acts[v.uid] || new Set())
+            .add(s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8));
+        }
+      });
+    } catch (e) { console.warn('checkins', e); }
+  } catch (e) {
+    el.innerHTML = '<div style="color:#ff8585;font-size:13px">불러오기 실패: ' + (e && e.message) + '</div>';
+    return;
+  }
+
+  const visited = (u, days) => days.some(d => u.visits && u.visits[d]);
+  const firstOf = u => (u.activity && u.activity.first) || null;
+
+  // ── CC = Inflow ÷ Churn ──
+  // Churn = 지난 창에는 활동했는데 이번 창에는 안 온 사람의 비율.
+  function cc(win) {
+    const cur = window._growthDays(win, 0), prev = window._growthDays(win, win);
+    const activePrev = users.filter(u => visited(u, prev));
+    const churned = activePrev.filter(u => !visited(u, cur));
+    const rate = activePrev.length ? churned.length / activePrev.length : 0;
+    const inflow = users.filter(u => cur.includes(firstOf(u))).length;
+    return {
+      win, inflow, churned: churned.length, activePrev: activePrev.length,
+      rate, cc: rate > 0 ? Math.round(inflow / rate) : null,
+      active: users.filter(u => visited(u, cur)).length
+    };
+  }
+  const c7 = cc(7), c30 = cc(30);
+
+  // ── 리텐션: 가입 후 n일 안에 다시 왔나 (range retention) ──
+  const NS = [1, 3, 7, 14, 30];
+  const today = _creditToday();
+  const dayDiff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+  const retRow = NS.map(n => {
+    // n일이 지날 만큼 시간이 흐른 사람만 분모에 넣는다(아직 기회가 없던 사람 제외)
+    const pool = users.filter(u => firstOf(u) && dayDiff(firstOf(u), today) >= n);
+    const kept = pool.filter(u => Object.keys(u.visits || {})
+      .some(d => d !== firstOf(u) && dayDiff(firstOf(u), d) <= n && dayDiff(firstOf(u), d) > 0));
+    return { n, pool: pool.length, kept: kept.length,
+             pct: pool.length ? Math.round(kept.length / pool.length * 100) : null };
+  });
+
+  // ── 아하 모먼트 후보: 가입 후 N일 안에 인증/체크인 M회 ──
+  // ★N·M 을 감으로 정하지 않는다. 조합별로 '통과한 사람의 잔존율'을 비교해서 고른다.
+  const cur7 = window._growthDays(7, 0);
+  const combos = [];
+  [3, 5, 7].forEach(N => [1, 2, 3].forEach(M => {
+    const pool = users.filter(u => firstOf(u) && dayDiff(firstOf(u), today) >= N + 7);
+    if (pool.length < 3) return;
+    const pass = pool.filter(u => {
+      const s = acts[u.uid]; if (!s) return false;
+      let k = 0; s.forEach(d => { const g = dayDiff(firstOf(u), d); if (g >= 0 && g < N) k++; });
+      return k >= M;
+    });
+    const fail = pool.filter(u => pass.indexOf(u) < 0);
+    const rK = a => a.length ? Math.round(a.filter(u => visited(u, cur7)).length / a.length * 100) : null;
+    combos.push({ N, M, pool: pool.length, pass: pass.length,
+                  keptPass: rK(pass), keptFail: rK(fail) });
+  }));
+  combos.sort((a, b) => ((b.keptPass || 0) - (b.keptFail || 0)) - ((a.keptPass || 0) - (a.keptFail || 0)));
+
+  // ── 퍼널: 가입 → 재방문 → 첫 인증/체크인 ──
+  const total = users.length;
+  const withNick = users.filter(u => u.nickname).length;
+  const revisit = users.filter(u => Object.keys(u.visits || {}).length >= 2).length;
+  const didAct = users.filter(u => acts[u.uid] && acts[u.uid].size > 0).length;
+  const didAct3 = users.filter(u => acts[u.uid] && acts[u.uid].size >= 3).length;
+
+  const card = (label, val, color, note) =>
+    '<div style="background:#141a28;border:1px solid #2b3350;border-radius:12px;padding:13px">'
+    + '<div style="font-size:11px;color:#8a93a8;margin-bottom:5px">' + label + '</div>'
+    + '<div style="font-size:22px;font-weight:800;color:' + color + '">' + val + '</div>'
+    + (note ? '<div style="font-size:10px;color:#6b7488;margin-top:4px">' + note + '</div>' : '') + '</div>';
+
+  const bar = (pct, color) =>
+    '<div style="height:8px;background:#1b2233;border-radius:2px;overflow:hidden">'
+    + '<div style="height:100%;width:' + (pct || 0) + '%;background:' + color + '"></div></div>';
+
+  const csv = ['지표,값',
+    'CC(7d),' + (c7.cc == null ? '이탈 0' : c7.cc),
+    'CC(30d),' + (c30.cc == null ? '이탈 0' : c30.cc),
+    '주간 신규,' + c7.inflow, '주간 이탈률,' + Math.round(c7.rate * 100) + '%',
+    '총 가입,' + total, '재방문,' + revisit, '인증 1회+,' + didAct, '인증 3회+,' + didAct3,
+    ''].concat(['가입후 N일 재방문율'], retRow.map(r => r.n + '일,' + (r.pct == null ? '-' : r.pct + '%')))
+    .join('\n');
+  window._growthCsv = csv;
+
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'
+    + '<b style="color:#fff;font-size:17px">성장 지표</b>'
+    + '<button onclick="document.getElementById(\'growth-stats\').remove()" style="margin-left:auto;background:rgba(255,255,255,.1);border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer">✕</button></div>'
+    + '<div style="font-size:11.5px;color:#6b7488;margin-bottom:18px;line-height:1.6">CC = 주간 신규 ÷ 주간 이탈률. 지금 구조가 도달할 수 있는 최대 유저 수예요.</div>'
+
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px">'
+    + card('CC (7일 기준)', c7.cc == null ? '—' : c7.cc, '#F5C24B', '빨리 반응 · 흔들림 큼')
+    + card('CC (30일 기준)', c30.cc == null ? '—' : c30.cc, '#3D7EFF', '느리지만 안정')
+    + card('주간 신규', c7.inflow, '#4ADE80', 'Inflow')
+    + card('주간 이탈률', Math.round(c7.rate * 100) + '%', '#ff8b8b',
+           c7.churned + '명 / 지난주 활동 ' + c7.activePrev + '명')
+    + '</div>'
+    + (c7.cc == null ? '<div style="font-size:11.5px;color:#6b7488;margin-bottom:20px">아직 이탈이 0이라 CC 를 계산할 수 없어요. 2주쯤 지나야 숫자가 나옵니다.</div>'
+       : '<div style="font-size:11.5px;color:#6b7488;margin-bottom:20px">7d 가 30d 보다 높으면 지금 하는 게 CC 를 올리는 중이에요.</div>')
+
+    + '<div style="font-size:12px;color:#8a93a8;margin-bottom:9px">퍼널</div>'
+    + [['가입', total], ['닉네임 설정', withNick], ['재방문(2일+)', revisit],
+       ['인증·체크인 1회+', didAct], ['인증·체크인 3회+', didAct3]].map(r =>
+      '<div style="margin-bottom:9px"><div style="display:flex;font-size:12px;margin-bottom:4px">'
+      + '<span style="color:#cfd6e6">' + r[0] + '</span>'
+      + '<span style="margin-left:auto;color:#fff;font-weight:700">' + r[1] + '</span>'
+      + '<span style="color:#6b7488;margin-left:6px">' + (total ? Math.round(r[1] / total * 100) : 0) + '%</span></div>'
+      + bar(total ? r[1] / total * 100 : 0, '#3D7EFF') + '</div>').join('')
+
+    + '<div style="font-size:12px;color:#8a93a8;margin:20px 0 9px">가입 후 N일 안에 재방문</div>'
+    + retRow.map(r =>
+      '<div style="margin-bottom:9px"><div style="display:flex;font-size:12px;margin-bottom:4px">'
+      + '<span style="color:#cfd6e6">' + r.n + '일 안에</span>'
+      + '<span style="margin-left:auto;color:#fff;font-weight:700">' + (r.pct == null ? '—' : r.pct + '%') + '</span>'
+      + '<span style="color:#6b7488;margin-left:6px">' + r.kept + '/' + r.pool + '</span></div>'
+      + bar(r.pct, '#4ADE80') + '</div>').join('')
+
+    + '<div style="font-size:12px;color:#8a93a8;margin:20px 0 6px">아하 모먼트 후보</div>'
+    + '<div style="font-size:11px;color:#6b7488;margin-bottom:9px;line-height:1.6">'
+    + '"가입 후 N일 안에 인증·체크인 M회". 통과한 사람과 못 한 사람의 잔존율 차이가 클수록 그게 아하 모먼트예요.</div>'
+    + (combos.length ? '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<tr style="color:#6b7488"><td style="padding:5px 4px">조건</td><td style="padding:5px 4px;text-align:right">통과</td>'
+      + '<td style="padding:5px 4px;text-align:right">통과 잔존</td><td style="padding:5px 4px;text-align:right">미통과</td>'
+      + '<td style="padding:5px 4px;text-align:right">차이</td></tr>'
+      + combos.slice(0, 6).map((c, i) => {
+        const gap = (c.keptPass || 0) - (c.keptFail || 0);
+        return '<tr style="' + (i === 0 ? 'background:rgba(245,194,75,.09)' : '') + '">'
+          + '<td style="padding:6px 4px;color:#fff">' + c.N + '일 · ' + c.M + '회</td>'
+          + '<td style="padding:6px 4px;text-align:right;color:#8a93a8">' + c.pass + '/' + c.pool + '</td>'
+          + '<td style="padding:6px 4px;text-align:right;color:#4ADE80">' + (c.keptPass == null ? '—' : c.keptPass + '%') + '</td>'
+          + '<td style="padding:6px 4px;text-align:right;color:#8a93a8">' + (c.keptFail == null ? '—' : c.keptFail + '%') + '</td>'
+          + '<td style="padding:6px 4px;text-align:right;color:' + (gap > 0 ? '#F5C24B' : '#6b7488') + ';font-weight:700">'
+          + (gap > 0 ? '+' : '') + gap + '</td></tr>';
+      }).join('') + '</table>'
+      : '<div style="font-size:11.5px;color:#6b7488">표본이 아직 적어요. 가입 후 2주는 지나야 판정할 수 있습니다.</div>')
+
+    + '<button onclick="navigator.clipboard.writeText(window._growthCsv).then(function(){showToast(\'CSV 복사됨\')})" '
+    + 'style="width:100%;margin-top:22px;background:#3D7EFF;border:none;color:#fff;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">CSV 복사</button>';
 };
 
 // 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
