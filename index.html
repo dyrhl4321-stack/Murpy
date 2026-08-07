@@ -5110,7 +5110,15 @@ window._mwWorldReveal = function () {
 };
 
 function openPanel(id) {
-  document.getElementById(id).classList.add('open');
+  const _p = document.getElementById(id);
+  _p.classList.add('open');
+  // ★유저 피드백 #21 — "받은 좋아요에서 상대 프로필을 눌러도 무반응"의 정체.
+  //   .panel 은 전부 z-index:100 이라 **DOM 순서**로 겹침이 결정된다. user-profile-panel(1701줄)이
+  //   interest-panel(1737줄)보다 위에 있어서, 관심 패널에서 프로필을 열면 열리긴 해도
+  //   관심 패널 뒤에 깔려 안 보였다. 알림·채팅 패널에서 열 때도 같은 증상이다.
+  //   → 나중에 연 패널이 항상 위로 오게 깊이만큼 z를 올린다.
+  //   ★200 을 넘기면 안 된다 — .modal-overlay 가 200 이라 패널에서 띄운 모달이 뒤로 숨는다.
+  _p.style.zIndex = 100 + Math.min(20, (window._panelDepth || 0) + 1);
   // ★패널이 열려도 배경(홈 피드 등)이 그대로 스크롤됐다. 패널은 fixed 라 안 가려질 것 같지만,
   //   모바일에서 아래가 조금 벌어지면 그 틈으로 뒷화면이 움직이는 게 보인다.
   //   여러 패널이 겹쳐 열릴 수 있으므로 **몇 개 열렸는지 세어** 마지막 하나가 닫힐 때만 푼다.
@@ -5132,6 +5140,8 @@ function closePanel(id) {
     window._panelDepth = Math.max(0, (window._panelDepth || 0) - 1);
     if (window._panelDepth === 0 && typeof unlockBodyScroll === 'function') unlockBodyScroll();
   }
+  // 닫힌 패널은 z 를 원래대로 (닫히는 애니메이션 중엔 유지해야 위에서 미끄러져 나간다)
+  if (_el) setTimeout(() => { if (!_el.classList.contains('open')) _el.style.zIndex = ''; }, 320);
   if (id === 'chat-detail-panel' && window._chatUnsubscribe) {
     window._chatUnsubscribe(); window._chatUnsubscribe = null; window._currentChatId = null;
   }
@@ -10157,7 +10167,7 @@ window.loadMatchCandidates = async function () {
 };
 
 // ===== 실시간 알림 (배지 + 매칭 팝업) =====
-let _notifUnsub = null, _notifFirst = true;
+let _notifUnsub = null, _notifFirst = true, _likesUnsub = null;
 function _showMatchPopup(n) {
   const nameEl = document.getElementById('match-popup-name');
   if (nameEl) nameEl.innerHTML = '<b style="color:#fff">' + ((n.fromNickname || '상대').replace(/</g, '&lt;')) + '</b>님과 연결됐어요!<br>이제 서로의 운동 기록을 볼 수 있어요';
@@ -10201,11 +10211,30 @@ window.startNotifListener = (uid) => {
           else showToast('새 알림이 도착했어요');
         });
       }
+      // ★유저 피드백 #21 — 대숲 '저에요'도 받은 좋아요에 포함되므로 하트를 다시 센다
+      if (snap.docChanges().some(ch => ch.doc.data().type === 'bamboo_request')) {
+        if (window._loadInterestPanel) window._loadInterestPanel(true);
+      }
       _notifFirst = false;
     }, err => {});
   } catch (e) {}
+
+  // ★유저 피드백 #21 — "받은 좋아요 갯수/색이 홈에 나갔다 와야 반영된다".
+  //   원인: 헤더 하트를 갱신하는 _loadInterestPanel 이 **관심 패널을 열 때와 매칭 탭 진입 때**만
+  //   불렸다. 그래서 좋아요를 받아도 탭을 옮기기 전까진 하트가 흰색 그대로였다.
+  //   → likes 를 실시간 구독해서 받는 즉시 하트·배지가 바뀌게 한다(최초 1회도 여기서 처리된다).
+  if (_likesUnsub) { _likesUnsub(); _likesUnsub = null; }
+  try {
+    const lq = query(collection(db, 'likes'), where('to', '==', uid));
+    _likesUnsub = onSnapshot(lq, () => {
+      if (window._loadInterestPanel) window._loadInterestPanel(true);
+    }, err => {});
+  } catch (e) {}
 };
-window.stopNotifListener = () => { if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; } };
+window.stopNotifListener = () => {
+  if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
+  if (_likesUnsub) { _likesUnsub(); _likesUnsub = null; }
+};
 
 // ===== FCM 시스템 푸시 (앱 꺼져 있어도) =====
 // ↓↓↓ Firebase 콘솔 > 프로젝트설정 > 클라우드 메시징 > "웹 푸시 인증서" 의 키 페어(공개키)를 붙여넣으세요
@@ -11989,11 +12018,14 @@ window._switchInterestTab = (tab) => {
   window._renderInterestList();
 };
 
-window._loadInterestPanel = async () => {
+// silent=true 면 목록은 건드리지 않고 **헤더 하트/배지 숫자만** 갱신한다.
+// (실시간 리스너에서 부르는 용도 — 패널이 닫혀 있는데 프로필 사진까지 읽어올 필요는 없다)
+window._loadInterestPanel = async (silent) => {
   const user = auth.currentUser || window.currentUser;
   const el = document.getElementById('interest-list');
   if (!el || !user) return;
-  el.innerHTML = '<div style="text-align:center;padding:30px;color:#444">불러오는 중...</div>';
+  const panelOpen = !!document.getElementById('interest-panel')?.classList.contains('open');
+  if (!silent && panelOpen) el.innerHTML = '<div style="text-align:center;padding:30px;color:#444">불러오는 중...</div>';
 
   // 1) 매칭 좋아요 받은 사람: likes 컬렉션에서 to==me 인 문서
   const likeDocs = [], bambooDocs = [];
@@ -12054,7 +12086,8 @@ window._loadInterestPanel = async () => {
   window._interestLikeDocs = likeDocs;
   window._interestSentDocs = sentDocs;
   window._interestBambooDocs = bambooDocs;
-  window._renderInterestList();
+  // 패널이 닫혀 있으면 목록은 안 그린다(다음에 열 때 openPanel 이 다시 부른다)
+  if (panelOpen) window._renderInterestList();
 };
 
 window._renderInterestList = async () => {
