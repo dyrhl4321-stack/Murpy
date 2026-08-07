@@ -85,8 +85,18 @@ Murpy/
 
 ## 5. 앱 구조
 
-**하단탭 6개**: 홈(피드) / 매칭 / 대숲 / **스쿼드** / 머피월드 / 센터
+**하단탭 5개**: 홈(피드) / 매칭 / 대숲 / **스쿼드** / 머피월드
 ※ 7-20에 크루 → **스쿼드**로 전환(크루 코드는 삭제 않고 휴면).
+
+### ★★센터 탭은 없다 (`display:none`, index.html 4923줄) — 반복해서 틀린 부분
+센터 기능은 **머피월드 안의 지도·체크인**으로 흡수됐다. 하단탭의 센터 버튼은 숨김이고,
+`page-center`(센터 목록)에 들어갈 길이 없다.
+→ **센터 목록에서만 열리는 것은 전부 유저가 도달 못 하는 죽은 코드다:**
+  `openCenterDetail` · `center-detail-panel` · **별점/리뷰 작성**(`openWriteReview`,
+  `saveRatingFirestore`, `centers/{id}/ratings`) · 신고 · 수정요청.
+  살아 있는 센터 기능 = **체크인 도장 · 지도 · 사용자 직접 등록**(8-06)뿐이다.
+★여기를 고칠 일이 생기면 **"지금 유저가 그 화면에 갈 수 있나"를 먼저 확인할 것.**
+  (2026-08-07: 리뷰 코드를 고쳐놓고 대표에게 확인을 요청했다가 지적받음)
 
 **머피월드 내부 트리오**: 지도 · **체크인** · 카메라
 ※ 7-19에 "도감" → **"체크인"** 으로 개명(라벨만, `kind==='dogam'` 키는 유지).
@@ -99,7 +109,8 @@ users/{uid}          nickname, photoURL, photos[], character, wardrobe[], credit
                      hiddenChars{cult:{weekday},somm,zombie}, monthly{YYYY-MM:{axis:n}}
   └ roomstat/{날짜}   방문수(TODAY)          └ guestbook/{id}  방명록
 feed/ bamboo/ (+comments) · matches/ likes/ chats/ notifications/
-centers/{id}/ratings/{uid} · reports/ centerEditRequests/
+centers/{id}                          # 센터 자체는 살아 있음(지도·체크인·직접등록)
+centers/{id}/ratings/{uid} · reports/ centerEditRequests/   # ★도달 불가(센터 탭 숨김) — 5장 참조
 checkins/{uid}_{centerId}_{yyyymmdd}   # ★센터 체크인 도장 (GPS 200m)
 crews/{id}/...       # 휴면 (스쿼드로 대체)
 squads/              # 스쿼드 + schedules/applicants/chat/treasury
@@ -119,7 +130,8 @@ RTDB squadRooms/{sid}/players/{uid}    # 실시간 위치·presence (onDisconnec
 **출석**(호스트 코드/QR 발급·멤버 입력·지각 판정·도장 팝 브로드캐스트),
 호스트 머피 적립(멱등), 벙주 등급(새싹/단골/인증), 종목별 와이드 필드 7종
 
-**센터·체크인 (7-15~19)** — Firestore 센터(42곳 시딩), 지역 필터, 별점/리뷰, 신고, 수정요청,
+**센터·체크인 (7-15~19)** — Firestore 센터(42곳 시딩), 지역 필터,
+~~별점/리뷰, 신고, 수정요청~~(센터 탭이 숨겨져 **현재 도달 불가** — 5장 참조),
 **GPS 반경 200m 체크인 도장**(`checkins`), 센터별 방문 누적 → **레벨 칭호**(뜨내기→터줏대감→전설),
 **체크인 탭 개편**(상단 3타일 목차·콜드스타트 안내·도장 랠리 보상 상단 이동·원정 스탬프 아코디언),
 지도 MapTiler + 내 위치 버튼, 카메라 스탬프 + SNS 공유 3버튼
