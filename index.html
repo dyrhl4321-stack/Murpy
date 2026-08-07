@@ -9015,7 +9015,12 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //     [무료로 굴러가는 선] 월 수입 185 기준: 매칭 10회(-50) + 수락 4회(-20)
 //       + 대숲 15회(-15) + '저에요' 4회(-12) = -97 → 남는 88로 가구 4~5개.
 //       즉 **하루 한 번꼴 매칭은 무료로 되고, 그 이상 적극적으로 쓰려면 충전**한다.
-const CREDIT_WELCOME = 30, CREDIT_DAILY = 1, COST_MATCH = 5, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+// ★2026-08-07 재홍보 — 가입 선물 30 → **300머피**. 대표가 베타테스터에게 약속한 금액이다.
+//   근거: 어차피 다 꾸며야 재미가 붙는다(꾸미기 = Recurring Value). 첫날 캐릭터를 못 꾸미면
+//   머피월드가 텅 빈 채로 보이고 그게 초반 이탈로 직결된다.
+const CREDIT_WELCOME = 300, CREDIT_DAILY = 1, COST_MATCH = 5, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+// 이미 가입한 베타테스터도 같은 약속의 대상이다 → 아래 1회성 지급 플래그로 같이 올려준다.
+const BETA_GRANT_KEY = 'betaGrant300';
 //   ※ 인테리어 슬롯 확장권 상수(COST_SLOT_EXT / MW_SLOT_*)는 **꾸미기 편집기 쪽**에 있다.
 //     편집기는 모듈 밖 스크립트라 여기(module) 의 const 를 못 본다.
 const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKE = 1,
@@ -10020,6 +10025,22 @@ window.ensureCreditsInit = async (uid) => {
         } catch (e) {}
       } else if (d.creditsMigrated !== true) {
         try { await updateDoc(ref, { creditsMigrated: true }); } catch (e) {}
+      }
+      // ★베타테스터 300머피 (2026-08-07, 1회).
+      //   위 보정은 creditsMigrated 로 이미 한 번 끝나서 다시 안 돈다. 그런데 가입 선물을
+      //   300으로 올렸으니 **먼저 가입한 베타테스터가 나중에 온 사람보다 불리해진다.**
+      //   대표가 약속한 대상은 '베타테스터'이므로 기존 계정도 같은 출발선까지 올린다.
+      //   ※ 더해주는 게 아니라 **300까지 채운다** — 이미 300 이상이면 손대지 않는다.
+      if (d[BETA_GRANT_KEY] !== true) {
+        try {
+          if ((d.credits | 0) < CREDIT_WELCOME) {
+            await updateDoc(ref, { credits: CREDIT_WELCOME, [BETA_GRANT_KEY]: true });
+            d.credits = CREDIT_WELCOME;
+            if (window.showToast) setTimeout(() => showToast('베타테스터 선물 · 머피 300개를 넣어드렸어요'), 1200);
+          } else {
+            await updateDoc(ref, { [BETA_GRANT_KEY]: true });
+          }
+        } catch (e) {}
       }
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
@@ -13066,10 +13087,22 @@ async function mwLoadCheckins(force) {
 window.mwLoadCheckinsPublic = mwLoadCheckins;
 // 히든 캐릭터 판정(순수함수). 체크인만으로 계산. 조건 충족분만 배열로.
 // 검증: tools/test/test_eval_hidden.mjs (여기 로직 바꾸면 그 ref도 같이 맞출 것). 설계: specs/2026-07-27-hidden-characters-design.md
+// ★히든 퀘스트는 2026-08-07 재홍보 시점부터 다시 시작한다 (대표 지시).
+//   이 날짜(yyyymmdd) 이전의 체크인은 판정에서 뺀다 — 먼저 가입해 기록이 쌓인 사람만
+//   유리해지면 '지금부터 시작'이 아니게 된다. 좀비의 14일 공백도 이 창 안에서 다시 센다.
+//   ※ **이미 해금한 사람의 캐릭터는 회수하지 않는다**(users.hiddenChars 는 건드리지 않는다).
+//   시즌을 새로 열려면 이 값만 바꾸면 된다.
+window._HIDDEN_START_DAY = '20260807';
 window.mwEvalHidden = function (checkins, now) {
   now = now || new Date();
   const out = [];
   const at = (k) => (k.at && k.at.toDate) ? k.at.toDate() : (k.at instanceof Date ? k.at : new Date());
+  const dayOf = (k) => {
+    if (k.day) return String(k.day);
+    const d = at(k);
+    return '' + d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  };
+  if (window._HIDDEN_START_DAY) checkins = (checkins || []).filter(k => dayOf(k) >= window._HIDDEN_START_DAY);
   // 교주: 최근 8주(56일) 체크인 ≥6, 최다 요일 비중 ≥0.58
   const cut = new Date(now); cut.setDate(cut.getDate() - 56);
   const recent = checkins.filter(k => at(k) >= cut);
