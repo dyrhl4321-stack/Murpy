@@ -1440,6 +1440,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
         성장 지표 · CC (관리자)
       </button>
+      <button id="feed-hair-fix-btn" onclick="window.showFeedHairFix && window.showFeedHairFix()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-6a8 8 0 0 1 16 0v6"/><path d="M4 14h16"/><path d="M9 20v-4M15 20v-4"/></svg>
+        지난 피드 빡빡이 고치기 (관리자)
+      </button>
     </div>
     <div id="my-photos" style="display:none">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 프로필 인증에도 쓰여요.</div>
@@ -8166,6 +8170,8 @@ window.updateUI = function(user) {
     if (usageBtn) usageBtn.style.display = _adm ? 'flex' : 'none';
     const growthBtn = document.getElementById('growth-stats-btn');
     if (growthBtn) growthBtn.style.display = _adm ? 'flex' : 'none';
+    const feedHairBtn = document.getElementById('feed-hair-fix-btn');
+    if (feedHairBtn) feedHairBtn.style.display = _adm ? 'flex' : 'none';
     if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
@@ -9595,6 +9601,127 @@ window.logVisit = async function (uid) {
 
 // 관리자 전용: 쌓인 사용 기록을 표로 본다.
 // 플레이스토어 프로덕션 액세스 신청서·예창패·IR 에 그대로 붙일 수 있는 형태로 뽑는다.
+// ===== 지난 피드 빡빡이 고치기 (관리자 전용, 유저 피드백 #5 후속) =====
+// ★피드 사진은 캐릭터가 **이미지에 구워져서** imgBB 에 올라간다. 원본 사진은 저장하지 않는다.
+//   그래서 이미 올라간 빡빡이 사진은 코드를 고쳐도 저절로 낫지 않는다.
+//   다행히 캐릭터를 그리는 좌표·크기가 고정 상수라 **같은 자리에 다시 그려 덮을 수** 있다.
+//   헤어는 몸 위에 얹히는 레이어라, 빡빡이 위에 올바른 캐릭터를 겹치면 정확히 덮인다.
+// ★남의 게시물을 바꾸는 일이라 자동 적용하지 않는다 — 전/후를 눈으로 보고 대표가 누른 것만 바꾼다.
+window._MCAM_GEO = { W: 1080, H: 1350, bar: 210, CH: 340 };   // _mwBuildStamp 와 같은 값
+window._mcamCharBox = function () {
+  const g = window._MCAM_GEO, cw = Math.round(g.CH * 141 / 224);
+  return { x: g.W - cw - 34, y: g.H - g.bar - g.CH + 26, w: cw, h: g.CH };
+};
+window._loadImg = (src) => new Promise(res => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+// 캐릭터 한 벌을 캔버스에 그린다(정면 정지 = row0 col0)
+window._mcamDrawChar = async function (ctx, cfg, box) {
+  const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg) : null;
+  if (!sheets) return false;
+  ctx.imageSmoothingEnabled = false;
+  for (const slot of ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc']) {
+    const url = sheets[slot]; if (!url) continue;
+    const im = await window._loadImg(url); if (!im) continue;
+    ctx.drawImage(im, 0, 0, im.width / 3, im.height / 4, box.x, box.y, box.w, box.h);
+  }
+  ctx.imageSmoothingEnabled = true;
+  return true;
+};
+window.showFeedHairFix = async function () {
+  if (typeof isAdmin !== 'function' || !isAdmin()) return;
+  const g = window._MCAM_GEO, box = window._mcamCharBox();
+  const el = document.createElement('div');
+  el.id = 'feed-hair-fix';
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-y:auto;padding:18px 14px 70px';
+  el.innerHTML = '<div style="color:#8a93a8;font-size:13px">피드를 훑는 중…</div>';
+  document.body.appendChild(el);
+  const close = '<button onclick="document.getElementById(\'feed-hair-fix\').remove()" style="position:fixed;top:12px;right:12px;z-index:2;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.16);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:inherit">✕</button>';
+
+  let docs = [];
+  try {
+    const qs = await getDocs(query(collection(db, 'feed'), orderBy('createdAt', 'desc')));
+    docs = qs.docs;
+  } catch (e) { el.innerHTML = close + '<div style="color:#ff8585">불러오기 실패: ' + (e && e.message) + '</div>'; return; }
+
+  const profCache = {};
+  const items = [];
+  let skipped = 0, failed = 0;
+  for (const d of docs) {
+    const p = d.data() || {};
+    if (!p.photoURL) continue;
+    try {
+      const img = await window._loadImg(p.photoURL);
+      // 머피캠 합성본만 대상 — 규격이 다르면 필터를 안 쓴 원본 사진이다
+      if (!img || img.naturalWidth !== g.W || img.naturalHeight !== g.H) { skipped++; continue; }
+      const cv = document.createElement('canvas'); cv.width = g.W; cv.height = g.H;
+      const cx = cv.getContext('2d');
+      cx.drawImage(img, 0, 0);
+      // 필름바 위의 6px 짙은 띠(#05070c)가 있는지로 합성본을 한 번 더 확인한다.
+      // ★여기서 터지면 imgBB 가 CORS 를 안 줘서 캔버스가 잠긴 것이다(그 사진만 건너뛴다).
+      let dark = 0;
+      for (let i = 1; i <= 12; i++) {
+        const px = cx.getImageData(Math.round(g.W * i / 13), g.H - g.bar - 3, 1, 1).data;
+        if (px[0] < 30 && px[1] < 30 && px[2] < 40) dark++;
+      }
+      if (dark < 10) { skipped++; continue; }
+      // 글쓴이의 **현재** 캐릭터로 다시 그린다
+      if (!(p.userId in profCache)) {
+        try { const us = await getDoc(doc(db, 'users', p.userId)); profCache[p.userId] = us.exists() ? (us.data().character || null) : null; }
+        catch (e) { profCache[p.userId] = null; }
+      }
+      const cfg = { ...(profCache[p.userId] || window.CHAR_DEFAULT) };
+      if (window._charEnsureDefaults) window._charEnsureDefaults(cfg);
+      await window._mcamDrawChar(cx, cfg, box);
+      items.push({ id: d.id, before: p.photoURL, after: cv, name: p.userName || '익명' });
+    } catch (e) { failed++; console.warn('[feed-hair-fix] 건너뜀', d.id, e && e.message); }
+  }
+
+  const _note = '<div style="font-size:11px;color:#666;margin-top:14px;line-height:1.6">'
+    + '대상 아님(필터 안 쓴 사진) ' + skipped + '건 · 읽기 실패 ' + failed + '건'
+    + (failed ? '<br>읽기 실패는 사진 서버가 CORS 를 안 줘서 캔버스가 잠긴 경우예요.' : '') + '</div>';
+  if (!items.length) { el.innerHTML = close + '<div style="color:#8a93a8;font-size:13px">고칠 머피캠 사진이 없어요.</div>' + _note; return; }
+
+  el.innerHTML = close
+    + '<div style="font-size:16px;font-weight:800;margin-bottom:6px">지난 피드 캐릭터 다시 그리기</div>'
+    + '<div style="font-size:12px;color:#8a93a8;line-height:1.7;margin-bottom:16px">'
+    + '사진에 구워진 캐릭터를 <b style="color:#cfd6e6">글쓴이의 현재 캐릭터</b>로 다시 그려 덮어요.<br>'
+    + '★올린 뒤에 옷을 바꾼 사람은 <b style="color:#F5C24B">그 사진의 옷도 지금 것으로 바뀝니다.</b> '
+    + '오른쪽(고친 것)을 보고 괜찮은 것만 눌러주세요. 되돌릴 수 없어요.</div>'
+    + '<div id="fhf-list"></div>' + _note;
+  const list = el.querySelector('#fhf-list');
+  items.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px;margin-bottom:14px';
+    row.innerHTML = '<div style="font-size:12px;color:#8a93a8;margin-bottom:8px">' + it.name + '</div>'
+      + '<div style="display:flex;gap:8px;align-items:flex-start">'
+      + '<div style="flex:1"><div style="font-size:10px;color:#666;margin-bottom:4px">지금</div>'
+      + '<img src="' + it.before + '" style="width:100%;border-radius:8px;display:block"></div>'
+      + '<div style="flex:1"><div style="font-size:10px;color:#4ADE80;margin-bottom:4px">고친 것</div>'
+      + '<img id="fhf-after-' + i + '" style="width:100%;border-radius:8px;display:block"></div>'
+      + '</div>'
+      + '<button id="fhf-btn-' + i + '" style="width:100%;margin-top:10px;background:#3D7EFF;color:#fff;border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">이걸로 바꾸기</button>';
+    list.appendChild(row);
+    row.querySelector('#fhf-after-' + i).src = it.after.toDataURL('image/jpeg', 0.9);
+    row.querySelector('#fhf-btn-' + i).onclick = async function () {
+      const b = this; b.disabled = true; b.textContent = '올리는 중…';
+      try {
+        const blob = await new Promise(r => it.after.toBlob(r, 'image/jpeg', 0.9));
+        const fd = new FormData();
+        fd.append('image', blob, 'fixed.jpg');
+        fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+        const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+        const json = await res.json();
+        if (!json.success) throw new Error('imgBB 업로드 실패');
+        await updateDoc(doc(db, 'feed', it.id), { photoURL: json.data.url });
+        b.textContent = '바뀌었어요';
+        b.style.background = '#4ADE80'; b.style.color = '#08210f';
+      } catch (e) {
+        b.disabled = false; b.textContent = '실패 · 다시 시도';
+        b.style.background = '#FF4D67';
+      }
+    };
+  });
+};
+
 window.showUsageStats = async function () {
   if (typeof isAdmin !== 'function' || !isAdmin()) return;
   const el = document.createElement('div');
