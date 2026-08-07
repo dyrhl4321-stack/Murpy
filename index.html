@@ -2109,6 +2109,37 @@ window._HAIR_ID_MIGRATE = {
   //   "대체품이 없으면 기본헤어로" 원칙대로 기본헤어로 보낸다.
   hair_fem_bob: 'hair_f_basic', hair_fem_long: 'hair_f_long'
 };
+// ★유저 피드백 #5 (2026-08-07) — "머피캠 필터에서 캐릭터가 빡빡이로 나온다".
+//   base(walk.png)는 빡빡이라서 **헤어 슬롯이 비면 민머리가 그대로 드러난다.**
+//   비는 경로가 두 개 있었다:
+//     ① 성별 몸통 백필 — 남캐 몸으로 가입한 여성을 여캐 몸으로 옮기면서 남캐 전용
+//        헤어를 벗기는데, **여캐 기본헤어를 채워 넣지 않았다.**
+//     ② 카탈로그에서 내린 헤어(품질 미달로 주석 처리 등)를 끼고 있던 유저 —
+//        _HAIR_ID_MIGRATE 에 없으면 그대로 '없는 id' 가 되어 아무것도 안 그려진다.
+//   → 몸통마다 정해둔 defaultHair/Top/Bottom 으로 메운다. 한 곳에서 처리해야
+//     머피캠뿐 아니라 오버월드·프로필·피드까지 같이 낫는다.
+//   ※ 신발은 일부러 비워 둔다 — 맨발이 기본이고 러닝화가 첫 구매 대상이다.
+//   바뀌었으면 true 를 돌려준다(호출한 쪽이 저장할지 판단).
+window._charEnsureDefaults = function (cfg) {
+  if (!cfg) return false;
+  const bodyKey = cfg.body || 'human';
+  const b = window._CHAR_BODIES[bodyKey] || window._CHAR_BODIES.human;
+  if (!b.wearable) return false;   // 헬토리·히든은 통짜 캐릭터라 헤어·옷 개념이 없다
+  let changed = false;
+  if (cfg.hair && window._HAIR_ID_MIGRATE[cfg.hair]) { cfg.hair = window._HAIR_ID_MIGRATE[cfg.hair]; changed = true; }
+  // 카탈로그에 없거나 다른 몸통 전용이면 벗긴다 (렌더는 어차피 무시하므로 데이터도 맞춘다)
+  ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
+    const id = cfg[slot]; if (!id) return;
+    const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
+    if (!it || (it.body && it.body !== bodyKey)) { cfg[slot] = null; changed = true; }
+  });
+  const fill = function (slot, id) {
+    if (cfg[slot] || !id) return;
+    if ((window.CHAR_ITEMS || []).some(function (x) { return x.id === id && x.slot === slot; })) { cfg[slot] = id; changed = true; }
+  };
+  fill('hair', b.defaultHair); fill('top', b.defaultTop); fill('bottom', b.defaultBottom);
+  return changed;
+};
 // 아이템의 body = 그 몸통 전용(실루엣이 달라 다른 몸엔 안 맞는다). 없으면 공용.
 window.CHAR_ITEMS = [
   // 헤어: hatVariants = 모자 착용 시 대체 시트(푹 눌러쓴 비니 밖으로 뒷머리만 빼꼼). null = 완전히 숨김(짧은 머리)
@@ -9894,6 +9925,11 @@ window.ensureCreditsInit = async (uid) => {
         });
         try { await setDoc(ref, { character: window._charState.character }, { merge: true }); } catch (e) {}
       }
+      // ★유저 피드백 #5 — 위 백필이 헤어를 벗기기만 하고 안 채워서 빡빡이가 되던 것을 여기서 막는다.
+      //   카탈로그에서 내려간 헤어를 끼고 있던 유저도 같이 구제된다.
+      if (window._charEnsureDefaults && window._charEnsureDefaults(window._charState.character)) {
+        try { await setDoc(ref, { character: window._charState.character }, { merge: true }); } catch (e) {}
+      }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
@@ -14455,7 +14491,11 @@ window._mwBuildStamp = async function (photo, t, caption) {
   x.fillText('MURPY · 오운완 인증', 40, H-bar+164);
   // 내 캐릭터 (현재 착장, 정면 정지) — 픽셀 그대로
   try {
-    const cfg=(window.getMyCharacter?window.getMyCharacter():window.CHAR_DEFAULT)||{};
+    // ★유저 피드백 #5 — 사진에 찍히는 캐릭터가 빡빡이로 나오던 문제.
+    //   저장본이 낡아 헤어가 비어 있어도 여기서 기본형으로 메운다(사본이라 저장은 안 한다).
+    //   사진은 한 번 올리면 되돌릴 수 없으니 렌더 직전에 한 번 더 막는다.
+    const cfg={ ...((window.getMyCharacter?window.getMyCharacter():window.CHAR_DEFAULT)||{}) };
+    if (window._charEnsureDefaults) window._charEnsureDefaults(cfg);
     const sheets=window._charEquippedSheets?window._charEquippedSheets(cfg):null;
     if (sheets) {
       x.imageSmoothingEnabled=false;
