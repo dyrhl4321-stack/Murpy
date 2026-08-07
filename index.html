@@ -8177,6 +8177,9 @@ window.saveNickname = async () => {
     if (!existingPhoto) saveData.photoURL = user.photoURL || '';
     await setDoc(userRef, saveData, { merge: true });
     if (window.currentUser) window.currentUser.nickname = nickname;
+    // 유저 피드백 #6 — 세션 캐시도 같이 (머피월드 라벨이 옛 이름으로 남던 문제)
+    window._mwMyNick = nickname;
+    if (window._cachedProfile) window._cachedProfile.nickname = nickname;
     document.getElementById('info-name').textContent = nickname;
     closeNicknameModal();
     showToast('✓ 닉네임이 설정됐어요!');
@@ -11288,6 +11291,7 @@ window.saveProfile = async () => {
   if (!user) return;
   const nickname = document.getElementById('edit-nickname').value.trim();
   if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
+  const _prevNick = (window._cachedProfile && window._cachedProfile.nickname) || '';
   const _ageRaw = document.getElementById('edit-age').value.trim();
   const age = _ageRaw ? parseInt(_ageRaw) : null;
   if (_ageRaw && (!age || age < 15 || age > 80)) { showToast('나이는 15~80세로 입력해주세요'); return; }
@@ -11304,10 +11308,47 @@ window.saveProfile = async () => {
       district, bio, gym, career, updatedAt: serverTimestamp()
     }, { merge: true });
     if (window.currentUser) window.currentUser.nickname = nickname;
+    // ★유저 피드백 #6 — "닉네임을 바꿨는데 이전 닉네임이 남는다".
+    //   세션 캐시를 여기서 같이 갈아준다. _mwMyNick 은 앱 열 때 한 번만 읽고
+    //   그 뒤로는 `if (!window._mwMyNick)` 로만 채워서, 바꿔도 그 세션 내내 옛 이름이 남았다
+    //   (머피월드 발밑 라벨·스쿼드 시스템 메시지·방명록 등).
+    window._mwMyNick = nickname;
+    if (window._cachedProfile) window._cachedProfile.nickname = nickname;
+    if (window._charApplyPos) window._charApplyPos();   // 오버월드 발밑 라벨 즉시 반영
     await window.loadUserProfile(user.uid);
     closePanel('edit-profile-panel');
     showToast('✓ 프로필 저장됐어요');
+    // 지난 글에 박혀 있는 옛 닉네임까지 갈아준다(느려도 되니 화면은 안 붙잡는다)
+    if (_prevNick && _prevNick !== nickname) window._propagateNickname(nickname);
   } catch(e) { console.error('프로필 저장 실패:', e); showToast('저장 실패'); }
+};
+
+// ★유저 피드백 #6 — 닉네임은 글마다 복사돼 저장된다(비정규화). 글을 읽을 때마다
+//   작성자 문서를 다시 읽지 않으려고 그렇게 만든 것이라, 닉네임을 바꿔도
+//   **이미 쓴 글에는 옛 이름이 그대로 남는다.** 바꾸는 시점에 내 것만 훑어 갈아준다.
+//   ※ 대숲은 화면에 '익명'으로 뜨지만 userName 필드는 갖고 있어 같이 정리한다.
+//   ※ 실패해도 프로필 저장 자체는 이미 끝났으므로 조용히 넘어간다(토스트로 겁주지 않는다).
+window._propagateNickname = async (nickname) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  let n = 0;
+  const _bulk = async (colName) => {
+    try {
+      const snap = await getDocs(query(collection(db, colName), where('userId', '==', user.uid)));
+      await Promise.all(snap.docs
+        .filter(d => d.data().userName !== nickname)
+        .map(d => updateDoc(d.ref, { userName: nickname }).then(() => { n++; }).catch(() => {})));
+    } catch (e) {}
+  };
+  await _bulk('feed');
+  await _bulk('bamboo');
+  // 스쿼드 멤버 문서 — 남들이 보는 참가자 목록이라 여기가 제일 눈에 띈다
+  try {
+    const sq = await getDocs(query(collection(db, 'squads'), where('memberUids', 'array-contains', user.uid)));
+    await Promise.all(sq.docs.map(s =>
+      updateDoc(doc(db, 'squads', s.id, 'members', user.uid), { nickname }).then(() => { n++; }).catch(() => {})));
+  } catch (e) {}
+  if (n) console.log('[nickname] 지난 기록 ' + n + '건 갱신됨');
 };
 
 // ===== 구글 로그인 (전역 함수로 분리) =====
@@ -12707,7 +12748,10 @@ window.saveRatingFirestore = async (centerId, score, text) => {
     await setDoc(ratingRef, {
       score, text: text || '',
       userId: user.uid,
-      nickname: user.displayName || window.userNickname || '익명',
+      // ★유저 피드백 #6 — 여기만 users 문서를 안 읽고 displayName(구글·카카오 계정 이름)을
+      //   그대로 박고 있었다. 머피 닉네임을 바꿔도 리뷰엔 계정 실명이 남는다.
+      nickname: (window._cachedProfile && window._cachedProfile.nickname)
+                || window._mwMyNick || user.displayName || '익명',
       createdAt: serverTimestamp()
     });
     // 센터 평균 평점 + 리뷰 수 재계산
