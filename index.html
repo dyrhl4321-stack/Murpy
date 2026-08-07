@@ -1451,6 +1451,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-6a8 8 0 0 1 16 0v6"/><path d="M4 14h16"/><path d="M9 20v-4M15 20v-4"/></svg>
         지난 피드 빡빡이 고치기 (관리자)
       </button>
+      <button id="center-fix-btn" onclick="window.showCenterFix && window.showCenterFix()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.2-7-10.5A7 7 0 0 1 19 10.5C19 15.8 12 21 12 21z"/><circle cx="12" cy="10.3" r="2.4"/></svg>
+        헬스장 좌표·시딩 정비 (관리자)
+      </button>
     </div>
     <div id="my-photos" style="display:none">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 프로필 인증에도 쓰여요.</div>
@@ -8221,6 +8225,8 @@ window.updateUI = function(user) {
     if (growthBtn) growthBtn.style.display = _adm ? 'flex' : 'none';
     const feedHairBtn = document.getElementById('feed-hair-fix-btn');
     if (feedHairBtn) feedHairBtn.style.display = _adm ? 'flex' : 'none';
+    const centerFixBtn = document.getElementById('center-fix-btn');
+    if (centerFixBtn) centerFixBtn.style.display = _adm ? 'flex' : 'none';
     if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
@@ -9664,6 +9670,143 @@ window.logVisit = async function (uid) {
 
 // 관리자 전용: 쌓인 사용 기록을 표로 본다.
 // 플레이스토어 프로덕션 액세스 신청서·예창패·IR 에 그대로 붙일 수 있는 형태로 뽑는다.
+// ===== 헬스장 좌표·시딩 정비 (관리자 전용) =====
+// ★왜 앱 안에 버튼으로 넣었나 (2026-08-07)
+//   원래는 docs/seeds/*.js 를 F12 콘솔에 붙여넣는 방식이었는데, 크롬이 콘솔 붙여넣기를
+//   막아(‘allow pasting’ 요구) 앞부분이 잘려 들어가거나 주소창에 넣게 되는 일이 반복됐다.
+//   대표가 폰·PC 어디서든 버튼 한 번으로 끝내게 하는 편이 확실하다.
+// ★좌표가 없으면 mwCheckin 이 `.filter(c => c.lat && c.lng)` 로 그 센터를 통째로 빼기 때문에
+//   목록엔 보이는데 체크인은 영영 안 된다. 그래서 이 정비가 필요하다.
+// 데이터 출처 = docs/seeds/centers.csv · centers-fixcoords.js (카카오 로컬 검색, 이름 일치분만)
+window._CENTER_NEW = [
+  { name: '짐박스피트니스 일원역점', type: '헬스', loc: '강남', addr: '서울 강남구 일원동 717', lat: 37.4840740343, lng: 127.0844520898 },
+  { name: '짐박스피트니스 사당1호점', type: '헬스', loc: '동작', addr: '서울 동작구 사당동 1030-20', lat: 37.4804095268, lng: 126.9814581452 },
+  { name: '짐맥스', type: '헬스', loc: '하남', addr: '경기 하남시 망월동 1129-1', lat: 37.5632074735, lng: 127.1942108156 },
+  { name: '짐박스피트니스 사당2호점', type: '헬스', loc: '관악', addr: '서울 관악구 남현동 1059-16', lat: 37.4761293317, lng: 126.9790624656 }
+];
+// 이미 등록돼 있는데 좌표만 비어 있는 곳 — **수정**해야 한다(새로 만들면 중복이 된다)
+window._CENTER_FIX = [
+  { name: '필라테스 도원', addr: '서울 강남구 테헤란로4길 40', lat: 37.4958178800494, lng: 127.030516662959 },
+  { name: '짐타임 성수역점', addr: '서울 성동구 성수이로 113', lat: 37.54514242146, lng: 127.057127702187 },
+  { name: '크로스핏 헬퍼', addr: '서울 마포구 성미산로1길 61', lat: 37.56042824693298, lng: 126.9067163191254 },
+  { name: '무한크로스핏', addr: '서울 마포구 큰우물로 49', lat: 37.5425490672215, lng: 126.944174414332 },
+  { name: '휘트니스플레이스 송파장지점', addr: '서울 송파구 충민로2길 28', lat: 37.4772644560868, lng: 127.127395265641 },
+  { name: '헬스보이짐 강남역점', addr: '서울 강남구 테헤란로2길 27', lat: 37.4964902401947, lng: 127.029695944353 },
+  { name: '클라필라테스 홍대점', addr: '서울 마포구 성미산로 78', lat: 37.56030773706622, lng: 126.91665146904312 },
+  { name: '헬스보이짐 잠실점', addr: '서울 송파구 올림픽로 240', lat: 37.5113107836422, lng: 127.098140395433 },
+  { name: '빅브로짐 성수점', addr: '서울 성동구 왕십리로 115', lat: 37.547920365137635, lng: 127.04413769678499 },
+  { name: '빌드업피트니스 성수역점', addr: '서울 성동구 아차산로 97', lat: 37.5451848283766, lng: 127.055105604146 },
+  { name: '휴메이크 피트니스 잠실점', addr: '서울 송파구 삼전로 85', lat: 37.50625141395916, lng: 127.08934710974127 },
+  { name: '크로스핏 강남 언주', addr: '서울 강남구 논현로 614', lat: 37.508589703264136, lng: 127.03359146535587 },
+  { name: '시그마스포츠클럽 잠실', addr: '서울 송파구 올림픽로 289', lat: 37.514613743649974, lng: 127.10252440248789 },
+  // ↓ 이름이 완전히 같지는 않아 보류했던 12곳. 대표 지시(2026-08-07)로 **검색 1순위**를 그대로 넣는다.
+  //   ★즉 아래 좌표는 '확인된 것'이 아니라 '카카오 검색 1번째 결과'다. 유저가 체크인이 안 된다고
+  //     하면 여기부터 의심할 것.
+  { name: '크로스핏 스팀펑크', addr: '서울 서대문구 연세로5다길 22-3', lat: 37.55679778145561, lng: 126.93430168330222 },
+  { name: '스타트짐 성수', addr: '서울 성동구 성덕정길 106', lat: 37.53716593256434, lng: 127.05510196566289 },
+  { name: '아고라 피트니스', addr: '서울 서초구 서초대로78길 38', lat: 37.4945264043513, lng: 127.028231893925 },
+  { name: '쓰리짐 성수', addr: '서울 성동구 왕십리로14길 30-3', lat: 37.548364224232344, lng: 127.0473246184364 },
+  { name: '헬스보이짐 홍대점', addr: '서울 마포구 양화로 176', lat: 37.5571921283267, lng: 126.924758338835 },
+  { name: 'ABC 크로스핏 강남', addr: '서울 강남구 테헤란로8길 30', lat: 37.496887932745494, lng: 127.03181757500396 },
+  { name: '브릿 필라테스 강남점', addr: '서울 강남구 선릉로 431', lat: 37.5034359288207, lng: 127.049106893146 },
+  // ★'크로스핏 강남'과 '크로스핏 강남 언주'가 **같은 좌표**가 된다(둘 다 언주점이 1순위).
+  //   200m 반경 안에 두 센터가 겹치면 체크인은 둘 중 하나로만 잡힌다 — 같은 곳이면 하나를 지울 것.
+  { name: '크로스핏 강남', addr: '서울 강남구 논현로 614', lat: 37.508589703264136, lng: 127.03359146535587 },
+  { name: '강남클라이밍', addr: '서울 강남구 대치동 1010-1', lat: 37.5034557084123, lng: 127.067455409393 },
+  { name: '오오필라테스', addr: '서울 강남구 논현로 641', lat: 37.5108175235943, lng: 127.03164704163 },
+  { name: '방이동 24짐', addr: '서울 송파구 올림픽로47길 19', lat: 37.528340867364, lng: 127.116707356107 },
+  { name: '잠실피트니스클럽', addr: '서울 송파구 올림픽로 76', lat: 37.5115701916604, lng: 127.079025645245 }
+];
+// 카카오 지도에 아예 없는 곳 — 대표 지시로 **삭제**한다(2026-08-07).
+// 유저가 목록에서 보고 찾아갔는데 실제로 없으면 헛걸음이라, 비워두느니 없애는 게 낫다.
+window._CENTER_REMOVE = [
+  '합정 딜라이트 피트니스', '슈퍼맨짐 역삼', '클라임이모션', '빗미PT 홍대',
+  '탑짐 강남점', '스파르타 복싱클럽 강남', '태그아웃 트레이닝', 'GX코리아 강남'
+];
+window.showCenterFix = async function () {
+  if (typeof isAdmin !== 'function' || !isAdmin()) return;
+  const el = document.createElement('div');
+  el.id = 'center-fix';
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-y:auto;padding:20px 16px 60px';
+  const log = [];
+  const paint = (title, extra) => {
+    el.innerHTML = '<div style="font-size:16px;font-weight:800;margin-bottom:12px">' + title + '</div>'
+      + '<div style="font-size:12.5px;color:#cfd6e6;line-height:1.9;white-space:pre-wrap">' + log.join('\n') + '</div>'
+      + (extra || '')
+      + '<button onclick="document.getElementById(\'center-fix\').remove()" style="position:fixed;top:12px;right:12px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.16);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:inherit">✕</button>';
+  };
+  document.body.appendChild(el);
+  log.push('불러오는 중…'); paint('헬스장 정비');
+
+  try {
+    await window.loadCentersFirestore();
+    const have = window.centersData || [];
+    const byName = {};
+    have.forEach(c => { byName[c.name] = c; });
+
+    // 1) 새 센터 등록 (이름이 없을 때만)
+    const toAdd = window._CENTER_NEW.filter(c => !byName[c.name]);
+    log.length = 0;
+    log.push('■ 새 헬스장 등록');
+    if (!toAdd.length) log.push('  추가할 것 없음 (이미 ' + window._CENTER_NEW.length + '곳 등록됨)');
+    else {
+      await window.seedCenters(toAdd);
+      toAdd.forEach(c => log.push('  + ' + c.name));
+    }
+    paint('헬스장 정비');
+
+    // 2) 좌표 채우기 (이미 좌표가 있으면 건드리지 않는다 = 여러 번 눌러도 안전)
+    log.push('');
+    log.push('■ 좌표 채우기');
+    let done = 0, skip = 0, miss = [];
+    for (const f of window._CENTER_FIX) {
+      const c = byName[f.name];
+      if (!c) { miss.push(f.name); continue; }
+      if (c.lat && c.lng) { skip++; continue; }
+      const ok = await window.updateCenterFirestore(c.id, { addr: f.addr, lat: f.lat, lng: f.lng });
+      if (ok !== false) { done++; log.push('  ✓ ' + f.name); paint('헬스장 정비'); }
+    }
+    log.push('  채움 ' + done + '곳 · 이미 있어서 건너뜀 ' + skip + '곳 · 이름 못 찾음 ' + miss.length + '곳');
+    if (miss.length) log.push('  못 찾음: ' + miss.join(', '));
+
+    // 3) 지도에 없는 센터 삭제 — 되돌릴 수 없으므로 한 번 묻는다
+    const gone = window._CENTER_REMOVE.filter(n => byName[n]);
+    log.push('');
+    log.push('■ 지도에 없는 센터 삭제');
+    if (!gone.length) log.push('  지울 것 없음 (이미 정리됨)');
+    else {
+      const ok = window.murpyConfirm
+        ? await window.murpyConfirm({
+            title: '센터 ' + gone.length + '곳을 지울까요?',
+            desc: gone.join(', ') + '<br><b style="color:#FF4D67">되돌릴 수 없어요.</b>',
+            confirmText: '삭제' })
+        : confirm(gone.length + '곳을 삭제할까요? 되돌릴 수 없습니다.');
+      if (!ok) log.push('  취소함 — 그대로 두었습니다');
+      else {
+        for (const n of gone) {
+          try { await deleteDoc(doc(db, 'centers', String(byName[n].id))); log.push('  − ' + n); }
+          catch (e) { log.push('  ! ' + n + ' 삭제 실패: ' + (e && e.message)); }
+          paint('헬스장 정비');
+        }
+      }
+    }
+
+    // 3) 현재 상태 요약
+    await window.loadCentersFirestore();
+    const all = window.centersData || [];
+    const withGeo = all.filter(c => c.lat && c.lng);
+    log.push('');
+    log.push('■ 현재 상태');
+    log.push('  전체 ' + all.length + '곳 · 체크인 가능(좌표 있음) ' + withGeo.length + '곳');
+    log.push('  좌표 없음 ' + (all.length - withGeo.length) + '곳 — 지도에 없거나 이름이 달라 보류한 곳');
+    paint('헬스장 정비 완료');
+  } catch (e) {
+    log.push('');
+    log.push('실패: ' + (e && e.message));
+    paint('헬스장 정비 — 오류');
+  }
+};
+
 // ===== 지난 피드 빡빡이 고치기 (관리자 전용, 유저 피드백 #5 후속) =====
 // ★피드 사진은 캐릭터가 **이미지에 구워져서** imgBB 에 올라간다. 원본 사진은 저장하지 않는다.
 //   그래서 이미 올라간 빡빡이 사진은 코드를 고쳐도 저절로 낫지 않는다.
