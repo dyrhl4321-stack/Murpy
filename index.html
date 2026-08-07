@@ -3384,11 +3384,12 @@ window.charSlot = function (slot, btn) {
     grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
 };
-window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
+window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window._charAutoSave(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
 window.charClearSlot = function (slot) {
   if (!window._charDraft) return;
   window._charDraft[slot] = null;
   window._charRenderAvatar(); window._charApplyPos();   // 프리뷰 + 걷는 캐릭터 반영
+  window._charAutoSave();                                // 벗는 것도 저장돼야 한다(#16)
   window.charSlot(slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
 // ※ charPickColor 제거 — 색상 탭과 함께 폐기. 부르는 곳이 없다.
@@ -3475,13 +3476,43 @@ window.charPick = async function (id) {
   window._charDraft[item.slot] = id;
   window._charRenderAvatar();
   window._charApplyPos();     // 걷는 캐릭터에 즉시 반영
+  window._charAutoSave();     // 유저 피드백 #16 — 저장 버튼 없이 바로 저장
   window.charSlot(item.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
+// ===== 캐릭터 자동 저장 (유저 피드백 #16) =====
+// ★저장 버튼이 꾸미기 패널 **맨 아래**에 있어서 못 보고 나가는 사람이 많았다.
+//   콜드스타터가 "공들여 꾸민 캐릭터를 잃었다"고 느끼는 게 제일 비싸다.
+//   → 버튼을 없애고 **바꾸는 즉시 저장**한다. 버튼 자리에는 상태만 보여준다.
+//   연타(옷을 여러 번 갈아입기)로 쓰기가 폭주하지 않게 0.6초 모아서 한 번만 쓴다.
+window._charSaveT = null;
+window._charSetSaveStatus = function (state) {
+  const el = document.getElementById('char-save-status');
+  if (!el) return;
+  const ok = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 6 9 17l-5-5"/></svg>';
+  const wrap = (c, html) => '<span style="display:inline-flex;align-items:center;gap:5px;color:' + c + '">' + html + '</span>';
+  if (state === 'saving')      el.innerHTML = wrap('rgba(255,255,255,0.38)', '저장 중…');
+  else if (state === 'saved')  el.innerHTML = wrap('#4ADE80', ok + '저장됨');
+  else if (state === 'error')  el.innerHTML = wrap('#FF4D67', '저장 실패 · 인터넷 확인 후 다시 골라주세요');
+  else if (state === 'guest')  el.innerHTML = wrap('rgba(255,255,255,0.38)', '로그인하면 저장돼요');
+  else                         el.innerHTML = wrap('rgba(255,255,255,0.32)', '고르면 자동으로 저장돼요');
+};
+window._charAutoSave = function (immediate) {
+  if (!window._charDraft) return;
+  if (!window.currentUser) { window._charSetSaveStatus('guest'); return; }
+  // 화면상의 내 캐릭터는 즉시 최신으로(저장 완료를 기다리지 않는다)
+  if (window._charState) window._charState.character = { ...window._charDraft };
+  window._charSetSaveStatus('saving');
+  if (window._charSaveT) { clearTimeout(window._charSaveT); window._charSaveT = null; }
+  const run = async () => {
+    const okSave = window._charPersistCharacter ? await window._charPersistCharacter(window._charDraft) : false;
+    window._charSetSaveStatus(okSave ? 'saved' : 'error');
+  };
+  if (immediate) run(); else window._charSaveT = setTimeout(run, 600);
+};
+// 옛 이름 유지 — 다른 곳에서 부르고 있어도 안 깨지게(이제는 즉시 저장 트리거)
 window.charSave = function () {
   if (!window.currentUser) { window.requireLogin && requireLogin('로그인 후 캐릭터를 저장할 수 있어요'); return; }
-  if (window._charPersistCharacter) window._charPersistCharacter(window._charDraft);
-  if (window._charState) window._charState.character = { ...window._charDraft };
-  window.showToast && showToast('캐릭터 저장됨');
+  window._charAutoSave(true);
 };
 // ===== 캐릭터(body) 선택 + 근방단 한정 코드 해금 =====
 window.charPickBody = function (key) {
@@ -3507,6 +3538,7 @@ window.charPickBody = function (key) {
   window._charPos.face = 'down'; window._charPos.frame = 0;
   window._charApplyPos();
   window._charRenderAvatar();      // dress 탭이면 프리뷰 갱신(아니면 무시)
+  window._charAutoSave();          // 유저 피드백 #16 — 몸통 교체도 바로 저장
   window.charRenderRoster();       // 로스터 '착용중' 갱신
 };
 window.openCharCodeModal = function (key) {
@@ -3628,12 +3660,15 @@ window.charHubTab = function (name, btn) {
       //   hairColor/topColor 를 아예 안 본다. 옷 색 커마는 안 하기로 했다.
       + '<button class="tab-btn" onclick="window.charSlot(\'acc\',this)">악세사리</button></div>'
       + '<div id="charworld-items" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>'
-      + '<button class="mw-btn" style="width:100%;margin-top:18px" onclick="window.charSave()">저장</button>';
+      // ★유저 피드백 #16 — '저장' 버튼을 없애고 자동 저장 상태만 보여준다.
+      //   버튼이 목록 맨 아래라 스크롤을 안 내리면 안 보였고, 안 누르고 나가면 꾸민 게 날아갔다.
+      + '<div id="char-save-status" style="text-align:center;margin-top:16px;font-size:12px;letter-spacing:-0.2px;min-height:17px"></div>';
     if (!(window._CHAR_BODIES[body] || {}).wearable) {
       panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:#8a93a8;line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 기본 캐릭터에서!</div>');
     }
     window._charRenderAvatar();
     window.charSlot('hair');
+    window._charSetSaveStatus(window.currentUser ? '' : 'guest');   // 안내 문구 초기 표시(#16)
   } else {
     panel.innerHTML = '<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">'
       + '<div style="width:66px;height:66px;margin:0 auto 16px;position:relative;background:#0e1320;box-shadow:0 0 0 3px #2b3350">'
@@ -8963,7 +8998,8 @@ const CREDIT_BUMP_FIRST = 10, CREDIT_BUMP = 3, CAP_BUMP_DAY = 3;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
-window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); } catch (e) { console.error('char save', e); } };
+// 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
+window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); return true; } catch (e) { console.error('char save', e); return false; } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
