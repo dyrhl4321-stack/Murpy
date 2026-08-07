@@ -8999,7 +8999,12 @@ window.isMatched = async (otherUid) => {
   try { const m = await getDoc(doc(db, 'matches', _pairKey(me, otherUid))); return m.exists(); } catch (e) { return false; }
 };
 
-// 이미 연결된 사이 여부 (매칭 또는 채팅 개설) — 관심목록에서 제외용
+// 이미 연결된 사이 여부 (매칭 **또는 채팅 개설**) — 관심목록에서 제외용.
+// ★주의 (2026-08-07): 이건 isMatched 와 다른 판정이다. 채팅만 있어도 true 가 된다.
+//   대숲 '저에요'로 열린 익명 채팅처럼 **매칭이 아닌 채팅**이 존재할 수 있기 때문이다.
+//   그래서 '매칭됐는가?'를 물어야 하는 자리에 이 함수를 쓰면 안 된다 — 그러면
+//   "이미 연결된 사이라는데 프로필은 잠겨 있는" 모순이 생긴다(대표가 랄프에서 겪음).
+//   매칭 여부는 반드시 isMatched 를 쓸 것.
 window._isConnected = async (otherUid) => {
   const me = window.currentUser?.uid;
   if (!me || !otherUid) return false;
@@ -10372,9 +10377,14 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
   if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
-  // 이미 연결된 사이면 새로 보내지 말고(전송실패 방지) 기존 채팅으로 연결
-  if (window._isConnected && await window._isConnected(toUid)) {
-    showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
+  // ★버그 수정 (2026-08-07, 대표 리포트 '랄프'): 여기서 _isConnected 를 보고 있었다.
+  //   그런데 _isConnected 는 **채팅만 있어도 true** 라(대숲 익명채팅 등), 매칭이 안 된
+  //   사이인데도 "이미 연결된 사이"라며 좋아요 전송을 막고 채팅만 열었다.
+  //   반면 프로필 화면은 isMatched(=matches 문서)로 판정하니 잠긴 채로 보였다.
+  //   → 셋이 어긋나 "연결됐다는데 프로필은 매칭 전, 눌러도 채팅만 또 열림"이 됐다.
+  //   막아야 하는 건 **진짜 매칭된 사이**뿐이다. 채팅만 있는 사이엔 정상적으로 신청이 가야 한다.
+  if (window.isMatched && await window.isMatched(toUid)) {
+    showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
     if (window.openChatFirestore) window.openChatFirestore(_pairKey(me, toUid), toUid, toName, toPhoto, false);
     return;
   }
@@ -10411,9 +10421,9 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
 window.feedInvite = async (uid, name, photo) => {
   if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.currentUser.uid === uid) { showToast('내 글이에요'); return; }
-  // 이미 연결된 사이면 새로 보내지 말고(전송실패 방지) 기존 채팅으로 연결
-  if (window._isConnected && await window._isConnected(uid)) {
-    showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
+  // 위 sendLike 와 같은 이유로 isMatched 로 판정한다(채팅만 있는 사이는 막지 않는다)
+  if (window.isMatched && await window.isMatched(uid)) {
+    showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
     if (window.openChatFirestore) window.openChatFirestore(_pairKey(window.currentUser.uid, uid), uid, name, photo, false);
     return;
   }
@@ -12425,10 +12435,12 @@ window._loadInterestPanel = async (silent) => {
   try {
     const q = query(collection(db, 'likes'), where('to', '==', user.uid));
     const snap = await getDocs(q);
-    // 이미 연결된 사이(매칭/채팅)는 제외
+    // ★제외 기준은 **매칭**이다 (2026-08-07 수정). 예전엔 _isConnected(채팅만 있어도 true)로
+    //   걸렀는데, 그러면 대숲 익명채팅 등으로 대화방만 열려 있는 상대가 보낸 좋아요가
+    //   **목록에서 통째로 사라진다.** 아직 매칭 전이므로 받은 좋아요에 남아 있어야 한다.
     for (const d of snap.docs) {
       const fromUid = d.data().from;
-      if (await window._isConnected(fromUid)) continue;
+      if (await window.isMatched(fromUid)) continue;
       likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt });
     }
   } catch(e) {}
@@ -12442,6 +12454,9 @@ window._loadInterestPanel = async (silent) => {
       const n = d.data();
       if (seenUid.has(n.fromUid)) continue;
       seenUid.add(n.fromUid);
+      // ★여기는 위(매칭 좋아요)와 달리 _isConnected 가 맞다 — 일부러 그대로 둔다.
+      //   대숲 '저에요'는 **채팅이 열리면 끝난 일**이다. isMatched 로 바꾸면 이미 처리한
+      //   대숲 신청이 목록에 영원히 남는다.
       if (await window._isConnected(n.fromUid)) continue;
       bambooDocs.push(n);
     }
@@ -12454,7 +12469,7 @@ window._loadInterestPanel = async (silent) => {
     const snap = await getDocs(q);
     for (const d of snap.docs) {
       const toUid = d.data().to;
-      if (await window._isConnected(toUid)) continue;
+      if (await window.isMatched(toUid)) continue;   // 위와 같은 이유 — 매칭 전이면 '수락 대기중'이 맞다
       sentDocs.push({ uid: toUid, createdAt: d.data().createdAt });
     }
   } catch(e) {}
