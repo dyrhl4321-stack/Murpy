@@ -6698,7 +6698,10 @@ function gymPickerRender() {
   const q = (sEl ? sEl.value : '').trim();
   const ql = q.toLowerCase();
   let list = (typeof getCentersList === 'function' ? getCentersList() : []).filter(c => c && c.name);
-  if (ql) list = list.filter(c => c.name.toLowerCase().includes(ql));
+  // 지역으로도 찾을 수 있게 (유저 피드백 #12) — "송파"만 쳐도 그 동네 센터가 나온다
+  if (ql) list = list.filter(c => c.name.toLowerCase().includes(ql) || String(c.loc || '').toLowerCase().includes(ql));
+  // ★ㄱㄴㄷ 정렬. localeCompare 에 'ko' 를 줘야 한글이 자모 순으로 정렬된다(기본은 코드포인트 순)
+  list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   list = list.slice(0, 50);
   const pin = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
   let html = '';
@@ -14811,19 +14814,40 @@ window.mwRenderVisit = function () {
     </div>`;
 };
 // ---------- 홈센터 선택 ----------
+// ★유저 피드백 #12 — 홈 센터 고르기에 정렬·검색이 없어 49곳을 눈으로 훑어야 했다.
+//   센터가 계속 늘어나는 화면이라 **검색 + ㄱㄴㄷ 정렬**이 있어야 쓸 수 있다.
+//   ※목록만 다시 그린다(입력칸을 통째로 다시 그리면 키보드가 닫히고 포커스가 날아간다).
 window.mwPickHome = function () {
-  const centers = (typeof getCentersList==='function'?getCentersList():[]).filter(c=>c&&c.name);
   const root = document.getElementById('mw-dogam-root'); if (!root) return;
   root.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button onclick="window.mwRenderDogam()" style="background:none;border:none;color:#8a93a8;font-size:16px;cursor:pointer">‹</button>
       <span style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff">홈 센터 고르기</span>
     </div>
-    <div style="display:flex;flex-direction:column;gap:8px">${centers.map(c=>`
-      <button class="mw-panel" style="padding:13px 14px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;border:3px solid #05070c;width:100%;font-family:inherit" onclick="window.mwSetHome('${c.id}')">
-        <span style="flex:1;font-size:13.5px;color:#fff;font-weight:700">${c.name}</span>
-        <span style="font-size:11px;color:#4a5266">${c.loc||''}</span>
-      </button>`).join('')}</div>`;
+    <input id="mw-home-search" autocomplete="off" maxlength="24" placeholder="센터 이름·지역 검색"
+      oninput="window._mwHomeList && window._mwHomeList()"
+      style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:11px 13px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:10px">
+    <div id="mw-home-list" style="display:flex;flex-direction:column;gap:8px"></div>`;
+  window._mwHomeList();
+};
+window._mwHomeList = function () {
+  const el = document.getElementById('mw-home-list'); if (!el) return;
+  const sEl = document.getElementById('mw-home-search');
+  const q = (sEl ? sEl.value : '').trim().toLowerCase();
+  let centers = (typeof getCentersList === 'function' ? getCentersList() : []).filter(c => c && c.name);
+  if (q) centers = centers.filter(c => c.name.toLowerCase().includes(q) || String(c.loc || '').toLowerCase().includes(q));
+  // ㄱㄴㄷ 정렬 — localeCompare 에 'ko' 를 줘야 한글이 자모 순으로 정렬된다(기본 정렬은 코드포인트 순)
+  centers.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  if (!centers.length) {
+    el.innerHTML = '<div style="padding:26px 12px;text-align:center;color:#4a5266;font-size:12.5px;line-height:1.7">'
+      + '찾는 센터가 없어요.<br>지도 화면에서 직접 등록할 수 있어요.</div>';
+    return;
+  }
+  el.innerHTML = centers.map(c => `
+    <button class="mw-panel" style="padding:13px 14px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;border:3px solid #05070c;width:100%;font-family:inherit" onclick="window.mwSetHome('${c.id}')">
+      <span style="flex:1;font-size:13.5px;color:#fff;font-weight:700">${c.name}</span>
+      <span style="font-size:11px;color:#4a5266">${c.loc || ''}</span>
+    </button>`).join('');
 };
 window.mwSetHome = async function (centerId) {
   const user = auth.currentUser || window.currentUser; if (!user) return;
