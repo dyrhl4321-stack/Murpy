@@ -9717,6 +9717,10 @@ window._CENTER_FIX = [
   { name: '방이동 24짐', addr: '서울 송파구 올림픽로47길 19', lat: 37.528340867364, lng: 127.116707356107 },
   { name: '잠실피트니스클럽', addr: '서울 송파구 올림픽로 76', lat: 37.5115701916604, lng: 127.079025645245 }
 ];
+// 이름만 고칠 곳 (유저 피드백 #9 — 송파점이 오픈했는데 이름에 '(오픈예정)'이 남아 있다)
+window._CENTER_RENAME = [
+  { from: '짐박스피트니스 송파점 (오픈예정)', to: '짐박스피트니스 송파점' }
+];
 // 카카오 지도에 아예 없는 곳 — 대표 지시로 **삭제**한다(2026-08-07).
 // 유저가 목록에서 보고 찾아갔는데 실제로 없으면 헛걸음이라, 비워두느니 없애는 게 낫다.
 window._CENTER_REMOVE = [
@@ -9768,6 +9772,19 @@ window.showCenterFix = async function () {
     }
     log.push('  채움 ' + done + '곳 · 이미 있어서 건너뜀 ' + skip + '곳 · 이름 못 찾음 ' + miss.length + '곳');
     if (miss.length) log.push('  못 찾음: ' + miss.join(', '));
+
+    // 2-b) 이름 고치기 (유저 피드백 #9)
+    log.push('');
+    log.push('■ 이름 고치기');
+    let renamed = 0;
+    for (const r of window._CENTER_RENAME) {
+      const c = byName[r.from];
+      if (!c) continue;
+      const ok = await window.updateCenterFirestore(c.id, { name: r.to });
+      if (ok !== false) { renamed++; log.push('  ' + r.from + ' → ' + r.to); }
+    }
+    if (!renamed) log.push('  고칠 것 없음');
+    paint('헬스장 정비');
 
     // 3) 지도에 없는 센터 삭제 — 되돌릴 수 없으므로 한 번 묻는다
     const gone = window._CENTER_REMOVE.filter(n => byName[n]);
@@ -12200,7 +12217,9 @@ window.loadBamboo = async (tab) => {
       const requesterCount = requesters.length > 0 ? ` (${requesters.length})` : '';
       let actionBtn = '';
       if (user && isMyPost) {
-        actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px" onclick="window.viewBambooRequesters('${post.id}')">신청자 보기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>${requesterCount}</button>`;
+        // 유저 피드백 #4 — 내 글 삭제. 보안규칙은 원래 작성자 삭제를 허용하고 있었고 UI 만 없었다.
+        actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px" onclick="window.viewBambooRequesters('${post.id}')">신청자 보기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>${requesterCount}</button>`
+          + `<button aria-label="글 삭제" onclick="window.deleteBambooPost('${post.id}')" style="margin-left:6px;background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 8px;color:rgba(255,255,255,0.42);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>`;
       } else if (user && !isMyPost) {
         if (hasRequested) {
           actionBtn = `<button disabled style="padding:4px 12px;font-size:11px;font-weight:500;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#555;cursor:default">신청완료</button>`;
@@ -12248,6 +12267,34 @@ window.postBambooFirestore = async (text) => {
     if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
   } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
+};
+
+// ★유저 피드백 #4 — 대숲 본인 글 삭제.
+//   보안규칙은 처음부터 `allow delete: if ownsDoc() || isAdmin()` 으로 열려 있었다.
+//   즉 못 지운 게 아니라 **버튼이 없었을 뿐**이다.
+//   댓글은 하위 컬렉션이라 글만 지우면 떠돌게 되므로 같이 지운다(실패해도 글 삭제는 진행).
+window.deleteBambooPost = async (postId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  const ok = window.murpyConfirm
+    ? await window.murpyConfirm({ title: '이 글을 지울까요?', desc: '지운 글은 <b style="color:#FF4D67">되돌릴 수 없어요.</b><br>달린 댓글도 함께 사라져요.', confirmText: '삭제' })
+    : confirm('이 글을 지울까요? 되돌릴 수 없습니다.');
+  if (!ok) return;
+  try {
+    try {
+      const cs = await getDocs(collection(db, 'bamboo', postId, 'comments'));
+      await Promise.all(cs.docs.map(c => deleteDoc(c.ref).catch(() => {})));
+    } catch (e) {}
+    await deleteDoc(doc(db, 'bamboo', postId));
+    showToast('글을 지웠어요');
+    // 지금 보고 있는 탭(전체/인기/내 글)을 유지한 채 다시 그린다
+    const ab = document.querySelector('#bamboo-tab-bar .bamboo-tab-btn.active');
+    const tab = ab ? (ab.textContent.includes('인기') ? 'popular' : ab.textContent.includes('내 글') ? 'mine' : 'all') : 'all';
+    if (window.loadBamboo) window.loadBamboo(tab);
+  } catch (e) {
+    console.error('대숲 삭제 실패', e);
+    showToast('삭제 실패: ' + (e && e.message));
+  }
 };
 
 window.toggleBambooLikeFirestore = async (postId) => {
