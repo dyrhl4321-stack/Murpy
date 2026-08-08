@@ -1211,10 +1211,25 @@
         </div>
         <textarea id="bamboo-input" placeholder="익명으로 전해보세요. 같은 운동 하는 사람들에게…" style="flex:1;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:62px"></textarea>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
-        <button onclick="window.collapseBambooCompose()" style="border-radius:20px;padding:8px 16px;font-size:13px;font-weight:600;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.12);cursor:pointer;font-family:inherit">취소</button>
-        <button style="border-radius:20px;padding:8px 20px;font-size:13px;font-weight:700;background:#fff;color:#111;border:none;cursor:pointer;font-family:inherit;letter-spacing:-0.2px" onclick="postBamboo()">익명 전송</button>
+      <!-- 유저 피드백 #11 — 대숲에 일상 사진. 미리보기는 붙였을 때만 보인다. -->
+      <input type="file" id="bamboo-photo-input" accept="image/*" style="display:none" onchange="window.pickBambooPhoto(this)">
+      <div id="bamboo-photo-wrap" style="display:none;position:relative;margin-top:10px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.1);max-width:190px">
+        <img id="bamboo-photo-preview" style="width:100%;display:block" alt="">
+        <button onclick="window.clearBambooPhoto()" aria-label="사진 빼기" style="position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.2);color:#fff;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;padding:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <button onclick="document.getElementById('bamboo-photo-input').click()" aria-label="사진 첨부" style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.11);border-radius:20px;padding:7px 12px;color:rgba(255,255,255,0.55);font-size:12.5px;cursor:pointer;font-family:inherit;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5L5 19"/></svg>사진
+        </button>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button onclick="window.collapseBambooCompose()" style="border-radius:20px;padding:8px 16px;font-size:13px;font-weight:600;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.12);cursor:pointer;font-family:inherit">취소</button>
+          <button id="bamboo-post-btn" style="border-radius:20px;padding:8px 20px;font-size:13px;font-weight:700;background:#fff;color:#111;border:none;cursor:pointer;font-family:inherit;letter-spacing:-0.2px" onclick="postBamboo()">익명 전송</button>
+        </div>
+      </div>
+      <!-- 대숲은 익명이 정체성이다. 사진 때문에 신원이 드러나면 그 전제가 깨진다. -->
+      <div id="bamboo-photo-hint" style="display:none;font-size:11px;color:rgba(255,255,255,0.32);line-height:1.6;margin-top:8px">얼굴·이름표·주변 사람이 찍혀 있으면 익명이 아니게 돼요. 한 번만 확인해 주세요.</div>
     </div>
   </div>
   <!-- 종목 필터 칩 -->
@@ -2086,10 +2101,58 @@ window.expandBambooCompose = function () {
   if (window.renderBambooChips) window.renderBambooChips();
   const ta = document.getElementById('bamboo-input'); if (ta) ta.focus();
 };
+// 사진 한 장 크게 보기 (대숲 사진용, 다른 곳에서도 재사용 가능)
+window.openPhotoViewer = function (url) {
+  if (!url) return;
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;inset:0;z-index:30000;background:rgba(0,0,0,0.94);display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out';
+  el.onclick = () => el.remove();
+  el.innerHTML = '<img src="' + String(url).replace(/"/g, '') + '" alt="" style="max-width:100%;max-height:100%;object-fit:contain;display:block">'
+    + '<button aria-label="닫기" style="position:absolute;top:14px;right:14px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#fff;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center">'
+    + '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>';
+  document.body.appendChild(el);
+};
+
+// ===== 대숲 사진 첨부 (유저 피드백 #11) =====
+// 피드처럼 4:5 로 자르지 않는다 — 대숲은 '일상 한 장'이라 원본 비율 그대로가 자연스럽다.
+// 업로드 전에 _compressImg 로 줄인다(아이폰 HEIC 대응이 이미 그 함수에 들어 있다).
+window._bambooPhoto = null;
+window.pickBambooPhoto = async function (input) {
+  const file = input && input.files && input.files[0];
+  input.value = '';                       // 같은 파일을 다시 골라도 change 가 뜨게
+  if (!file) return;
+  if (!/^image\//.test(file.type || '')) { showToast('이미지 파일만 올릴 수 있어요'); return; }
+  const btn = document.getElementById('bamboo-post-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '사진 준비 중…'; }
+  try {
+    const small = await window._compressImg(file, 1280, 0.82);
+    window._bambooPhoto = small;
+    const wrap = document.getElementById('bamboo-photo-wrap');
+    const img = document.getElementById('bamboo-photo-preview');
+    if (img) { if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src); img.src = URL.createObjectURL(small); }
+    if (wrap) wrap.style.display = 'block';
+    const hint = document.getElementById('bamboo-photo-hint');
+    if (hint) hint.style.display = 'block';
+  } catch (e) {
+    console.warn('대숲 사진 준비 실패', e);
+    showToast('사진을 읽지 못했어요');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
+};
+window.clearBambooPhoto = function () {
+  window._bambooPhoto = null;
+  const img = document.getElementById('bamboo-photo-preview');
+  if (img && img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+  if (img) img.removeAttribute('src');
+  const wrap = document.getElementById('bamboo-photo-wrap'); if (wrap) wrap.style.display = 'none';
+  const hint = document.getElementById('bamboo-photo-hint'); if (hint) hint.style.display = 'none';
+};
+
 window.collapseBambooCompose = function () {
   const t = document.getElementById('bamboo-compose-trigger');
   const f = document.getElementById('bamboo-compose-full');
   const ta = document.getElementById('bamboo-input'); if (ta) ta.value = '';
+  if (window.clearBambooPhoto) window.clearBambooPhoto();   // 접을 때 붙인 사진도 비운다
   if (f) f.style.display = 'none';
   if (t) t.style.display = 'flex';
 };
@@ -5621,8 +5684,9 @@ function renderBambooItem(post) {
 
 function postBamboo() {
   const text = document.getElementById('bamboo-input').value.trim();
-  if (!text) { showToast('내용을 입력해주세요'); return; }
-  if (window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
+  // 사진만 올리는 것도 허용한다 (유저 피드백 #11 — '일상 사진'이 목적이라 글이 없을 수 있다)
+  if (!text && !window._bambooPhoto) { showToast('내용을 입력하거나 사진을 넣어주세요'); return; }
+  if (text && window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
   if (!window.currentUser) { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
   if (window.postBambooFirestore) {
     window.postBambooFirestore(text).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; if (window.collapseBambooCompose) window.collapseBambooCompose(); renderBamboo(); } });
@@ -12211,6 +12275,12 @@ window.loadBamboo = async (tab) => {
         : '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 글이 없어요</div>';
       return;
     }
+    // ★글 본문을 그대로 innerHTML 에 넣고 있었다(저장형 XSS). 누가 <script>·onerror 를 적으면
+    //   그 글을 보는 **모든 사람의 브라우저에서** 실행된다. 여기서 이스케이프한다.
+    //   줄바꿈은 escape 하면 사라지므로 white-space:pre-wrap 으로 살린다.
+    const _bEsc = s => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     list.innerHTML = posts.map(post => {
       const liked = user && (post.likedBy || []).includes(user.uid);
       const time = post.createdAt ? new Date(post.createdAt.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '방금';
@@ -12232,7 +12302,13 @@ window.loadBamboo = async (tab) => {
       }
       return `<div class="card bamboo-item">
         ${post.category ? `<div style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#86efac;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);padding:3px 9px;border-radius:11px;margin-bottom:10px">${window.bambooCatSvg(post.category, 11)}${post.category}</div>` : ''}
-        <div style="font-size:14px;line-height:1.7;color:#fff;margin-bottom:12px">${post.text}</div>
+        ${post.text ? `<div style="font-size:14px;line-height:1.7;color:#fff;margin-bottom:12px;white-space:pre-wrap;word-break:break-word">${_bEsc(post.text)}</div>` : ''}
+        ${post.photoURL ? `<div style="margin-bottom:12px;border-radius:12px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.07)">
+          <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 720) : post.photoURL}" loading="lazy" decoding="async" alt="대나무숲 사진"
+               onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
+               onclick="window.openPhotoViewer && window.openPhotoViewer('${String(post.photoURL).replace(/'/g, '')}')"
+               style="width:100%;display:block;cursor:zoom-in">
+        </div>` : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div style="display:flex;gap:16px;align-items:center;min-width:0">
             <button style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;color:${liked?'#4ADE80':'#666'}" onclick="window.toggleBambooLikeFirestore('${post.id}')">
@@ -12258,6 +12334,31 @@ window.loadBamboo = async (tab) => {
 window.postBambooFirestore = async (text) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 글을 쓸 수 있어요'); return false; }
+  // ★사진 업로드를 **머피 차감보다 먼저** 한다. 반대로 하면 업로드가 실패했을 때
+  //   글은 못 올렸는데 머피만 빠져나간다.
+  let photoURL = '';
+  if (window._bambooPhoto) {
+    const btn = document.getElementById('bamboo-post-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+    try {
+      const fd = new FormData();
+      fd.append('image', window._bambooPhoto, 'bamboo.jpg');
+      fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 30000);   // 30초 넘으면 끊는다(모바일 회선 대비)
+      const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd, signal: ctl.signal });
+      clearTimeout(t);
+      const json = await res.json();
+      if (!json.success) throw new Error('imgBB 실패');
+      photoURL = json.data.url;
+    } catch (e) {
+      console.warn('대숲 사진 업로드 실패', e);
+      showToast(e && e.name === 'AbortError' ? '사진 업로드가 너무 오래 걸려요 · 연결 확인 후 다시' : '사진 업로드에 실패했어요');
+      if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
+      return false;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
+  }
   if (!(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return false; }
   try {
     let nickname = '익명';
@@ -12266,7 +12367,7 @@ window.postBambooFirestore = async (text) => {
       const userSnap = await getDoc(doc(db, 'users', user.uid));
       if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
     } catch(e) {}
-    await addDoc(collection(db, 'bamboo'), { text, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
+    await addDoc(collection(db, 'bamboo'), { text, photoURL, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
     if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
   } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
