@@ -1209,7 +1209,12 @@
         <div style="width:28px;height:28px;border-radius:50%;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.28);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
         </div>
-        <textarea id="bamboo-input" placeholder="익명으로 전해보세요. 같은 운동 하는 사람들에게…" style="flex:1;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:62px"></textarea>
+        <div style="flex:1;min-width:0">
+          <!-- 제목은 선택. 안 쓰면 본문 첫 줄이 제목이 된다(_bambooTitle) -->
+          <input id="bamboo-title" maxlength="40" autocomplete="off" placeholder="제목 (안 써도 돼요)"
+            style="width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,0.09);color:#fff;font-size:15px;font-weight:700;letter-spacing:-0.3px;padding:0 0 9px;outline:none;font-family:inherit;box-sizing:border-box">
+          <textarea id="bamboo-input" placeholder="익명으로 전해보세요. 같은 운동 하는 사람들에게…" style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:62px;margin-top:10px;font-family:inherit;box-sizing:border-box"></textarea>
+        </div>
       </div>
       <!-- 유저 피드백 #11 — 대숲에 일상 사진. 미리보기는 붙였을 때만 보인다. -->
       <input type="file" id="bamboo-photo-input" accept="image/*" style="display:none" onchange="window.pickBambooPhoto(this)">
@@ -1737,6 +1742,15 @@
   <div class="panel-body" id="user-profile-body"></div>
 </div>
 
+<!-- 대나무숲 글 상세 (게시판형, 2026-08-07) -->
+<div class="panel" id="bamboo-detail-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('bamboo-detail-panel')">←</button>
+    <span style="font-weight:700;font-size:16px;letter-spacing:-0.3px">대나무숲</span>
+  </div>
+  <div class="panel-body" id="bamboo-detail-body"></div>
+</div>
+
 <!-- Comment Panel -->
 <div class="panel" id="comment-panel">
   <div class="panel-header">
@@ -2153,6 +2167,7 @@ window.collapseBambooCompose = function () {
   const t = document.getElementById('bamboo-compose-trigger');
   const f = document.getElementById('bamboo-compose-full');
   const ta = document.getElementById('bamboo-input'); if (ta) ta.value = '';
+  const ti = document.getElementById('bamboo-title'); if (ti) ti.value = '';
   if (window.clearBambooPhoto) window.clearBambooPhoto();   // 접을 때 붙인 사진도 비운다
   if (f) f.style.display = 'none';
   if (t) t.style.display = 'flex';
@@ -5685,12 +5700,14 @@ function renderBambooItem(post) {
 
 function postBamboo() {
   const text = document.getElementById('bamboo-input').value.trim();
+  const titleEl = document.getElementById('bamboo-title');
+  const title = titleEl ? titleEl.value.trim() : '';
   // 사진만 올리는 것도 허용한다 (유저 피드백 #11 — '일상 사진'이 목적이라 글이 없을 수 있다)
-  if (!text && !window._bambooPhoto) { showToast('내용을 입력하거나 사진을 넣어주세요'); return; }
-  if (text && window._hasContact(text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
+  if (!text && !title && !window._bambooPhoto) { showToast('내용을 입력하거나 사진을 넣어주세요'); return; }
+  if (window._hasContact(title + ' ' + text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
   if (!window.currentUser) { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
   if (window.postBambooFirestore) {
-    window.postBambooFirestore(text).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; if (window.collapseBambooCompose) window.collapseBambooCompose(); renderBamboo(); } });
+    window.postBambooFirestore(text, title).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; if (titleEl) titleEl.value = ''; if (window.collapseBambooCompose) window.collapseBambooCompose(); renderBamboo(); } });
   } else { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); }
 }
 
@@ -12282,51 +12299,32 @@ window.loadBamboo = async (tab) => {
     const _bEsc = s => String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    // ★게시판형 목록 (대표 지시 2026-08-07 — 당근 동네생활·네이버 익명카페 느낌).
+    //   예전엔 카드마다 본문 전문과 큰 사진을 다 펼쳐서, 한 화면에 두세 글밖에 안 들어갔다.
+    //   목록은 **훑는 곳**이고 읽는 곳은 상세다 → 제목 + 본문 두 줄 + 작은 썸네일.
+    //   좋아요·저에요·삭제 같은 행동은 전부 상세로 옮겼다(목록에서 잘못 누르는 것도 막힌다).
+    window._bambooCache = {};
     list.innerHTML = posts.map(post => {
-      const liked = user && (post.likedBy || []).includes(user.uid);
-      const time = post.createdAt ? new Date(post.createdAt.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '방금';
-      const isMyPost = user && post.userId === user.uid;
-      const requesters = post.requesters || [];
-      const hasRequested = user && !isMyPost && requesters.includes(user.uid);
-      const requesterCount = requesters.length > 0 ? ` (${requesters.length})` : '';
-      let actionBtn = '';
-      if (user && isMyPost) {
-        // 유저 피드백 #4 — 내 글 삭제. 보안규칙은 원래 작성자 삭제를 허용하고 있었고 UI 만 없었다.
-        actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px" onclick="window.viewBambooRequesters('${post.id}')">신청자 보기<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>${requesterCount}</button>`
-          + `<button aria-label="글 삭제" onclick="window.deleteBambooPost('${post.id}')" style="margin-left:6px;background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 8px;color:rgba(255,255,255,0.42);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>`;
-      } else if (user && !isMyPost) {
-        if (hasRequested) {
-          actionBtn = `<button disabled style="padding:4px 12px;font-size:11px;font-weight:500;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:#555;cursor:default">신청완료</button>`;
-        } else {
-          actionBtn = `<button class="btn-glass" style="padding:4px 12px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px" onclick="window.sendBambooRequest('${post.id}','${post.userId}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 13V4.5a1.5 1.5 0 0 1 3 0V11l.5-6.5a1.5 1.5 0 0 1 3 0V12l1-3.5a1.4 1.4 0 0 1 2.7.7l-1 6.3A6 6 0 0 1 10.3 20l-2.6-4.5A1.6 1.6 0 0 1 7 13z"/></svg>저에요</button>`;
-        }
-      }
-      return `<div class="card bamboo-item">
-        ${post.category ? `<div style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#86efac;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);padding:3px 9px;border-radius:11px;margin-bottom:10px">${window.bambooCatSvg(post.category, 11)}${post.category}</div>` : ''}
-        ${post.text ? `<div style="font-size:14px;line-height:1.7;color:#fff;margin-bottom:12px;white-space:pre-wrap;word-break:break-word">${_bEsc(post.text)}</div>` : ''}
-        ${post.photoURL ? `<div style="position:relative;margin-bottom:12px;border-radius:12px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.07)">
-          <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 720) : post.photoURL}" loading="lazy" decoding="async" alt="대나무숲 사진"
-               onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
-               onclick="window.openPhotoViewer && window.openPhotoViewer('${String(post.photoURL).replace(/'/g, '')}')"
-               style="width:100%;max-height:300px;object-fit:cover;display:block;cursor:zoom-in">
-          <div style="position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:4px;background:rgba(6,8,14,0.62);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:4px 7px;font-size:10.5px;color:rgba(255,255,255,0.72);pointer-events:none">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>전체 보기
+      window._bambooCache[post.id] = post;          // 상세를 다시 조회하지 않고 바로 연다
+      const t = window._bambooTitle(post);
+      const body = window._bambooBody(post);
+      return `<div class="card bamboo-item" onclick="window.openBambooDetail('${post.id}')" style="cursor:pointer;display:flex;gap:12px;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          ${post.category ? `<div style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#86efac;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);padding:2px 8px;border-radius:11px;margin-bottom:7px">${window.bambooCatSvg(post.category, 11)}${post.category}</div>` : ''}
+          <div style="font-size:14.5px;font-weight:700;color:#fff;letter-spacing:-0.3px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;word-break:break-all">${_bEsc(t)}</div>
+          ${body ? `<div style="font-size:12.5px;color:rgba(255,255,255,0.42);line-height:1.55;margin-top:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all">${_bEsc(body)}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:9px;margin-top:9px;font-size:11px;color:#4a5266">
+            <span>익명</span><span>·</span><span>${window._bambooAgo(post.createdAt)}</span>
+            ${(post.likes || 0) ? `<span>·</span><span style="display:inline-flex;align-items:center;gap:3px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${post.likes}</span>` : ''}
+            ${(post.commentCount || 0) ? `<span>·</span><span style="display:inline-flex;align-items:center;gap:3px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>${post.commentCount}</span>` : ''}
+            ${(post.requesters || []).length ? `<span>·</span><span style="color:#86efac">저에요 ${(post.requesters || []).length}</span>` : ''}
           </div>
-        </div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-          <div style="display:flex;gap:16px;align-items:center;min-width:0">
-            <button style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;color:${liked?'#4ADE80':'#666'}" onclick="window.toggleBambooLikeFirestore('${post.id}')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="${liked?'#4ADE80':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-              <span style="font-size:12px">${post.likes||0}</span>
-            </button>
-            <button style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:4px;color:#666" onclick="openCommentPanel('${post.id}','bamboo')">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              <span id="bamboo-comment-count-${post.id}" style="font-size:12px">${post.commentCount||0}</span>
-            </button>
-            <span style="font-size:11px;color:#444;white-space:nowrap">${time}</span>
-          </div>
-          ${actionBtn ? `<div style="flex-shrink:0">${actionBtn}</div>` : ''}
         </div>
+        ${post.photoURL ? `<div style="width:72px;height:72px;border-radius:10px;overflow:hidden;flex-shrink:0;background:#111;border:1px solid rgba(255,255,255,0.07)">
+          <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 180) : post.photoURL}" loading="lazy" decoding="async" alt=""
+               onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
+               style="width:100%;height:100%;object-fit:cover;display:block">
+        </div>` : ''}
       </div>`;
     }).join('');
   } catch(e) {
@@ -12335,7 +12333,7 @@ window.loadBamboo = async (tab) => {
   }
 };
 
-window.postBambooFirestore = async (text) => {
+window.postBambooFirestore = async (text, title) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 글을 쓸 수 있어요'); return false; }
   // ★글쓰기 비용 확인창 (대표 지시 2026-08-07). 매칭 신청은 확인창이 있는데 대숲만 없어서
@@ -12383,37 +12381,126 @@ window.postBambooFirestore = async (text) => {
       const userSnap = await getDoc(doc(db, 'users', user.uid));
       if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
     } catch(e) {}
-    await addDoc(collection(db, 'bamboo'), { text, photoURL, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
+    await addDoc(collection(db, 'bamboo'), { text, title: title || '', photoURL, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
     if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
   } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
+};
+
+// ===== 대숲 게시판형 (2026-08-07, 대표 지시: 당근 동네생활·네이버 익명카페 느낌) =====
+// 제목은 **선택**이다. 안 쓰면 본문 첫 줄을 제목으로 삼는다.
+// ★그래야 지금까지 쌓인 글(제목 필드가 아예 없다)도 목록에서 멀쩡히 보인다.
+window._bambooTitle = function (p) {
+  if (p.title && String(p.title).trim()) return String(p.title).trim();
+  const first = String(p.text || '').split('\n').find(l => l.trim()) || '';
+  if (first.trim()) return first.trim().slice(0, 40);
+  return p.photoURL ? '사진' : '(내용 없음)';
+};
+// 목록 미리보기용 본문 — 제목으로 쓴 첫 줄은 빼서 같은 문장이 두 번 보이지 않게 한다
+window._bambooBody = function (p) {
+  const text = String(p.text || '');
+  if (p.title && String(p.title).trim()) return text.trim();
+  const lines = text.split('\n');
+  const i = lines.findIndex(l => l.trim());
+  return i < 0 ? '' : lines.slice(i + 1).join(' ').trim();
+};
+window._bambooAgo = function (ts) {
+  if (!ts || !ts.seconds) return '방금';
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - ts.seconds));
+  if (s < 60) return '방금';
+  if (s < 3600) return Math.floor(s / 60) + '분 전';
+  if (s < 86400) return Math.floor(s / 3600) + '시간 전';
+  if (s < 86400 * 7) return Math.floor(s / 86400) + '일 전';
+  const d = new Date(ts.seconds * 1000);
+  return (d.getMonth() + 1) + '월 ' + d.getDate() + '일';
+};
+// 상세에서 좋아요 — 캐시를 버리고 서버에서 다시 읽어야 숫자가 맞는다(캐시로 그리면 안 바뀐 것처럼 보인다)
+window.bambooDetailLike = async function (postId) {
+  await window.toggleBambooLikeFirestore(postId);
+  if (window._bambooCache) delete window._bambooCache[postId];
+  await window.openBambooDetail(postId);
+};
+window.openBambooDetail = async function (postId) {
+  const user = auth.currentUser || window.currentUser;
+  let p = window._bambooCache && window._bambooCache[postId];
+  if (!p) {
+    try { const s = await getDoc(doc(db, 'bamboo', postId)); if (s.exists()) p = { id: postId, ...s.data() }; } catch (e) {}
+  }
+  const body = document.getElementById('bamboo-detail-body');
+  if (!p || !body) return;
+  window._bambooDetailId = postId;
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const isMine = user && p.userId === user.uid;
+  const liked = user && (p.likedBy || []).includes(user.uid);
+  const requesters = p.requesters || [];
+  const hasRequested = user && !isMine && requesters.includes(user.uid);
+  // 제목을 본문에서 뽑아 쓴 경우, 본문에서 그 줄을 빼야 같은 문장이 두 번 나오지 않는다
+  const shownBody = window._bambooBody(p);
+  body.innerHTML = `
+    <div style="padding:18px 18px 8px">
+      ${p.category ? `<div style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#86efac;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);padding:3px 9px;border-radius:11px;margin-bottom:11px">${window.bambooCatSvg(p.category, 11)}${p.category}</div>` : ''}
+      <div style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.5px;line-height:1.4;word-break:break-all">${esc(window._bambooTitle(p))}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:11.5px;color:#4a5266">
+        <span>익명</span><span>·</span><span>${window._bambooAgo(p.createdAt)}</span>
+      </div>
+    </div>
+    ${shownBody ? `<div style="padding:6px 18px 4px;font-size:14.5px;line-height:1.75;color:rgba(255,255,255,0.88);white-space:pre-wrap;word-break:break-word">${esc(shownBody)}</div>` : ''}
+    ${p.photoURL ? `<div style="padding:12px 18px 0">
+      <img src="${window._cdnImg ? window._cdnImg(p.photoURL, 1080) : p.photoURL}" alt="대나무숲 사진"
+           onerror="this.onerror=null;this.src='${String(p.photoURL).replace(/'/g, '')}'"
+           onclick="window.openPhotoViewer && window.openPhotoViewer('${String(p.photoURL).replace(/'/g, '')}')"
+           style="width:100%;border-radius:12px;display:block;cursor:zoom-in;border:1px solid rgba(255,255,255,0.07)">
+    </div>` : ''}
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px;margin-top:6px">
+      <button onclick="window.bambooDetailLike('${p.id}')" style="display:flex;align-items:center;gap:6px;background:${liked ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.05)'};border:1px solid ${liked ? 'rgba(74,222,128,0.35)' : 'rgba(255,255,255,0.1)'};border-radius:20px;padding:9px 15px;color:${liked ? '#4ADE80' : 'rgba(255,255,255,0.6)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="${liked ? '#4ADE80' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>${p.likes || 0}
+      </button>
+      <button onclick="openCommentPanel('${p.id}','bamboo')" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:9px 15px;color:rgba(255,255,255,0.6);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>댓글 ${p.commentCount || 0}
+      </button>
+      ${isMine ? `<button onclick="window.deleteBambooPost('${p.id}').then(function(ok){ if(ok) closePanel('bamboo-detail-panel'); })" aria-label="글 삭제" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:9px 13px;color:rgba(255,255,255,0.42);cursor:pointer;font-family:inherit;display:flex;align-items:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>` : ''}
+    </div>
+    <div style="padding:0 18px 40px">
+      ${isMine
+        ? `<button class="btn-glass" style="width:100%;padding:14px;font-size:14px;font-weight:700" onclick="window.viewBambooRequesters('${p.id}')">저에요 신청자 보기${requesters.length ? ' (' + requesters.length + ')' : ''}</button>`
+        : (user
+            ? (hasRequested
+                ? `<button disabled style="width:100%;padding:14px;font-size:14px;font-weight:600;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;color:#555;cursor:default;font-family:inherit">신청 완료 · 글쓴이가 수락하면 대화가 열려요</button>`
+                : `<button onclick="window.sendBambooRequest('${p.id}','${p.userId}')" style="width:100%;padding:14px;font-size:14px;font-weight:800;background:#4ADE80;color:#08210f;border:none;border-radius:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 13V4.5a1.5 1.5 0 0 1 3 0V11l.5-6.5a1.5 1.5 0 0 1 3 0V12l1-3.5a1.4 1.4 0 0 1 2.7.7l-1 6.3A6 6 0 0 1 10.3 20l-2.6-4.5A1.6 1.6 0 0 1 7 13z"/></svg>저에요</button>`)
+            : '')}
+    </div>`;
+  openPanel('bamboo-detail-panel');
 };
 
 // ★유저 피드백 #4 — 대숲 본인 글 삭제.
 //   보안규칙은 처음부터 `allow delete: if ownsDoc() || isAdmin()` 으로 열려 있었다.
 //   즉 못 지운 게 아니라 **버튼이 없었을 뿐**이다.
 //   댓글은 하위 컬렉션이라 글만 지우면 떠돌게 되므로 같이 지운다(실패해도 글 삭제는 진행).
+// 성공하면 true 를 돌려준다 — 상세 화면이 그때만 닫히게(취소했는데 닫히면 안 된다)
 window.deleteBambooPost = async (postId) => {
   const user = auth.currentUser || window.currentUser;
-  if (!user) return;
+  if (!user) return false;
   const ok = window.murpyConfirm
     ? await window.murpyConfirm({ title: '이 글을 지울까요?', desc: '지운 글은 <b style="color:#FF4D67">되돌릴 수 없어요.</b><br>달린 댓글도 함께 사라져요.', confirmText: '삭제' })
     : confirm('이 글을 지울까요? 되돌릴 수 없습니다.');
-  if (!ok) return;
+  if (!ok) return false;
   try {
     try {
       const cs = await getDocs(collection(db, 'bamboo', postId, 'comments'));
       await Promise.all(cs.docs.map(c => deleteDoc(c.ref).catch(() => {})));
     } catch (e) {}
     await deleteDoc(doc(db, 'bamboo', postId));
+    if (window._bambooCache) delete window._bambooCache[postId];
     showToast('글을 지웠어요');
     // 지금 보고 있는 탭(전체/인기/내 글)을 유지한 채 다시 그린다
     const ab = document.querySelector('#bamboo-tab-bar .bamboo-tab-btn.active');
     const tab = ab ? (ab.textContent.includes('인기') ? 'popular' : ab.textContent.includes('내 글') ? 'mine' : 'all') : 'all';
     if (window.loadBamboo) window.loadBamboo(tab);
+    return true;
   } catch (e) {
     console.error('대숲 삭제 실패', e);
     showToast('삭제 실패: ' + (e && e.message));
+    return false;
   }
 };
 
