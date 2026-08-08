@@ -1770,8 +1770,13 @@
     <span id="bamboo-detail-tools" style="margin-left:auto;display:flex;align-items:center;gap:4px"></span>
   </div>
   <div class="panel-body" id="bamboo-detail-body"></div>
-  <!-- 하나뿐인 주된 행동은 아래에 고정한다. 글이 길어도 손이 닿는 자리에 있어야 한다. -->
-  <div id="bamboo-detail-cta" style="flex-shrink:0;padding:12px 18px calc(14px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,0.07);background:#0a0a0a"></div>
+  <!-- 하단 고정 바는 **'저에요'가 있을 때만** 쓴다. 비어 있으면 통째로 숨긴다.
+       ★구분선(border-top)을 넣었더니 화면이 잘린 것처럼 보였다(대표 지적 2026-08-07).
+         선 대신 위쪽으로 배경이 서서히 사라지는 그라디언트를 둬서 본문이 자연스럽게 깔리게 한다. -->
+  <div id="bamboo-detail-cta" style="display:none;flex-shrink:0;position:relative;padding:14px 20px calc(16px + env(safe-area-inset-bottom));background:#0a0a0a">
+    <div aria-hidden="true" style="position:absolute;left:0;right:0;top:-24px;height:24px;background:linear-gradient(to top,#0a0a0a,rgba(10,10,10,0));pointer-events:none"></div>
+    <div id="bamboo-detail-cta-in"></div>
+  </div>
 </div>
 
 <!-- Comment Panel -->
@@ -12509,7 +12514,7 @@ window.openBambooDetail = async function (postId) {
       ${p.category ? `<div style="font-size:11.5px;font-weight:700;color:#4ADE80;letter-spacing:-0.1px;margin-bottom:10px">${esc(p.category)}</div>` : ''}
       <h2 style="font-size:23px;font-weight:800;color:#fff;letter-spacing:-0.7px;line-height:1.32;word-break:break-all;margin:0">${esc(window._bambooTitle(p))}</h2>
       <div style="margin-top:11px;font-size:12px;color:#3f4757;letter-spacing:-0.2px">익명 · ${window._bambooAgo(p.createdAt)}</div>
-      ${requesters.length ? `<div style="margin-top:12px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#4ADE80;letter-spacing:-0.2px">
+      ${!isMine && requesters.length ? `<div style="margin-top:12px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#4ADE80;letter-spacing:-0.2px">
         ${window.icHandUp(15, 1.9)}${requesters.length}명이 저에요를 눌렀어요
       </div>` : ''}
     </header>
@@ -12527,6 +12532,9 @@ window.openBambooDetail = async function (postId) {
       <button onclick="openCommentPanel('${p.id}','bamboo')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:rgba(255,255,255,0.42);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:color 0.15s ease">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>댓글 ${p.commentCount || 0}
       </button>
+      ${isMine && requesters.length ? `<button onclick="window.viewBambooRequesters('${p.id}')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:#4ADE80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;margin-left:auto">
+        ${window.icHandUp(16, 1.9)}신청자 ${requesters.length}
+      </button>` : ''}
     </div>`;
 
   // 헤더 우측 = 내 글일 때만 삭제
@@ -12537,18 +12545,25 @@ window.openBambooDetail = async function (postId) {
       : '';
   }
 
-  // 아래 고정 바 = 이 화면의 단 하나의 주된 행동
+  // 아래 고정 바는 '저에요' 계열에만 쓴다.
+  // ★내 글이면 바를 아예 띄우지 않는다. 글쓴이에게 '신청자 보기'는 하단에 못박을 만큼
+  //   급한 행동이 아니고(대표 지적), 빈 바가 남으면 화면이 잘린 것처럼 보인다.
+  //   신청자는 위쪽 공감·댓글 줄 오른쪽에 '신청자 N' 으로 놓았다(0명이면 아예 안 보인다).
   const cta = document.getElementById('bamboo-detail-cta');
-  if (cta) {
+  const ctaIn = document.getElementById('bamboo-detail-cta-in');
+  if (cta && ctaIn) {
+    let html = '';
     if (isMine) {
-      cta.innerHTML = `<button style="width:100%;padding:15px;font-size:14.5px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#fff;cursor:pointer;font-family:inherit;letter-spacing:-0.3px" onclick="window.viewBambooRequesters('${p.id}')">저에요 신청자 ${requesters.length}명 보기</button>`;
+      html = '';
     } else if (!user) {
-      cta.innerHTML = `<button style="width:100%;padding:15px;font-size:14.5px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:rgba(255,255,255,0.6);cursor:pointer;font-family:inherit" onclick="requireLogin('대나무숲')">로그인하고 참여하기</button>`;
+      html = `<button style="width:100%;padding:15px;font-size:14.5px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:rgba(255,255,255,0.6);cursor:pointer;font-family:inherit" onclick="requireLogin('대나무숲')">로그인하고 참여하기</button>`;
     } else if (hasRequested) {
-      cta.innerHTML = `<div style="text-align:center;padding:13px;font-size:13px;color:#4a5266;line-height:1.6">신청을 보냈어요<br><span style="font-size:11.5px">글쓴이가 수락하면 익명 대화가 열려요</span></div>`;
+      html = `<div style="text-align:center;padding:11px 0;font-size:13px;color:#4a5266;line-height:1.6">신청을 보냈어요<br><span style="font-size:11.5px">글쓴이가 수락하면 익명 대화가 열려요</span></div>`;
     } else {
-      cta.innerHTML = `<button onclick="window.sendBambooRequest('${p.id}','${p.userId}')" style="width:100%;padding:15px;font-size:15px;font-weight:800;background:#4ADE80;color:#08210f;border:none;border-radius:12px;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">${window.icHandUp(18, 2)}저에요</button>`;
+      html = `<button onclick="window.sendBambooRequest('${p.id}','${p.userId}')" style="width:100%;padding:15px;font-size:15px;font-weight:800;background:#4ADE80;color:#08210f;border:none;border-radius:12px;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">${window.icHandUp(18, 2)}저에요</button>`;
     }
+    ctaIn.innerHTML = html;
+    cta.style.display = html ? 'block' : 'none';
   }
   openPanel('bamboo-detail-panel');
 };
