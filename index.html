@@ -15678,28 +15678,42 @@ window.loadHomeTrending = async () => {
     };
 
     // 1. 인기 스쿼드 (모집 중 · 참가자 많은 순) — 크루를 대체한다
+    // ★★필드 이름이 전부 틀려 있었다 (2026-08-09 대표 지적으로 발견).
+    //   스쿼드 문서의 실제 필드는 exerciseType / memberUids / location / scheduledAt 인데
+    //   여기서는 type / members / place / startAt 을 읽고 있었다. 그래서:
+    //     - 인원이 항상 0 → 정렬이 무의미해져 **늘 같은 벙**이 걸렸다
+    //     - 종목을 못 읽어 러닝 벙인데도 필드가 헬스로 떨어졌다
+    //     - 장소가 안 뜨고, 지난 벙 거르기도 동작하지 않았다
     if (squadSnap) {
       const now = Date.now();
       const squads = squadSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(s => {
-          const t = s.startAt && s.startAt.seconds ? s.startAt.seconds * 1000 : 0;
-          return !t || t > now - 6 * 3600 * 1000;          // 지난 벙은 뺀다
+          if (s.status === 'ended' || s.status === 'canceled') return false;
+          const t = Number(s.expiresAt || s.scheduledAt || 0);
+          return !t || t > now;                            // 이미 끝난 벙은 뺀다
         })
-        .sort((a, b) => ((b.members || []).length) - ((a.members || []).length));
+        .sort((a, b) => ((b.memberUids || []).length) - ((a.memberUids || []).length));
       if (squads[0]) {
         const s = squads[0];
-        const n = (s.members || []).length;
-        // ★유저 피드백 #13 — 콜드스타트에서 카드가 허전하다.
-        //   스쿼드는 대부분 img 가 없어 회색 그라디언트로 떨어졌다.
-        //   종목별 와이드 필드가 이미 있으니 그걸 배경으로 쓴다(squadFieldSrc 재사용).
-        //   ★필드는 픽셀 에셋이라 image-rendering:pixelated 를 줘야 뭉개지지 않는다.
-        const _sqField = (!s.img && window.squadFieldSrc) ? window.squadFieldSrc(s.type) : '';
+        const n = (s.memberUids || []).length;
+        // 종목별 와이드 필드를 배경으로 (#13). 필드는 픽셀 에셋이라 pixelated 필수
+        const _sqField = (!s.img && window.squadFieldSrc) ? window.squadFieldSrc(s.exerciseType) : '';
+        // ★제목이 자동 기본값('오늘 러닝 스쿼드')이면 카드에서 알려주는 게 없다.
+        //   벙주가 제목을 안 바꾸는 게 보통이라 홈 카드가 늘 같은 문장으로 보인다.
+        //   그럴 땐 **언제 하는 벙인지**로 바꿔 준다 — 그게 사람이 알고 싶은 것이다.
+        const _tName = (window.SQUAD_TYPES && window.SQUAD_TYPES[s.exerciseType])
+          ? window.SQUAD_TYPES[s.exerciseType].name : '';
+        const _auto = _tName ? ('오늘 ' + _tName + ' 스쿼드') : '';
+        const _when = (s.scheduledAt && window._sqFmtTime) ? window._sqFmtTime(Number(s.scheduledAt)) : '';
+        const _title = (s.title && s.title !== _auto)
+          ? s.title
+          : (_when ? (_tName ? _tName + ' · ' + _when : _when) : (s.title || '같이 운동해요'));
         cards.push(card({
           click: `goPage('squad')`, color: BLUE, icon: icoCrew, label: '인기 스쿼드',
           img: s.img || '',
           inner: _sqField ? `<div style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat url('${_sqField}');image-rendering:pixelated"></div>` : '',
-          title: s.title || s.name || '같이 운동해요',
-          meta: `${s.place ? mPin + '<span>' + esc(s.place) + '</span><span style="opacity:.45">·</span>' : ''}<span>${n}명</span>`
+          title: _title,
+          meta: `${s.location ? mPin + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.location) + '</span><span style="opacity:.45;flex-shrink:0">·</span>' : ''}<span style="flex-shrink:0">${n}명</span>`
         }));
       }
     }
