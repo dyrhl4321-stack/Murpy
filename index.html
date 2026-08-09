@@ -15803,9 +15803,15 @@ window.loadHomeTrending = async () => {
     if (ckSnap) {
       const cnt = {};
       ckSnap.docs.forEach(d => { const c = (d.data() || {}).centerId; if (c) cnt[c] = (cnt[c] || 0) + 1; });
-      const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+      const list = Array.isArray(window.centersData) ? window.centersData : [];
+      // ★지금 **존재하는** 센터 중에서 1위를 고른다 (대표 지적 2026-08-09).
+      //   지운 센터(합정 딜라이트 등)의 옛 체크인 기록이 그대로 남아 1위를 잡고 있었고,
+      //   그 id 로는 센터를 못 찾아 제목이 '우리 동네 센터'로 떨어졌다.
+      //   눌러도 없는 센터로 가니 카드 자체가 죽은 링크였다.
+      const top = Object.keys(cnt)
+        .sort((a, b) => cnt[b] - cnt[a])
+        .find(id => list.some(c => String(c.id) === String(id)));
       if (top) {
-        const list = Array.isArray(window.centersData) ? window.centersData : [];
         const ct = list.find(c => String(c.id) === String(top));
         // 센터도 pixelLogo 를 가진 곳이 거의 없다 → 센터 필드 배경으로 채운다(#13)
         const _ctField = (!(ct && ct.pixelLogo) && window.centerFieldSrc) ? window.centerFieldSrc(ct) : '';
@@ -15815,8 +15821,10 @@ window.loadHomeTrending = async () => {
           color: '#E4472E', icon: icoPin, label: '체크인 급상승', aria: '체크인이 많은 센터',
           img: (ct && ct.pixelLogo) || '',
           inner: _ctField ? `<div style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat url('${_ctField}');image-rendering:pixelated"></div>` : '',
-          title: (ct && ct.name) ? esc(ct.name) : '우리 동네 센터',
-          meta: `<span>오늘 ${cnt[top]}명 다녀감</span>`
+          title: esc(ct.name),
+          // '오늘'이라고 쓰면 안 된다 — 체크인 80건을 통째로 세는 것이라 날짜 구분이 없다.
+          // 실제 뜻은 '최근 다녀간 사람 수'다. 문구가 데이터보다 앞서가면 안 된다.
+          meta: `<span>최근 ${cnt[top]}명 다녀감</span>`
         }));
       }
     }
