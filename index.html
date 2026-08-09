@@ -1772,14 +1772,9 @@
     <span style="font-weight:700;font-size:16px;letter-spacing:-0.3px">대나무숲</span>
     <span id="bamboo-detail-tools" style="margin-left:auto;display:flex;align-items:center;gap:4px"></span>
   </div>
+  <!-- ★하단 고정 바를 쓰지 않는다(대표 지적 2026-08-09 "저에요 버튼이 너무 하단에 처박혀 있다").
+       '저에요'는 본문 흐름 안, 반응 줄 바로 아래에 둔다 — 읽고 → 반응 보고 → 누르는 순서. -->
   <div class="panel-body" id="bamboo-detail-body"></div>
-  <!-- 하단 고정 바는 **'저에요'가 있을 때만** 쓴다. 비어 있으면 통째로 숨긴다.
-       ★구분선(border-top)을 넣었더니 화면이 잘린 것처럼 보였다(대표 지적 2026-08-07).
-         선 대신 위쪽으로 배경이 서서히 사라지는 그라디언트를 둬서 본문이 자연스럽게 깔리게 한다. -->
-  <div id="bamboo-detail-cta" style="display:none;flex-shrink:0;position:relative;padding:14px 20px calc(16px + env(safe-area-inset-bottom));background:#0a0a0a">
-    <div aria-hidden="true" style="position:absolute;left:0;right:0;top:-24px;height:24px;background:linear-gradient(to top,#0a0a0a,rgba(10,10,10,0));pointer-events:none"></div>
-    <div id="bamboo-detail-cta-in"></div>
-  </div>
 </div>
 
 <!-- Comment Panel -->
@@ -12512,6 +12507,20 @@ window.openBambooDetail = async function (postId) {
   const hasRequested = user && !isMine && requesters.includes(user.uid);
   // 제목을 본문에서 뽑아 쓴 경우, 본문에서 그 줄을 빼야 같은 문장이 두 번 나오지 않는다
   const shownBody = window._bambooBody(p);
+  // '저에요' 계열 — 본문 흐름 안, 반응 줄 바로 아래에 놓는다(하단 고정 바를 쓰지 않는다).
+  // ★내 글이면 아무것도 두지 않는다. 글쓴이에게 '신청자 보기'는 큰 버튼이 필요한 행동이 아니고,
+  //   신청자 수는 위 반응 줄 오른쪽에 이미 있다(0명이면 그것도 안 나온다).
+  let _ctaHtml = '';
+  if (isMine) {
+    _ctaHtml = '';
+  } else if (!user) {
+    _ctaHtml = `<button style="width:100%;padding:15px;font-size:14.5px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:rgba(255,255,255,0.6);cursor:pointer;font-family:inherit" onclick="requireLogin('대나무숲')">로그인하고 참여하기</button>`;
+  } else if (hasRequested) {
+    _ctaHtml = `<div style="text-align:center;padding:13px 0;font-size:13px;color:#4a5266;line-height:1.6;border:1px dashed rgba(255,255,255,0.1);border-radius:12px">신청을 보냈어요<br><span style="font-size:11.5px">글쓴이가 수락하면 익명 대화가 열려요</span></div>`;
+  } else {
+    _ctaHtml = `<button onclick="window.sendBambooRequest('${p.id}','${p.userId}')" style="width:100%;padding:15px;font-size:15px;font-weight:800;background:#4ADE80;color:#08210f;border:none;border-radius:12px;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">${window.icHandUp(19, 'dark')}저에요</button>`;
+  }
+
   // ★배치 원칙 (2026-08-07 리디자인)
   //   ① 읽는 것 먼저: 종목·시간 → 제목 → 본문 → 사진. 액션이 읽기 흐름을 끊지 않는다.
   //   ② 공감·댓글은 **조용한 글자 버튼**. 알약 버튼 두 개를 나란히 두니 둘 다 주인공처럼 보였다.
@@ -12533,7 +12542,7 @@ window.openBambooDetail = async function (postId) {
            onclick="window.openPhotoViewer && window.openPhotoViewer('${String(p.photoURL).replace(/'/g, '')}')"
            style="width:100%;border-radius:10px;display:block;cursor:zoom-in">
     </figure>` : ''}
-    <div style="margin:30px 20px 0;padding:16px 0 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:24px">
+    <div style="margin:30px 20px ${_ctaHtml ? '18px' : '0'};padding:16px 0 ${_ctaHtml ? '0' : '32px'};border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:24px">
       <button onclick="window.bambooDetailLike('${p.id}')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:${liked ? '#4ADE80' : 'rgba(255,255,255,0.42)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:color 0.15s ease">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="${liked ? '#4ADE80' : 'none'}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>공감 ${p.likes || 0}
       </button>
@@ -12543,7 +12552,8 @@ window.openBambooDetail = async function (postId) {
       ${isMine && requesters.length ? `<button onclick="window.viewBambooRequesters('${p.id}')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:#4ADE80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;margin-left:auto">
         ${window.icHandUp(16)}신청자 ${requesters.length}
       </button>` : ''}
-    </div>`;
+    </div>
+    ${_ctaHtml ? `<div style="padding:0 20px 34px">${_ctaHtml}</div>` : ''}`;
 
   // 헤더 우측 = 내 글일 때만 삭제
   const tools = document.getElementById('bamboo-detail-tools');
@@ -12553,26 +12563,6 @@ window.openBambooDetail = async function (postId) {
       : '';
   }
 
-  // 아래 고정 바는 '저에요' 계열에만 쓴다.
-  // ★내 글이면 바를 아예 띄우지 않는다. 글쓴이에게 '신청자 보기'는 하단에 못박을 만큼
-  //   급한 행동이 아니고(대표 지적), 빈 바가 남으면 화면이 잘린 것처럼 보인다.
-  //   신청자는 위쪽 공감·댓글 줄 오른쪽에 '신청자 N' 으로 놓았다(0명이면 아예 안 보인다).
-  const cta = document.getElementById('bamboo-detail-cta');
-  const ctaIn = document.getElementById('bamboo-detail-cta-in');
-  if (cta && ctaIn) {
-    let html = '';
-    if (isMine) {
-      html = '';
-    } else if (!user) {
-      html = `<button style="width:100%;padding:15px;font-size:14.5px;font-weight:700;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:rgba(255,255,255,0.6);cursor:pointer;font-family:inherit" onclick="requireLogin('대나무숲')">로그인하고 참여하기</button>`;
-    } else if (hasRequested) {
-      html = `<div style="text-align:center;padding:11px 0;font-size:13px;color:#4a5266;line-height:1.6">신청을 보냈어요<br><span style="font-size:11.5px">글쓴이가 수락하면 익명 대화가 열려요</span></div>`;
-    } else {
-      html = `<button onclick="window.sendBambooRequest('${p.id}','${p.userId}')" style="width:100%;padding:15px;font-size:15px;font-weight:800;background:#4ADE80;color:#08210f;border:none;border-radius:12px;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">${window.icHandUp(19, 'dark')}저에요</button>`;
-    }
-    ctaIn.innerHTML = html;
-    cta.style.display = html ? 'block' : 'none';
-  }
   openPanel('bamboo-detail-panel');
 };
 
