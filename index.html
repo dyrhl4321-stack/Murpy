@@ -3655,16 +3655,10 @@ window.charPick = async function (id) {
     if (window.celebrateMurpy) window.celebrateMurpy(0, { amount: 0, title: "'" + item.name + "' 획득!" });
     else window.showToast && showToast("'" + item.name + "' 획득!");
   } else if (!has) {
-    const uid = window.currentUser && window.currentUser.uid;
-    if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
-      const ok = await window.murpyConfirm({ title: "'" + item.name + "' 구매", desc: '<b style="color:#F5C24B">' + item.price + '머피</b>로 구매해요', cost: true, confirmText: '구매' });
-      if (!ok) return;
-    }
-    const paid = window.spendCredit ? await window.spendCredit(uid, item.price) : true;
-    if (!paid) { window.showToast && showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
-    window._charState.wardrobe = [...owned, id];
-    if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
-    window.showToast && showToast("'" + item.name + "' 획득!");
+    // ★유저 피드백 #19 — 바로 사지 않고 **먼저 입어보게** 한다.
+    //   예전엔 여기서 곧바로 결제됐다(베타는 creditsEnforcedFor 가 false 라 확인창도 없었다).
+    window.charTryOn(id);
+    return;
   }
   window._charDraft[item.slot] = id;
   window._charRenderAvatar();
@@ -3672,6 +3666,100 @@ window.charPick = async function (id) {
   window._charAutoSave();     // 유저 피드백 #16 — 저장 버튼 없이 바로 저장
   window.charSlot(item.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
+// ===== 미리 입어보기 (유저 피드백 #19) =====
+// ★왜: 미보유 아이템을 누르면 **곧바로 사졌다.** 입어보고 고르는 재미가 없고,
+//   잘못 눌러 머피가 빠지는 사고도 난다. 꾸미기는 Recurring Value 축이라 여기가 중요하다.
+// ★안전장치 두 가지 — 안 사고 입어본 옷이 저장되면 영영 공짜로 입고 다니게 된다:
+//   ①시착 중에는 자동저장(#16)을 부르지 않는다.
+//   ②이 시트는 **모달**이다. 시착 상태로 다른 화면에 나갈 길을 아예 막는다.
+//     나가는 길은 되돌리기 / 사기 둘뿐이고, 배경을 눌러 닫아도 되돌린다.
+window._charTryOrig = null;
+
+// 같은 슬롯에서 '아직 안 산' 것만 (조건형은 퀘스트로 여는 것이라 뺀다)
+window._charTryList = function (slot) {
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  const myBody = (window._charDraft && window._charDraft.body) || 'human';
+  return (window.CHAR_ITEMS || []).filter(function (i) {
+    if (i.slot !== slot || (i.body && i.body !== myBody)) return false;
+    if (i.require) return false;
+    return !(owned.includes(i.id) || i.price === 0);
+  });
+};
+
+window.charTryOn = function (id) {
+  const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id; });
+  if (!item || !window._charDraft) return;
+  // 원래 입고 있던 것은 **처음 한 번만** 기억한다(좌우로 넘기며 여러 벌 입어봐도 되돌릴 곳은 하나)
+  if (!window._charTryOrig) window._charTryOrig = { slot: item.slot, value: window._charDraft[item.slot] || null };
+  window._charDraft[item.slot] = id;
+  window._charRenderAvatar();
+  if (window._charApplyPos) window._charApplyPos();
+  window._charTryRender(item);
+  const sheet = document.getElementById('char-tryon');
+  if (sheet) sheet.style.display = 'flex';
+};
+
+window._charTryRender = function (item) {
+  const cfg = window._charDraft || window.CHAR_DEFAULT;
+  const b = (window._CHAR_BODIES && window._CHAR_BODIES[(cfg && cfg.body) || 'human']) || { cw: 141, ch: 224 };
+  const H = 208, W = Math.round(H * b.cw / b.ch);
+  const stage = document.getElementById('tryon-stage');
+  if (stage) {
+    stage.innerHTML = '<div style="position:relative;width:' + W + 'px;height:' + H + 'px">'
+      + (window._mwSpriteLayers ? window._mwSpriteLayers(cfg, W, H) : '') + '</div>';
+  }
+  const nm = document.getElementById('tryon-name');
+  if (nm) nm.innerHTML = '<div style="font-size:15px;font-weight:800;letter-spacing:-0.3px">' + item.name + '</div>'
+    + '<div style="font-size:13px;font-weight:700;color:#F5C24B;margin-top:3px;display:flex;align-items:center;justify-content:center">'
+    + (window._mwCoinImg || '') + item.price + '</div>';
+  const buy = document.getElementById('tryon-buy');
+  if (buy) buy.innerHTML = item.price + '머피로 사기';
+  // 좌우 화살표는 같은 슬롯에 더 볼 게 있을 때만
+  const list = window._charTryList(item.slot);
+  const i = list.findIndex(function (x) { return x.id === item.id; });
+  const pv = document.getElementById('tryon-prev'), nx = document.getElementById('tryon-next');
+  if (pv) pv.style.visibility = (i > 0) ? 'visible' : 'hidden';
+  if (nx) nx.style.visibility = (i >= 0 && i < list.length - 1) ? 'visible' : 'hidden';
+};
+
+window.charTryOnStep = function (d) {
+  const o = window._charTryOrig; if (!o || !window._charDraft) return;
+  const list = window._charTryList(o.slot);
+  const i = list.findIndex(function (x) { return x.id === window._charDraft[o.slot]; });
+  const n = list[i + d];
+  if (n) window.charTryOn(n.id);
+};
+
+window.charTryOnClose = function (revert) {
+  const o = window._charTryOrig;
+  if (revert && o && window._charDraft) {
+    window._charDraft[o.slot] = o.value;      // 안 샀으니 원래대로 — 저장은 애초에 안 했다
+    window._charRenderAvatar();
+    if (window._charApplyPos) window._charApplyPos();
+  }
+  window._charTryOrig = null;
+  const sheet = document.getElementById('char-tryon');
+  if (sheet) sheet.style.display = 'none';
+  if (o) window.charSlot(o.slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
+};
+
+window.charTryOnBuy = async function () {
+  const o = window._charTryOrig; if (!o || !window._charDraft) return;
+  const id = window._charDraft[o.slot];
+  const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id; });
+  if (!item) return;
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  if (owned.includes(id)) { window.charTryOnClose(false); return; }
+  const uid = window.currentUser && window.currentUser.uid;
+  const paid = window.spendCredit ? await window.spendCredit(uid, item.price) : true;
+  if (!paid) { window.showToast && showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+  window._charState.wardrobe = [...owned, id];
+  if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+  window.showToast && showToast("'" + item.name + "' 획득!");
+  window.charTryOnClose(false);   // 되돌리지 않는다 — 산 옷을 그대로 입고 나간다
+  window._charAutoSave();
+};
+
 // ===== 캐릭터 자동 저장 (유저 피드백 #16) =====
 // ★저장 버튼이 꾸미기 패널 **맨 아래**에 있어서 못 보고 나가는 사람이 많았다.
 //   콜드스타터가 "공들여 꾸민 캐릭터를 잃었다"고 느끼는 게 제일 비싸다.
@@ -4058,6 +4146,41 @@ window.mwPortal = function () {
     <input id="char-code-input" placeholder="CODE" autocomplete="off" onkeydown="if(event.key==='Enter')window.submitCharCode()" style="width:100%;box-sizing:border-box;padding:14px;font-size:15px;color:#fff;text-align:center;letter-spacing:3px;outline:none;text-transform:uppercase;margin-bottom:14px">
     <button class="mw-btn mw-btn-gold" style="width:100%" onclick="window.submitCharCode()">잠금해제</button>
     <button class="mw-btn mw-btn-ghost" style="width:100%;margin-top:10px" onclick="closeModal('char-code-modal')">닫기</button>
+  </div>
+</div>
+
+<!-- 미리 입어보기 (유저 피드백 #19) — 사기 전에 내 캐릭터에 입혀본다.
+     ★모달이어야 한다. 시착 상태로 다른 화면에 나가면 '안 산 옷'이 자동저장(#16)에 실려
+       그대로 굳어버린다. 나가는 길은 되돌리기 / 사기 둘뿐이다.
+     ★꾸미기는 머피월드의 '서브' 화면이라 라운드 톤을 쓴다(메인만 사각 픽셀 입체). -->
+<div id="char-tryon" onclick="if(event.target===this)window.charTryOnClose(true)"
+     style="display:none;position:fixed;inset:0;z-index:20200;background:rgba(0,0,0,0.78);align-items:flex-end;justify-content:center">
+  <div onclick="event.stopPropagation()" style="width:100%;max-width:390px;background:#0d1016;border:1px solid rgba(255,255,255,0.1);border-bottom:none;border-top-left-radius:20px;border-top-right-radius:20px;padding:14px 18px 24px;box-sizing:border-box">
+
+    <div style="display:flex;align-items:center;margin-bottom:6px">
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.42);letter-spacing:-0.2px">입어보는 중 · 아직 사지 않았어요</div>
+      <button onclick="window.charTryOnClose(true)" aria-label="닫기" style="margin-left:auto;background:none;border:none;color:rgba(255,255,255,0.45);cursor:pointer;padding:2px;font-family:inherit">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px">
+      <button id="tryon-prev" onclick="window.charTryOnStep(-1)" aria-label="이전 아이템" style="flex-shrink:0;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div id="tryon-stage" style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:214px"></div>
+      <button id="tryon-next" onclick="window.charTryOnStep(1)" aria-label="다음 아이템" style="flex-shrink:0;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div id="tryon-name" style="text-align:center;margin-top:8px"></div>
+
+    <div style="display:flex;gap:9px;margin-top:16px">
+      <button onclick="window.charTryOnClose(true)" style="flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px;color:rgba(255,255,255,0.6);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">되돌리기</button>
+      <button id="tryon-buy" onclick="window.charTryOnBuy()" style="flex:1.6;background:#F5C24B;border:none;border-radius:12px;padding:14px;color:#3a2a00;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px"></button>
+    </div>
+
   </div>
 </div>
 
