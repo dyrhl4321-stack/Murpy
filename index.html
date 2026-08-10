@@ -1149,7 +1149,7 @@
 <div class="page" id="page-match">
   <div class="page-head">
     <span class="ph-ic"><img src="char/dumbbell_blue.png?v=2" style="width:24px;height:auto;display:block" alt="덤벨"></span>
-    <div><div class="ph-title">오늘의 매칭</div><div class="ph-sub">같이 운동할 메이트를 찾아요</div></div>
+    <div><div class="ph-title">오늘의 매칭</div><div class="ph-sub" id="match-sub">같이 운동할 메이트를 찾아요</div></div>
   </div>
   <!-- ★마크업에 **더미 값을 넣지 않는다.** 예전엔 여기에 남의 스톡 사진 + "지수 26 · 마포"가
        박혀 있어서, 탭에 들어올 때마다 그 가짜 카드가 한 번 번쩍이고 진짜 후보로 바뀌었다.
@@ -5514,8 +5514,10 @@ function renderMatch() {
       empty.style.display = 'block';
       empty.innerHTML = `
         <div style="display:flex;justify-content:center;margin-bottom:14px"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="8" width="2.6" height="8" rx="1.3"/><rect x="5.4" y="6.5" width="2.7" height="11" rx="1.35"/><path d="M8.1 12h7.8"/><rect x="15.9" y="6.5" width="2.7" height="11" rx="1.35"/><rect x="19.1" y="8" width="2.6" height="8" rx="1.3"/></svg></div>
-        <div style="font-size:14px;color:rgba(255,255,255,0.55);font-weight:600;margin-bottom:6px">오늘 추천할 분을 다 봤어요</div>
-        <div style="font-size:12px;color:rgba(255,255,255,0.32);line-height:1.6;margin-bottom:20px">스쿼드에서 운동 메이트를 찾아보거나<br>잠시 후 다시 확인해보세요</div>
+        <div style="font-size:14px;color:rgba(255,255,255,0.55);font-weight:600;margin-bottom:6px">${(window._matchPoolLeft || 0) > 0 ? '오늘 추천을 다 봤어요' : '오늘 추천할 분을 다 봤어요'}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.32);line-height:1.6;margin-bottom:20px">${(window._matchPoolLeft || 0) > 0
+            ? '내일 아침 새로 골라드릴게요<br>그동안 스쿼드에서 같이 운동할 사람을 찾아보세요'
+            : '스쿼드에서 운동 메이트를 찾아보거나<br>잠시 후 다시 확인해보세요'}</div>
         <button onclick="goPage('crew')" style="background:rgba(61,126,255,0.14);border:1px solid rgba(61,126,255,0.32);color:#7aa8ff;border-radius:12px;padding:12px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">스쿼드 둘러보기</button>`;
     }
     return;
@@ -5525,6 +5527,14 @@ function renderMatch() {
   if (actions) actions.style.display = 'flex';
   if (empty) empty.style.display = 'none';
   const _det1 = document.getElementById('match-detail'); if (_det1) _det1.style.display = 'block';
+
+  // 오늘의 추천이 몇 명인지는 **머리말에만** 적는다(최대 5, 전체 회원 수가 아니다).
+  // ★_MATCH_DAILY 를 여기서 쓰면 안 된다 — 그건 아래 module 블록(8477~)의 const 라
+  //   이 블록(5179~8475)에서는 보이지 않는다. 그래서 플래그를 window 로 받는다.
+  const _sub = document.getElementById('match-sub');
+  if (_sub) _sub.textContent = window._matchUnlimited
+    ? '같이 운동할 메이트를 찾아요'          // 관리자·테스터는 제한이 없다
+    : '오늘의 ' + list.length + '명';
 
   // 좌우로 넘겨보기 (#8) — 소비가 아니라 이동이라 되돌아올 수 있다.
   // ★'N / M' 위치 표시는 뺐다(대표 8-09) — 전체 회원 수가 그대로 드러나고 인증뱃지와 겹쳤다.
@@ -10972,6 +10982,41 @@ window.fetchMonthCount = async function (uid) {
   } catch (e) { return 0; }
 };
 
+// ===== 오늘의 추천 (대표 8-09 확정) =====
+// 하루 5명만 보여주고, 다 보면 내일 새로 고른다(머피 내고 더 보기는 두지 않는다).
+const _MATCH_DAILY = 5;
+
+// ★하루의 경계를 자정이 아니라 **새벽 5시**로 잡는다.
+//   자정 기준이면 새벽 1시에 벌써 '내일 추천'이 떠서 "내일 아침 새로 골라드릴게요" 안내와 어긋난다.
+function _matchDayKey() {
+  const d = new Date(Date.now() - 5 * 3600 * 1000);
+  return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+}
+
+// 이번달 운동 활발함 0~2점. users 문서 안의 값만 쓴다(추가 조회 없음).
+// monthly{YYYY-MM:{축:n}} 의 축 이름이 바뀌어도 안 깨지게 **가장 큰 축**을 활동량으로 본다.
+function _matchActScore(d) {
+  const now = new Date();
+  const mk = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const m = (d.monthly && d.monthly[mk]) || {};
+  let n = Number(m.feed || 0);
+  if (!n) {
+    Object.keys(m).forEach(k => { const v = Number(m[k]); if (v > n) n = v; });
+  }
+  const act = Math.max(n || 0, Number(d.streak || 0));
+  return act >= 8 ? 2 : (act >= 3 ? 1 : 0);
+}
+
+// 최근 7일 안에 앱을 연 적 있으면 +1 (users.visits{YYYY-MM-DD})
+function _matchRecentScore(d) {
+  const v = d.visits || {};
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(); dt.setDate(dt.getDate() - i);
+    if (v[_creditDateStr(dt)]) return 1;
+  }
+  return 0;
+}
+
 // ===== 매칭 후보 로더 (users → 지역/센터 우선 정렬) =====
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
@@ -10991,23 +11036,64 @@ window.loadMatchCandidates = async function () {
     }
     const passed = window._matchPassed || new Set();
 
+    // 내가 다니는 곳 — #10 이후 gyms[](최대 3) 가 진짜 소스이고 gym 은 그 첫 번째다
+    const myGyms = new Set([...(myProf.gyms || []), myGym].filter(Boolean));
+
     const snap = await getDocs(collection(db, 'users'));
     const arr = [];
+    const seeAll = (window.isMatchSeeAll && window.isMatchSeeAll())
+                || (window.isMatchTester && window.isMatchTester());
     snap.forEach(d => {
       const u = d.id;
       // 관리자(isMatchSeeAll)는 제외 없이 전원을 본다 — 이미 좋아요한 상대도 다시 뜬다
-      const _seeAll = (window.isMatchSeeAll && window.isMatchSeeAll())
-                   || (window.isMatchTester && window.isMatchTester());
-      if (u === me || (!_seeAll && (liked.has(u) || matchedSet.has(u) || passed.has(u)))) return;
+      if (u === me || (!seeAll && (liked.has(u) || matchedSet.has(u) || passed.has(u)))) return;
       const data = d.data() || {};
       if (!data.nickname) return; // 프로필 미설정자 제외
       const sameDistrict = !!(myDistrict && data.district === myDistrict);
-      const sameGym = !!(myGym && data.gym && data.gym === myGym);
-      arr.push({ uid: u, ...data, _sameCenter: sameGym, _score: (sameDistrict ? 2 : 0) + (sameGym ? 1 : 0) });
+      const theirGyms = [...(data.gyms || []), data.gym].filter(Boolean);
+      const sameGym = theirGyms.some(g => myGyms.has(g));
+      // 점수 배분 (대표 8-09 확정): 같은 헬스장 +4 · 같은 동네 +2 · 이번달 인증 0~2 · 최근 7일 접속 +1
+      // ★users 문서에 이미 있는 값만 쓴다. 사람마다 feed 를 세면(fetchMonthCount) 후보 수만큼
+      //   추가 조회가 나가서 매칭 탭이 그만큼 느려진다.
+      const _score = (sameGym ? 4 : 0) + (sameDistrict ? 2 : 0)
+                   + _matchActScore(data) + _matchRecentScore(data);
+      arr.push({ uid: u, ...data, _sameCenter: sameGym, _score });
     });
     arr.sort((a, b) => (b._score - a._score) || ((b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0)));
 
-    window._matchList = arr;
+    // ===== 오늘의 추천 5명 (대표 8-09 확정) =====
+    // 전체를 다 뿌리면 (1) 회원 수가 그대로 드러나고 (2) 매일 다시 올 이유가 없다.
+    // 하루치 덱은 **날짜별로 한 번만 뽑아 저장**한다 — 새로고침마다 사람이 바뀌면
+    // "아까 그 사람 어디 갔지"가 된다. 소비된 사람(좋아요·매칭·패스)은 위에서 이미 빠졌으므로
+    // 저장된 덱을 다시 맞춰보면 자연히 줄어든다.
+    window._matchUnlimited = !!seeAll;   // renderMatch(다른 script 블록)가 머리말에 쓴다
+    if (seeAll) {
+      window._matchList = arr;
+      window._matchPoolLeft = 0;         // 관리자·테스터는 제한 없음
+    } else {
+      const key = 'murpy_deck_' + (me || 'guest') + '_' + _matchDayKey();
+      let deck = [];
+      try { deck = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { deck = []; }
+      const byUid = {}; arr.forEach(c => { byUid[c.uid] = c; });
+      let picked;
+      if (deck.length) {
+        picked = deck.map(u => byUid[u]).filter(Boolean);
+      } else {
+        picked = arr.slice(0, _MATCH_DAILY);
+        deck = picked.map(c => c.uid);
+        try {
+          localStorage.setItem(key, JSON.stringify(deck));
+          // 지난 날짜 덱은 지운다(브라우저 저장소가 무한히 쌓이지 않게)
+          Object.keys(localStorage).forEach(k => {
+            if (k.indexOf('murpy_deck_') === 0 && k !== key) localStorage.removeItem(k);
+          });
+        } catch (e) {}
+      }
+      const inDeck = new Set(deck);
+      window._matchList = picked;
+      // 오늘 덱에 안 들어간 사람이 남아 있나 = "내일 새로 골라드릴게요"가 참인가
+      window._matchPoolLeft = arr.filter(c => !inDeck.has(c.uid)).length;
+    }
     window._matchIdx = 0;
   } catch (e) {
     window._matchList = [];
