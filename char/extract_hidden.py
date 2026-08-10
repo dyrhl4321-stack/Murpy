@@ -22,6 +22,9 @@ SOURCES = {
     'hidden_zombie': (os.path.join(SRCDIR, '좀비_clean-nukki.png'), False),
     'heltori':       (os.path.join(_DESKTOP, '헬토리_초안-Photoroom.png'), True),
     # 돼쫀토(코드 해금 한정판, 2026-08-10). 원본 → remove_gemini_watermark.py -f → nukki.py 순서.
+    # ★★재추출하면 반드시 아래를 다시 돌릴 것 — 안 그러면 정면이 한 발로만 걷는 상태로 돌아간다:
+    #     python char/mirror_front_step.py char/ddungddung.png --cw 145 --row 0
+    #   (소스 정면 3프레임이 정지/정지/한발듦 이라 걸음이 안 만들어진다. 뒷면·측면은 정상)
     'ddungddung':    (os.path.join(_LIMITED, '돼쫀토_clean-nukki.png'), False),
 }
 
