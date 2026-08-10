@@ -1154,18 +1154,25 @@
   <!-- ★마크업에 **더미 값을 넣지 않는다.** 예전엔 여기에 남의 스톡 사진 + "지수 26 · 마포"가
        박혀 있어서, 탭에 들어올 때마다 그 가짜 카드가 한 번 번쩍이고 진짜 후보로 바뀌었다.
        카드는 기본 숨김이고 renderMatch 가 실제 데이터를 채운 뒤에만 보여준다. -->
-  <div class="match-card" id="match-card" onclick="openMatchDetail()" style="display:none">
+  <!-- 유저 피드백 #8 — 넘겨보기용 '덱'. 카드 뒤에 다음 사람이 한 장 깔려 있어서
+       넘길 때 깊이가 보인다(대표 8-09: "카드 넘기는 애니메이션이 부족하다").
+       ★몇 명 중 몇 번째인지는 **표시하지 않는다.** 전체 회원 수가 그대로 드러나고
+         우상단 '인증완료' 뱃지와도 자리가 겹쳤다. -->
+  <div id="match-deck" style="position:relative">
+  <div id="match-back" style="display:none;position:absolute;inset:0;border-radius:20px;overflow:hidden;background:#14161c;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:scale(0.94) translateY(8px);opacity:0.5;pointer-events:none;z-index:0">
+    <img id="match-back-img" alt="" draggable="false" style="width:100%;height:100%;object-fit:cover">
+    <div class="match-grad"></div>
+  </div>
+  <div class="match-card" id="match-card" onclick="openMatchDetail()" style="display:none;z-index:1">
     <img id="match-img" alt="" draggable="false">
     <div class="match-grad"></div>
-    <!-- 유저 피드백 #8 — 좌우로 넘겨보기. 패스가 아니라 '자리 이동'이라 되돌아올 수 있다.
-         터치가 없는 PC 에서도 되게 화살표를 같이 둔다. -->
+    <!-- 패스가 아니라 '자리 이동'이라 되돌아올 수 있다. 터치가 없는 PC 용 화살표. -->
     <button id="match-prev" onclick="event.stopPropagation();window._matchGo(-1)" aria-label="이전 사람" style="display:none;position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:4;width:34px;height:34px;border-radius:50%;background:rgba(6,8,14,0.5);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.14);color:#fff;cursor:pointer;align-items:center;justify-content:center;padding:0;font-family:inherit">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
     <button id="match-next" onclick="event.stopPropagation();window._matchGo(1)" aria-label="다음 사람" style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);z-index:4;width:34px;height:34px;border-radius:50%;background:rgba(6,8,14,0.5);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.14);color:#fff;cursor:pointer;align-items:center;justify-content:center;padding:0;font-family:inherit">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
-    <div id="match-pos" style="display:none;position:absolute;top:14px;right:14px;z-index:4;background:rgba(6,8,14,0.5);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.14);border-radius:20px;padding:4px 10px;font-size:11px;font-weight:700;color:rgba(255,255,255,0.85);letter-spacing:0.2px"></div>
     <!-- 위치 칩 (좌상단) -->
     <div class="match-loc-chip" id="match-loc" style="display:none">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -1197,6 +1204,7 @@
       <button onclick="openModal('login-method-modal')" style="margin-top:18px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">로그인하고 시작하기</button>
     </div>
   </div>
+  </div><!-- /match-deck -->
 
   <!-- 버튼 영역 -->
   <!-- 정보: 칩(상단) → 자기소개 → 이번달 인증(서브) -->
@@ -5469,6 +5477,7 @@ function renderMatch() {
   //   그대로 보이다가 바뀌어서 "가짜가 한 번 뜬다"고 느껴진다.
   if (!list) {
     card.style.display = 'none';
+    _matchBackHide();          // 카드가 숨는데 뒤 카드만 남아 사진이 떠 있는 것 방지
     if (actions) actions.style.display = 'none';
     if (moreWrap) moreWrap.style.display = 'none';
     const _det = document.getElementById('match-detail'); if (_det) _det.style.display = 'none';
@@ -5497,6 +5506,7 @@ function renderMatch() {
   // 후보 없음 (다 봤거나 아무도 없음)
   if (!p) {
     card.style.display = 'none';
+    _matchBackHide();
     if (actions) actions.style.display = 'none';
     if (moreWrap) moreWrap.style.display = 'none';
     const _det0 = document.getElementById('match-detail'); if (_det0) _det0.style.display = 'none';
@@ -5516,18 +5526,13 @@ function renderMatch() {
   if (empty) empty.style.display = 'none';
   const _det1 = document.getElementById('match-detail'); if (_det1) _det1.style.display = 'block';
 
-  // 좌우로 넘겨보기 (#8) — 스와이프 연결 + 위치 표시. 소비가 아니라 이동이라 되돌아올 수 있다.
+  // 좌우로 넘겨보기 (#8) — 소비가 아니라 이동이라 되돌아올 수 있다.
+  // ★'N / M' 위치 표시는 뺐다(대표 8-09) — 전체 회원 수가 그대로 드러나고 인증뱃지와 겹쳤다.
   if (window._matchSwipeInit) window._matchSwipeInit();
   const _pv = document.getElementById('match-prev');
   const _nx = document.getElementById('match-next');
-  const _ps = document.getElementById('match-pos');
   if (_pv) _pv.style.display = idx > 0 ? 'flex' : 'none';
   if (_nx) _nx.style.display = idx < list.length - 1 ? 'flex' : 'none';
-  if (_ps) {
-    // 한 명뿐이면 '1 / 1'은 알려주는 게 없다
-    if (list.length > 1) { _ps.style.display = 'block'; _ps.textContent = (idx + 1) + ' / ' + list.length; }
-    else _ps.style.display = 'none';
-  }
 
   // ★사진 없는 후보: 예전엔 마크업의 스톡 사진이 그대로 남아 **남의 얼굴**이 그 사람인 양 보였다.
   //   이제 기본 src 가 없으므로 빈 문자열이면 이미지를 감추고 카드 배경만 둔다.
@@ -5657,61 +5662,149 @@ function openMatchDetail() {
 // ★"패스가 아니라 되돌아올 수 있어야 한다"가 요구의 핵심이다.
 //   그래서 스와이프는 **아무것도 소비하지 않는다** — 목록 안에서 자리만 옮긴다.
 //   패스는 오직 패스 버튼으로만 일어난다(그때만 _matchPassed 에 담긴다).
+//
+// ★애니메이션 (대표 8-09 "카드 넘기는 애니메이션이 부족하다")
+//   밋밋했던 이유는 카드가 **34px 만 밀리고 사라졌다가 반대편에서 다시 밀려들어온** 것이다.
+//   종이 카드를 넘기는 느낌은 세 가지에서 나온다:
+//     1) 끄는 동안 손가락을 따라 **기운다**(회전) — 이게 제일 크다
+//     2) 놓으면 화면 **밖까지 날아간다**(살짝 미는 게 아니라)
+//     3) 뒤에 깔려 있던 다음 사람이 **커지면서 앞으로 올라온다**(옆에서 들어오지 않는다)
+//   빠르게 튕기면(속도) 거리가 짧아도 넘어가야 손맛이 산다.
+const _MATCH_ROT = 15;      // 최대 기울기(도)
+const _MATCH_TH = 62;       // 이만큼 끌면 넘어간다(px)
+const _MATCH_VEL = 0.5;     // 이보다 빠르면 거리와 무관하게 넘어간다(px/ms)
+
+// 뒤에 깔리는 카드에 '넘기면 나올 사람' 사진을 미리 그려둔다.
+function _matchPaintBack(delta) {
+  const back = document.getElementById('match-back');
+  const bimg = document.getElementById('match-back-img');
+  if (!back || !bimg) return;
+  const list = window._matchList || [];
+  const p = list[(window._matchIdx || 0) + (delta > 0 ? 1 : -1)];
+  if (!p) { back.style.display = 'none'; return; }
+  const src = _mImg(p.photoURL || (p.photos && p.photos[0]) || '', 720);
+  bimg.style.display = src ? '' : 'none';
+  if (src) bimg.src = src;
+  back.style.display = 'block';
+}
+
+function _matchBackTo(k, animate) {
+  // k=0 → 뒤에 깔린 상태 / k=1 → 앞자리
+  const back = document.getElementById('match-back');
+  if (!back) return;
+  back.style.transition = animate ? 'transform .28s cubic-bezier(0.34,1.1,0.64,1), opacity .24s ease' : 'none';
+  back.style.transform = 'scale(' + (0.94 + 0.06 * k) + ') translateY(' + (8 - 8 * k) + 'px)';
+  back.style.opacity = String(0.5 + 0.5 * k);
+}
+
+function _matchBackHide() {
+  const back = document.getElementById('match-back');
+  if (!back) return;
+  _matchBackTo(0, false);
+  back.style.display = 'none';
+}
+
+// 문턱을 못 넘겨 제자리로 — 고무줄처럼 살짝 넘쳤다 돌아온다
+function _matchSnapBack() {
+  const card = document.getElementById('match-card');
+  if (card) {
+    card.style.transition = 'transform .34s cubic-bezier(0.34,1.4,0.64,1), opacity .2s ease';
+    card.style.transform = 'none';
+    card.style.opacity = '1';
+  }
+  _matchBackTo(0, true);
+  setTimeout(_matchBackHide, 300);
+}
+
 window._matchGo = function (delta) {
+  if (window._matchAnim) return;                 // 연타로 두 장 넘어가는 것 방지
   const list = window._matchList; if (!list || !list.length) return;
   const cur = window._matchIdx || 0;
   const next = cur + delta;
+  const card = document.getElementById('match-card');
+
   if (next < 0 || next >= list.length) {
-    // 끝에서 더 밀면 살짝 튕겨서 '여기가 끝'임을 알린다(토스트는 과하다)
-    const card = document.getElementById('match-card');
+    // 끝에서 더 밀면 튕겨서 '여기가 끝'임을 몸으로 알린다(토스트는 과하다)
     if (card) {
-      card.style.transition = 'transform .18s ease';
-      card.style.transform = 'translateX(' + (delta > 0 ? -14 : 14) + 'px)';
-      setTimeout(() => { card.style.transform = 'none'; }, 180);
+      card.style.transition = 'transform .15s ease-out';
+      card.style.transform = 'translateX(' + (delta > 0 ? -20 : 20) + 'px) rotate(' + (delta > 0 ? -1.6 : 1.6) + 'deg)';
+      setTimeout(() => {
+        card.style.transition = 'transform .36s cubic-bezier(0.34,1.45,0.64,1)';
+        card.style.transform = 'none';
+      }, 150);
     }
+    _matchBackHide();
     return;
   }
-  const card = document.getElementById('match-card');
-  if (card) { card.style.transition = 'transform .2s ease, opacity .2s ease'; card.style.transform = 'translateX(' + (delta > 0 ? -34 : 34) + 'px)'; card.style.opacity = '0'; }
+
+  window._matchAnim = true;
+  _matchPaintBack(delta);
+
+  // 1) 지금 카드는 화면 밖까지 기울면서 날아간다
+  const W = (card ? card.offsetWidth : 360) + 110;
+  if (card) {
+    card.style.transition = 'transform .27s cubic-bezier(0.4,0,0.7,1), opacity .27s ease-in';
+    card.style.transform = 'translateX(' + (delta > 0 ? -W : W) + 'px) rotate(' + (delta > 0 ? -_MATCH_ROT : _MATCH_ROT) + 'deg)';
+    card.style.opacity = '0';
+  }
+  // 2) 그동안 뒤 카드가 앞자리로 올라온다
+  _matchBackTo(1, true);
+
   setTimeout(() => {
     window._matchIdx = next;
-    if (card) { card.style.transition = 'none'; card.style.transform = 'translateX(' + (delta > 0 ? 34 : -34) + 'px)'; card.style.opacity = '0'; }
+    // 3) 새 카드는 '뒤에 있던 것이 올라온 것'처럼 커지며 자리를 잡는다(옆에서 안 들어온다)
+    if (card) { card.style.transition = 'none'; card.style.transform = 'scale(0.94) translateY(8px)'; card.style.opacity = '0'; }
     renderMatch();
-    requestAnimationFrame(() => { if (card) { card.style.transition = 'transform .22s ease, opacity .22s ease'; card.style.transform = 'none'; card.style.opacity = '1'; } });
-  }, 200);
+    _matchBackHide();
+    requestAnimationFrame(() => {
+      if (!card) return;
+      card.style.transition = 'transform .3s cubic-bezier(0.34,1.25,0.64,1), opacity .18s ease';
+      card.style.transform = 'none';
+      card.style.opacity = '1';
+    });
+    setTimeout(() => { window._matchAnim = false; }, 300);
+  }, 270);
 };
-// 손가락 끌기 — 끌리는 동안 카드가 따라오고, 충분히 끌면 넘어간다.
+
+// 손가락 끌기 — 끌리는 동안 카드가 따라오며 기울고, 충분히 끌거나 빠르게 튕기면 넘어간다.
 // ★세로 스크롤과 싸우지 않게, 처음 몇 px 의 방향을 보고 가로일 때만 가로채기 시작한다.
 window._matchSwipeInit = function () {
   const card = document.getElementById('match-card');
   if (!card || card._swipeBound) return;
   card._swipeBound = true;
-  let x0 = 0, y0 = 0, dx = 0, dir = 0, on = false;
-  const TH = 56;                          // 이 이상 끌면 넘긴다
+  let x0 = 0, y0 = 0, t0 = 0, dx = 0, dir = 0, on = false;
+
   card.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; dir = 0; on = true;
+    if (e.touches.length !== 1 || window._matchAnim) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    t0 = Date.now(); dx = 0; dir = 0; on = true;
     card.style.transition = 'none';
   }, { passive: true });
+
   card.addEventListener('touchmove', (e) => {
     if (!on) return;
     const ax = e.touches[0].clientX - x0, ay = e.touches[0].clientY - y0;
     if (!dir) {
       if (Math.abs(ax) < 8 && Math.abs(ay) < 8) return;
       dir = Math.abs(ax) > Math.abs(ay) ? 1 : -1;   // 1=가로(내가 처리) / -1=세로(스크롤에 양보)
+      if (dir === 1) _matchPaintBack(ax < 0 ? 1 : -1);
     }
     if (dir !== 1) return;
     dx = ax;
     if (e.cancelable) e.preventDefault();           // 가로일 때만 스크롤을 막는다
-    card.style.transform = 'translateX(' + (dx * 0.55) + 'px)';
+    const t = Math.max(-1, Math.min(1, dx / 170));  // 많이 끌수록 많이 기운다(상한 있음)
+    card.style.transform = 'translateX(' + (dx * 0.7) + 'px) rotate(' + (t * _MATCH_ROT) + 'deg)';
+    card.style.opacity = String(1 - Math.min(0.3, Math.abs(dx) / 850));
+    _matchBackTo(Math.min(1, Math.abs(dx) / _MATCH_TH), false);
   }, { passive: false });
+
   const end = () => {
     if (!on) return;
     on = false;
-    card.style.transition = 'transform .2s ease';
-    if (dir === 1 && Math.abs(dx) > TH) { card.style.transform = 'none'; window._matchGo(dx < 0 ? 1 : -1); }
-    else card.style.transform = 'none';
-    dx = 0; dir = 0;
+    const vel = Math.abs(dx) / Math.max(1, Date.now() - t0);
+    if (dir === 1 && (Math.abs(dx) > _MATCH_TH || vel > _MATCH_VEL)) window._matchGo(dx < 0 ? 1 : -1);
+    else if (dir === 1) _matchSnapBack();
+    dir = 0;
   };
   card.addEventListener('touchend', end);
   card.addEventListener('touchcancel', end);
