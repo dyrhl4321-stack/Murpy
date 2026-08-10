@@ -12307,7 +12307,23 @@ window._propagateNickname = async (nickname) => {
 };
 
 // ===== 구글 로그인 (전역 함수로 분리) =====
+// ★인앱브라우저(인스타·페북·카톡·네이버…)에서는 팝업을 먼저 시도하면 안 된다.
+//   증상(대표 8-10, 인스타 스토리 링크): 처음 누르면 '리디렉션 차단됨'만 뜨고
+//   한 번 더 눌러야 구글 로그인이 뜬다.
+//   원인: 인앱브라우저가 팝업을 막아 auth/popup-blocked 가 나고, 그때는 이미
+//   **사용자 제스처가 만료돼** catch 안에서 부르는 폴백 리디렉션까지 막힌다.
+//   그래서 인앱이면 팝업을 건너뛰고 처음부터 리디렉션으로 간다
+//   (signInWithRedirect 를 제스처 안에서 **첫 await 로** 불러야 한다 — 앞에 await 를 끼우지 말 것).
 window.googleLogin = async () => {
+  if (window._isInApp && window._isInApp()) {
+    try {
+      await signInWithRedirect(auth, provider);
+    } catch (e) {
+      console.error('로그인 실패(인앱 리디렉션):', e.code, e.message);
+      showToast('로그인 실패: ' + e.message);
+    }
+    return;
+  }
   try {
     const result = await signInWithPopup(auth, provider);
     window.currentUser = result.user;
