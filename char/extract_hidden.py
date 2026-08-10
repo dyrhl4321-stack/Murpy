@@ -15,11 +15,14 @@ SRCDIR = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스�
 _DESKTOP = r"C:\Users\allys\Desktop\머피브랜딩\머피월드 캐릭터\커스터마이징 3차"
 # (파일명, largest_only). largest_only=True면 셀에서 가장 큰 연결덩어리(캐릭터)만 추출 →
 #   외딴 제미나이 ✦ 등 작은 잡티가 자동 제거된다(누끼 전 워터마크 제거를 못 한 헬토리용).
+_LIMITED = os.path.join(_DESKTOP, '한정판캐릭터')
 SOURCES = {
     'hidden_cult':   (os.path.join(SRCDIR, '화요일교 교주 시안_clean-nukki.png'), False),
     'hidden_somm':   (os.path.join(SRCDIR, '소믈리에_clean-nukki.png'), False),
     'hidden_zombie': (os.path.join(SRCDIR, '좀비_clean-nukki.png'), False),
     'heltori':       (os.path.join(_DESKTOP, '헬토리_초안-Photoroom.png'), True),
+    # 돼쫀토(코드 해금 한정판, 2026-08-10). 원본 → remove_gemini_watermark.py -f → nukki.py 순서.
+    'ddungddung':    (os.path.join(_LIMITED, '돼쫀토_clean-nukki.png'), False),
 }
 
 
@@ -72,5 +75,14 @@ def build(name, path, largest_only=False):
 
 
 if __name__ == '__main__':
+    # 인자를 주면 그 이름만 다시 만든다(예: python char/extract_hidden.py ddungddung).
+    # 인자가 없으면 전부 — 단 소스가 없는 것은 건너뛴다(옛 소스가 지워진 PC에서 터지지 않게).
+    import sys
+    only = set(sys.argv[1:])
     for name, (path, largest) in SOURCES.items():
+        if only and name not in only:
+            continue
+        if not os.path.exists(path):
+            print(name, '건너뜀 — 소스 없음:', path)
+            continue
         build(name, path, largest)
