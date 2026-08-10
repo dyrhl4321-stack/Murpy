@@ -3656,7 +3656,7 @@ window.charPick = async function (id) {
     else window.showToast && showToast("'" + item.name + "' 획득!");
   } else if (!has) {
     // ★유저 피드백 #19 — 바로 사지 않고 **먼저 입어보게** 한다.
-    //   예전엔 여기서 곧바로 결제됐다(베타는 creditsEnforcedFor 가 false 라 확인창도 없었다).
+    //   예전엔 여기서 곧바로 구매 확인창이 떴다(입어보지도 못하고 살지 말지부터 골라야 했다).
     window.charTryOn(id);
     return;
   }
@@ -3751,6 +3751,13 @@ window.charTryOnBuy = async function () {
   const owned = (window._charState && window._charState.wardrobe) || [];
   if (owned.includes(id)) { window.charTryOnClose(false); return; }
   const uid = window.currentUser && window.currentUser.uid;
+  // ★구매 확인창은 그대로 둔다. CREDITS_MODE 는 'enforced' 라 **실제로 머피가 차감된다**
+  //   (예전 메모에 'beta라 차감 없음'이라 적혀 있었는데 그건 옛 상태다 — 대표 지적 8-10).
+  //   시착 시트의 'N머피로 사기'와 겹쳐 보이지만, 돈이 빠지는 자리라 확인을 없애지 않는다.
+  if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
+    const ok = await window.murpyConfirm({ title: "'" + item.name + "' 구매", desc: '<b style="color:#F5C24B">' + item.price + '머피</b>로 구매해요', cost: true, confirmText: '구매' });
+    if (!ok) return;
+  }
   const paid = window.spendCredit ? await window.spendCredit(uid, item.price) : true;
   if (!paid) { window.showToast && showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
   window._charState.wardrobe = [...owned, id];
