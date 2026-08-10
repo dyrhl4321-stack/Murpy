@@ -2456,12 +2456,16 @@ window._charEquippedSheets = function (cfg) {
 window._charStepToggle = false;
 // 앞모습 프리뷰 = 오버월드와 동일 시트(down/정지 프레임) 겹 합성 → WYSIWYG.
 // 시트가 있는 슬롯은 시트로, 없으면(SVG전용) 아래 renderCharacter 폴백에 맡김.
-window._charRenderAvatar = function () {
-  const el = document.getElementById('charworld-preview');
+// ★★캐릭터를 그리는 곳은 **여기 하나뿐이다.** 미리보기·시착이라고 따로 그리지 말 것.
+//   따로 그렸다가 overShoes(버뮤다 밑단이 신발 목을 덮는 규칙)가 빠져서
+//   시착 화면에서만 신발이 버뮤다를 파고들었다(대표 8-10 지적).
+//   크기가 다르면 H 만 바꿔 부른다 — 조합 규칙은 건드리지 않는다.
+window._charRenderTo = function (el, H, cfg) {
   if (!el) return;
-  const cfg = window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
+  cfg = cfg || window._charDraft || (window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT);
   const b = window._CHAR_BODIES[(cfg && cfg.body) || 'human'] || window._CHAR_BODIES.human;
-  const H = window._CHAR_DISPLAY_H || 88, w = Math.round(H * b.cw / b.ch);
+  H = H || window._CHAR_DISPLAY_H || 88;
+  const w = Math.round(H * b.cw / b.ch);
   const sheets = window._charEquippedSheets(cfg);
   const hasSheet = window._CHAR_LAYER_ORDER.some(function (s) { return s !== 'body' && sheets[s]; });
   // 기본 몸통이 아니면 아이템이 없어도 그 몸통 시트로 렌더한다(여캐·헬토리·히든).
@@ -2481,8 +2485,11 @@ window._charRenderAvatar = function () {
     order.forEach(function (s) { if (sheets[s]) html += layer(sheets[s]); });
     el.innerHTML = html + "</div>";
   } else if (window.renderCharacter) {
-    el.innerHTML = window.renderCharacter(cfg, { size: 76, masked: !!(cfg && cfg.mask) });   // SVG 폴백
+    el.innerHTML = window.renderCharacter(cfg, { size: Math.round(H * 0.86), masked: !!(cfg && cfg.mask) });   // SVG 폴백
   }
+};
+window._charRenderAvatar = function () {
+  window._charRenderTo(document.getElementById('charworld-preview'));
 };
 // ===== 방 인테리어 (LimeZu 48px 가구, 768 좌표계) =====
 window.ROOM_ITEMS = [
@@ -3700,14 +3707,10 @@ window.charTryOn = function (id) {
 };
 
 window._charTryRender = function (item) {
-  const cfg = window._charDraft || window.CHAR_DEFAULT;
-  const b = (window._CHAR_BODIES && window._CHAR_BODIES[(cfg && cfg.body) || 'human']) || { cw: 141, ch: 224 };
-  const H = 208, W = Math.round(H * b.cw / b.ch);
-  const stage = document.getElementById('tryon-stage');
-  if (stage) {
-    stage.innerHTML = '<div style="position:relative;width:' + W + 'px;height:' + H + 'px">'
-      + (window._mwSpriteLayers ? window._mwSpriteLayers(cfg, W, H) : '') + '</div>';
-  }
+  // ★꾸미기 화면이 쓰는 렌더러를 **그대로** 쓰고 크기(H)만 2배로 준다.
+  //   따로 그리면 overShoes 같은 조합 규칙이 빠진다 — 실제로 그래서 한 번 깨졌다.
+  //   88 → 176 은 꾸미기 프리뷰(_CHAR_DISPLAY_H=88)의 정확히 2배다.
+  window._charRenderTo(document.getElementById('tryon-stage'), 176);
   const nm = document.getElementById('tryon-name');
   if (nm) nm.innerHTML = '<div style="font-size:15px;font-weight:800;letter-spacing:-0.3px">' + item.name + '</div>'
     + '<div style="font-size:13px;font-weight:700;color:#F5C24B;margin-top:3px;display:flex;align-items:center;justify-content:center">'
@@ -3979,7 +3982,17 @@ window.openMurpyCharge = function () { if (window.openModal) openModal('murpy-ch
 window._mwSpriteLayers = function (cfg, w, h) {
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg || window.CHAR_DEFAULT) : null;
   if (!sheets) return '';
-  return ['body','bottom','shoes','top','hair','hat','acc'].filter(function (s) { return sheets[s]; }).map(function (s) {
+  // ★버뮤다처럼 밑단이 신발 목을 덮어야 하는 하의(overShoes)를 여기서도 지켜야 한다.
+  //   이걸 빠뜨려서 **미리보기에서만** 신발이 버뮤다를 파고들었다(대표 8-10 지적).
+  //   걸어다니는 캐릭터는 _charBottomZ 로 z 를 올려 이미 맞았는데, 이 함수는 DOM 순서로만
+  //   쌓기 때문에 배열 순서를 직접 바꿔줘야 한다. 판정 규칙은 _charBottomZ 와 하나로 둔다.
+  const order = ['body','bottom','shoes','top','hair','hat','acc'];
+  if (window._charBottomZ && window._CHAR_LAYER_ORDER
+      && window._charBottomZ(cfg) > window._CHAR_LAYER_ORDER.indexOf('shoes') * 10) {
+    order.splice(order.indexOf('bottom'), 1);
+    order.splice(order.indexOf('shoes') + 1, 0, 'bottom');
+  }
+  return order.filter(function (s) { return sheets[s]; }).map(function (s) {
     return '<div class="mw-sp-l" style="position:absolute;left:0;top:0;width:' + w + 'px;height:' + h + 'px;image-rendering:pixelated;'
       + "background-image:url('" + sheets[s] + "');background-repeat:no-repeat;"
       + 'background-size:' + (w * 3) + 'px ' + (h * 4) + 'px;background-position:0 0"></div>';
@@ -4175,7 +4188,7 @@ window.mwPortal = function () {
       <button id="tryon-prev" onclick="window.charTryOnStep(-1)" aria-label="이전 아이템" style="flex-shrink:0;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <div id="tryon-stage" style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:214px"></div>
+      <div id="tryon-stage" style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:184px"></div>
       <button id="tryon-next" onclick="window.charTryOnStep(1)" aria-label="다음 아이템" style="flex-shrink:0;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-family:inherit">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
       </button>
