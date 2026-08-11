@@ -12954,6 +12954,9 @@ window.sqInviteLink = function (sid) {
   // ★그림 없이 보내면 카톡에서 그냥 글줄로 떨어진다(대표 8-11). 대표 사진이 있으면 그것,
   //   없으면 종목 필드 그림을 태운다. 카카오 서버가 직접 받아가므로 **절대주소**여야 한다.
   let img = s.img ? String(s.img) : '';
+  // ★정기반 사진은 'char/promo/…' 같은 **상대경로**다. 카카오 서버가 직접 받아가므로
+  //   상대경로를 그대로 넘기면 그림이 통째로 안 나온다 — 절대주소로 바꿔준다.
+  if (img && !/^https?:\/\//i.test(img)) img = 'https://murpy.app/' + img.replace(/^\.?\//, '');
   // 크기는 **아는 그림일 때만** 알려준다. 대표 사진은 비율이 제각각이라 크기를 우겨넣으면 찌그러진다.
   let size = null;
   if (!img && window.squadFieldSrc) {
@@ -17978,10 +17981,13 @@ window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무�
 // ★img 를 주면 종목 필드 대신 그 사진을 쓴다. 실제 활동 사진이 필드보다 훨씬 세다(대표 8-11).
 //   규격 1080x415(2.6:1) · 왼쪽 55%는 어두워야 한다(제목·부제가 거기 얹힌다).
 window.SQUAD_CLASSES = [
-  { id: 'mon_am_gym', name: '월요일 오전 헬스반', type: 'gym', weekday: 1, hour: 6, min: 30,
+  // ★실제로 돌아가는 벙이다(대표 8-11). 첫 회차 = 8/18(화) 07:00.
+  //   weekday:2 라 매주 화요일로 반복된다. 한 번만 열 거면 weekday 를 지우고
+  //   date:'2026-08-18' 을 주면 그날이 지나는 순간 저절로 빠진다.
+  { id: 'tue_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 2, hour: 7, min: 0,
     durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
     img: 'char/promo/ad_gym_morning.jpg?v=2',
-    memo: '한 주를 운동으로 여는 고정반이에요. 처음 오셔도 됩니다.' }
+    memo: '아침에 모여서 같이 합니다. 처음 오셔도 됩니다.' }
   // ★type 은 SQUAD_TYPES 의 키와 정확히 같아야 한다(gym·running·golf·tennis·climbing·hyrox·hiking).
   //   'run' 이라고 썼다가 필드가 헬스로 떨어졌다 — squadFieldSrc 가 모르는 키는 gym 으로 폴백한다.
   // ※'수요일 저녁 러닝반'·'토요일 오전 헬스반'은 대표 지시로 뺐다(8-11). 실제로 안 돌아가는
@@ -18047,6 +18053,7 @@ window.sqOpenClass = async function (clsId) {
       title: cls.name, exerciseType: cls.type, centerId: null, location: cls.location,
       scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + Math.round(cls.durH * 3600 * 1000) + 3600 * 1000,
       capacity: cls.capacity, level: cls.level, oneLineMemo: cls.memo,
+      img: cls.img || null,        // 카드에 쓰는 사진을 벙에도 그대로 — 목록·상세·카톡이 다 같아진다
       joinMode: 'open', feeAmount: 0,
       status: 'recruiting', source: 'class', classId: cls.id, occKey: key,
       hostRewarded: false, createdAt: serverTimestamp() });
