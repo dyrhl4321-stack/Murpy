@@ -1296,6 +1296,8 @@
     <div><div class="ph-title">스쿼드</div><div class="ph-sub">오늘 같이 운동할 사람들</div></div>
     <button class="ph-action btn-white" style="border-radius:20px;padding:8px 15px;font-size:12px" onclick="window.openSquadCreate&&window.openSquadCreate()">+ 만들기</button>
   </div>
+  <!-- 콜드유저 대응 히어로 (자동 슬라이드). 스쿼드가 없어도 여기는 항상 뭔가 떠 있다. -->
+  <div id="squad-hero" style="padding-top:12px"></div>
   <div id="squad-list" style="padding-top:14px"></div>
   <!-- ↓ 옛 크루 UI (휴면 — 코드 보존용, 표시 안 함) -->
   <div class="tab-bar" id="crew-tab-bar" style="display:none">
@@ -17588,8 +17590,172 @@ window._sqFmtTime = function (ms) {
 };
 window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무료';
 
+// ===== 정기반 (콜드스타트 공급) =====
+// ★왜: 스쿼드는 양면 시장이다. 벙주가 있어야 참가자가 오고 참가자가 보여야 벙주가 만든다.
+//   유저가 적은 지금은 목록이 비고, 콜드유저는 "여긴 아무도 없네" 하고 나간다.
+//   → 유저가 늘 때까지 **공급을 우리가 깐다.** 요일·시간을 못 박은 정기반을 운영이 등록해두면
+//     매주 같은 자리에 뜬다. 유저는 벙주가 될 부담 없이 참가만 하면 된다(대표 지시 8-11).
+// ★서버(Cloud Functions)가 없으므로 회차를 미리 만들어두지 않는다.
+//   다음 회차는 **화면에서 계산**하고, 누가 참가를 누르는 순간에만 진짜 스쿼드 문서를 만든다.
+//   그래서 아무도 안 눌러도 목록은 차 있고, 빈 스쿼드가 DB에 쌓이지도 않는다.
+// ★고치는 법: 아래 배열만 손보면 된다. weekday 0=일 ~ 6=토.
+window.SQUAD_CLASSES = [
+  { id: 'mon_am_gym', name: '월요일 오전 헬스반', type: 'gym', weekday: 1, hour: 6, min: 30,
+    durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
+    memo: '한 주를 운동으로 여는 고정반이에요. 처음 오셔도 됩니다.' },
+  { id: 'wed_pm_run', name: '수요일 저녁 러닝반', type: 'run', weekday: 3, hour: 19, min: 30,
+    durH: 1.5, location: '한강공원', capacity: 8, level: '누구나',
+    memo: '가볍게 5km. 페이스는 맞춰서 뜁니다.' },
+  { id: 'sat_am_gym', name: '토요일 오전 헬스반', type: 'gym', weekday: 6, hour: 9, min: 0,
+    durH: 2, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
+    memo: '주말 오전에 몰아서. 끝나고 커피 한 잔.' }
+];
+// 다음 회차 시각. 오늘이 그 요일이어도 **이미 지났으면 다음 주**로 넘긴다.
+window._sqNextOcc = function (cls) {
+  const n = new Date();
+  const d = new Date(n.getFullYear(), n.getMonth(), n.getDate(), cls.hour, cls.min, 0, 0);
+  let add = (cls.weekday - d.getDay() + 7) % 7;
+  if (add === 0 && d.getTime() <= Date.now()) add = 7;
+  d.setDate(d.getDate() + add);
+  return d;
+};
+window._sqOccKey = function (dt) {
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+};
+// 정기반 회차를 실제 스쿼드로 연다(없으면 만들고, 이미 있으면 그리로 간다).
+// ★classId+occKey 로 중복을 막는다. 두 사람이 동시에 눌러도 목록을 다시 읽어 확인한다.
+window.sqOpenClass = async function (clsId) {
+  const user = auth.currentUser;
+  if (!user) { requireLogin && requireLogin('스쿼드에 참가하려면 로그인이 필요해요'); return; }
+  const cls = (window.SQUAD_CLASSES || []).find(c => c.id === clsId); if (!cls) return;
+  const occ = window._sqNextOcc(cls), key = window._sqOccKey(occ);
+  try {
+    const qs = await getDocs(query(collection(db, 'squads'), where('classId', '==', clsId), where('occKey', '==', key), limit(1)));
+    if (!qs.empty) { window.openSquadDetail && window.openSquadDetail(qs.docs[0].id); return; }
+  } catch (e) { console.warn('정기반 조회 실패', e); }
+  try {
+    if (!window._mwMyNick) { try { const us = await getDoc(doc(db, 'users', user.uid)); window._mwMyNick = (us.exists() && us.data().nickname) || '머피'; } catch (e) {} }
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    const sched = occ.getTime();
+    const dRef = await addDoc(collection(db, 'squads'), {
+      hostUid: user.uid, memberUids: [user.uid],
+      title: cls.name, exerciseType: cls.type, centerId: null, location: cls.location,
+      scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + Math.round(cls.durH * 3600 * 1000) + 3600 * 1000,
+      capacity: cls.capacity, level: cls.level, oneLineMemo: cls.memo,
+      joinMode: 'open', feeAmount: 0,
+      status: 'recruiting', source: 'class', classId: cls.id, occKey: key,
+      hostRewarded: false, createdAt: serverTimestamp() });
+    await setDoc(doc(db, 'squads', dRef.id, 'members', user.uid),
+      { status: 'accepted', nickname: window._mwMyNick || '머피', character: cfg, paid: false, joinedAt: serverTimestamp() });
+    showToast('정기반에 참가했어요!');
+    window.renderSquadPage();
+    window.openSquadDetail && window.openSquadDetail(dRef.id);
+  } catch (e) { console.error(e); showToast('참가 실패 — 다시 시도해주세요'); }
+};
+
+// ===== 스쿼드 히어로 (자동 슬라이드) =====
+// ★대표 요청(8-11): "가만히 있어도 자동으로 슬라이드되는 광고페이지 같은 것".
+//   다만 내용은 광고가 아니라 **지금 우리 동네에서 벌어지는 일**로 채운다 —
+//   빈 화면을 가리는 게 아니라 "사람이 있다"를 보여주는 게 목적이다.
+// 슬라이드 구성: 정기반 모집 → 오늘 체크인 → 머피 범프 소개
+//   (관리자 슬라이드=인스타·챌린지 광고는 다음 단계에서 붙인다)
+window._sqHeroT = null;
+window._sqHeroI = 0;
+window.renderSquadHero = async function () {
+  const host = document.getElementById('squad-hero'); if (!host) return;
+  const slides = [];
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+
+  // 1) 정기반 — 다가오는 순서로. 목록이 비어도 여기는 항상 찬다.
+  (window.SQUAD_CLASSES || []).map(c => ({ c, at: window._sqNextOcc(c) }))
+    .sort((a, b) => a.at - b.at).slice(0, 3).forEach(({ c, at }) => {
+      const when = WD[at.getDay()] + '요일 ' + String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
+      const dday = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
+      slides.push({
+        bg: window.squadFieldSrc ? window.squadFieldSrc(c.type) : '',
+        tag: dday === 0 ? '오늘' : (dday === 1 ? '내일' : 'D-' + dday),
+        tagColor: dday <= 1 ? '#3dde7c' : '#7aa8ff',
+        title: esc(c.name),
+        sub: when + ' · ' + esc(c.location),
+        cta: '참가하기',
+        click: "window.sqOpenClass('" + c.id + "')"
+      });
+    });
+
+  // 2) 오늘 체크인 — "지금 사람이 있다"는 유일하게 늘 참인 사실이다.
+  try {
+    const day = (function () { const n = new Date(); return n.getFullYear() + String(n.getMonth() + 1).padStart(2, '0') + String(n.getDate()).padStart(2, '0'); })();
+    const cs = await getDocs(query(collection(db, 'checkins'), where('day', '==', day), limit(40)));
+    const byCenter = {};
+    cs.forEach(d => { const v = d.data(); const k = v.centerName || v.centerId; if (k) byCenter[k] = (byCenter[k] || 0) + 1; });
+    const top = Object.keys(byCenter).sort((a, b) => byCenter[b] - byCenter[a])[0];
+    if (top) slides.push({
+      bg: window.squadFieldSrc ? window.squadFieldSrc('gym') : '',
+      tag: '지금', tagColor: '#3dde7c',
+      title: '오늘 ' + esc(top) + '에 ' + byCenter[top] + '명',
+      sub: '같이 할 사람을 찾고 있을지도 몰라요',
+      cta: '스쿼드 열기',
+      click: 'window.openSquadCreate&&window.openSquadCreate()'
+    });
+  } catch (e) { /* 체크인을 못 읽어도 정기반 슬라이드는 뜬다 */ }
+
+  // 3) 처음 온 사람에게 — 우리가 뭐가 다른지 한 장
+  slides.push({
+    bg: window.squadFieldSrc ? window.squadFieldSrc('gym') : '',
+    tag: '머피 범프', tagColor: '#F5C24B',
+    title: '만나면 폰을 맞대보세요',
+    sub: '실제로 만난 사이만 쌓이는 기록이 생겨요',
+    cta: '스쿼드 둘러보기',
+    click: "document.getElementById('squad-list')&&document.getElementById('squad-list').scrollIntoView({behavior:'smooth'})"
+  });
+
+  window._sqHeroSlides = slides;
+  if (window._sqHeroI >= slides.length) window._sqHeroI = 0;
+  host.innerHTML =
+    '<div id="sq-hero-vp" style="position:relative;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.08);height:132px">'
+    + slides.map((s, i) =>
+      '<div class="sq-hero-s" data-i="' + i + '" onclick="' + s.click + '" style="position:absolute;inset:0;cursor:pointer;opacity:' + (i === window._sqHeroI ? '1' : '0') + ';transition:opacity .5s ease;pointer-events:' + (i === window._sqHeroI ? 'auto' : 'none') + '">'
+      + (s.bg ? '<div style="position:absolute;inset:0;background:url(\'' + s.bg + '\') center/cover"></div>' : '')
+      + '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.95) 0%,rgba(5,7,12,.8) 55%,rgba(5,7,12,.35) 100%)"></div>'
+      + '<div style="position:relative;padding:15px 16px;height:100%;display:flex;flex-direction:column;justify-content:center;gap:6px">'
+      +   '<div><span style="background:rgba(255,255,255,.1);color:' + s.tagColor + ';border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:800">' + s.tag + '</span></div>'
+      +   '<div style="font-size:16px;font-weight:800;letter-spacing:-.4px;line-height:1.25">' + s.title + '</div>'
+      +   '<div style="font-size:12px;color:rgba(255,255,255,.55);line-height:1.4">' + s.sub + '</div>'
+      +   '<div style="position:absolute;right:14px;bottom:14px;background:var(--accent);color:#fff;border-radius:20px;padding:7px 14px;font-size:12px;font-weight:800">' + s.cta + '</div>'
+      + '</div></div>').join('')
+    + '<div style="position:absolute;left:16px;bottom:12px;display:flex;gap:5px;z-index:2">'
+    + slides.map((_, i) => '<i class="sq-hero-d" data-i="' + i + '" style="width:' + (i === window._sqHeroI ? '14px' : '5px') + ';height:5px;border-radius:3px;background:rgba(255,255,255,' + (i === window._sqHeroI ? '.9' : '.3') + ');transition:all .3s;display:block"></i>').join('')
+    + '</div></div>';
+  window._sqHeroStart();
+};
+// 4초마다 다음 장. 탭을 벗어나면 멈춘다(안 멈추면 백그라운드에서 계속 돈다).
+window._sqHeroStart = function () {
+  clearInterval(window._sqHeroT);
+  const slides = window._sqHeroSlides || [];
+  if (slides.length < 2) return;
+  window._sqHeroT = setInterval(function () {
+    const host = document.getElementById('sq-hero-vp');
+    if (!host || !document.getElementById('page-crew') || !document.getElementById('page-crew').classList.contains('active')) {
+      clearInterval(window._sqHeroT); return;
+    }
+    window._sqHeroI = (window._sqHeroI + 1) % slides.length;
+    host.querySelectorAll('.sq-hero-s').forEach(function (el) {
+      const on = String(window._sqHeroI) === el.dataset.i;
+      el.style.opacity = on ? '1' : '0';
+      el.style.pointerEvents = on ? 'auto' : 'none';
+    });
+    host.querySelectorAll('.sq-hero-d').forEach(function (el) {
+      const on = String(window._sqHeroI) === el.dataset.i;
+      el.style.width = on ? '14px' : '5px';
+      el.style.background = 'rgba(255,255,255,' + (on ? '.9' : '.3') + ')';
+    });
+  }, 4000);
+};
+
 // ---------- 피드 ----------
 window.renderSquadPage = async function () {
+  if (window.renderSquadHero) window.renderSquadHero();
   const root = document.getElementById('squad-list'); if (!root) return;
   root.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">스쿼드 불러오는 중…</div>';
   let rows = [];
