@@ -7302,9 +7302,86 @@ function unlockBodyScroll() {
 }
 window._isBodyLocked = function () { return _bodyLocked; };
 
+// ===== 사진 촬영시각 읽기 (유저 피드백 #18) =====
+// ★왜: 머피캠 필름바에 늘 **지금 시각**이 찍혔다. 바로 찍은 사진은 맞지만
+//   갤러리에서 고른 사진은 "어제 운동한 걸 오늘 올린" 것이라 시각이 거짓이 된다.
+//   운동 인증은 '검증된 기록'이 자산이라 여기서 거짓말하면 안 된다.
+// ★외부 라이브러리를 못 쓴다(CSP·오프라인) → JPEG EXIF 를 직접 읽는다.
+//   앞부분만 읽으면 된다. EXIF 는 APP1 마커라 파일 맨 앞에 있다.
+// 순서: EXIF DateTimeOriginal → 파일 수정시각 → (없으면 호출부가 현재 시각)
+window._exifShotAt = async function (file) {
+  if (!file) return null;
+  try {
+    const buf = await file.slice(0, 256 * 1024).arrayBuffer();
+    const v = new DataView(buf);
+    if (v.byteLength < 4 || v.getUint16(0) !== 0xFFD8) return _exifFallback(file);   // JPEG 아님
+    let p = 2;
+    while (p + 4 < v.byteLength) {
+      if (v.getUint8(p) !== 0xFF) break;
+      const marker = v.getUint16(p);
+      const size = v.getUint16(p + 2);
+      if (marker === 0xFFE1) {
+        // "Exif\0\0" 확인
+        if (v.getUint32(p + 4) === 0x45786966 && v.getUint16(p + 8) === 0x0000) {
+          const t = p + 10;                       // TIFF 헤더 시작
+          const le = v.getUint16(t) === 0x4949;   // II=little / MM=big
+          const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+          if (u16(t + 2) !== 0x002A) return _exifFallback(file);
+          const ifd0 = t + u32(t + 4);
+          const findTag = (base, tag) => {
+            const n = u16(base);
+            for (let i = 0; i < n; i++) {
+              const e = base + 2 + i * 12;
+              if (u16(e) === tag) return e;
+            }
+            return 0;
+          };
+          const readAscii = (e) => {
+            const cnt = u32(e + 4);
+            const off = cnt > 4 ? t + u32(e + 8) : e + 8;
+            let s = '';
+            for (let i = 0; i < cnt - 1 && off + i < v.byteLength; i++) s += String.fromCharCode(v.getUint8(off + i));
+            return s;
+          };
+          // ExifIFD 안의 DateTimeOriginal(0x9003) 이 '찍은 시각'이다.
+          // IFD0 의 DateTime(0x0132)은 '수정 시각'이라 보정본이면 어긋난다 — 뒤로 둔다.
+          let str = '';
+          const ep = findTag(ifd0, 0x8769);
+          if (ep) {
+            const exifIfd = t + u32(ep + 8);
+            const dt = findTag(exifIfd, 0x9003) || findTag(exifIfd, 0x9004);
+            if (dt) str = readAscii(dt);
+          }
+          if (!str) { const d0 = findTag(ifd0, 0x0132); if (d0) str = readAscii(d0); }
+          const m = str && str.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+          if (m) {
+            const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+            if (!isNaN(d.getTime())) return d;
+          }
+        }
+      }
+      if (marker === 0xFFDA) break;               // 이미지 데이터 시작 — 더 볼 것 없다
+      p += 2 + size;
+    }
+  } catch (e) { /* 파싱 실패는 조용히 폴백 */ }
+  return _exifFallback(file);
+};
+// EXIF 가 없을 때(HEIC·PNG·스크린샷 등). 갤러리 파일은 수정시각이 촬영시각인 경우가 많다.
+// ★단 '지금'과 거의 같으면 방금 만들어진 파일이라 의미가 없으므로 안 쓴다.
+function _exifFallback(file) {
+  const lm = file && file.lastModified;
+  if (!lm) return null;
+  if (Date.now() - lm < 60 * 1000) return null;
+  const d = new Date(lm);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function openCropModal(file) {
   const modal = document.getElementById('crop-modal');
   if (!file || !modal) return;
+  // 촬영시각을 원본에서 미리 읽어 둔다 — 크롭 후 blob 에는 EXIF 가 남지 않는다
+  window.cropData.shotAt = null;
+  window._exifShotAt(file).then(function (d) { window.cropData.shotAt = d; }).catch(function () {});
   // 사진 선택 시트가 열린 채로 크롭 모달이 겹치면 스크롤·z-index 가 꼬인다 → 먼저 닫는다
   if (window.closeModal) closeModal('photo-pick-sheet');
   // ★실패 경로에서 반드시 잠금을 푼다. 안 그러면 모달은 안 뜨고 배경만 잠겨
@@ -7604,7 +7681,7 @@ window.toggleMurpyCam = async function (keepFocus) {
     });
     // ★미리보기는 **글씨 없이** 합성한다. 글씨는 위에 겹쳐둔 입력칸이 보여주기 때문에,
     //   여기서도 찍으면 두 겹으로 보인다. 실제 인쇄는 공유할 때 한 번만 한다(submitFeedPost).
-    const dataUrl = await window._mwBuildStamp(img, null, '');
+    const dataUrl = await window._mwBuildStamp(img, null, '', window.cropData && window.cropData.shotAt);
     URL.revokeObjectURL(url);
     const blob = await (await fetch(dataUrl)).blob();
     show(blob);
@@ -12599,7 +12676,7 @@ window.submitFeedPost = async function() {
       try {
         const _u = URL.createObjectURL(window.cropData.plainBlob);
         const _im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = _u; });
-        const _d = await window._mwBuildStamp(_im, null, camText);
+        const _d = await window._mwBuildStamp(_im, null, camText, window.cropData && window.cropData.shotAt);
         URL.revokeObjectURL(_u);
         file = await (await fetch(_d)).blob();
       } catch (e) { console.warn('머피캠 최종 합성 실패, 미리보기본으로 올림', e); }
@@ -15928,7 +16005,9 @@ window.mwShot = function () {
 // ---------- 스탬프 합성 ----------
 // ★합성만 하는 순수 함수로 분리했다 — 카메라 탭(mwCompose)과 **홈 피드 머피캠 필터**가 같이 쓴다.
 //   t = 체크인 대상 센터. null 이면 자유 촬영(센터명 대신 '오운완').
-window._mwBuildStamp = async function (photo, t, caption) {
+// shotAt = 사진을 **찍은** 시각(유저 피드백 #18). 갤러리에서 고른 사진은 EXIF 에서 읽어 넘긴다.
+// 안 넘기면 현재 시각 — 카메라 탭에서 바로 찍는 경우가 그렇고, 그때는 그게 맞다.
+window._mwBuildStamp = async function (photo, t, caption, shotAt) {
   try { await document.fonts.load("16px 'Galmuri11'"); await document.fonts.load("16px 'Galmuri14'"); } catch(e){}
   const W=1080, H=1350;                                     // 4:5 (인스타 최적)
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -15939,7 +16018,7 @@ window._mwBuildStamp = async function (photo, t, caption) {
   // 하단 필름 바
   const bar=210; x.fillStyle='rgba(6,8,14,0.82)'; x.fillRect(0,H-bar,W,bar);
   x.fillStyle='#05070c'; x.fillRect(0,H-bar-6,W,6);
-  const now=new Date();
+  const now=(shotAt instanceof Date && !isNaN(shotAt.getTime())) ? shotAt : new Date();
   const dstr=`${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
   const tstr=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   x.textBaseline='middle';
