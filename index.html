@@ -19477,6 +19477,12 @@ window._sqQuickBar = function (s) {
     + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
     + 'outline:none;font-family:inherit;border-radius:0"'
     + ' onkeydown="if(event.key===\'Enter\')window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')">'
+    // 고정 토글 — 켜면 내 말풍선이 안 사라진다(켜져 있으면 골드)
+    + '<button id="sq-quick-pin" onclick="window.sqBubblePinToggle()" aria-label="말풍선 고정"'
+    + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
+    + (window._sqBubblePin ? 'background:#F5C24B;color:#3a2a00;' : 'background:rgba(5,7,12,.85);color:rgba(255,255,255,.7);')
+    + "border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:0;font-size:11px;cursor:pointer;"
+    + "font-family:'Galmuri11',sans-serif;border-radius:0\">고정</button>"
     + '<button onclick="window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;background:var(--accent);border:2px solid #05070c;'
     + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
@@ -19621,6 +19627,10 @@ window._sqStampPop = function (uid) {
   setTimeout(() => { try { el.remove(); } catch(e) {} }, 2000);
 };
 // ---------- 캐릭터 머리 위 말풍선 ----------
+// ★말풍선이 3.8초 만에 사라져서 읽기도 전에 없어졌다(대표 8-11) → 9초.
+//   ★고정(핀)을 켜면 **내 말풍선은 안 사라진다.** 필드에서 뭔가를 알리고 있어야 할 때가 있다
+//     ("먼저 시작하고 있어요", "3층입니다" 같은 것). 다시 말하면 그 내용으로 바뀐다.
+window._SQ_BUBBLE_MS = 9000;
 window._sqRoomBubble = function (uid, text) {
   const c = window._sqChars && window._sqChars[uid]; if (!c || !c.el.isConnected) return;
   let b = c.el.querySelector('.sq-bubble');
@@ -19628,7 +19638,26 @@ window._sqRoomBubble = function (uid, text) {
   b.textContent = String(text || '').slice(0, 60);
   requestAnimationFrame(() => b.classList.add('on'));
   clearTimeout(c.bubbleT);
-  c.bubbleT = setTimeout(() => b.classList.remove('on'), 3800);
+  const me = (auth.currentUser || window.currentUser || {}).uid;
+  if (window._sqBubblePin && uid === me) return;      // 내가 고정해둔 말풍선은 안 지운다
+  c.bubbleT = setTimeout(() => b.classList.remove('on'), window._SQ_BUBBLE_MS);
+};
+// 고정 토글. 켤 때 지금 떠 있는 내 말풍선이 있으면 그대로 살려둔다.
+window.sqBubblePinToggle = function () {
+  window._sqBubblePin = !window._sqBubblePin;
+  const btn = document.getElementById('sq-quick-pin');
+  if (btn) {
+    btn.style.background = window._sqBubblePin ? '#F5C24B' : 'rgba(5,7,12,.85)';
+    btn.style.color = window._sqBubblePin ? '#3a2a00' : 'rgba(255,255,255,.7)';
+  }
+  const me = (auth.currentUser || window.currentUser || {}).uid;
+  const c = me && window._sqChars && window._sqChars[me];
+  if (c) {
+    const b = c.el.querySelector('.sq-bubble');
+    if (window._sqBubblePin) { clearTimeout(c.bubbleT); if (b && b.textContent) b.classList.add('on'); }
+    else if (b) { clearTimeout(c.bubbleT); c.bubbleT = setTimeout(() => b.classList.remove('on'), window._SQ_BUBBLE_MS); }
+  }
+  showToast(window._sqBubblePin ? '말풍선을 고정했어요 · 다시 누르면 풀려요' : '말풍선 고정을 풀었어요');
 };
 
 // ---------- 출석 (호스트: 코드 발급 / 멤버: 코드 입력 → 도장 팝) ----------
