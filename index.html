@@ -19096,11 +19096,14 @@ window.sqEditSubmit = async function () {
 //   위에 붙여둔(sticky) 필드도 같이 화면 밖으로 나간다.
 //   → 상세의 높이·위치를 **실제로 보이는 영역(visualViewport)** 에 맞춰준다. 그러면 밀 이유가 없다.
 window._sqVVFit = function () {
-  const el = document.getElementById('sq-detail'); const vv = window.visualViewport;
-  if (!el || !vv) return;
-  el.style.top = (vv.offsetTop || 0) + 'px';
-  el.style.height = vv.height + 'px';
-  el.style.bottom = 'auto';
+  const vv = window.visualViewport; if (!vv) return;
+  // 톡 방도 같이 맞춘다 — 안 그러면 키보드가 올라왔을 때 입력칸이 키보드 아래로 숨는다
+  ['sq-detail', 'sq-talk'].forEach(function (id) {
+    const el = document.getElementById(id); if (!el) return;
+    el.style.top = (vv.offsetTop || 0) + 'px';
+    el.style.height = vv.height + 'px';
+    el.style.bottom = 'auto';
+  });
 };
 window._sqVVOn = function () {
   const vv = window.visualViewport; if (!vv || window._sqVVBound) return;
@@ -19460,7 +19463,9 @@ window._sqTalkOpen = function () {
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   let el = document.getElementById('sq-talk'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-talk';
-  el.style.cssText = 'position:fixed;left:0;right:0;top:0;height:100%;z-index:2;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
+  // ★z 는 필드(sticky, z-index:4)보다 **위**여야 한다. 2로 뒀더니 톡을 열어도 필드가 위에 그대로
+  //   떠서 공지를 가렸다(대표 8-11). 상세(#sq-detail) 안이라 프로필 패널과는 여전히 안 싸운다.
+  el.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;z-index:10;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
   const notice = (s.notice || '').trim();
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;padding:14px 14px 11px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
@@ -19478,6 +19483,7 @@ window._sqTalkOpen = function () {
     </div>`;
   const host = document.getElementById('sq-detail') || document.body;
   host.appendChild(el);
+  window._sqVVFit && window._sqVVFit();      // 방금 만든 톡 방도 보이는 영역에 맞춘다
   window._sqChatPaint();
   window._sqChatGateApply();
 };
