@@ -19024,9 +19024,11 @@ window.openSquadDetail = function (sid) {
         <div id="sq-room-stage"></div>
         <div id="sq-room-hint" style="font-size:10.5px;color:rgba(255,255,255,.32);text-align:center;margin-top:6px">필드를 탭하면 캐릭터가 걸어가요</div>
       </div>
+      <!-- ★톡은 **필드 바로 밑**이다(대표 8-11). 말한 게 캐릭터 머리 위 말풍선으로 뜨는 걸
+           보면서 쳐야 한다. 아래에 두면 치고 나서 위로 올려야 확인이 되고, 그게 이 기능의 재미를 죽인다. -->
+      <div id="sq-chat-wrap"></div>
       <div id="sq-d-actions"></div>
       <div id="sq-d-members"></div>
-      <div id="sq-chat-wrap"></div>
     </div>`;
   document.body.appendChild(el);
   window._sqDoc = null; window._sqMembers = {}; window._sqHostStats = null;
@@ -19269,7 +19271,7 @@ window._sqChatStop = function () {
   if (window._sqChatUnsub) { try { window._sqChatUnsub(); } catch(e) {} window._sqChatUnsub = null; }
   window._sqChatReady = false;
   window._sqChatMsgs = []; window._sqChatSid = null;
-  window.sqChatClose && window.sqChatClose();   // 전체화면 톡이 떠 있으면 같이 닫는다
+  const w = document.getElementById('sq-chat-wrap'); if (w) w.dataset.sid = '';
 };
 // ===== 스쿼드 톡 =====
 // ★예전엔 긴 상세 페이지 **맨 아래에 박혀** 있었다. 치려면 한참 내려야 하고, 치고 나면
@@ -19305,65 +19307,34 @@ window._sqChatCan = function () {
   return { ok: false, why: done ? '종료된 스쿼드예요 (기록은 남아있어요)'
                         : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요' };
 };
-// 상세 페이지에 남기는 얇은 줄 — 마지막 한 마디만 보여주고 누르면 전체화면으로 연다.
+// 필드 바로 밑에 붙는 톡. 목록은 짧게(말풍선을 보는 게 주인공이지 로그를 읽는 화면이 아니다).
 window._sqChatBar = function () {
-  const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
-  const msgs = window._sqChatMsgs || [];
-  const last = msgs.find(m => !m.sys) || msgs[0];
-  const esc = v => String(v||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-  const preview = last ? (last.sys ? esc(last.text) : esc(last.nick) + ': ' + esc(last.text)) : '첫 마디를 남겨보세요';
+  const wrap = document.getElementById('sq-chat-wrap');
+  if (!wrap) return;
+  const sid = window._sqChatSid;
+  if (wrap.dataset.sid === sid) { window._sqChatPaint(); window._sqChatPaintGate(); return; }  // 이미 만들어둠
+  wrap.dataset.sid = sid || '';
   wrap.innerHTML = `
-    <div onclick="window.sqChatOpen()" style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:13px 14px;cursor:pointer">
-      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8fb6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-5A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>
-      <div style="min-width:0;flex:1">
-        <div style="font-size:12.5px;font-weight:700;color:#fff;margin-bottom:2px">스쿼드 톡</div>
-        <div style="font-size:11.5px;color:rgba(255,255,255,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
-      </div>
-      <span style="color:rgba(255,255,255,.3);font-size:17px;flex-shrink:0">›</span>
+    <!-- ★목록은 일부러 짧다(104px). 필드(가로 1376:768 → 390 화면에서 약 200px)와 입력칸이
+         **키보드가 올라온 상태에서도 같이 보여야** 하기 때문이다. 로그를 읽는 화면이 아니라
+         말풍선을 보면서 치는 화면이다. -->
+    <div id="sq-chat-list" style="height:104px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:8px;padding:9px 11px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px 14px 0 0"></div>
+    <div style="display:flex;gap:7px;padding:9px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-top:none;border-radius:0 0 14px 14px">
+      <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" onfocus="window._sqChatFocusView()"
+        style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:11px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0"
+        onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
+      <button id="sq-chat-send" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
     </div>`;
-};
-window.sqChatOpen = function () {
-  const sid = window._sqChatSid; if (!sid) return;
-  const s = window._sqDoc || {};
-  let el = document.getElementById('sq-chat-full'); if (el) el.remove();
-  el = document.createElement('div'); el.id = 'sq-chat-full';
-  el.style.cssText = 'position:fixed;left:0;right:0;top:0;height:100%;z-index:930;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;padding:14px 14px 11px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-      <button onclick="window.sqChatClose()" style="background:none;border:none;color:rgba(255,255,255,.65);font-size:19px;cursor:pointer;padding:2px 4px">←</button>
-      <div style="min-width:0;flex:1">
-        <div style="font-size:14.5px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${String(s.title||'스쿼드 톡').replace(/</g,'&lt;')}</div>
-        <div style="font-size:10.5px;color:rgba(255,255,255,.35)">말하면 캐릭터 머리 위에 떠요</div>
-      </div>
-    </div>
-    <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
-    <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
-      <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
-      <button id="sq-chat-send" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
-    </div>`;
-  document.body.appendChild(el);
   window._sqChatPaint();
   window._sqChatPaintGate();
-  // ★키보드가 올라와도 입력창이 가려지지 않게 — 화면(visualViewport) 높이에 판을 맞춘다.
-  //   iOS 는 키보드가 고정 요소를 덮어버려서 이걸 안 하면 입력창이 키보드 아래로 숨는다.
-  const vv = window.visualViewport;
-  if (vv) {
-    const fit = function () {
-      const p = document.getElementById('sq-chat-full'); if (!p) return;
-      p.style.height = vv.height + 'px';
-      p.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
-    };
-    window._sqChatFit = fit;
-    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
-    fit();
-  }
-  const inp = document.getElementById('sq-chat-input');
-  if (inp && !inp.disabled) setTimeout(function () { inp.focus(); }, 120);
 };
-window.sqChatClose = function () {
-  const vv = window.visualViewport;
-  if (vv && window._sqChatFit) { vv.removeEventListener('resize', window._sqChatFit); vv.removeEventListener('scroll', window._sqChatFit); window._sqChatFit = null; }
-  const el = document.getElementById('sq-chat-full'); if (el) el.remove();
+// ★입력칸을 누르면 **필드가 화면에 보이도록** 맞춰 올린다. 말한 게 캐릭터 위에 뜨는 걸
+//   그 자리에서 봐야 한다 — 키보드가 올라오면서 필드가 위로 밀려나면 이 기능이 무의미해진다.
+window._sqChatFocusView = function () {
+  setTimeout(function () {
+    const room = document.getElementById('sq-room-wrap');
+    if (room && room.scrollIntoView) room.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 260);   // 키보드가 올라온 뒤에 맞춰야 위치가 맞는다
 };
 window._sqChatPaintGate = function () {
   const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
