@@ -17981,10 +17981,11 @@ window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무�
 // ★img 를 주면 종목 필드 대신 그 사진을 쓴다. 실제 활동 사진이 필드보다 훨씬 세다(대표 8-11).
 //   규격 1080x415(2.6:1) · 왼쪽 55%는 어두워야 한다(제목·부제가 거기 얹힌다).
 window.SQUAD_CLASSES = [
-  // ★실제로 돌아가는 벙이다(대표 8-11). 첫 회차 = 8/18(화) 07:00.
-  //   weekday:2 라 매주 화요일로 반복된다. 한 번만 열 거면 weekday 를 지우고
-  //   date:'2026-08-18' 을 주면 그날이 지나는 순간 저절로 빠진다.
-  { id: 'tue_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 2, hour: 7, min: 0,
+  // ★실제로 돌아가는 벙이다(대표 8-11). **매주 월요일 07:00** 이 정규다.
+  //   단 8/17(월)은 대체공휴일이라 **이번 주만 8/18(화)로 옮긴다** → moves.
+  //   앞으로도 공휴일에 걸리면 moves 에 '원래날짜':'옮긴날짜' 한 줄만 더하면 된다.
+  { id: 'gbd_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 1, hour: 7, min: 0,
+    moves: { '2026-08-17': '2026-08-18' },
     durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
     img: 'char/promo/ad_gym_morning.jpg?v=2',
     memo: '아침에 모여서 같이 합니다. 처음 오셔도 됩니다.' }
@@ -18018,17 +18019,38 @@ window.SQUAD_ADS = [
 // 다음 회차 시각.
 // ★date('YYYY-MM-DD')가 있으면 **그날 한 번뿐인 벙**이다(8/22 요가벙 같은 것).
 //   weekday 가 있으면 매주 반복 — 오늘이 그 요일이어도 이미 지났으면 다음 주로 넘긴다.
+// ★moves = **이번 주만 옮기는 날**. 공휴일이라 하루 미루는 일이 실제로 생긴다(8-11 대표).
+//   { '2026-08-17': '2026-08-18' } 처럼 원래 날짜 → 옮긴 날짜. 시간은 그대로다.
+//   지난 주 이동은 그냥 남겨둬도 된다(그 날짜가 다시 오지 않으므로 아무 일도 안 한다).
 window._sqNextOcc = function (cls) {
+  const mk = function (y, mo, da) { return new Date(y, mo - 1, da, cls.hour, cls.min, 0, 0); };
+  const shift = function (d) {
+    const key = window._sqOccKey(d);
+    const to = cls.moves && cls.moves[key];
+    if (!to) return d;
+    const m = String(to).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? mk(+m[1], +m[2], +m[3]) : d;
+  };
   if (cls.date) {
     const m = String(cls.date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) return new Date(+m[1], +m[2] - 1, +m[3], cls.hour, cls.min, 0, 0);
+    if (m) return shift(mk(+m[1], +m[2], +m[3]));
   }
   const n = new Date();
   const d = new Date(n.getFullYear(), n.getMonth(), n.getDate(), cls.hour, cls.min, 0, 0);
   let add = (cls.weekday - d.getDay() + 7) % 7;
   if (add === 0 && d.getTime() <= Date.now()) add = 7;
   d.setDate(d.getDate() + add);
-  return d;
+  let best = shift(d);
+  // 옮긴 날이 이미 지났으면(월요일이 화요일로 밀렸는데 그 화요일도 지난 경우) 다음 주로.
+  if (best.getTime() <= Date.now()) { const d2 = new Date(d); d2.setDate(d2.getDate() + 7); best = shift(d2); }
+  // ★옮겨 간 날 **당일 아침**이면 위 계산은 이미 다음 주를 가리킨다(원래 요일이 어제였으므로).
+  //   옮긴 날짜가 아직 안 지났으면 그쪽이 진짜 다음 회차다.
+  if (cls.moves) Object.keys(cls.moves).forEach(function (k) {
+    const mv = String(cls.moves[k]).match(/^(\d{4})-(\d{2})-(\d{2})$/); if (!mv) return;
+    const cand = mk(+mv[1], +mv[2], +mv[3]);
+    if (cand.getTime() > Date.now() && cand.getTime() < best.getTime()) best = cand;
+  });
+  return best;
 };
 window._sqOccKey = function (dt) {
   return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
@@ -18626,6 +18648,119 @@ window._sqSubmitCreate = async function () {
   } catch(e) { console.error(e); showToast('생성 실패 — 다시 시도해주세요'); btn.disabled = false; btn.textContent = '스쿼드 열기'; }
 };
 
+// ---------- 수정 (연 사람 / 관리자) ----------
+// ★왜: 정원을 잘못 잡거나 장소가 바뀌는 일이 실제로 생긴다. 예전엔 고칠 방법이 없어
+//   **벙을 지우고 다시 만드는 수밖에** 없었고, 그러면 이미 들어온 사람이 다 떨어져 나간다.
+// ★보안규칙은 이미 `squads update: signedIn()` 이라 따로 손댈 게 없다.
+//   대신 화면에서 벙주·관리자만 들어오게 막고, 정원은 **지금 인원보다 작게 못 준다.**
+window.sqEditOpen = function (sid) {
+  const s = window._sqDoc; if (!s || s.id !== sid) return;
+  const me = (auth.currentUser || {}).uid || null;
+  const admin = (typeof isAdmin === 'function' && isAdmin());
+  if (!(me && (me === s.hostUid || admin))) { showToast('연 사람만 고칠 수 있어요'); return; }
+  const n = (s.memberUids || []).length;
+  window._sqEdit = { sid: sid, capacity: s.capacity || 4, min: Math.max(2, n), img: s.img || null,
+                     dur: Math.max(3600000, (s.expiresAt || 0) - s.scheduledAt) };
+  const d = new Date(s.scheduledAt);
+  const dstr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const tstr = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const inputCss = 'width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:12px;padding:13px 14px;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box';
+  const lbl = t => `<div style="font-size:11.5px;color:rgba(255,255,255,.45);margin:16px 2px 7px;font-weight:700">${t}</div>`;
+  let el = document.getElementById('sq-edit'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-edit';
+  el.style.cssText = 'position:fixed;inset:0;z-index:920;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column;overflow-y:auto';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:16px 18px 8px">
+      <button onclick="document.getElementById('sq-edit').remove()" style="background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px">←</button>
+      <span style="font-size:17px;font-weight:800;color:#fff">스쿼드 수정</span>
+    </div>
+    <div style="padding:0 18px calc(30px + env(safe-area-inset-bottom))">
+      ${lbl('제목')}
+      <input id="sq-e-title" maxlength="40" value="${esc(s.title)}" style="${inputCss}">
+      ${lbl('장소')}
+      <input id="sq-e-loc" maxlength="40" value="${esc(s.location)}" style="${inputCss}">
+      ${lbl('언제 모여요?')}
+      <div style="display:flex;gap:8px">
+        <input id="sq-e-date" type="date" value="${dstr}" style="${inputCss};flex:1.3;color-scheme:dark">
+        <input id="sq-e-time" type="time" value="${tstr}" style="${inputCss};flex:1;color-scheme:dark">
+      </div>
+      ${lbl('정원')}
+      <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px">
+        <button onclick="window._sqECap(-1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">−</button>
+        <span style="flex:1;text-align:center;font-size:16px;font-weight:800;color:#fff"><b id="sq-e-cap">${window._sqEdit.capacity}</b>명</span>
+        <button onclick="window._sqECap(1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">+</button>
+      </div>
+      <div style="font-size:10.5px;color:rgba(255,255,255,.35);margin:6px 2px 0">지금 ${n}명 들어와 있어요 · 그보다 적게는 못 줄여요</div>
+      ${lbl('참가비 (없으면 0)')}
+      <input id="sq-e-fee" type="number" inputmode="numeric" value="${Number(s.feeAmount)||0}" min="0" step="1000" style="${inputCss}">
+      ${lbl('한 줄 메모')}
+      <input id="sq-e-memo" maxlength="60" value="${esc(s.oneLineMemo)}" style="${inputCss}">
+      ${lbl('대표 사진')}
+      <div style="display:flex;gap:11px;align-items:center">
+        <div id="sq-e-thumb-prev" style="width:104px;height:52px;flex-shrink:0;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:url('${window._sqImgSrc(s)}') center/cover"></div>
+        <div style="flex:1;min-width:0">
+          <input type="file" accept="image/*" id="sq-e-thumb-in" style="display:none" onchange="window._sqEPickThumb(this)">
+          <button id="sq-e-thumb-btn" onclick="document.getElementById('sq-e-thumb-in').click()" style="background:rgba(255,255,255,.08);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">사진 바꾸기</button>
+          ${s.img ? '<button onclick="window._sqEClearThumb()" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:11.5px;padding:9px 8px;cursor:pointer;font-family:inherit">기본 그림으로</button>' : ''}
+        </div>
+      </div>
+      <button id="sq-e-go" onclick="window.sqEditSubmit()" style="width:100%;margin-top:24px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">저장하기</button>
+    </div>`;
+  document.body.appendChild(el);
+};
+window._sqECap = function (d) {
+  const e = window._sqEdit; if (!e) return;
+  e.capacity = Math.max(e.min, Math.min(30, e.capacity + d));
+  const el = document.getElementById('sq-e-cap'); if (el) el.textContent = e.capacity;
+};
+window._sqEPickThumb = async function (input) {
+  const f = input && input.files && input.files[0]; if (!f) return;
+  const btn = document.getElementById('sq-e-thumb-btn'), pv = document.getElementById('sq-e-thumb-prev');
+  if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+  try {
+    const url = await window.uploadImgbb(f);
+    if (url) { window._sqEdit.img = url; if (pv) pv.style.backgroundImage = "url('" + url + "')"; }
+  } catch (e) { console.warn('sq edit thumb', e); }
+  if (btn) { btn.disabled = false; btn.textContent = '사진 바꾸기'; }
+  input.value = '';
+};
+window._sqEClearThumb = function () {
+  const e = window._sqEdit; if (!e) return;
+  e.img = null;
+  const s = window._sqDoc, pv = document.getElementById('sq-e-thumb-prev');
+  if (pv && s) pv.style.backgroundImage = "url('" + window.squadFieldSrc(s.exerciseType, s.scheduledAt) + "')";
+  showToast('기본 그림으로 돌아가요 · 저장을 눌러야 반영돼요');
+};
+window.sqEditSubmit = async function () {
+  const e = window._sqEdit; if (!e) return;
+  const title = (document.getElementById('sq-e-title').value || '').trim();
+  const loc = (document.getElementById('sq-e-loc').value || '').trim();
+  const date = document.getElementById('sq-e-date').value, time = document.getElementById('sq-e-time').value;
+  if (!title) { showToast('제목을 입력해주세요'); return; }
+  if (!loc) { showToast('장소를 입력해주세요'); return; }
+  if (!date || !time) { showToast('날짜와 시간을 정해주세요'); return; }
+  const sched = new Date(date + 'T' + time).getTime();
+  if (!sched) { showToast('시간을 다시 확인해주세요'); return; }
+  const btn = document.getElementById('sq-e-go'); btn.disabled = true; btn.textContent = '저장 중…';
+  try {
+    // ★expiresAt 을 같이 옮긴다. 안 옮기면 시간을 미뤘을 때 **시작하기도 전에 만료**된다
+    //   (목록이 expiresAt 으로 살아 있는 벙을 거른다).
+    await updateDoc(doc(db, 'squads', e.sid), {
+      title: title, location: loc, scheduledAt: sched, expiresAt: sched + e.dur,
+      capacity: e.capacity, img: e.img || null,
+      feeAmount: Math.max(0, parseInt(document.getElementById('sq-e-fee').value || '0', 10) || 0),
+      oneLineMemo: (document.getElementById('sq-e-memo').value || '').trim()
+    });
+    const p = document.getElementById('sq-edit'); if (p) p.remove();
+    showToast('수정했어요');
+    window.renderSquadPage && window.renderSquadPage();   // 상세는 onSnapshot 이 알아서 다시 그린다
+  } catch (err) {
+    console.error(err); showToast('저장하지 못했어요 — 다시 시도해주세요');
+    btn.disabled = false; btn.textContent = '저장하기';
+  }
+};
+
 // ---------- 상세 (실시간 문서·멤버 구독) ----------
 window._sqClose = function () {
   window._sqDocUnsub && window._sqDocUnsub(); window._sqDocUnsub = null;
@@ -18680,6 +18815,9 @@ window._sqRenderDetail = function () {
   const done = ['completed','cancelled','expired'].includes(s.status);
   const live = !done && now >= s.scheduledAt && now < (s.expiresAt||0);
   const isHost = me && me === s.hostUid;
+  // 연 사람은 자기 벙을 고칠 수 있어야 한다(대표 8-11). 관리자도 — 정기반은 첫 참가자가 벙주라
+  // 대표가 만든 반인데도 대표가 못 고치는 일이 생긴다.
+  const canEdit = !!(isHost || (typeof isAdmin === 'function' && isAdmin()));
   const myMem = me ? mem[me] : null;
   const joined = !!(me && (s.memberUids||[]).includes(me));
   const esc = v => String(v||'').replace(/</g,'&lt;');
@@ -18691,6 +18829,7 @@ window._sqRenderDetail = function () {
       <div style="position:absolute;inset:0;background:url('${window._sqImgSrc(s)}') center/cover"></div>
       <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.55) 0%,rgba(5,7,12,.35) 45%,#05070c 100%)"></div>
       <button onclick="window._sqClose()" style="position:absolute;left:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:17px;cursor:pointer;width:36px;height:36px;border-radius:50%">←</button>
+      ${canEdit && !done ? `<button onclick="window.sqEditOpen('${s.id}')" style="position:absolute;right:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;height:36px;padding:0 15px;border-radius:18px;font-family:inherit">수정</button>` : ''}
       <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
           <span style="background:rgba(255,255,255,.14);backdrop-filter:blur(4px);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
