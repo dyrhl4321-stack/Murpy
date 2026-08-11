@@ -12841,11 +12841,24 @@ window.guestAskNick = async function () {
       <div style="font-size:12.5px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:18px">
         오늘은 <b style="color:#cfd6e6">이름만</b> 정하면 바로 시작해요<br>가입은 나중에 하셔도 돼요</div>
       <input id="guest-nick-in" maxlength="12" placeholder="닉네임" autocomplete="off"
-        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#fff;font-size:15px;text-align:center;outline:none;font-family:inherit;margin-bottom:12px">
+        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#fff;font-size:15px;text-align:center;outline:none;font-family:inherit;margin-bottom:10px">
+      <!-- ★캐릭터 몸통은 성별로 정해진다. 안 물으면 전원 남캐로 시작한다(여자 게스트는 남캐로 굳는다).
+           탭 한 번이라 이탈이 늘지 않고, 정식 가입자와 같은 규칙이 된다. -->
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="guest-g-m" onclick="window.guestPickGender('남성')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">남성</button>
+        <button id="guest-g-f" onclick="window.guestPickGender('여성')" style="flex:1;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">여성</button>
+      </div>
       <button onclick="window.guestSaveNick()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">시작하기</button>
     </div>`;
   document.body.appendChild(el);
+  window._guestGender = '남성';
   setTimeout(function () { const i = document.getElementById('guest-nick-in'); if (i) i.focus(); }, 150);
+};
+window.guestPickGender = function (g) {
+  window._guestGender = g;
+  const m = document.getElementById('guest-g-m'), f = document.getElementById('guest-g-f');
+  if (m) m.style.background = g === '남성' ? 'var(--accent)' : 'rgba(255,255,255,.07)';
+  if (f) f.style.background = g === '여성' ? 'var(--accent)' : 'rgba(255,255,255,.07)';
 };
 window.guestSaveNick = async function () {
   const user = auth.currentUser; if (!user) return;
@@ -12854,9 +12867,15 @@ window.guestSaveNick = async function () {
   try {
     // ★onboardingComplete 를 켜둔다 — 안 켜면 다음 접속 때 무거운 온보딩이 뜬다.
     //   guest:true 는 나중에 '프로필 만들기'를 권할 때 쓰는 표식이다.
+    // ★몸통은 성별에서 정해진다(정식 가입자와 같은 규칙) — 안 그러면 전원 남캐로 시작한다.
+    const _g = window._guestGender || '남성';
+    const _char = Object.assign({}, window.CHAR_DEFAULT || {},
+      { body: window._charBodyForGender ? window._charBodyForGender(_g) : 'human' });
+    // 기본값은 남캐 기준이라 여캐면 헤어·상의가 안 맞는다 → 몸통에 맞는 기본옷으로 갈아입힌다
+    if (window._charEnsureDefaults) window._charEnsureDefaults(_char);
     await setDoc(doc(db, 'users', user.uid), {
-      nickname: v, guest: true, onboardingComplete: true,
-      character: window.CHAR_DEFAULT || null, createdAt: serverTimestamp()
+      nickname: v, guest: true, gender: _g, onboardingComplete: true,
+      character: _char, createdAt: serverTimestamp()
     }, { merge: true });
     window.currentUser = user; window.currentUser.nickname = v; window._mwMyNick = v;
     const el = document.getElementById('guest-nick'); if (el) el.remove();
@@ -12974,6 +12993,30 @@ window.sqInviteCopy = function (sid) {
       done();
     }
   } catch (e) { done(); }
+};
+
+// ★계정을 권하기 가장 좋은 순간 = **기록이 막 생긴 직후**(범프 성공 등). 그 전엔 지킬 게 없어서
+//   "가입하세요"가 그냥 광고로 들린다. 하루 한 번만 뜬다 — 매번 뜨면 그게 곧 이탈이다.
+window.guestNudge = function () {
+  const user = auth.currentUser;
+  if (!user || !user.isAnonymous) return;
+  // 하루 경계는 앱 전체와 같게(새벽 5시) — _creditToday 는 같은 모듈 블록의 함수다
+  let day; try { day = _creditToday(); } catch (e) { day = new Date().toDateString(); }
+  const key = 'murpy_guest_nudge_' + day;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
+  let el = document.getElementById('guest-nudge'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'guest-nudge';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40030;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  el.innerHTML = `
+    <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(245,194,75,.3);border-radius:18px;padding:24px 22px;text-align:center">
+      <div style="font-size:17px;font-weight:800;margin-bottom:7px">오늘 기록이 생겼어요</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.55);line-height:1.7;margin-bottom:18px">
+        지금은 <b style="color:#F5C24B">임시 계정</b>이라<br>이 폰에서 앱을 지우면 같이 사라져요.<br>
+        계정을 만들면 <b style="color:#cfd6e6">기록은 그대로</b> 옮겨가요.</div>
+      <button onclick="document.getElementById('guest-nudge').remove();window.guestUpgrade&&window.guestUpgrade()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
+      <button onclick="document.getElementById('guest-nudge').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12.5px;padding:13px 0 0;cursor:pointer;font-family:inherit">나중에 할게요</button>
+    </div>`;
+  document.body.appendChild(el);
 };
 
 // 게스트 → 정식 계정. uid 가 그대로라 오늘 기록이 전부 따라온다.
@@ -18693,7 +18736,15 @@ window._sqRenderDetail = function () {
     <button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">리더 승인 기다리는 중…</button>`;
   else if (n >= s.capacity) actions = `<button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.4)">정원 마감</button>`;
   else actions = `<button onclick="window.joinSquad('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">${s.joinMode==='approval'?'참가 신청':'참가하기'}</button>`;
-  if (act) act.innerHTML = actions ? `<div style="display:flex;flex-direction:column;gap:8px">${actions}</div>` : '';
+  // ★게스트에게 계정을 권하는 자리가 **머피월드 프로필 안에만** 있었다. 링크로 들어온 사람은
+  //   거기까지 갈 이유가 없다 — 지금 서 있는 이 화면에 한 줄로 둔다(대표 8-11).
+  const guestBar = (auth.currentUser && auth.currentUser.isAnonymous)
+    ? '<div style="display:flex;align-items:center;gap:10px;background:rgba(245,194,75,.1);border:1px solid rgba(245,194,75,.28);border-radius:13px;padding:11px 13px">'
+      + '<div style="flex:1;font-size:11.5px;color:rgba(255,255,255,.6);line-height:1.5">'
+      +   '지금은 <b style="color:#F5C24B">임시 계정</b>이에요<br>앱을 지우면 오늘 기록이 사라져요</div>'
+      + '<button onclick="window.guestUpgrade&&window.guestUpgrade()" style="flex-shrink:0;background:#F5C24B;color:#3a2a00;border:none;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">계정 만들기</button></div>'
+    : '';
+  if (act) act.innerHTML = (actions || guestBar) ? `<div style="display:flex;flex-direction:column;gap:8px">${guestBar}${actions}</div>` : '';
   // --- 멤버 ---
   const mv = document.getElementById('sq-d-members');
   const stChip = m => {
@@ -19398,6 +19449,11 @@ window.bumpClose = function () {
   if (bpMeRef && window._rt) { try { window._rt.remove(bpMeRef); } catch (e) {} }
   bpMeRef = null; bpBuf = [];
   const el = document.getElementById('bp-ov'); if (el) el.remove();
+  // 범프가 성립한 뒤 연출을 닫는 순간 = 게스트에게 계정을 권할 자리(지킬 게 막 생겼다)
+  if (window._guestGotRecord) {
+    window._guestGotRecord = false;
+    setTimeout(function () { window.guestNudge && window.guestNudge(); }, 450);
+  }
 };
 
 // 접촉 성립 — 즉시 타격 → 출석 판정 → (인정된 경우에만) 연속 장면 연출 → 범퍼 기록
@@ -19427,6 +19483,7 @@ async function bpSucceed(other, dt) {
   const earned = (await bpEarn(bk.stacked, bk.first)) + _att;
   bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already',
                       stacked: bk.stacked, first: bk.first, earned: earned, attend: !!_att });
+  window._guestGotRecord = true;   // 연출을 닫는 순간 게스트에게 계정을 권한다(bumpClose)
   if (window._rt && bpSid) {
     try { window._rt.update(window._rt.ref(window._rt.db, 'squadRooms/' + bpSid + '/players/' + user.uid), { stamp: Date.now() }); } catch (e) {}
   }
