@@ -19044,10 +19044,6 @@ window.openSquadDetail = function (sid) {
       </div>
       <div id="sq-d-actions"></div>
       <div id="sq-d-members"></div>
-      <!-- ★톡방(로그)은 처음 버전 자리 그대로 여기 둔다. 대표가 이 형태를 좋아했다.
-           문제였던 건 **칠 때마다 여기까지 내려와야 하는 것**이었는데, 그건 아래 입력 바를
-           화면 하단에 고정해서 푼다(sq-chat-dock). 스크롤 위치와 상관없이 항상 칠 수 있고,
-           필드를 보고 있는 채로 치면 말풍선이 바로 보인다. -->
       <div id="sq-chat-wrap"></div>
     </div>`;
   document.body.appendChild(el);
@@ -19290,22 +19286,26 @@ window.sqTogglePaid = async function (sid, uid, cur) {
 window._sqChatStop = function () {
   if (window._sqChatUnsub) { try { window._sqChatUnsub(); } catch(e) {} window._sqChatUnsub = null; }
   window._sqChatReady = false;
-  window._sqChatMsgs = []; window._sqChatSid = null;
-  const w = document.getElementById('sq-chat-wrap'); if (w) w.dataset.sid = '';
-  window._sqChatDockOff && window._sqChatDockOff();
 };
-// ===== 스쿼드 톡 =====
-// ★예전엔 긴 상세 페이지 **맨 아래에 박혀** 있었다. 치려면 한참 내려야 하고, 치고 나면
-//   다시 올려야 보였다(대표 8-11: "내가 친 게 바로 보이는 게 핵심인데 짜증나는 포인트").
-//   → 톡은 **전체화면**으로 뺀다. 입력창이 화면 아래에 붙어 있고 최신 글이 그 바로 위에 있다.
-//     상세 페이지에는 마지막 한 줄만 보여주는 얇은 줄을 남긴다.
-// ★구독(onSnapshot)은 톡을 닫아도 계속 돈다 — 캐릭터 머리 위 말풍선이 여기에 물려 있다.
 window._sqChatStart = function (sid) {
   window._sqChatStop();
-  window._sqChatSid = sid; window._sqChatMsgs = [];
-  window._sqChatBar();
+  const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin:4px 2px 8px">
+      <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">스쿼드 톡</span>
+      <span style="font-size:10px;color:rgba(255,255,255,.28)">— 말하면 캐릭터 머리 위에 떠요</span>
+    </div>
+    <div id="sq-chat-list" style="height:230px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:8px 2px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px 14px 0 0;padding:10px">
+      <div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
+    </div>
+    <div style="display:flex;gap:7px;padding:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-top:none;border-radius:0 0 14px 14px">
+      <input id="sq-chat-input" maxlength="120" disabled placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:11px 13px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
+      <button id="sq-chat-send" disabled onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">보내기</button>
+    </div>`;
   const q1 = query(collection(db,'squads',sid,'chat'), orderBy('at','desc'), limit(60));
   window._sqChatUnsub = onSnapshot(q1, qs => {
+    const listEl = document.getElementById('sq-chat-list'); if (!listEl) { window._sqChatStop(); return; }
+    const myUid = (auth.currentUser || window.currentUser || {}).uid;
     // 새 메시지 → 워킹 룸 캐릭터 말풍선 (첫 스냅샷은 과거 로그라 스킵)
     if (window._sqChatReady) {
       qs.docChanges().filter(c => c.type === 'added').forEach(c => {
@@ -19314,111 +19314,33 @@ window._sqChatStart = function (sid) {
       });
     }
     window._sqChatReady = true;
-    window._sqChatMsgs = qs.docs.map(d => d.data());   // desc = 최신이 앞
-    window._sqChatPaint();
-    window._sqChatBar();
+    const msgs = qs.docs.map(d => d.data());   // desc + column-reverse = 최신이 하단(게임 채팅)
+    listEl.innerHTML = msgs.length ? msgs.map(m => {
+      const esc = v => String(v||'').replace(/</g,'&lt;');
+      if (m.sys) return `<div style="text-align:center;font-size:10.5px;color:rgba(255,255,255,.35);padding:2px 0">${esc(m.text)}</div>`;
+      const td = m.at && m.at.toDate ? m.at.toDate() : null;
+      const ts = td ? String(td.getHours()).padStart(2,'0') + ':' + String(td.getMinutes()).padStart(2,'0') : '';
+      const mine = myUid && m.uid === myUid;
+      const bubble = `<div style="font-size:12.5px;line-height:1.5;word-break:break-all;padding:7px 10px;display:inline-block;border-radius:12px;color:${mine?'#fff':'#e7ecf6'};background:${mine?'var(--accent)':'rgba(255,255,255,.08)'}">${esc(m.text)}</div>`;
+      const time = `<span style="font-size:9px;color:rgba(255,255,255,.3);flex-shrink:0">${ts}</span>`;
+      const avatar = `<div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>`;
+      if (mine) return `<div style="display:flex;gap:7px;align-items:flex-end;justify-content:flex-end">${time}<div style="min-width:0;text-align:right">${bubble}</div></div>`;
+      return `<div style="display:flex;gap:7px;align-items:flex-end">${avatar}<div style="min-width:0"><div style="font-size:10px;color:#7aa8ff;margin-bottom:3px">${esc(m.nick)}</div>${bubble}</div>${time}</div>`;
+    }).join('') : '<div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">첫 마디를 남겨보세요</div>';
+    listEl.scrollTop = 0;
   }, e => console.warn('sq chat', e));
-  window._sqChatGate = function () { window._sqChatBar(); window._sqChatPaintGate(); };
-};
-// 지금 이 사람이 쓸 수 있는가 + 못 쓰면 이유
-window._sqChatCan = function () {
-  const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
-  const done = s && ['completed','cancelled','expired'].includes(s.status);
-  if (s && !done && me && (s.memberUids||[]).includes(me)) return { ok: true, why: '스쿼드에 한마디…' };
-  return { ok: false, why: done ? '종료된 스쿼드예요 (기록은 남아있어요)'
-                        : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요' };
-};
-// 톡방(로그). 처음 버전 그대로 넉넉한 높이 — 대표가 이 형태를 좋아했다.
-window._sqChatBar = function () {
-  const wrap = document.getElementById('sq-chat-wrap');
-  if (!wrap) return;
-  const sid = window._sqChatSid;
-  if (wrap.dataset.sid !== sid) {
-    wrap.dataset.sid = sid || '';
-    wrap.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;margin:4px 2px 8px">
-        <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">스쿼드 톡</span>
-        <span style="font-size:10px;color:rgba(255,255,255,.28)">— 말하면 캐릭터 머리 위에 떠요</span>
-      </div>
-      <div id="sq-chat-list" style="height:230px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px"></div>`;
-  }
-  window._sqChatDock();
-  window._sqChatPaint();
-  window._sqChatPaintGate();
-};
-// ★입력 바는 **화면 하단에 고정**이다(대표 8-11).
-//   예전엔 톡방 안에 붙어 있어서 치려면 페이지 끝까지 내려야 했고, 치고 나면 말풍선을 보려고
-//   다시 필드까지 올라가야 했다. 고정해두면 스크롤이 어디에 있든 그 자리에서 칠 수 있고,
-//   필드를 보고 있는 채로 치면 말풍선이 바로 보인다.
-// ★#sq-detail 안에 넣는다 — 밖에 두면 프로필 패널을 열 때 이 바만 위에 떠 버린다.
-window._sqChatDock = function () {
-  const host = document.getElementById('sq-detail');
-  const sid = window._sqChatSid;
-  const old = document.getElementById('sq-chat-dock');
-  // ★쓸 수 없는 사람에게는 아예 안 보인다. 안 그러면 이 바가 화면 아래에서 '참가하기' 버튼을 가린다.
-  const can = window._sqChatCan().ok;
-  if (!host || !sid || !can) {
-    if (old) { window._sqChatDockOff(); const p = document.getElementById('sq-chat-wrap'); if (p) p.style.paddingBottom = ''; }
-    return;
-  }
-  if (old) return;                        // 이미 있으면 다시 만들지 않는다(치던 글자가 날아간다)
-  const dock = document.createElement('div');
-  dock.id = 'sq-chat-dock';
-  dock.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2;max-width:390px;margin:0 auto;'
-    + 'display:flex;gap:7px;padding:9px 12px calc(9px + env(safe-area-inset-bottom));'
-    + 'background:rgba(5,7,12,.94);backdrop-filter:blur(12px);border-top:1px solid rgba(255,255,255,.08)';
-  dock.innerHTML = `
-    <input id="sq-chat-input" maxlength="120" placeholder="확인 중…"
-      style="flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:11px;padding:11px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0"
-      onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
-    <button id="sq-chat-send" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>`;
-  host.appendChild(dock);
-  // 고정 바가 목록 끝을 가리지 않게 아래 여백을 준다
-  const pad = host.querySelector('#sq-chat-wrap');
-  if (pad) pad.style.paddingBottom = '64px';
-  // ★iOS 는 키보드가 fixed 요소를 덮는다 — 화면(visualViewport) 아래끝에 맞춰 띄운다.
-  const vv = window.visualViewport;
-  if (vv) {
-    const fit = function () {
-      const d = document.getElementById('sq-chat-dock'); if (!d) return;
-      const gap = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
-      d.style.transform = 'translateY(-' + gap + 'px)';
-    };
-    window._sqDockFit = fit;
-    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
-    fit();
-  }
-};
-window._sqChatDockOff = function () {
-  const vv = window.visualViewport;
-  if (vv && window._sqDockFit) { vv.removeEventListener('resize', window._sqDockFit); vv.removeEventListener('scroll', window._sqDockFit); window._sqDockFit = null; }
-  const d = document.getElementById('sq-chat-dock'); if (d) d.remove();
-};
-window._sqChatPaintGate = function () {
-  window._sqChatDock();                    // 자격이 바뀌면 고정 바가 생기거나 사라진다
-  const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
-  if (!input || !btn) return;
-  const c = window._sqChatCan();
-  input.disabled = !c.ok; btn.disabled = !c.ok; input.placeholder = c.why;
-  btn.style.opacity = c.ok ? '1' : '.4';
-};
-window._sqChatPaint = function () {
-  const listEl = document.getElementById('sq-chat-list'); if (!listEl) return;
-  const myUid = (auth.currentUser || window.currentUser || {}).uid;
-  const msgs = window._sqChatMsgs || [];
-  listEl.innerHTML = msgs.length ? msgs.map(m => {
-    const esc = v => String(v||'').replace(/</g,'&lt;');
-    if (m.sys) return `<div style="text-align:center;font-size:10.5px;color:rgba(255,255,255,.35);padding:2px 0">${esc(m.text)}</div>`;
-    const td = m.at && m.at.toDate ? m.at.toDate() : null;
-    const ts = td ? String(td.getHours()).padStart(2,'0') + ':' + String(td.getMinutes()).padStart(2,'0') : '';
-    const mine = myUid && m.uid === myUid;
-    const bubble = `<div style="font-size:13px;line-height:1.5;word-break:break-all;padding:8px 11px;display:inline-block;border-radius:13px;color:${mine?'#fff':'#e7ecf6'};background:${mine?'var(--accent)':'rgba(255,255,255,.08)'}">${esc(m.text)}</div>`;
-    const time = `<span style="font-size:9px;color:rgba(255,255,255,.3);flex-shrink:0">${ts}</span>`;
-    const avatar = `<div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>`;
-    if (mine) return `<div style="display:flex;gap:7px;align-items:flex-end;justify-content:flex-end">${time}<div style="min-width:0;text-align:right">${bubble}</div></div>`;
-    return `<div style="display:flex;gap:7px;align-items:flex-end">${avatar}<div style="min-width:0"><div style="font-size:10px;color:#8fb6ff;margin-bottom:3px">${esc(m.nick)}</div>${bubble}</div>${time}</div>`;
-  }).join('') : '<div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:16px">첫 마디를 남겨보세요</div>';
-  listEl.scrollTop = 0;   // column-reverse 라 0 이 곧 **최신**이다
+  // 쓰기 자격 = 스쿼드 멤버
+  const gate = () => {
+    const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
+    const done = s && ['completed','cancelled','expired'].includes(s.status);
+    const can = !!(s && !done && me && (s.memberUids||[]).includes(me));
+    const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
+    if (!input || !btn) return;
+    if (can) { input.disabled = false; input.placeholder = '스쿼드에 한마디…'; btn.disabled = false; }
+    else { input.disabled = true; btn.disabled = true;
+      input.placeholder = done ? '종료된 스쿼드예요 (기록은 남아있어요)' : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요'; }
+  };
+  gate(); window._sqChatGate = gate;
 };
 window.sqChatSend = async function (sid) {
   const user = auth.currentUser; if (!user) return;
@@ -19431,8 +19353,6 @@ window.sqChatSend = async function (sid) {
       { uid:user.uid, nick:window._mwMyNick||'머피', character:cfg, text:text.slice(0,120), at:serverTimestamp() });
     window._sqRoomBubble && window._sqRoomBubble(user.uid, text);   // 내 말풍선은 즉시
     if (navigator.vibrate) navigator.vibrate(10);
-    // ★키보드를 내리지 않는다 — 연달아 치는 게 채팅의 기본이다
-    if (!input.disabled) input.focus();
   } catch(e) { showToast('전송 실패'); }
 };
 window.sqChatSys = async function (sid, text) {   // 시스템 메시지 (입퇴장·출석)
