@@ -16480,12 +16480,12 @@ window.loadHomeTrending = async () => {
         const s = squads[0];
         const n = (s.memberUids || []).length;
         // 종목별 와이드 필드를 배경으로 (#13). 필드는 픽셀 에셋이라 pixelated 필수
-        const _sqField = (!s.img && window.squadFieldSrc) ? window.squadFieldSrc(s.exerciseType) : '';
+        const _sqField = (!s.img && window.squadFieldSrc) ? window.squadFieldSrc(s.exerciseType, s.scheduledAt) : '';
         // ★제목이 자동 기본값('오늘 러닝 스쿼드')이면 카드에서 알려주는 게 없다.
         //   벙주가 제목을 안 바꾸는 게 보통이라 홈 카드가 늘 같은 문장으로 보인다.
         //   그럴 땐 **언제 하는 벙인지**로 바꿔 준다 — 그게 사람이 알고 싶은 것이다.
-        const _tName = (window.SQUAD_TYPES && window.SQUAD_TYPES[s.exerciseType])
-          ? window.SQUAD_TYPES[s.exerciseType].name : '';
+        const _tName = (window.SQUAD_TYPES && window._sqTypeKey)
+          ? window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)].name : '';
         const _auto = _tName ? ('오늘 ' + _tName + ' 스쿼드') : '';
         const _when = (s.scheduledAt && window._sqFmtTime) ? window._sqFmtTime(Number(s.scheduledAt)) : '';
         const _title = (s.title && s.title !== _auto)
@@ -17603,8 +17603,17 @@ window._sqTod = function (ms) {
   return (h >= 5 && h < 11) ? 'am' : (h < 17 ? 'day' : 'pm');
 };
 // whenMs 를 주면 그 시간대 필드를 찾고, 없으면 기본 필드. 안 주면 예전과 똑같이 동작한다.
+// ★이미 만들어진 스쿼드 문서에 남은 옛 키를 살려준다.
+//   내가 정기반을 'run' 으로 넣는 바람에 그때 만들어진 스쿼드는 exerciseType:'run' 으로 저장됐고,
+//   상수를 고친 뒤에도 그 문서들은 계속 헬스 필드로 떨어졌다(대표 8-11).
+//   문서를 고치는 대신 읽는 쪽에서 옮겨준다 — 쓰기 없이 옛 데이터까지 같이 낫는다.
+window.SQUAD_TYPE_ALIAS = { run: 'running', hike: 'hiking', climb: 'climbing' };
+window._sqTypeKey = function (t) {
+  const a = (window.SQUAD_TYPE_ALIAS || {})[t] || t;
+  return window.SQUAD_TYPES[a] ? a : 'gym';
+};
 window.squadFieldSrc = function (t, whenMs) {
-  const k = window.SQUAD_TYPES[t] ? t : 'gym';
+  const k = window._sqTypeKey(t);
   if (whenMs != null) {
     const tod = window._sqTod(whenMs);
     const v = (window.SQUAD_FIELD_TOD[k] || {})[tod];
@@ -17875,7 +17884,7 @@ window.renderSquadPage = async function () {
   }
   const now = Date.now();
   root.innerHTML = rows.map(s => {
-    const t = window.SQUAD_TYPES[s.exerciseType] || window.SQUAD_TYPES.gym;
+    const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
     const n = (s.memberUids||[]).length, full = n >= s.capacity;
     const live = now >= s.scheduledAt && now < (s.expiresAt||0);
     const chip = live
@@ -18061,7 +18070,7 @@ window._sqRenderDetail = function () {
   const el = document.getElementById('sq-detail'); if (!el) return;
   const me = (auth.currentUser || window.currentUser || {}).uid || null;
   const mem = window._sqMembers || {};
-  const t = window.SQUAD_TYPES[s.exerciseType] || window.SQUAD_TYPES.gym;
+  const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
   const n = (s.memberUids||[]).length;
   const now = Date.now();
   const done = ['completed','cancelled','expired'].includes(s.status);
@@ -18427,7 +18436,7 @@ window._sqWalkTo = function (x, y) {
 window._sqRoomInit = function (s) {
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
   stage.className = 'sq-stage';
-  stage.style.backgroundImage = "url('" + window.squadFieldSrc(s.exerciseType) + "')";
+  stage.style.backgroundImage = "url('" + window.squadFieldSrc(s.exerciseType, s.scheduledAt) + "')";
   stage.innerHTML = '';
   window._sqChars = {};
   const me = (auth.currentUser || {}).uid;
