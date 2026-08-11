@@ -5604,6 +5604,11 @@ function closePanel(id) {
   }
   // 닫힌 패널은 z 를 원래대로 (닫히는 애니메이션 중엔 유지해야 위에서 미끄러져 나간다)
   if (_el) setTimeout(() => { if (!_el.classList.contains('open')) _el.style.zIndex = ''; }, 320);
+  // ★패널을 띄우려고 잠깐 낮춰둔 화면이 있으면 되돌린다.
+  //   .panel 은 z 가 100~120 인데 스쿼드 상세는 890 이라, 그냥 열면 프로필이 **뒤에 깔린다.**
+  //   패널 z 를 890 위로 올리는 방법은 못 쓴다 — 모달(.modal-overlay)이 200 이라 이번엔
+  //   프로필에서 띄운 모달이 숨는다. 그래서 아래 화면을 잠깐 내리고 닫힐 때 되돌린다.
+  if (window._zRestore) { try { window._zRestore(); } catch (e) {} window._zRestore = null; }
   if (id === 'chat-detail-panel' && window._chatUnsubscribe) {
     window._chatUnsubscribe(); window._chatUnsubscribe = null; window._currentChatId = null;
   }
@@ -18640,13 +18645,22 @@ window.renderSquadPage = async function () {
     const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
     const n = (s.memberUids||[]).length, full = n >= s.capacity;
     const live = now >= s.scheduledAt && now < (s.expiresAt||0);
-    // ★상태 칩은 **항상 있어야 한다**(대표 8-11). 한번 지웠더니 대부분의 카드에서 칩이 통째로
-    //   사라져 화면이 죽었다 — 카드가 살아 있다는 신호가 이 줄에서 나온다.
-    //   LIVE = 초록(깜빡이는 점) / 마감 = 회색 / 그 외 = 모집중 파랑.
+    // ★★목록 카드 = **액센트 한 색(골드)으로 잠근다**(대표 8-11 지적 + taste 스킬 4.2 'Max 1 accent').
+    //   파란 칩·파란 인원·파란 그라디언트를 얹었더니 사진 위에서 싸구려로 보였다. 파랑은 앱 전체의
+    //   '액션색'이지 카드 장식색이 아니다. 여기서는 전부 뺀다.
+    //   남는 색은 둘 뿐 — **골드(돈·강조)** 와 **초록(LIVE = 진짜 상태)**. 나머지는 흰 유리.
+    //   바닥도 파랑기 없는 앱 배경색(#05070c) 그대로 깐다. 색을 섞으면 사진이 탁해진다.
+    const glass = 'background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);'
+      + 'backdrop-filter:blur(10px);border-radius:20px;padding:4px 10px;font-size:10.5px;font-weight:700';
     const chip = live
-      ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(61,222,124,.18);border:1px solid rgba(61,222,124,.34);color:#4ce88a;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:800"><i style="width:6px;height:6px;border-radius:50%;background:#4ce88a;box-shadow:0 0 8px #4ce88a;animation:mwBlink 1.1s steps(2) infinite"></i>LIVE</span>'
-      : full ? '<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">마감</span>'
-      : '<span style="background:rgba(61,126,255,.22);border:1px solid rgba(61,126,255,.32);color:#9dbcff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
+      ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(61,222,124,.2);border:1px solid rgba(61,222,124,.42);backdrop-filter:blur(10px);color:#4ce88a;border-radius:20px;padding:4px 10px;font-size:10.5px;font-weight:800"><i style="width:6px;height:6px;border-radius:50%;background:#4ce88a;box-shadow:0 0 8px #4ce88a;animation:mwBlink 1.1s steps(2) infinite"></i>LIVE</span>'
+      : full ? `<span style="${glass};color:rgba(255,255,255,.5)">마감</span>`
+      : `<span style="${glass};color:rgba(255,255,255,.85)">모집중</span>`;
+    // 금액은 **읽으라고 있는 값**이다 — 회색으로 깔면 없는 정보가 된다(대표 지적).
+    // 유료는 골드 알약으로 세우고, 무료도 흰 유리 알약으로 같은 자리에 세운다.
+    const feePill = s.feeAmount > 0
+      ? `<span style="background:rgba(245,194,75,.18);border:1px solid rgba(245,194,75,.4);color:#F5C24B;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:800;flex-shrink:0">${window._sqFmtFee(s.feeAmount)}</span>`
+      : `<span style="${glass};color:rgba(255,255,255,.9);font-size:11.5px;font-weight:800;flex-shrink:0">무료</span>`;
     // 정기반 가짜 줄은 누르는 순간 진짜 벙이 만들어진다(sqOpenClass)
     // 가짜 줄(아직 문서 없는 정기반 회차)은 미리보기로 — 누른다고 벙이 생기면 안 된다
     const go = s._cls ? `window.sqClassPreview('${s._cls}')` : `window.openSquadDetail('${s.id}')`;
@@ -18657,28 +18671,31 @@ window.renderSquadPage = async function () {
     //   글씨는 흰색 위계로 읽힌다.** 종목 배지 = 브랜드 블루 틴트(카드마다 브랜드색이 하나씩 산다),
     //   LIVE = 초록 테두리+빛번짐(지금 하는 중은 카드째로 눈에 띄어야 한다), 돈 = 골드.
     //   바닥 그라디언트도 순검정 대신 **딥네이비**다 — 사진 위에 검정을 깔면 색이 탁해진다.
-    const liveEdge = live
-      ? 'border:1px solid rgba(61,222,124,.45);box-shadow:0 0 22px -6px rgba(61,222,124,.45)'
-      : 'border:1px solid rgba(61,126,255,.16);box-shadow:0 8px 20px -12px rgba(0,0,0,.8)';
+    // 테두리·그림자도 배경 색조(#05070c)에 맞춘다. 순검정 그림자는 다크 화면에서 지저분해진다.
+    const edge = live
+      ? 'border:1px solid rgba(61,222,124,.42);box-shadow:0 0 24px -8px rgba(61,222,124,.4)'
+      : 'border:1px solid rgba(255,255,255,.09);box-shadow:0 10px 24px -14px rgba(5,7,12,.95)';
     return `
-    <div onclick="${go}" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:11px;cursor:pointer;${liveEdge}">
+    <div onclick="${go}" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:11px;cursor:pointer;${edge}">
       <div style="position:absolute;inset:0;background:url('${window._sqImgSrc(s)}') center/cover"></div>
-      <div style="position:absolute;inset:0;background:linear-gradient(100deg,rgba(6,11,26,.95) 0%,rgba(6,11,26,.76) 46%,rgba(6,11,26,.16) 100%)"></div>
-      <div style="position:relative;padding:14px 15px;display:flex;flex-direction:column;gap:6px">
+      <div style="position:absolute;inset:0;background:linear-gradient(96deg,rgba(5,7,12,.92) 0%,rgba(5,7,12,.62) 52%,rgba(5,7,12,.10) 100%)"></div>
+      <!-- ★아래쪽 가림막. 좌우 그라디언트만으로는 **사진 오른쪽이 밝을 때 인원·금액이 묻힌다**
+           (실제로 헬스장 사진에서 8/8 이 안 읽혔다). 위아래로 한 겹 더 눌러 글씨 자리를 지킨다. -->
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.28) 0%,rgba(5,7,12,0) 34%,rgba(5,7,12,.82) 100%)"></div>
+      <div style="position:relative;padding:14px 15px;display:flex;flex-direction:column;gap:7px">
         <div style="display:flex;align-items:center;gap:6px">
-          <!-- 종목은 중립(흰 유리)으로 둔다. 옆의 상태 칩이 파랑이라 여기까지 파랑이면 두 칩이 뭉갠다 -->
-          <span style="background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:20px;padding:3px 9px;font-size:10.5px;font-weight:700">${t.name}</span>
+          <span style="${glass};color:#fff">${t.name}</span>
           ${chip}
-          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${full?'rgba(255,255,255,.4)':'#8fb6ff'};font-weight:700">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}</span>
+          <!-- 인원도 유리 알약으로. 맨 오른쪽은 사진이 제일 밝은 자리라 맨몸 글씨는 못 버틴다 -->
+          <span style="margin-left:auto;${glass};display:inline-flex;align-items:center;gap:4px;font-size:11px;color:${full?'rgba(255,255,255,.5)':'#fff'}">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}</span>
         </div>
-        <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.title||'').replace(/</g,'&lt;')}</div>
-        <div style="display:flex;align-items:baseline;gap:7px;font-size:12px">
-          <span style="color:rgba(255,255,255,.9);font-weight:600">${window._sqFmtTime(s.scheduledAt)}</span>
-          <span style="color:rgba(255,255,255,.52);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px">${(s.location||'미정').replace(/</g,'&lt;')}</span>
-          <!-- 무료를 회색으로 내렸더니 안 보였다(대표 지적). 돈은 어느 쪽이든 **읽혀야 하는 정보**다.
-               유료 = 골드로 눈에 띄게, 무료 = 흰색 굵게. 회색은 '없는 정보' 취급이라 틀렸다. -->
-          <span style="margin-left:auto;font-weight:800;flex-shrink:0;color:${s.feeAmount>0?'#F5C24B':'rgba(255,255,255,.85)'}">${window._sqFmtFee(s.feeAmount)}</span>
+        <div style="font-size:16.5px;font-weight:800;color:#fff;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 12px rgba(5,7,12,.7)">${(s.title||'').replace(/</g,'&lt;')}</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;min-width:0">
+          <span style="color:#fff;font-weight:700;flex-shrink:0">${window._sqFmtTime(s.scheduledAt)}</span>
+          <span style="color:rgba(255,255,255,.62);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.location||'미정').replace(/</g,'&lt;')}</span>
+          <span style="margin-left:auto"></span>
+          ${feePill}
         </div>
       </div>
     </div>`;
@@ -18823,6 +18840,20 @@ window._sqSubmitCreate = async function () {
     window.renderSquadPage();
     window.openSquadDetail && window.openSquadDetail(dRef.id);
   } catch(e) { console.error(e); showToast('생성 실패 — 다시 시도해주세요'); btn.disabled = false; btn.textContent = '스쿼드 열기'; }
+};
+
+// 스쿼드 멤버 → 그 사람 프로필.
+// ★스쿼드 상세(z 890)는 .panel(z 100~120) 보다 위라, 그냥 열면 프로필이 **뒤에 깔려 안 보인다.**
+//   패널을 890 위로 올리는 건 안 된다 — 모달이 200 이라 이번엔 프로필에서 띄운 모달이 숨는다.
+//   그래서 여는 동안만 스쿼드 상세를 내리고, 패널이 닫힐 때 closePanel 이 되돌린다(_zRestore).
+window.sqMemberProfile = function (uid, nick) {
+  if (!uid) return;
+  const d = document.getElementById('sq-detail');
+  if (d) {
+    d.style.zIndex = '90';
+    window._zRestore = function () { const e = document.getElementById('sq-detail'); if (e) e.style.zIndex = '890'; };
+  }
+  if (window.openUserProfile) window.openUserProfile(uid, nick || '프로필');
 };
 
 // ---------- 수정 (연 사람 / 관리자) ----------
@@ -19112,13 +19143,17 @@ window._sqRenderDetail = function () {
     .filter(uid => mem[uid].status !== 'left')
     .sort((a,b) => (a===s.hostUid?-1:1) - (b===s.hostUid?-1:1))
     .map(uid => { const m = mem[uid]; const wait = m.status==='invited';
+      // ★캐릭터·이름을 누르면 그 사람 프로필(대표 8-11). 같이 운동할 사람이 누군지 보고 정하는 게
+      //   이 목록의 목적인데, 예전엔 픽셀 캐릭터와 닉네임만 보이고 눌러도 아무 일이 없었다.
+      const openMe = `window.sqMemberProfile('${uid}','${(m.nickname||'').replace(/'/g,"\\'").replace(/</g,'&lt;')}')`;
       return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;${wait?'opacity:.62':''}">
-        <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
-        <div style="min-width:0;flex:1">
+        <div onclick="${openMe}" style="flex-shrink:0;cursor:pointer">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
+        <div onclick="${openMe}" style="min-width:0;flex:1;cursor:pointer">
           <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;color:#fff">
             ${esc(m.nickname)} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
           </div>
+          <div style="font-size:10.5px;color:rgba(255,255,255,.32);margin-top:2px">눌러서 프로필 보기</div>
         </div>
         ${stChip(m)}
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:${m.paid?'rgba(61,222,124,.14)':'rgba(255,255,255,.07)'};color:${m.paid?'#3dde7c':'rgba(255,255,255,.5)'};border:none;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
@@ -19233,26 +19268,21 @@ window.sqTogglePaid = async function (sid, uid, cur) {
 window._sqChatStop = function () {
   if (window._sqChatUnsub) { try { window._sqChatUnsub(); } catch(e) {} window._sqChatUnsub = null; }
   window._sqChatReady = false;
+  window._sqChatMsgs = []; window._sqChatSid = null;
+  window.sqChatClose && window.sqChatClose();   // 전체화면 톡이 떠 있으면 같이 닫는다
 };
+// ===== 스쿼드 톡 =====
+// ★예전엔 긴 상세 페이지 **맨 아래에 박혀** 있었다. 치려면 한참 내려야 하고, 치고 나면
+//   다시 올려야 보였다(대표 8-11: "내가 친 게 바로 보이는 게 핵심인데 짜증나는 포인트").
+//   → 톡은 **전체화면**으로 뺀다. 입력창이 화면 아래에 붙어 있고 최신 글이 그 바로 위에 있다.
+//     상세 페이지에는 마지막 한 줄만 보여주는 얇은 줄을 남긴다.
+// ★구독(onSnapshot)은 톡을 닫아도 계속 돈다 — 캐릭터 머리 위 말풍선이 여기에 물려 있다.
 window._sqChatStart = function (sid) {
   window._sqChatStop();
-  const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
-  wrap.innerHTML = `
-    <div style="display:flex;align-items:center;gap:6px;margin:4px 2px 8px">
-      <span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">스쿼드 톡</span>
-      <span style="font-size:10px;color:rgba(255,255,255,.28)">— 말하면 캐릭터 머리 위에 떠요</span>
-    </div>
-    <div id="sq-chat-list" style="height:230px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:8px 2px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px 14px 0 0;padding:10px">
-      <div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
-    </div>
-    <div style="display:flex;gap:7px;padding:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-top:none;border-radius:0 0 14px 14px">
-      <input id="sq-chat-input" maxlength="120" disabled placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:11px 13px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
-      <button id="sq-chat-send" disabled onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">보내기</button>
-    </div>`;
+  window._sqChatSid = sid; window._sqChatMsgs = [];
+  window._sqChatBar();
   const q1 = query(collection(db,'squads',sid,'chat'), orderBy('at','desc'), limit(60));
   window._sqChatUnsub = onSnapshot(q1, qs => {
-    const listEl = document.getElementById('sq-chat-list'); if (!listEl) { window._sqChatStop(); return; }
-    const myUid = (auth.currentUser || window.currentUser || {}).uid;
     // 새 메시지 → 워킹 룸 캐릭터 말풍선 (첫 스냅샷은 과거 로그라 스킵)
     if (window._sqChatReady) {
       qs.docChanges().filter(c => c.type === 'added').forEach(c => {
@@ -19261,33 +19291,104 @@ window._sqChatStart = function (sid) {
       });
     }
     window._sqChatReady = true;
-    const msgs = qs.docs.map(d => d.data());   // desc + column-reverse = 최신이 하단(게임 채팅)
-    listEl.innerHTML = msgs.length ? msgs.map(m => {
-      const esc = v => String(v||'').replace(/</g,'&lt;');
-      if (m.sys) return `<div style="text-align:center;font-size:10.5px;color:rgba(255,255,255,.35);padding:2px 0">${esc(m.text)}</div>`;
-      const td = m.at && m.at.toDate ? m.at.toDate() : null;
-      const ts = td ? String(td.getHours()).padStart(2,'0') + ':' + String(td.getMinutes()).padStart(2,'0') : '';
-      const mine = myUid && m.uid === myUid;
-      const bubble = `<div style="font-size:12.5px;line-height:1.5;word-break:break-all;padding:7px 10px;display:inline-block;border-radius:12px;color:${mine?'#fff':'#e7ecf6'};background:${mine?'var(--accent)':'rgba(255,255,255,.08)'}">${esc(m.text)}</div>`;
-      const time = `<span style="font-size:9px;color:rgba(255,255,255,.3);flex-shrink:0">${ts}</span>`;
-      const avatar = `<div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>`;
-      if (mine) return `<div style="display:flex;gap:7px;align-items:flex-end;justify-content:flex-end">${time}<div style="min-width:0;text-align:right">${bubble}</div></div>`;
-      return `<div style="display:flex;gap:7px;align-items:flex-end">${avatar}<div style="min-width:0"><div style="font-size:10px;color:#7aa8ff;margin-bottom:3px">${esc(m.nick)}</div>${bubble}</div>${time}</div>`;
-    }).join('') : '<div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:12px">첫 마디를 남겨보세요</div>';
-    listEl.scrollTop = 0;
+    window._sqChatMsgs = qs.docs.map(d => d.data());   // desc = 최신이 앞
+    window._sqChatPaint();
+    window._sqChatBar();
   }, e => console.warn('sq chat', e));
-  // 쓰기 자격 = 스쿼드 멤버
-  const gate = () => {
-    const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
-    const done = s && ['completed','cancelled','expired'].includes(s.status);
-    const can = !!(s && !done && me && (s.memberUids||[]).includes(me));
-    const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
-    if (!input || !btn) return;
-    if (can) { input.disabled = false; input.placeholder = '스쿼드에 한마디…'; btn.disabled = false; }
-    else { input.disabled = true; btn.disabled = true;
-      input.placeholder = done ? '종료된 스쿼드예요 (기록은 남아있어요)' : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요'; }
-  };
-  gate(); window._sqChatGate = gate;
+  window._sqChatGate = function () { window._sqChatBar(); window._sqChatPaintGate(); };
+};
+// 지금 이 사람이 쓸 수 있는가 + 못 쓰면 이유
+window._sqChatCan = function () {
+  const s = window._sqDoc; const me = (auth.currentUser || window.currentUser || {}).uid;
+  const done = s && ['completed','cancelled','expired'].includes(s.status);
+  if (s && !done && me && (s.memberUids||[]).includes(me)) return { ok: true, why: '스쿼드에 한마디…' };
+  return { ok: false, why: done ? '종료된 스쿼드예요 (기록은 남아있어요)'
+                        : me ? '참가하면 대화할 수 있어요' : '로그인하고 참가하면 대화할 수 있어요' };
+};
+// 상세 페이지에 남기는 얇은 줄 — 마지막 한 마디만 보여주고 누르면 전체화면으로 연다.
+window._sqChatBar = function () {
+  const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
+  const msgs = window._sqChatMsgs || [];
+  const last = msgs.find(m => !m.sys) || msgs[0];
+  const esc = v => String(v||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const preview = last ? (last.sys ? esc(last.text) : esc(last.nick) + ': ' + esc(last.text)) : '첫 마디를 남겨보세요';
+  wrap.innerHTML = `
+    <div onclick="window.sqChatOpen()" style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:13px 14px;cursor:pointer">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#8fb6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.8-.8L3 21l1.9-5A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:12.5px;font-weight:700;color:#fff;margin-bottom:2px">스쿼드 톡</div>
+        <div style="font-size:11.5px;color:rgba(255,255,255,.45);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
+      </div>
+      <span style="color:rgba(255,255,255,.3);font-size:17px;flex-shrink:0">›</span>
+    </div>`;
+};
+window.sqChatOpen = function () {
+  const sid = window._sqChatSid; if (!sid) return;
+  const s = window._sqDoc || {};
+  let el = document.getElementById('sq-chat-full'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-chat-full';
+  el.style.cssText = 'position:fixed;left:0;right:0;top:0;height:100%;z-index:930;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 14px 11px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
+      <button onclick="window.sqChatClose()" style="background:none;border:none;color:rgba(255,255,255,.65);font-size:19px;cursor:pointer;padding:2px 4px">←</button>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:14.5px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${String(s.title||'스쿼드 톡').replace(/</g,'&lt;')}</div>
+        <div style="font-size:10.5px;color:rgba(255,255,255,.35)">말하면 캐릭터 머리 위에 떠요</div>
+      </div>
+    </div>
+    <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
+    <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
+      <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
+      <button id="sq-chat-send" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
+    </div>`;
+  document.body.appendChild(el);
+  window._sqChatPaint();
+  window._sqChatPaintGate();
+  // ★키보드가 올라와도 입력창이 가려지지 않게 — 화면(visualViewport) 높이에 판을 맞춘다.
+  //   iOS 는 키보드가 고정 요소를 덮어버려서 이걸 안 하면 입력창이 키보드 아래로 숨는다.
+  const vv = window.visualViewport;
+  if (vv) {
+    const fit = function () {
+      const p = document.getElementById('sq-chat-full'); if (!p) return;
+      p.style.height = vv.height + 'px';
+      p.style.transform = 'translateY(' + (vv.offsetTop || 0) + 'px)';
+    };
+    window._sqChatFit = fit;
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    fit();
+  }
+  const inp = document.getElementById('sq-chat-input');
+  if (inp && !inp.disabled) setTimeout(function () { inp.focus(); }, 120);
+};
+window.sqChatClose = function () {
+  const vv = window.visualViewport;
+  if (vv && window._sqChatFit) { vv.removeEventListener('resize', window._sqChatFit); vv.removeEventListener('scroll', window._sqChatFit); window._sqChatFit = null; }
+  const el = document.getElementById('sq-chat-full'); if (el) el.remove();
+};
+window._sqChatPaintGate = function () {
+  const input = document.getElementById('sq-chat-input'), btn = document.getElementById('sq-chat-send');
+  if (!input || !btn) return;
+  const c = window._sqChatCan();
+  input.disabled = !c.ok; btn.disabled = !c.ok; input.placeholder = c.why;
+  btn.style.opacity = c.ok ? '1' : '.4';
+};
+window._sqChatPaint = function () {
+  const listEl = document.getElementById('sq-chat-list'); if (!listEl) return;
+  const myUid = (auth.currentUser || window.currentUser || {}).uid;
+  const msgs = window._sqChatMsgs || [];
+  listEl.innerHTML = msgs.length ? msgs.map(m => {
+    const esc = v => String(v||'').replace(/</g,'&lt;');
+    if (m.sys) return `<div style="text-align:center;font-size:10.5px;color:rgba(255,255,255,.35);padding:2px 0">${esc(m.text)}</div>`;
+    const td = m.at && m.at.toDate ? m.at.toDate() : null;
+    const ts = td ? String(td.getHours()).padStart(2,'0') + ':' + String(td.getMinutes()).padStart(2,'0') : '';
+    const mine = myUid && m.uid === myUid;
+    const bubble = `<div style="font-size:13px;line-height:1.5;word-break:break-all;padding:8px 11px;display:inline-block;border-radius:13px;color:${mine?'#fff':'#e7ecf6'};background:${mine?'var(--accent)':'rgba(255,255,255,.08)'}">${esc(m.text)}</div>`;
+    const time = `<span style="font-size:9px;color:rgba(255,255,255,.3);flex-shrink:0">${ts}</span>`;
+    const avatar = `<div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>`;
+    if (mine) return `<div style="display:flex;gap:7px;align-items:flex-end;justify-content:flex-end">${time}<div style="min-width:0;text-align:right">${bubble}</div></div>`;
+    return `<div style="display:flex;gap:7px;align-items:flex-end">${avatar}<div style="min-width:0"><div style="font-size:10px;color:#8fb6ff;margin-bottom:3px">${esc(m.nick)}</div>${bubble}</div>${time}</div>`;
+  }).join('') : '<div style="color:rgba(255,255,255,.3);font-size:11.5px;text-align:center;padding:16px">첫 마디를 남겨보세요</div>';
+  listEl.scrollTop = 0;   // column-reverse 라 0 이 곧 **최신**이다
 };
 window.sqChatSend = async function (sid) {
   const user = auth.currentUser; if (!user) return;
@@ -19300,6 +19401,8 @@ window.sqChatSend = async function (sid) {
       { uid:user.uid, nick:window._mwMyNick||'머피', character:cfg, text:text.slice(0,120), at:serverTimestamp() });
     window._sqRoomBubble && window._sqRoomBubble(user.uid, text);   // 내 말풍선은 즉시
     if (navigator.vibrate) navigator.vibrate(10);
+    // ★키보드를 내리지 않는다 — 연달아 치는 게 채팅의 기본이다
+    if (!input.disabled) input.focus();
   } catch(e) { showToast('전송 실패'); }
 };
 window.sqChatSys = async function (sid, text) {   // 시스템 메시지 (입퇴장·출석)
