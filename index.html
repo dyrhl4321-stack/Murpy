@@ -17600,11 +17600,9 @@ window.SQUAD_TYPES = {
   climbing: { name:'클라이밍', v:1 },
   hyrox:    { name:'하이록스', v:1 },
   hiking:   { name:'등산',     v:1 },
-  // ★요가·댄스 (2026-08-11 추가). 전용 필드가 아직 없어서 field 로 다른 필드를 빌려 쓴다.
-  //   char/fields/field_yoga_wide.png · field_dance_wide.png 가 들어오면 그 field 줄만 지우면 된다.
-  //   ★없는 파일을 가리키면 404 가 조용히 나면서 카드·워킹룸 배경이 통째로 빈다.
-  yoga:     { name:'요가',     v:1, field:'gym' },
-  dance:    { name:'댄스',     v:1, field:'gym' },
+  // 요가·댄스 (2026-08-11). 전용 필드 들어옴 — 더 이상 빌려 쓰지 않는다.
+  yoga:     { name:'요가',     v:1 },
+  dance:    { name:'댄스',     v:1 },
 };
 // ===== 시간대별 필드 (대표 8-11) =====
 // 같은 러닝이어도 아침에 뛰는 것과 저녁에 뛰는 건 그림이 달라야 한다.
@@ -17962,6 +17960,11 @@ window.renderSquadHero = async function () {
 
   window._sqHeroSlides = slides;
   if (window._sqHeroI >= slides.length) window._sqHeroI = 0;
+  // ★이 탭이 뭘 보여주는 자리인지 한 줄로 알려준다(대표 8-11) — 홈의 '지금 머피에선'과 같은 결.
+  //   라벨이 없으면 카드가 그냥 광고처럼 보이고 무슨 탭인지 안 읽힌다.
+  const label = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:9px">'
+    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5h5L11 22l8.5-11.5h-5z"/></svg>'
+    + '<span style="font-size:12.5px;font-weight:800;color:rgba(255,255,255,.7);letter-spacing:-0.2px">요즘 뜨는 스쿼드</span></div>';
   // ★진짜 가로 슬라이드다(대표 8-11) — 겹쳐놓고 페이드가 아니라 **카드가 옆에서 밀려 들어온다.**
   //   트랙 하나를 translateX 로 옮긴다. 손가락으로 끌어서 넘기는 것도 된다.
   // ★카드가 **각각 따로** 서 있고 옆 카드가 양쪽에 걸쳐 보이면서 밀려온다(대표 8-11).
@@ -17970,19 +17973,31 @@ window.renderSquadHero = async function () {
   //   ★비율 2:1 (레퍼런스 기준). 2.6:1 은 너무 납작해서 카드가 작아 보였다.
   // ★dx(끌고 있는 거리)는 **calc 안에** 더해야 한다. 밖에 붙이면 translateX(calc(..) + -40px)
   //   같은 잘못된 CSS 가 되어 조용히 아무 일도 안 일어난다.
+  // ★무한 루프 캐러셀 — 앞뒤에 **복제 카드**를 한 장씩 붙인다.
+  //   이걸 안 하면 마지막에서 첫 장으로 갈 때 트랙이 통째로 왼쪽으로 되감겨서
+  //   "뒤로 후루룩 돌아가는" 느낌이 나고, 지나가는 카드들이 어두워졌다 밝아진다(대표 8-11).
+  //   복제본까지 민 다음 애니메이션 없이 진짜 자리로 순간이동하면 **계속 오른쪽으로만** 흐른다.
+  //   덤으로 첫 장·마지막 장에서도 양옆에 이웃이 있어 한쪽만 걸치는 문제도 사라진다.
   const SQ_W = 86, SQ_G = 10, SQ_PAD = (100 - SQ_W) / 2;   // 양옆에 남기는 여백(=걸치는 폭)
   const off = (i, dx) => 'translateX(calc(-' + (i * SQ_W - SQ_PAD) + '% - ' + (i * SQ_G - (dx || 0)) + 'px))';
   window._sqHeroOff = off;
   const n = slides.length;
-  host.innerHTML =
-    '<div id="sq-hero-vp" style="position:relative;overflow:hidden;touch-action:pan-y">'
-    + '<div id="sq-hero-track" style="display:flex;gap:' + SQ_G + 'px;will-change:transform;transform:' + off(window._sqHeroI) + ';transition:transform .45s cubic-bezier(.25,.46,.45,.94)">'
-    + slides.map((s, i) =>
-      '<div class="sq-hero-s" data-i="' + i + '" onclick="' + s.click + '" style="flex:0 0 ' + SQ_W + '%;position:relative;aspect-ratio:2/1;cursor:pointer;overflow:hidden;border-radius:16px;transition:opacity .35s,transform .35s;opacity:' + (i === window._sqHeroI ? '1' : '.5') + ';transform:scale(' + (i === window._sqHeroI ? '1' : '.965') + ')">'
+  // 화면에 그리는 순서: [마지막 복제, 0..n-1, 첫 장 복제]  → 트랙 인덱스 = 진짜 인덱스 + 1
+  const view = n > 1 ? [slides[n - 1]].concat(slides, [slides[0]]) : slides.slice();
+  window._sqHeroN = n;
+  window._sqHeroT_i = (n > 1 ? window._sqHeroI + 1 : 0);   // 트랙 인덱스
+  host.innerHTML = label
+    + '<div id="sq-hero-vp" style="position:relative;overflow:hidden;touch-action:pan-y">'
+    + '<div id="sq-hero-track" style="display:flex;gap:' + SQ_G + 'px;will-change:transform;transform:' + off(window._sqHeroT_i) + ';transition:transform .45s cubic-bezier(.25,.46,.45,.94)">'
+    + view.map((s, i) =>
+      '<div class="sq-hero-s" data-i="' + i + '" onclick="' + s.click + '" style="flex:0 0 ' + SQ_W + '%;position:relative;aspect-ratio:2/1;cursor:pointer;overflow:hidden;border-radius:16px;transition:opacity .35s,transform .35s;opacity:' + (i === window._sqHeroT_i ? '1' : '.5') + ';transform:scale(' + (i === window._sqHeroT_i ? '1' : '.965') + ')">'
       + (s.bg ? '<div style="position:absolute;inset:0;background:url(\'' + s.bg + '\') center/cover"></div>' : '')
       // ★글씨가 없는 카드(대표가 디자인해서 올린 이미지)는 그라디언트도 안 깐다 — 그림을 그대로 보여준다.
+      // ★그라디언트를 얇게 깐다(대표 8-11: "사진이 너무 어두워 잘 안 보인다").
+      //   예전엔 .95/.8/.35 라 사진이 통째로 죽었다. 글씨는 왼쪽 아래에만 필요하므로
+      //   왼쪽만 눌러 주고 오른쪽(피사체)은 거의 손대지 않는다.
       + (s.plain ? '' :
-          '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.95) 0%,rgba(5,7,12,.8) 55%,rgba(5,7,12,.35) 100%)"></div>'
+          '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.82) 0%,rgba(5,7,12,.5) 48%,rgba(5,7,12,.05) 100%)"></div>'
         + '<div style="position:relative;padding:18px 18px;height:100%;display:flex;flex-direction:column;justify-content:center;gap:7px">'
         +   '<div><span style="background:rgba(255,255,255,.1);color:' + s.tagColor + ';border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:800">' + s.tag + '</span></div>'
         +   '<div style="font-size:19px;font-weight:800;letter-spacing:-.5px;line-height:1.25">' + s.title + '</div>'
@@ -17999,26 +18014,41 @@ window.renderSquadHero = async function () {
   window._sqHeroBindSwipe();
   window._sqHeroStart();
 };
-// 트랙을 n 번째로 민다.
-window._sqHeroGo = function (n, animate) {
-  const slides = window._sqHeroSlides || [];
-  if (!slides.length) return;
-  window._sqHeroI = (n + slides.length) % slides.length;
+// 트랙 인덱스 ti 로 민다. ti 는 복제본을 포함한 자리(0 = 마지막 복제, n+1 = 첫 장 복제).
+window._sqHeroSet = function (ti, animate) {
+  const n = window._sqHeroN || 0;
+  if (!n) return;
+  window._sqHeroT_i = ti;
+  window._sqHeroI = ((ti - 1) % n + n) % n;          // 진짜 인덱스
   const tr = document.getElementById('sq-hero-track');
   if (tr && window._sqHeroOff) {
     tr.style.transition = animate === false ? 'none' : 'transform .45s cubic-bezier(.25,.46,.45,.94)';
-    tr.style.transform = window._sqHeroOff(window._sqHeroI);
+    tr.style.transform = window._sqHeroOff(ti);
   }
   const vp = document.getElementById('sq-hero-vp');
   if (!vp) return;
   // 지금 카드만 또렷하고 살짝 크게 — 옆에 걸친 카드는 흐리게 둬야 '다음 게 있다'가 보인다
   vp.querySelectorAll('.sq-hero-s').forEach(function (el) {
-    const on = String(window._sqHeroI) === el.dataset.i;
+    const on = String(ti) === el.dataset.i;
     el.style.opacity = on ? '1' : '.5';
     el.style.transform = on ? 'scale(1)' : 'scale(.965)';
   });
   const num = document.getElementById('sq-hero-num');
-  if (num) num.textContent = (window._sqHeroI + 1) + ' / ' + slides.length;
+  if (num) num.textContent = (window._sqHeroI + 1) + ' / ' + n;
+};
+// 한 칸 이동(+1 오른쪽 / -1 왼쪽). 복제본에 닿으면 **애니메이션 없이** 진짜 자리로 순간이동한다.
+window._sqHeroGo = function (dir) {
+  const n = window._sqHeroN || 0;
+  if (n < 2) return;
+  if (window._sqHeroAnim) return;                    // 연타로 두 칸 넘어가는 것 방지
+  window._sqHeroAnim = true;
+  const ti = window._sqHeroT_i + dir;
+  window._sqHeroSet(ti, true);
+  setTimeout(function () {
+    if (ti === n + 1) window._sqHeroSet(1, false);    // 첫 장 복제 → 진짜 첫 장
+    else if (ti === 0) window._sqHeroSet(n, false);   // 마지막 복제 → 진짜 마지막
+    window._sqHeroAnim = false;
+  }, 460);
 };
 // 손가락으로 끌어서 넘기기. 세로 스크롤과 안 싸우게 처음 방향을 보고 가로일 때만 가로챈다.
 window._sqHeroBindSwipe = function () {
@@ -18043,14 +18073,14 @@ window._sqHeroBindSwipe = function () {
     const tr = document.getElementById('sq-hero-track');
     if (tr && window._sqHeroOff) {
       tr.style.transition = 'none';
-      tr.style.transform = window._sqHeroOff(window._sqHeroI, dx);
+      tr.style.transform = window._sqHeroOff(window._sqHeroT_i, dx);
     }
   }, { passive: false });
   const end = function () {
     if (!on) return;
     on = false;
-    if (dir === 1 && Math.abs(dx) > 50) window._sqHeroGo(window._sqHeroI + (dx < 0 ? 1 : -1));
-    else window._sqHeroGo(window._sqHeroI);
+    if (dir === 1 && Math.abs(dx) > 50) window._sqHeroGo(dx < 0 ? 1 : -1);
+    else window._sqHeroSet(window._sqHeroT_i, true);   // 문턱 못 넘기면 제자리로
     dx = 0; dir = 0;
     window._sqHeroStart();                          // 손 떼면 다시 자동으로
   };
@@ -18068,7 +18098,7 @@ window._sqHeroStart = function () {
     if (!document.getElementById('sq-hero-track') || !pg || !pg.classList.contains('active')) {
       clearInterval(window._sqHeroT); return;
     }
-    window._sqHeroGo(window._sqHeroI + 1);
+    window._sqHeroGo(1);        // ★항상 오른쪽으로만. 되감기지 않는다.
   }, 4000);
 };
 
