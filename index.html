@@ -16800,9 +16800,28 @@ window.loadCrewFeed = async (crewId) => {
 
 // ===== 홈 요즘 뜨는 콘텐츠 =====
 
+// ★인기 스쿼드는 **실시간**이어야 한다(대표 8-11). 벙에 사람이 붙는 순간 1등이 바뀐다 —
+//   금요일 벙이 곧 최다가 될 텐데, 새로고침해야 바뀌면 홈이 늘 한 발 늦은 정보를 보여준다.
+//   스쿼드가 바뀔 때만 홈 카드를 다시 그린다(연달아 바뀌면 한 번으로 묶는다).
+window.watchHomeSquads = function () {
+  if (window._homeSquadWatch) return;
+  try {
+    const q1 = query(collection(db, 'squads'),
+      where('expiresAt', '>', Date.now()), orderBy('expiresAt', 'asc'), limit(30));
+    let first = true;
+    window._homeSquadWatch = onSnapshot(q1, function () {
+      if (first) { first = false; return; }        // 처음 것은 방금 그린 화면과 같다
+      clearTimeout(window._homeSquadT);
+      window._homeSquadT = setTimeout(function () {
+        window.loadHomeTrending && window.loadHomeTrending();
+      }, 1200);
+    }, function (e) { console.warn('home squad watch', e); });
+  } catch (e) { console.warn('home squad watch', e); }
+};
 window.loadHomeTrending = async () => {
   const el = document.getElementById('home-trending-scroll');
   if (!el) return;
+  window.watchHomeSquads();
 
   try {
     const cards = [];
@@ -16811,7 +16830,11 @@ window.loadHomeTrending = async () => {
     //   실패해도 나머지 카드는 뜨게 각각 catch 로 감싼다.
     const safe = (p) => p.then(s => s).catch(() => null);
     const [squadSnap, bambooSnap, usersSnap, ckSnap] = await Promise.all([
-      safe(getDocs(query(collection(db, 'squads'), limit(12)))),
+      // ★★limit(12) 만 걸어놨더니 **아무 12개**(사실상 가장 오래된 것들)를 읽었다. 벙이 50개가
+      //   되면서 살아 있는 벙은 한 개도 안 들어왔고, 홈 카드가 7월 벙에 굳어 있었다(대표 8-11).
+      //   → 스쿼드 목록과 똑같이 **안 끝난 것만** 읽는다(부등호 필드로 정렬해야 한다).
+      safe(getDocs(query(collection(db, 'squads'),
+        where('expiresAt', '>', Date.now()), orderBy('expiresAt', 'asc'), limit(30)))),
       safe(getDocs(query(collection(db, 'bamboo'), limit(10)))),
       safe(getDocs(query(collection(db, 'users'), limit(20)))),
       safe(getDocs(query(collection(db, 'checkins'), limit(80))))
@@ -16854,7 +16877,10 @@ window.loadHomeTrending = async () => {
       const now = Date.now();
       const squads = squadSnap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(s => {
-          if (s.status === 'ended' || s.status === 'canceled') return false;
+          // ★상태값 이름이 틀려 있었다 — 실제로 쓰는 값은 completed/cancelled/expired 인데
+          //   ended/canceled 를 보고 있었다. 그래서 **끝난 벙이 인기 스쿼드로 계속 걸렸다**
+          //   (수요일 저녁 러닝반이 안 내려간 이유, 대표 8-11).
+          if (['completed', 'cancelled', 'expired', 'ended', 'canceled'].includes(s.status)) return false;
           const t = Number(s.expiresAt || s.scheduledAt || 0);
           return !t || t > now;                            // 이미 끝난 벙은 뺀다
         })
