@@ -3948,8 +3948,11 @@ window.mwRenderBumpers = function (hostId) {
     + list.slice(0, 12).map(function (b) {
       let ch = '';
       try { ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 64) : '') || ''; } catch (e) {}
+      // 오늘 생일이면 표시 (#15) — **범프한 사이에게만** 보인다(대표 확정)
+      const bday = window._isBdayToday && window._isBdayToday(b.bday);
       return '<div onclick="window.mwVisitRoom&&window.mwVisitRoom(\'' + b.uid + '\')"'
-        + ' style="flex-shrink:0;width:66px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer">'
+        + ' style="flex-shrink:0;width:66px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;position:relative">'
+        + (bday ? '<div style="position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:2;background:#F5C24B;color:#3a2a00;font-size:9px;font-weight:800;border-radius:20px;padding:2px 7px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.4)">오늘 생일</div>' : '')
         + '<div style="height:64px;display:flex;align-items:flex-end">' + ch + '</div>'
         // ★필드명은 nick 이다(nickname 아님). 틀리면 전원이 '머피'로 보인다 — 실제로 그랬다(8-11)
         + '<div style="font-size:10.5px;color:#8a93a8;max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(b.nick || b.nickname || '머피') + '</div>'
@@ -8945,6 +8948,7 @@ async function checkAndSetNickname(user) {
           try { await setDoc(doc(db, 'users', user.uid), { age: _realAge }, { merge: true }); } catch (e) {}
         }
       }
+      if (window.mwBirthdayCheck) window.mwBirthdayCheck(data);   // 내 생일이면 축하 + 선물(#15)
       // 온보딩 미완료면 온보딩 표시
       if (!data.onboardingComplete) {
         showOnboarding(data);
@@ -9755,6 +9759,9 @@ const CREDIT_WELCOME = 300, CREDIT_DAILY = 1, COST_MATCH = 5, COST_BAMBOO = 1, C
 const BETA_GRANT_KEY = 'betaGrant300';
 //   ※ 인테리어 슬롯 확장권 상수(COST_SLOT_EXT / MW_SLOT_*)는 **꾸미기 편집기 쪽**에 있다.
 //     편집기는 모듈 밖 스크립트라 여기(module) 의 const 를 못 본다.
+// 생일 선물 (유저 피드백 #15). 1년에 한 번이라 하루 적립(+1)과는 급이 달라야 한다.
+// ★숫자만 여기서 바꾸면 된다. 홀수로 둔 것은 범프 보상과 같은 결(홀수 법칙).
+const CREDIT_BIRTHDAY = 55;
 const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKE = 1,
       CREDIT_SQUAD_HOST = 10, CREDIT_SQUAD_ATTEND = 2, CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
 // 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기·껐다켜기)을 막는 상한
@@ -11100,6 +11107,41 @@ window.grantDailyCreditOnVerify = async (uid) => {
   } catch (e) { return false; }
 };
 
+// ===== 생일 (유저 피드백 #15) =====
+// ★대표 확정(8-11): ①본인에게만 축하 ②남에게는 **범프한 사이(일촌)에게만** 보인다.
+//   생일은 개인정보라 아무에게나 뿌리지 않는다. 실제로 만난 사이만 안다.
+// 'MM-DD' 만 다룬다 — 연도는 남의 문서에 복사하지 않는다.
+window._bdayKey = function (birth) {
+  const m = String(birth || '').match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return m ? (m[1] + '-' + m[2]) : null;
+};
+window._isBdayToday = function (birthOrKey) {
+  if (!birthOrKey) return false;
+  const k = String(birthOrKey).length === 5 ? String(birthOrKey) : window._bdayKey(birthOrKey);
+  if (!k) return false;
+  const n = new Date();
+  const today = String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+  return k === today;
+};
+// 내 생일이면 축하 + 선물. 1년에 한 번만(users.bdayGift = 지급한 연도).
+window.mwBirthdayCheck = async function (data) {
+  const uid = window.currentUser && window.currentUser.uid;
+  if (!uid || !data || !data.birth) return;
+  if (!window._isBdayToday(data.birth)) return;
+  const year = String(new Date().getFullYear());
+  if (String(data.bdayGift || '') === year) return;      // 올해 이미 받음
+  try {
+    await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_BIRTHDAY), bdayGift: year });
+    if (window._creditState) window._creditState.credits += CREDIT_BIRTHDAY;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    if (window._cachedProfile) window._cachedProfile.bdayGift = year;
+    setTimeout(function () {
+      if (window.celebrateMurpy) window.celebrateMurpy(0, { amount: CREDIT_BIRTHDAY, title: '생일 축하해요!' });
+      else if (window.showToast) showToast('생일 축하해요! +' + CREDIT_BIRTHDAY + '머피');
+    }, 900);
+  } catch (e) { /* 실패하면 다음 접속 때 다시 시도된다(플래그를 안 남겼으므로) */ }
+};
 // 적립 공용 — 내 문서에만 쓴다(남의 credits 는 규칙상 못 건드린다)
 window.earnCredit = async function (amount, reason) {
   const uid = window.currentUser && window.currentUser.uid;
@@ -15842,8 +15884,12 @@ window.mwSyncBumpers = async function (hostId) {
       const d = s.data(), k = recent[i], cur = map[k] || {};
       const nick = d.nickname || cur.nick || '머피';
       const ch = d.character || cur.character || null;
-      if (nick !== cur.nick || JSON.stringify(ch) !== JSON.stringify(cur.character || null)) {
-        map[k] = Object.assign({}, cur, { nick: nick, character: ch });
+      // ★생일은 'MM-DD' 만 가져온다(#15). 연도는 남의 문서에 복사하지 않는다 —
+      //   생일을 챙기는 데 연도는 필요 없고, 나이는 개인정보라 옮길 이유가 없다.
+      const bd = (window._bdayKey ? window._bdayKey(d.birth) : null) || cur.bday || null;
+      if (nick !== cur.nick || bd !== (cur.bday || null)
+          || JSON.stringify(ch) !== JSON.stringify(cur.character || null)) {
+        map[k] = Object.assign({}, cur, { nick: nick, character: ch, bday: bd });
         changed = true;
       }
     });
@@ -18626,8 +18672,14 @@ async function bpSaveBumper(other, place) {
     const key = (bpSid || 'free') + '_' + day + '_' + other.uid;
     const stacked = was.key !== key;
     const first = Object.keys(prev).length === 0;
-    let ch = null;
-    try { const os = await getDoc(doc(db, 'users', other.uid)); if (os.exists()) ch = os.data().character || null; } catch (e) {}
+    let ch = null, bd = null;
+    try {
+      const os = await getDoc(doc(db, 'users', other.uid));
+      if (os.exists()) {
+        ch = os.data().character || null;
+        bd = window._bdayKey ? window._bdayKey(os.data().birth) : null;   // 'MM-DD' 만 (#15)
+      }
+    } catch (e) {}
     await setDoc(doc(db, 'users', user.uid), {
       bumpers: Object.assign({}, prev, {
         [other.uid]: {
@@ -18635,6 +18687,7 @@ async function bpSaveBumper(other, place) {
           //   빡빡이 시절에 만난 사람은 영영 빡빡이로 남았다(대표 8-11 지적).
           nick: other.nick || was.nick || '머피',
           character: ch || was.character,
+          bday: bd || was.bday || null,
           firstAt: was.firstAt || Date.now(),
           lastAt: Date.now(),
           count: (was.count || 0) + (stacked ? 1 : 0),
@@ -18979,7 +19032,9 @@ window.bumpDogam = async function () {
         onclick="document.getElementById('bp-dg').remove();window.mwVisitRoom&&window.mwVisitRoom('${b.uid}')">
         <div style="flex-shrink:0;width:42px">${window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 42) : ''}</div>
         <div style="min-width:0;flex:1">
-          <div style="font-family:'Galmuri14',sans-serif;font-size:13.5px;color:#fff">${(b.nick || '머피')}</div>
+          <div style="font-family:'Galmuri14',sans-serif;font-size:13.5px;color:#fff">${(b.nick || '머피')}${
+            (window._isBdayToday && window._isBdayToday(b.bday))
+              ? ' <span style="font-family:inherit;font-size:9.5px;font-weight:800;background:#F5C24B;color:#3a2a00;border-radius:20px;padding:2px 7px;vertical-align:2px">오늘 생일</span>' : ''}</div>
           <div style="font-size:11px;color:#8a93a8;margin-top:3px">
             첫 범프 ${fmt(b.firstAt || Date.now())}${b.place ? ' · ' + String(b.place).replace(/</g, '&lt;').slice(0, 16) : ''}</div>
         </div>
