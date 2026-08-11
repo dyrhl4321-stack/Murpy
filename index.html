@@ -8799,7 +8799,7 @@ if ('serviceWorker' in navigator) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
@@ -15525,7 +15525,18 @@ window.mwAskProfile = async function (uid, nick) {
 window.mwVisitRoom = async function (uid) {
   window._mwCtalkStop && window._mwCtalkStop();
   const me = auth.currentUser || window.currentUser;
-  let p = {}; try { const us = await getDoc(doc(db,'users',uid)); p = us.exists()?us.data():{}; } catch(e){}
+  // ★방은 **서버에서 강제로** 읽는다(대표 8-11: 방명록에서 들어가면 예전 방이 보였다).
+  //   Firestore 를 persistentLocalCache 로 쓰고 있어서, 그 사람 문서가 캐시에 남아 있으면
+  //   그 뒤에 방을 다시 꾸며도 옛 배치가 그대로 나온다. 저장 필드(users.room)는 맞았고
+  //   읽는 쪽이 낡은 사본을 본 것이다.
+  //   ★오프라인이면 getDocFromServer 가 던지므로 그때만 캐시본으로 떨어진다(안 그러면 방이 안 열린다).
+  let p = {};
+  try {
+    const us = await getDocFromServer(doc(db, 'users', uid));
+    p = us.exists() ? us.data() : {};
+  } catch (e) {
+    try { const us2 = await getDoc(doc(db, 'users', uid)); p = us2.exists() ? us2.data() : {}; } catch (e2) {}
+  }
   let el=document.getElementById('mw-wpanel'); if (el) el.remove();
   el=document.createElement('div'); el.id='mw-wpanel'; el.className='mw-wpanel'; document.body.appendChild(el);
   const nick = p.nickname || '머피';
