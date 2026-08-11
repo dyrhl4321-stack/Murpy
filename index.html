@@ -17578,8 +17578,27 @@ window.SQUAD_TYPES = {
   hyrox:    { name:'하이록스', v:1 },
   hiking:   { name:'등산',     v:1 },
 };
-window.squadFieldSrc = function (t) {
+// ===== 시간대별 필드 (대표 8-11) =====
+// 같은 러닝이어도 아침에 뛰는 것과 저녁에 뛰는 건 그림이 달라야 한다.
+// ★**있는 파일만** 여기 적는다. 안 적힌 조합은 기본 필드로 떨어진다 —
+//   없는 파일을 가리키면 카드 배경이 통째로 비어 보인다(404 는 조용히 실패한다).
+//   파일 이름 규칙: char/fields/field_{종목}_{am|day|pm}_wide.png
+window.SQUAD_FIELD_TOD = {
+  running: { am: 1 }        // 아침 러닝 (2026-08-11). 낮·저녁 버전이 오면 여기에 추가.
+};
+// 아침 05~10 / 낮 11~16 / 저녁 17~04
+window._sqTod = function (ms) {
+  const h = new Date(ms || Date.now()).getHours();
+  return (h >= 5 && h < 11) ? 'am' : (h < 17 ? 'day' : 'pm');
+};
+// whenMs 를 주면 그 시간대 필드를 찾고, 없으면 기본 필드. 안 주면 예전과 똑같이 동작한다.
+window.squadFieldSrc = function (t, whenMs) {
   const k = window.SQUAD_TYPES[t] ? t : 'gym';
+  if (whenMs != null) {
+    const tod = window._sqTod(whenMs);
+    const v = (window.SQUAD_FIELD_TOD[k] || {})[tod];
+    if (v) return 'char/fields/field_' + k + '_' + tod + '_wide.png?v=' + v;
+  }
   return 'char/fields/field_' + k + '_wide.png?v=' + window.SQUAD_TYPES[k].v;
 };
 window.SQUAD_LEVELS = { easy:'가볍게', mid:'중간', hard:'빡세게' };
@@ -17603,7 +17622,9 @@ window.SQUAD_CLASSES = [
   { id: 'mon_am_gym', name: '월요일 오전 헬스반', type: 'gym', weekday: 1, hour: 6, min: 30,
     durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
     memo: '한 주를 운동으로 여는 고정반이에요. 처음 오셔도 됩니다.' },
-  { id: 'wed_pm_run', name: '수요일 저녁 러닝반', type: 'run', weekday: 3, hour: 19, min: 30,
+  // ★type 은 SQUAD_TYPES 의 키와 정확히 같아야 한다(gym·running·golf·tennis·climbing·hyrox·hiking).
+  //   'run' 이라고 썼다가 필드가 헬스로 떨어졌다 — squadFieldSrc 가 모르는 키는 gym 으로 폴백한다.
+  { id: 'wed_pm_run', name: '수요일 저녁 러닝반', type: 'running', weekday: 3, hour: 19, min: 30,
     durH: 1.5, location: '한강공원', capacity: 8, level: '누구나',
     memo: '가볍게 5km. 페이스는 맞춰서 뜁니다.' },
   { id: 'sat_am_gym', name: '토요일 오전 헬스반', type: 'gym', weekday: 6, hour: 9, min: 0,
@@ -17673,7 +17694,7 @@ window.renderSquadHero = async function () {
       const when = WD[at.getDay()] + '요일 ' + String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
       const dday = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
       slides.push({
-        bg: window.squadFieldSrc ? window.squadFieldSrc(c.type) : '',
+        bg: window.squadFieldSrc ? window.squadFieldSrc(c.type, at.getTime()) : '',   // 그 회차 시간대 필드
         tag: dday === 0 ? '오늘' : (dday === 1 ? '내일' : 'D-' + dday),
         tagColor: dday <= 1 ? '#3dde7c' : '#7aa8ff',
         title: esc(c.name),
@@ -17852,7 +17873,7 @@ window.renderSquadPage = async function () {
       : '<span style="background:rgba(61,126,255,.2);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
     return `
     <div onclick="window.openSquadDetail('${s.id}')" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:12px;cursor:pointer;border:1px solid rgba(255,255,255,.08)">
-      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType, s.scheduledAt)}') center/cover"></div>
       <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.94) 0%,rgba(5,7,12,.78) 52%,rgba(5,7,12,.30) 100%)"></div>
       <div style="position:relative;padding:15px 16px;display:flex;flex-direction:column;gap:7px">
         <div style="display:flex;align-items:center;gap:7px">
@@ -18043,7 +18064,7 @@ window._sqRenderDetail = function () {
   const hero = document.getElementById('sq-d-hero');
   if (hero) hero.innerHTML = `
     <div style="position:relative;height:172px;overflow:hidden">
-      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType, s.scheduledAt)}') center/cover"></div>
       <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.55) 0%,rgba(5,7,12,.35) 45%,#05070c 100%)"></div>
       <button onclick="window._sqClose()" style="position:absolute;left:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:17px;cursor:pointer;width:36px;height:36px;border-radius:50%">←</button>
       <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
