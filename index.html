@@ -3949,7 +3949,8 @@ window.mwRenderBumpers = function (hostId) {
       return '<div onclick="window.mwVisitRoom&&window.mwVisitRoom(\'' + b.uid + '\')"'
         + ' style="flex-shrink:0;width:66px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer">'
         + '<div style="height:64px;display:flex;align-items:flex-end">' + ch + '</div>'
-        + '<div style="font-size:10.5px;color:#8a93a8;max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(b.nickname || '머피') + '</div>'
+        // ★필드명은 nick 이다(nickname 아님). 틀리면 전원이 '머피'로 보인다 — 실제로 그랬다(8-11)
+        + '<div style="font-size:10.5px;color:#8a93a8;max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(b.nick || b.nickname || '머피') + '</div>'
         + '</div>';
     }).join('')
     + '</div>';
@@ -3981,7 +3982,8 @@ window.charHubTab = function (name, btn) {
       // 유저 피드백 #20 — 범프한 사이는 여기서도 그 사람 방에 간다(일촌 개념).
       + '<div id="mw-bumpers" style="margin-top:22px"></div>';
     window.charRenderRoster();
-    window.mwRenderBumpers();
+    window.mwRenderBumpers();                                            // 일단 있는 걸로 즉시
+    if (window.mwSyncBumpers) window.mwSyncBumpers();                    // 최신값으로 다시(비동기)
   } else if (name === 'dress') {
     const body = (window._charDraft && window._charDraft.body) || 'human';
     panel.innerHTML =
@@ -15647,12 +15649,14 @@ window.mwGbLoad = async function (uid, listId) {
           border-radius:3px;padding:1px 5px;letter-spacing:.5px">범프</span>
         <span style="font-size:10.5px;color:#8a93a8">${día}${where?' · '+where:''}에서 만남</span></div>`;
     };
-    // ★유저 피드백 #20 — **범프한 사이면** 방명록에서 바로 그 사람 방으로 간다(일촌 개념).
-    //   범프가 아닌 글은 그냥 글이다(온라인으로 누구나 쓸 수 있어 '사이'가 아니다).
+    // ★유저 피드백 #20 — 방명록에서 그 사람 방으로 간다.
+    //   범프한 사이 = **카드 전체**가 눌린다(일촌이라 통째로 연다).
+    //   그냥 글쓴이 = **닉네임만** 눌린다(대표 8-11). 방명록에 글을 남긴 시점에
+    //   이미 자기를 드러낸 것이라 막을 이유가 없다. 다만 본문까지 눌리면 오작동이 잦다.
     //   ★옛 글에는 from 이 없을 수 있고, 내 글에는 갈 이유가 없으므로 둘 다 막는다.
     const goRoom = g => {
       const me = window.currentUser && window.currentUser.uid;
-      if (!g.bump || !g.from || (me && g.from === me)) return null;
+      if (!g.from || (me && g.from === me)) return null;
       return `window.mwVisitRoom&&window.mwVisitRoom('${String(g.from).replace(/'/g,'')}')`;
     };
     list.innerHTML = items.length ? items.map(g=> g.bump ? (function(){
@@ -15669,11 +15673,47 @@ window.mwGbLoad = async function (uid, listId) {
         ${go?`<div style="flex-shrink:0;align-self:center;display:flex;align-items:center;gap:3px;color:#8a93a8;font-size:10.5px;white-space:nowrap">방 보기<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>`:''}
       </div>`;})() : `
       <div class="mw-panel" style="padding:10px 12px;display:flex;gap:9px;align-items:baseline">
-        <b style="font-size:12px;color:#7aa4ff;flex-shrink:0">${g.fromNick||'머피'}</b>
+        ${(function(){const go=goRoom(g);const nm=(g.fromNick||'머피').replace(/</g,'&lt;');
+          return go?`<b onclick="${go}" style="font-size:12px;color:#7aa4ff;flex-shrink:0;cursor:pointer;text-decoration:underline;text-underline-offset:2px">${nm}</b>`
+                   :`<b style="font-size:12px;color:#7aa4ff;flex-shrink:0">${nm}</b>`;})()}
         <span style="font-size:12.5px;color:#e7ecf6;line-height:1.5;word-break:break-all">${(g.text||'').replace(/</g,'&lt;')}</span>
       </div>`).join('')
       : '<div style="color:#4a5266;font-size:12px;text-align:center;padding:10px">첫 방명록의 주인공이 되어보세요!</div>';
   } catch(e){ list.innerHTML='<div style="color:#4a5266;font-size:12px;text-align:center;padding:10px">방명록을 불러오지 못했어요</div>'; }
+};
+// ===== 범퍼 스냅샷 새로고침 (대표 8-11) =====
+// bumpers 에 든 닉네임·캐릭터는 **범프한 순간의 사본**이라 시간이 지나면 낡는다.
+//   - 닉네임을 나중에 정한 사람 → 전원 '머피'로 보인다
+//   - 헤어가 붙기 전(빡빡이 시절)에 만난 사람 → 계속 빡빡이로 보인다
+// 남의 문서는 못 고치니, **내 문서 안의 사본을 현재 값으로 덮어쓰는 것**이 유일한 방법이다.
+// ★화면에 보이는 만큼(최근 12명)만 읽는다. 전부 읽으면 범퍼 수만큼 조회가 나간다.
+window.mwSyncBumpers = async function (hostId) {
+  const me = auth.currentUser || window.currentUser; if (!me) return;
+  try {
+    const us = await getDoc(doc(db, 'users', me.uid));
+    if (!us.exists()) return;
+    const map = Object.assign({}, us.data().bumpers || {});
+    const keys = Object.keys(map);
+    if (!keys.length) return;
+    const recent = keys.map(k => ({ k, at: map[k].lastAt || 0 }))
+      .sort((a, b) => b.at - a.at).slice(0, 12).map(x => x.k);
+    const snaps = await Promise.all(recent.map(u => getDoc(doc(db, 'users', u)).catch(() => null)));
+    let changed = false;
+    snaps.forEach((s, i) => {
+      if (!s || !s.exists()) return;
+      const d = s.data(), k = recent[i], cur = map[k] || {};
+      const nick = d.nickname || cur.nick || '머피';
+      const ch = d.character || cur.character || null;
+      if (nick !== cur.nick || JSON.stringify(ch) !== JSON.stringify(cur.character || null)) {
+        map[k] = Object.assign({}, cur, { nick: nick, character: ch });
+        changed = true;
+      }
+    });
+    window._cachedProfile = Object.assign({}, window._cachedProfile || {}, { bumpers: map });
+    // 고쳐진 사본을 내 문서에 남긴다 → 범프 도감도 다음부터 제대로 보인다
+    if (changed) { try { await setDoc(doc(db, 'users', me.uid), { bumpers: map }, { merge: true }); } catch (e) {} }
+    if (window.mwRenderBumpers) window.mwRenderBumpers(hostId);
+  } catch (e) {}
 };
 // 프로필 머피 탭용 — 내 방의 TODAY 방문수 + 내가 받은 방명록
 window.mwMyRoomStat = async function () {
@@ -15690,7 +15730,8 @@ window.mwMyRoomStat = async function () {
       if (us.exists()) window._cachedProfile = Object.assign({}, window._cachedProfile || {}, us.data());
     }
   } catch (e) {}
-  if (window.mwRenderBumpers) window.mwRenderBumpers('my-mw-bumpers');
+  if (window.mwRenderBumpers) window.mwRenderBumpers('my-mw-bumpers');   // 일단 있는 걸로 즉시
+  window.mwSyncBumpers('my-mw-bumpers');                                 // 최신값으로 다시(비동기)
   window.mwGbLoad(me.uid, 'my-mw-gb');
 };
 window.mwGbWrite = async function (uid) {
@@ -18450,8 +18491,10 @@ async function bpSaveBumper(other, place) {
     await setDoc(doc(db, 'users', user.uid), {
       bumpers: Object.assign({}, prev, {
         [other.uid]: {
-          nick: other.nick || '머피',
-          character: was.character || ch,
+          // ★현재 값을 우선한다. 예전엔 `was.character || ch` 라 **첫 범프 때 모습으로 굳어**
+          //   빡빡이 시절에 만난 사람은 영영 빡빡이로 남았다(대표 8-11 지적).
+          nick: other.nick || was.nick || '머피',
+          character: ch || was.character,
           firstAt: was.firstAt || Date.now(),
           lastAt: Date.now(),
           count: (was.count || 0) + (stacked ? 1 : 0),
@@ -18772,8 +18815,13 @@ window.bumpDogam = async function () {
     <div id="bp-dg-body" style="color:#8a93a8;font-size:12.5px;text-align:center;padding:30px 0">불러오는 중…</div>`;
   document.body.appendChild(el);
   try {
-    const us = await getDoc(doc(db, 'users', user.uid));
-    const map = (us.exists() && us.data().bumpers) || {};
+    // 저장된 사본이 낡아 있을 수 있다(닉네임 '머피'·빡빡이) → 먼저 최신값으로 맞춘다
+    if (window.mwSyncBumpers) { try { await window.mwSyncBumpers(); } catch (e) {} }
+    let map = (window._cachedProfile && window._cachedProfile.bumpers) || null;
+    if (!map) {
+      const us = await getDoc(doc(db, 'users', user.uid));
+      map = (us.exists() && us.data().bumpers) || {};
+    }
     const list = Object.keys(map).map(k => Object.assign({ uid: k }, map[k]))
       .sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
     const body = document.getElementById('bp-dg-body'); if (!body) return;
