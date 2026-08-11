@@ -17638,9 +17638,12 @@ window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무�
 //   다음 회차는 **화면에서 계산**하고, 누가 참가를 누르는 순간에만 진짜 스쿼드 문서를 만든다.
 //   그래서 아무도 안 눌러도 목록은 차 있고, 빈 스쿼드가 DB에 쌓이지도 않는다.
 // ★고치는 법: 아래 배열만 손보면 된다. weekday 0=일 ~ 6=토.
+// ★img 를 주면 종목 필드 대신 그 사진을 쓴다. 실제 활동 사진이 필드보다 훨씬 세다(대표 8-11).
+//   규격 1080x415(2.6:1) · 왼쪽 55%는 어두워야 한다(제목·부제가 거기 얹힌다).
 window.SQUAD_CLASSES = [
   { id: 'mon_am_gym', name: '월요일 오전 헬스반', type: 'gym', weekday: 1, hour: 6, min: 30,
     durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
+    img: 'char/promo/ad_gym_morning.jpg?v=1',
     memo: '한 주를 운동으로 여는 고정반이에요. 처음 오셔도 됩니다.' },
   // ★type 은 SQUAD_TYPES 의 키와 정확히 같아야 한다(gym·running·golf·tennis·climbing·hyrox·hiking).
   //   'run' 이라고 썼다가 필드가 헬스로 떨어졌다 — squadFieldSrc 가 모르는 키는 gym 으로 폴백한다.
@@ -17650,6 +17653,20 @@ window.SQUAD_CLASSES = [
   { id: 'sat_am_gym', name: '토요일 오전 헬스반', type: 'gym', weekday: 6, hour: 9, min: 0,
     durH: 2, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
     memo: '주말 오전에 몰아서. 끝나고 커피 한 잔.' }
+];
+// ===== 광고 카드 (실제 활동 사진) =====
+// ★대표 8-11: "AI로 뽑은 것보다 실제 활동 멤버 실사 사진이 훨씬 낫다."
+//   사진은 char/promo/ 에 1080x415(2.6:1)로 넣는다. 왼쪽 55%는 어두워야 글씨가 읽힌다.
+//   href 를 주면 누를 때 그리로 나간다(근방단 인스타 게시물 등).
+// ★지금은 코드 상수다 — 대표가 직접 올리는 관리자 화면이 붙으면 그쪽으로 옮긴다.
+window.SQUAD_ADS = [
+  { img: 'char/promo/ad_dance.jpg?v=1', tag: '근방단', title: '춤벙, 이번에도 열립니다',
+    sub: '해본 적 없어도 됩니다 · 근방단 정기 모임', cta: '보러가기',
+    href: 'https://www.instagram.com/gbd_project' },
+  { img: 'char/promo/ad_hiking.jpg?v=1', tag: '등산', title: '주말 아침, 산에서 만나요',
+    sub: '천천히 올라가고 위에서 같이 밥 먹어요', cta: '스쿼드 열기' },
+  { img: 'char/promo/ad_climbing.jpg?v=1', tag: '클라이밍', title: '오늘 클라이밍 같이 하실 분',
+    sub: '초보 환영 · 신발만 빌리면 시작돼요', cta: '스쿼드 열기' }
 ];
 // 다음 회차 시각. 오늘이 그 요일이어도 **이미 지났으면 다음 주**로 넘긴다.
 window._sqNextOcc = function (cls) {
@@ -17714,7 +17731,7 @@ window.renderSquadHero = async function () {
       const when = WD[at.getDay()] + '요일 ' + String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
       const dday = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
       slides.push({
-        bg: window.squadFieldSrc ? window.squadFieldSrc(c.type, at.getTime()) : '',   // 그 회차 시간대 필드
+        bg: c.img || (window.squadFieldSrc ? window.squadFieldSrc(c.type, at.getTime()) : ''),   // 사진 있으면 사진, 없으면 시간대 필드
         tag: dday === 0 ? '오늘' : (dday === 1 ? '내일' : 'D-' + dday),
         tagColor: dday <= 1 ? '#3dde7c' : '#7aa8ff',
         title: esc(c.name),
@@ -17741,7 +17758,18 @@ window.renderSquadHero = async function () {
     });
   } catch (e) { /* 체크인을 못 읽어도 정기반 슬라이드는 뜬다 */ }
 
-  // 3) 처음 온 사람에게 — 우리가 뭐가 다른지 한 장
+  // 3) 광고 카드 — 실제 활동 사진. 지금은 코드 상수지만 곧 관리자 화면에서 등록하게 바꾼다.
+  //    ★href 가 있으면 그리로 보내고(인스타 게시물 등), 없으면 스쿼드 만들기로 보낸다.
+  (window.SQUAD_ADS || []).forEach(function (a) {
+    slides.push({
+      bg: a.img, tag: a.tag || '근방단', tagColor: a.tagColor || '#F5C24B',
+      title: esc(a.title), sub: esc(a.sub), cta: a.cta || '보러가기',
+      click: a.href ? ("window.open('" + a.href + "','_blank','noopener')")
+                    : 'window.openSquadCreate&&window.openSquadCreate()'
+    });
+  });
+
+  // 4) 처음 온 사람에게 — 우리가 뭐가 다른지 한 장
   slides.push({
     bg: window.squadFieldSrc ? window.squadFieldSrc('gym') : '',
     tag: '머피 범프', tagColor: '#F5C24B',
