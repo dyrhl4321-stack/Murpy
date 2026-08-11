@@ -19138,9 +19138,7 @@ window.openSquadDetail = function (sid) {
   el.innerHTML = `
     <div id="sq-d-hero" style="position:relative;flex-shrink:0"></div>
     <div style="padding:0 16px calc(26px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px">
-      <!-- ★필드는 화면 위에 **고정(sticky)** 이다(대표 8-11). 채팅을 치면 키보드가 올라오면서
-           필드가 위로 밀려 사라졌다 — 말풍선을 보려고 만든 건데 정작 필드가 안 보였다.
-           고정해두면 톡방까지 내려가 있어도 필드가 계속 화면 위에 남는다. -->
+      <!-- 필드는 화면 위에 붙어 있는다(sticky) — 톡이나 멤버까지 내려가도 말풍선이 계속 보이게 -->
       <div id="sq-room-wrap" style="margin-top:14px;position:sticky;top:0;z-index:4;background:#05070c;padding-bottom:8px">
         <div id="sq-room-stage"></div>
         <div id="sq-quick-wrap"></div>
@@ -19479,7 +19477,7 @@ window._sqTalkOpen = function () {
     <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
     <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
       <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
-      <button id="sq-chat-send" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
+      <button id="sq-chat-send" onmousedown="event.preventDefault()" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
     </div>`;
   const host = document.getElementById('sq-detail') || document.body;
   host.appendChild(el);
@@ -19689,16 +19687,37 @@ window._sqQuickBar = function (s) {
     + 'outline:none;font-family:inherit;border-radius:0"'
     + ' onkeydown="if(event.key===\'Enter\')window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')">'
     // 고정 토글 — 켜면 내 말풍선이 안 사라진다(켜져 있으면 골드)
-    + '<button id="sq-quick-pin" onclick="window.sqBubblePinToggle()" aria-label="말풍선 고정"'
+    + '<button id="sq-quick-pin" onmousedown="event.preventDefault()" onclick="window.sqBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
     + (window._sqBubblePin ? 'background:#F5C24B;color:#3a2a00;' : 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);')
     + "border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:0;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">고정</button>"
-    + '<button onclick="window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')"'
+    // ★onmousedown 을 막아야 한다 — 안 막으면 버튼을 누르는 순간 입력칸이 포커스를 잃고
+    //   키보드가 내려갔다 올라오면서 **화면이 한 번 들썩인다**(대표 8-11).
+    + '<button onmousedown="event.preventDefault()" onclick="window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;background:var(--accent);border:2px solid #05070c;'
     + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">말하기</button>";
   host.appendChild(bar);
+  window._sqNoJump(document.getElementById('sq-quick-input'));
+};
+// ★키보드가 올라올 때 화면이 들썩이던 것(대표 8-11).
+//   원인은 브라우저의 기본 동작이다 — 입력칸에 포커스가 가면 **그 칸을 보이게 하려고 스크롤**한다.
+//   이미 보이는 자리에 있어도 한 번 튄다. 그래서 **포커스 직후 스크롤 위치를 원래대로 되돌린다.**
+//   한 프레임에 끝나지 않고(키보드 애니메이션 동안 여러 번 조정된다) 잠깐 붙잡고 있어야 한다.
+window._sqNoJump = function (input) {
+  if (!input || input._noJump) return;
+  input._noJump = true;
+  input.addEventListener('focus', function () {
+    const sc = document.getElementById('sq-detail'); if (!sc) return;
+    const keep = sc.scrollTop;
+    let n = 0;
+    const hold = function () {
+      if (sc.scrollTop !== keep) sc.scrollTop = keep;
+      if (++n < 40) requestAnimationFrame(hold);      // 약 0.6초간 붙잡는다
+    };
+    requestAnimationFrame(hold);
+  });
 };
 window._sqRoomInit = function (s) {
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
