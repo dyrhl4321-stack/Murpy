@@ -17712,10 +17712,21 @@ window.renderSquadHero = async function () {
 
   window._sqHeroSlides = slides;
   if (window._sqHeroI >= slides.length) window._sqHeroI = 0;
+  // ★진짜 가로 슬라이드다(대표 8-11) — 겹쳐놓고 페이드가 아니라 **카드가 옆에서 밀려 들어온다.**
+  //   트랙 하나를 translateX 로 옮긴다. 손가락으로 끌어서 넘기는 것도 된다.
+  // ★카드가 **각각 따로** 있고 옆 카드가 살짝 보이면서 밀려온다(대표 8-11).
+  //   한 액자 안에서 내용만 바뀌는 게 아니라, 카드 자체가 넘어가는 게 보여야 한다.
+  //   카드 폭 SQ_W%, 사이 간격 SQ_G px → i 번째 위치 = i*(SQ_W% + SQ_G px)
+  // ★dx(끌고 있는 거리)는 **calc 안에** 더해야 한다. 밖에 붙이면 translateX(calc(..) + -40px)
+  //   같은 잘못된 CSS 가 되어 조용히 아무 일도 안 일어난다.
+  const SQ_W = 86, SQ_G = 10;
+  const off = (i, dx) => 'translateX(calc(-' + (i * SQ_W) + '% - ' + (i * SQ_G - (dx || 0)) + 'px))';
+  window._sqHeroOff = off;
   host.innerHTML =
-    '<div id="sq-hero-vp" style="position:relative;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.08);height:132px">'
+    '<div id="sq-hero-vp" style="position:relative;overflow:hidden;touch-action:pan-y">'
+    + '<div id="sq-hero-track" style="display:flex;gap:' + SQ_G + 'px;will-change:transform;transform:' + off(window._sqHeroI) + ';transition:transform .45s cubic-bezier(.25,.46,.45,.94)">'
     + slides.map((s, i) =>
-      '<div class="sq-hero-s" data-i="' + i + '" onclick="' + s.click + '" style="position:absolute;inset:0;cursor:pointer;opacity:' + (i === window._sqHeroI ? '1' : '0') + ';transition:opacity .5s ease;pointer-events:' + (i === window._sqHeroI ? 'auto' : 'none') + '">'
+      '<div class="sq-hero-s" data-i="' + i + '" onclick="' + s.click + '" style="flex:0 0 ' + SQ_W + '%;position:relative;height:132px;cursor:pointer;overflow:hidden;border-radius:16px;border:1px solid rgba(255,255,255,.08);transition:opacity .35s;opacity:' + (i === window._sqHeroI ? '1' : '.55') + '">'
       + (s.bg ? '<div style="position:absolute;inset:0;background:url(\'' + s.bg + '\') center/cover"></div>' : '')
       + '<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.95) 0%,rgba(5,7,12,.8) 55%,rgba(5,7,12,.35) 100%)"></div>'
       + '<div style="position:relative;padding:15px 16px;height:100%;display:flex;flex-direction:column;justify-content:center;gap:6px">'
@@ -17724,32 +17735,84 @@ window.renderSquadHero = async function () {
       +   '<div style="font-size:12px;color:rgba(255,255,255,.55);line-height:1.4">' + s.sub + '</div>'
       +   '<div style="position:absolute;right:14px;bottom:14px;background:var(--accent);color:#fff;border-radius:20px;padding:7px 14px;font-size:12px;font-weight:800">' + s.cta + '</div>'
       + '</div></div>').join('')
-    + '<div style="position:absolute;left:16px;bottom:12px;display:flex;gap:5px;z-index:2">'
-    + slides.map((_, i) => '<i class="sq-hero-d" data-i="' + i + '" style="width:' + (i === window._sqHeroI ? '14px' : '5px') + ';height:5px;border-radius:3px;background:rgba(255,255,255,' + (i === window._sqHeroI ? '.9' : '.3') + ');transition:all .3s;display:block"></i>').join('')
+    + '</div>'
+    + '<div style="display:flex;gap:5px;justify-content:center;margin-top:10px">'
+    + slides.map((_, i) => '<i class="sq-hero-d" data-i="' + i + '" style="width:' + (i === window._sqHeroI ? '14px' : '5px') + ';height:5px;border-radius:3px;background:rgba(255,255,255,' + (i === window._sqHeroI ? '.9' : '.22') + ');transition:all .3s;display:block"></i>').join('')
     + '</div></div>';
+  window._sqHeroBindSwipe();
   window._sqHeroStart();
+};
+// 트랙을 n 번째로 민다.
+window._sqHeroGo = function (n, animate) {
+  const slides = window._sqHeroSlides || [];
+  if (!slides.length) return;
+  window._sqHeroI = (n + slides.length) % slides.length;
+  const tr = document.getElementById('sq-hero-track');
+  if (tr && window._sqHeroOff) {
+    tr.style.transition = animate === false ? 'none' : 'transform .45s cubic-bezier(.25,.46,.45,.94)';
+    tr.style.transform = window._sqHeroOff(window._sqHeroI);
+  }
+  const vp = document.getElementById('sq-hero-vp');
+  if (!vp) return;
+  // 지금 카드만 또렷하게 — 옆에 걸친 카드는 흐리게 둬야 '다음 게 있다'가 보인다
+  vp.querySelectorAll('.sq-hero-s').forEach(function (el) {
+    el.style.opacity = (String(window._sqHeroI) === el.dataset.i) ? '1' : '.55';
+  });
+  vp.querySelectorAll('.sq-hero-d').forEach(function (el) {
+    const on = String(window._sqHeroI) === el.dataset.i;
+    el.style.width = on ? '14px' : '5px';
+    el.style.background = 'rgba(255,255,255,' + (on ? '.9' : '.22') + ')';
+  });
+};
+// 손가락으로 끌어서 넘기기. 세로 스크롤과 안 싸우게 처음 방향을 보고 가로일 때만 가로챈다.
+window._sqHeroBindSwipe = function () {
+  const vp = document.getElementById('sq-hero-vp'); if (!vp || vp._bound) return;
+  vp._bound = true;
+  let x0 = 0, y0 = 0, dx = 0, dir = 0, on = false;
+  vp.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; dir = 0; on = true;
+    clearInterval(window._sqHeroT);                 // 만지는 동안엔 자동 넘김을 멈춘다
+  }, { passive: true });
+  vp.addEventListener('touchmove', function (e) {
+    if (!on) return;
+    const ax = e.touches[0].clientX - x0, ay = e.touches[0].clientY - y0;
+    if (!dir) {
+      if (Math.abs(ax) < 8 && Math.abs(ay) < 8) return;
+      dir = Math.abs(ax) > Math.abs(ay) ? 1 : -1;
+    }
+    if (dir !== 1) return;
+    dx = ax;
+    if (e.cancelable) e.preventDefault();
+    const tr = document.getElementById('sq-hero-track');
+    if (tr && window._sqHeroOff) {
+      tr.style.transition = 'none';
+      tr.style.transform = window._sqHeroOff(window._sqHeroI, dx);
+    }
+  }, { passive: false });
+  const end = function () {
+    if (!on) return;
+    on = false;
+    if (dir === 1 && Math.abs(dx) > 50) window._sqHeroGo(window._sqHeroI + (dx < 0 ? 1 : -1));
+    else window._sqHeroGo(window._sqHeroI);
+    dx = 0; dir = 0;
+    window._sqHeroStart();                          // 손 떼면 다시 자동으로
+  };
+  vp.addEventListener('touchend', end);
+  vp.addEventListener('touchcancel', end);
+  // 끌고 나서 손 뗀 자리의 카드가 눌리는 것을 막는다
+  vp.addEventListener('click', function (e) { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); } }, true);
 };
 // 4초마다 다음 장. 탭을 벗어나면 멈춘다(안 멈추면 백그라운드에서 계속 돈다).
 window._sqHeroStart = function () {
   clearInterval(window._sqHeroT);
-  const slides = window._sqHeroSlides || [];
-  if (slides.length < 2) return;
+  if ((window._sqHeroSlides || []).length < 2) return;
   window._sqHeroT = setInterval(function () {
-    const host = document.getElementById('sq-hero-vp');
-    if (!host || !document.getElementById('page-crew') || !document.getElementById('page-crew').classList.contains('active')) {
+    const pg = document.getElementById('page-crew');
+    if (!document.getElementById('sq-hero-track') || !pg || !pg.classList.contains('active')) {
       clearInterval(window._sqHeroT); return;
     }
-    window._sqHeroI = (window._sqHeroI + 1) % slides.length;
-    host.querySelectorAll('.sq-hero-s').forEach(function (el) {
-      const on = String(window._sqHeroI) === el.dataset.i;
-      el.style.opacity = on ? '1' : '0';
-      el.style.pointerEvents = on ? 'auto' : 'none';
-    });
-    host.querySelectorAll('.sq-hero-d').forEach(function (el) {
-      const on = String(window._sqHeroI) === el.dataset.i;
-      el.style.width = on ? '14px' : '5px';
-      el.style.background = 'rgba(255,255,255,' + (on ? '.9' : '.3') + ')';
-    });
+    window._sqHeroGo(window._sqHeroI + 1);
   }, 4000);
 };
 
