@@ -18135,7 +18135,7 @@ window.sqClassPreview = function (clsId) {
       <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
           <span style="background:rgba(255,255,255,.14);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
-          <span style="background:rgba(245,194,75,.16);color:#F5C24B;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">정기반</span>
+          <span style="background:rgba(61,126,255,.18);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">정기반</span>
         </div>
         <div style="font-size:19px;font-weight:800;color:#fff">${esc(c.name)}</div>
       </div>
@@ -18370,7 +18370,9 @@ window.renderSquadHero = async function () {
         bg: live ? window._sqImgSrc(live)
                  : (c.img || (window.squadFieldSrc ? window.squadFieldSrc(c.type, at.getTime()) : '')),
         tag: dday === 0 ? '오늘' : (dday === 1 ? '내일' : 'D-' + dday),
-        tagColor: dday <= 1 ? '#3dde7c' : '#7aa8ff',
+        // ★색은 뜻이 있을 때만 쓴다(대표 8-11: 골드·파랑·초록이 뒤섞여 개판). 초록 = '지금/곧'.
+        //   D-7 같은 건 급할 게 없으니 중립으로 둔다 — 파랑까지 쓰면 카드마다 색이 세 개가 된다.
+        tagColor: dday <= 1 ? '#3dde7c' : 'rgba(255,255,255,.8)',
         title: esc(live ? live.title : c.name),
         sub: when + ' · ' + esc(live ? live.location : c.location),
         cta: '참가하기',
@@ -18409,7 +18411,9 @@ window.renderSquadHero = async function () {
   } catch (e) { /* 규칙이 아직 없으면 조용히 건너뛴다 */ }
   admin.concat(window.SQUAD_ADS || []).forEach(function (a) {
     slides.push({
-      bg: a.img, tag: a.tag || '근방단', tagColor: a.tagColor || '#F5C24B',
+      // 광고 태그는 '요가'·'근방단' 같은 **분류 이름**이다. 골드는 돈(머피·참가비) 자리이므로
+      // 여기 쓰면 안 된다 — 값이 붙은 것처럼 보인다.
+      bg: a.img, tag: a.tag || '근방단', tagColor: a.tagColor || 'rgba(255,255,255,.85)',
       title: esc(a.title), sub: esc(a.sub), cta: a.cta || '보러가기',
       // ★제목이 비어 있으면 **그림만** 보여준다 — 대표가 글씨까지 넣어 디자인한 카드는
       //   위에 또 얹으면 두 겹이 된다(레퍼런스가 그런 형태다).
@@ -18634,31 +18638,41 @@ window.renderSquadPage = async function () {
     const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
     const n = (s.memberUids||[]).length, full = n >= s.capacity;
     const live = now >= s.scheduledAt && now < (s.expiresAt||0);
+    // ★색 정리(대표 8-11). 한 카드에 색이 세 개씩 뜨던 것을 **뜻 있는 것만** 남긴다.
+    //   초록 = 지금 하는 중(LIVE) · 파랑 = 분류/인원 · 골드 = 돈 · 나머지는 전부 무채색.
+    //   '모집중'은 지웠다 — 대부분의 카드가 모집중이라 파란 칩이 도배됐고,
+    //   옆의 인원(3/8)이 같은 말을 이미 하고 있다.
     const chip = live
       ? '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(61,222,124,.16);color:#3dde7c;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700"><i style="width:6px;height:6px;border-radius:50%;background:#3dde7c;animation:mwBlink 1.1s steps(2) infinite"></i>LIVE</span>'
       : full ? '<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">마감</span>'
-      : '<span style="background:rgba(61,126,255,.2);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
+      : '';
     // 정기반 가짜 줄은 누르는 순간 진짜 벙이 만들어진다(sqOpenClass)
     // 가짜 줄(아직 문서 없는 정기반 회차)은 미리보기로 — 누른다고 벙이 생기면 안 된다
     const go = s._cls ? `window.sqClassPreview('${s._cls}')` : `window.openSquadDetail('${s.id}')`;
-    const clsChip = s._cls || s.classId
-      ? '<span style="background:rgba(245,194,75,.16);color:#F5C24B;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">정기반</span>' : '';
+    // ★'정기반' 칩은 뺐다(대표 8-11). 우리만 아는 말이라 남이 연 스쿼드가 섞이기 시작하면
+    //   "이건 뭐지"가 된다. 강조가 필요하면 칩이 아니라 **테두리·상단 노출**로 하는 게 맞다.
+    // ★사진이 주인공이 되게 다듬었다(대표 8-11 "색 배치가 개판").
+    //   ①왼쪽만 눌러 글씨를 받치고 오른쪽은 사진을 살린다(예전 .94/.78/.30 은 사진을 통째로 죽였다)
+    //   ②정보 위계 = 제목 > 시간 > 장소. 예전엔 시간·장소가 같은 밝기라 다 읽어야 했다
+    //   ③색은 딱 세 자리 — LIVE(초록) · 인원(파랑) · 참가비(골드). 나머지는 전부 무채색
     return `
-    <div onclick="${go}" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:12px;cursor:pointer;border:1px solid rgba(255,255,255,.08)">
+    <div onclick="${go}" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:11px;cursor:pointer;border:1px solid rgba(255,255,255,.07)">
       <div style="position:absolute;inset:0;background:url('${window._sqImgSrc(s)}') center/cover"></div>
-      <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.94) 0%,rgba(5,7,12,.78) 52%,rgba(5,7,12,.30) 100%)"></div>
-      <div style="position:relative;padding:15px 16px;display:flex;flex-direction:column;gap:7px">
-        <div style="display:flex;align-items:center;gap:7px">
-          <span style="background:rgba(255,255,255,.12);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
-          ${clsChip}${chip}
-          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${full?'rgba(255,255,255,.45)':'#7aa8ff'};font-weight:700">
+      <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.93) 0%,rgba(5,7,12,.74) 46%,rgba(5,7,12,.18) 100%)"></div>
+      <div style="position:relative;padding:14px 15px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="background:rgba(255,255,255,.13);color:rgba(255,255,255,.92);border-radius:20px;padding:3px 9px;font-size:10.5px;font-weight:700">${t.name}</span>
+          ${chip}
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:${full?'rgba(255,255,255,.4)':'#7aa8ff'};font-weight:700">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}</span>
         </div>
-        <div style="font-size:15.5px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.title||'').replace(/</g,'&lt;')}</div>
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cfd6e6">
-          <span>${window._sqFmtTime(s.scheduledAt)}</span><span style="color:rgba(255,255,255,.25)">·</span>
-          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${(s.location||'미정').replace(/</g,'&lt;')}</span>
-          <span style="margin-left:auto;font-weight:700;color:${s.feeAmount>0?'#F5C24B':'#3dde7c'}">${window._sqFmtFee(s.feeAmount)}</span>
+        <div style="font-size:16px;font-weight:800;color:#fff;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.title||'').replace(/</g,'&lt;')}</div>
+        <div style="display:flex;align-items:baseline;gap:7px;font-size:12px">
+          <span style="color:rgba(255,255,255,.88);font-weight:600">${window._sqFmtTime(s.scheduledAt)}</span>
+          <span style="color:rgba(255,255,255,.55);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px">${(s.location||'미정').replace(/</g,'&lt;')}</span>
+          <!-- 무료가 초록이었다. 초록은 'LIVE(지금 하는 중)' 자리고, 무료는 자랑할 정보가 아니라
+               기본값이다 → 조용한 회색. 돈이 드는 것만 골드로 눈에 띄게. -->
+          <span style="margin-left:auto;font-weight:700;flex-shrink:0;color:${s.feeAmount>0?'#F5C24B':'rgba(255,255,255,.38)'}">${window._sqFmtFee(s.feeAmount)}</span>
         </div>
       </div>
     </div>`;
