@@ -1529,6 +1529,12 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 12h20"/></svg>
         스쿼드 광고 카드 (관리자)
       </button>
+      <!-- ★관리자 매칭 전체보기. 켜면 실사용자와 **다른 화면**을 보게 된다(이미 매칭된 사람도 뜨고,
+           하루 5명 제한도 없어져 '오늘의 추천 끝'이 안 뜬다). 홍보 스크린샷용이라 기본은 꺼짐. -->
+      <button id="match-seeall-btn" onclick="window.toggleMatchSeeAll && window.toggleMatchSeeAll()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        매칭 전체보기: 꺼짐 (실사용자와 동일)
+      </button>
     </div>
     <div id="my-photos" style="display:none">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 프로필 인증에도 쓰여요.</div>
@@ -8236,8 +8242,28 @@ window.isMatchTester = function () {
 //   8-05에 대표가 불편하다고 해 비운 것이다. 여기서는 **보이기만** 되돌린다 —
 //   좋아요를 보내면 관리자도 실사용자처럼 카드가 정상적으로 넘어간다.
 // 쓰임새: 홍보용 스크린샷, 매칭 카드 점검. 관리자 계정에서만 참이다.
+// ★★기본은 **꺼짐**이다(대표 8-11). 켜져 있는 동안 관리자 계정은 실사용자와 전혀 다른 화면을 본다:
+//   ①이미 매칭된 사람이 계속 뜬다 ②하루 5명 제한이 없어서 **'오늘의 추천 끝' 화면이 영영 안 뜬다**
+//   ③점수순 그대로라 **매번 같은 사람이 첫 카드**로 나온다.
+//   대표가 "매칭이 안 도는 것 같다"고 본 증상이 전부 이것 때문이었다 — 기능은 정상인데
+//   관리자 화면만 달랐다. 홍보 스크린샷이 필요할 때만 마이페이지에서 켠다.
 window.isMatchSeeAll = function () {
-  return !!(typeof isAdmin === 'function' && isAdmin());
+  if (!(typeof isAdmin === 'function' && isAdmin())) return false;
+  try { return localStorage.getItem('murpy_match_seeall') === '1'; } catch (e) { return false; }
+};
+window.toggleMatchSeeAll = function () {
+  let on = false;
+  try {
+    on = localStorage.getItem('murpy_match_seeall') !== '1';
+    localStorage.setItem('murpy_match_seeall', on ? '1' : '0');
+  } catch (e) {}
+  const b = document.getElementById('match-seeall-btn');
+  // ★textContent 로 통째로 바꾸면 안의 아이콘(svg)까지 지워진다 — 마지막 글자 노드만 갈아끼운다
+  if (b && b.lastChild) b.lastChild.textContent = on ? ' 매칭 전체보기: 켜짐 (실사용자와 다르게 보임) ' : ' 매칭 전체보기: 꺼짐 (실사용자와 동일) ';
+  if (window.showToast) showToast(on ? '전체보기를 켰어요 · 실사용자 화면과 달라져요' : '전체보기를 껐어요 · 실사용자와 똑같이 보여요');
+  window.loadMatchCandidates && window.loadMatchCandidates().then(function () {
+    window.renderMatch && window.renderMatch();
+  });
 };
 
 // 생활권(구) → 포함 동네 매핑. 동네명으로 저장돼도 권역 필터에 잡히게
@@ -8925,6 +8951,13 @@ window.updateUI = function(user) {
     if (centerFixBtn) centerFixBtn.style.display = _adm ? 'flex' : 'none';
     const bannerBtn = document.getElementById('banner-admin-btn');
     if (bannerBtn) bannerBtn.style.display = _adm ? 'flex' : 'none';
+    const seeAllBtn = document.getElementById('match-seeall-btn');
+    if (seeAllBtn) {
+      seeAllBtn.style.display = _adm ? 'flex' : 'none';
+      let _on = false; try { _on = localStorage.getItem('murpy_match_seeall') === '1'; } catch (e) {}
+      const _lbl = seeAllBtn.lastChild;
+      if (_lbl) _lbl.textContent = _on ? ' 매칭 전체보기: 켜짐 (실사용자와 다르게 보임) ' : ' 매칭 전체보기: 꺼짐 (실사용자와 동일) ';
+    }
     if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
@@ -10753,6 +10786,14 @@ window.showUsageStats = async function () {
       Object.keys(axes).forEach(k => { totals[k] += (m[season][k] | 0); });
     });
   });
+  // ★매칭성사가 늘 0이었다(대표 8-11). monthly.matchOk 는 **대숲 '저에요' 수락에서만** 올라가고
+  //   정작 매칭 탭에서 서로 좋아요해서 성사된 건 한 번도 안 올렸다.
+  //   적립 자체는 아래 sendLike 에서 고쳤지만, 지난 성사분은 소급이 안 된다
+  //   → 통계는 **matches 문서 수를 직접 센다.** 그게 진짜 값이다.
+  try {
+    const ms = await getDocs(collection(db, 'matches'));
+    totals.matchOk = ms.size;
+  } catch (e) { console.warn('matches count', e); }
 
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const maxD = Math.max(1, ...dau);
@@ -11364,6 +11405,9 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
       const myNick = (window._cachedProfile && window._cachedProfile.nickname) || window.currentUser.nickname || '운동 메이트';
       const myPhoto = (window._cachedProfile && window._cachedProfile.photoURL) || window.currentUser.photoURL || '';
       try { await addDoc(collection(db, 'notifications'), { toUid, fromUid: me, fromNickname: myNick, fromPhoto: myPhoto, type: 'match', read: false, createdAt: serverTimestamp() }); } catch (e) {}
+      // ★매칭 성사 적립이 여기 없었다(대표 8-11: 관리자 통계의 '매칭성사'가 늘 0).
+      //   대숲 '저에요' 수락에만 붙어 있었고, 정작 매칭 탭의 성사는 한 번도 안 세어졌다.
+      if (window.mwBumpMonthly) window.mwBumpMonthly('matchOk');
       showToast((toName || '상대') + '님과 매칭됐어요!');
       window.openUserProfile(toUid, toName, toPhoto); // 잠금 해제 상태로 다시 그림
     } else {
@@ -19097,7 +19141,6 @@ window.openSquadDetail = function (sid) {
       <div id="sq-room-wrap" style="margin-top:14px;position:sticky;top:0;z-index:4;background:#05070c;padding-bottom:8px">
         <div id="sq-room-stage"></div>
         <div id="sq-quick-wrap"></div>
-        <div id="sq-room-hint" style="font-size:10.5px;color:rgba(255,255,255,.32);text-align:center;margin-top:6px">필드를 탭하면 캐릭터가 걸어가요</div>
       </div>
       <div id="sq-d-actions"></div>
       <div id="sq-d-members"></div>
@@ -19656,6 +19699,16 @@ window._sqRoomInit = function (s) {
   stage.className = 'sq-stage';
   stage.style.backgroundImage = "url('" + window.squadFieldSrc(s.exerciseType, s.scheduledAt) + "')";
   stage.innerHTML = '';
+  // ★안내 문구는 **필드 안 아래쪽**에 살짝 얹는다(대표 8-11) — 머피월드 남의 방의
+  //   '캐릭터를 눌러보세요'와 같은 방식이다. 필드 밖에 두면 바로 밑 입력줄에 달라붙어
+  //   문구인지 UI인지 구분이 안 됐다. pointer-events 는 꺼서 걷기를 방해하지 않는다.
+  const hint = document.createElement('div');
+  hint.id = 'sq-room-hint';
+  hint.textContent = '필드를 탭하면 캐릭터가 걸어가요';
+  hint.style.cssText = 'position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:7;'
+    + 'pointer-events:none;background:rgba(5,7,12,.55);color:rgba(255,255,255,.62);'
+    + "font-family:'Galmuri11',sans-serif;font-size:11px;padding:3px 8px;white-space:nowrap";
+  stage.appendChild(hint);
   window._sqChars = {};
   const me = (auth.currentUser || {}).uid;
   const joined = !!(me && (s.memberUids || []).includes(me));
