@@ -8953,7 +8953,18 @@ function closeNicknameModal() {
 async function checkAndSetNickname(user) {
   // ★게스트(익명)는 무거운 온보딩을 태우지 않는다. 프로필 사진·지역·종목을 다 받으면
   //   "일단 출석만 해보려던 사람"이 그 자리에서 나간다. 닉네임 하나만 받는다(대표 8-11).
-  if (user && user.isAnonymous) { if (window.guestAskNick) window.guestAskNick(); return; }
+  if (user && user.isAnonymous) {
+    // ★단, 초대 링크로 들어온 참인데 **아직 입장 방법을 고르지 않았으면 묻지 않는다.**
+    //   예전엔 여기서 닉네임 팝업이 먼저 뜨고 그 위에 입장 시트가 겹쳐서, 회원으로 로그인해도
+    //   밑에 깔려 있던 "반가워요!" 팝업이 그대로 남아 다시 떴다(대표 8-11).
+    if (window._sqInviteSid && !window._guestJustStarted) return;
+    if (window.guestAskNick) window.guestAskNick();
+    return;
+  }
+  // 정식 계정으로 들어왔으면 게스트용 화면은 흔적도 남기지 않는다(위 사고의 근본 정리)
+  ['guest-nick', 'sq-enter', 'guest-nudge'].forEach(function (id) {
+    const el = document.getElementById(id); if (el) el.remove();
+  });
   try {
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
@@ -12813,9 +12824,7 @@ window.sqEnterChoice = async function (sid, asGuest) {
         <div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">${esc(sub) || '눌러서 입장하세요'}</div>
         <!-- ★시트는 한 장이다. 이미 임시 계정이면 **버튼 글자만** 바뀐다(대표 8-11).
              안내 박스를 따로 얹으면 읽을 게 늘 뿐이고 고를 것은 어차피 둘이다. -->
-        <button onclick="${asGuest
-            ? `document.getElementById('sq-enter').remove();window.openSquadDetail&&window.openSquadDetail('${sid}')`
-            : `window.sqEnterAsGuest('${sid}')`}"
+        <button onclick="${asGuest ? `window.sqEnterKeepGuest('${sid}')` : `window.sqEnterAsGuest('${sid}')`}"
           style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">${asGuest ? '임시계정으로 입장' : '가입 없이 바로 입장'}</button>
         <button onclick="${asGuest ? 'window.sqEnterSwitchAccount()' : 'window.sqEnterAsMember()'}"
           style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>
@@ -12836,12 +12845,21 @@ window.sqEnterAsGuest = async function (sid) {
 window.sqEnterSwitchAccount = async function () {
   if (!confirm('임시 계정으로 쌓인 오늘 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  const g = document.getElementById('guest-nick'); if (g) g.remove();   // 게스트 화면 잔재 제거
   window._sqSkipEnterSheet = true;        // 로그아웃되면서 시트가 다시 뜨는 것을 막는다
   try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
   if (window.requireLogin) requireLogin('로그인하면 초대받은 스쿼드로 바로 들어가요');
 };
+// 이미 있던 임시 계정 그대로 들어간다. 닉네임이 아직 없으면 그때 한 번만 묻는다.
+window.sqEnterKeepGuest = function (sid) {
+  const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._guestJustStarted = true;                  // 이제부터는 게스트 흐름이 맞다
+  if (window.guestAskNick) window.guestAskNick();    // 닉네임이 이미 있으면 안 묻고 바로 방으로 간다
+  else if (window.openSquadDetail) window.openSquadDetail(sid);
+};
 window.sqEnterAsMember = function () {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  const g = document.getElementById('guest-nick'); if (g) g.remove();
   // 로그인에 성공하면 onAuthStateChanged 가 _sqInviteSid 를 보고 그 스쿼드로 데려간다
   if (window.requireLogin) requireLogin('로그인하면 초대받은 스쿼드로 바로 들어가요');
   else if (window.openModal) openModal('login-method-modal');
