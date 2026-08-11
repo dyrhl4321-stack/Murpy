@@ -9083,6 +9083,13 @@ onAuthStateChanged(auth, async (user) => {
     if (window._sqInviteSid && !user.isAnonymous && window.openSquadDetail) {
       setTimeout(function () { window.openSquadDetail(window._sqInviteSid); }, 900);
     }
+    // ★★한 번 게스트로 들어온 적이 있으면 그 임시 계정이 폰에 남는다. 그래서 다음에 링크를 눌러도
+    //   **묻지도 않고 임시 계정으로** 들어가 버렸다(대표 8-11). 이미 계정이 있는 사람에게는
+    //   여기서 다시 물어야 한다. 방금 게스트로 시작한 경우(_guestJustStarted)는 묻지 않는다.
+    if (window._sqInviteSid && user.isAnonymous && !window._guestJustStarted && window.sqEnterChoice) {
+      setTimeout(function () { window.sqEnterChoice(window._sqInviteSid, true); }, 800);
+    }
+    window._guestJustStarted = false;
     // 비로그인 상태에서 막혔던 의도가 있으면 로그인 직후 1회 재개
     if (window._pendingIntent) {
       const _fn = window._pendingIntent;
@@ -9100,9 +9107,13 @@ onAuthStateChanged(auth, async (user) => {
     //   가입 없이 바로 / 이미 머피 회원이면 로그인 — 둘 다 열어둔다. 예전엔 무조건 익명이라
     //   **이미 계정이 있는 사람이 자기 기록과 끊긴 새 임시 계정으로 들어갔다.**
     //   ★앱은 위에서 이미 평소대로 띄워놨고 시트만 얹는다 — 이게 실패해도 흰 화면이 안 된다.
-    if (window._sqInviteSid && window.sqEnterChoice) {
+    if (window._sqInviteSid && window.sqEnterChoice && !window._sqSkipEnterSheet) {
       setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
       setTimeout(() => window.sqEnterChoice(window._sqInviteSid), 520);
+    } else if (window._sqSkipEnterSheet) {
+      // 계정 갈아타는 중 — 로그인 모달이 이미 떠 있다. 시트를 다시 얹지 않는다.
+      window._sqSkipEnterSheet = false;
+      setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
     } else if (typeof showSplashOnboarding === 'function' && !localStorage.getItem('murpy_splash_done')) {
       // 비로그인: 온보딩 미완료자만 온보딩 표시. 이미 봤으면(건너뛰기/완료) 바로 홈 둘러보기로
       setTimeout(() => showSplashOnboarding(), 1700);
@@ -12775,7 +12786,8 @@ window._propagateNickname = async (nickname) => {
 // 초대 링크로 들어온 **비로그인** 사람에게 묻는다 — 그냥 들어갈래요, 로그인할래요?
 // ★이미 머피 회원인 사람을 익명으로 넣으면 그날 기록이 **자기 계정이 아닌 임시 계정**에 쌓이고,
 //   나중에 옮길 방법이 없다(구글 연결은 uid 가 비어 있는 임시 계정에서만 된다).
-window.sqEnterChoice = async function (sid) {
+// asGuest = 이미 임시 계정으로 들어와 있는 상태(전에 게스트로 왔던 폰). 문구와 버튼이 달라진다.
+window.sqEnterChoice = async function (sid, asGuest) {
   if (!sid) return;
   let s = null;
   try { const d = await getDoc(doc(db, 'squads', sid)); if (d.exists()) s = d.data(); } catch (e) {}
@@ -12794,8 +12806,12 @@ window.sqEnterChoice = async function (sid) {
         <div style="font-size:11px;color:#7aa8ff;font-weight:800;margin-bottom:6px">스쿼드 초대</div>
         <div style="font-size:17px;font-weight:800;margin-bottom:5px">${esc(s ? s.title : '머피 스쿼드')}</div>
         <div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">${esc(sub) || '눌러서 입장하세요'}</div>
-        <button onclick="window.sqEnterAsGuest('${sid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">가입 없이 바로 입장</button>
-        <button onclick="window.sqEnterAsMember()" style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>
+        ${asGuest
+          ? `<div style="font-size:11.5px;color:#F5C24B;background:rgba(245,194,75,.1);border-radius:10px;padding:9px 11px;line-height:1.55;margin-bottom:13px">지금 <b>임시 계정</b>으로 들어와 있어요</div>
+             <button onclick="document.getElementById('sq-enter').remove();window.openSquadDetail&&window.openSquadDetail('${sid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">이대로 입장</button>
+             <button onclick="window.sqEnterSwitchAccount()" style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">내 머피 계정으로 들어갈래요</button>`
+          : `<button onclick="window.sqEnterAsGuest('${sid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">가입 없이 바로 입장</button>
+             <button onclick="window.sqEnterAsMember()" style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>`}
         <button onclick="document.getElementById('sq-enter').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:13px 0 0;cursor:pointer;font-family:inherit">그냥 둘러볼게요</button>
       </div>
     </div>`;
@@ -12803,7 +12819,19 @@ window.sqEnterChoice = async function (sid) {
 };
 window.sqEnterAsGuest = async function (sid) {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._guestJustStarted = true;        // 방금 고른 것이므로 다시 묻지 않는다
   await window.startGuestInvite(sid);     // 실패해도 앱은 이미 평소 화면으로 떠 있다
+};
+// 임시 계정 → 내 계정으로 갈아타기.
+// ★계정 연결(linkWithPopup)이 아니라 **갈아타기**다. 연결은 임시 계정에 구글을 붙이는 것이라
+//   원래 쓰던 계정이 따로 있으면 못 붙는다(그 구글은 이미 다른 계정에 물려 있다).
+//   그래서 임시 계정을 버리고 로그인시킨다 — 버리기 전에 반드시 확인을 받는다.
+window.sqEnterSwitchAccount = async function () {
+  if (!confirm('임시 계정으로 쌓인 오늘 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
+  const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._sqSkipEnterSheet = true;        // 로그아웃되면서 시트가 다시 뜨는 것을 막는다
+  try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
+  if (window.requireLogin) requireLogin('로그인하면 초대받은 스쿼드로 바로 들어가요');
 };
 window.sqEnterAsMember = function () {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
@@ -16095,7 +16123,10 @@ window.mwSquadInvite = async function (uid, nick) {
   const me = window.currentUser; if (!me) { showToast('로그인이 필요해요'); return; }
   let mine = [];
   try {
-    const qs = await getDocs(query(collection(db, 'squads'), orderBy('scheduledAt', 'asc'), limit(40)));
+    // ★목록과 같은 함정 — orderBy('scheduledAt','asc')+limit 은 **지난 벙**부터 읽어서
+    //   내가 방금 연 벙이 안 잡혔다. 안 끝난 것만 읽는다(부등호 필드로 정렬해야 한다).
+    const qs = await getDocs(query(collection(db, 'squads'),
+      where('expiresAt', '>', Date.now()), orderBy('expiresAt', 'asc'), limit(60)));
     const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
     // 내가 연 것 + 아직 모집 중 + 안 지난 것. (멤버로 참여만 한 스쿼드까지 보려면 문서를 40번
     //  더 읽어야 해서 호스트 기준으로 둔다 — 초대는 보통 벙주가 한다)
@@ -18007,8 +18038,12 @@ window.SQUAD_CLASSES = [
 window.SQUAD_ADS = [
   // ★v2(8-11) — 세로 사진을 2:1 로 자르는 바람에 **발이 위로 잘려** 나갔다(대표 지적).
   //   전신이 들어간 가로 원본을 통째로 축소해 넣고 남는 양옆만 흐린 배경으로 메웠다.
+  // ★sid = 이 카드가 가리키는 **진짜 벙 문서 id**. 주면 눌렀을 때 그 벙으로 바로 들어간다.
+  //   예전엔 홍보 카드가 '스쿼드 만들기'로 떨어져서, 누리쌤 벙을 보고 누른 사람이
+  //   엉뚱하게 자기 벙을 만드는 화면을 봤다(대표 8-11: "다 연동되어야 한다").
   { img: 'char/promo/ad_yoga.jpg?v=2', tag: '8/22 토', title: '누리쌤 요가벙',
-    sub: '처음이어도 괜찮아요 · 매트는 준비돼 있어요', cta: '보러가기' },
+    sub: '처음이어도 괜찮아요 · 매트는 준비돼 있어요', cta: '보러가기',
+    sid: 'fDezyUdJoUkBCMepB0qi' },
   { img: 'char/promo/ad_dance.jpg?v=2', tag: '근방단', title: '춤벙, 이번에도 열립니다',
     sub: '해본 적 없어도 됩니다 · 근방단 정기 모임', cta: '보러가기',
     href: 'https://www.instagram.com/gbd_project' },
@@ -18057,21 +18092,26 @@ window._sqOccKey = function (dt) {
   return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
 };
 // 정기반 회차를 실제 스쿼드로 연다(없으면 만들고, 이미 있으면 그리로 간다).
-// ★classId+occKey 로 중복을 막는다. 두 사람이 동시에 눌러도 목록을 다시 읽어 확인한다.
+// ★중복 방지는 **문서 id**로 한다 — 'cls_{classId}_{회차날짜}'. 조회로 막던 방식은 실패했다.
 window.sqOpenClass = async function (clsId) {
   const user = auth.currentUser;
   if (!user) { requireLogin && requireLogin('스쿼드에 참가하려면 로그인이 필요해요'); return; }
   const cls = (window.SQUAD_CLASSES || []).find(c => c.id === clsId); if (!cls) return;
   const occ = window._sqNextOcc(cls), key = window._sqOccKey(occ);
+  // ★★문서 id 를 회차로 못 박는다(대표 8-11: 같은 회차가 4개까지 생겼다).
+  //   예전엔 classId+occKey 로 **조회해서** 없으면 만들었는데, 그 조회가 실패하거나
+  //   두 사람이 동시에 누르면 그대로 새 문서가 하나 더 생겼다. id 가 같으면 애초에 두 개가 못 생긴다.
+  const sqId = 'cls_' + clsId + '_' + key;
   try {
-    const qs = await getDocs(query(collection(db, 'squads'), where('classId', '==', clsId), where('occKey', '==', key), limit(1)));
-    if (!qs.empty) { window.openSquadDetail && window.openSquadDetail(qs.docs[0].id); return; }
+    const snap = await getDoc(doc(db, 'squads', sqId));
+    if (snap.exists()) { window.openSquadDetail && window.openSquadDetail(sqId); return; }
   } catch (e) { console.warn('정기반 조회 실패', e); }
   try {
     if (!window._mwMyNick) { try { const us = await getDoc(doc(db, 'users', user.uid)); window._mwMyNick = (us.exists() && us.data().nickname) || '머피'; } catch (e) {} }
     const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
     const sched = occ.getTime();
-    const dRef = await addDoc(collection(db, 'squads'), {
+    const dRef = doc(db, 'squads', sqId);
+    await setDoc(dRef, {
       hostUid: user.uid, memberUids: [user.uid],
       title: cls.name, exerciseType: cls.type, centerId: null, location: cls.location,
       scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + Math.round(cls.durH * 3600 * 1000) + 3600 * 1000,
@@ -18292,7 +18332,9 @@ window.renderSquadHero = async function () {
       // ★제목이 비어 있으면 **그림만** 보여준다 — 대표가 글씨까지 넣어 디자인한 카드는
       //   위에 또 얹으면 두 겹이 된다(레퍼런스가 그런 형태다).
       plain: !a.title,
-      click: a.href ? ("window.open('" + a.href + "','_blank','noopener')")
+      // sid(진짜 벙) > href(외부 링크) > 만들기. 홍보 카드는 실제 벙으로 이어지는 게 기본이다.
+      click: a.sid ? ("window.openSquadDetail&&window.openSquadDetail('" + a.sid + "')")
+           : a.href ? ("window.open('" + a.href + "','_blank','noopener')")
                     : 'window.openSquadCreate&&window.openSquadCreate()'
     });
   });
@@ -18460,13 +18502,16 @@ window.renderSquadPage = async function () {
   root.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">스쿼드 불러오는 중…</div>';
   let rows = [];
   try {
-    const qs = await getDocs(query(collection(db,'squads'), orderBy('scheduledAt','asc'), limit(40)));
-    const now = Date.now();
-    const all = qs.docs.map(d => ({ id:d.id, ...d.data() }));
-    // lazy 만료: 시간 지난 스쿼드는 조용히 expired 처리
-    all.filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) <= now)
-       .slice(0, 5).forEach(s => { updateDoc(doc(db,'squads',s.id), { status:'expired' }).catch(()=>{}); });
-    rows = all.filter(s => !['completed','cancelled','expired'].includes(s.status) && (s.expiresAt||0) > now);
+    // ★★목록이 통째로 비던 버그(대표 8-11, 누리쌤이 연 벙이 안 떴다).
+    //   예전 쿼리 = orderBy('scheduledAt','asc') + limit(40) 이었다. 오름차순이라 **가장 오래된**
+    //   40개를 읽는데, 그 자리는 이미 지난 벙들이 다 차지한다(7월 것들). 그래서 살아 있는 벙은
+    //   한 개도 안 읽혔다 — 실측 결과 살아있는 9개 전부가 40개 밖으로 밀려나 있었다.
+    //   → 아예 **안 끝난 것만** 읽는다. 부등호 필드와 첫 정렬 기준이 같아야 해서 expiresAt 로 읽고,
+    //     화면에 보이는 순서(시간순)는 아래에서 다시 정렬한다.
+    const qs = await getDocs(query(collection(db,'squads'),
+      where('expiresAt','>', Date.now()), orderBy('expiresAt','asc'), limit(60)));
+    rows = qs.docs.map(d => ({ id:d.id, ...d.data() }))
+                  .filter(s => !['completed','cancelled','expired'].includes(s.status));
   } catch(e) { console.warn('squad feed', e); }
   // ★정기반도 이 목록에 같이 뜬다(대표 8-11). 예전엔 위 카드에서만 보여서 위아래가 딴 페이지 같았다.
   //   아직 아무도 안 누른 회차는 문서가 없다(참가를 누르는 순간에만 만든다) → **가짜 줄**로 그린다.
@@ -18727,6 +18772,12 @@ window.sqEditOpen = function (sid) {
         </div>
       </div>
       <button id="sq-e-go" onclick="window.sqEditSubmit()" style="width:100%;margin-top:24px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">저장하기</button>
+      <!-- ★진짜 삭제는 **연 사람만** 된다 — 보안규칙이 hostUid 본인만 지우게 막아서, 관리자여도
+           남의 벙은 서버가 거절한다. 대신 관리자는 '목록에서 내리기'(취소 처리)를 쓸 수 있다.
+           그건 update 라 규칙을 통과한다. 잘못 만들어진 벙을 정리할 방법이 이것뿐이었다. -->
+      ${me === s.hostUid
+        ? '<button onclick="window.sqDelete()" style="width:100%;margin-top:10px;background:none;border:none;color:rgba(255,77,103,.75);font-size:13px;padding:12px;cursor:pointer;font-family:inherit">이 스쿼드 지우기</button>'
+        : (admin ? '<button onclick="window.sqHide()" style="width:100%;margin-top:10px;background:none;border:none;color:rgba(255,77,103,.75);font-size:13px;padding:12px;cursor:pointer;font-family:inherit">목록에서 내리기 (관리자)</button>' : '')}
     </div>`;
   document.body.appendChild(el);
 };
@@ -18752,6 +18803,33 @@ window._sqEClearThumb = function () {
   const s = window._sqDoc, pv = document.getElementById('sq-e-thumb-prev');
   if (pv && s) pv.style.backgroundImage = "url('" + window.squadFieldSrc(s.exerciseType, s.scheduledAt) + "')";
   showToast('기본 그림으로 돌아가요 · 저장을 눌러야 반영돼요');
+};
+// 관리자용 — 남의 벙은 지울 수 없어서(규칙) 취소 처리로 목록에서만 내린다. 문서는 남는다.
+window.sqHide = async function () {
+  const e = window._sqEdit; if (!e) return;
+  const s = window._sqDoc || {};
+  if (!confirm('「' + (s.title || '스쿼드') + '」을(를) 목록에서 내릴까요?\n(문서는 남고 목록에만 안 보여요)')) return;
+  try {
+    await updateDoc(doc(db, 'squads', e.sid), { status: 'cancelled' });
+    const p = document.getElementById('sq-edit'); if (p) p.remove();
+    window._sqClose && window._sqClose();
+    showToast('목록에서 내렸어요');
+    window.renderSquadPage && window.renderSquadPage();
+  } catch (err) { console.error(err); showToast('내리지 못했어요'); }
+};
+window.sqDelete = async function () {
+  const e = window._sqEdit; if (!e) return;
+  const s = window._sqDoc || {};
+  const n = (s.memberUids || []).length;
+  if (!confirm('「' + (s.title || '스쿼드') + '」을(를) 지울까요?'
+    + (n > 1 ? '\n지금 ' + n + '명이 들어와 있어요.' : '') + '\n되돌릴 수 없어요.')) return;
+  try {
+    await deleteDoc(doc(db, 'squads', e.sid));
+    const p = document.getElementById('sq-edit'); if (p) p.remove();
+    window._sqClose && window._sqClose();
+    showToast('지웠어요');
+    window.renderSquadPage && window.renderSquadPage();
+  } catch (err) { console.error(err); showToast('지우지 못했어요 — 연 사람만 지울 수 있어요'); }
 };
 window.sqEditSubmit = async function () {
   const e = window._sqEdit; if (!e) return;
