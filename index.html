@@ -6743,6 +6743,16 @@ window.renderMyMurpy = function () {
     +   'style="width:100%;max-width:300px;display:block;margin:12px auto 0;background:var(--accent);'
     +   'border:none;color:#fff;border-radius:13px;padding:13px;font-size:14px;font-weight:800;'
     +   'cursor:pointer;font-family:inherit;letter-spacing:-0.2px">머피월드에서 꾸미기</button>'
+    // ── 게스트(익명)에게만: 정식 계정 만들기. uid 가 안 바뀌어 기록이 그대로 따라온다.
+    + ((window.currentUser && window.currentUser.isAnonymous)
+        ? '<div style="margin-top:18px;background:rgba(245,194,75,.10);border:1px solid rgba(245,194,75,.3);border-radius:14px;padding:14px">'
+          + '<div style="font-size:13px;font-weight:800;color:#F5C24B;margin-bottom:5px">아직 임시 계정이에요</div>'
+          + '<div style="font-size:11.5px;color:rgba(255,255,255,.55);line-height:1.6;margin-bottom:11px">'
+          +   '지금 기록(출석·범프·머피)은 <b style="color:#cfd6e6">그대로 남은 채로</b> 계정만 만들어져요.<br>'
+          +   '이 폰에서 앱을 지우면 임시 계정은 사라져요.</div>'
+          + '<button onclick="window.guestUpgrade&&window.guestUpgrade()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:12px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>'
+          + '</div>'
+        : '')
     // ── 내 범퍼 (유저 피드백 #20) — 실제로 만난 사이만. 눌러서 그 사람 방으로 간다.
     + '<div style="height:1px;background:rgba(255,255,255,0.07);margin:18px 0 13px"></div>'
     + '<div id="my-mw-bumpers"></div>'
@@ -8808,7 +8818,7 @@ if ('serviceWorker' in navigator) {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
@@ -8835,6 +8845,11 @@ try {
   db = getFirestore(app);
 }
 const provider = new GoogleAuthProvider();
+// ★초대 링크의 스쿼드 id. **onAuthStateChanged 보다 먼저** 잡아둬야 한다 —
+//   아래쪽(게스트 초대 블록)에서 선언하면 인증 콜백이 먼저 도는 경우 빈 값을 본다.
+window._sqInviteSid = (function () {
+  try { return new URLSearchParams(location.search).get('sq') || ''; } catch (e) { return ''; }
+})();
 // ---------- Realtime Database (스쿼드 워킹 룸 위치 동기화 전용) ----------
 // 콘솔에서 RTDB를 asia-southeast1 리전으로 생성해야 함. 미생성/미연결이면 _SQUAD_RT_OFF=true → 룸은 정적 배치 폴백.
 window._SQUAD_RT_OFF = true;
@@ -8930,10 +8945,22 @@ function closeNicknameModal() {
 }
 
 async function checkAndSetNickname(user) {
+  // ★게스트(익명)는 무거운 온보딩을 태우지 않는다. 프로필 사진·지역·종목을 다 받으면
+  //   "일단 출석만 해보려던 사람"이 그 자리에서 나간다. 닉네임 하나만 받는다(대표 8-11).
+  if (user && user.isAnonymous) { if (window.guestAskNick) window.guestAskNick(); return; }
   try {
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
     const data = userSnap.exists() ? userSnap.data() : {};
+    // ★게스트가 구글을 연결하면(uid 그대로) 여기로 온다. 표식 정리를 **로그인 경로에서** 하는 이유:
+    //   인앱브라우저는 linkWithRedirect 라 페이지가 떠나고, guestUpgrade 의 뒷줄이 영영 실행되지 않는다.
+    if (data.guest === true && !user.isAnonymous) {
+      try {
+        await setDoc(userRef, { guest: false }, { merge: true });
+        data.guest = false;
+        showToast('계정이 연결됐어요 · 기록은 그대로예요');
+      } catch (e) { console.warn('guest flag', e); }
+    }
     if (data.nickname) {
       if (window.currentUser) {
         window.currentUser.nickname = data.nickname;
@@ -9051,6 +9078,10 @@ onAuthStateChanged(auth, async (user) => {
     if (window.initPush) window.initPush(user.uid);
     // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
+    // 초대 링크로 들어온 정식 계정은 그 스쿼드로 바로 보낸다(게스트는 닉네임 저장 후에 간다)
+    if (window._sqInviteSid && !user.isAnonymous && window.openSquadDetail) {
+      setTimeout(function () { window.openSquadDetail(window._sqInviteSid); }, 900);
+    }
     // 비로그인 상태에서 막혔던 의도가 있으면 로그인 직후 1회 재개
     if (window._pendingIntent) {
       const _fn = window._pendingIntent;
@@ -9060,6 +9091,15 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     window.currentUser = null;
     if (window.stopNotifListener) window.stopNotifListener();
+    // ★초대 링크(?sq=)로 들어왔으면 **가입 화면 대신 익명으로 바로 입장**시킨다.
+    //   현장에서 "지금 가입하세요"는 안 통한다 — 먼저 쓰게 하고 가입은 나중에 권한다.
+    //   ★실패해도 여기서 return 하면 안 된다 — 로고 화면에서 영영 안 넘어간다.
+    //     (콘솔에서 익명 로그인이 꺼져 있거나 네트워크가 끊긴 경우) 평소 화면으로 떨어뜨린다.
+    if (window._sqInviteSid && window.startGuestInvite) {
+      const _guestOk = await window.startGuestInvite(window._sqInviteSid);
+      if (_guestOk) return;              // 성공 → onAuthStateChanged 가 곧 다시 돈다
+      window._sqInviteSid = '';          // 두 번 시도하지 않는다
+    }
     updateUI(null);
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
@@ -12725,6 +12765,125 @@ window._propagateNickname = async (nickname) => {
       updateDoc(doc(db, 'squads', s.id, 'members', user.uid), { nickname }).then(() => { n++; }).catch(() => {})));
   } catch (e) {}
   if (n) console.log('[nickname] 지난 기록 ' + n + '건 갱신됨');
+};
+
+// ===== 게스트 초대 (금요일 범프·요가벙용) =====
+// ★왜: 현장에서 처음 만난 사람에게 "지금 가입하세요"는 안 통한다. 그 자리에서 튕긴다.
+//   익명 로그인으로 **가입 없이** 먼저 쓰게 하고, 나중에 구글을 그 계정에 연결한다.
+//   ★linkWithPopup 은 uid 를 바꾸지 않는다 — 그래서 오늘 찍은 출석·범프·머피가 그대로 남는다.
+//     (새로 가입시키면 기록이 딴 계정에 남아 옮길 방법이 없다)
+// 링크 형태: https://murpy.app/?sq=<스쿼드ID>   (_sqInviteSid 파싱은 파일 위쪽 provider 선언 옆)
+// ★성공하면 true. 실패하면 false 를 돌려줘 **부르는 쪽이 평소 화면으로 떨어뜨리게** 한다.
+window.startGuestInvite = async function (sid) {
+  if (auth.currentUser) { window.openSquadDetail && window.openSquadDetail(sid); return true; }
+  try {
+    await signInAnonymously(auth);       // onAuthStateChanged 가 이어받는다
+    return true;
+  } catch (e) {
+    console.error('익명 로그인 실패', e);
+    showToast('바로 입장하지 못했어요 · 로그인하고 들어와주세요');
+    return false;
+  }
+};
+
+// 게스트에게 닉네임만 받는다. 저장하면 바로 초대받은 스쿼드로 들어간다.
+window.guestAskNick = async function () {
+  const user = auth.currentUser; if (!user) return;
+  // 이미 닉네임이 있으면(재방문) 묻지 않는다
+  try {
+    const s = await getDoc(doc(db, 'users', user.uid));
+    if (s.exists() && s.data().nickname) { window._guestGoSquad(); return; }
+  } catch (e) {}
+  let el = document.getElementById('guest-nick'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'guest-nick';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  el.innerHTML = `
+    <div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px;text-align:center">
+      <div style="font-size:18px;font-weight:800;margin-bottom:7px">반가워요!</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:18px">
+        오늘은 <b style="color:#cfd6e6">이름만</b> 정하면 바로 시작해요<br>가입은 나중에 하셔도 돼요</div>
+      <input id="guest-nick-in" maxlength="12" placeholder="닉네임" autocomplete="off"
+        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#fff;font-size:15px;text-align:center;outline:none;font-family:inherit;margin-bottom:12px">
+      <button onclick="window.guestSaveNick()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">시작하기</button>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(function () { const i = document.getElementById('guest-nick-in'); if (i) i.focus(); }, 150);
+};
+window.guestSaveNick = async function () {
+  const user = auth.currentUser; if (!user) return;
+  const v = (document.getElementById('guest-nick-in').value || '').trim();
+  if (v.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
+  try {
+    // ★onboardingComplete 를 켜둔다 — 안 켜면 다음 접속 때 무거운 온보딩이 뜬다.
+    //   guest:true 는 나중에 '프로필 만들기'를 권할 때 쓰는 표식이다.
+    await setDoc(doc(db, 'users', user.uid), {
+      nickname: v, guest: true, onboardingComplete: true,
+      character: window.CHAR_DEFAULT || null, createdAt: serverTimestamp()
+    }, { merge: true });
+    window.currentUser = user; window.currentUser.nickname = v; window._mwMyNick = v;
+    const el = document.getElementById('guest-nick'); if (el) el.remove();
+    window._guestGoSquad();
+  } catch (e) { console.error(e); showToast('저장하지 못했어요'); }
+};
+window._guestGoSquad = function () {
+  if (typeof dismissLanding === 'function') dismissLanding();
+  const sid = window._sqInviteSid;
+  if (sid && window.openSquadDetail) setTimeout(function () { window.openSquadDetail(sid); }, 300);
+};
+
+// 초대 링크 만들기 — 벙주가 카톡방에 뿌리는 그 링크다. 받은 사람은 가입 없이 바로 들어온다.
+// ★주소는 항상 murpy.app 으로 만든다. 지금 앱을 옛 github.io 로 열었더라도, 남에게 나가는
+//   링크에 옛 도메인이 찍히면 나중에 그 주소를 정리하는 순간 뿌려둔 링크가 통째로 죽는다.
+window.sqInviteLink = function (sid) {
+  const url = 'https://murpy.app/?sq=' + encodeURIComponent(sid);
+  const s = window._sqDoc || {};
+  const when = window._sqFmtTime ? window._sqFmtTime(s.scheduledAt) : '';
+  const line = (s.title || '머피 스쿼드') + '\n'
+    + [when, s.location].filter(Boolean).join(' · ')
+    + '\n\n가입 안 해도 눌러서 바로 들어와요';
+  // 카톡 SDK 가 살아 있으면 카톡으로 바로 보낸다(현장 동선이 카톡방이다)
+  if (window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized()) {
+    try {
+      Kakao.Share.sendDefault({
+        objectType: 'text', text: line,
+        link: { mobileWebUrl: url, webUrl: url },
+        buttons: [{ title: '바로 입장하기', link: { mobileWebUrl: url, webUrl: url } }],
+      });
+      return;
+    } catch (e) { console.warn('kakao invite', e); }   // 실패하면 아래 복사로 떨어진다
+  }
+  const done = function () { showToast('초대 링크를 복사했어요 · 카톡에 붙여넣으세요'); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, done);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
+  } catch (e) { done(); }
+};
+
+// 게스트 → 정식 계정. uid 가 그대로라 오늘 기록이 전부 따라온다.
+window.guestUpgrade = async function () {
+  const user = auth.currentUser;
+  if (!user || !user.isAnonymous) { showToast('이미 계정이 있어요'); return; }
+  try {
+    if (window._isInApp && window._isInApp()) await linkWithRedirect(auth, provider);
+    else await linkWithPopup(auth, provider);
+    await updateDoc(doc(db, 'users', user.uid), { guest: false });
+    showToast('계정이 연결됐어요 · 기록은 그대로예요');
+    if (window.updateUI) updateUI(auth.currentUser);
+  } catch (e) {
+    console.error('계정 연결 실패', e);
+    // 이미 그 구글 계정으로 가입한 적이 있으면 합칠 수 없다 — 솔직히 알린다
+    showToast(e && e.code === 'auth/credential-already-in-use'
+      ? '그 구글 계정은 이미 머피에 있어요 · 로그아웃 후 그 계정으로 들어와주세요'
+      : '연결하지 못했어요 — 다시 시도해주세요');
+  }
 };
 
 // ===== 구글 로그인 (전역 함수로 분리) =====
@@ -18364,15 +18523,19 @@ window._sqRenderDetail = function () {
     align-items:center;justify-content:center;gap:10px">${window.bumpIconHtml ? window.bumpIconHtml(23) : ''}범프로 출석</button>`;
   const sub = 'flex:1;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;'
     + 'cursor:pointer;font-family:inherit;background:rgba(255,255,255,.08);color:rgba(255,255,255,.82)';
+  // 초대 링크 = 현장에서 처음 만난 사람을 **가입 없이** 끌어오는 입구. 벙주·참가자 둘 다 뿌릴 수 있다.
+  const inviteBtn = `<button onclick="window.sqInviteLink&&window.sqInviteLink('${s.id}')" style="${sub}">초대 링크</button>`;
   if (done) actions = '';
   else if (isHost) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
+      ${inviteBtn}
       <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>
     </div>`;
   else if (joined) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>
+      ${inviteBtn}
       <button onclick="window.leaveSquad('${s.id}')" style="${sub};flex:0.6;color:rgba(255,255,255,.5)">나가기</button>
     </div>`;
   if (actions && (isHost || joined)) actions += `
