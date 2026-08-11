@@ -9091,21 +9091,19 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     window.currentUser = null;
     if (window.stopNotifListener) window.stopNotifListener();
-    // ★초대 링크(?sq=)로 들어왔으면 **가입 화면 대신 익명으로 바로 입장**시킨다.
-    //   현장에서 "지금 가입하세요"는 안 통한다 — 먼저 쓰게 하고 가입은 나중에 권한다.
-    //   ★실패해도 여기서 return 하면 안 된다 — 로고 화면에서 영영 안 넘어간다.
-    //     (콘솔에서 익명 로그인이 꺼져 있거나 네트워크가 끊긴 경우) 평소 화면으로 떨어뜨린다.
-    if (window._sqInviteSid && window.startGuestInvite) {
-      const _guestOk = await window.startGuestInvite(window._sqInviteSid);
-      if (_guestOk) return;              // 성공 → onAuthStateChanged 가 곧 다시 돈다
-      window._sqInviteSid = '';          // 두 번 시도하지 않는다
-    }
     updateUI(null);
     loadFeed();
     if (window.loadHomeTrending) window.loadHomeTrending();
     if (window.loadCentersFirestore) window.loadCentersFirestore();
-    // 비로그인: 온보딩 미완료자만 온보딩 표시. 이미 봤으면(건너뛰기/완료) 바로 홈 둘러보기로
-    if (typeof showSplashOnboarding === 'function' && !localStorage.getItem('murpy_splash_done')) {
+    // ★초대 링크(?sq=)로 들어온 사람에게는 **온보딩 대신 입장 방법**을 묻는다(대표 8-11).
+    //   가입 없이 바로 / 이미 머피 회원이면 로그인 — 둘 다 열어둔다. 예전엔 무조건 익명이라
+    //   **이미 계정이 있는 사람이 자기 기록과 끊긴 새 임시 계정으로 들어갔다.**
+    //   ★앱은 위에서 이미 평소대로 띄워놨고 시트만 얹는다 — 이게 실패해도 흰 화면이 안 된다.
+    if (window._sqInviteSid && window.sqEnterChoice) {
+      setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
+      setTimeout(() => window.sqEnterChoice(window._sqInviteSid), 520);
+    } else if (typeof showSplashOnboarding === 'function' && !localStorage.getItem('murpy_splash_done')) {
+      // 비로그인: 온보딩 미완료자만 온보딩 표시. 이미 봤으면(건너뛰기/완료) 바로 홈 둘러보기로
       setTimeout(() => showSplashOnboarding(), 1700);
     } else {
       setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
@@ -12773,6 +12771,46 @@ window._propagateNickname = async (nickname) => {
 //   ★linkWithPopup 은 uid 를 바꾸지 않는다 — 그래서 오늘 찍은 출석·범프·머피가 그대로 남는다.
 //     (새로 가입시키면 기록이 딴 계정에 남아 옮길 방법이 없다)
 // 링크 형태: https://murpy.app/?sq=<스쿼드ID>   (_sqInviteSid 파싱은 파일 위쪽 provider 선언 옆)
+// 초대 링크로 들어온 **비로그인** 사람에게 묻는다 — 그냥 들어갈래요, 로그인할래요?
+// ★이미 머피 회원인 사람을 익명으로 넣으면 그날 기록이 **자기 계정이 아닌 임시 계정**에 쌓이고,
+//   나중에 옮길 방법이 없다(구글 연결은 uid 가 비어 있는 임시 계정에서만 된다).
+window.sqEnterChoice = async function (sid) {
+  if (!sid) return;
+  let s = null;
+  try { const d = await getDoc(doc(db, 'squads', sid)); if (d.exists()) s = d.data(); } catch (e) {}
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const when = (s && window._sqFmtTime) ? window._sqFmtTime(s.scheduledAt) : '';
+  const sub = s ? [when, s.location].filter(Boolean).join(' · ') : '';
+  const img = s ? window._sqImgSrc(s) : '';
+  let el = document.getElementById('sq-enter'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-enter';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:24px';
+  el.innerHTML = `
+    <div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden">
+      ${img ? `<div style="height:118px;background:url('${img}') center/cover;position:relative">
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,16,22,.15),#0d1016)"></div></div>` : ''}
+      <div style="padding:${img ? '2px' : '24px'} 20px 22px;text-align:center">
+        <div style="font-size:11px;color:#7aa8ff;font-weight:800;margin-bottom:6px">스쿼드 초대</div>
+        <div style="font-size:17px;font-weight:800;margin-bottom:5px">${esc(s ? s.title : '머피 스쿼드')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">${esc(sub) || '눌러서 입장하세요'}</div>
+        <button onclick="window.sqEnterAsGuest('${sid}')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">가입 없이 바로 입장</button>
+        <button onclick="window.sqEnterAsMember()" style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>
+        <button onclick="document.getElementById('sq-enter').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:13px 0 0;cursor:pointer;font-family:inherit">그냥 둘러볼게요</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+};
+window.sqEnterAsGuest = async function (sid) {
+  const el = document.getElementById('sq-enter'); if (el) el.remove();
+  await window.startGuestInvite(sid);     // 실패해도 앱은 이미 평소 화면으로 떠 있다
+};
+window.sqEnterAsMember = function () {
+  const el = document.getElementById('sq-enter'); if (el) el.remove();
+  // 로그인에 성공하면 onAuthStateChanged 가 _sqInviteSid 를 보고 그 스쿼드로 데려간다
+  if (window.requireLogin) requireLogin('로그인하면 초대받은 스쿼드로 바로 들어가요');
+  else if (window.openModal) openModal('login-method-modal');
+};
+
 // ★성공하면 true. 실패하면 false 를 돌려줘 **부르는 쪽이 평소 화면으로 떨어뜨리게** 한다.
 window.startGuestInvite = async function (sid) {
   if (auth.currentUser) { window.openSquadDetail && window.openSquadDetail(sid); return true; }
@@ -12831,27 +12869,98 @@ window._guestGoSquad = function () {
   if (sid && window.openSquadDetail) setTimeout(function () { window.openSquadDetail(sid); }, 300);
 };
 
+// ===== 스쿼드 초대 =====
+// ★입구가 두 개여야 한다(대표 8-11).
+//   ①앱 안 — 이미 머피를 쓰는 사람(범프한 사이)에게 알림으로 부른다. 예전엔 이 입구가
+//     **머피룸에서 캐릭터를 눌러야만** 나와서, 정작 스쿼드 화면에선 부를 방법이 없었다.
+//   ②카톡 — 아직 머피가 없는 사람. 링크를 받으면 가입 없이 들어온다.
+window.sqInviteSheet = function (sid) {
+  const s = window._sqDoc || {};
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const js = v => String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // 범프한 사이 = 실제로 만난 사람. 온라인으로만 스친 사람에게 벙 알림을 뿌리면 스팸이 된다.
+  const bum = (window._cachedProfile && window._cachedProfile.bumpers) || {};
+  const uids = Object.keys(bum).sort((a, b) => (bum[b].lastAt || 0) - (bum[a].lastAt || 0));
+  const people = uids.length
+    ? '<div style="display:flex;gap:12px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none">'
+      + uids.slice(0, 20).map(function (u) {
+          const b = bum[u] || {};
+          return '<div onclick="window.sqInviteTo(\'' + js(u) + '\',\'' + js(b.nick || '머피') + '\',\'' + js(sid) + '\')" '
+            + 'style="flex-shrink:0;width:62px;text-align:center;cursor:pointer">'
+            + '<div style="height:62px;display:flex;align-items:flex-end;justify-content:center">'
+            +   (window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 56) : '') + '</div>'
+            + '<div style="font-size:10.5px;color:rgba(255,255,255,.7);margin-top:3px;overflow:hidden;'
+            +   'text-overflow:ellipsis;white-space:nowrap">' + esc(b.nick || '머피') + '</div></div>';
+        }).join('')
+      + '</div>'
+    : '<div style="font-size:11.5px;color:rgba(255,255,255,.4);line-height:1.7;padding:4px 2px 10px">'
+      + '아직 범프로 만난 머피가 없어요.<br>운동에서 만나 폰을 맞대면 여기로 부를 수 있어요.</div>';
+  let el = document.getElementById('sq-inv'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-inv';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40010;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center';
+  const row = 'width:100%;box-sizing:border-box;display:flex;align-items:center;gap:11px;background:rgba(255,255,255,.06);'
+    + 'border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:14px;color:#fff;font-size:13.5px;'
+    + 'font-weight:700;cursor:pointer;font-family:inherit;text-align:left';
+  el.innerHTML = `
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom))">
+      <div style="font-size:16px;font-weight:800;margin-bottom:3px">누구를 부를까요?</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,.45);margin-bottom:15px">${esc(s.title || '스쿼드')}</div>
+      <div style="font-size:11.5px;color:rgba(255,255,255,.45);font-weight:700;margin-bottom:8px">범프로 만난 머피</div>
+      ${people}
+      <div style="height:1px;background:rgba(255,255,255,.07);margin:6px 0 13px"></div>
+      <button onclick="window.sqInviteLink('${sid}')" style="${row};margin-bottom:8px"><span style="flex:1">카톡으로 초대 링크 보내기<span style="display:block;font-size:10.5px;font-weight:400;color:rgba(255,255,255,.4);margin-top:2px">머피가 없어도 가입 없이 들어와요</span></span></button>
+      <button onclick="window.sqInviteCopy('${sid}')" style="${row}"><span style="flex:1">링크만 복사하기</span></button>
+      <button onclick="document.getElementById('sq-inv').remove()" style="width:100%;background:none;border:none;color:rgba(255,255,255,.4);font-size:13px;padding:14px 0 0;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
+  document.body.appendChild(el);
+};
+// 앱 안 초대 — 알림으로 간다. 보내는 코드는 머피룸에서 쓰던 것을 그대로 쓴다(문서 id 고정 = 중복 방지).
+window.sqInviteTo = function (uid, nick, sid) {
+  const s = window._sqDoc || {};
+  const el = document.getElementById('sq-inv'); if (el) el.remove();
+  window._mwSqInvSend && window._mwSqInvSend(uid, nick, sid, s.title || '스쿼드');
+};
+
 // 초대 링크 만들기 — 벙주가 카톡방에 뿌리는 그 링크다. 받은 사람은 가입 없이 바로 들어온다.
 // ★주소는 항상 murpy.app 으로 만든다. 지금 앱을 옛 github.io 로 열었더라도, 남에게 나가는
 //   링크에 옛 도메인이 찍히면 나중에 그 주소를 정리하는 순간 뿌려둔 링크가 통째로 죽는다.
+window._sqInviteUrl = function (sid) { return 'https://murpy.app/?sq=' + encodeURIComponent(sid); };
 window.sqInviteLink = function (sid) {
-  const url = 'https://murpy.app/?sq=' + encodeURIComponent(sid);
+  const url = window._sqInviteUrl(sid);
   const s = window._sqDoc || {};
   const when = window._sqFmtTime ? window._sqFmtTime(s.scheduledAt) : '';
-  const line = (s.title || '머피 스쿼드') + '\n'
-    + [when, s.location].filter(Boolean).join(' · ')
-    + '\n\n가입 안 해도 눌러서 바로 들어와요';
-  // 카톡 SDK 가 살아 있으면 카톡으로 바로 보낸다(현장 동선이 카톡방이다)
+  const sub = [when, s.location].filter(Boolean).join(' · ');
+  const sheet = document.getElementById('sq-inv'); if (sheet) sheet.remove();
+  // ★그림 없이 보내면 카톡에서 그냥 글줄로 떨어진다(대표 8-11). 대표 사진이 있으면 그것,
+  //   없으면 종목 필드 그림을 태운다. 카카오 서버가 직접 받아가므로 **절대주소**여야 한다.
+  let img = s.img ? String(s.img) : '';
+  // 크기는 **아는 그림일 때만** 알려준다. 대표 사진은 비율이 제각각이라 크기를 우겨넣으면 찌그러진다.
+  let size = null;
+  if (!img && window.squadFieldSrc) {
+    img = 'https://murpy.app/' + window.squadFieldSrc(s.exerciseType, s.scheduledAt);
+    size = { imageWidth: 1376, imageHeight: 768 };
+  }
   if (window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized()) {
     try {
       Kakao.Share.sendDefault({
-        objectType: 'text', text: line,
-        link: { mobileWebUrl: url, webUrl: url },
+        objectType: 'feed',
+        content: Object.assign({
+          title: s.title || '머피 스쿼드',
+          description: (sub ? sub + '\n' : '') + '가입 안 해도 눌러서 바로 들어와요',
+          imageUrl: img,
+          link: { mobileWebUrl: url, webUrl: url },
+        }, size || {}),
         buttons: [{ title: '바로 입장하기', link: { mobileWebUrl: url, webUrl: url } }],
       });
       return;
     } catch (e) { console.warn('kakao invite', e); }   // 실패하면 아래 복사로 떨어진다
   }
+  window.sqInviteCopy(sid);
+};
+window.sqInviteCopy = function (sid) {
+  const url = window._sqInviteUrl(sid);
+  const sheet = document.getElementById('sq-inv'); if (sheet) sheet.remove();
   const done = function () { showToast('초대 링크를 복사했어요 · 카톡에 붙여넣으세요'); };
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -17799,6 +17908,13 @@ window.squadFieldSrc = function (t, whenMs) {
   const f = window.SQUAD_TYPES[k].field || k;
   return 'char/fields/field_' + f + '_wide.png?v=' + window.SQUAD_TYPES[f].v;
 };
+// 스쿼드 그림 = **대표 사진이 있으면 그것**, 없으면 종목·시간대 필드 그림.
+// ★url('...') 안에 그대로 들어가므로 따옴표·괄호는 지운다(남의 URL 로 스타일이 깨지면 안 된다).
+window._sqImgSrc = function (s) {
+  const raw = s && s.img;
+  if (raw) return String(raw).replace(/['"()\s]/g, '');
+  return window.squadFieldSrc(s && s.exerciseType, s && s.scheduledAt);
+};
 window.SQUAD_LEVELS = { easy:'가볍게', mid:'중간', hard:'빡세게' };
 window._sqFmtTime = function (ms) {
   const d = new Date(ms), yo = ['일','월','화','수','목','금','토'];
@@ -17841,7 +17957,9 @@ window.SQUAD_CLASSES = [
 //   href 를 주면 누를 때 그리로 나간다(근방단 인스타 게시물 등).
 // ★지금은 코드 상수다 — 대표가 직접 올리는 관리자 화면이 붙으면 그쪽으로 옮긴다.
 window.SQUAD_ADS = [
-  { img: 'char/promo/ad_yoga.jpg?v=1', tag: '8/22 토', title: '누리쌤 요가벙',
+  // ★v2(8-11) — 세로 사진을 2:1 로 자르는 바람에 **발이 위로 잘려** 나갔다(대표 지적).
+  //   전신이 들어간 가로 원본을 통째로 축소해 넣고 남는 양옆만 흐린 배경으로 메웠다.
+  { img: 'char/promo/ad_yoga.jpg?v=2', tag: '8/22 토', title: '누리쌤 요가벙',
     sub: '처음이어도 괜찮아요 · 매트는 준비돼 있어요', cta: '보러가기' },
   { img: 'char/promo/ad_dance.jpg?v=2', tag: '근방단', title: '춤벙, 이번에도 열립니다',
     sub: '해본 적 없어도 됩니다 · 근방단 정기 모임', cta: '보러가기',
@@ -18301,7 +18419,7 @@ window.renderSquadPage = async function () {
       : '<span style="background:rgba(61,126,255,.2);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
     return `
     <div onclick="window.openSquadDetail('${s.id}')" style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:12px;cursor:pointer;border:1px solid rgba(255,255,255,.08)">
-      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType, s.scheduledAt)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:url('${window._sqImgSrc(s)}') center/cover"></div>
       <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,7,12,.94) 0%,rgba(5,7,12,.78) 52%,rgba(5,7,12,.30) 100%)"></div>
       <div style="position:relative;padding:15px 16px;display:flex;flex-direction:column;gap:7px">
         <div style="display:flex;align-items:center;gap:7px">
@@ -18376,6 +18494,15 @@ window.openSquadCreate = function () {
       </div>
       ${lbl('한 줄 메모 (선택)')}
       <input id="sq-c-memo" maxlength="60" placeholder="예) 가슴·삼두 하실 분! 초보 환영" style="${inputCss}">
+      ${lbl('대표 사진 (선택)')}
+      <div style="display:flex;gap:11px;align-items:center">
+        <div id="sq-c-thumb-prev" style="width:104px;height:52px;flex-shrink:0;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:url('${window.squadFieldSrc('gym')}') center/cover"></div>
+        <div style="flex:1;min-width:0">
+          <input type="file" accept="image/*" id="sq-c-thumb-in" style="display:none" onchange="window._sqPickThumb(this)">
+          <button id="sq-c-thumb-btn" onclick="document.getElementById('sq-c-thumb-in').click()" style="background:rgba(255,255,255,.08);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">사진 고르기</button>
+          <div style="font-size:10.5px;color:rgba(255,255,255,.35);margin-top:6px;line-height:1.5">안 고르면 종목 그림이 자동으로 붙어요</div>
+        </div>
+      </div>
       <button id="sq-c-go" onclick="window._sqSubmitCreate()" style="width:100%;margin-top:24px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">스쿼드 열기</button>
     </div>`;
   document.body.appendChild(el);
@@ -18385,6 +18512,26 @@ window._sqPickType = function (k) {
   document.querySelectorAll('#sq-c-types button').forEach(b => b.style.background = b.dataset.t===k ? 'var(--accent)' : 'rgba(255,255,255,.07)');
   const ti = document.getElementById('sq-c-title');
   if (ti && !window._sqForm.titleTouched) ti.value = '오늘 ' + window.SQUAD_TYPES[k].name + ' 스쿼드';
+  // 사진을 아직 안 고른 사람에게는 미리보기가 곧 '자동으로 붙을 그림'이다 → 종목 따라 바꿔준다
+  const pv = document.getElementById('sq-c-thumb-prev');
+  if (pv && !window._sqForm.img) pv.style.backgroundImage = "url('" + window.squadFieldSrc(k) + "')";
+};
+// 대표 사진 고르기. 고르는 즉시 올린다 — '열기'를 누른 뒤에 올리면 그 자리에서 몇 초를 더 기다린다.
+window._sqPickThumb = async function (input) {
+  const f = input && input.files && input.files[0]; if (!f) return;
+  const btn = document.getElementById('sq-c-thumb-btn');
+  const pv = document.getElementById('sq-c-thumb-prev');
+  if (btn) { btn.disabled = true; btn.textContent = '올리는 중…'; }
+  try {
+    const url = await window.uploadImgbb(f);       // 실패하면 안에서 사유를 띄운다
+    if (url) {
+      window._sqForm.img = url;
+      if (pv) pv.style.backgroundImage = "url('" + url + "')";
+      if (btn) btn.textContent = '다른 사진으로';
+    } else if (btn) { btn.textContent = '사진 고르기'; }
+  } catch (e) { console.warn('sq thumb', e); if (btn) btn.textContent = '사진 고르기'; }
+  if (btn) btn.disabled = false;
+  input.value = '';                                // 같은 파일을 다시 골라도 onchange 가 돈다
 };
 window._sqPickLevel = function (k) {
   window._sqForm.level = k;
@@ -18416,6 +18563,7 @@ window._sqSubmitCreate = async function () {
     const dRef = await addDoc(collection(db,'squads'), {
       hostUid: user.uid, memberUids: [user.uid],
       title, exerciseType: f.type, centerId: null, location: loc,
+      img: f.img || null,          // 대표 사진. 없으면 화면마다 종목 필드 그림으로 떨어진다
       scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + 4*3600*1000,
       capacity: f.capacity, level: f.level, oneLineMemo: (document.getElementById('sq-c-memo').value||'').trim(),
       joinMode: f.joinMode, feeAmount: Math.max(0, parseInt(document.getElementById('sq-c-fee').value||'0',10) || 0),
@@ -18492,7 +18640,7 @@ window._sqRenderDetail = function () {
   const hero = document.getElementById('sq-d-hero');
   if (hero) hero.innerHTML = `
     <div style="position:relative;height:172px;overflow:hidden">
-      <div style="position:absolute;inset:0;background:url('${window.squadFieldSrc(s.exerciseType, s.scheduledAt)}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:url('${window._sqImgSrc(s)}') center/cover"></div>
       <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.55) 0%,rgba(5,7,12,.35) 45%,#05070c 100%)"></div>
       <button onclick="window._sqClose()" style="position:absolute;left:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:17px;cursor:pointer;width:36px;height:36px;border-radius:50%">←</button>
       <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
@@ -18524,7 +18672,7 @@ window._sqRenderDetail = function () {
   const sub = 'flex:1;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;'
     + 'cursor:pointer;font-family:inherit;background:rgba(255,255,255,.08);color:rgba(255,255,255,.82)';
   // 초대 링크 = 현장에서 처음 만난 사람을 **가입 없이** 끌어오는 입구. 벙주·참가자 둘 다 뿌릴 수 있다.
-  const inviteBtn = `<button onclick="window.sqInviteLink&&window.sqInviteLink('${s.id}')" style="${sub}">초대 링크</button>`;
+  const inviteBtn = `<button onclick="window.sqInviteSheet&&window.sqInviteSheet('${s.id}')" style="${sub}">초대하기</button>`;
   if (done) actions = '';
   else if (isHost) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
