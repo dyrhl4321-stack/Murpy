@@ -1881,8 +1881,10 @@
       </div>
     </div>
     <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600">나이</div>
-      <input id="edit-age" type="number" min="15" max="80" placeholder="나이 입력" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+      <!-- #15 — 생년월일. 옛 가입자는 age 만 있어 비어 있을 수 있다(아래 힌트로 안내). -->
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600">생년월일</div>
+      <input id="edit-birth" type="date" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit;box-sizing:border-box">
+      <div id="edit-birth-hint" style="font-size:11.5px;color:rgba(255,255,255,0.32);margin-top:7px;line-height:1.5"></div>
     </div>
     <div style="margin-bottom:16px">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600">운동 목적</div>
@@ -4375,8 +4377,12 @@ window.mwPortal = function () {
       </div>
     </div>
     <div style="margin-bottom:32px">
-      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600;letter-spacing:0.3px">나이</div>
-      <input id="ob-age" type="number" min="15" max="80" placeholder="나이 입력" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 16px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
+      <!-- 유저 피드백 #15 — 나이(숫자) 대신 **생년월일**을 받는다.
+           나이만 받으면 해가 바뀌어도 그대로고 생일을 챙겨줄 수도 없다.
+           나이는 생년월일에서 계산해 users.age 에 같이 저장한다(기존 화면들이 age 를 쓴다). -->
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:8px;font-weight:600;letter-spacing:0.3px">생년월일</div>
+      <input id="ob-birth" type="date" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:14px 16px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
+      <div id="ob-birth-hint" style="font-size:11.5px;color:rgba(255,255,255,0.32);margin-top:7px;line-height:1.5">생일에 축하해 드릴게요 · 나이는 여기서 자동으로 계산돼요</div>
     </div>
     <button onclick="obNextStep()" style="width:100%;padding:16px;font-size:15px;font-weight:700;border-radius:14px;border:none;background:#fff;color:#000;cursor:pointer;font-family:inherit">다음 →</button>
   </div>
@@ -7066,12 +7072,36 @@ function obToggleSport(btn) {
   }
 }
 
+// ===== 생년월일 → 나이 (유저 피드백 #15) =====
+// ★나이(숫자)만 받으면 해가 바뀌어도 안 늘고 생일을 챙겨줄 수도 없다.
+//   생년월일을 받아 나이는 계산한다. 저장은 birth('YYYY-MM-DD') + age(계산값) 둘 다 —
+//   age 를 읽는 화면이 여럿이라 그쪽을 다 고치는 것보다 값을 같이 넣어두는 게 안전하다.
+window._ageFromBirth = function (birth) {
+  if (!birth) return null;
+  const m = String(birth).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const now = new Date();
+  let a = now.getFullYear() - y;
+  // 올해 생일이 아직 안 지났으면 한 살 빼기 (만 나이)
+  if (now.getMonth() + 1 < mo || (now.getMonth() + 1 === mo && now.getDate() < d)) a--;
+  return a;
+};
+// 15~80세만 받는다(기존 규칙 유지). 반환: {ok, age, msg}
+window._checkBirth = function (birth) {
+  if (!birth) return { ok: false, msg: '생년월일을 입력해주세요' };
+  const age = window._ageFromBirth(birth);
+  if (age == null) return { ok: false, msg: '생년월일을 정확히 입력해주세요' };
+  if (age < 15 || age > 80) return { ok: false, msg: '만 15~80세만 이용할 수 있어요' };
+  return { ok: true, age: age };
+};
+
 function obNextStep() {
   const nickname = document.getElementById('ob-nickname').value.trim();
   if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
   if (!window._obData.gender) { showToast('성별을 선택해주세요'); return; }
-  const age = parseInt(document.getElementById('ob-age').value);
-  if (!age || age < 15 || age > 80) { showToast('나이를 정확히 입력해주세요'); return; }
+  const _b = window._checkBirth(document.getElementById('ob-birth').value);
+  if (!_b.ok) { showToast(_b.msg); return; }
   document.getElementById('ob-step-1').style.display = 'none';
   document.getElementById('ob-step-2').style.display = 'block';
   document.getElementById('ob-dot-1').style.background = 'rgba(255,255,255,0.25)';
@@ -7109,7 +7139,12 @@ function showOnboarding(userData = {}) {
   if (_obi) _obi.style.display = '';
   window._obData = { gender: userData.gender||'', purpose: userData.purpose||'', times: [...(userData.workoutTime||[])], sports: [...(userData.sports||[])] };
   document.getElementById('ob-nickname').value = userData.nickname || '';
-  document.getElementById('ob-age').value = userData.age || '';
+  // 옛 가입자는 birth 가 없고 age 만 있다 — 그때는 비워두고 힌트로 알린다(임의 추정 금지)
+  document.getElementById('ob-birth').value = userData.birth || '';
+  const _obh = document.getElementById('ob-birth-hint');
+  if (_obh) _obh.textContent = (!userData.birth && userData.age)
+    ? '전에 ' + userData.age + '세로 등록하셨어요 · 생년월일을 넣으면 생일을 챙겨드려요'
+    : '생일에 축하해 드릴게요 · 나이는 여기서 자동으로 계산돼요';
   document.getElementById('ob-step-1').style.display = 'block';
   document.getElementById('ob-step-2').style.display = 'none';
   document.getElementById('ob-step-3').style.display = 'none';
@@ -7127,7 +7162,13 @@ function showOnboarding(userData = {}) {
 function openEditProfile() {
   const d = window._cachedProfile || {};
   document.getElementById('edit-nickname').value = d.nickname || '';
-  document.getElementById('edit-age').value = d.age || '';
+  // #15 — 생년월일. 옛 가입자는 birth 가 없어 비어 있다 → 힌트로 안내한다(나이를 역산해 넣지 않는다)
+  document.getElementById('edit-birth').value = d.birth || '';
+  const _eh = document.getElementById('edit-birth-hint');
+  if (_eh) _eh.textContent = d.birth
+    ? '만 ' + (window._ageFromBirth(d.birth) || '-') + '세'
+    : (d.age ? '지금은 ' + d.age + '세로 등록돼 있어요 · 생년월일을 넣으면 생일을 챙겨드려요'
+             : '생일에 축하해 드릴게요');
   document.getElementById('edit-bio').value = d.bio || '';
   // 유저 피드백 #10 — 예전 계정은 gym 문자열 하나뿐이다. 그걸 첫 칸으로 옮겨 담는다.
   window._editGyms = Array.isArray(d.gyms) && d.gyms.length ? d.gyms.slice(0, 3) : (d.gym ? [d.gym] : []);
@@ -8893,6 +8934,17 @@ async function checkAndSetNickname(user) {
       const infoName = document.getElementById('info-name');
       if (infoName) infoName.textContent = data.nickname;
       window._cachedProfile = data;
+      // ★#15 — 저장된 age 는 생일이 지나면 낡는다(숫자로 굳어 있어 저절로 안 는다).
+      //   생년월일이 있으면 여기서 다시 계산해 어긋날 때만 고친다 = 사람당 1년에 한 번 쓰기.
+      //   age 를 읽는 화면이 여럿이라 값 자체를 맞춰두는 편이 그쪽을 다 고치는 것보다 안전하다.
+      if (data.birth && window._ageFromBirth) {
+        const _realAge = window._ageFromBirth(data.birth);
+        if (_realAge != null && _realAge !== data.age) {
+          data.age = _realAge;
+          window._cachedProfile = data;
+          try { await setDoc(doc(db, 'users', user.uid), { age: _realAge }, { merge: true }); } catch (e) {}
+        }
+      }
       // 온보딩 미완료면 온보딩 표시
       if (!data.onboardingComplete) {
         showOnboarding(data);
@@ -12512,12 +12564,14 @@ window.obComplete = async () => {
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   const nickname = document.getElementById('ob-nickname').value.trim();
-  const age = parseInt(document.getElementById('ob-age').value);
+  // #15 — 생년월일을 저장하고 나이는 거기서 계산해 같이 넣는다(옛 화면들이 age 를 읽는다)
+  const birth = document.getElementById('ob-birth').value || null;
+  const age = window._ageFromBirth(birth);
   const bio = document.getElementById('ob-bio').value.trim();
   try {
     if (!test) {
       await setDoc(doc(db, 'users', user.uid), {
-        nickname, age, gender: window._obData.gender,
+        nickname, birth, age, gender: window._obData.gender,
         purpose: window._obData.purpose, workoutTime: window._obData.times,
         sports: window._obData.sports,
         district, bio, onboardingComplete: true, updatedAt: serverTimestamp()
@@ -12549,9 +12603,16 @@ window.saveProfile = async () => {
   const nickname = document.getElementById('edit-nickname').value.trim();
   if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
   const _prevNick = (window._cachedProfile && window._cachedProfile.nickname) || '';
-  const _ageRaw = document.getElementById('edit-age').value.trim();
-  const age = _ageRaw ? parseInt(_ageRaw) : null;
-  if (_ageRaw && (!age || age < 15 || age > 80)) { showToast('나이는 15~80세로 입력해주세요'); return; }
+  // #15 — 생년월일. 입력칸이 비어 있으면 **기존 값을 그대로 둔다.**
+  //   null 을 그냥 쓰면 이미 넣어둔 생년월일이 지워진다(다른 항목만 고치러 들어와도 날아간다).
+  const _birthIn = document.getElementById('edit-birth').value || '';
+  const birth = _birthIn || (window._cachedProfile && window._cachedProfile.birth) || null;
+  let age = (window._cachedProfile && window._cachedProfile.age) || null;
+  if (_birthIn) {
+    const _b = window._checkBirth(_birthIn);
+    if (!_b.ok) { showToast(_b.msg); return; }
+    age = _b.age;
+  }
   const gender = document.querySelector('[data-ep="gender"].ep-selected')?.dataset?.val || window._cachedProfile?.gender || '';
   const purpose = document.querySelector('[data-ep="purpose"].ep-selected')?.dataset?.val || window._cachedProfile?.purpose || '';
   const district = document.getElementById('edit-district').value;
@@ -12563,7 +12624,7 @@ window.saveProfile = async () => {
   const career = document.getElementById('edit-career').value;
   try {
     await setDoc(doc(db, 'users', user.uid), {
-      nickname, age, gender, purpose, gyms,
+      nickname, birth, age, gender, purpose, gyms,
       workoutTime: window._epTimes || [],
       district, bio, gym, career, updatedAt: serverTimestamp()
     }, { merge: true });
