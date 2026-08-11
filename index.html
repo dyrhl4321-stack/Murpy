@@ -18016,8 +18016,12 @@ window.SQUAD_CLASSES = [
   // ★실제로 돌아가는 벙이다(대표 8-11). **매주 월요일 07:00** 이 정규다.
   //   단 8/17(월)은 대체공휴일이라 **이번 주만 8/18(화)로 옮긴다** → moves.
   //   앞으로도 공휴일에 걸리면 moves 에 '원래날짜':'옮긴날짜' 한 줄만 더하면 된다.
+  // ★occSid = 그 회차의 **이미 열려 있는 진짜 벙 문서 id**. 주면 카드가 새로 만들지 않고
+  //   그 벙으로 바로 들어간다. 8/18 회차는 대표가 직접 만들어 둔 것이 있어서 여기 물린다.
+  //   다음 회차(8/24)부터는 없으므로 참가하는 순간 'cls_gbd_am_gym_2026-08-24' 로 새로 열린다.
   { id: 'gbd_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 1, hour: 7, min: 0,
     moves: { '2026-08-17': '2026-08-18' },
+    occSid: { '2026-08-18': 'oscXZllyBvvsojNndePC' },
     durH: 1.5, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
     img: 'char/promo/ad_gym_morning.jpg?v=2',
     memo: '아침에 모여서 같이 합니다. 처음 오셔도 됩니다.' }
@@ -18091,13 +18095,68 @@ window._sqNextOcc = function (cls) {
 window._sqOccKey = function (dt) {
   return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
 };
+// 그 회차에 **이미 열려 있는 벙 문서 id**. occSid 에 적어둔 것이 먼저고, 없으면
+// 우리가 만들 때 쓰는 고정 id 를 돌려준다(있는지 없는지는 부르는 쪽이 확인한다).
+window._sqOccSid = function (cls) {
+  const key = window._sqOccKey(window._sqNextOcc(cls));
+  return (cls.occSid && cls.occSid[key]) || '';
+};
+// ★★정기반 카드를 **누르기만 해도 벙 문서가 생기던 것**을 막는다(대표 8-11).
+//   예전엔 카드 = sqOpenClass 라, 구경하려고 누른 것만으로 벙이 만들어지고 내가 벙주가 됐다.
+//   토요일 헬스반이 4개나 쌓인 게 그 때문이다. → 카드는 **미리보기**를 열고,
+//   거기서 [참가하기]를 눌러야 그때 진짜 문서가 생긴다.
+window.sqClassPreview = function (clsId) {
+  const c = (window.SQUAD_CLASSES || []).find(x => x.id === clsId); if (!c) return;
+  const occ = window._sqNextOcc(c), sched = occ.getTime();
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const t = window.SQUAD_TYPES[window._sqTypeKey(c.type)];
+  const img = c.img || window.squadFieldSrc(c.type, sched);
+  const WD = ['일','월','화','수','목','금','토'];
+  let el = document.getElementById('sq-cls'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-cls';
+  el.style.cssText = 'position:fixed;inset:0;z-index:895;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column;overflow-y:auto';
+  const row = (k, v) => `<div style="display:flex;gap:12px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+      <span style="width:64px;flex-shrink:0;font-size:12.5px;color:rgba(255,255,255,.4)">${k}</span>
+      <span style="flex:1;font-size:13.5px;color:#e7ecf5;font-weight:600">${v}</span></div>`;
+  el.innerHTML = `
+    <div style="position:relative;height:172px;overflow:hidden;flex-shrink:0">
+      <div style="position:absolute;inset:0;background:url('${img}') center/cover"></div>
+      <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.5) 0%,rgba(5,7,12,.3) 45%,#05070c 100%)"></div>
+      <button onclick="document.getElementById('sq-cls').remove()" style="position:absolute;left:12px;top:14px;z-index:2;background:rgba(5,7,12,.55);backdrop-filter:blur(4px);border:none;color:#fff;font-size:17px;cursor:pointer;width:36px;height:36px;border-radius:50%">←</button>
+      <div style="position:absolute;left:16px;right:16px;bottom:12px;z-index:2">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+          <span style="background:rgba(255,255,255,.14);color:#fff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">${t.name}</span>
+          <span style="background:rgba(245,194,75,.16);color:#F5C24B;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">정기반</span>
+        </div>
+        <div style="font-size:19px;font-weight:800;color:#fff">${esc(c.name)}</div>
+      </div>
+    </div>
+    <div style="padding:14px 18px calc(26px + env(safe-area-inset-bottom))">
+      ${c.memo ? `<div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.65;margin-bottom:14px">${esc(c.memo)}</div>` : ''}
+      ${row('다음 회차', window._sqFmtTime(sched))}
+      ${row('장소', esc(c.location))}
+      ${row('정원', c.capacity + '명')}
+      ${row('강도', esc(c.level))}
+      ${row('반복', c.weekday != null ? '매주 ' + WD[c.weekday] + '요일' : '이번 한 번')}
+      <div style="font-size:11.5px;color:rgba(255,255,255,.35);line-height:1.6;margin:14px 2px 0">
+        참가를 누르면 이번 회차 스쿼드가 열리고 목록에 올라가요.<br>이미 열려 있으면 그 스쿼드로 들어가요.</div>
+      <button onclick="window.sqOpenClass('${c.id}')" style="width:100%;margin-top:16px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">참가하기</button>
+    </div>`;
+  document.body.appendChild(el);
+};
+
 // 정기반 회차를 실제 스쿼드로 연다(없으면 만들고, 이미 있으면 그리로 간다).
+// ★여기가 **문서를 만드는 자리**다. 미리보기의 [참가하기] 에서만 불린다 — 카드를 누르는 것만으로
+//   불리면 안 된다(구경만 해도 벙이 쌓인다).
 // ★중복 방지는 **문서 id**로 한다 — 'cls_{classId}_{회차날짜}'. 조회로 막던 방식은 실패했다.
 window.sqOpenClass = async function (clsId) {
   const user = auth.currentUser;
   if (!user) { requireLogin && requireLogin('스쿼드에 참가하려면 로그인이 필요해요'); return; }
   const cls = (window.SQUAD_CLASSES || []).find(c => c.id === clsId); if (!cls) return;
   const occ = window._sqNextOcc(cls), key = window._sqOccKey(occ);
+  // 이 회차에 이미 열려 있다고 적어둔 벙이 있으면 그리로 간다(새로 만들지 않는다).
+  const known = cls.occSid && cls.occSid[key];
+  if (known) { window.openSquadDetail && window.openSquadDetail(known); return; }
   // ★★문서 id 를 회차로 못 박는다(대표 8-11: 같은 회차가 4개까지 생겼다).
   //   예전엔 classId+occKey 로 **조회해서** 없으면 만들었는데, 그 조회가 실패하거나
   //   두 사람이 동시에 누르면 그대로 새 문서가 하나 더 생겼다. id 가 같으면 애초에 두 개가 못 생긴다.
@@ -18296,7 +18355,11 @@ window.renderSquadHero = async function () {
         title: esc(c.name),
         sub: when + ' · ' + esc(c.location),
         cta: '참가하기',
-        click: "window.sqOpenClass('" + c.id + "')"
+        // ★이미 열려 있는 회차면 그 벙으로 바로. 아니면 **미리보기**를 연다 —
+        //   누르는 것만으로 벙이 만들어지면 구경만 해도 목록에 쌓인다(대표 8-11).
+        click: window._sqOccSid(c)
+          ? "window.openSquadDetail&&window.openSquadDetail('" + window._sqOccSid(c) + "')"
+          : "window.sqClassPreview('" + c.id + "')"
       });
     });
 
@@ -18522,7 +18585,9 @@ window.renderSquadPage = async function () {
       const occ = window._sqNextOcc(c), key = window._sqOccKey(occ), sched = occ.getTime();
       const dur = Math.round((c.durH || 1) * 3600000);
       if (sched + dur <= _now) return;                                  // 이미 끝난 회차
-      if (rows.some(function (r) { return r.classId === c.id && r.occKey === key; })) return;
+      // 이미 진짜 문서가 있는 회차면 가짜 줄을 만들지 않는다(그러면 같은 벙이 두 줄이 된다)
+      const known = window._sqOccSid(c);
+      if (rows.some(function (r) { return r.id === known || (r.classId === c.id && r.occKey === key); })) return;
       rows.push({ id: '_cls_' + c.id, _cls: c.id, title: c.name, exerciseType: c.type,
         location: c.location, scheduledAt: sched, expiresAt: sched + dur + 3600000,
         capacity: c.capacity, memberUids: [], feeAmount: 0, img: c.img || null, status: 'recruiting' });
@@ -18550,7 +18615,8 @@ window.renderSquadPage = async function () {
       : full ? '<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">마감</span>'
       : '<span style="background:rgba(61,126,255,.2);color:#7aa8ff;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">모집중</span>';
     // 정기반 가짜 줄은 누르는 순간 진짜 벙이 만들어진다(sqOpenClass)
-    const go = s._cls ? `window.sqOpenClass('${s._cls}')` : `window.openSquadDetail('${s.id}')`;
+    // 가짜 줄(아직 문서 없는 정기반 회차)은 미리보기로 — 누른다고 벙이 생기면 안 된다
+    const go = s._cls ? `window.sqClassPreview('${s._cls}')` : `window.openSquadDetail('${s.id}')`;
     const clsChip = s._cls || s.classId
       ? '<span style="background:rgba(245,194,75,.16);color:#F5C24B;border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:700">정기반</span>' : '';
     return `
