@@ -1518,6 +1518,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.2-7-10.5A7 7 0 0 1 19 10.5C19 15.8 12 21 12 21z"/><circle cx="12" cy="10.3" r="2.4"/></svg>
         헬스장 좌표·시딩 정비 (관리자)
       </button>
+      <button id="banner-admin-btn" onclick="window.showBannerAdmin && window.showBannerAdmin()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 12h20"/></svg>
+        스쿼드 광고 카드 (관리자)
+      </button>
     </div>
     <div id="my-photos" style="display:none">
       <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:12px;line-height:1.5">다른 사람이 내 프로필을 볼 때 스와이프로 넘겨보는 사진이에요. 프로필 인증에도 쓰여요.</div>
@@ -8892,6 +8896,8 @@ window.updateUI = function(user) {
     if (feedHairBtn) feedHairBtn.style.display = _adm ? 'flex' : 'none';
     const centerFixBtn = document.getElementById('center-fix-btn');
     if (centerFixBtn) centerFixBtn.style.display = _adm ? 'flex' : 'none';
+    const bannerBtn = document.getElementById('banner-admin-btn');
+    if (bannerBtn) bannerBtn.style.display = _adm ? 'flex' : 'none';
     if (window._mwFxRestoreSync) window._mwFxRestoreSync();
     const mypageAdminBadge = document.getElementById('mypage-admin-badge');
     if (mypageAdminBadge) mypageAdminBadge.style.display = _adm ? 'inline-block' : 'none';
@@ -17711,6 +17717,145 @@ window.sqOpenClass = async function (clsId) {
   } catch (e) { console.error(e); showToast('참가 실패 — 다시 시도해주세요'); }
 };
 
+// ===== 스쿼드 광고 카드 — 관리자 등록 (대표 8-11) =====
+// ★대표가 원한 건 "인스타 사진을 카드로 띄우는 것"이다. Instagram Graph API 는
+//   비즈니스 전환·앱 심사·서버·60일 토큰갱신이 필요해 출시 준비 중에 붙일 물건이 아니다.
+//   어차피 뜨는 그림은 인스타에 올린 그 사진이므로 **여기서 올리면 결과가 같다.**
+// ★인스타 사진은 대부분 정사각/세로다. 2.6:1 카드에 그냥 넣으면 잘리므로
+//   올릴 때 여기서 잘라준다 — 어디를 살릴지(왼/가운데/오른쪽)만 고르면 된다.
+window._bnFile = null;
+window._bnBlob = null;
+
+// 사진 → 카드 규격(1080x415). cx = 가로 크롭 중심(0 왼쪽 / .5 가운데 / 1 오른쪽)
+// ★왼쪽 55% 에 제목·부제가 얹힌다. 그쪽이 밝으면 글씨가 안 읽혀서 그때만 어둡게 깐다.
+window._bnMakeCard = function (file, cx) {
+  return new Promise(function (res, rej) {
+    const W = 1080, H = 415;
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = function () {
+      try {
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const x = cv.getContext('2d');
+        const s = Math.max(W / im.width, H / im.height);
+        const pw = im.width * s, ph = im.height * s;
+        x.drawImage(im, -(pw - W) * (cx == null ? 0.5 : cx), -(ph - H) / 2, pw, ph);
+        // 왼쪽 밝기 재기 — 밝으면 글씨가 죽는다
+        let lum = 0;
+        try {
+          const d = x.getImageData(0, 0, Math.round(W * 0.55), H).data;
+          let sum = 0; for (let i = 0; i < d.length; i += 16) sum += (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+          lum = sum / (d.length / 16);
+        } catch (e) { lum = 0; }
+        if (lum > 90) { x.fillStyle = 'rgba(5,7,12,' + Math.min(0.55, (lum - 90) / 140) + ')'; x.fillRect(0, 0, W, H); }
+        // 왼쪽으로 갈수록 어두워지는 그라디언트 — 앱이 한 겹 더 깔지만 여기서도 깔아야 안전하다
+        const g = x.createLinearGradient(0, 0, W, 0);
+        g.addColorStop(0, 'rgba(5,7,12,.72)'); g.addColorStop(.55, 'rgba(5,7,12,.28)'); g.addColorStop(1, 'rgba(5,7,12,0)');
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? res(b) : rej(new Error('canvas')); }, 'image/jpeg', 0.85);
+      } catch (e) { rej(e); }
+    };
+    im.onerror = function () { URL.revokeObjectURL(url); rej(new Error('load')); };
+    im.src = url;
+  });
+};
+window._bnPreview = async function () {
+  const f = window._bnFile; if (!f) return;
+  const cx = parseFloat((document.getElementById('bn-cx') || {}).value || '0.5');
+  try {
+    window._bnBlob = await window._bnMakeCard(f, cx);
+    const el = document.getElementById('bn-prev');
+    if (el) { if (el._u) URL.revokeObjectURL(el._u); el._u = URL.createObjectURL(window._bnBlob); el.src = el._u; el.style.display = 'block'; }
+  } catch (e) { showToast('사진을 처리하지 못했어요'); }
+};
+window.showBannerAdmin = async function () {
+  if (typeof isAdmin !== 'function' || !isAdmin()) return;
+  let el = document.getElementById('bn-admin'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'bn-admin';
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#05070c;overflow-y:auto;padding:18px 16px 60px';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="font-size:16px;font-weight:800;flex:1">스쿼드 광고 카드</div>
+      <button onclick="document.getElementById('bn-admin').remove()" style="background:none;border:none;color:#8a93a8;font-size:20px;cursor:pointer;font-family:inherit">✕</button>
+    </div>
+    <div style="font-size:11.5px;color:#4a5266;line-height:1.7;margin-bottom:16px">
+      인스타에 올린 사진을 그대로 올리면 돼요. 가로 2.6:1 로 잘리고 왼쪽은 글씨가 읽히게 어두워져요.
+    </div>
+    <div class="mw-panel" style="padding:14px;margin-bottom:18px">
+      <input type="file" id="bn-file" accept="image/*" style="width:100%;font-size:12px;color:#8a93a8;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:11.5px;color:#8a93a8;flex-shrink:0">살릴 부분</span>
+        <input id="bn-cx" type="range" min="0" max="1" step="0.05" value="0.5" oninput="window._bnPreview()" style="flex:1">
+      </div>
+      <img id="bn-prev" style="display:none;width:100%;border-radius:10px;margin-bottom:10px">
+      <input id="bn-tag" maxlength="10" placeholder="태그 (예: 근방단)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
+      <input id="bn-title" maxlength="24" placeholder="제목 (예: 춤벙, 이번에도 열립니다)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
+      <input id="bn-sub" maxlength="34" placeholder="한 줄 설명" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
+      <input id="bn-cta" maxlength="8" placeholder="버튼 글씨 (기본: 보러가기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
+      <input id="bn-href" placeholder="누르면 갈 주소 (비우면 스쿼드 만들기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:12px;font-family:inherit">
+      <button id="bn-save" onclick="window.bnSave()" class="mw-btn mw-btn-gold" style="width:100%">카드 올리기</button>
+    </div>
+    <div style="font-size:12px;color:#8a93a8;margin-bottom:9px">올린 카드</div>
+    <div id="bn-list" style="display:flex;flex-direction:column;gap:9px"><div style="color:#4a5266;font-size:12px">불러오는 중…</div></div>`;
+  document.body.appendChild(el);
+  const fi = document.getElementById('bn-file');
+  if (fi) fi.onchange = function (e) { window._bnFile = e.target.files && e.target.files[0]; window._bnPreview(); };
+  window.bnRenderList();
+};
+window.bnRenderList = async function () {
+  const list = document.getElementById('bn-list'); if (!list) return;
+  try {
+    const qs = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc')));
+    const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!rows.length) { list.innerHTML = '<div style="color:#4a5266;font-size:12px">아직 없어요</div>'; return; }
+    list.innerHTML = rows.map(function (b) {
+      return '<div class="mw-panel" style="padding:10px;display:flex;gap:10px;align-items:center">'
+        + '<img src="' + b.img + '" style="width:88px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0">'
+        + '<div style="flex:1;min-width:0">'
+        +   '<div style="font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (b.title || '') + '</div>'
+        +   '<div style="font-size:10.5px;color:#4a5266">순서 ' + (b.order != null ? b.order : '-') + ' · ' + (b.on === false ? '꺼짐' : '켜짐') + '</div>'
+        + '</div>'
+        + '<button onclick="window.bnToggle(\'' + b.id + '\',' + (b.on === false) + ')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">' + (b.on === false ? '켜기' : '끄기') + '</button>'
+        + '<button onclick="window.bnDelete(\'' + b.id + '\')" style="background:none;border:none;color:#FF4D67;font-size:11px;cursor:pointer;font-family:inherit">삭제</button>'
+        + '</div>';
+    }).join('');
+  } catch (e) { list.innerHTML = '<div style="color:#FF4D67;font-size:12px">불러오지 못했어요 — 보안규칙에 banners 가 있는지 확인하세요</div>'; }
+};
+window.bnSave = async function () {
+  if (!window._bnBlob) { showToast('사진을 먼저 고르세요'); return; }
+  const title = (document.getElementById('bn-title').value || '').trim();
+  if (!title) { showToast('제목을 입력해주세요'); return; }
+  const btn = document.getElementById('bn-save'); btn.disabled = true; btn.textContent = '올리는 중…';
+  try {
+    const f = new File([window._bnBlob], 'ad.jpg', { type: 'image/jpeg' });
+    const url = await window.uploadImgbb(f);
+    if (!url) throw new Error('upload');
+    await addDoc(collection(db, 'banners'), {
+      img: url, title: title,
+      tag: (document.getElementById('bn-tag').value || '근방단').trim(),
+      sub: (document.getElementById('bn-sub').value || '').trim(),
+      cta: (document.getElementById('bn-cta').value || '보러가기').trim(),
+      href: (document.getElementById('bn-href').value || '').trim(),
+      on: true, order: Date.now(), createdAt: serverTimestamp()
+    });
+    showToast('카드를 올렸어요');
+    window._bnFile = null; window._bnBlob = null;
+    const p = document.getElementById('bn-prev'); if (p) p.style.display = 'none';
+    ['bn-tag','bn-title','bn-sub','bn-cta','bn-href'].forEach(function (id) { const e = document.getElementById(id); if (e) e.value = ''; });
+    window.bnRenderList();
+    window.renderSquadHero && window.renderSquadHero();
+  } catch (e) { console.error(e); showToast('올리지 못했어요 — 다시 시도해주세요'); }
+  btn.disabled = false; btn.textContent = '카드 올리기';
+};
+window.bnToggle = async function (id, on) {
+  try { await updateDoc(doc(db, 'banners', id), { on: !!on }); window.bnRenderList(); window.renderSquadHero && window.renderSquadHero(); } catch (e) { showToast('바꾸지 못했어요'); }
+};
+window.bnDelete = async function (id) {
+  if (window.murpyConfirm && !(await window.murpyConfirm({ title: '이 카드를 지울까요?', desc: '되돌릴 수 없어요', confirmText: '삭제' }))) return;
+  try { await deleteDoc(doc(db, 'banners', id)); window.bnRenderList(); window.renderSquadHero && window.renderSquadHero(); } catch (e) { showToast('지우지 못했어요'); }
+};
+
 // ===== 스쿼드 히어로 (자동 슬라이드) =====
 // ★대표 요청(8-11): "가만히 있어도 자동으로 슬라이드되는 광고페이지 같은 것".
 //   다만 내용은 광고가 아니라 **지금 우리 동네에서 벌어지는 일**로 채운다 —
@@ -17758,9 +17903,15 @@ window.renderSquadHero = async function () {
     });
   } catch (e) { /* 체크인을 못 읽어도 정기반 슬라이드는 뜬다 */ }
 
-  // 3) 광고 카드 — 실제 활동 사진. 지금은 코드 상수지만 곧 관리자 화면에서 등록하게 바꾼다.
-  //    ★href 가 있으면 그리로 보내고(인스타 게시물 등), 없으면 스쿼드 만들기로 보낸다.
-  (window.SQUAD_ADS || []).forEach(function (a) {
+  // 3) 광고 카드 — 실제 활동 사진.
+  //    ★관리자가 올린 것(banners)이 먼저, 그다음 코드에 박아둔 기본 카드.
+  //      banners 를 못 읽어도(규칙 미배포·오프라인) 기본 카드는 뜬다 — 화면이 비면 안 된다.
+  let admin = [];
+  try {
+    const bs = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc'), limit(10)));
+    admin = bs.docs.map(d => d.data()).filter(b => b.on !== false && b.img);
+  } catch (e) { /* 규칙이 아직 없으면 조용히 건너뛴다 */ }
+  admin.concat(window.SQUAD_ADS || []).forEach(function (a) {
     slides.push({
       bg: a.img, tag: a.tag || '근방단', tagColor: a.tagColor || '#F5C24B',
       title: esc(a.title), sub: esc(a.sub), cta: a.cta || '보러가기',
