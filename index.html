@@ -17594,6 +17594,11 @@ window.SQUAD_TYPES = {
   climbing: { name:'클라이밍', v:1 },
   hyrox:    { name:'하이록스', v:1 },
   hiking:   { name:'등산',     v:1 },
+  // ★요가·댄스 (2026-08-11 추가). 전용 필드가 아직 없어서 field 로 다른 필드를 빌려 쓴다.
+  //   char/fields/field_yoga_wide.png · field_dance_wide.png 가 들어오면 그 field 줄만 지우면 된다.
+  //   ★없는 파일을 가리키면 404 가 조용히 나면서 카드·워킹룸 배경이 통째로 빈다.
+  yoga:     { name:'요가',     v:1, field:'gym' },
+  dance:    { name:'댄스',     v:1, field:'gym' },
 };
 // ===== 시간대별 필드 (대표 8-11) =====
 // 같은 러닝이어도 아침에 뛰는 것과 저녁에 뛰는 건 그림이 달라야 한다.
@@ -17625,7 +17630,9 @@ window.squadFieldSrc = function (t, whenMs) {
     const v = (window.SQUAD_FIELD_TOD[k] || {})[tod];
     if (v) return 'char/fields/field_' + k + '_' + tod + '_wide.png?v=' + v;
   }
-  return 'char/fields/field_' + k + '_wide.png?v=' + window.SQUAD_TYPES[k].v;
+  // 전용 필드가 아직 없는 종목은 field 로 빌려 쓴다(없는 파일을 가리키면 배경이 빈다)
+  const f = window.SQUAD_TYPES[k].field || k;
+  return 'char/fields/field_' + f + '_wide.png?v=' + window.SQUAD_TYPES[f].v;
 };
 window.SQUAD_LEVELS = { easy:'가볍게', mid:'중간', hard:'빡세게' };
 window._sqFmtTime = function (ms) {
@@ -17658,7 +17665,12 @@ window.SQUAD_CLASSES = [
     memo: '가볍게 5km. 페이스는 맞춰서 뜁니다.' },
   { id: 'sat_am_gym', name: '토요일 오전 헬스반', type: 'gym', weekday: 6, hour: 9, min: 0,
     durH: 2, location: '근방단 지정 헬스장', capacity: 8, level: '누구나',
-    memo: '주말 오전에 몰아서. 끝나고 커피 한 잔.' }
+    memo: '주말 오전에 몰아서. 끝나고 커피 한 잔.' },
+  // ★일회성 벙은 weekday 대신 date 를 준다. 그날이 지나면 목록에서 저절로 빠진다.
+  { id: 'yoga_0822', name: '누리쌤 요가벙', type: 'yoga', date: '2026-08-22', hour: 10, min: 0,
+    durH: 1.5, location: '요가원 (장소 공지 예정)', capacity: 8, level: '누구나',
+    img: 'char/promo/ad_yoga.jpg?v=1',
+    memo: '처음이어도 괜찮아요. 매트는 준비돼 있어요.' }
 ];
 // ===== 광고 카드 (실제 활동 사진) =====
 // ★대표 8-11: "AI로 뽑은 것보다 실제 활동 멤버 실사 사진이 훨씬 낫다."
@@ -17674,8 +17686,14 @@ window.SQUAD_ADS = [
   { img: 'char/promo/ad_climbing.jpg?v=2', tag: '클라이밍', title: '오늘 클라이밍 같이 하실 분',
     sub: '초보 환영 · 신발만 빌리면 시작돼요', cta: '스쿼드 열기' }
 ];
-// 다음 회차 시각. 오늘이 그 요일이어도 **이미 지났으면 다음 주**로 넘긴다.
+// 다음 회차 시각.
+// ★date('YYYY-MM-DD')가 있으면 **그날 한 번뿐인 벙**이다(8/22 요가벙 같은 것).
+//   weekday 가 있으면 매주 반복 — 오늘이 그 요일이어도 이미 지났으면 다음 주로 넘긴다.
 window._sqNextOcc = function (cls) {
+  if (cls.date) {
+    const m = String(cls.date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], cls.hour, cls.min, 0, 0);
+  }
   const n = new Date();
   const d = new Date(n.getFullYear(), n.getMonth(), n.getDate(), cls.hour, cls.min, 0, 0);
   let add = (cls.weekday - d.getDay() + 7) % 7;
@@ -17872,8 +17890,10 @@ window.renderSquadHero = async function () {
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
 
   // 1) 정기반 — 다가오는 순서로. 목록이 비어도 여기는 항상 찬다.
+  // ★지난 일회성 벙은 빼고(그날이 지나면 저절로 사라진다) 가까운 순으로.
   (window.SQUAD_CLASSES || []).map(c => ({ c, at: window._sqNextOcc(c) }))
-    .sort((a, b) => a.at - b.at).slice(0, 3).forEach(({ c, at }) => {
+    .filter(x => x.at.getTime() > Date.now() - 4 * 3600 * 1000)
+    .sort((a, b) => a.at - b.at).slice(0, 4).forEach(({ c, at }) => {
       const when = WD[at.getDay()] + '요일 ' + String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
       const dday = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()) - new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())) / 86400000);
       slides.push({
@@ -17961,7 +17981,8 @@ window.renderSquadHero = async function () {
         +   '<div><span style="background:rgba(255,255,255,.1);color:' + s.tagColor + ';border-radius:20px;padding:3px 10px;font-size:10.5px;font-weight:800">' + s.tag + '</span></div>'
         +   '<div style="font-size:19px;font-weight:800;letter-spacing:-.5px;line-height:1.25">' + s.title + '</div>'
         +   '<div style="font-size:12.5px;color:rgba(255,255,255,.6);line-height:1.4">' + s.sub + '</div>'
-        +   '<div style="position:absolute;left:18px;bottom:16px;background:var(--accent);color:#fff;border-radius:20px;padding:8px 15px;font-size:12.5px;font-weight:800">' + s.cta + '</div>'
+        // ★CTA 버튼 없앴다(대표 8-11) — 카드가 2:1 로 커지면서 버튼 자리가 애매해졌고,
+        //   카드 자체가 눌리므로 버튼이 하는 일이 없다. 사진이 주인공이어야 한다.
         + '</div>')
       + '</div>').join('')
     + '</div>'
