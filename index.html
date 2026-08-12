@@ -6118,10 +6118,17 @@ function _applyMatchGuestLock(isGuest) {
       if (gT) gT.innerHTML = _temp ? '지금은 임시 계정이에요<br>계정을 만들면 매칭이 열려요' : '매칭 기능을 쓰려면<br>로그인이 필요해요';
       if (gB) {
         gB.textContent = _temp ? '계정 만들기' : '로그인하고 시작하기';
-        gB.onclick = _temp
-          ? function () { window.guestUpgrade && window.guestUpgrade(); }
-          : function () { openModal('login-method-modal'); };
+        gB.onclick = function (e) {
+          // ★여기서 전파를 끊어야 한다. 이 오버레이는 카드(.match-card) **안**에 있어서,
+          //   클릭이 그대로 카드로 올라가 openMatchDetail 이 같이 열렸다(대표 8-12:
+          //   "계정 만들기 누르면 각 사람들 꺼 클릭도 된다").
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          if (_temp) { window.guestUpgradeSheet ? window.guestUpgradeSheet('매칭은 계정을 만들어야 열려요') : (window.guestUpgrade && window.guestUpgrade()); }
+          else openModal('login-method-modal');
+        };
       }
+      // 오버레이 아무 데나 눌러도 카드로 안 새게 막는다
+      guest.onclick = function (e) { if (e) e.stopPropagation(); };
       guest.style.display = 'flex';
     }
   } else {
@@ -6135,6 +6142,12 @@ function _applyMatchGuestLock(isGuest) {
 }
 
 function openMatchDetail() {
+  // ★회원이 아니면 프로필을 열 수 없다. 카드는 블러로 가려놨지만 **누르면 상세가 열렸다** —
+  //   블러 뒤의 실제 사진·닉네임이 그대로 나갔다(대표 8-12).
+  if (window._notMember && window._notMember()) {
+    if (window.requireLogin) requireLogin('다른 머피의 프로필은 계정을 만들어야 볼 수 있어요');
+    return;
+  }
   const list = window._matchList; if (!list) return;
   const p = list[window._matchIdx || 0]; if (!p) return;
   if (window.openUserProfile) window.openUserProfile(p.uid, p.nickname || '익명', p.photoURL || '');
@@ -9146,7 +9159,7 @@ if ('serviceWorker' in navigator) {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
@@ -13060,14 +13073,40 @@ async function _kakaoFirebaseAuth(accessToken) {
   const email = `kakao_${kakaoId}@kakao.murpy.app`;
   const pw = `kp_${kakaoId}_mk`;
   let userCred;
-  try {
-    userCred = await signInWithEmailAndPassword(auth, email, pw);
-  } catch(e) {
-    if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
-      userCred = await createUserWithEmailAndPassword(auth, email, pw);
-    } else throw e;
+  // ★임시(익명) 계정이 켜져 있으면 **새로 로그인하지 않고 그 계정에 붙인다**(대표 8-12).
+  //   왜 카카오여야 하나 — 구글은 OAuth 팝업/리다이렉트라 카톡 인앱브라우저 안에서 막힌다
+  //   ("연결하지 못했어요"의 정체). 카카오는 우리 쪽에서 이메일/비밀번호로 바꿔 쓰기 때문에
+  //   웹뷰 안에서도 그냥 된다. uid 가 유지돼 스쿼드 기록이 그대로 따라온다.
+  const _cur = auth.currentUser;
+  const _wantLink = !!(_cur && _cur.isAnonymous);
+  let _linked = false;
+  if (_wantLink) {
+    try {
+      userCred = await linkWithCredential(_cur, EmailAuthProvider.credential(email, pw));
+      _linked = true;
+    } catch (e) {
+      // 그 카카오 계정이 이미 머피에 있으면 합칠 수 없다 — 솔직히 알리고 그 계정으로 들여보낸다
+      if (e.code === 'auth/email-already-in-use' || e.code === 'auth/credential-already-in-use'
+          || e.code === 'auth/provider-already-linked') {
+        userCred = await signInWithEmailAndPassword(auth, email, pw);
+        showToast('이미 쓰던 카카오 계정이라 그쪽으로 들어왔어요');
+      } else throw e;
+    }
+  }
+  if (!userCred) {
+    try {
+      userCred = await signInWithEmailAndPassword(auth, email, pw);
+    } catch(e) {
+      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+        userCred = await createUserWithEmailAndPassword(auth, email, pw);
+      } else throw e;
+    }
   }
   const uid = userCred.user.uid;
+  // 연결에 성공했으면 임시 딱지를 뗀다. 닉네임은 게스트 때 쓰던 걸 그대로 둔다(본인이 정한 이름이다).
+  if (_linked) {
+    try { await setDoc(doc(db,'users',uid), { guest: false, kakaoId, provider: 'kakao', updatedAt: serverTimestamp() }, { merge: true }); } catch(e) {}
+  }
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
   if (!userSnap.exists() || !userSnap.data().nickname) {
@@ -13657,17 +13696,41 @@ window.guestUpgradeSheet = function (reason) {
   el = document.createElement('div'); el.id = 'guest-upsheet';
   el.style.cssText = 'position:fixed;inset:0;z-index:40030;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
   el.onclick = function (e) { if (e.target === el) el.remove(); };
+  // ★시트 구조는 **스쿼드 초대 시트(sq-enter)와 똑같이** 간다(대표 8-12: "그거 그대로 쓰면 되잖아").
+  //   거기서 이미 답을 낸 구조다 — [내 길로 진행] / [이미 머피 회원이에요 · 로그인] / [나중에].
+  //   여기서 '내 길'은 **임시 계정에 붙이기**(기록 유지)이고, 이미 계정이 따로 있는 사람은
+  //   붙일 수가 없어서(그 계정에 이미 물려 있다) 갈아타기로 보내야 한다.
+  // ★1순위를 카카오로 둔다. 이 사람들은 대부분 카톡 링크로 들어오는데 그 안에서는
+  //   구글 OAuth 가 막혀 "연결하지 못했어요"만 떴다. 카카오는 우리 쪽에서 이메일/비밀번호로
+  //   바꿔 쓰기 때문에 웹뷰 안에서도 그냥 된다.
   el.innerHTML = `
-    <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(245,194,75,.3);border-radius:18px;padding:24px 22px;text-align:center">
-      <div style="font-size:17px;font-weight:800;margin-bottom:7px">계정을 만들면 열려요</div>
-      <div style="font-size:12.5px;color:rgba(255,255,255,.55);line-height:1.7;margin-bottom:18px">
+    <div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 20px 22px;text-align:center">
+      <div style="font-size:11px;color:#F5C24B;font-weight:800;margin-bottom:6px">임시 계정</div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:5px">계정을 만들면 열려요</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">
         ${(reason || '이 기능은 머피 회원만 쓸 수 있어요').replace(/</g, '&lt;')}<br>
-        지금은 <b style="color:#F5C24B">임시 계정</b>이에요.<br>
-        계정을 만들어도 <b style="color:#cfd6e6">스쿼드 기록은 그대로</b> 따라와요.</div>
-      <button onclick="document.getElementById('guest-upsheet').remove();window.guestUpgrade&&window.guestUpgrade()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
-      <button onclick="document.getElementById('guest-upsheet').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12.5px;padding:13px 0 0;cursor:pointer;font-family:inherit">나중에 할게요</button>
+        지금 스쿼드 기록은 <b style="color:rgba(255,255,255,.72)">그대로 따라와요</b></div>
+      <button onclick="document.getElementById('guest-upsheet').remove();window.kakaoLogin&&window.kakaoLogin()"
+        style="width:100%;background:#FEE500;color:#000;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px;display:flex;align-items:center;justify-content:center;gap:7px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="#000"><path d="M12 3C6.48 3 2 6.48 2 10.8c0 2.7 1.55 5.08 3.9 6.5l-.97 3.6 4.18-2.77c.93.18 1.89.27 2.89.27 5.52 0 10-3.48 10-7.8S17.52 3 12 3z"/></svg>
+        카카오로 계정 만들기</button>
+      <button onclick="document.getElementById('guest-upsheet').remove();window.guestSwitchAccount&&window.guestSwitchAccount()"
+        style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>
+      <button onclick="document.getElementById('guest-upsheet').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:13px 0 0;cursor:pointer;font-family:inherit">나중에 할게요</button>
     </div>`;
   document.body.appendChild(el);
+};
+// 임시 계정 → 원래 쓰던 계정으로 갈아타기(스쿼드 밖에서도 쓰는 일반판).
+// ★연결(link)이 아니라 갈아타기다. 이미 계정이 있는 사람의 구글·카카오는 그 계정에 물려 있어서
+//   임시 계정에 붙일 수가 없다. 그래서 임시 계정을 버리는데, 버리기 전에 반드시 확인을 받는다.
+window.guestSwitchAccount = async function () {
+  if (!confirm('임시 계정으로 쌓인 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
+  ['guest-upsheet', 'guest-nick', 'guest-nudge', 'sq-enter'].forEach(function (id) {
+    const e = document.getElementById(id); if (e) e.remove();
+  });
+  window._sqSkipEnterSheet = true;   // 로그아웃되면서 초대 시트가 다시 뜨는 것을 막는다
+  try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
+  if (window.openModal) openModal('login-method-modal');
 };
 
 // 게스트 → 정식 계정. uid 가 그대로라 오늘 기록이 전부 따라온다.
@@ -13682,6 +13745,13 @@ window.guestUpgrade = async function () {
     if (window.updateUI) updateUI(auth.currentUser);
   } catch (e) {
     console.error('계정 연결 실패', e);
+    // ★인앱브라우저(카톡·인스타)에서는 구글 OAuth 자체가 막힌다 — 여기서 "다시 시도"라고 하면
+    //   백 번을 눌러도 안 된다(대표 8-12). 되는 길(카카오)을 알려준다.
+    if (window._isInApp && window._isInApp()) {
+      showToast('카톡 안에서는 구글 연결이 막혀요 · 카카오로 만들어주세요');
+      if (window.guestUpgradeSheet) window.guestUpgradeSheet('구글 대신 카카오로 만들면 바로 돼요');
+      return;
+    }
     // 이미 그 구글 계정으로 가입한 적이 있으면 합칠 수 없다 — 솔직히 알린다
     showToast(e && e.code === 'auth/credential-already-in-use'
       ? '그 구글 계정은 이미 머피에 있어요 · 로그아웃 후 그 계정으로 들어와주세요'
@@ -14038,9 +14108,17 @@ window.loadBamboo = async (tab) => {
         <div style="font-size:12.5px;color:rgba(255,255,255,.42);line-height:1.7;margin-bottom:20px">
           속마음을 익명으로 남기는 곳이라<br>계정이 있어야 열려요.<br>
           지금 스쿼드 기록은 <b style="color:rgba(255,255,255,.7)">그대로 따라와요</b>.</div>
-        <button onclick="window.guestUpgrade&&window.guestUpgrade()" style="background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:13px 24px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
+        <button onclick="window.guestUpgradeSheet&&window.guestUpgradeSheet('대나무숲은 계정을 만들어야 열려요')" style="background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:13px 24px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">계정 만들기</button>
       </div>`;
     const _cnt = document.getElementById('my-post-count'); if (_cnt) _cnt.textContent = '';
+    // ★탭에 들어오는 순간 팝업까지 띄운다(대표 8-12). 잠금 화면만 그려두면 "왜 안 되지"로 끝나고,
+    //   무엇을 하면 열리는지는 결국 팝업이 말해준다. 화면 전환 애니메이션 뒤에 얹는다.
+    setTimeout(function () {
+      if (window.isTempAccount && window.isTempAccount() && window.guestUpgradeSheet
+          && !document.getElementById('guest-upsheet')) {
+        window.guestUpgradeSheet('대나무숲은 계정을 만들어야 열려요');
+      }
+    }, 420);
     return;
   }
   if (window.renderBambooChips) window.renderBambooChips();
