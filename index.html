@@ -5557,7 +5557,11 @@ function goPage(name) {
   });
   if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); }
   if (name === 'crew') { if (window.renderSquadPage) window.renderSquadPage(); else renderCrews(); }   // 크루 탭 → 스쿼드 (크루 렌더는 휴면)
-  if (name === 'match') renderMatch();
+  if (name === 'match') {
+    renderMatch();
+    // 오늘 몫이 와 있다는 걸 한 번 알려준다(하루 1회). 후보 로딩이 끝난 뒤라야 숫자가 맞는다.
+    setTimeout(() => { if (window.matchHello) window.matchHello(); }, 900);
+  }
   if (name === 'center') renderCenters();
   if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
   if (name === 'char' && window.renderCharSpace) { window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx(); }
@@ -5768,6 +5772,11 @@ function renderMatch() {
         <div style="font-size:12px;color:rgba(255,255,255,0.32);line-height:1.6;margin-bottom:20px">${(window._matchPoolLeft || 0) > 0
             ? '내일 아침 새로 골라드릴게요<br>그동안 스쿼드에서 같이 운동할 사람을 찾아보세요'
             : '스쿼드에서 운동 메이트를 찾아보거나<br>잠시 후 다시 확인해보세요'}</div>
+        <!-- ★여기가 매칭탭의 첫 결제 접점이다(대표 8-12). 다 봤다는 화면에서 끝내면 그날 앱을 닫는다.
+             남은 사람이 있을 때만 띄운다 — 없는데 권하면 눌러도 허탕이다. -->
+        ${(window._matchMoreLeft || 0) > 0 ? `
+          <button onclick="window.matchBuyMore&&window.matchBuyMore()" style="display:block;width:100%;max-width:280px;margin:0 auto 10px;background:#F5C24B;border:none;color:#3a2a00;border-radius:12px;padding:13px 20px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">${window._matchMoreCost}머피로 ${window._matchMoreN}명 더 보기</button>
+          <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:16px">오늘 아직 ${window._matchMoreLeft}명이 남아 있어요</div>` : ''}
         <!-- ★반투명 배경 칠하기 금지(대표). 액션 버튼은 블루 단색이 앱 전체의 규칙이다 -->
         <button onclick="goPage('crew')" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:13px 24px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">스쿼드 둘러보기</button>`;
     }
@@ -9920,6 +9929,12 @@ const CREDIT_WELCOME = 30;          // 평상시 신규 가입 선물
 const CREDIT_BETA_GIFT = 300;       // 베타테스터 선물 (대표가 약속한 금액)
 window.BETA_GIFT_ON = true;         // ★베타 끝나면 여기만 false
 const CREDIT_DAILY = 1, COST_MATCH = 10, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+// ★오늘 치를 다 본 뒤 더 보는 값(대표 8-12). **매칭 신청(10)보다 싸야 한다** —
+//   보는 것이 거는 것보다 비싸면 아무도 안 산다. 5의 배수를 피해 7로 둔다(홀수 법칙).
+// ★renderMatch 는 다른 script 블록이라 이 const 를 못 본다 → window 로도 실어 보낸다.
+const COST_MATCH_MORE = 7, MATCH_MORE_N = 5;
+window._matchMoreCost = COST_MATCH_MORE;
+window._matchMoreN = MATCH_MORE_N;
 // 지금 나가야 하는 가입 선물 금액
 window.welcomeAmount = function () { return window.BETA_GIFT_ON ? CREDIT_BETA_GIFT : CREDIT_WELCOME; };
 // 이미 가입한 베타테스터도 같은 약속의 대상이다 → 아래 1회성 지급 플래그로 같이 올려준다.
@@ -11577,6 +11592,91 @@ function _matchRecentScore(d) {
   return 0;
 }
 
+// ===== 오늘 치를 다 본 뒤 '머피로 더 보기' (대표 8-12) =====
+// ★여기가 매칭탭의 **첫 결제 접점**이다. 다 봤다는 화면에서 끝내면 그날 앱을 닫는다.
+//   남은 후보를 이미 들고 있으므로(_matchPool) 서버를 다시 읽지 않는다.
+window.matchMoreLeft = function () {
+  if (window._matchUnlimited) return 0;               // 관리자·테스터는 제한이 없다
+  const pool = window._matchPool || [];
+  const have = new Set((window._matchList || []).map(c => c.uid));
+  const n = pool.filter(c => !have.has(c.uid)).length;
+  window._matchMoreLeft = n;                          // renderMatch(다른 블록)가 읽는다
+  return n;
+};
+window.matchBuyMore = async function () {
+  const me = window.currentUser && window.currentUser.uid;
+  if (!me) { requireLogin && requireLogin('더 보려면 로그인이 필요해요'); return; }
+  const pool = window._matchPool || [];
+  const have = new Set((window._matchList || []).map(c => c.uid));
+  const rest = pool.filter(c => !have.has(c.uid));
+  if (!rest.length) { showToast('오늘 소개할 분을 다 봤어요 · 내일 새로 골라드릴게요'); return; }
+  const add = rest.slice(0, MATCH_MORE_N);
+  if (window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
+    const ok = await window.murpyConfirm({
+      title: add.length + '명 더 보기',
+      desc: '<b style="color:#F5C24B">' + COST_MATCH_MORE + '머피</b>로 오늘 ' + add.length + '명을 더 만나요',
+      cost: true, confirmText: '열어보기'
+    });
+    if (!ok) return;
+    if (!(await window.spendCredit(me, COST_MATCH_MORE))) {
+      showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return;
+    }
+  }
+  const at = (window._matchList || []).length;
+  window._matchList = (window._matchList || []).concat(add);
+  // 새로고침해도 유지되게 오늘 덱에 같이 적어둔다
+  try {
+    const k = window._matchDeckKey;
+    if (k) localStorage.setItem(k, JSON.stringify(window._matchList.map(c => c.uid)));
+  } catch (e) {}
+  window._matchPoolLeft = window.matchMoreLeft();
+  window._matchIdx = at;                  // 방금 열린 첫 사람부터 보여준다
+  if (window.renderMatch) window.renderMatch();
+  if (window.showToast) showToast(add.length + '명을 더 열었어요!');
+};
+
+// ===== 매칭탭에 들어올 때 한 번 띄우는 안내 (하루 1회) =====
+// ★"오늘 몫이 와 있다"를 알려주는 자리다. 매일 열어볼 이유를 만드는 게 목적이라
+//   이미 다 본 날에는 **더 보기**를 권한다.
+window.matchHello = function () {
+  if (window._matchUnlimited) return;                 // 관리자·테스터는 제한이 없다
+  const me = window.currentUser && window.currentUser.uid; if (!me) return;
+  let day; try { day = _creditToday(); } catch (e) { day = new Date().toDateString(); }
+  const key = 'murpy_match_hello_' + me + '_' + day;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
+  const list = window._matchList || [];
+  const seen = Math.min(window._matchIdx || 0, list.length);
+  const left = list.length - seen;
+  const more = window.matchMoreLeft();
+  let el = document.getElementById('match-hello'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'match-hello';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40040;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  const body = left > 0
+    ? `오늘의 <b style="color:#F5C24B">${left}명</b>이 도착했어요`
+    : (more > 0 ? `오늘 몫은 다 봤어요<br><b style="color:#F5C24B">${COST_MATCH_MORE}머피</b>로 ${Math.min(MATCH_MORE_N, more)}명을 더 만날 수 있어요`
+                : '오늘 소개할 분을 다 봤어요<br>내일 아침 새로 골라드릴게요');
+  el.innerHTML = `
+    <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px;text-align:center">
+      <div style="display:flex;justify-content:center;margin-bottom:12px">
+        <img src="char/ui/murpy_sad.png?v=3" alt="" style="width:0;height:0;opacity:0">
+        <span id="match-hello-char"></span>
+      </div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:7px">오늘의 추천</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.7;margin-bottom:18px">${body}</div>
+      ${left > 0
+        ? '<button onclick="document.getElementById(\'match-hello\').remove()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">보러 가기</button>'
+        : (more > 0
+          ? '<button onclick="document.getElementById(\'match-hello\').remove();window.matchBuyMore()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">' + COST_MATCH_MORE + '머피로 더 보기</button>'
+          : '<button onclick="document.getElementById(\'match-hello\').remove()" style="width:100%;background:rgba(255,255,255,.08);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">확인</button>')}
+      <button onclick="document.getElementById('match-hello').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12.5px;padding:13px 0 0;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  document.body.appendChild(el);
+  const slot = document.getElementById('match-hello-char');
+  if (slot && window.mwMiniCharHtml) {
+    slot.innerHTML = window.mwMiniCharHtml((window._charState && window._charState.character) || window.CHAR_DEFAULT, 72);
+  }
+};
+
 // ===== 매칭 후보 로더 (users → 지역/센터 우선 정렬) =====
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
@@ -11653,7 +11753,12 @@ window.loadMatchCandidates = async function () {
       window._matchList = picked;
       // 오늘 덱에 안 들어간 사람이 남아 있나 = "내일 새로 골라드릴게요"가 참인가
       window._matchPoolLeft = arr.filter(c => !inDeck.has(c.uid)).length;
+      // ★남은 후보를 **버리지 않고 들고 있는다**(8-12). '머피로 더 보기'가 여기서 꺼내 쓴다.
+      //   예전엔 5명만 남기고 나머지를 그대로 흘려보내서, 더 보려면 전체를 다시 읽어야 했다.
+      window._matchPool = arr;
+      window._matchDeckKey = key;
     }
+    window.matchMoreLeft && window.matchMoreLeft();   // _matchMoreLeft 갱신(덱 소진 화면이 쓴다)
     window._matchIdx = 0;
   } catch (e) {
     window._matchList = [];
