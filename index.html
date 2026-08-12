@@ -5685,6 +5685,12 @@ function closePanel(id) {
 window.isTempAccount = function () {
   try { return !!(window.currentUser && window.currentUser.isAnonymous); } catch (e) { return false; }
 };
+// ★회원 전용 문은 전부 이걸로 센다. `!window.currentUser` 를 그대로 쓰면 임시 계정이 통과한다.
+//   임시 계정에 열어두는 것은 **스쿼드(입장·톡·출석)와 내 방 걸어다니기뿐**이다 —
+//   가입이 귀찮은 사람도 벙 출첵은 되게 하려고 만든 길이라 거기를 막으면 기능이 죽는다.
+window._notMember = function () {
+  return !window.currentUser || (window.isTempAccount && window.isTempAccount());
+};
 // 막혔으면 true. 임시 계정이면 '계정 만들기'로, 아예 비로그인이면 로그인 가드로 보낸다.
 window.requireRealAccount = function (reason) {
   if (window.isTempAccount()) {
@@ -5692,10 +5698,20 @@ window.requireRealAccount = function (reason) {
     if (window.guestUpgrade) window.guestUpgrade();
     return true;
   }
-  if (!window.currentUser) { requireLogin(reason); return true; }
+  if (window._notMember()) { requireLogin(reason); return true; }
   return false;
 };
 function requireLogin(reason, onAfterLogin) {
+  // ★임시 계정에는 **로그인 창을 띄우면 안 된다.** 거기서 구글로 '로그인'해 버리면 새 uid 로
+  //   갈아타서 스쿼드에서 쌓은 닉네임·출석이 통째로 날아간다. 계정 **연결**(link)로 보내야
+  //   uid 가 유지돼 기록이 그대로 따라온다(대표 8-12).
+  if (window.isTempAccount && window.isTempAccount()) {
+    window._pendingIntent = (typeof onAfterLogin === 'function') ? onAfterLogin : null;
+    if (window.guestUpgradeSheet) { window.guestUpgradeSheet(reason); return; }
+    showToast(reason || '계정을 만들면 쓸 수 있어요');
+    if (window.guestUpgrade) window.guestUpgrade();
+    return;
+  }
   document.getElementById('login-guard-text').textContent = reason || '이 기능은 로그인 후 사용할 수 있어요';
   window._pendingIntent = (typeof onAfterLogin === 'function') ? onAfterLogin : null;
   openModal('login-guard-modal');
@@ -6335,7 +6351,7 @@ function handleLike() {
   const list = window._matchList; if (!list) return;
   const p = list[window._matchIdx || 0]; if (!p) return;
   // 비로그인: 안내만 띄우고 카드는 넘기지 않음(보낸 것처럼 사라지던 버그 방지)
-  if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.sendLike) window.sendLike(p.uid, p.nickname || '익명', p.photoURL || '');
   // 관리자·테스트 계정은 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
   if (window.isMatchTester && window.isMatchTester()) return;
@@ -6421,7 +6437,7 @@ function postBamboo() {
   // 사진만 올리는 것도 허용한다 (유저 피드백 #11 — '일상 사진'이 목적이라 글이 없을 수 있다)
   if (!text && !title && !window._bambooPhoto) { showToast('내용을 입력하거나 사진을 넣어주세요'); return; }
   if (window._hasContact(title + ' ' + text)) { showToast('외부 연락처는 쓸 수 없어요'); return; }
-  if (!window.currentUser) { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
   if (window.postBambooFirestore) {
     window.postBambooFirestore(text, title).then(ok => { if (ok) { document.getElementById('bamboo-input').value = ''; if (titleEl) titleEl.value = ''; if (window.collapseBambooCompose) window.collapseBambooCompose(); renderBamboo(); } });
   } else { requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); }
@@ -6560,7 +6576,7 @@ function filterRegion(region, btn) {
 }
 
 function joinCrew(id) {
-  if (!window.currentUser) { requireLogin('크루에 가입하려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('크루에 가입하려면 로그인이 필요해요'); return; }
   const crews = window.crewsData || [];
   const crew = crews.find(c => c.id == id);
   if (!crew) return;
@@ -6708,7 +6724,7 @@ function renderCrewSchedule(crew) {
 }
 
 function openCreateScheduleModal() {
-  if (!window.currentUser) { requireLogin('모임을 만들려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('모임을 만들려면 로그인이 필요해요'); return; }
   window._createScheduleCrewId = window._currentCrewId;
   window._editScheduleId = null;
   ['sched-title','sched-location','sched-desc'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -7122,7 +7138,7 @@ async function handlePhotoUpload(input, gridId) {
   const files = Array.from(input.files);
   input.value = '';
   if (!files.length) return;
-  if (!window.currentUser) { requireLogin('사진을 올리려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('사진을 올리려면 로그인이 필요해요'); return; }
   const grid = document.getElementById(gridId);
   const field = gridId === 'photos-grid' ? 'photos' : 'workoutPhotos';
   showToast(`업로드 중... (${files.length}장)`);
@@ -8092,7 +8108,7 @@ function initCropDrag() {
 // 사진 선택 → 크롭 모달 열기
 document.getElementById('feed-photo-input').addEventListener('change', function() {
   const file = this.files[0]; if (!file) return;
-  if (!window.currentUser) { this.value = ''; requireLogin('운동 인증은 로그인 후 올릴 수 있어요'); return; }
+  if (window._notMember()) { this.value = ''; requireLogin('운동 인증은 로그인 후 올릴 수 있어요'); return; }
   openCropModal(file);
 });
 
@@ -8411,7 +8427,7 @@ function selectPostCat(cat, btn) {
   window._crewPostCat = cat;
 }
 function openCrewPostWrite() {
-  if (!window.currentUser) { requireLogin('게시글을 쓰려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('게시글을 쓰려면 로그인이 필요해요'); return; }
   _crewPostCat = '자유'; window._crewPostCat = '자유';
   document.querySelectorAll('#post-category-btns button').forEach(b => {
     b.className = 'btn-glass'; b.style.cssText = 'padding:6px 12px;font-size:12px;border-radius:20px';
@@ -11820,7 +11836,7 @@ window.acceptLike = async (toUid, toName, toPhoto) => {
   return window.sendLike(toUid, toName, toPhoto, true, true);
 };
 window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
-  if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
   if (me === toUid) { showToast('본인에겐 보낼 수 없어요'); return; }
   // ★버그 수정 (2026-08-07, 대표 리포트 '랄프'): 여기서 _isConnected 를 보고 있었다.
@@ -11868,7 +11884,7 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
 
 // 홈 피드 우측 '같이운동' 바로요청: 프로필 안 들어가고 확인 → 바로 sendLike (같이 운동해요 전송)
 window.feedInvite = async (uid, name, photo) => {
-  if (!window.currentUser) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   if (window.currentUser.uid === uid) { showToast('내 글이에요'); return; }
   // 위 sendLike 와 같은 이유로 isMatched 로 판정한다(채팅만 있는 사이는 막지 않는다)
   if (window.isMatched && await window.isMatched(uid)) {
@@ -11888,7 +11904,7 @@ window.feedInvite = async (uid, name, photo) => {
 };
 
 window.openChatWith = async (uid, name, photo) => {
-  if (!window.currentUser) { requireLogin('로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
   const myNick = window._cachedProfile?.nickname || window.currentUser.nickname || window.currentUser.displayName || '익명';
   const myPhoto = window._cachedProfile?.photoURL || window.currentUser.firestorePhotoURL || window.currentUser.photoURL || '';
@@ -11967,7 +11983,7 @@ window.matchMoreLeft = function () {
 };
 window.matchBuyMore = async function () {
   const me = window.currentUser && window.currentUser.uid;
-  if (!me) { requireLogin && requireLogin('더 보려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin && requireLogin('더 보려면 계정이 필요해요'); return; }
   const pool = window._matchPool || [];
   const have = new Set((window._matchList || []).map(c => c.uid));
   const rest = pool.filter(c => !have.has(c.uid));
@@ -12413,7 +12429,7 @@ function _fvCaptureEnabled(on) {
 }
 
 window.startFaceVerify = async function() {
-  if (!window.currentUser) { requireLogin('프로필 인증은 로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('프로필 인증은 로그인이 필요해요'); return; }
   const prof = window._cachedProfile || {};
   const candidates = [prof.photoURL || window.currentUser.photoURL, ...(prof.photos || []), ...(prof.workoutPhotos || [])].filter(Boolean);
   if (!candidates.length) { showToast('먼저 사진을 한 장 등록해주세요'); return; }
@@ -12945,7 +12961,7 @@ async function _sendNotif(toUid, type, extra = {}, overrideNick, overridePhoto) 
 }
 
 window.likePost = async (postId, btn) => {
-  if (!window.currentUser) { requireLogin('좋아요는 로그인 후 누를 수 있어요'); return; }
+  if (window._notMember()) { requireLogin('좋아요는 로그인 후 누를 수 있어요'); return; }
   try {
     const postRef = doc(db, 'feed', postId);
     const postSnap = await getDoc(postRef);
@@ -13620,6 +13636,27 @@ window.guestNudge = function () {
         계정을 만들면 <b style="color:#cfd6e6">기록은 그대로</b> 옮겨가요.</div>
       <button onclick="document.getElementById('guest-nudge').remove();window.guestUpgrade&&window.guestUpgrade()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
       <button onclick="document.getElementById('guest-nudge').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12.5px;padding:13px 0 0;cursor:pointer;font-family:inherit">나중에 할게요</button>
+    </div>`;
+  document.body.appendChild(el);
+};
+
+// 임시 계정이 회원 전용 기능을 눌렀을 때 그 자리에서 뜨는 시트.
+// guestNudge 와 달리 **누른 이유를 그대로 보여주고** 하루 1회 제한도 없다 —
+// 기능을 누른 직후에 뜨는 창이라 그 자리에서 답이 돼야 한다(대표 8-12).
+window.guestUpgradeSheet = function (reason) {
+  let el = document.getElementById('guest-upsheet'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'guest-upsheet';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40030;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  el.onclick = function (e) { if (e.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(245,194,75,.3);border-radius:18px;padding:24px 22px;text-align:center">
+      <div style="font-size:17px;font-weight:800;margin-bottom:7px">계정을 만들면 열려요</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.55);line-height:1.7;margin-bottom:18px">
+        ${(reason || '이 기능은 머피 회원만 쓸 수 있어요').replace(/</g, '&lt;')}<br>
+        지금은 <b style="color:#F5C24B">임시 계정</b>이에요.<br>
+        계정을 만들어도 <b style="color:#cfd6e6">스쿼드 기록은 그대로</b> 따라와요.</div>
+      <button onclick="document.getElementById('guest-upsheet').remove();window.guestUpgrade&&window.guestUpgrade()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
+      <button onclick="document.getElementById('guest-upsheet').remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12.5px;padding:13px 0 0;cursor:pointer;font-family:inherit">나중에 할게요</button>
     </div>`;
   document.body.appendChild(el);
 };
@@ -15933,7 +15970,7 @@ window._mwAddCenterBtn = function () {
 };
 
 window.mwAddCenterHere = async function () {
-  if (!window.currentUser) { if (window.requireLogin) requireLogin('헬스장을 등록하려면 로그인이 필요해요'); return; }
+  if (window._notMember()) { if (window.requireLogin) requireLogin('헬스장을 등록하려면 로그인이 필요해요'); return; }
   if (!navigator.geolocation) { showToast('이 기기는 위치를 지원하지 않아요'); return; }
   showToast('현재 위치 확인 중…');
   let pos;
@@ -16033,7 +16070,7 @@ window._mwJoinGate = function (why) {
 };
 window.mwRenderTodayMurpys = async function () {
   const root = document.getElementById('mw-map-root'); if (!root) return;
-  const guest = !(auth.currentUser || window.currentUser);
+  const guest = !(auth.currentUser || window.currentUser) || (window.isTempAccount && window.isTempAccount());
   const today = mwTodayKey();
   // ★콜드스타터에게는 **최근 3일**을 보여준다(대표 8-12). 오늘 도장이 0건인 날이 실제로 있는데,
   //   링크를 받고 처음 들어온 사람이 "아직 아무도 없어요"를 보면 그대로 나간다.
@@ -16623,7 +16660,7 @@ window.mwVisitRoom = async function (uid) {
 // .../by/{누른사람} 이 토글 표식. 카운터를 users 본문에 못 두는 이유는 규칙 주석 참고.
 window.mwLikeToggle = async function (uid, kind) {
   const me = window.currentUser;
-  if (!me) { requireLogin('좋아요를 누르려면 로그인이 필요해요'); return null; }
+  if (window._notMember()) { requireLogin('좋아요를 누르려면 계정이 필요해요'); return null; }
   if (me.uid === uid) { showToast('내 것에는 못 눌러요'); return null; }
   const statRef = doc(db, 'users', uid, 'likestat', kind);
   const byRef = doc(db, 'users', uid, 'likestat', kind, 'by', me.uid);
@@ -17770,7 +17807,7 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-sch
 };
 
 window.openEditScheduleModal = async (crewId, scheduleId) => {
-  if (!window.currentUser) { requireLogin('로그인이 필요해요'); return; }
+  if (window._notMember()) { requireLogin('로그인이 필요해요'); return; }
   window._createScheduleCrewId = crewId;
   window._editScheduleId = scheduleId;
   try {
@@ -19361,7 +19398,7 @@ window.renderSquadPage = async function () {
 window._sqForm = null;
 window.openSquadCreate = function () {
   const user = auth.currentUser || window.currentUser;
-  if (!user) { window.requireLogin ? requireLogin() : showToast('로그인이 필요해요'); return; }
+  if (window._notMember()) { window.requireLogin ? requireLogin('스쿼드를 열려면 계정이 필요해요') : showToast('로그인이 필요해요'); return; }
   window._sqForm = { type:'gym', capacity:4, level:'mid', joinMode:'instant', titleTouched:false };
   let el = document.getElementById('sq-create'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-create';
