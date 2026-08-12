@@ -176,12 +176,16 @@
    위에서도** 떠야 한다. 방 꾸미기 편집기(.mw-wpanel)가 880 이라 200 짜리 확인창이 그 뒤에
    깔려서, '칸 늘리기'를 눌러도 편집기를 닫기 전엔 아무 반응이 없어 보였다(대표 지적 2026-08-05).
    결제를 막는 blocking UI 라 언제나 맨 앞이 맞다. */
-#murpy-confirm-modal { z-index: 10060; }
+/* ★30200 — 시착 시트(#char-tryon 20200)보다 위여야 한다.
+   10060 이던 시절엔 '10머피로 사기'를 눌러도 구매 확인창이 시착 시트 **뒤에** 깔려서,
+   아이비리그컷을 사려다 화면이 멈춘 것처럼 보였다(대표 8-12).
+   방 꾸미기 편집기(880)·스쿼드 상세(890)보다 위인 건 그대로 유지된다. */
+#murpy-confirm-modal { z-index: 30200; }
 /* ★로그인/가입 안내창도 **언제나 맨 앞**이어야 한다(대표 8-12).
    200 으로 두니 스쿼드 상세(890)·방 꾸미기 편집기(880)·머피월드 오버레이 뒤에 깔려서,
    "참가 신청"이나 지도의 "머피 시작하기"를 눌러도 창이 안 보이고 아무 반응이 없어 보였다.
    막힌 이유를 알려주는 창이 가려지면, 막은 것도 아니고 안내한 것도 아닌 상태가 된다. */
-#login-guard-modal, #login-method-modal { z-index: 10050; }
+#login-guard-modal, #login-method-modal { z-index: 30100; }
   .modal-overlay.open { display: flex; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); }
   .modal-sheet { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 24px 24px 0 0; padding: 32px 24px 48px; width: 100%; max-width: 390px; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1); }
   .modal-overlay.open .modal-sheet { transform: translateY(0); }
@@ -13643,13 +13647,18 @@ window.sqInviteLink = function (sid) {
     img = 'https://murpy.app/' + window.squadFieldSrc(s.exerciseType, s.scheduledAt);
   }
   // ★카카오에 **원본을 그대로 넘기지 않는다**(대표 8-12: "예전엔 잘 뜨던 썸네일이 안 뜬다").
-  //   필드 그림은 1MB 넘는 PNG 라(field_gym_wide 1.03MB) 카카오가 받아가다 놓치는 일이 생긴다.
-  //   weserv 로 **800x400 JPEG(약 36KB)** 로 줄여서 넘긴다 — 카카오 권장 규격이기도 하다.
-  //   ※_cdnImg 를 그대로 쓰면 안 된다. 그건 webp 를 내보내는데 카카오가 webp 를 잘 못 읽는다.
-  const size = { imageWidth: 800, imageHeight: 400 };
+  //   우리 필드 그림은 1MB 넘는 PNG 라(field_gym_wide 1.03MB) 카카오가 받아가다 놓친다.
+  //   weserv 로 줄여서 넘긴다(약 36KB). ※_cdnImg 를 쓰면 안 된다 — 그건 webp 를 내보내는데
+  //   카카오가 webp 를 잘 못 읽는다.
+  // ★★비율은 **우리 그림일 때만** 800x400 으로 자른다.
+  //   벙주가 올린 사진은 세로 인물 사진이 많아서 2:1 로 자르면 머리가 날아간다
+  //   (누리쌤 요가 사진에서 이미 겪은 문제). 그건 가로만 800 으로 줄이고 비율은 그대로 둔다.
+  let size = null;
   if (img) {
-    img = 'https://images.weserv.nl/?url=' + encodeURIComponent(img.replace(/^https?:\/\//, ''))
-        + '&w=800&h=400&fit=cover&output=jpg&q=82';
+    const _ours = /^https:\/\/murpy\.app\//i.test(img);
+    const _base = 'https://images.weserv.nl/?url=' + encodeURIComponent(img.replace(/^https?:\/\//, ''));
+    if (_ours) { img = _base + '&w=800&h=400&fit=cover&output=jpg&q=82'; size = { imageWidth: 800, imageHeight: 400 }; }
+    else { img = _base + '&w=800&output=jpg&q=82'; }
   }
   if (window.Kakao && Kakao.Share && Kakao.isInitialized && Kakao.isInitialized()) {
     try {
