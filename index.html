@@ -15568,8 +15568,15 @@ window.mwAddCenterHere = async function () {
   });
 };
 
+// 콜드스타터가 뭔가를 누르면 여기로 온다 — 왜 막혔는지 알려주고 가입으로 보낸다.
+// ★"막혔다"로 끝내면 그냥 나간다. **이미 눈으로 본 것**(사람들·필드)을 미끼로 삼아야 한다.
+window._mwJoinGate = function (why) {
+  if (window.requireLogin) requireLogin((why || '이 기능을 쓰려면') + ' 머피 회원이 되어야 해요');
+  else if (window.showToast) showToast('로그인이 필요해요');
+};
 window.mwRenderTodayMurpys = async function () {
   const root = document.getElementById('mw-map-root'); if (!root) return;
+  const guest = !(auth.currentUser || window.currentUser);
   const today = mwTodayKey();
   let rows = [];
   try {
@@ -15587,30 +15594,45 @@ window.mwRenderTodayMurpys = async function () {
   const live = document.getElementById('mw-map-live'); if (live) live.style.display = rows.length ? '' : 'none';
   const groups = Object.keys(byCenter).map(cid => {
     const g = byCenter[cid];
+    // ★비로그인(콜드스타터)에게도 **사람은 다 보여준다** — "여기 사람이 있다"가 가입 이유다.
+    //   대신 누르면 들어가지는 못하고 가입 화면으로 보낸다(대표 8-12).
     const murpys = g.list.map(k => {
       const p = profiles[k.uid] || {};
-      return `<div onclick="window.mwVisitRoom('${k.uid}')" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
+      const go = guest ? `window._mwJoinGate('${(p.nickname||'머피').replace(/'/g,"")}님 방을 구경하려면')`
+                       : `window.mwVisitRoom('${k.uid}')`;
+      return `<div onclick="${go}" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
         ${window.mwMiniCharHtml(p.character, 58)}
         <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nickname||'머피'}</span></div>`;
     }).join('');
+    const goField = guest ? `window._mwJoinGate('${(g.name||'이 센터').replace(/'/g,"")} 필드에 들어가려면')`
+                          : `window.mwCenterField('${cid}')`;
     return `
       <div class="mw-panel" style="padding:13px 13px 15px;margin-bottom:11px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;cursor:pointer" onclick="window.mwCenterField('${cid}')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;cursor:pointer" onclick="${goField}">
           <span class="mw-wb-live" style="position:static"></span>
           <span style="font-size:13px;color:#fff;font-weight:700">${g.name||'센터'}</span>
           <span style="font-size:11px;color:#F5C24B;margin-left:auto">${g.list.length}명 오운완</span>
           <span style="font-size:12px;color:#8a93a8">필드 ›</span>
         </div>
         <div style="display:flex;gap:9px;overflow-x:auto;padding-bottom:3px">${murpys}</div>
-        <div style="font-size:10px;color:#4a5266;margin-top:7px">캐릭터를 누르면 그 머피의 방으로!</div>
+        <div style="font-size:10px;color:${guest?'#F5C24B':'#4a5266'};margin-top:7px">${guest ? '가입하면 이 머피들의 방에 놀러갈 수 있어요' : '캐릭터를 누르면 그 머피의 방으로!'}</div>
       </div>`;
   }).join('');
+  // 콜드스타터에게는 **지금 몇 명이 운동 중인지**를 맨 위에 숫자로 박는다. 그게 이 화면의 미끼다.
+  const guestHead = guest && rows.length
+    ? `<div class="mw-panel" style="padding:13px 14px;margin-bottom:11px;border-color:rgba(245,194,75,.4)">
+         <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;line-height:1.5">
+           오늘 <b style="color:#F5C24B">${rows.length}명</b>이 운동하고 도장을 찍었어요</div>
+         <div style="font-size:11.5px;color:#8a93a8;margin-top:6px;line-height:1.6">가입하면 이 머피들 방에 놀러가고<br>같이 운동할 사람도 찾을 수 있어요</div>
+         <button onclick="window._mwJoinGate('머피들을 만나려면')" class="mw-btn" style="width:100%;margin-top:11px">머피 시작하기</button>
+       </div>` : '';
   root.innerHTML = `
     <div style="font-size:12px;color:#8a93a8;margin:2px 2px 10px">오늘 체크인한 머피들 <span style="color:#4a5266">— 도장 찍으면 여기 떠요</span></div>
+    ${guestHead}
     ${groups || `<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">
       <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;margin-bottom:8px">아직 아무도 없어요</div>
       <div style="font-size:12px;line-height:1.7">오늘 첫 도장의 주인공이 되어보세요!<br>도감 → 체크인</div></div>`}
-    ${window._mwAddCenterBtn()}`;
+    ${guest ? '' : window._mwAddCenterBtn()}`;
   // ---- 리얼 지도 (Leaflet) : 좌표 있는 센터 + 오늘 인원 배지 ----
   // 타일은 MapTiler streets-v2(밝은 지도, CARTO Voyager와 가장 비슷). 바꾼 이유(7-24):
   //   ① CARTO는 상업 무료 사용이 약관상 금지라 출시 시 위반 → MapTiler(상업 무료 월10만)로 교체.
@@ -15643,7 +15665,12 @@ window.mwRenderTodayMurpys = async function () {
     centers.forEach(c => {
       const n = byCenter[c.id] ? byCenter[c.id].list.length : 0;
       const icon = L.divIcon({ className:'', html:`<div class="mw-pin${n?' on':''}">${n||''}</div>`, iconSize:[26,32], iconAnchor:[13,32] });
-      L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{ window.mwCenterField && window.mwCenterField(c.id); });   // 핀 = 바로 '우리 센터 머피들' 필드로
+      // 핀 = 바로 '우리 센터 머피들' 필드로. ★비로그인은 여기서 막고 가입으로 보낸다(대표 8-12) —
+      //   핀에 찍힌 인원 숫자까지는 보여주되, 들어가는 건 회원부터다.
+      L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{
+        if (guest) { window._mwJoinGate((c.name || '이 센터') + '에 누가 왔는지 보려면'); return; }
+        window.mwCenterField && window.mwCenterField(c.id);
+      });
       pts.push([c.lat,c.lng]);
     });
     if (!pts.length) {

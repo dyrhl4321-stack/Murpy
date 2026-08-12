@@ -103,7 +103,12 @@ service cloud.firestore {
     // ===== 센터 체크인 (도감·스탬프) =====
     // 문서 ID = {uid}_{centerId}_{yyyymmdd} → 하루 1회가 ID로 자연 강제됨
     match /checkins/{checkinId} {
-      allow read: if signedIn();                       // "우리센터 머피들" 표시용 공개 읽기(로그인)
+      // ★읽기를 **비로그인에게도** 연다(대표 2026-08-12).
+      //   콜드스타트 링크로 처음 온 사람에게 지도의 '오늘 체크인한 머피들'이 텅 비어 있었다.
+      //   "여기 사람이 있다"가 가입 이유인데 그걸 못 보여주면 링크를 뿌리는 의미가 없다.
+      //   ※쓰기는 그대로 본인만. 화면에서는 눌러도 못 들어가고 가입 화면으로 보낸다.
+      //   ※공개되는 값 = 누가·어느 센터·언제·스탬프 사진. feed/bamboo/users 도 이미 공개읽기다.
+      allow read: if true;
       allow create: if signedIn()
                     && request.resource.data.uid == request.auth.uid
                     && checkinId.matches(request.auth.uid + '_.*');
