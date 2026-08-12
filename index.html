@@ -11306,26 +11306,37 @@ window.earnCredit = async function (amount, reason) {
 //   socialEarn = { d: 날짜, visit: 오늘받은횟수, like: 오늘받은횟수 }
 //   users/{uid} 는 본인만 쓸 수 있는데 이제 쓰는 주체가 본인이라 규칙에 걸릴 일도 없다.
 //   하루 한도(CAP_*)로 상한을 둔다 — 좋아요는 껐다 켜기를 반복할 수 있어 한도가 유일한 방벽이다.
-window.mwEarnSocial = async function (kind, reason) {   // kind: 'visit' | 'like'
+// ★once = **다시는 안 주는 열쇠**(예: 'like_<상대uid>_char'). 대표 8-11:
+//   "인스타 좋아요처럼 한 번 누르면 그 사람한테는 더 못 받게. 뺐다 다시 눌러도 재지급 금지."
+//   예전엔 하루 횟수만 봐서, 같은 사람에게 껐다 켜기를 반복하거나 방을 옮겨 다니며
+//   **하루 한도만큼 계속 벌 수 있었다.** 이제 상대별 1회 + 하루 한도, 둘 다 통과해야 준다.
+//   기록은 내 문서(`users/{me}.earnOnce`)에 남긴다 — 좋아요 표식(likestat/by)은 취소하면
+//   지워지므로 거기 두면 껐다 켤 때 기록도 같이 사라진다.
+window.mwEarnSocial = async function (kind, reason, once) {   // kind: 'visit' | 'like'
   const uid = window.currentUser && window.currentUser.uid;
   if (!uid) return false;
   const day = _creditToday();
   const cap = (kind === 'visit') ? CAP_VISIT_DAY : CAP_LIKE_DAY;
   const amount = (kind === 'visit') ? CREDIT_VISIT : CREDIT_LIKE;
+  const key = once ? String(once).replace(/[.\/\[\]#$]/g, '_') : '';   // 필드 경로에 못 쓰는 글자 제거
   try {
     // 읽고-쓰기라 트랜잭션이어야 한다. 방을 빠르게 여러 개 열면 겹칠 수 있다.
     const paid = await runTransaction(db, async tx => {
       const meRef = doc(db, 'users', uid);
       const s = await tx.get(meRef);
       if (!s.exists()) return false;
-      const se = s.data().socialEarn || {};
+      const d = s.data();
+      if (key && (d.earnOnce || {})[key]) return false;      // 이 상대에게는 이미 받았다
+      const se = d.socialEarn || {};
       const same = se.d === day;
       const n = same ? (se[kind] | 0) : 0;
       if (n >= cap) return false;
       const next = same ? Object.assign({}, se) : { d: day };
       next.d = day;
       next[kind] = n + 1;
-      tx.update(meRef, { credits: increment(amount), socialEarn: next });
+      const upd = { credits: increment(amount), socialEarn: next };
+      if (key) upd['earnOnce.' + key] = true;
+      tx.update(meRef, upd);
       return true;
     });
     if (!paid) return false;
@@ -16103,12 +16114,17 @@ window.mwLikeToggle = async function (uid, kind) {
   const byRef = doc(db, 'users', uid, 'likestat', kind, 'by', me.uid);
   try {
     // ★표식과 카운터를 한 트랜잭션으로 — 따로 하면 취소했는데 숫자가 안 줄거나 그 반대가 된다
+    // ★새 숫자를 **돌려준다**(대표 8-11: 숫자가 바로 안 바뀐다). 예전엔 increment 로만 올리고
+    //   버튼을 다시 그릴 때 서버를 또 읽었는데, 방금 쓴 값이 아직 안 보여 옛 숫자가 그려졌다.
     return await runTransaction(db, async tx => {
       const b = await tx.get(byRef);
+      const st = await tx.get(statRef);
+      const cur = Math.max(0, (st.exists() && st.data().count) || 0);
       const on = !b.exists();
-      if (on) { tx.set(byRef, { at: serverTimestamp() }); tx.set(statRef, { count: increment(1) }, { merge: true }); }
-      else { tx.delete(byRef); tx.set(statRef, { count: increment(-1) }, { merge: true }); }
-      return on;
+      const next = on ? cur + 1 : Math.max(0, cur - 1);
+      if (on) { tx.set(byRef, { at: serverTimestamp() }); tx.set(statRef, { count: next }, { merge: true }); }
+      else { tx.delete(byRef); tx.set(statRef, { count: next }, { merge: true }); }
+      return { on: on, count: next };
     });
   } catch (e) { showToast('잠시 후 다시 시도해주세요'); return null; }
 };
@@ -16125,9 +16141,10 @@ window.mwLikeState = async function (uid, kind) {
   return { count, on };
 };
 // 하트 버튼 하나를 그려 넣는다(방 좋아요·캐릭터 좋아요 공용)
-window.mwLikeBtn = async function (elId, uid, kind, label) {
+// st 를 넘기면 서버를 다시 안 읽는다 — 누른 직후엔 방금 계산한 값이 정답이다
+window.mwLikeBtn = async function (elId, uid, kind, label, st) {
   const el = document.getElementById(elId); if (!el) return;
-  const st = await window.mwLikeState(uid, kind);
+  if (!st) st = await window.mwLikeState(uid, kind);
   const mine = window.currentUser && window.currentUser.uid === uid;
   const c = st.on ? '#FF6B6B' : '#8a93a8';
   el.innerHTML = '<button ' + (mine ? 'disabled' : 'onclick="window._mwLikeTap(\'' + elId + '\',\'' + uid + '\',\'' + kind + '\',\'' + label + '\')"')
@@ -16139,13 +16156,18 @@ window.mwLikeBtn = async function (elId, uid, kind, label) {
     + label + ' <b style="color:' + (st.on ? '#FF6B6B' : '#cfd6e6') + '">' + st.count + '</b></button>';
 };
 window._mwLikeTap = async function (elId, uid, kind, label) {
-  const on = await window.mwLikeToggle(uid, kind);
-  if (on === null) return;
-  await window.mwLikeBtn(elId, uid, kind, label);
-  if (on) {
+  const r = await window.mwLikeToggle(uid, kind);
+  if (!r) return;
+  // 방금 계산한 숫자로 바로 다시 그린다(서버 재조회 없음 → 숫자가 즉시 바뀐다)
+  await window.mwLikeBtn(elId, uid, kind, label, { on: r.on, count: r.count });
+  if (r.on) {
     if (navigator.vibrate) navigator.vibrate(8);
-    // 켤 때만 적립한다. 껐다 켜기를 반복해도 하루 한도(CAP_LIKE_DAY)에서 막힌다.
-    if (window.mwEarnSocial) window.mwEarnSocial('like', (kind === 'room' ? '방' : '캐릭터') + ' 좋아요');
+    // ★적립은 **그 사람의 그 항목에 대해 한 번뿐**이다(대표 8-11).
+    //   껐다 다시 켜도, 다음 날 다시 와도 안 준다. 숫자(좋아요 수)는 그대로 오르내린다 —
+    //   보상만 1회고 인기 카운트는 인스타처럼 계속 누적된다.
+    if (window.mwEarnSocial) {
+      window.mwEarnSocial('like', (kind === 'room' ? '방' : '캐릭터') + ' 좋아요', 'like_' + uid + '_' + kind);
+    }
   }
 };
 
