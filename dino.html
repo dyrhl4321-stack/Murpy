@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>머피 히든 오브젝트 · 아기 공룡</title>
+<meta name="description" content="머피 어딘가에 공룡이 한 마리 앉아 있습니다. 열 번 두드리면 내 방으로 데려갈 수 있어요.">
+<link rel="icon" href="icon.svg">
+
+<!-- ★카카오톡 링크 미리보기(썸네일)를 만드는 건 이 og: 태그들이다.
+     - og:image 는 **반드시 절대 주소**여야 한다. 상대경로면 카톡이 못 읽어서 그림 없이 글자만 나간다.
+     - 카톡은 한번 읽은 미리보기를 오래 캐시한다. 그림을 바꾼 뒤에는
+       카카오 디벨로퍼스 → 도구 → 캐시 초기화에 이 주소를 넣고 한 번 지워야 새 그림이 나간다.
+     - 사이즈 1200x630 (og-dino.png). 카톡 피드에서 가로형으로 잘린다. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Murpy">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:url" content="https://murpy.app/dino.html">
+<meta property="og:title" content="공룡을 10번 두드리면 내 방으로 옵니다">
+<meta property="og:description" content="머피 어딘가에 히든 오브젝트가 앉아 있습니다. 찾아서 열 번 두드려 보세요.">
+<meta property="og:image" content="https://murpy.app/og-dino.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="아기 공룡 픽셀 캐릭터">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="공룡을 10번 두드리면 내 방으로 옵니다">
+<meta name="twitter:description" content="머피 어딘가에 히든 오브젝트가 앉아 있습니다. 찾아서 열 번 두드려 보세요.">
+<meta name="twitter:image" content="https://murpy.app/og-dino.png">
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" as="style" crossorigin
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+</style>
+</head>
+<body>
+<style>
+  /* ─────────────────────────────────────────────────────────────
+     이 페이지는 **머피월드의 획득 모달을 그대로 확장한 화면**이다.
+     앱에서 히든 오브젝트를 받으면 보라 테두리(#B48BFF)를 두른 각진 픽셀 창이 뜨는데,
+     그 창의 문법(라운드 0 / 3px 하드 테두리 / 흐림 없는 오프셋 그림자)을 페이지 전체로 넓혔다.
+     그래서 어두운 한 세계에 고정한다 — 라이트 테마로 갈아입히지 않고,
+     대신 배경·글자색을 전부 토큰으로 직접 칠해 어느 바탕에 올려도 그대로 선다.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    --ground:    #080B12;
+    --ground-2:  #0C1119;
+    --panel:     #171E2E;
+    --panel-2:   #1E263A;
+    --edge:      #04060A;
+    --accent:    #B48BFF;   /* 앱이 '히든'에 찍는 바로 그 보라 — 이 페이지의 유일한 액센트 */
+    --accent-soft:#CBB0FF;
+    --ink:       #E9EEF9;
+    --muted:     #939CB2;
+    --faint:     #5A6478;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard Variable",
+            "Malgun Gothic", "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+    --dw: 188px;            /* 공룡 표시 폭 = 94 * 2 (정수배만. 픽셀 아트 하드룰) */
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    /* 게임 화면처럼 보이게 아주 옅은 격자 한 겹. 4px 간격이라 확대해야 보인다 */
+    background-image:
+      linear-gradient(rgba(180,139,255,.030) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(180,139,255,.030) 1px, transparent 1px);
+    background-size: 4px 4px;
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 56px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* ── 픽셀 창: 라운드 0, 하드 테두리, 흐림 없는 오프셋 그림자 ── */
+  .win {
+    background: var(--panel);
+    border: 3px solid var(--edge);
+    box-shadow: 0 8px 0 rgba(4,6,10,.55);
+    padding: 22px 20px;
+  }
+  .win--hero {
+    box-shadow: 0 0 0 2px var(--accent), 0 10px 0 rgba(4,6,10,.55);
+    padding: 26px 20px 24px;
+    text-align: center;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  /* ★한글에는 mono + 자간을 쓰지 않는다. 모노 스택에서 한글은 대체 폰트로 떨어지고,
+     거기에 자간까지 벌리면 글자가 하나씩 떨어져 보인다("알 아 두 면  좋 은  것").
+     라틴 대문자 라벨에만 mono 를 남기고, 한글 라벨은 산세리프로 되돌린다. */
+  .eyebrow--quiet {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    text-transform: none;
+    color: var(--faint);
+  }
+
+  h1 {
+    font-size: clamp(22px, 5.2vw, 28px);
+    font-weight: 800;
+    letter-spacing: -.035em;
+    line-height: 1.32;
+    text-wrap: balance;
+    margin: 0 0 8px;
+  }
+  h2 {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    margin: 0 0 16px;
+  }
+  p { margin: 0; }
+  .lede { color: var(--muted); font-size: 14px; max-width: 42ch; margin: 0 auto; }
+
+  /* ── 공룡 무대 ── */
+  .stage {
+    margin: 22px 0 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .tapbtn {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    display: block;
+    line-height: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .13s cubic-bezier(.34, 1.56, .64, 1);
+  }
+  .tapbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; }
+  .tapbtn.squish { transform: scale(1.13, .87) translateY(5px); }
+  .tapbtn img {
+    width: var(--dw);
+    height: auto;
+    display: block;
+    image-rendering: pixelated;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* ★접지 그림자는 안 그린다(대표 8-12). 앱 안의 그림자와 모양이 달라서
+     같은 물건으로 안 보였다 — 어설프게 흉내 내느니 빼는 게 낫다. */
+
+  /* ── 두드린 횟수 ── */
+  .tally {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin: 20px 0 12px;
+  }
+  .pip {
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--edge);
+    background: var(--panel-2);
+    transition: background .12s linear, box-shadow .12s linear;
+  }
+  .pip.on {
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(180,139,255,.55);
+  }
+  /* 문장은 산세리프로, 숫자만 mono 로. 자리수가 바뀌어도 안 밀리게 tabular-nums */
+  .count {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--faint);
+    margin: 0;
+  }
+  .count b {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* ── 해금 상태 ── */
+  .prize {
+    display: none;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px dashed rgba(180,139,255,.28);
+  }
+  .prize.show { display: block; animation: rise .34s cubic-bezier(.2, .9, .3, 1) both; }
+  .prize-name { font-size: 17px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 4px; }
+  .prize-title { font-size: 13px; color: var(--accent); margin: 0; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .win--hero.unlocked { box-shadow: 0 0 0 2px var(--accent), 0 0 44px rgba(180,139,255,.30), 0 10px 0 rgba(4,6,10,.55); }
+
+  /* ── 순서가 있는 것만 번호를 붙인다 ── */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+  ol.steps li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start; }
+  .num {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.5;
+    padding-top: 1px;
+  }
+  .step-t { font-size: 14.5px; font-weight: 700; letter-spacing: -.02em; }
+  .step-d { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  /* ── 규칙 ── */
+  dl.rules { margin: 0; display: flex; flex-direction: column; gap: 13px; }
+  dl.rules > div { display: grid; grid-template-columns: 88px 1fr; gap: 12px; align-items: baseline; }
+  dl.rules dt { font-size: 12px; color: var(--faint); font-weight: 700; letter-spacing: -.01em; }
+  dl.rules dd { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  /* ── CTA ── */
+  .cta {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    background: var(--accent);
+    color: #14091F;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    padding: 15px;
+    border: 3px solid var(--edge);
+    box-shadow: 0 6px 0 rgba(4,6,10,.55);
+    transition: transform .1s ease, box-shadow .1s ease;
+  }
+  .cta:hover { background: var(--accent-soft); }
+  .cta:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(4,6,10,.55); }
+  .cta:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  footer {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .14em;
+    color: var(--faint);
+    margin-top: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tapbtn, .cta { transition: none; }
+    .tapbtn.squish { transform: none; }
+    .prize.show { animation: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <section class="win win--hero" id="hero">
+    <p class="eyebrow">Hidden Object</p>
+    <h1>어딘가에 공룡이 한 마리<br>앉아 있습니다</h1>
+    <p class="lede">머피 안에서 이 공룡을 찾아 열 번 두드리면, 그대로 내 방으로 데려갈 수 있습니다.</p>
+
+    <div class="stage">
+      <button class="tapbtn" id="tap" aria-label="공룡 두드리기">
+        <img src="char/rooms/s2608_dino.png?v=8" alt="아기 공룡 픽셀 캐릭터">
+      </button>
+    </div>
+
+    <div class="tally" id="tally" aria-hidden="true"></div>
+    <p class="count" id="count">여기서도 두드려 보세요 · <b>0</b> / 10</p>
+
+    <div class="prize" id="prize">
+      <p class="eyebrow eyebrow--quiet" style="margin-bottom:10px;color:var(--accent)">획득</p>
+      <p class="prize-name">아기 공룡</p>
+      <p class="prize-title">칭호 · 공룡의 친구</p>
+    </div>
+  </section>
+
+  <section class="win">
+    <h2>어디서 만나나</h2>
+    <ol class="steps">
+      <li>
+        <span class="num">1</span>
+        <div>
+          <div class="step-t">매칭 탭을 엽니다</div>
+          <div class="step-d">머피가 매일 아침 새로 골라주는 다섯 명이 기다리고 있습니다.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <div>
+          <div class="step-t">오늘의 추천을 끝까지 넘깁니다</div>
+          <div class="step-d">다섯 명을 다 보면 다음 화면으로 넘어갑니다. 공룡은 여기에 앉아 있습니다.</div>
+        </div>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <div>
+          <div class="step-t">공룡을 열 번 두드립니다</div>
+          <div class="step-d">누를 때마다 찌부러졌다 튀어오릅니다. 열 번째에 상자가 열립니다.</div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="win">
+    <h2>받는 것</h2>
+    <dl class="rules">
+      <div>
+        <dt>방 오브젝트</dt>
+        <dd>아기 공룡 — 꾸미기에서 바로 방에 놓을 수 있고, 놓아두면 혼자 움직입니다.</dd>
+      </div>
+      <div>
+        <dt>칭호</dt>
+        <dd>공룡의 친구 — 프로필과 방명록에 답니다.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="win">
+    <p class="eyebrow eyebrow--quiet">알아두면 좋은 것</p>
+    <dl class="rules">
+      <div>
+        <dt>조건표에 없음</dt>
+        <dd>도감의 이번 달 목록에는 실루엣조차 뜨지 않습니다. 운동 횟수로는 열리지 않습니다.</dd>
+      </div>
+      <div>
+        <dt>한 번만</dt>
+        <dd>계정당 한 번 받습니다. 이미 가진 사람이 눌러도 공룡은 반응하지만 상자는 열리지 않습니다.</dd>
+      </div>
+      <div>
+        <dt>기한</dt>
+        <dd>2026년 11월까지 이 자리에 앉아 있습니다.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <a class="cta" href="https://murpy.app/">머피 열고 찾으러 가기</a>
+
+  <footer>MURPY · MOVE TOGETHER</footer>
+
+</div>
+
+<script>
+  (function () {
+    var NEED = 10;
+    var taps = 0, done = false;
+    var btn = document.getElementById('tap');
+    var tally = document.getElementById('tally');
+    var count = document.getElementById('count');
+    var prize = document.getElementById('prize');
+    var hero = document.getElementById('hero');
+
+    for (var i = 0; i < NEED; i++) {
+      var pip = document.createElement('span');
+      pip.className = 'pip';
+      tally.appendChild(pip);
+    }
+    var pips = tally.children;
+
+    btn.addEventListener('click', function () {
+      // 두드리는 반응은 다 채운 뒤에도 살아 있다 — 앱에서도 그렇게 만들어 뒀다
+      btn.classList.add('squish');
+      setTimeout(function () { btn.classList.remove('squish'); }, 130);
+      if (navigator.vibrate) { navigator.vibrate(8); }
+      if (done) { return; }
+
+      taps++;
+      if (pips[taps - 1]) { pips[taps - 1].classList.add('on'); }
+      count.innerHTML = '여기서도 두드려 보세요 · <b>' + taps + '</b> / ' + NEED;
+
+      if (taps >= NEED) {
+        done = true;
+        count.innerHTML = '앱에서도 이렇게 열립니다 · <b>' + NEED + '</b> / ' + NEED;
+        prize.classList.add('show');
+        hero.classList.add('unlocked');
+        if (navigator.vibrate) { navigator.vibrate([12, 40, 30]); }
+      }
+    });
+  })();
+</script>
+</body>
+</html>
