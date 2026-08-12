@@ -177,6 +177,11 @@
    깔려서, '칸 늘리기'를 눌러도 편집기를 닫기 전엔 아무 반응이 없어 보였다(대표 지적 2026-08-05).
    결제를 막는 blocking UI 라 언제나 맨 앞이 맞다. */
 #murpy-confirm-modal { z-index: 10060; }
+/* ★로그인/가입 안내창도 **언제나 맨 앞**이어야 한다(대표 8-12).
+   200 으로 두니 스쿼드 상세(890)·방 꾸미기 편집기(880)·머피월드 오버레이 뒤에 깔려서,
+   "참가 신청"이나 지도의 "머피 시작하기"를 눌러도 창이 안 보이고 아무 반응이 없어 보였다.
+   막힌 이유를 알려주는 창이 가려지면, 막은 것도 아니고 안내한 것도 아닌 상태가 된다. */
+#login-guard-modal, #login-method-modal { z-index: 10050; }
   .modal-overlay.open { display: flex; background: rgba(0,0,0,0.85); backdrop-filter: blur(4px); }
   .modal-sheet { background: var(--bg-elevated); border: 1px solid var(--border-default); border-radius: 24px 24px 0 0; padding: 32px 24px 48px; width: 100%; max-width: 390px; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1); }
   .modal-overlay.open .modal-sheet { transform: translateY(0); }
@@ -1232,9 +1237,11 @@
     <!-- 비로그인 안내 오버레이 (블러 위) -->
     <div id="match-guest" style="display:none;position:absolute;inset:0;z-index:5;background:rgba(10,10,10,0.28);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px">
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <div id="match-guest-title" style="font-size:16px;font-weight:800;color:#fff;margin-top:14px;line-height:1.4">매칭 기능을 쓰려면<br>로그인이 필요해요</div>
+      <!-- ★비로그인과 임시 계정이 **같은 문구**를 본다(대표 8-12). '로그인'이 아니라 '회원'으로
+           말해야 둘 다에게 맞는다 — 임시 계정은 이미 로그인은 돼 있는 상태다. -->
+      <div id="match-guest-title" style="font-size:16px;font-weight:800;color:#fff;margin-top:14px;line-height:1.4">매칭은<br>머피 회원만 쓸 수 있어요</div>
       <div style="font-size:12.5px;color:rgba(255,255,255,0.62);margin-top:7px;line-height:1.5">운동 메이트를 찾고 같이 운동해요</div>
-      <button id="match-guest-btn" onclick="openModal('login-method-modal')" style="margin-top:18px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">로그인하고 시작하기</button>
+      <button id="match-guest-btn" onclick="window.memberGate&&window.memberGate('매칭은 머피 회원만 쓸 수 있어요')" style="margin-top:18px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">머피 시작하기</button>
     </div>
   </div>
   </div><!-- /match-deck -->
@@ -5691,14 +5698,17 @@ window.isTempAccount = function () {
 window._notMember = function () {
   return !window.currentUser || (window.isTempAccount && window.isTempAccount());
 };
-// 막혔으면 true. 임시 계정이면 '계정 만들기'로, 아예 비로그인이면 로그인 가드로 보낸다.
+// ★회원 전용 문 앞에서는 **항상 이걸 부른다.** 비로그인이든 임시 계정이든
+//   유저가 보는 화면은 같아야 한다(대표 8-12: "막히는 것도 UI도 거의 똑같아야 한다").
+//   갈리는 건 안내창 뒤에서 뭘 하느냐뿐이다 —
+//     비로그인 → 로그인 창 / 임시 계정 → 계정 **연결**(uid 유지, 스쿼드 기록이 따라온다).
+window.memberGate = function (reason) {
+  if (window.isTempAccount() && window.guestUpgradeSheet) { window.guestUpgradeSheet(reason); return; }
+  requireLogin(reason);
+};
+// 막혔으면 true 를 돌려준다(호출부에서 바로 return 하기 좋게).
 window.requireRealAccount = function (reason) {
-  if (window.isTempAccount()) {
-    showToast(reason || '계정을 만들면 쓸 수 있어요');
-    if (window.guestUpgrade) window.guestUpgrade();
-    return true;
-  }
-  if (window._notMember()) { requireLogin(reason); return true; }
+  if (window._notMember()) { window.memberGate(reason); return true; }
   return false;
 };
 function requireLogin(reason, onAfterLogin) {
@@ -5860,11 +5870,8 @@ function renderMatch() {
         // 홍보 링크(?from=dino)로 온 사람에게는 **공룡이 앉는 자리가 여기라는 것**까지 알려준다.
         let _fromDino = false;
         try { _fromDino = new URLSearchParams(location.search).get('from') === 'dino'; } catch (e) {}
-        // 임시 계정은 로그인 창이 아니라 **계정 만들기**로 보낸다 — 이미 로그인은 돼 있으니까
-        const _temp = !!(window.isTempAccount && window.isTempAccount());
-        const _cta = _temp
-          ? { t: '계정 만들고 시작하기', go: 'window.guestUpgrade&&window.guestUpgrade()' }
-          : { t: '로그인하고 시작하기',   go: "openModal('login-method-modal')" };
+        // 비로그인·임시 계정 모두 같은 화면·같은 버튼. 뒤에서 뭘 할지는 memberGate 가 고른다.
+        const _cta = { t: '머피 시작하기', go: "window.memberGate&&window.memberGate('매칭은 머피 회원만 쓸 수 있어요')" };
         empty.innerHTML = `
           ${_fromDino ? `
             <div style="display:flex;justify-content:center;align-items:flex-end;height:76px;margin-bottom:13px">
@@ -6110,21 +6117,15 @@ function _applyMatchGuestLock(isGuest) {
     if (actions) { actions.style.filter = 'blur(3px)'; actions.style.pointerEvents = 'none'; }
     if (moreWrap) moreWrap.style.display = 'none';     // 추천 썸네일은 실사진이라 게스트엔 숨김
     if (guest) {
-      // 임시 계정은 이미 '로그인'은 돼 있다 — 그 사람에게 로그인하라고 하면 앞뒤가 안 맞는다.
-      // 문구와 버튼을 계정 만들기로 바꿔 끼운다(대표 8-12).
-      const _temp = !!(window.isTempAccount && window.isTempAccount());
-      const gT = document.getElementById('match-guest-title');
+      // ★비로그인과 임시 계정은 **같은 화면**을 본다(대표 8-12). 문구를 갈아끼우지 않는다.
+      //   갈리는 건 버튼을 눌렀을 때 뒤에서 도는 것뿐이고, 그건 memberGate 가 판단한다.
       const gB = document.getElementById('match-guest-btn');
-      if (gT) gT.innerHTML = _temp ? '지금은 임시 계정이에요<br>계정을 만들면 매칭이 열려요' : '매칭 기능을 쓰려면<br>로그인이 필요해요';
       if (gB) {
-        gB.textContent = _temp ? '계정 만들기' : '로그인하고 시작하기';
         gB.onclick = function (e) {
-          // ★여기서 전파를 끊어야 한다. 이 오버레이는 카드(.match-card) **안**에 있어서,
-          //   클릭이 그대로 카드로 올라가 openMatchDetail 이 같이 열렸다(대표 8-12:
-          //   "계정 만들기 누르면 각 사람들 꺼 클릭도 된다").
+          // ★전파를 끊어야 한다. 이 오버레이는 카드(.match-card) **안**에 있어서, 클릭이
+          //   그대로 카드로 올라가 프로필 상세가 같이 열렸다(대표 8-12).
           if (e) { e.preventDefault(); e.stopPropagation(); }
-          if (_temp) { window.guestUpgradeSheet ? window.guestUpgradeSheet('매칭은 계정을 만들어야 열려요') : (window.guestUpgrade && window.guestUpgrade()); }
-          else openModal('login-method-modal');
+          window.memberGate ? window.memberGate('매칭은 머피 회원만 쓸 수 있어요') : openModal('login-method-modal');
         };
       }
       // 오버레이 아무 데나 눌러도 카드로 안 새게 막는다
@@ -14098,7 +14099,7 @@ window.loadBamboo = async (tab) => {
   //   대숲은 익명으로 속마음을 쓰는 곳이라, 가입도 안 한 임시 계정이 남의 글을 훑고
   //   '저에요' 신청까지 보낼 수 있으면 이 탭의 신뢰가 통째로 무너진다.
   //   ※비로그인(계정 자체가 없는 방문자)은 지금처럼 미리보기를 본다 — 그건 유입 설계다.
-  if (window.isTempAccount && window.isTempAccount()) {
+  if (window._notMember && window._notMember()) {
     list.innerHTML = `
       <div style="text-align:center;padding:52px 26px">
         <div style="margin:0 auto 14px;width:40px;height:40px;display:flex;align-items:center;justify-content:center">
@@ -14106,17 +14107,17 @@ window.loadBamboo = async (tab) => {
         </div>
         <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:7px">대나무숲은 회원만 볼 수 있어요</div>
         <div style="font-size:12.5px;color:rgba(255,255,255,.42);line-height:1.7;margin-bottom:20px">
-          속마음을 익명으로 남기는 곳이라<br>계정이 있어야 열려요.<br>
-          지금 스쿼드 기록은 <b style="color:rgba(255,255,255,.7)">그대로 따라와요</b>.</div>
-        <button onclick="window.guestUpgradeSheet&&window.guestUpgradeSheet('대나무숲은 계정을 만들어야 열려요')" style="background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:13px 24px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">계정 만들기</button>
+          속마음을 익명으로 남기는 곳이라<br>머피 회원만 들어올 수 있어요</div>
+        <button onclick="window.memberGate&&window.memberGate('대나무숲은 회원만 볼 수 있어요')" style="background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:13px 24px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">머피 시작하기</button>
       </div>`;
     const _cnt = document.getElementById('my-post-count'); if (_cnt) _cnt.textContent = '';
     // ★탭에 들어오는 순간 팝업까지 띄운다(대표 8-12). 잠금 화면만 그려두면 "왜 안 되지"로 끝나고,
     //   무엇을 하면 열리는지는 결국 팝업이 말해준다. 화면 전환 애니메이션 뒤에 얹는다.
     setTimeout(function () {
-      if (window.isTempAccount && window.isTempAccount() && window.guestUpgradeSheet
-          && !document.getElementById('guest-upsheet')) {
-        window.guestUpgradeSheet('대나무숲은 계정을 만들어야 열려요');
+      if (window._notMember && window._notMember() && window.memberGate
+          && !document.getElementById('guest-upsheet')
+          && !document.querySelector('#login-guard-modal.open')) {
+        window.memberGate('대나무숲은 회원만 볼 수 있어요');
       }
     }, 420);
     return;
