@@ -135,6 +135,12 @@
   .feed-invite-btn { display:inline-flex; align-items:center; gap:7px; flex-shrink:0; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.72); font-size:12px; font-weight:700; letter-spacing:-0.3px; padding:5px 10px; border-radius:8px; cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; transition:background 0.15s; }
   .feed-invite-btn:active { background:rgba(255,255,255,0.09); }
   .feed-invite-btn svg { width:16px; height:16px; color:#3D7EFF; }
+  /* 보낸 뒤 = 기다리는 중. 누를 게 없으니 색을 빼고 눌리지도 않게 한다(대표 8-12) */
+  .feed-invite-btn.is-sent { background:none; border-color:rgba(255,255,255,0.08); color:rgba(255,255,255,0.34); cursor:default; }
+  .feed-invite-btn.is-sent svg { color:rgba(255,255,255,0.3); }
+  /* 이미 매칭된 사이 = 누르면 대화가 열린다. 대화는 초록이 아니라 블루(앱의 액션색) */
+  .feed-invite-btn.is-matched { background:rgba(61,126,255,0.12); border-color:rgba(61,126,255,0.34); color:#8fb4ff; }
+  .feed-invite-btn.is-matched svg { color:#8fb4ff; }
   /* 머피월드 방향 키패드 */
   .dpad-btn { display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; color:rgba(255,255,255,0.72); cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent; transition:background .1s, color .1s; }
   .dpad-btn:active { background:var(--accent); color:#fff; }
@@ -2644,9 +2650,13 @@ window.SEASON_ITEMS = [
   // 정적 원본은 s2608_dino_still.png, 재생성은 char/animate_dino.py.
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105,
     hd:'char/rooms/hd/s2608_dino.webp?v=1', hdMax:200, still:'char/rooms/s2608_dino_still.png?v=1',
-    // ★획득 조건을 **비워둔다**(cond:{}). mwSeasonCheck 는 cond 가 빈 항목을 자동 지급하지
-    //   않으므로, 이 공룡을 얻는 길은 **매칭 소진 화면의 공룡을 10번 두드리는 것 하나뿐**이
-    //   된다(대표 8-12: "진짜 뜬금없이 주는 거지"). 조건표에도 안 적고 힌트도 안 준다.
+    // ★★공룡은 **이 하나만 예외**다. 조건표를 비워(cond:{}) 자동 지급을 끊고,
+    //   매칭 소진 화면에서 10번 두드릴 때 matchDinoTap 이 roomInv 에 **직접** 넣는다.
+    //   → 방에 **히든 상자로는 배달되지 않는다.** 상자 경로는 mwSeasonCheck 안에 있는데
+    //     거기는 cond 가 빈 항목을 아예 건너뛴다(그 자리 주석 참고).
+    // ★앞으로 추가할 오브젝트는 **전부 지금까지 쓰던 상자 시스템 그대로** 간다(대표 8-12).
+    //   kind:'hidden' + cond 를 채워 넣으면 조건을 만족한 날 방에 상자가 배달되고,
+    //   눌러서 열면 그 안에서 나온다. 이 공룡의 방식(cond 비우고 직접 지급)을 따라 하지 말 것.
     season:'2026-08', until:'2026-11', kind:'hidden', axis:'',
     hint:'', title:'공룡의 친구', cond:{} },
 ];
@@ -9440,6 +9450,8 @@ onAuthStateChanged(auth, async (user) => {
     updateUI(user);
     await checkAndSetNickname(user);
     if (window.ensureCreditsInit) window.ensureCreditsInit(user.uid);
+    // 누구에게 신청했고 누구와 매칭됐는지 — 피드 버튼이 이걸 보고 글자를 정한다
+    if (window.loadRelations) window.loadRelations();
     // 사용 기록 — 접속 첫 순간에 남긴다. 실패해도 앱 동작에 영향 없게 뒤로 던져둔다.
     if (window.logVisit) setTimeout(function () { window.logVisit(user.uid); }, 1200);
     // 어제·오늘 내 방에 다녀갔거나 좋아요 누른 게 있으면 여기서 정산한다(내 문서만 쓸 수 있어서)
@@ -9920,7 +9932,8 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost
           ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>`
-          : `<button onclick="event.stopPropagation();window.feedInvite('${p.userId||''}','${(p.userName||'익명').replace(/'/g,"\\'")}','${displayPhoto}')" class="feed-invite-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>같이 운동해요</button>`}
+          : `<button data-inv="${p.userId||''}" data-inv-name="${(p.userName||'익명').replace(/"/g,'&quot;')}" data-inv-photo="${String(displayPhoto||'').replace(/"/g,'')}"
+               onclick="event.stopPropagation();window.feedInviteTap(this)" class="feed-invite-btn">${window.feedInviteBtnHtml ? window.feedInviteBtnHtml(p.userId||'') : ''}</button>`}
       </div>
       ${tagRow}
       ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
@@ -10428,7 +10441,9 @@ window.mwSeasonCheck = async function () {
   const _granted = [];
   for (const it of items) {
     if (st.inv.includes(it.id) || st.box.includes(it.id) || _seasonBusy.has(it.id)) continue;
-    // cond 없는(또는 빈) 항목은 절대 자동 지급하지 않는다 — 수기로 매달 편집하는 배열이라 오타/누락 방어
+    // cond 없는(또는 빈) 항목은 절대 자동 지급하지 않는다 — 수기로 매달 편집하는 배열이라 오타/누락 방어.
+    // ★아기 공룡(s2608_dino)이 여기 걸려 걸러진다. 그래서 방에 상자로 배달될 일이 없다.
+    //   나머지 히든 오브젝트는 예전 그대로 여기서 pendingBox 로 배달된다(아래 kind==='hidden').
     const condKeys = it.cond ? Object.keys(it.cond) : [];
     if (!condKeys.length) continue;
     const ok = condKeys.every(k => (counts[k] || 0) >= it.cond[k]);
@@ -11885,6 +11900,82 @@ window.spendCredit = async (uid, cost) => {
 window.acceptLike = async (toUid, toName, toPhoto) => {
   return window.sendLike(toUid, toName, toPhoto, true, true);
 };
+
+// ===== 관계 상태 (대표 8-12) =====
+// ★피드의 '같이 운동해요' 버튼이 **이미 보낸 뒤에도 그대로 떠 있었다.** 버튼이 매번 새로
+//   그려지면서 상대와 나의 상태를 한 번도 안 봤기 때문이다. 매칭 탭에서 보냈든 피드에서
+//   보냈든, 어디서 보내도 모든 버튼이 즉시 같은 상태가 되어야 한다.
+//   → 보낸 사람/매칭된 사람을 **한 곳에 들고 있고**, 버튼은 그걸 보고 그린다.
+window._rel = { liked: new Set(), matched: new Set(), ready: false };
+window._relAt = 0;
+window.loadRelations = async function (force) {
+  const me = window.currentUser && window.currentUser.uid;
+  if (!me || (window.isTempAccount && window.isTempAccount())) return;
+  // 60초 스로틀 — 피드 페이지네이션마다 조회가 나가면 안 된다
+  if (!force && Date.now() - window._relAt < 60000) return;
+  window._relAt = Date.now();
+  try {
+    const [ls, ms] = await Promise.all([
+      getDocs(query(collection(db, 'likes'), where('from', '==', me))),
+      getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me)))
+    ]);
+    const liked = new Set(), matched = new Set();
+    ls.forEach(d => { const t = d.data().to; if (t) liked.add(t); });
+    ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matched.add(u); }));
+    window._rel = { liked, matched, ready: true };
+    window.relRepaint();
+  } catch (e) { console.warn('relations', e); }
+};
+// 'matched' = 서로 됐다 / 'sent' = 내가 보내고 기다리는 중 / 'none'
+window.relState = function (uid) {
+  if (!uid || !window._rel) return 'none';
+  if (window._rel.matched.has(uid)) return 'matched';
+  if (window._rel.liked.has(uid)) return 'sent';
+  return 'none';
+};
+// 상태가 바뀌면 **화면에 있는 그 사람 버튼을 전부** 다시 그린다(피드 여러 장에 같은 사람이 있다)
+window.relMark = function (uid, state) {
+  if (!uid || !window._rel) return;
+  if (state === 'matched') { window._rel.matched.add(uid); window._rel.liked.add(uid); }
+  else if (state === 'sent') { window._rel.liked.add(uid); }
+  window.relRepaint(uid);
+};
+window.relRepaint = function (only) {
+  const sel = only ? '[data-inv="' + String(only).replace(/"/g, '') + '"]' : '[data-inv]';
+  document.querySelectorAll(sel).forEach(function (b) {
+    const u = b.getAttribute('data-inv'); if (!u) return;
+    b.className = 'feed-invite-btn' + (window.relState(u) === 'sent' ? ' is-sent'
+                                    : window.relState(u) === 'matched' ? ' is-matched' : '');
+    b.innerHTML = window.feedInviteBtnHtml(u);
+  });
+};
+// 버튼 속 그림+글자. 상태 하나로 셋을 다 정한다 — 화면마다 따로 쓰면 또 어긋난다.
+const _INV_ICO = {
+  none: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>',
+  sent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>',
+  matched: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+};
+window.feedInviteBtnHtml = function (uid) {
+  const st = window.relState ? window.relState(uid) : 'none';
+  const txt = st === 'matched' ? '대화하기' : (st === 'sent' ? '수락 기다리는 중' : '같이 운동해요');
+  return _INV_ICO[st] + txt;
+};
+// 상태에 따라 하는 일이 다르다. 버튼 하나가 세 가지 일을 한다 — 그래야 어긋날 자리가 없다.
+window.feedInviteTap = function (btn) {
+  if (!btn) return;
+  const uid = btn.getAttribute('data-inv');
+  const name = btn.getAttribute('data-inv-name') || '익명';
+  const photo = btn.getAttribute('data-inv-photo') || '';
+  const st = window.relState(uid);
+  if (st === 'sent') { showToast('이미 보냈어요 · 상대가 수락하면 매칭돼요'); return; }
+  if (st === 'matched') {
+    if (window.openChatFirestore && window.currentUser) {
+      window.openChatFirestore(_pairKey(window.currentUser.uid, uid), uid, name, photo, false);
+    }
+    return;
+  }
+  window.feedInvite(uid, name, photo);
+};
 window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
   if (window._notMember()) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
   const me = window.currentUser.uid;
@@ -11896,6 +11987,7 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
   //   → 셋이 어긋나 "연결됐다는데 프로필은 매칭 전, 눌러도 채팅만 또 열림"이 됐다.
   //   막아야 하는 건 **진짜 매칭된 사이**뿐이다. 채팅만 있는 사이엔 정상적으로 신청이 가야 한다.
   if (window.isMatched && await window.isMatched(toUid)) {
+    window.relMark && window.relMark(toUid, 'matched');   // 화면 버튼도 바로 '대화하기'로
     showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
     if (window.openChatFirestore) window.openChatFirestore(_pairKey(me, toUid), toUid, toName, toPhoto, false);
     return;
@@ -11917,9 +12009,13 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
       // ★매칭 성사 적립이 여기 없었다(대표 8-11: 관리자 통계의 '매칭성사'가 늘 0).
       //   대숲 '저에요' 수락에만 붙어 있었고, 정작 매칭 탭의 성사는 한 번도 안 세어졌다.
       if (window.mwBumpMonthly) window.mwBumpMonthly('matchOk');
+      window.relMark && window.relMark(toUid, 'matched');
       showToast((toName || '상대') + '님과 매칭됐어요!');
       window.openUserProfile(toUid, toName, toPhoto); // 잠금 해제 상태로 다시 그림
     } else {
+      // ★보낸 즉시 **화면에 있는 그 사람 버튼이 전부** 바뀐다(대표 8-12).
+      //   피드에서 보냈든 매칭 탭에서 보냈든, 어디서 보내도 같은 상태가 되어야 한다.
+      window.relMark && window.relMark(toUid, 'sent');
       showToast('같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
     }
     // 좋아요 보낸 사람은 이번 세션 '더 많은 추천'에서 숨김(_matchPassed와 동일 패턴).
@@ -11938,6 +12034,7 @@ window.feedInvite = async (uid, name, photo) => {
   if (window.currentUser.uid === uid) { showToast('내 글이에요'); return; }
   // 위 sendLike 와 같은 이유로 isMatched 로 판정한다(채팅만 있는 사이는 막지 않는다)
   if (window.isMatched && await window.isMatched(uid)) {
+    window.relMark && window.relMark(uid, 'matched');
     showToast('이미 매칭된 사이에요! 기존 채팅으로 연결할게요');
     if (window.openChatFirestore) window.openChatFirestore(_pairKey(window.currentUser.uid, uid), uid, name, photo, false);
     return;
@@ -12909,6 +13006,9 @@ async function loadMoreFeed() {
 
 let feedFirstPageCache = null;
 async function loadFeed() {
+  // 상대가 그새 수락했으면 버튼이 '대화하기'로 바뀌어야 한다 — 피드를 새로 부를 때 같이 훑는다.
+  // (loadRelations 안에 60초 스로틀이 있어 스크롤 페이지네이션마다 조회가 나가지는 않는다)
+  if (window.loadRelations) window.loadRelations();
   feedLastDoc = null; feedLoading = false; feedAllLoaded = false;
   if (feedObserver) { feedObserver.disconnect(); feedObserver = null; }
   const feedEl = document.getElementById('firebase-feed');
