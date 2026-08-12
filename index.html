@@ -9891,7 +9891,16 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //   머피월드가 텅 빈 채로 보이고 그게 초반 이탈로 직결된다.
 // ★COST_MATCH 5 → **10** (대표 8-12). 매칭이 이 앱에서 가장 값나가는 행동인데 5는 너무 쌌다.
 //   하루 벌이(인증1 + 방문2 + 좋아요2 + 체크인2 …)로 하루 한 번이 빠듯한 선이 10이다.
-const CREDIT_WELCOME = 300, CREDIT_DAILY = 1, COST_MATCH = 10, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+// ★★가입 선물은 **두 값으로 나눠 둔다**(대표 8-12).
+//   예전엔 상수 하나(300)로 신규·베타를 같이 처리해서, 베타가 끝나 신규를 30으로 내리려면
+//   기존 베타테스터 보정치까지 같이 내려가 버렸다. 이제 스위치 한 줄로 끝난다.
+//   ※베타 끝나는 날 할 일 = `BETA_GIFT_ON = false` 로 바꾸고 배포. 그러면 신규는 30만 받는다.
+const CREDIT_WELCOME = 30;          // 평상시 신규 가입 선물
+const CREDIT_BETA_GIFT = 300;       // 베타테스터 선물 (대표가 약속한 금액)
+window.BETA_GIFT_ON = true;         // ★베타 끝나면 여기만 false
+const CREDIT_DAILY = 1, COST_MATCH = 10, COST_BAMBOO = 1, COST_BAMBOO_REQ = 3;
+// 지금 나가야 하는 가입 선물 금액
+window.welcomeAmount = function () { return window.BETA_GIFT_ON ? CREDIT_BETA_GIFT : CREDIT_WELCOME; };
 // 이미 가입한 베타테스터도 같은 약속의 대상이다 → 아래 1회성 지급 플래그로 같이 올려준다.
 const BETA_GRANT_KEY = 'betaGrant300';
 //   ※ 인테리어 슬롯 확장권 상수(COST_SLOT_EXT / MW_SLOT_*)는 **꾸미기 편집기 쪽**에 있다.
@@ -11087,14 +11096,15 @@ window.grantBetaGift = async function () {
     if (!us.exists()) return false;
     const d = us.data();
     if (d[BETA_GRANT_KEY] === true) return false;          // 이미 받았다
-    const next = Math.max(d.credits | 0, CREDIT_WELCOME);
+    const gift = window.welcomeAmount();                   // 베타 중 300 / 끝나면 30
+    const next = Math.max(d.credits | 0, gift);
     await updateDoc(ref, { credits: next, [BETA_GRANT_KEY]: true, betaGrantPending: false });
     window._creditState.credits = next;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
     window.celebrateMurpy && window.celebrateMurpy(next, {
-      amount: CREDIT_WELCOME,
-      title: '베타테스터 선물이에요!'
+      amount: gift,
+      title: window.BETA_GIFT_ON ? '베타테스터 선물이에요!' : '가입 선물이에요!'
     });
     return true;
   } catch (e) { console.warn('beta gift', e); return false; }
@@ -11126,7 +11136,8 @@ window.ensureCreditsInit = async (uid) => {
       //   기존 계정은 가입 선물이 10머피이던 시절에 만들어졌고, 그동안 beta 라 차감이
       //   없어서 잔액을 신경 쓸 일도 없었다. 차감을 켜는 날 잔액이 바닥이면 매칭도
       //   대숲도 막혀 앱이 멈춘 것처럼 보인다 — **신규 가입자보다 불리해지면 안 된다.**
-      //   그래서 신규와 같은 출발선(30머피)까지만 올려준다. 이미 그 이상이면 손대지 않는다.
+      //   그래서 신규와 같은 출발선까지만 올려준다. 이미 그 이상이면 손대지 않는다.
+      //   ※그 뒤 아래 베타 선물이 한 번 더 300까지 채운다(베타 중일 때).
       if (d.creditsMigrated !== true && d.credits < CREDIT_WELCOME) {
         try {
           await updateDoc(ref, { credits: CREDIT_WELCOME, creditsMigrated: true });
