@@ -6123,6 +6123,31 @@ function renderMatch() {
   }
 
   _applyMatchGuestLock(isGuest);
+  _matchLikeBtnSync(p);
+}
+
+// ★매칭 카드의 큰 버튼도 **관계 상태**를 따라간다(대표 8-12 점검).
+//   예전엔 글자가 '같이 운동해요'로 박혀 있어서, 피드에서 이미 보낸 사람이 매칭 카드에 뜨면
+//   또 보낼 수 있었다(그리고 10머피가 또 나갔다). 피드 버튼과 같은 말을 쓴다.
+function _matchLikeBtnSync(p) {
+  const b = document.getElementById('match-like-btn');
+  if (!b || !p) return;
+  const st = (window.relState ? window.relState(p.uid) : 'none');
+  b.disabled = false;
+  b.style.opacity = '1';
+  if (st === 'matched') {
+    b.textContent = '대화하기';
+    b.style.background = 'var(--accent)';
+  } else if (st === 'sent') {
+    b.textContent = '수락 기다리는 중';
+    b.style.background = 'rgba(255,255,255,0.06)';
+    b.style.color = 'rgba(255,255,255,0.42)';
+    b.disabled = true;
+  } else {
+    b.textContent = '같이 운동해요';
+    b.style.background = 'var(--accent)';
+    b.style.color = '#fff';
+  }
 }
 
 // 게스트: 실제 프로필을 살짝 강하게 블러 + 잠금 오버레이(유입 유도·프라이버시). 로그인이면 전부 해제.
@@ -6401,6 +6426,13 @@ function handleLike() {
   const p = list[window._matchIdx || 0]; if (!p) return;
   // 비로그인: 안내만 띄우고 카드는 넘기지 않음(보낸 것처럼 사라지던 버그 방지)
   if (window._notMember()) { requireLogin('같이 운동하려면 로그인이 필요해요'); return; }
+  // 이미 보냈거나 매칭된 사람이면 하는 일이 다르다(피드 버튼과 같은 규칙)
+  const _st = window.relState ? window.relState(p.uid) : 'none';
+  if (_st === 'sent') { showToast('이미 보냈어요 · 상대가 수락하면 매칭돼요'); return; }
+  if (_st === 'matched') {
+    if (window.openChatWith) window.openChatWith(p.uid, p.nickname || '익명', p.photoURL || '');
+    return;
+  }
   if (window.sendLike) window.sendLike(p.uid, p.nickname || '익명', p.photoURL || '');
   // 관리자·테스트 계정은 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
   if (window.isMatchTester && window.isMatchTester()) return;
@@ -11949,7 +11981,14 @@ window.loadRelations = async function (force) {
     ls.forEach(d => { const t = d.data().to; if (t) liked.add(t); });
     ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matched.add(u); }));
     window._rel = { liked, matched, ready: true };
+    // ★매칭 탭이 쓰던 _matchLiked 와 **같은 것**이 되게 맞춘다(대표 8-12 점검에서 발견).
+    //   둘이 따로 놀아서, 피드에서 보낸 사람이 매칭 카드에는 아직 '안 보낸 사람'으로 남아 있었다.
+    //   ※테스터·관리자는 반복 실험을 해야 해서 예전처럼 안 숨긴다.
+    if (!(window.isMatchTester && window.isMatchTester())) {
+      window._matchLiked = new Set(liked);
+    }
     window.relRepaint();
+    if (typeof window.renderMatch === 'function') window.renderMatch();
   } catch (e) { console.warn('relations', e); }
 };
 // 'matched' = 서로 됐다 / 'sent' = 내가 보내고 기다리는 중 / 'none'
@@ -11964,7 +12003,13 @@ window.relMark = function (uid, state) {
   if (!uid || !window._rel) return;
   if (state === 'matched') { window._rel.matched.add(uid); window._rel.liked.add(uid); }
   else if (state === 'sent') { window._rel.liked.add(uid); }
+  // 매칭 탭도 같은 집합을 본다 — 한쪽만 갱신하면 화면끼리 어긋난다
+  if (!(window.isMatchTester && window.isMatchTester())) {
+    window._matchLiked = window._matchLiked || new Set();
+    window._matchLiked.add(uid);
+  }
   window.relRepaint(uid);
+  if (typeof window.renderMatch === 'function') window.renderMatch();
 };
 window.relRepaint = function (only) {
   const sel = only ? '[data-inv="' + String(only).replace(/"/g, '') + '"]' : '[data-inv]';
