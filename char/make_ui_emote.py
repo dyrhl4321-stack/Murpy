@@ -11,16 +11,20 @@
 #   4) 알파를 128 에서 이진화(반투명 테두리 금지 — 앱 하드룰)
 #   5) 지워진 마젠타가 번진 가장자리를 되살린다(despill): 분홍끼를 뺀다
 #
-# 사용:  python char/make_ui_emote.py <입력.png> <출력.png>
+# 사용:  python char/make_ui_emote.py <입력.png> <출력.png> [목표높이]
+#
+# ★목표높이는 **화면에 보일 크기와 같게** 잡는 게 제일 선명하다.
+#   파일을 크게 만들어두고 CSS 로 줄이면 브라우저가 도트를 버려서 오히려 뭉개진다
+#   (144 짜리를 72 로 줄이면 도트 절반이 사라진다). 1 파일픽셀 = 1 화면픽셀이 정답.
 import sys, os
 from PIL import Image
 
 SRC = sys.argv[1] if len(sys.argv) > 1 else None
 OUT = sys.argv[2] if len(sys.argv) > 2 else None
 if not SRC or not OUT:
-    print('사용: python char/make_ui_emote.py <입력.png> <출력.png>'); sys.exit(1)
+    print('사용: python char/make_ui_emote.py <입력.png> <출력.png> [목표높이]'); sys.exit(1)
 
-TARGET_H = 224          # base 캐릭터 셀 높이와 같게
+TARGET_H = int(sys.argv[3]) if len(sys.argv) > 3 else 224   # 기본 = base 캐릭터 셀 높이
 
 im = Image.open(SRC).convert('RGBA')
 w, h = im.size
