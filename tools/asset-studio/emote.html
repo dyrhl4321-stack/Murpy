@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>머피 단발 에셋 리터치</title>
+<!--
+  단발 PNG(감정 아이콘 등) 픽셀 수정기.
+  ★기존 retouch.html 은 3x4 시트(423x896) 전용이라 72x112 같은 한 장짜리를 못 연다(대표 8-11).
+    이건 **크기를 안 따진다** — 아무 PNG나 열어서 픽셀만 고친다.
+  ★알파는 0/255 로만 찍는다(앱 하드룰: 반투명 테두리 금지).
+  ★확대는 정수배 NEAREST 만.
+-->
+<style>
+  :root { --bg:#05070c; --panel:#0e1320; --line:#222a3d; --txt:#cfd6e6; --accent:#3D7EFF; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  header { padding:14px 18px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; flex-wrap:wrap }
+  h1 { font-size:15px; font-weight:800; margin:0; letter-spacing:-.3px }
+  .hint { font-size:11.5px; color:#6b7590 }
+  main { display:flex; gap:18px; padding:18px; align-items:flex-start; flex-wrap:wrap }
+  .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px;
+    /* 투명 영역이 보이게 체크무늬 */
+    background-image:linear-gradient(45deg,#141a28 25%,transparent 25%),linear-gradient(-45deg,#141a28 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#141a28 75%),linear-gradient(-45deg,transparent 75%,#141a28 75%);
+    background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0 }
+  canvas { image-rendering:pixelated; display:block; cursor:crosshair; touch-action:none }
+  aside { width:260px; display:flex; flex-direction:column; gap:14px }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px }
+  .box h2 { font-size:11.5px; font-weight:700; color:#8a93a8; margin:0 0 9px }
+  .row { display:flex; gap:7px; flex-wrap:wrap }
+  button { font-family:inherit; font-size:12.5px; font-weight:700; color:var(--txt);
+    background:#182034; border:1px solid var(--line); border-radius:9px; padding:9px 12px; cursor:pointer }
+  button:hover { background:#1e2740 }
+  button.on { background:var(--accent); border-color:var(--accent); color:#fff }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; width:100% }
+  input[type=range] { width:100% }
+  .val { font-size:11.5px; color:#8a93a8 }
+  .sw { width:26px; height:26px; border:2px solid #05070c; box-shadow:0 0 0 1px var(--line) }
+  .prev { display:flex; align-items:flex-end; gap:14px }
+  .prev img { image-rendering:pixelated; display:block }
+  .drop { border:1px dashed #33405e; border-radius:12px; padding:22px; text-align:center; font-size:12.5px; color:#6b7590 }
+</style>
+
+<header>
+  <h1>머피 단발 에셋 리터치</h1>
+  <span class="hint">크기 안 따집니다 · 알파는 0/255 로만 찍힙니다 · 확대는 정수배</span>
+</header>
+
+<main>
+  <div>
+    <div class="stage"><canvas id="cv"></canvas></div>
+    <div class="hint" id="pos" style="margin-top:8px">파일을 열어주세요</div>
+  </div>
+
+  <aside>
+    <div class="box">
+      <h2>파일</h2>
+      <div class="drop" id="drop">여기에 PNG 를 끌어다 놓거나<br><br>
+        <button onclick="document.getElementById('fi').click()">파일 고르기</button>
+      </div>
+      <input id="fi" type="file" accept="image/png,.png" style="display:none">
+      <div class="hint" id="info" style="margin-top:9px"></div>
+    </div>
+
+    <div class="box">
+      <h2>도구</h2>
+      <div class="row">
+        <button id="t-erase" class="on" data-tool="erase">지우개 E</button>
+        <button id="t-paint" data-tool="paint">칠하기 B</button>
+        <button id="t-pick" data-tool="pick">스포이드 I</button>
+      </div>
+      <div style="margin-top:11px">
+        <div class="val">붓 크기 <b id="sz">1</b> px &nbsp;<span class="hint">[ ]</span></div>
+        <input id="brush" type="range" min="1" max="8" value="1">
+      </div>
+      <div class="row" style="margin-top:9px;align-items:center">
+        <div class="sw" id="sw"></div>
+        <span class="val" id="colv">색을 스포이드로 집으세요</span>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>보기</h2>
+      <div class="val">확대 <b id="zv">6</b>배</div>
+      <input id="zoom" type="range" min="1" max="16" value="6">
+      <div class="row" style="margin-top:9px">
+        <button id="gridBtn">격자 켜기</button>
+        <button id="undo">되돌리기 Ctrl+Z</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>실제 표시 크기</h2>
+      <div class="prev"><img id="p1" alt=""><img id="p2" alt=""></div>
+      <div class="hint" style="margin-top:7px">왼쪽 = 원본 크기 · 오른쪽 = 2배</div>
+    </div>
+
+    <button class="primary" id="save">PNG 로 저장</button>
+    <div class="hint">저장하면 브라우저 다운로드 폴더에 원래 이름으로 떨어집니다.</div>
+  </aside>
+</main>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d', { willReadFrequently: true });
+let img = null, W = 0, H = 0, zoom = 6, grid = false, tool = 'erase', brush = 1;
+let color = [255, 255, 255, 255], fileName = 'emote.png';
+const hist = [];
+
+function fit() {
+  cv.width = W; cv.height = H;
+  cv.style.width = (W * zoom) + 'px';
+  cv.style.height = (H * zoom) + 'px';
+}
+function draw() {
+  // 캔버스는 원본 해상도 그대로, 화면만 CSS 로 확대한다(정수배 NEAREST)
+  document.getElementById('zv').textContent = zoom;
+  cv.style.width = (W * zoom) + 'px';
+  cv.style.height = (H * zoom) + 'px';
+  cv.style.backgroundImage = grid && zoom >= 4
+    ? 'linear-gradient(to right,rgba(255,255,255,.12) 1px,transparent 1px),linear-gradient(to bottom,rgba(255,255,255,.12) 1px,transparent 1px)'
+    : 'none';
+  cv.style.backgroundSize = zoom + 'px ' + zoom + 'px';
+  refreshPreview();
+}
+function refreshPreview() {
+  const url = cv.toDataURL('image/png');
+  const p1 = document.getElementById('p1'), p2 = document.getElementById('p2');
+  p1.src = url; p1.style.width = W + 'px';
+  p2.src = url; p2.style.width = (W * 2) + 'px';
+}
+function pushHist() {
+  hist.push(ctx.getImageData(0, 0, W, H));
+  if (hist.length > 60) hist.shift();
+}
+function load(file) {
+  fileName = file.name || 'emote.png';
+  const fr = new FileReader();
+  fr.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      img = im; W = im.naturalWidth; H = im.naturalHeight;
+      fit();
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(im, 0, 0);
+      hist.length = 0;
+      document.getElementById('info').textContent = fileName + ' · ' + W + '×' + H;
+      document.getElementById('pos').textContent = '왼쪽 드래그로 칠하거나 지웁니다';
+      draw();
+    };
+    im.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+document.getElementById('fi').addEventListener('change', e => { if (e.target.files[0]) load(e.target.files[0]); });
+const drop = document.getElementById('drop');
+['dragover', 'dragenter'].forEach(ev => document.body.addEventListener(ev, e => { e.preventDefault(); drop.style.borderColor = '#3D7EFF'; }));
+['dragleave', 'drop'].forEach(ev => document.body.addEventListener(ev, e => { e.preventDefault(); drop.style.borderColor = '#33405e'; }));
+document.body.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) load(f); });
+
+function px(e) {
+  const r = cv.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / zoom), Math.floor((e.clientY - r.top) / zoom)];
+}
+function apply(x, y) {
+  const n = brush, o = Math.floor((n - 1) / 2);
+  if (tool === 'pick') {
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    if (d[3] > 0) {
+      color = [d[0], d[1], d[2], 255];
+      document.getElementById('sw').style.background = 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')';
+      document.getElementById('colv').textContent = 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')';
+    }
+    return;
+  }
+  const id = ctx.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) {
+    if (tool === 'erase') { id.data[i * 4 + 3] = 0; }
+    else { id.data[i * 4] = color[0]; id.data[i * 4 + 1] = color[1]; id.data[i * 4 + 2] = color[2]; id.data[i * 4 + 3] = 255; }
+  }
+  ctx.putImageData(id, x - o, y - o);   // putImageData 는 알파를 덮어쓴다 = 0/255 만 남는다
+}
+let down = false;
+cv.addEventListener('pointerdown', e => {
+  if (!img) return;
+  down = true; cv.setPointerCapture(e.pointerId);
+  if (tool !== 'pick') pushHist();
+  const [x, y] = px(e); apply(x, y); refreshPreview();
+});
+cv.addEventListener('pointermove', e => {
+  if (!img) return;
+  const [x, y] = px(e);
+  document.getElementById('pos').textContent = x + ', ' + y;
+  if (down) { apply(x, y); refreshPreview(); }
+});
+['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, () => { down = false; }));
+
+document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => {
+  tool = b.dataset.tool;
+  document.querySelectorAll('[data-tool]').forEach(o => o.classList.toggle('on', o === b));
+}));
+document.getElementById('brush').addEventListener('input', e => { brush = +e.target.value; document.getElementById('sz').textContent = brush; });
+document.getElementById('zoom').addEventListener('input', e => { zoom = +e.target.value; draw(); });
+document.getElementById('gridBtn').addEventListener('click', e => { grid = !grid; e.target.textContent = grid ? '격자 끄기' : '격자 켜기'; e.target.classList.toggle('on', grid); draw(); });
+document.getElementById('undo').addEventListener('click', undo);
+function undo() { const s = hist.pop(); if (s) { ctx.putImageData(s, 0, 0); refreshPreview(); } }
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  const k = e.key.toLowerCase();
+  if (k === 'e' || k === 'b' || k === 'i') {
+    const map = { e: 'erase', b: 'paint', i: 'pick' };
+    document.querySelector('[data-tool="' + map[k] + '"]').click();
+  }
+  if (e.key === '[') { brush = Math.max(1, brush - 1); document.getElementById('brush').value = brush; document.getElementById('sz').textContent = brush; }
+  if (e.key === ']') { brush = Math.min(8, brush + 1); document.getElementById('brush').value = brush; document.getElementById('sz').textContent = brush; }
+});
+
+document.getElementById('save').addEventListener('click', () => {
+  if (!img) return;
+  // 저장 전 알파 이진화 한 번 더 — 어떤 경로로든 반투명이 섞이지 않게
+  const d = ctx.getImageData(0, 0, W, H);
+  for (let i = 3; i < d.data.length; i += 4) d.data[i] = d.data[i] >= 128 ? 255 : 0;
+  ctx.putImageData(d, 0, 0);
+  const a = document.createElement('a');
+  a.download = fileName;
+  a.href = cv.toDataURL('image/png');
+  a.click();
+});
+</script>
+</html>
