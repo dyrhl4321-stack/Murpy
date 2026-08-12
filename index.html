@@ -1569,6 +1569,13 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
         성장 지표 · CC (관리자)
       </button>
+      <!-- ★관리자 테스트용 머피 충전(대표 8-12). 매칭 10 · 더보기 20 · 아이템 구매처럼
+           돈이 빠지는 길을 계속 눌러봐야 하는데 잔액이 바닥나면 테스트가 거기서 멈춘다.
+           **더하는 게 아니라 2000까지 채운다** — 눌러도 계속 2000이라 얼마 남았는지가 기준선이 된다. -->
+      <button id="admin-credit-btn" onclick="window.adminFillCredits && window.adminFillCredits()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+        머피 2000 채우기 (관리자)
+      </button>
       <button id="feed-hair-fix-btn" onclick="window.showFeedHairFix && window.showFeedHairFix()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20v-6a8 8 0 0 1 16 0v6"/><path d="M4 14h16"/><path d="M9 20v-4M15 20v-4"/></svg>
         지난 피드 빡빡이 고치기 (관리자)
@@ -9278,6 +9285,8 @@ window.updateUI = function(user) {
     if (usageBtn) usageBtn.style.display = _adm ? 'flex' : 'none';
     const growthBtn = document.getElementById('growth-stats-btn');
     if (growthBtn) growthBtn.style.display = _adm ? 'flex' : 'none';
+    const adminCreditBtn = document.getElementById('admin-credit-btn');
+    if (adminCreditBtn) adminCreditBtn.style.display = _adm ? 'flex' : 'none';
     const feedHairBtn = document.getElementById('feed-hair-fix-btn');
     if (feedHairBtn) feedHairBtn.style.display = _adm ? 'flex' : 'none';
     const centerFixBtn = document.getElementById('center-fix-btn');
@@ -11571,6 +11580,23 @@ window.grantBetaGift = async function () {
     });
     return true;
   } catch (e) { console.warn('beta gift', e); return false; }
+};
+
+// ===== 관리자 테스트용 머피 충전 (대표 8-12) =====
+// ★더하지 않고 **2000까지 채운다.** 눌러도 계속 2000이라 '얼마 남았나'가 기준선이 된다.
+//   관리자만 보이는 버튼이고, 규칙상 users/{uid} 는 본인만 쓸 수 있어 남의 잔액은 못 건드린다.
+const ADMIN_CREDIT_FILL = 2000;
+window.adminFillCredits = async function () {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const uid = window.currentUser && window.currentUser.uid;
+  if (!uid) return;
+  try {
+    await updateDoc(doc(db, 'users', uid), { credits: ADMIN_CREDIT_FILL });
+    window._creditState.credits = ADMIN_CREDIT_FILL;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    showToast('머피 ' + ADMIN_CREDIT_FILL + ' 채웠어요');
+  } catch (e) { console.error('admin credit', e); showToast('충전 실패'); }
 };
 
 // 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
