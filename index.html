@@ -4914,16 +4914,21 @@ window.mwPortal = function () {
 </div>
 
 <!-- 로그인 화면 (전체화면) — 닫고 비회원 둘러보기 가능 -->
-<div class="modal-overlay" id="login-method-modal" style="background:#0a0a0a;backdrop-filter:none;z-index:40000;align-items:stretch">
-  <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 32px;box-sizing:border-box">
+<!-- ★height:100dvh — inset:0 만 쓰면 모바일에서 주소창이 접힐 때 실제 보이는 높이와 어긋나
+     하단에 뒤 페이지가 비친다(대표 8-12). overflow:hidden 으로 이 화면 자체도 안 밀리게 한다. -->
+<div class="modal-overlay" id="login-method-modal" style="background:#0a0a0a;backdrop-filter:none;z-index:40000;align-items:stretch;height:100dvh;overflow:hidden">
+  <!-- ★로고와 버튼은 **겹치지 않는 두 칸**이다. 예전엔 버튼이 absolute 라 화면이 짧으면
+       'Move together' 카피를 그대로 덮었다(대표 8-12). 로고 칸이 남는 높이를 다 먹고,
+       버튼은 흐름 안에서 바닥에 붙는다 — 위치는 원래대로 하단 고정이다. -->
+  <div style="position:absolute;inset:0;display:flex;flex-direction:column;padding:0 32px;box-sizing:border-box;overflow:hidden">
     <button onclick="closeModal('login-method-modal'); if(typeof dismissLanding==='function') dismissLanding();" aria-label="닫고 둘러보기" style="position:absolute;top:16px;left:14px;z-index:2;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.14);color:rgba(255,255,255,0.85);width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
     </button>
-    <div class="lg-logo" id="lg-logo" style="display:flex;flex-direction:column;align-items:center;position:relative;z-index:1;margin-top:-40px">
-      <img src="./logo-nukki.png" style="width:160px;height:160px;object-fit:contain;margin-bottom:2px">
+    <div class="lg-logo" id="lg-logo" style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1">
+      <img src="./logo-nukki.png" style="width:160px;height:160px;object-fit:contain;margin-bottom:2px;flex-shrink:0">
       <div style="font-size:13px;font-weight:500;letter-spacing:4px;color:rgba(255,255,255,0.4);text-transform:uppercase">Move together</div>
     </div>
-    <div class="lg-btns" style="position:absolute;bottom:60px;left:0;right:0;padding:0 32px;display:flex;flex-direction:column;gap:10px;z-index:1;box-sizing:border-box">
+    <div class="lg-btns" style="flex-shrink:0;padding:0 0 calc(34px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;z-index:1;box-sizing:border-box">
       <button onclick="window.kakaoLogin()" style="width:100%;background:#FEE500;color:#000;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#000"><path d="M12 3C6.48 3 2 6.48 2 10.8c0 2.7 1.55 5.08 3.9 6.5l-.97 3.6 4.18-2.77c.93.18 1.89.27 2.89.27 5.52 0 10-3.48 10-7.8S17.52 3 12 3z"/></svg>
         카카오로 시작하기
@@ -5736,16 +5741,25 @@ window.openCreditInfo = function (celebrate) {
 // 오프라인 감지
 window.addEventListener('offline', () => { document.getElementById('offline-banner').style.display = 'block'; });
 window.addEventListener('online', () => { document.getElementById('offline-banner').style.display = 'none'; showToast('✓ 연결됐어요'); });
+// ★화면을 꽉 채우는 모달(로그인 화면)은 **뒤 페이지의 스크롤을 잠근다**(대표 8-12).
+//   안 잠그면 로그인 화면에서 아래로 밀 때 뒤에 깔린 피드가 같이 밀려서 하단에 비친다.
+//   반투명 시트형 모달은 원래대로 둔다 — 거기서는 뒤가 보이는 게 정상이다.
+const _FULL_MODALS = ['login-method-modal'];
+function _lockBodyScroll(on) {
+  document.body.style.overflow = on ? 'hidden' : '';
+}
 function openModal(id) {
   const el = document.getElementById(id); if (!el) return;
   clearTimeout(el._closeT);
   el.style.display = 'flex';      // 먼저 렌더(시트는 translateY(100%) 상태)
   void el.offsetWidth;            // 리플로우 강제 → .open 추가 시 슬라이드업 재생
   el.classList.add('open');
+  if (_FULL_MODALS.indexOf(id) >= 0) _lockBodyScroll(true);
 }
 function closeModal(id) {
   const el = document.getElementById(id); if (!el) return;
   el.classList.remove('open');   // 시트 슬라이드다운 + 스크림 페이드아웃
+  if (_FULL_MODALS.indexOf(id) >= 0) _lockBodyScroll(false);
   el._closeT = setTimeout(() => { el.style.display = 'none'; }, 320);
 }
 
@@ -13155,8 +13169,9 @@ window._isInApp = function () {
 (function () {
   const run = function () {
     if (!window._isInApp()) return;
+    // ★버튼 묶음이 흐름 안으로 바뀌었으므로(8-12) bottom 이 아니라 아래 여백을 키운다.
     const btns = document.querySelector('#login-method-modal .lg-btns') || document.querySelector('.lg-btns');
-    if (btns) btns.style.bottom = '96px';
+    if (btns) btns.style.paddingBottom = 'calc(70px + env(safe-area-inset-bottom))';
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
