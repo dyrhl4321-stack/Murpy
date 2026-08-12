@@ -2602,8 +2602,11 @@ window.SEASON_ITEMS = [
   // 정적 원본은 s2608_dino_still.png, 재생성은 char/animate_dino.py.
   { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105,
     hd:'char/rooms/hd/s2608_dino.webp?v=1', hdMax:200, still:'char/rooms/s2608_dino_still.png?v=1',
+    // ★획득 조건을 **비워둔다**(cond:{}). mwSeasonCheck 는 cond 가 빈 항목을 자동 지급하지
+    //   않으므로, 이 공룡을 얻는 길은 **매칭 소진 화면의 공룡을 10번 두드리는 것 하나뿐**이
+    //   된다(대표 8-12: "진짜 뜬금없이 주는 거지"). 조건표에도 안 적고 힌트도 안 준다.
     season:'2026-08', until:'2026-11', kind:'hidden', axis:'',
-    hint:'', title:'공룡의 친구', cond:{ feed:5, bamboo:3, checkin:3 } },
+    hint:'', title:'공룡의 친구', cond:{} },
 ];
 // 퀘스트형 해금 캐릭터 (상시 — 기한 없음).
 // SEASON_ITEMS와 달리 소유처가 _charState.wardrobe이고, 그림도 걷기 시트라 thumb을 따로 쓴다.
@@ -5781,6 +5784,8 @@ function renderMatch() {
       // 그림도 상황에 맞춘다 — 더 볼 사람이 남았으면 아쉬울 일이 아니다
       const _faceSrc = _more ? (window._MATCH_FACE_MORE || 'char/ui/murpy_sad.png?v=3') : 'char/ui/murpy_sad.png?v=3';
       const _faceW = _more ? (window._MATCH_FACE_W || 72) : 72;
+      // 공룡일 때만 두드릴 수 있다(이스터에그). 실망한 머피는 그냥 그림이다.
+      const _faceTap = _more ? 'onclick="window.matchDinoTap&&window.matchDinoTap(this)"' : '';
       // ★★두 줄 카드의 뼈대는 **한 곳에서 만들어 둘 다 그대로 쓴다**(대표 8-12).
       //   따로 적어두니 gap 하나만 어긋나도 글씨 시작점이 틀어져서 세 번을 다시 고쳤다.
       //   배치 원칙: 내용은 **카드 가운데에 덩어리로** 놓는다. 글씨 칸을 flex:1 로 늘리면
@@ -5807,7 +5812,10 @@ function renderMatch() {
       empty.innerHTML = `
         <!-- ★파일 자체가 72x112 다. 크게 두고 CSS 로 줄이면 브라우저가 도트를 절반 버린다 -->
         <div style="display:flex;justify-content:center;align-items:flex-end;height:${_more ? '76px' : '118px'};margin-bottom:13px">
-          <img src="${_faceSrc}" alt="" style="width:${_faceW}px;height:auto;display:block;image-rendering:pixelated">
+          <!-- ★공룡은 **누를 수 있다**(대표 8-12 이스터에그). 10번 두드리면 방 아이템으로 온다.
+               커서·힌트는 일부러 안 준다 — 우연히 만져본 사람만 발견하는 게 전부다. -->
+          <img src="${_faceSrc}" alt="" draggable="false" ${_faceTap}
+               style="width:${_faceW}px;height:auto;display:block;image-rendering:pixelated;${_more ? 'touch-action:manipulation;-webkit-user-select:none;user-select:none' : ''}">
         </div>
         <!-- ★제목도 캐릭터와 **같은 조건**으로 갈린다(대표 8-12 지적).
              '오늘 소개할 분을 다 봤어요'는 끝났다는 말이라 실망한 머피 자리다.
@@ -10103,6 +10111,42 @@ window._mwGrantRoomItem = async (id) => {
     return true;
   } catch (e) { console.error('roomInv grant', e); return false; }
 };
+// ===== 아기 공룡 이스터에그 (대표 8-12) =====
+// 매칭 소진 화면에 뜬금없이 앉아 있는 공룡을 **10번 두드리면** 그 공룡이 방 아이템으로 온다.
+// 어디에도 안 적고 힌트도 안 준다 — 우연히 발견하는 게 이 아이템의 전부다.
+// (그래서 SEASON_ITEMS 의 dino 는 cond 를 비워 자동 지급 경로를 막아뒀다. 이 길이 유일하다.)
+window._DINO_TAPS_NEED = 10;
+window._dinoTaps = 0;
+window.matchDinoTap = async function (img) {
+  const id = 's2608_dino';
+  // ①두드리는 맛은 **소유 여부와 상관없이** 준다. 이미 가진 사람이 눌렀는데 아무 반응도
+  //   없으면 그냥 그림이 된다. 눌리는 느낌은 늘 살아 있어야 한다.
+  if (img) {
+    img.style.transition = 'transform .13s cubic-bezier(.34,1.56,.64,1)';
+    img.style.transform = 'scale(1.13,.87) translateY(4px)';
+    setTimeout(function () { img.style.transform = 'scale(1) translateY(0)'; }, 130);
+  }
+  if (navigator.vibrate) navigator.vibrate(8);
+  const st = window._seasonState || {};
+  if ((st.inv || []).includes(id) || (st.box || []).includes(id)) return;   // 이미 가짐
+  if (!window.currentUser) return;                                          // 게스트는 줄 곳이 없다
+  window._dinoTaps = (window._dinoTaps || 0) + 1;
+  if (window._dinoTaps < window._DINO_TAPS_NEED) return;
+  window._dinoTaps = 0;
+  const def = (window.SEASON_ITEMS || []).find(function (s) { return s.id === id; });
+  if (!def) return;
+  const uid = window.currentUser.uid;
+  try {
+    // 칭호까지 같이 준다 — 획득 모달이 칭호 줄을 그리는데 실제로 없으면 거짓말이 된다
+    const upd = { roomInv: arrayUnion(id) };
+    if (def.title) upd.titles = arrayUnion(def.title);
+    await updateDoc(doc(db, 'users', uid), upd);
+  } catch (e) { console.warn('dino grant', e); return; }
+  if (!(st.inv || []).includes(id)) st.inv = (st.inv || []).concat(id);
+  if (def.title && !(st.titles || []).includes(def.title)) st.titles = (st.titles || []).concat(def.title);
+  window.mwSeasonCelebrate(Object.assign({}, def));
+};
+
 // ===== 월간 한정 오브젝트: 상태 + 활동 카운터 =====
 window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], ready: false };
 // 장착 칭호(users.title)·말풍선(users.roomMsg). 표시할 땐 반드시 mwValidTitle로 거른다 —
@@ -19529,14 +19573,15 @@ window._sqRenderDetail = function () {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}명</span>
           ${s.feeAmount>0
             ? `<span style="color:rgba(255,255,255,.22)">·</span>
-               <span style="color:#F5C24B;font-weight:800">${window._sqFmtFee(s.feeAmount)}</span>
+               <!-- 금액은 목록 카드와 같은 규칙 — **색이 아니라 굵기**로 세운다(대표 8-12) -->
+               <span style="color:#fff;font-weight:800;font-size:13px">${window._sqFmtFee(s.feeAmount)}</span>
                <span style="color:rgba(255,255,255,.22)">·</span>
-               <!-- ★입금은 **돈 이야기의 일부**다. 초록(#4ce88a)을 따로 주니 부트스트랩 성공배지처럼
-                    보였다(대표 8-12: "짜친다"). 색은 늘리는 게 아니라 **묶는다** —
-                    금액과 같은 골드를 쓰되 밝기를 낮춰서 금액에 딸린 값으로 읽히게 한다.
-                    다 걷히면 밝은 골드 + 체크로 살아난다.
+               <!-- ★입금 초록(#4ce88a)은 뺐다 — 부트스트랩 성공배지처럼 보였다(대표 8-12: "짜친다").
+                    금액이 흰색이 된 뒤로는 **골드를 상시로 두지 않는다.** 걷는 중에는 흐린 흰색이고,
+                    **다 걷혔을 때만 골드 + ✓ 로 살아난다.** 골드가 장식이 아니라
+                    '좋은 소식'이 되는 자리다.
                     ※초록은 이제 '진짜 몸이 움직인 것'(LIVE·오운완)에만 남긴다. -->
-               <span style="color:${paidN>=n && n>0 ? '#F5C24B' : 'rgba(245,194,75,.6)'}">입금 ${paidN}/${n}${paidN>=n && n>0 ? ' ✓' : ''}</span>`
+               <span style="color:${paidN>=n && n>0 ? '#F5C24B' : 'rgba(255,255,255,.5)'}">입금 ${paidN}/${n}${paidN>=n && n>0 ? ' ✓' : ''}</span>`
             : `<span style="color:rgba(255,255,255,.22)">·</span>
                <span style="color:rgba(255,255,255,.72)">무료</span>`}
         </div>
