@@ -11522,9 +11522,13 @@ window.closeSeasonKickoff = function () {
 //   ① 기존 계정 = 접속하면 홈에서 바로 (ensureCreditsInit 에서 호출)
 //   ② 신규 가입 = 첫 피드를 올리는 순간 (submitFeedPost 에서 호출)
 // ★더해주는 게 아니라 300까지 채운다 — 이미 300 이상 모은 사람의 잔액을 건드리지 않기 위해서다.
+// ★임시 계정에는 주지 않는다(대표 8-12). 가입 선물은 **가입한 사람**에게 주는 것이고,
+//   임시 계정은 스쿼드 출첵만 하라고 만든 계정이다. 여기서 주면 링크를 여러 번 눌러
+//   임시 계정을 새로 만들 때마다 선물이 나간다. 계정을 연결하는 순간 그때 받는다.
 window.grantBetaGift = async function () {
   const user = auth.currentUser || window.currentUser;
   if (!user) return false;
+  if (user.isAnonymous) return false;
   try {
     const ref = doc(db, 'users', user.uid);
     const us = await getDoc(ref);
@@ -11548,6 +11552,10 @@ window.grantBetaGift = async function () {
 // 로그인 시 1회: 잔액 없으면 환영 보너스로 초기화, 있으면 캐시
 window.ensureCreditsInit = async (uid) => {
   if (!uid) return;
+  // ★임시 계정에는 가입 보정(CREDIT_WELCOME)도 걸지 않는다(대표 8-12).
+  //   스쿼드 출첵만 하는 계정이라 머피를 쓸 데도 없고, 링크를 다시 눌러 임시 계정을
+  //   새로 만들 때마다 보정이 도는 꼴이 된다. 계정을 연결하면 그때 정상 경로로 받는다.
+  try { if (auth.currentUser && auth.currentUser.isAnonymous) return; } catch (e) {}
   try {
     const ref = doc(db, 'users', uid);
     const snap = await getDoc(ref);
