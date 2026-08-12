@@ -940,6 +940,10 @@
     <div id="splash-tagline" style="font-size:13px;font-weight:500;letter-spacing:4px;color:rgba(255,255,255,0.38);text-transform:uppercase;opacity:0;animation:splashTagline 0.5s ease 0.85s forwards">Move together</div>
   </div>
 
+  <!-- 홍보 링크(?from=…)로 들어온 사람에게만 뜨는 한 줄. 기본은 숨김 -->
+  <div id="splash-from" style="display:none;position:absolute;bottom:238px;width:100%;max-width:390px;padding:0 34px;
+       align-items:center;gap:11px;text-align:left"></div>
+
   <!-- 하단 버튼 (비로그인시만 표시) -->
   <div id="splash-btns" style="position:absolute;bottom:88px;width:100%;max-width:390px;padding:0 32px;opacity:0;pointer-events:none;transition:opacity 0.4s ease">
     <button onclick="window.kakaoLogin()" style="width:100%;background:#FEE500;color:#000;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform 0.12s ease,opacity 0.12s ease" onmousedown="this.style.transform='scale(0.97)';this.style.opacity='0.88'" onmouseup="this.style.transform='scale(1)';this.style.opacity='1'" ontouchstart="this.style.transform='scale(0.97)';this.style.opacity='0.88'" ontouchend="this.style.transform='scale(1)';this.style.opacity='1'">
@@ -1010,6 +1014,32 @@
     if (!btns) return;
     btns.style.opacity = '1';
     btns.style.pointerEvents = 'auto';
+    showLandingFrom();
+  }
+
+  // ★홍보 링크로 들어온 사람에게 **왜 여기 왔는지**를 되돌려준다(대표 8-12).
+  //   카톡·인스타 인앱 브라우저는 평소 쓰는 크롬과 저장소가 분리돼 있어서, 링크를 누르면
+  //   무조건 로그아웃 상태로 뜬다. 그때 로고와 로그인 버튼만 나오면 "공룡은 어디 갔지"가 된다.
+  //   murpy.app/dino.html 의 버튼이 ?from=dino 를 달고 오므로, 그 경우만 한 줄 얹는다.
+  //   ※ 실패해도 로그인 화면 자체는 반드시 떠야 하므로 통째로 try 로 감싼다.
+  var LANDING_FROM = {
+    dino: { icon: 'char/rooms/s2608_dino_still.png?v=1', text: '가입하고 <b>매칭</b> 탭에서 공룡을 찾아보세요' }
+  };
+  function showLandingFrom() {
+    try {
+      var key = new URLSearchParams(location.search).get('from');
+      var meta = key && LANDING_FROM[key];
+      if (!meta) return;
+      var host = document.getElementById('splash-from');
+      if (!host || host.dataset.done) return;
+      host.dataset.done = '1';
+      host.innerHTML =
+        '<img src="' + meta.icon + '" alt="" style="width:44px;height:auto;display:block;image-rendering:pixelated"'
+        + ' onerror="this.style.display=\'none\'">'
+        + '<span style="font-size:12.5px;color:rgba(255,255,255,.62);line-height:1.55;letter-spacing:-.2px">'
+        + meta.text + '</span>';
+      host.style.display = 'flex';
+    } catch (e) { /* 링크 장식일 뿐이라 실패해도 조용히 넘어간다 */ }
   }
 
   // 2.5초 내 auth 미결정 시 버튼 표시 (폴백)
@@ -1202,9 +1232,9 @@
     <!-- 비로그인 안내 오버레이 (블러 위) -->
     <div id="match-guest" style="display:none;position:absolute;inset:0;z-index:5;background:rgba(10,10,10,0.28);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px">
       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      <div style="font-size:16px;font-weight:800;color:#fff;margin-top:14px;line-height:1.4">매칭 기능을 쓰려면<br>로그인이 필요해요</div>
+      <div id="match-guest-title" style="font-size:16px;font-weight:800;color:#fff;margin-top:14px;line-height:1.4">매칭 기능을 쓰려면<br>로그인이 필요해요</div>
       <div style="font-size:12.5px;color:rgba(255,255,255,0.62);margin-top:7px;line-height:1.5">운동 메이트를 찾고 같이 운동해요</div>
-      <button onclick="openModal('login-method-modal')" style="margin-top:18px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">로그인하고 시작하기</button>
+      <button id="match-guest-btn" onclick="openModal('login-method-modal')" style="margin-top:18px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:12px 26px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">로그인하고 시작하기</button>
     </div>
   </div>
   </div><!-- /match-deck -->
@@ -2183,7 +2213,8 @@ window.openCreateCrew = function () { if (window.openPanel) openPanel('create-cr
 window.expandBambooCompose = function () {
   const t = document.getElementById('bamboo-compose-trigger');
   const f = document.getElementById('bamboo-compose-full');
-  if (!window.currentUser) { if (window.requireLogin) requireLogin('대나무숲 글을 쓰려면 로그인이 필요해요'); return; }
+  // ★임시 계정도 막는다 — currentUser 만 보면 스쿼드 초대로 들어온 익명 계정이 그대로 통과했다(8-12)
+  if (window.requireRealAccount && window.requireRealAccount('대나무숲 글을 쓰려면 계정이 필요해요')) return;
   if (t) t.style.display = 'none';
   if (f) f.style.display = 'block';
   if (window.renderBambooChips) window.renderBambooChips();
@@ -5646,6 +5677,24 @@ function closePanel(id) {
     if (fab) fab.style.display = 'none';
   }
 }
+// ★임시(익명) 계정은 **회원이 아니다.**
+//   스쿼드 초대 링크로 들어온 사람이 방 안을 걸어다닐 수 있게 만든 계정인데,
+//   window.currentUser 가 채워지는 바람에 `!window.currentUser` 로 세운 문들이 전부 열려 있었다
+//   — 매칭·대숲까지 다 보였다(대표 8-12: "임시계정인데 왜 매칭탭이 다 보이냐").
+//   회원 전용 화면은 반드시 이 함수로 막는다.
+window.isTempAccount = function () {
+  try { return !!(window.currentUser && window.currentUser.isAnonymous); } catch (e) { return false; }
+};
+// 막혔으면 true. 임시 계정이면 '계정 만들기'로, 아예 비로그인이면 로그인 가드로 보낸다.
+window.requireRealAccount = function (reason) {
+  if (window.isTempAccount()) {
+    showToast(reason || '계정을 만들면 쓸 수 있어요');
+    if (window.guestUpgrade) window.guestUpgrade();
+    return true;
+  }
+  if (!window.currentUser) { requireLogin(reason); return true; }
+  return false;
+};
 function requireLogin(reason, onAfterLogin) {
   document.getElementById('login-guard-text').textContent = reason || '이 기능은 로그인 후 사용할 수 있어요';
   window._pendingIntent = (typeof onAfterLogin === 'function') ? onAfterLogin : null;
@@ -5718,7 +5767,8 @@ function renderMatch() {
   const info = card.querySelector('.match-info');
 
   // 게스트도 실제 후보를 블러로 미리보기(유입 유도). 블러/잠금은 렌더 끝에서 _applyMatchGuestLock으로 일괄 처리.
-  const isGuest = !window.currentUser;
+  // ★임시(익명) 계정도 게스트다 — 스쿼드 초대로 들어온 사람에게 매칭이 통째로 열려 있었다(대표 8-12)
+  const isGuest = !window.currentUser || (window.isTempAccount && window.isTempAccount());
 
   const list = window._matchList;
   // 아직 로드 전 → 후보 로드(게스트 포함, users 읽기는 공개)
@@ -5772,6 +5822,51 @@ function renderMatch() {
     const _det0 = document.getElementById('match-detail'); if (_det0) _det0.style.display = 'none';
     if (empty) {
       empty.style.display = 'block';
+
+      // ─── ①불러오기 실패 ───────────────────────────────────────────────
+      // 실패를 '다 봤어요'로 보여주면 처음 온 사람이 아무것도 안 했는데 다 본 화면을 본다.
+      // 카톡·인스타 인앱 브라우저에서 실제로 이렇게 보였다(대표 8-12).
+      if (window._matchLoadFailed) {
+        empty.innerHTML = `
+          <div style="font-size:16px;color:#fff;font-weight:800;letter-spacing:-.3px;margin-bottom:7px">목록을 못 불러왔어요</div>
+          <div style="font-size:12.5px;color:rgba(255,255,255,0.42);line-height:1.65;margin-bottom:22px">연결이 잠깐 끊겼을 수 있어요</div>
+          <button class="match-row" onclick="window.matchRetryLoad&&window.matchRetryLoad()"
+            style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;cursor:pointer;
+                   font-family:inherit;border:1px solid rgba(255,255,255,.14);border-radius:15px;padding:15px;
+                   background:none;font-size:14px;font-weight:800;color:#fff">다시 시도</button>`;
+        return;
+      }
+
+      // ─── ②비로그인(콜드스타터) ────────────────────────────────────────
+      // 비로그인은 '다 봤어요'가 아니라 **가입 유도**다. 프로필 탭은 콜드스타터 화면인데
+      // 매칭 탭만 소진 화면이 뜨니 앱이 통째로 꼬여 보였다(대표 8-12).
+      if (isGuest) {
+        // 홍보 링크(?from=dino)로 온 사람에게는 **공룡이 앉는 자리가 여기라는 것**까지 알려준다.
+        let _fromDino = false;
+        try { _fromDino = new URLSearchParams(location.search).get('from') === 'dino'; } catch (e) {}
+        // 임시 계정은 로그인 창이 아니라 **계정 만들기**로 보낸다 — 이미 로그인은 돼 있으니까
+        const _temp = !!(window.isTempAccount && window.isTempAccount());
+        const _cta = _temp
+          ? { t: '계정 만들고 시작하기', go: 'window.guestUpgrade&&window.guestUpgrade()' }
+          : { t: '로그인하고 시작하기',   go: "openModal('login-method-modal')" };
+        empty.innerHTML = `
+          ${_fromDino ? `
+            <div style="display:flex;justify-content:center;align-items:flex-end;height:76px;margin-bottom:13px">
+              <img src="char/rooms/s2608_dino.png?v=8" alt="" draggable="false"
+                   style="width:56px;height:auto;display:block;image-rendering:pixelated">
+            </div>` : ''}
+          <div style="font-size:16px;color:#fff;font-weight:800;letter-spacing:-.3px;margin-bottom:7px">${_fromDino
+            ? '공룡은 바로 이 자리에 앉아요'
+            : '오늘의 5명을 소개해 드릴게요'}</div>
+          <div style="font-size:12.5px;color:rgba(255,255,255,0.42);line-height:1.65;margin-bottom:22px">${_fromDino
+            ? '가입하고 오늘의 추천을 다 보면 여기서 만나요'
+            : '가입하면 매일 아침 새로 골라드려요'}</div>
+          <button onclick="${_cta.go}"
+            style="width:100%;cursor:pointer;font-family:inherit;border:none;border-radius:15px;padding:15px;
+                   background:#3D7EFF;color:#fff;font-size:15px;font-weight:800;letter-spacing:-.3px">${_cta.t}</button>`;
+        return;
+      }
+
       // ★★이 화면 다시 설계(대표 8-12: "캐릭터 빼고 다 별로"). 원칙 세 가지만 지킨다.
       //   ①액센트는 **골드 하나**(=머피/돈). 파랑 버튼을 같이 두면 눈이 둘로 갈린다
       //   ②머피 금액에는 **동전 로고**를 쓴다 — 골드 박스만 두면 그냥 노란 버튼이다
@@ -5998,7 +6093,21 @@ function _applyMatchGuestLock(isGuest) {
     if (det) det.style.filter = 'blur(4.5px)';
     if (actions) { actions.style.filter = 'blur(3px)'; actions.style.pointerEvents = 'none'; }
     if (moreWrap) moreWrap.style.display = 'none';     // 추천 썸네일은 실사진이라 게스트엔 숨김
-    if (guest) guest.style.display = 'flex';
+    if (guest) {
+      // 임시 계정은 이미 '로그인'은 돼 있다 — 그 사람에게 로그인하라고 하면 앞뒤가 안 맞는다.
+      // 문구와 버튼을 계정 만들기로 바꿔 끼운다(대표 8-12).
+      const _temp = !!(window.isTempAccount && window.isTempAccount());
+      const gT = document.getElementById('match-guest-title');
+      const gB = document.getElementById('match-guest-btn');
+      if (gT) gT.innerHTML = _temp ? '지금은 임시 계정이에요<br>계정을 만들면 매칭이 열려요' : '매칭 기능을 쓰려면<br>로그인이 필요해요';
+      if (gB) {
+        gB.textContent = _temp ? '계정 만들기' : '로그인하고 시작하기';
+        gB.onclick = _temp
+          ? function () { window.guestUpgrade && window.guestUpgrade(); }
+          : function () { openModal('login-method-modal'); };
+      }
+      guest.style.display = 'flex';
+    }
   } else {
     if (mImg) mImg.style.filter = '';
     if (info) info.style.filter = '';
@@ -9066,13 +9175,17 @@ window.updateUI = function(user) {
     const loginBtn = document.getElementById('login-btn');
     const logoutBtn = document.getElementById('mypage-logout-btn');
     if (user) {
+      // ★사진이 없는 계정을 위해 **둘 중 하나는 반드시 남긴다**(대표 8-12).
+      //   예전엔 아바타를 사진 유무로 숨기면서 대체 아이콘까지 '로그인했으니까'라며 같이 숨겨서,
+      //   사진을 안 올린 사람은 우측 상단에 **아무것도 없었다** — 마이페이지로 갈 길이 사라졌다.
+      //   카카오 로그인은 프로필 사진을 안 주는 경우가 있어서 신규 유입에서 특히 잘 걸린다.
+      const rawPhoto = (user.firestorePhotoURL || user.photoURL) || '';
       if (avatar) {
-        const rawPhoto = (user.firestorePhotoURL || user.photoURL) || '';
         avatar.src = window._cdnImg(rawPhoto, 80);
         avatar.onerror = rawPhoto ? function() { this.onerror = null; this.src = rawPhoto; } : null;
         avatar.style.display = rawPhoto ? 'block' : 'none';
       }
-      if (mypageBtn) mypageBtn.style.display = 'none';
+      if (mypageBtn) mypageBtn.style.display = rawPhoto ? 'none' : 'block';
       if (loginBtn) loginBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'block';
       const heartBtn = document.getElementById('header-interest-btn');
@@ -10129,7 +10242,10 @@ window.matchDinoTap = async function (img) {
   if (navigator.vibrate) navigator.vibrate(8);
   const st = window._seasonState || {};
   if ((st.inv || []).includes(id) || (st.box || []).includes(id)) return;   // 이미 가짐
-  if (!window.currentUser) return;                                          // 게스트는 줄 곳이 없다
+  // ★임시(익명) 계정에는 주지 않는다(대표 8-12). 이 공룡은 **가입을 유도하는 미끼**다 —
+  //   애초에 매칭 탭 자체가 정식 계정에만 열리므로 여기까지 올 일도 없지만, 방어로 한 번 더 막는다.
+  //   임시 계정으로 받아가면 그 계정을 버리는 순간 아이템도 같이 사라져서 억울해진다.
+  if (!window.currentUser || (window.isTempAccount && window.isTempAccount())) return;
   window._dinoTaps = (window._dinoTaps || 0) + 1;
   if (window._dinoTaps < window._DINO_TAPS_NEED) return;
   window._dinoTaps = 0;
@@ -11964,12 +12080,23 @@ window.loadMatchCandidates = async function () {
     }
     window.matchMoreLeft && window.matchMoreLeft();   // _matchMoreLeft 갱신(덱 소진 화면이 쓴다)
     window._matchIdx = 0;
+    window._matchLoadFailed = false;
   } catch (e) {
+    // ★실패를 빈 목록으로 뭉개면 안 된다. 그러면 소진 화면("다 봤어요")이 뜨고,
+    //   처음 온 사람이 아무것도 안 했는데 다 본 것처럼 보인다(대표 8-12, 카톡 인앱에서 발생).
+    console.warn('match load', e);
     window._matchList = [];
+    window._matchLoadFailed = true;
   } finally {
     window._matchLoading = false;
     if (typeof window.renderMatch === 'function') window.renderMatch();
   }
+};
+// 실패 화면의 '다시 시도'. 목록을 비워야 renderMatch 가 로딩(스켈레톤)부터 다시 탄다.
+window.matchRetryLoad = function () {
+  window._matchLoadFailed = false;
+  window._matchList = null;
+  if (typeof window.renderMatch === 'function') window.renderMatch();
 };
 
 // ===== 실시간 알림 (배지 + 매칭 팝업) =====
