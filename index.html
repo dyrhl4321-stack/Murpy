@@ -19594,7 +19594,8 @@ window._sqTalkOpen = function () {
   el = document.createElement('div'); el.id = 'sq-talk';
   // ★z 는 필드(sticky, z-index:4)보다 **위**여야 한다. 2로 뒀더니 톡을 열어도 필드가 위에 그대로
   //   떠서 공지를 가렸다(대표 8-11). 상세(#sq-detail) 안이라 프로필 패널과는 여전히 안 싸운다.
-  el.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;z-index:10;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
+  //   ★말풍선(120)·도장(130)보다도 위로 올려 둔다 — 필드는 어차피 숨기지만 이중으로 막는다.
+  el.style.cssText = 'position:fixed;left:0;right:0;top:0;bottom:0;z-index:200;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column';
   const notice = (s.notice || '').trim();
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;padding:14px 14px 11px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
@@ -19613,12 +19614,20 @@ window._sqTalkOpen = function () {
     </div>`;
   const host = document.getElementById('sq-detail') || document.body;
   host.appendChild(el);
+  // ★톡을 열면 **필드를 통째로 숨긴다**(대표 8-12: 내 캐릭터가 톡 화면까지 따라온다).
+  //   원인은 z-index 싸움이다 — 말풍선(.sq-bubble z:120)·도장(.sq-stamp z:130)이 톡 패널보다
+  //   높게 잡혀 있어서 패널 위로 뚫고 올라온다. 패널 z 를 올려 이기는 것보다
+  //   **안 보여야 할 것을 안 그리는 게** 확실하다(다음에 z 를 또 만지면 같은 싸움이 난다).
+  const _rw = document.getElementById('sq-room-wrap');
+  if (_rw) _rw.style.visibility = 'hidden';
   window._sqVVFit && window._sqVVFit();      // 방금 만든 톡 방도 보이는 영역에 맞춘다
   window._sqChatPaint();
   window._sqChatGateApply();
 };
 window._sqTalkClose = function () {
   const el = document.getElementById('sq-talk'); if (el) el.remove();
+  const rw = document.getElementById('sq-room-wrap');
+  if (rw) rw.style.visibility = '';          // 숨겨둔 필드를 되돌린다
 };
 // 벙주·관리자가 지난 대화를 비운다(대표 8-12).
 // ★공지는 안 지운다 — 그건 대화가 아니라 벙 정보다. 입퇴장 같은 시스템 줄까지 같이 정리한다.
