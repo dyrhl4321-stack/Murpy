@@ -5743,9 +5743,20 @@ function renderMatch() {
   if (empty) empty.style.padding = '60px 24px';
 
   let idx = window._matchIdx || 0;
-  // 썸네일에서 이미 좋아요 보낸 사람이 히어로 차례가 되면 건너뜀 (앞으로만 이동 → 안전)
+  // 이미 좋아요를 보낸 사람은 건너뛴다.
+  // ★건너뛰는 **방향은 이동 방향을 따른다**(유저 피드백 #8, 8-12에 수정).
+  //   예전엔 무조건 앞으로만 건너뛰어서, 뒤로 가려는데 바로 앞 사람이 좋아요한 사람이면
+  //   그대로 다시 앞으로 밀려나 '← 가 먹통'으로 보였다.
   const _liked = window._matchLiked;
-  if (_liked) { while (list[idx] && _liked.has(list[idx].uid)) idx++; window._matchIdx = idx; }
+  if (_liked) {
+    const step = (window._matchDir === -1) ? -1 : 1;
+    while (list[idx] && _liked.has(list[idx].uid)) idx += step;
+    if (idx < 0) {                       // 뒤로 훑다 처음을 지나쳤으면 앞쪽에서 다시 찾는다
+      idx = 0;
+      while (list[idx] && _liked.has(list[idx].uid)) idx++;
+    }
+    window._matchIdx = idx;
+  }
   const p = list[idx];
 
   // 후보 없음 (다 봤거나 아무도 없음)
@@ -5767,8 +5778,9 @@ function renderMatch() {
                1 파일픽셀 = 1 화면픽셀이라 이 크기가 제일 선명하다. -->
           <img src="char/ui/murpy_sad.png?v=3" alt="" style="width:72px;height:auto;display:block;image-rendering:pixelated">
         </div>
-        <!-- ★몇 명을 봤는지 숫자로 말해준다 — "오늘 치를 끝냈다"가 내일 다시 올 이유가 된다 -->
-        <div style="font-size:15px;color:#fff;font-weight:700;margin-bottom:6px">${list.length ? '오늘의 ' + list.length + '명을 다 봤어요!' : ((window._matchPoolLeft || 0) > 0 ? '오늘 추천을 다 봤어요' : '오늘 추천할 분을 다 봤어요')}</div>
+        <!-- ★몇 명을 봤는지 숫자로 말해준다 — "오늘 치를 끝냈다"가 내일 다시 올 이유가 된다.
+             ★느낌표는 뺀다(대표 8-12) — 아쉬워하는 캐릭터를 올려놓고 신나는 말투면 따로 논다. -->
+        <div style="font-size:15px;color:#fff;font-weight:700;margin-bottom:6px">${list.length ? '오늘의 ' + list.length + '명을 다 봤어요' : ((window._matchPoolLeft || 0) > 0 ? '오늘 추천을 다 봤어요' : '오늘 추천할 분을 다 봤어요')}</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.32);line-height:1.6;margin-bottom:20px">${(window._matchPoolLeft || 0) > 0
             ? '내일 아침 새로 골라드릴게요<br>그동안 스쿼드에서 같이 운동할 사람을 찾아보세요'
             : '스쿼드에서 운동 메이트를 찾아보거나<br>잠시 후 다시 확인해보세요'}</div>
@@ -5778,7 +5790,12 @@ function renderMatch() {
           <button onclick="window.matchBuyMore&&window.matchBuyMore()" style="display:block;width:100%;max-width:280px;margin:0 auto 10px;background:#F5C24B;border:none;color:#3a2a00;border-radius:12px;padding:13px 20px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">${window._matchMoreCost}머피로 ${window._matchMoreN}명 더 보기</button>
           <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:16px">오늘 아직 ${window._matchMoreLeft}명이 남아 있어요</div>` : ''}
         <!-- ★반투명 배경 칠하기 금지(대표). 액션 버튼은 블루 단색이 앱 전체의 규칙이다 -->
-        <button onclick="goPage('crew')" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:13px 24px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">스쿼드 둘러보기</button>`;
+        <button onclick="goPage('crew')" style="background:var(--accent);border:none;color:#fff;border-radius:12px;padding:13px 24px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">스쿼드 둘러보기</button>
+        <!-- ★되돌아갈 수 있어야 한다(대표 8-12). 스와이프는 아무것도 소비하지 않으므로
+             방금 지나친 사람을 다시 볼 수 있어야 한다. 좋아요를 보낸 사람은 이미 소비돼서
+             건너뛰므로, 돌아갈 카드가 실제로 있을 때만 버튼을 띄운다. -->
+        ${window._matchHasBack && window._matchHasBack() ? `
+          <div><button onclick="window.matchBackToCards&&window.matchBackToCards()" style="background:none;border:none;color:rgba(255,255,255,0.45);font-size:12.5px;padding:14px 10px 0;cursor:pointer;font-family:inherit">← 방금 본 사람 다시 보기</button></div>` : ''}`;
     }
     return;
   }
@@ -5986,7 +6003,28 @@ function _matchSnapBack() {
   setTimeout(_matchBackHide, 300);
 }
 
+// 덱 소진 화면에서 되돌아갈 카드가 있나 = 좋아요로 소비되지 않은 사람이 하나라도 남았나
+window._matchHasBack = function () {
+  const list = window._matchList || [];
+  const liked = window._matchLiked;
+  return list.some(c => !liked || !liked.has(c.uid));
+};
+// 마지막으로 '아직 살아 있는' 카드로 되돌아간다
+window.matchBackToCards = function () {
+  const list = window._matchList || [];
+  const liked = window._matchLiked;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (!liked || !liked.has(list[i].uid)) {
+      window._matchDir = -1;
+      window._matchIdx = i;
+      renderMatch();
+      return;
+    }
+  }
+  showToast('돌아갈 카드가 없어요');
+};
 window._matchGo = function (delta) {
+  window._matchDir = delta;                      // 건너뛰기가 이 방향을 따른다(피드백 #8)
   if (window._matchAnim) return;                 // 연타로 두 장 넘어가는 것 방지
   const list = window._matchList; if (!list || !list.length) return;
   const cur = window._matchIdx || 0;
@@ -6103,6 +6141,7 @@ window._matchSwipeInit = function () {
 };
 
 function _matchAdvance(exitTransform) {
+  window._matchDir = 1;                          // 좋아요·패스는 앞으로 간다(건너뛰기 방향)
   const card = document.getElementById('match-card');
   if (card) { card.style.transition = 'transform .28s ease, opacity .28s ease'; card.style.transform = exitTransform; card.style.opacity = '0'; }
   setTimeout(() => {
