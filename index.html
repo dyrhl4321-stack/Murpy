@@ -15578,10 +15578,20 @@ window.mwRenderTodayMurpys = async function () {
   const root = document.getElementById('mw-map-root'); if (!root) return;
   const guest = !(auth.currentUser || window.currentUser);
   const today = mwTodayKey();
+  // ★콜드스타터에게는 **최근 3일**을 보여준다(대표 8-12). 오늘 도장이 0건인 날이 실제로 있는데,
+  //   링크를 받고 처음 들어온 사람이 "아직 아무도 없어요"를 보면 그대로 나간다.
+  //   회원에게는 그대로 **오늘**만 — 그 사람에겐 오늘 누가 나왔는지가 정보다.
+  const DAYS = guest ? 3 : 1;
+  const keys = [];
+  for (let i = 0; i < DAYS; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    keys.push(d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0'));
+  }
   let rows = [];
   try {
     const qs = await getDocs(query(collection(db,'checkins'), orderBy('at','desc'), limit(80)));
-    rows = qs.docs.map(d=>({id:d.id,...d.data()})).filter(k=>k.id.endsWith('_'+today));
+    rows = qs.docs.map(d=>({id:d.id,...d.data()}))
+                  .filter(k => keys.some(day => k.id.endsWith('_' + day)));
   } catch(e){ console.warn(e); }
   const byCenter = {};
   rows.forEach(k => { (byCenter[k.centerId]=byCenter[k.centerId]||{name:k.centerName,list:[]}).list.push(k); });
@@ -15622,12 +15632,12 @@ window.mwRenderTodayMurpys = async function () {
   const guestHead = guest && rows.length
     ? `<div class="mw-panel" style="padding:13px 14px;margin-bottom:11px;border-color:rgba(245,194,75,.4)">
          <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;line-height:1.5">
-           오늘 <b style="color:#F5C24B">${rows.length}명</b>이 운동하고 도장을 찍었어요</div>
+           최근 3일간 <b style="color:#F5C24B">${rows.length}명</b>이 운동하고 도장을 찍었어요</div>
          <div style="font-size:11.5px;color:#8a93a8;margin-top:6px;line-height:1.6">가입하면 이 머피들 방에 놀러가고<br>같이 운동할 사람도 찾을 수 있어요</div>
          <button onclick="window._mwJoinGate('머피들을 만나려면')" class="mw-btn" style="width:100%;margin-top:11px">머피 시작하기</button>
        </div>` : '';
   root.innerHTML = `
-    <div style="font-size:12px;color:#8a93a8;margin:2px 2px 10px">오늘 체크인한 머피들 <span style="color:#4a5266">— 도장 찍으면 여기 떠요</span></div>
+    <div style="font-size:12px;color:#8a93a8;margin:2px 2px 10px">${guest ? '요즘 운동한 머피들' : '오늘 체크인한 머피들'} <span style="color:#4a5266">— 도장 찍으면 여기 떠요</span></div>
     ${guestHead}
     ${groups || `<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">
       <div style="font-family:'Galmuri14',sans-serif;font-size:13px;color:#fff;margin-bottom:8px">아직 아무도 없어요</div>
