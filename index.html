@@ -5781,6 +5781,18 @@ function renderMatch() {
       // 그림도 상황에 맞춘다 — 더 볼 사람이 남았으면 아쉬울 일이 아니다
       const _faceSrc = _more ? (window._MATCH_FACE_MORE || 'char/ui/murpy_sad.png?v=3') : 'char/ui/murpy_sad.png?v=3';
       const _faceW = _more ? (window._MATCH_FACE_W || 72) : 72;
+      // ★★두 줄 카드의 뼈대는 **한 곳에서 만들어 둘 다 그대로 쓴다**(대표 8-12).
+      //   따로 적어두니 gap 하나만 어긋나도 글씨 시작점이 틀어져서 세 번을 다시 고쳤다.
+      //   배치 원칙: 내용은 **카드 가운데에 덩어리로** 놓는다. 글씨 칸을 flex:1 로 늘리면
+      //   아이콘+글씨는 왼쪽에 몰리고 오른쪽에 빈 공간만 남아 좌측 쏠림으로 보인다(대표 지적).
+      //   → [아이콘 26][글씨 고정 142][끝 62] 을 justify-content:center 로 통째로 가운데.
+      //     칸이 다 고정폭이라 두 줄의 글씨 시작점은 자동으로 같아진다.
+      const _rowCss = 'display:flex;align-items:center;justify-content:center;gap:14px;width:100%;cursor:pointer;'
+        + 'font-family:inherit;border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:14px 15px;'
+        + 'background:rgba(255,255,255,.045);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)';
+      const _icoCss = 'flex-shrink:0;width:26px;display:flex;align-items:center;justify-content:center';
+      const _txtCss = 'flex-shrink:0;width:142px';
+      const _endCss = 'flex-shrink:0;width:62px;display:flex;align-items:center;justify-content:flex-end';
       empty.innerHTML = `
         <!-- ★파일 자체가 72x112 다. 크게 두고 CSS 로 줄이면 브라우저가 도트를 절반 버린다 -->
         <div style="display:flex;justify-content:center;align-items:flex-end;height:${_more ? '76px' : '118px'};margin-bottom:13px">
@@ -5804,23 +5816,15 @@ function renderMatch() {
              ④카드 자체는 무채색. 색은 아이콘과 가격 숫자에만 있어서 화면이 안 시끄럽다 -->
         <div style="display:flex;flex-direction:column;gap:9px;text-align:left">
           ${_more ? `
-            <button class="match-row" onclick="window.matchBuyMore&&window.matchBuyMore()"
-              style="display:flex;align-items:center;gap:20px;width:100%;cursor:pointer;font-family:inherit;
-                     border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:14px 15px;
-                     background:rgba(255,255,255,.045);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)">
-              <!-- ★아이콘 칸은 **폭을 고정**한다(26px). 하트와 번개는 그려지는 폭이 달라서
-                   칸을 안 잡으면 두 줄의 글씨 시작점이 어긋나 보인다(대표 8-12 지적) -->
-              <span style="flex-shrink:0;width:26px;display:flex;align-items:center;justify-content:center">
+            <button class="match-row" onclick="window.matchBuyMore&&window.matchBuyMore()" style="${_rowCss}">
+              <span style="${_icoCss}">
                 <svg width="23" height="23" viewBox="0 0 24 24" fill="#FF6B6B"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
               </span>
-              <span style="flex:1;min-width:0">
+              <span style="${_txtCss}">
                 <span style="display:block;font-size:14px;font-weight:800;color:#fff;letter-spacing:-.3px">${window._matchMoreN}명 더 보기</span>
                 <span style="display:block;font-size:11.5px;font-weight:500;color:rgba(255,255,255,.42);margin-top:2px">오늘 ${window._matchMoreLeft}명이 남아 있어요</span>
               </span>
-              <!-- ★오른쪽 칸도 **폭을 고정**한다(66px, 오른쪽 붙임). 그래야 두 줄의 글씨 영역이
-                   정확히 같아져서 제목·부제 시작점이 딱 맞는다(대표 8-12: 배치를 똑같이).
-                   코인 × 숫자는 한 덩어리로 붙인다(gap 3) — 벌어지면 셋이 따로 논다 -->
-              <span style="flex-shrink:0;width:66px;display:flex;align-items:center;justify-content:flex-end">
+              <span style="${_endCss}">
                 <!-- ★gap 을 0으로 둔다. 동전 png 는 400px 중 47~354 만 실제 그림이라
                      이미 좌우로 12%(=21px 기준 2.4px)씩 여백을 물고 있다. 여기에 gap 을 더 주면
                      동전·×·숫자가 따로 논다(대표 8-12: 더 붙여라). × 뒤만 2px 띄운다. -->
@@ -5828,20 +5832,15 @@ function renderMatch() {
                 <b style="font-size:16px;font-weight:800;color:#F5C24B;letter-spacing:-.3px">${window._matchMoreCost}</b>
               </span>
             </button>` : ''}
-          <!-- ★gap 은 두 줄이 반드시 같아야 한다(20px). 여기만 다르면 글씨 시작점이 어긋난다 -->
-          <button class="match-row" onclick="goPage('crew')"
-            style="display:flex;align-items:center;gap:20px;width:100%;cursor:pointer;font-family:inherit;
-                   border:1px solid rgba(255,255,255,.09);border-radius:15px;padding:14px 15px;
-                   background:rgba(255,255,255,.045);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)">
-            <span style="flex-shrink:0;width:26px;display:flex;align-items:center;justify-content:center">
+          <button class="match-row" onclick="goPage('crew')" style="${_rowCss}">
+            <span style="${_icoCss}">
               <svg width="23" height="23" viewBox="0 0 24 24" fill="#7aa8ff"><path d="M13 2L4.5 13.5h5L11 22l8.5-11.5h-5z"/></svg>
             </span>
-            <span style="flex:1;min-width:0">
+            <span style="${_txtCss}">
               <span style="display:block;font-size:14px;font-weight:800;color:#fff;letter-spacing:-.3px">스쿼드 둘러보기</span>
               <span style="display:block;font-size:11.5px;font-weight:500;color:rgba(255,255,255,.42);margin-top:2px">같이 운동할 사람 찾기</span>
             </span>
-            <!-- 위 줄과 같은 폭의 오른쪽 칸. 안 맞추면 글씨 영역이 달라져 시작점이 어긋난다 -->
-            <span style="flex-shrink:0;width:66px;display:flex;align-items:center;justify-content:flex-end">
+            <span style="${_endCss}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 5 16 12 9 19"/></svg>
             </span>
           </button>
