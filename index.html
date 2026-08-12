@@ -6219,6 +6219,13 @@ window.matchBackToCards = function () {
   showToast('돌아갈 카드가 없어요');
 };
 window._matchGo = function (delta) {
+  // ★회원이 아니면 **카드를 넘길 수조차 없다**(대표 8-12). 블러·잠금 오버레이만 얹고
+  //   넘기기를 열어두면, 임시 계정이 흐릿한 얼굴을 계속 넘겨보게 된다 — 막은 게 아니다.
+  //   미는 순간 왜 막혔는지 알려주고 가입으로 보낸다.
+  if (window._notMember && window._notMember()) {
+    if (window.requireLogin) requireLogin('매칭은 계정을 만들어야 볼 수 있어요');
+    return;
+  }
   window._matchDir = delta;                      // 건너뛰기가 이 방향을 따른다(피드백 #8)
   if (window._matchAnim) return;                 // 연타로 두 장 넘어가는 것 방지
   const list = window._matchList; if (!list || !list.length) return;
@@ -6299,6 +6306,8 @@ window._matchSwipeInit = function () {
 
   card.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || window._matchAnim) return;
+    // 회원이 아니면 스와이프 자체를 시작하지 않는다 — 카드가 손끝을 따라오면 넘어가는 줄 안다
+    if (window._notMember && window._notMember()) return;
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
     t0 = Date.now(); dx = 0; dir = 0; on = true;
     card.style.transition = 'none';
@@ -14015,6 +14024,25 @@ window.loadBamboo = async (tab) => {
   const user = auth.currentUser || window.currentUser;
   const list = document.getElementById('bamboo-list');
   if (!list) return;
+  // ★임시 계정에는 대숲을 **읽기부터 막는다**(대표 8-12).
+  //   대숲은 익명으로 속마음을 쓰는 곳이라, 가입도 안 한 임시 계정이 남의 글을 훑고
+  //   '저에요' 신청까지 보낼 수 있으면 이 탭의 신뢰가 통째로 무너진다.
+  //   ※비로그인(계정 자체가 없는 방문자)은 지금처럼 미리보기를 본다 — 그건 유입 설계다.
+  if (window.isTempAccount && window.isTempAccount()) {
+    list.innerHTML = `
+      <div style="text-align:center;padding:52px 26px">
+        <div style="margin:0 auto 14px;width:40px;height:40px;display:flex;align-items:center;justify-content:center">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div style="font-size:15px;font-weight:800;color:#fff;margin-bottom:7px">대나무숲은 회원만 볼 수 있어요</div>
+        <div style="font-size:12.5px;color:rgba(255,255,255,.42);line-height:1.7;margin-bottom:20px">
+          속마음을 익명으로 남기는 곳이라<br>계정이 있어야 열려요.<br>
+          지금 스쿼드 기록은 <b style="color:rgba(255,255,255,.7)">그대로 따라와요</b>.</div>
+        <button onclick="window.guestUpgrade&&window.guestUpgrade()" style="background:#F5C24B;color:#3a2a00;border:none;border-radius:12px;padding:13px 24px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">구글로 계정 만들기</button>
+      </div>`;
+    const _cnt = document.getElementById('my-post-count'); if (_cnt) _cnt.textContent = '';
+    return;
+  }
   if (window.renderBambooChips) window.renderBambooChips();
   list.innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
   try {
@@ -14333,6 +14361,12 @@ window.toggleBambooLikeFirestore = async (postId) => {
 
 window.sendBambooRequest = async (postId, authorUid) => {
   const user = auth.currentUser || window.currentUser;
+  // ★임시 계정도 막는다 — auth.currentUser 만 보면 익명 계정이 그대로 통과했다(대표 8-12)
+  if (window._notMember && window._notMember()) {
+    if (window.requireLogin) requireLogin('저에요 신청은 계정을 만들어야 보낼 수 있어요');
+    else showToast('계정이 필요해요');
+    return;
+  }
   if (!user) { showToast('로그인 후 신청할 수 있어요'); return; }
   if (user.uid === authorUid) return;
   // 이미 매칭된 사이면 바로 채팅으로 (일반 매칭 or 대숲 매칭 둘 다 체크)
@@ -17026,6 +17060,12 @@ window.mwSetHome = async function (centerId) {
 };
 // ---------- 체크인 (GPS → 반경 판정) ----------
 window.mwCheckin = function () {
+  // ★여기에 문이 아예 없었다(대표 8-12: "체크인도 다 뚫린다"). 도장은 레벨·칭호·시즌
+  //   카운터로 이어지는 **기록**이라 임시 계정이 찍으면 갈 곳이 없다.
+  if (window._notMember && window._notMember()) {
+    window._mwJoinGate ? window._mwJoinGate('도장을 찍으려면') : (window.requireLogin && requireLogin('도장을 찍으려면 계정이 필요해요'));
+    return;
+  }
   const centers = (typeof getCentersList==='function'?getCentersList():[]).filter(c=>c&&c.lat&&c.lng);
   const admin = (typeof isAdmin==='function') && isAdmin();
   if (!centers.length && !admin) { showToast('좌표가 등록된 센터가 아직 없어요'); return; }
@@ -19911,6 +19951,12 @@ window._sqRenderDetail = function () {
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="font-size:10px;color:#F5C24B;font-weight:700">입금 ✓</span>' : '')}
         ${wait && isHost ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
+        <!-- ★내보내기 — 벙주 본인만, 자기 자신은 제외(대표 8-12).
+             초대 링크로 아무나(임시 계정 포함) 들어올 수 있는 구조라, 벙주가 정리할 수단이
+             없으면 이상한 사람이 낀 벙을 지우고 다시 만드는 수밖에 없다. -->
+        ${isHost && uid !== s.hostUid ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/'/g,"").replace(/</g,'&lt;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>` : ''}
       </div>`; }).join('');
   if (mv) mv.innerHTML = `
     <!-- 인원 숫자의 파란색은 뺀다(대표가 목록 카드에서 이미 지적한 것과 같은 건). 인원은 정보=흰색 -->
@@ -19997,6 +20043,31 @@ window.approveSquadMember = async function (sid, uid) {
     });
     showToast('승인했어요');
   } catch(e) { showToast(e.message || '승인 실패'); }
+};
+// 벙주가 멤버를 내보낸다. 나가기(leaveSquad)와 같은 형태로 쓰되 대상이 남이다.
+// ★status 를 'left' 로 바꾼다 — 문서를 지우지 않는다. 지우면 출석·입금 기록까지 사라져서
+//   나중에 "그때 그 사람 돈 냈었나"를 확인할 수 없다. 목록 렌더가 이미 'left' 를 거른다.
+window.sqKickMember = async function (sid, uid, nick) {
+  const user = auth.currentUser; if (!user) return;
+  const s = window._sqDoc;
+  if (!s || s.id !== sid || s.hostUid !== user.uid) { showToast('연 사람만 내보낼 수 있어요'); return; }
+  if (uid === user.uid) { showToast('나가려면 아래 나가기를 눌러주세요'); return; }
+  const ok = window.murpyConfirm
+    ? await window.murpyConfirm({ title: (nick || '이 사람') + '을 내보낼까요?',
+        desc: '다시 참가 신청은 할 수 있어요', confirmText: '내보내기' })
+    : confirm((nick || '이 사람') + '을 내보낼까요?');
+  if (!ok) return;
+  try {
+    await runTransaction(db, async tx => {
+      const sRef = doc(db,'squads',sid); const snap = await tx.get(sRef);
+      if (!snap.exists()) throw new Error('없는 스쿼드');
+      const d = snap.data();
+      tx.update(sRef, { memberUids: (d.memberUids||[]).filter(u => u !== uid) });
+      tx.update(doc(db,'squads',sid,'members',uid), { status: 'left' });
+    });
+    showToast('내보냈어요');
+    if (window.openSquadDetail) window.openSquadDetail(sid);
+  } catch(e) { console.error(e); showToast(e.message || '내보내기 실패'); }
 };
 window.leaveSquad = async function (sid) {
   const user = auth.currentUser; if (!user) return;
