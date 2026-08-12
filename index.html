@@ -11778,6 +11778,9 @@ window.earnCredit = async function (amount, reason) {
 window.mwEarnSocial = async function (kind, reason, once) {   // kind: 'visit' | 'like'
   const uid = window.currentUser && window.currentUser.uid;
   if (!uid) return false;
+  // ★임시 계정에는 적립하지 않는다(대표 8-12). 위쪽에서 막았어도 마지막 문은 여기다 —
+  //   적립은 돈이 움직이는 자리라 화면 게이트 하나만 믿으면 안 된다.
+  if (window._notMember && window._notMember()) return false;
   const day = _creditToday();
   const cap = (kind === 'visit') ? CAP_VISIT_DAY : CAP_LIKE_DAY;
   const amount = (kind === 'visit') ? CREDIT_VISIT : CREDIT_LIKE;
@@ -16612,6 +16615,14 @@ window.mwAskProfile = async function (uid, nick) {
 
 // ---------- 남의 방 구경 (TODAY + 방명록) ----------
 window.mwVisitRoom = async function (uid) {
+  // ★남의 방 구경은 **회원부터**다(대표 8-12). 비로그인도 임시 계정도 여기서 막힌다.
+  //   예전엔 임시 계정이 방을 열기만 해도 머피가 적립됐다 — 애초에 못 들어가야 맞다.
+  //   화면은 새로 만들지 않는다. 기존 로그인 팝업(구글·카카오)이 그대로 뜬다.
+  if (window._notMember && window._notMember()) {
+    window._mwJoinGate ? window._mwJoinGate('머피의 방을 구경하려면')
+                       : (window.memberGate && window.memberGate('머피의 방을 구경하려면 로그인이 필요해요'));
+    return;
+  }
   window._mwCtalkStop && window._mwCtalkStop();
   const me = auth.currentUser || window.currentUser;
   // ★방은 **서버에서 강제로** 읽는다(대표 8-11: 방명록에서 들어가면 예전 방이 보였다).
