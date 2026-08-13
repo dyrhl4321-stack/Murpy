@@ -9315,7 +9315,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '561';
+window._SW_V = '562';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20899,8 +20899,14 @@ window._sqRenderDetailInner = function () {
   const joined = !!(me && (s.memberUids||[]).includes(me));
   const esc = v => String(v||'').replace(/</g,'&lt;');
   // --- 히어로 ---
-  const paidN = Object.values(mem).filter(m => m.paid).length;
-  const attendN = Object.values(mem).filter(m => m.checkedIn || m.checkinType === 'present' || m.checkinType === 'late').length;
+  // ★내보낸 사람(status:'left')과 승인 대기자는 세지 않는다 (대표 8-14: "입금 5/4 로 뜬다").
+  //   분자는 mem 전체를 세고 분모(n)는 memberUids 라, 내보낸 사람의 입금이 계속 남아
+  //   인원수를 넘어섰다. 출석 요약도 같은 구조라 같이 고친다.
+  const _countable = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
+  const paidN = _countable.filter(u => mem[u].paid).length;
+  const attendN = _countable.filter(u => {
+    const m = mem[u]; return m.checkedIn || m.checkinType === 'present' || m.checkinType === 'late';
+  }).length;
   const hero = document.getElementById('sq-d-hero');
   if (hero) hero.innerHTML = `
     <!-- 숫자 알약 줄이 한 줄 늘어나서 172 로는 글씨가 잘린다 -->
@@ -20942,13 +20948,15 @@ window._sqRenderDetailInner = function () {
                     걷는 중에도 골드로 또렷하게 — 회색으로 깔면 안 읽힌다.
                     ★★상단 요약에는 체크(✓)를 붙이지 않는다(대표 8-14). 여기는 **숫자를 읽는 자리**고,
                       체크는 멤버 줄의 칩이 가진 표시다. 두 군데서 같은 말을 하면 지저분해진다. -->
-               <span style="color:#F5C24B">입금 ${paidN}/${n}</span>`
+               <!-- ★눌러서 누가 냈는지 본다(대표 8-14). 분모는 실제 멤버 수로 맞춘다 —
+                    내보낸 사람을 세던 탓에 '입금 5/4' 가 나왔다. -->
+               <span onclick="event.stopPropagation();window.sqPaidPicker&&window.sqPaidPicker('${s.id}')" style="color:#F5C24B;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(245,194,75,.4)">입금 ${paidN}/${_countable.length}</span>`
             : `<span style="color:rgba(255,255,255,.22)">·</span>
                <span style="color:rgba(255,255,255,.72)">무료</span>`}
           <!-- ★출석 요약 = **초록**(대표 8-14). 몸이 실제로 움직인 것에만 쓰는 색이라 출석이 맞다.
                여기도 체크(✓)는 붙이지 않는다 — 숫자만 읽는 자리다. 한 명도 없으면 아예 안 띄운다. -->
           ${attendN > 0 ? `<span style="color:rgba(255,255,255,.22)">·</span>
-               <span style="color:#3dde7c">출석 ${attendN}/${n}</span>` : ''}
+               <span style="color:#3dde7c">출석 ${attendN}/${_countable.length}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -21313,6 +21321,60 @@ window._sqBindSwipe = function () {
     el.addEventListener('pointerup', done);
     el.addEventListener('pointercancel', done);
   });
+};
+
+// ★입금 현황 (대표 8-14) — 상단 '입금 N/M' 을 누르면 **누가 냈는지** 보이고,
+//   벙주는 그 자리에서 체크를 고칠 수 있다. 멤버 줄의 작은 칩만으로는 훑기 어렵다.
+//   내보낸 사람·대기자는 목록에 없다(그들이 세어져서 '입금 5/4' 가 나왔다).
+window.sqPaidPicker = function (sid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const me = (auth.currentUser || {}).uid;
+  if (!s) return;
+  const isHost = !!(me && me === s.hostUid);
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = Object.keys(mem)
+    .filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited')
+    .sort((a, b) => (mem[b].paid ? 1 : 0) - (mem[a].paid ? 1 : 0));   // 낸 사람이 위로
+  if (!list.length) { showToast('아직 멤버가 없어요'); return; }
+  const paid = list.filter(u => mem[u].paid).length;
+  let el = document.getElementById('sq-paid'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-paid';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40025;background:rgba(0,0,0,.86);display:flex;align-items:flex-end;justify-content:center';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:22px 20px 26px;max-height:86vh;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <div style="font-size:17px;font-weight:800;letter-spacing:-0.4px">입금 현황</div>
+        <div style="font-size:13px;font-weight:800;color:#F5C24B">${paid}/${list.length}</div>
+      </div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px">
+        ${isHost ? '눌러서 입금을 체크하거나 해제할 수 있어요' : '벙주만 체크할 수 있어요'}</div>
+      <div style="flex:1;overflow-y:auto;margin:16px 0 4px;min-height:80px">
+        ${list.map(u => {
+          const m = mem[u];
+          return `<div ${isHost ? `onclick="window.sqPaidToggleIn('${sid}','${u}')"` : ''} data-paid="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;${isHost ? 'cursor:pointer' : ''}">
+            <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 36) : ''}</div>
+            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">벙주</span>' : ''}</div>
+            <span class="sq-paid-chip" style="flex-shrink:0;background:none;border:1px solid ${m.paid ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)'};color:${m.paid ? '#F5C24B' : 'rgba(255,255,255,.45)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700">${m.paid ? '입금 ✓' : '미입금'}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <button onclick="document.getElementById('sq-paid').remove()" style="margin-top:12px;width:100%;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.7);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  document.body.appendChild(el);
+};
+// 팝업 안에서 바로 토글 — 화면을 다시 그리지 않고 그 줄만 바꾼다(스크롤 위치가 튀지 않게).
+window.sqPaidToggleIn = async function (sid, uid) {
+  const mem = window._sqMembers || {};
+  const cur = !!(mem[uid] && mem[uid].paid);
+  const chip = document.querySelector('#sq-paid [data-paid="' + uid + '"] .sq-paid-chip');
+  if (chip) {
+    chip.textContent = cur ? '미입금' : '입금 ✓';
+    chip.style.borderColor = cur ? 'rgba(255,255,255,.14)' : 'rgba(245,194,75,.5)';
+    chip.style.color = cur ? 'rgba(255,255,255,.45)' : '#F5C24B';
+  }
+  try { await updateDoc(doc(db, 'squads', sid, 'members', uid), { paid: !cur }); }
+  catch (e) { showToast('변경 실패'); }
 };
 
 // ★운영진 임명 — 리더가 **여러 명을 한 번에** 고른다 (대표 8-14 설계).
