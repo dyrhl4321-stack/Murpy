@@ -1869,6 +1869,18 @@
   <div class="panel-body" id="user-profile-body"></div>
 </div>
 
+<!-- 피드 글 상세 (2026-08-13) — 프로필의 '운동 인증 기록' 사진을 탭하면 열린다.
+     대표 원문: "인증 기록 사진을 탭하면 피드 원본글+사진을 바로 확대해서 보는 창".
+     ★새로 그리지 않는다 — 홈 피드와 **같은 카드 함수**(buildPostHTML)를 detail 모드로 쓴다.
+       따로 만들면 좋아요·댓글·태그가 홈과 갈라진다. -->
+<div class="panel" id="feed-post-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('feed-post-panel')">←</button>
+    <span style="font-weight:700;font-size:16px;letter-spacing:-0.3px">운동 인증</span>
+  </div>
+  <div class="panel-body" id="feed-post-body" style="padding:0"></div>
+</div>
+
 <!-- 대나무숲 글 상세 (게시판형, 2026-08-07) -->
 <div class="panel" id="bamboo-detail-panel">
   <div class="panel-header">
@@ -1922,11 +1934,16 @@
 </div>
 
 <!-- Chat Panel -->
+<!-- ★매칭된 사람 스트립 (대표 8-13) — "내가 누구랑 매칭된 사이인지 볼 데가 없다".
+     매칭되면 채팅이 자동 개설되니 톡 목록이 곧 매칭 목록인데, 프로필로 가려면
+     대화를 열고 헤더 아바타를 눌러야 해서 3단계였다. 여기서 바로 프로필로 간다.
+     새 화면을 만들지 않는다 — 하단탭 5개 고정 + 기존 UI 재사용 원칙. -->
 <div class="panel" id="chat-panel">
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('chat-panel')">←</button>
     <span style="font-weight:700;font-size:16px">톡</span>
   </div>
+  <div id="chat-matched-strip" style="display:none;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,0.06)"></div>
   <div class="panel-body" id="chat-list"></div>
 </div>
 
@@ -5695,7 +5712,7 @@ function openPanel(id) {
   if (window._panelDepth === 1 && typeof lockBodyScroll === 'function') lockBodyScroll();
   if (id==='notif-panel') { if (window.loadNotificationsFirestore) window.loadNotificationsFirestore(); else renderNotifs(); }
   if (id==='interest-panel') { window._loadInterestPanel && window._loadInterestPanel(); }
-  if (id==='chat-panel') { if (window.loadChatListFirestore) window.loadChatListFirestore(); else renderChatList(); }
+  if (id==='chat-panel') { if (window.loadChatListFirestore) window.loadChatListFirestore(); else renderChatList(); if (window.loadMatchedStrip) window.loadMatchedStrip(); }
   if (id==='edit-profile-panel' && typeof initEditProfile === 'function') initEditProfile();
   if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile();
 }
@@ -9966,7 +9983,13 @@ function _relTime(sec) {
   if (diff < 604800) return Math.floor(diff / 86400) + '일 전';
   return new Date(sec * 1000).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
-function buildPostHTML(p) {
+// opts.detail = 상세 화면(feed-post-panel)에서 쓰는 모드. 홈 피드와 **같은 함수**를 쓴다 —
+//   따로 그리면 좋아요·댓글·태그가 두 벌이 되어 갈라진다(대표 8-13).
+//   ①사진을 4:5 로 자르지 않고 원본 비율 그대로 + 탭하면 확대(대표가 요구한 '확대해서 보는 창')
+//   ②작성자 줄을 눌러도 프로필을 다시 열지 않는다 — 이 화면은 이미 그 사람 프로필에서 들어왔다
+//   ③아래 구분선 없음(카드 한 장만 놓인다)
+function buildPostHTML(p, opts) {
+  const _detail = !!(opts && opts.detail);
   const time = p.createdAt ? _relTime(p.createdAt.seconds) : '방금';
   const liked = window.currentUser && (p.likedBy || []).includes(window.currentUser.uid);
   const likeColor = liked ? '#ff4444' : 'rgba(255,255,255,0.45)';
@@ -9981,9 +10004,9 @@ function buildPostHTML(p) {
       : `<span class="feed-tag">${t}</span>`).join('')}</div>` : '';
   const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `
-    <div style="border-bottom:1px solid rgba(255,255,255,0.06);background:#0a0a0a">
+    <div style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
-        <div style="display:flex;align-items:center;flex:1;min-width:0;cursor:pointer" onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')">
+        <div style="display:flex;align-items:center;flex:1;min-width:0${_detail ? '' : ';cursor:pointer'}" ${_detail ? '' : `onclick="openUserProfile('${p.userId}','${p.userName||'익명'}','${displayPhoto}')"`}>
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
             <img data-av="${p.userId||''}" src="${window._cdnImg(displayPhoto,80)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
@@ -9994,11 +10017,16 @@ function buildPostHTML(p) {
         </div>
         ${isOwnPost
           ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>`
+          : _detail
+          // 상세는 그 사람 프로필에서 들어온다 — 프로필 아래에 이미 같은 버튼이 있다. 두 번 두지 않는다.
+          ? ''
           : `<button data-inv="${p.userId||''}" data-inv-name="${(p.userName||'익명').replace(/"/g,'&quot;')}" data-inv-photo="${String(displayPhoto||'').replace(/"/g,'')}"
                onclick="event.stopPropagation();window.feedInviteTap(this)" class="feed-invite-btn">${window.feedInviteBtnHtml ? window.feedInviteBtnHtml(p.userId||'') : ''}</button>`}
       </div>
       ${tagRow}
-      ${p.photoURL ? `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>` : ''}
+      ${p.photoURL ? (_detail
+        ? `<div style="width:100%;background:#000"><img src="${window._cdnImg(p.photoURL,1080)}" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" onclick="window.openPhotoViewer&&window.openPhotoViewer('${p.photoURL.replace(/'/g,'')}')" style="width:100%;height:auto;display:block;cursor:zoom-in"></div>`
+        : `<div style="width:100%;aspect-ratio:4/5;overflow:hidden"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>`) : ''}
       <div style="padding:5px 9px 5px;display:flex;gap:4px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:9px 11px;display:flex;align-items:center;gap:6px;color:${likeColor};font-size:14px;font-weight:600;font-family:inherit;border-radius:10px;-webkit-tap-highlight-color:transparent">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -10012,6 +10040,27 @@ function buildPostHTML(p) {
       ${p.text ? `<div style="padding:2px 20px 14px;font-size:14px;line-height:1.6;color:#fff;letter-spacing:-0.2px"><span style="font-weight:800;margin-right:8px;font-size:15px">${p.userName||'익명'}</span>${p.text}</div>` : '<div style="padding-bottom:12px"></div>'}
     </div>`;
 }
+
+// 피드 글 한 장 상세 — 프로필의 '운동 인증 기록' 그리드에서 탭하면 열린다(대표 8-13).
+// 프로필이 이미 읽어둔 글은 캐시로 바로 그린다(다시 조회하면 눌렀는데 잠깐 비어 보인다).
+window._feedPostCache = window._feedPostCache || {};
+window.openFeedPost = async function (postId) {
+  if (!postId) return;
+  const body = document.getElementById('feed-post-body');
+  if (!body) return;
+  let p = window._feedPostCache[postId];
+  body.innerHTML = p ? buildPostHTML(p, { detail: true })
+    : '<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,0.3);font-size:13px">불러오는 중...</div>';
+  openPanel('feed-post-panel');
+  if (p) return;
+  try { const s = await getDoc(doc(db, 'feed', postId)); if (s.exists()) p = { _id: postId, ...s.data() }; } catch (e) {}
+  if (!p) {
+    body.innerHTML = '<div style="text-align:center;padding:60px 20px;color:rgba(255,255,255,0.3);font-size:13px">글을 불러올 수 없어요<br><span style="font-size:12px;color:rgba(255,255,255,0.22)">지워진 글일 수 있어요</span></div>';
+    return;
+  }
+  window._feedPostCache[postId] = p;
+  body.innerHTML = buildPostHTML(p, { detail: true });
+};
 
 // ===== 오늘 운동 인증 라이브 바 (고유 유저 집계, 콜드스타트 3단 폴백) =====
 const LIVE_MIN = 3; // 이 수 미만이면 다음 범위로 폴백 (가짜 숫자 금지)
@@ -12494,11 +12543,14 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   let posts = [], totalCnt = 0, monthCnt = 0;
   try {
     const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', userId)));
-    const all = fsnap.docs.map(x => x.data());
+    // ★문서 id(`_id`)를 같이 담는다 — 인증 사진을 탭해 원본 글을 열려면 id 가 있어야 한다(대표 8-13).
+    const all = fsnap.docs.map(x => ({ _id: x.id, ...x.data() }));
     totalCnt = all.length;
     const mStart = new Date(); mStart.setDate(1); mStart.setHours(0, 0, 0, 0);
     monthCnt = all.filter(p => p.createdAt && p.createdAt.seconds * 1000 >= mStart.getTime()).length;
     posts = all.filter(p => p.photoURL).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 9);
+    // 상세를 바로 그릴 수 있게 캐시에 넣어둔다(탭하고 나서 다시 조회하면 잠깐 비어 보인다)
+    if (window._feedPostCache) posts.forEach(p => { window._feedPostCache[p._id] = p; });
   } catch (e) {}
 
   const esc = s => String(s || '').replace(/'/g, "\\'");
@@ -12550,7 +12602,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const feedSection = matched
     ? `<div style="padding:0 16px 16px">
          <div style="font-size:13px;font-weight:800;margin-bottom:11px;display:flex;align-items:center;gap:5px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>운동 인증 기록 <span style="color:rgba(255,255,255,0.35);font-weight:600">${totalCnt}</span></div>
-         ${posts.length ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${posts.map(p => `<div style="position:relative;aspect-ratio:1;background:#111;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.3)"><img src="${window._cdnImg(p.photoURL,300)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">${(p.likes || 0) > 0 ? `<div style="position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,0.65),transparent);display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#fff"><svg width="11" height="11" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>${p.likes}</div>` : ''}</div>`).join('')}</div>` : '<div style="text-align:center;padding:30px 24px;color:rgba(255,255,255,0.2);font-size:12px;background:rgba(255,255,255,0.03);border-radius:14px">아직 운동 인증 기록이 없어요</div>'}
+         ${posts.length ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${posts.map(p => `<div onclick="window.openFeedPost&&window.openFeedPost('${p._id}')" style="position:relative;aspect-ratio:1;background:#111;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.3);cursor:pointer"><img src="${window._cdnImg(p.photoURL,300)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">${(p.likes || 0) > 0 ? `<div style="position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,0.65),transparent);display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#fff"><svg width="11" height="11" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>${p.likes}</div>` : ''}</div>`).join('')}</div>` : '<div style="text-align:center;padding:30px 24px;color:rgba(255,255,255,0.2);font-size:12px;background:rgba(255,255,255,0.03);border-radius:14px">아직 운동 인증 기록이 없어요</div>'}
        </div>`
     : `<div style="padding:0 16px 16px;position:relative">
          <div style="filter:blur(8px);pointer-events:none;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${(posts.length ? posts : [0,0,0,0,0,0]).slice(0,6).map(p => `<div style="aspect-ratio:1;background:#1a1f2e;border-radius:12px;overflow:hidden">${p && p.photoURL ? `<img src="${window._cdnImg(p.photoURL,200)}" style="width:100%;height:100%;object-fit:cover">` : ''}</div>`).join('')}</div>
@@ -15335,6 +15387,57 @@ window.viewBambooRequesters = async (postId) => {
 };
 
 // ===== 채팅 Firestore =====
+// ===== 매칭된 사람 스트립 (톡 패널 상단) =====
+// 대표 8-13: "내가 누구랑 매칭된 사이인지 연결해주는 데가 없다. 매칭된 사람들은
+// 그 사람 피드나 사진을 쉽게 들락날락 가능하게."
+// ★새 화면을 만들지 않는다. 톡 목록이 이미 매칭 목록이므로(매칭 시 채팅 자동개설)
+//   그 위에 얼굴만 깔아 **프로필로 가는 한 걸음**을 만든다.
+// 이름·사진은 users 에서 읽어 세션 캐시에 담는다 — 톡을 열 때마다 N번 조회하면 안 된다.
+window._matchedStripCache = window._matchedStripCache || {};
+window.loadMatchedStrip = async () => {
+  const el = document.getElementById('chat-matched-strip');
+  if (!el) return;
+  const user = auth.currentUser || window.currentUser;
+  // 임시(익명) 계정은 스쿼드 전용이라 매칭 자체가 없다
+  if (!user || (window.isTempAccount && window.isTempAccount())) { el.style.display = 'none'; return; }
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/'/g, '&#39;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escJs = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  let pairs = [];
+  try {
+    const ms = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', user.uid)));
+    pairs = ms.docs
+      .map(d => ({ uid: (d.data().users || []).find(u => u !== user.uid), at: d.data().createdAt?.seconds || 0 }))
+      .filter(x => x.uid)
+      .sort((a, b) => b.at - a.at);   // 최근에 매칭된 사람이 앞에
+  } catch (e) { el.style.display = 'none'; return; }
+  if (!pairs.length) { el.style.display = 'none'; return; }
+
+  const C = window._matchedStripCache;
+  const need = pairs.map(p => p.uid).filter(u => !C[u]);
+  await Promise.all(need.map(async uid => {
+    try {
+      const us = await getDoc(doc(db, 'users', uid));
+      const d = us.exists() ? us.data() : {};
+      C[uid] = { name: d.nickname || '익명', photo: d.photoURL || (d.photos || [])[0] || '' };
+    } catch (e) { C[uid] = { name: '익명', photo: '' }; }
+  }));
+
+  const _ico = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>';
+  const cells = pairs.map(p => {
+    const prof = C[p.uid] || { name: '익명', photo: '' };
+    const img = prof.photo ? `<img src="${window._cdnImg(prof.photo, 140)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">` : _ico;
+    return `<div onclick="window.openUserProfile('${escJs(p.uid)}','${escJs(prof.name)}','${escJs(prof.photo)}')" style="flex:0 0 auto;width:60px;cursor:pointer">
+      <div style="width:60px;height:60px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);border:2px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center">${img}</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prof.name)}</div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="padding:14px 20px 0;font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);letter-spacing:-0.2px">매칭된 사람 <span style="color:#7aa8ff">${pairs.length}</span></div>
+    <div style="display:flex;gap:12px;overflow-x:auto;padding:11px 20px 14px;scrollbar-width:none;-webkit-overflow-scrolling:touch">${cells}</div>`;
+  el.style.display = 'block';
+};
+
 window.loadChatListFirestore = async () => {
   const user = auth.currentUser || window.currentUser;
   const el = document.getElementById('chat-list');
@@ -15377,7 +15480,7 @@ window.loadChatListFirestore = async () => {
         ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>'
         : (pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.style.display='none'}">` : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>');
       return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${c.id}','${pid}','${snJs}','${spJs}',${isBamboo})">
-        <div style="width:48px;height:48px;border-radius:50%;background:${isBamboo?'rgba(74,222,128,0.1)':'rgba(255,255,255,0.08)'};flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center${isBamboo?';border:1px solid rgba(74,222,128,0.2)':''}">
+        <div ${isBamboo || !pid ? '' : `onclick="event.stopPropagation();window.openUserProfile('${pid}','${snJs}','${spJs}')"`} style="width:48px;height:48px;border-radius:50%;background:${isBamboo?'rgba(74,222,128,0.1)':'rgba(255,255,255,0.08)'};flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center${isBamboo?';border:1px solid rgba(74,222,128,0.2)':''}">
           ${avatarInner}
         </div>
         <div style="flex:1;min-width:0">
