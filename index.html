@@ -8298,7 +8298,7 @@ window.confirmProfileCrop = async function() {
         const icon = document.getElementById('profile-pic-icon');
         if (preview) { preview.src = photoURL; preview.style.display = 'block'; }
         if (icon) icon.style.display = 'none';
-        document.getElementById('user-avatar').src = photoURL;
+        window._setHeaderAvatar(photoURL);   // 사진을 새로 올린 순간에도 아이콘이 남으면 안 된다
         showToast('✓ 프로필 사진이 변경됐어요!');
         window._pendingProfilePhoto = photoURL;
         window.dispatchEvent(new CustomEvent('save-profile-photo'));
@@ -9279,6 +9279,30 @@ const userPhotoCache = new Map(); // uid → photoURL, 로그아웃 시 clear
 // 자동 로그인 유지 설정
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
+// ★헤더 우측 = **아바타 사진과 대체 아이콘 중 항상 한 쪽만** 보인다.
+//   예전엔 아바타를 켜는 곳이 네 군데였는데 updateUI 만 아이콘을 같이 껐다.
+//   그래서 구글처럼 로그인 시점에 사진이 있는 계정은 멀쩡했지만,
+//   **카카오처럼 사진을 안 주는 계정**은 ①먼저 아이콘이 켜지고 ②나중에 Firestore 사진이
+//   도착해 아바타까지 켜져서 **둘이 겹쳐 보였다**(유꾸미·김현수 부계, 2026-08-13).
+//   → 켜고 끄는 일은 이 함수 하나만 한다. 다른 곳에서 직접 display 를 만지지 말 것.
+window._setHeaderAvatar = function (url) {
+  const av  = document.getElementById('user-avatar');
+  const btn = document.getElementById('mypage-icon-btn');
+  const has = !!url;
+  if (av) {
+    if (has) {
+      av.src = window._cdnImg(url, 80);
+      av.onerror = function () { this.onerror = null; this.src = url; };
+    } else {
+      av.src = '';
+      av.onerror = null;
+    }
+    av.style.display = has ? 'block' : 'none';
+  }
+  // 사진이 없으면 아이콘을 남긴다 — 안 그러면 마이페이지로 갈 길이 사라진다(대표 8-12)
+  if (btn) btn.style.display = has ? 'none' : 'block';
+};
+
 // UI 업데이트 — window에 등록해서 어디서든 호출 가능
 window.updateUI = function(user) {
   try {
@@ -9291,13 +9315,7 @@ window.updateUI = function(user) {
       //   예전엔 아바타를 사진 유무로 숨기면서 대체 아이콘까지 '로그인했으니까'라며 같이 숨겨서,
       //   사진을 안 올린 사람은 우측 상단에 **아무것도 없었다** — 마이페이지로 갈 길이 사라졌다.
       //   카카오 로그인은 프로필 사진을 안 주는 경우가 있어서 신규 유입에서 특히 잘 걸린다.
-      const rawPhoto = (user.firestorePhotoURL || user.photoURL) || '';
-      if (avatar) {
-        avatar.src = window._cdnImg(rawPhoto, 80);
-        avatar.onerror = rawPhoto ? function() { this.onerror = null; this.src = rawPhoto; } : null;
-        avatar.style.display = rawPhoto ? 'block' : 'none';
-      }
-      if (mypageBtn) mypageBtn.style.display = rawPhoto ? 'none' : 'block';
+      window._setHeaderAvatar((user.firestorePhotoURL || user.photoURL) || '');
       if (loginBtn) loginBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'block';
       const heartBtn = document.getElementById('header-interest-btn');
@@ -9309,8 +9327,7 @@ window.updateUI = function(user) {
         }
       });
     } else {
-      if (avatar) { avatar.src = ''; avatar.style.display = 'none'; }
-      if (mypageBtn) mypageBtn.style.display = 'block';
+      window._setHeaderAvatar('');
       if (loginBtn) loginBtn.style.display = 'flex';
       if (logoutBtn) logoutBtn.style.display = 'none';
       const badge = document.getElementById('notif-badge');
@@ -9405,12 +9422,7 @@ async function checkAndSetNickname(user) {
         window.currentUser.nickname = data.nickname;
         if (data.photoURL) {
           window.currentUser.firestorePhotoURL = data.photoURL;
-          const avatar = document.getElementById('user-avatar');
-          if (avatar) {
-            avatar.src = window._cdnImg(data.photoURL, 80);
-            avatar.onerror = function() { this.onerror=null; this.src = data.photoURL; };
-            avatar.style.display = 'block';
-          }
+          window._setHeaderAvatar(data.photoURL);   // ★아이콘도 같이 꺼야 겹치지 않는다
         }
       }
       const infoName = document.getElementById('info-name');
@@ -9485,12 +9497,7 @@ window.saveNickname = async () => {
         }
         if (userSnap.data().photoURL) {
           window.currentUser.firestorePhotoURL = userSnap.data().photoURL;
-          const av = document.getElementById('user-avatar');
-          if (av) {
-            av.src = window._cdnImg(userSnap.data().photoURL, 80);
-            av.onerror = function() { this.onerror=null; this.src = userSnap.data().photoURL; };
-            av.style.display = 'block';
-          }
+          window._setHeaderAvatar(userSnap.data().photoURL);   // ★아이콘도 같이 끈다
         }
       }
     } catch(e) {}
@@ -9594,8 +9601,7 @@ window._kakaoErrText = function (e) {
 document.addEventListener('murpy-logout', async () => {
   userPhotoCache.clear();
   window.currentUser = null;
-  const avatar = document.getElementById('user-avatar');
-  if (avatar) { avatar.src = ''; avatar.style.display = 'none'; }
+  window._setHeaderAvatar('');   // 사진 지우고 대체 아이콘을 되살린다
   await signOut(auth);
   showToast('로그아웃됐어요');
   if (typeof closePanel === 'function') closePanel('mypage-panel');
@@ -13500,12 +13506,7 @@ window.loadUserProfile = async (uid) => {
       const pic = document.getElementById('profile-pic-preview');
       const icon = document.getElementById('profile-pic-icon');
       if (pic) { pic.src = window._cdnImg(d.photoURL, 200); pic.style.display='block'; if(icon) icon.style.display='none'; }
-      const av = document.getElementById('user-avatar');
-      if (av) {
-        av.src = window._cdnImg(d.photoURL, 80);
-        av.onerror = function() { this.onerror=null; this.src = d.photoURL; };
-        av.style.display = 'block';
-      }
+      window._setHeaderAvatar(d.photoURL);   // ★아이콘도 같이 끈다
       if (window.currentUser) window.currentUser.firestorePhotoURL = d.photoURL;
     }
     document.getElementById('info-gender-age').textContent = [d.gender, d.age?d.age+'세':''].filter(Boolean).join(' · ') || '—';
@@ -14295,8 +14296,7 @@ window.loadMyPageProfile = async () => {
         if (preview) { preview.src = data.photoURL; preview.style.display = 'block'; }
         if (icon) icon.style.display = 'none';
         if (window.currentUser) window.currentUser.firestorePhotoURL = data.photoURL;
-        const avatar = document.getElementById('user-avatar');
-        if (avatar && avatar.style.display !== 'none') avatar.src = data.photoURL;
+        window._setHeaderAvatar(data.photoURL);
       }
     }
   } catch(e) { console.error('마이페이지 로드 실패:', e); }
