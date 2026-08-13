@@ -20826,8 +20826,14 @@ window._sqRenderDetail = function () {
     + 'cursor:pointer;font-family:inherit;background:rgba(255,255,255,.08);color:rgba(255,255,255,.82)';
   // 초대 링크 = 현장에서 처음 만난 사람을 **가입 없이** 끌어오는 입구. 벙주·참가자 둘 다 뿌릴 수 있다.
   const inviteBtn = `<button onclick="window.sqInviteSheet&&window.sqInviteSheet('${s.id}')" style="${sub}">초대하기</button>`;
+  // 대기 중인 사람이 있으면 벙주에게 **한 번에 승인**을 내준다(대표 8-14).
+  // 승인 전에는 범프해도 출석이 안 찍히므로, 20명이 몰리는 날엔 이게 첫 동작이어야 한다.
+  const _waitN = Object.keys(mem).filter(u => mem[u].status === 'invited').length;
+  const approveAllBtn = (isHost && _waitN)
+    ? `<button onclick="window.sqApproveAll&&window.sqApproveAll('${s.id}')" style="width:100%;border:1px solid rgba(61,126,255,.55);background:none;color:#7aa8ff;border-radius:13px;padding:13px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">대기 중 ${_waitN}명 전원 승인</button>`
+    : '';
   if (done) actions = '';
-  else if (isHost) actions = `${bumpMain}
+  else if (isHost) actions = `${approveAllBtn}${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
       ${inviteBtn}
@@ -20892,6 +20898,12 @@ window._sqRenderDetail = function () {
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="font-size:10px;color:#F5C24B;font-weight:700">입금 ✓</span>' : '')}
         ${wait && isHost ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
+        <!-- ★운영진 지정 (대표 8-14) — 벙주만, 자기 자신 제외(벙주는 이미 검증자다).
+             운영진은 **누구든 보는 족족 범프로 출석을 찍어줄 수 있다.** 도장이 여러 갈래로
+             동시에 퍼져서 20명이 한 줄로 기다리지 않는다.
+             입금 토글과 **같은 모양** — 면을 칠하지 않고 테두리로 알린다. -->
+        ${isHost && uid !== s.hostUid && !wait ? `<button onclick="window.sqToggleStaff('${s.id}','${uid}',${m.staff?'true':'false'})" style="background:none;border:1px solid ${m.staff?'rgba(61,126,255,.6)':'rgba(255,255,255,.14)'};color:${m.staff?'#7aa8ff':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.staff?'운영진 ✓':'운영진'}</button>`
+          : (m.staff ? '<span style="font-size:10px;color:#7aa8ff;font-weight:700;flex-shrink:0">운영진 ✓</span>' : '')}
         <!-- ★내보내기 — 벙주 본인만, 자기 자신은 제외(대표 8-12).
              초대 링크로 아무나(임시 계정 포함) 들어올 수 있는 구조라, 벙주가 정리할 수단이
              없으면 이상한 사람이 낀 벙을 지우고 다시 만드는 수밖에 없다. -->
@@ -21028,6 +21040,35 @@ window.leaveSquad = async function (sid) {
 window.sqTogglePaid = async function (sid, uid, cur) {
   try { await updateDoc(doc(db,'squads',sid,'members',uid), { paid: !cur }); }
   catch(e) { showToast('변경 실패'); }
+};
+// ★대기 중 전원 승인 (대표 8-14). 승인제는 그대로 두되 **승인을 한 번에** 한다.
+//   근방단 정기모임엔 20명이 한꺼번에 들어온다. 한 명씩 승인 버튼을 누르면 벙주가
+//   현장에서 폰만 보게 되고, 승인 전에는 범프를 해도 출석이 안 찍힌다(그게 승인제의 의도다).
+//   ★보안규칙상 members 문서는 본인 또는 벙주만 쓸 수 있어서 이건 **벙주만** 할 수 있다.
+window.sqApproveAll = async function (sid) {
+  const s = window._sqDoc; const me = (auth.currentUser || {}).uid;
+  if (!s || me !== s.hostUid) return;
+  const mem = window._sqMembers || {};
+  const waiting = Object.keys(mem).filter(u => mem[u].status === 'invited');
+  if (!waiting.length) { showToast('대기 중인 사람이 없어요'); return; }
+  const ok = window.murpyConfirm
+    ? await window.murpyConfirm({ title: `대기 중 ${waiting.length}명을 모두 승인할까요?`, desc: '승인하면 바로 <b style="color:#fff">범프로 출석</b>할 수 있어요.<br>모르는 사람이 섞여 있으면 승인 후 내보낼 수 있어요.', confirmText: '전원 승인' })
+    : confirm(`대기 중 ${waiting.length}명을 모두 승인할까요?`);
+  if (!ok) return;
+  let done = 0;
+  await Promise.all(waiting.map(async u => {
+    try { await updateDoc(doc(db, 'squads', sid, 'members', u), { status: 'accepted' }); done++; } catch (e) {}
+  }));
+  showToast(done === waiting.length ? `${done}명 승인했어요` : `${done}/${waiting.length}명 승인했어요 · 나머지는 다시 눌러주세요`);
+};
+// ★운영진 지정 (대표 8-14). 운영진은 **범프 검증자**가 된다 — 자기 출석 여부와 상관없이
+//   누구에게든 범프로 출석을 찍어줄 수 있다(bpAttend 의 iAmHost/otherOk 판정이 이걸 본다).
+//   보안규칙상 members 문서는 본인 또는 벙주만 쓸 수 있으므로, 지정은 벙주만 할 수 있다.
+window.sqToggleStaff = async function (sid, uid, cur) {
+  try {
+    await updateDoc(doc(db,'squads',sid,'members',uid), { staff: !cur });
+    showToast(cur ? '운영진에서 뺐어요' : '운영진으로 지정했어요 · 이제 누구든 범프로 출석을 찍어줄 수 있어요');
+  } catch(e) { showToast('변경 실패'); }
 };
 
 // ===== 스쿼드 톡 =====
@@ -21961,19 +22002,26 @@ async function bpAttend(sid, otherUid) {
     if (!mSnap.exists()) return 'not-member';
     const mData = mSnap.data();
     if (mData.checkedIn) return 'already';
-    // ★승인 대기(invited)여도 범프가 성공하면 출석으로 인정한다 (대표 8-14, 근방단 20명 대비).
-    //   승인제 스쿼드에서 joinSquad 는 status='invited' 로 넣는데, 예전엔 여기서 'not-member' 로
-    //   튕겨서 **범프를 해도 출석이 안 찍혔다.** 20명을 현장에서 일일이 승인해야 했다.
-    //   범프는 '검증된 사람과 같은 자리에서 물리적으로 부딪혔다'는 증거라 승인보다 강한 근거다.
-    //   (아래에서 상대가 리더이거나 이미 출석한 사람인지 반드시 확인하므로 문이 열리는 게 아니다.)
-    if (mData.status !== 'accepted' && mData.status !== 'checkedIn' && mData.status !== 'invited') return 'not-member';
+    // ★승인 대기(invited)는 출석시키지 않는다 (대표 8-14 확정).
+    //   한 번 열어봤다가 되돌렸다 — **승인제는 근방단이 아닌 사람을 애초에 막으려고 만든 문**이다.
+    //   범프가 강한 증거라는 것과, 그 사람이 이 모임에 들어와도 되는 사람이냐는 별개 문제다.
+    //   승인이 병목이 되는 문제는 벙주의 '전원 승인'(sqApproveAll)으로 푼다 — 문을 열지 않는다.
+    if (mData.status !== 'accepted' && mData.status !== 'checkedIn') return 'not-member';
 
-    const iAmHost = user.uid === s.hostUid;
+    // ★검증자 = 벙주 + **운영진(staff)** + 이미 출석한 사람 (대표 8-14).
+    //   예전엔 벙주 한 명에서만 도장이 퍼져서 20명이 한 줄로 기다려야 했다.
+    //   근방단은 운영진 여러 명이 같은 벙에 오므로, 그들을 미리 검증자로 세우면
+    //   여러 갈래로 동시에 퍼진다 — 20명 출석에서 속도를 가장 크게 바꾸는 지점이다.
+    //   운영진은 자기 출석 여부와 무관하게 검증자다(현장에 있는 게 전제인 사람들이다).
+    const iAmHost = user.uid === s.hostUid || !!mData.staff;
     let otherOk = (otherUid === s.hostUid);
     if (!otherOk && otherUid) {
-      try { const o = await getDoc(doc(db, 'squads', sid, 'members', otherUid)); otherOk = o.exists() && !!o.data().checkedIn; } catch (e) {}
+      try {
+        const o = await getDoc(doc(db, 'squads', sid, 'members', otherUid));
+        otherOk = o.exists() && (!!o.data().checkedIn || !!o.data().staff);
+      } catch (e) {}
     }
-    // 나도 상대도 아직 도장이 없으면 번질 근거가 없다 — 리더나 이미 찍은 사람과 맞대야 한다
+    // 나도 상대도 검증 근거가 없으면 번질 수 없다 — 벙주·운영진이나 이미 찍은 사람과 맞대야 한다
     if (!iAmHost && !otherOk) return 'need-verifier';
 
     // 범프 창 = 호스트가 출석을 연 뒤 유효한 구간(코드 만료 시각을 그대로 창으로 쓴다).
