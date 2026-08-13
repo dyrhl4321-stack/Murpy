@@ -5669,6 +5669,41 @@ const BOOST_OPTIONS = [
 //   전체화면 fixed 요소가 주인 화면 없이 남으면, 화면은 멀쩡히 보이는데 아무것도 안 눌린다.
 //   각 항목은 **주인이 없으면 존재할 수 없다**는 불변식으로만 지운다(멀쩡한 걸 지우지 않는다).
 //   무엇이 걸렸는지는 관리자에게만 알린다 — 원인을 알아야 근본을 고친다.
+// ★★진단: murpy.app/?diag=1 로 열면 **무엇이 화면을 덮고 있는지** 팝업으로 보여준다.
+//   화면이 안 눌리는 상태에서도 동작한다 — 주소만 열면 되고 아무것도 누를 필요가 없다.
+//   (대표 8-14: "카드가 보이는데 안 눌린다"의 원인을 내가 재현 못 해서 만든 것)
+window._diagStuck = function () {
+  const L = [];
+  try {
+    const W = innerWidth, H = innerHeight;
+    // 화면 여러 지점에서 '실제로 손이 닿는 요소'를 본다 — 이게 카드가 아니면 그게 범인이다
+    [[W/2,H*0.35],[W/2,H*0.55],[W/2,H*0.75]].forEach(function (p, i) {
+      const el = document.elementFromPoint(p[0], p[1]);
+      L.push('탭지점' + (i+1) + ': ' + (el ? (el.tagName.toLowerCase()
+        + (el.id ? '#' + el.id : '')
+        + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '')) : '(없음)'));
+    });
+    // 화면을 덮을 수 있는 fixed 요소를 전부 훑는다
+    [].slice.call(document.querySelectorAll('body *')).forEach(function (e) {
+      const cs = getComputedStyle(e);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') return;
+      const r = e.getBoundingClientRect();
+      if (r.width < innerWidth * 0.6 || r.height < innerHeight * 0.5) return;   // 전체화면급만
+      L.push('덮개: ' + (e.id ? '#' + e.id : e.tagName.toLowerCase())
+        + ' z=' + cs.zIndex + ' pe=' + cs.pointerEvents + ' op=' + cs.opacity);
+    });
+    L.push('_sqCurId=' + window._sqCurId + ' / _panelDepth=' + window._panelDepth);
+    L.push('body.position=' + getComputedStyle(document.body).position
+      + ' top=' + getComputedStyle(document.body).top);
+  } catch (e) { L.push('진단 실패: ' + e.message); }
+  alert('[머피 진단]\n' + L.join('\n'));
+};
+try {
+  if (new URLSearchParams(location.search).get('diag') === '1') {
+    window.addEventListener('load', function () { setTimeout(window._diagStuck, 2500); });
+  }
+} catch (e) {}
+
 window._sweepStuck = function (why) {
   const gone = [];
   const rm = id => { const e = document.getElementById(id); if (e) { e.remove(); gone.push(id); } };
