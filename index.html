@@ -9315,7 +9315,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '562';
+window._SW_V = '563';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21072,10 +21072,12 @@ window._sqRenderDetailInner = function () {
         <!-- ★승인은 이 줄의 칩이 아니라 **오른쪽으로 밀어서** 한다(대표 8-14) — 아래 대기 구역 참조.
              운영진 임명도 이 줄에서 뺐다. 입금 토글 옆에 파란 버튼이 또 붙으니 읽히지 않았다.
              임명은 머리줄의 '운영진 임명' 버튼 → 팝업에서 여러 명을 한 번에 고른다. -->
-        <!-- ★내보내기 — 벙주 본인만, 자기 자신은 제외(대표 8-12).
-             초대 링크로 아무나(임시 계정 포함) 들어올 수 있는 구조라, 벙주가 정리할 수단이
-             없으면 이상한 사람이 낀 벙을 지우고 다시 만드는 수밖에 없다. -->
-        ${isHost && uid !== s.hostUid ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/'/g,"").replace(/</g,'&lt;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
+        <!-- ★내보내기 — 벙주 **또는 운영진**(대표 8-14). 자기 자신과 벙주는 제외.
+             초대 링크로 아무나(임시 계정 포함) 들어올 수 있는 구조라, 정리할 수단이
+             없으면 이상한 사람이 낀 벙을 지우고 다시 만드는 수밖에 없다.
+             현장에서 벙주 혼자 20명을 감당할 수 없으니 운영진에게도 같은 권한을 준다
+             (보안규칙도 이미 그 스쿼드의 staff 에게 멤버 문서 쓰기를 허용한다). -->
+        ${_canApprove && uid !== s.hostUid && uid !== me ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/'/g,"").replace(/</g,'&lt;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>` : ''}
       </div>`; };
@@ -21198,8 +21200,12 @@ window.approveSquadMember = async function (sid, uid) {
 window.sqKickMember = async function (sid, uid, nick) {
   const user = auth.currentUser; if (!user) return;
   const s = window._sqDoc;
-  if (!s || s.id !== sid || s.hostUid !== user.uid) { showToast('연 사람만 내보낼 수 있어요'); return; }
+  // ★벙주 또는 그 스쿼드의 운영진(대표 8-14). 화면만 믿지 않고 여기서도 판정한다.
+  const _mem = window._sqMembers || {};
+  const _canKick = !!(s && s.id === sid && (s.hostUid === user.uid || (_mem[user.uid] && _mem[user.uid].staff)));
+  if (!_canKick) { showToast('벙주와 운영진만 내보낼 수 있어요'); return; }
   if (uid === user.uid) { showToast('나가려면 아래 나가기를 눌러주세요'); return; }
+  if (uid === s.hostUid) { showToast('벙주는 내보낼 수 없어요'); return; }
   const ok = window.murpyConfirm
     ? await window.murpyConfirm({ title: (nick || '이 사람') + '을 내보낼까요?',
         desc: '다시 참가 신청은 할 수 있어요', confirmText: '내보내기' })
@@ -21292,9 +21298,15 @@ window._sqBindSwipe = function () {
     el.setAttribute('data-bound', '1');
     const track = el.querySelector('.sq-swipe-track');
     if (!track) return;
-    let x0 = null, dx = 0, w = 0, fired = false;
+    // ★방향을 **먼저 판정**한다 (대표 8-14: "슬라이드 하려니 전체 스크롤에 뻑이 난다").
+    //   손을 대자마자 붙잡으면 세로로 넘기려던 손짓까지 우리가 먹어 스크롤이 걸린다.
+    //   8px 움직일 때까지 아무것도 하지 않고, 그때 가로가 세로보다 크면 그때부터 우리 것이다.
+    //   세로가 크면 'no' 로 확정하고 손 뗄 때까지 완전히 손을 뗀다 → 스크롤이 평소처럼 된다.
+    let x0 = null, y0 = 0, dx = 0, w = 0, fired = false, mode = null;   // mode: null(미정)|'x'|'no'
+    const reset = function () { x0 = null; dx = 0; mode = null; };
     const done = function () {
       if (x0 === null) return;
+      if (mode !== 'x') { reset(); return; }
       track.style.transition = 'transform .18s ease';
       // 절반 넘게 밀어야 승인된다 — 스치듯 지나가는 손짓으로 승인되면 안 된다
       if (dx > w * 0.55 && !fired) {
@@ -21305,21 +21317,28 @@ window._sqBindSwipe = function () {
       } else {
         track.style.transform = 'translateX(0)';
       }
-      x0 = null; dx = 0;
+      reset();
     };
     el.addEventListener('pointerdown', function (e) {
       if (fired) return;
-      x0 = e.clientX; w = el.clientWidth || 300; dx = 0;
-      track.style.transition = 'none';
-      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      x0 = e.clientX; y0 = e.clientY; w = el.clientWidth || 300; dx = 0; mode = null;
     });
     el.addEventListener('pointermove', function (e) {
-      if (x0 === null) return;
-      dx = Math.max(0, e.clientX - x0);                 // 왼쪽으로는 안 밀린다
+      if (x0 === null || mode === 'no') return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (mode === null) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;      // 아직 방향을 모른다 — 가만히 둔다
+        if (Math.abs(my) >= Math.abs(mx)) { mode = 'no'; return; }   // 세로다 → 스크롤에 넘긴다
+        mode = 'x';
+        track.style.transition = 'none';
+        try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      dx = Math.max(0, mx);                                     // 왼쪽으로는 안 밀린다
       track.style.transform = 'translateX(' + Math.min(dx, w) + 'px)';
     });
     el.addEventListener('pointerup', done);
     el.addEventListener('pointercancel', done);
+    el.addEventListener('pointerleave', done);
   });
 };
 
