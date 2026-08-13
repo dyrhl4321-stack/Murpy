@@ -9315,7 +9315,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '560';
+window._SW_V = '561';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20973,14 +20973,9 @@ window._sqRenderDetailInner = function () {
   //   현장에서 벙주가 폰만 붙들고 있게 된다. 지정은 벙주만 하므로 문이 넓어지는 건 아니다.
   const _iAmStaff = !!(me && mem[me] && mem[me].staff);
   const _canApprove = isHost || _iAmStaff;
-  const _waitN = Object.keys(mem).filter(u => mem[u].status === 'invited').length;
-  // ★자리는 **스쿼드 멤버 칸 머리줄**이다(대표 8-14). 액션 줄에 큰 버튼으로 두면
-  //   범프·출석코드 같은 주 동작과 무게가 같아지고, 승인은 멤버를 보면서 하는 일이다.
-  //   크기는 멤버 줄의 '승인' 버튼과 같은 급으로 작게.
-  const approveAllBtn = (_canApprove && _waitN)
-    // ★면을 칠하지 않는다 — 입금 토글과 같은 규칙(대표 8-14). 체크(✓)도 붙이지 않는다.
-    ? `<button onclick="window.sqApproveAll&&window.sqApproveAll('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.55);color:#7aa8ff;border-radius:10px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${_waitN}명 전원 승인</button>`
-    : '';
+  // ★'전원 승인' 버튼은 뺐다(대표 8-14: "일단 없애자").
+  //   승인은 아래 **승인 대기 구역에서 한 명씩 오른쪽으로 밀어서** 한다.
+  //   함수(sqApproveAll)는 남겨둔다 — 대기 구역이 자리를 잡았으니 필요해지면 거기 붙이면 된다.
   if (done) actions = '';
   else if (isHost) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
@@ -21030,10 +21025,10 @@ window._sqRenderDetailInner = function () {
   const crown = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" style="flex-shrink:0"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-1.6 10H4.6z"/></svg>';
   // 운영진 = 같은 왕관, 핑크 (대표 8-14). 리더(황금)와 한눈에 구분되게 색만 다르다.
   const crownStaff = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6FB5" style="flex-shrink:0"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-1.6 10H4.6z"/></svg>';
-  const rows = Object.keys(mem)
-    .filter(uid => mem[uid].status !== 'left')
-    .sort((a,b) => (a===s.hostUid?-1:1) - (b===s.hostUid?-1:1))
-    .map(uid => { const m = mem[uid]; const wait = m.status==='invited';
+  // ★참여 멤버와 승인 대기를 **구역으로 나눈다** (대표 8-14).
+  //   예전엔 한 목록에 섞여서 승인된 사람과 대기자가 와리가리 했다 — 리더 입장에서
+  //   누굴 승인해야 하는지 훑어야 했고, 참여자 입장에선 몇 명이 실제로 오는지가 안 읽혔다.
+  const _mkRow = (uid, m, wait) => {
       // ★캐릭터·이름을 누르면 그 사람 프로필(대표 8-11). 같이 운동할 사람이 누군지 보고 정하는 게
       //   이 목록의 목적인데, 예전엔 픽셀 캐릭터와 닉네임만 보이고 눌러도 아무 일이 없었다.
       const openMe = `window.sqMemberProfile('${uid}','${(m.nickname||'').replace(/'/g,"\\'").replace(/</g,'&lt;')}')`;
@@ -21066,33 +21061,47 @@ window._sqRenderDetailInner = function () {
              벙주만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
-        <!-- ★면을 칠하지 않는다 — 입금 토글과 같은 규칙(대표 8-14). 체크(✓)도 안 붙인다.
-             흐림(opacity)은 이름·아바타에만 걸려 있어서 이 버튼은 또렷하게 보인다. -->
-        ${wait && _canApprove ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:none;border:1px solid rgba(61,126,255,.55);color:#7aa8ff;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">승인</button>` : ''}
-        <!-- ★운영진 지정 (대표 8-14) — 벙주만, 자기 자신 제외(벙주는 이미 검증자다).
-             운영진은 **누구든 보는 족족 범프로 출석을 찍어줄 수 있다.** 도장이 여러 갈래로
-             동시에 퍼져서 20명이 한 줄로 기다리지 않는다.
-             입금 토글과 **같은 모양** — 면을 칠하지 않고 테두리로 알린다. -->
-        <!-- ★오른쪽 끝은 **누르는 자리**다 — 벙주에게만 토글을 둔다.
-             남에게 보이는 '운영진' 표시는 닉네임 옆으로 옮겼다(대표 8-14). 여기 중복으로 두지 않는다.
-             토글도 체크(✓) 없이 켜짐/꺼짐을 테두리·글자색으로만 알린다. -->
-        ${isHost && uid !== s.hostUid && !wait ? `<button onclick="window.sqToggleStaff('${s.id}','${uid}',${m.staff?'true':'false'})" style="background:none;border:1px solid ${m.staff?'rgba(61,126,255,.6)':'rgba(255,255,255,.14)'};color:${m.staff?'#7aa8ff':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">운영진</button>` : ''}
+        <!-- ★승인은 이 줄의 칩이 아니라 **오른쪽으로 밀어서** 한다(대표 8-14) — 아래 대기 구역 참조.
+             운영진 임명도 이 줄에서 뺐다. 입금 토글 옆에 파란 버튼이 또 붙으니 읽히지 않았다.
+             임명은 머리줄의 '운영진 임명' 버튼 → 팝업에서 여러 명을 한 번에 고른다. -->
         <!-- ★내보내기 — 벙주 본인만, 자기 자신은 제외(대표 8-12).
              초대 링크로 아무나(임시 계정 포함) 들어올 수 있는 구조라, 벙주가 정리할 수단이
              없으면 이상한 사람이 낀 벙을 지우고 다시 만드는 수밖에 없다. -->
         ${isHost && uid !== s.hostUid ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/'/g,"").replace(/</g,'&lt;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>` : ''}
-      </div>`; }).join('');
+      </div>`; };
+  const _alive = Object.keys(mem).filter(uid => mem[uid].status !== 'left');
+  const _joinedUids = _alive.filter(uid => mem[uid].status !== 'invited')
+    .sort((a,b) => (a===s.hostUid?-1:1) - (b===s.hostUid?-1:1));
+  const _waitUids = _alive.filter(uid => mem[uid].status === 'invited');
+  const rows = _joinedUids.map(uid => _mkRow(uid, mem[uid], false)).join('');
+  const card = inner => `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 10px">${inner}</div>`;
+  // ★승인 = **오른쪽으로 밀기**(대표 8-14). 칩 버튼은 입금 옆에서 존재감이 없었고,
+  //   승인은 되돌리기 어려운 행동이라 '한 번 미는' 만큼의 무게가 맞다.
+  //   미는 동안 뒤에서 초록 '승인' 바닥이 드러난다 — 출석과 같은 색(몸이 실제로 온 사람).
+  const _swipeRow = (uid, m) => `
+    <div class="sq-swipe" data-uid="${uid}" data-sid="${s.id}" style="position:relative;overflow:hidden;border-radius:12px;touch-action:pan-y;margin:4px 0">
+      <div style="position:absolute;inset:0;display:flex;align-items:center;padding-left:15px;border:1px solid rgba(61,222,124,.35);border-radius:12px;color:#3dde7c;font-size:12px;font-weight:800;letter-spacing:-0.2px">승인 →</div>
+      <div class="sq-swipe-track" style="position:relative;background:#101420;border-radius:12px;transition:transform .18s ease">${_mkRow(uid, m, true)}</div>
+    </div>`;
+  const _waitBlock = _waitUids.length ? `
+    <div style="display:flex;align-items:center;gap:8px;margin:16px 2px 6px">
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">승인 대기 <span style="color:#7aa8ff">${_waitUids.length}</span>명</div>
+      ${_canApprove ? '<div style="font-size:10.5px;color:rgba(255,255,255,.34);font-weight:600">오른쪽으로 밀어서 승인</div>' : ''}
+    </div>
+    ${card(_waitUids.map(uid => _canApprove ? _swipeRow(uid, mem[uid]) : _mkRow(uid, mem[uid], true)).join(''))}` : '';
   if (mv) mv.innerHTML = `
     <!-- 인원 숫자의 파란색은 뺀다(대표가 목록 카드에서 이미 지적한 것과 같은 건). 인원은 정보=흰색 -->
-    <!-- ★전원 승인은 여기 머리줄에 작게 둔다(대표 8-14) — 멤버를 보면서 하는 일이라 이 칸이 맞다.
-         액션 줄의 큰 버튼으로 두면 범프·출석코드와 무게가 같아져 버린다. -->
+    <!-- ★운영진 임명은 여기 머리줄의 버튼 하나로 모았다(대표 8-14).
+         멤버 줄마다 파란 버튼을 붙이니 입금 칩과 뒤엉켜 안 읽혔다. 누르면 팝업에서 여러 명을 한 번에. -->
     <div style="display:flex;align-items:center;gap:8px;margin:2px 2px 6px">
-      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${n}</span>/${s.capacity}</div>
-      ${approveAllBtn}
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${_joinedUids.length}</span>/${s.capacity}</div>
+      ${isHost ? `<button onclick="window.sqStaffPicker&&window.sqStaffPicker('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,111,181,.5);color:#FF6FB5;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">운영진 임명</button>` : ''}
     </div>
-    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 10px">${rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>'}</div>`;
+    ${card(rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>')}
+    ${_waitBlock}`;
+  window._sqBindSwipe && window._sqBindSwipe();
   // --- 워킹 룸 스테이지 + 채팅 (한 번만 초기화) ---
   if (!window._sqStageInit || window._sqStageInit !== s.id) {
     window._sqStageInit = s.id;
@@ -21267,6 +21276,106 @@ window.sqApproveAll = async function (sid) {
 // ★운영진 지정 (대표 8-14). 운영진은 **범프 검증자**가 된다 — 자기 출석 여부와 상관없이
 //   누구에게든 범프로 출석을 찍어줄 수 있다(bpAttend 의 iAmHost/otherOk 판정이 이걸 본다).
 //   보안규칙상 members 문서는 본인 또는 벙주만 쓸 수 있으므로, 지정은 벙주만 할 수 있다.
+// ★오른쪽으로 밀어서 승인 (대표 8-14). 포인터 이벤트라 손가락·마우스 둘 다 같은 코드로 돈다.
+//   세로 스크롤을 막지 않으려고 컨테이너에 touch-action:pan-y 를 준다 —
+//   가로로 미는 동안만 우리가 가져가고, 위아래 스크롤은 브라우저에 그대로 넘긴다.
+window._sqBindSwipe = function () {
+  document.querySelectorAll('.sq-swipe:not([data-bound])').forEach(function (el) {
+    el.setAttribute('data-bound', '1');
+    const track = el.querySelector('.sq-swipe-track');
+    if (!track) return;
+    let x0 = null, dx = 0, w = 0, fired = false;
+    const done = function () {
+      if (x0 === null) return;
+      track.style.transition = 'transform .18s ease';
+      // 절반 넘게 밀어야 승인된다 — 스치듯 지나가는 손짓으로 승인되면 안 된다
+      if (dx > w * 0.55 && !fired) {
+        fired = true;
+        track.style.transform = 'translateX(' + w + 'px)';
+        const sid = el.getAttribute('data-sid'), uid = el.getAttribute('data-uid');
+        setTimeout(function () { window.approveSquadMember && window.approveSquadMember(sid, uid); }, 150);
+      } else {
+        track.style.transform = 'translateX(0)';
+      }
+      x0 = null; dx = 0;
+    };
+    el.addEventListener('pointerdown', function (e) {
+      if (fired) return;
+      x0 = e.clientX; w = el.clientWidth || 300; dx = 0;
+      track.style.transition = 'none';
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (x0 === null) return;
+      dx = Math.max(0, e.clientX - x0);                 // 왼쪽으로는 안 밀린다
+      track.style.transform = 'translateX(' + Math.min(dx, w) + 'px)';
+    });
+    el.addEventListener('pointerup', done);
+    el.addEventListener('pointercancel', done);
+  });
+};
+
+// ★운영진 임명 — 리더가 **여러 명을 한 번에** 고른다 (대표 8-14 설계).
+//   멤버 줄마다 토글을 붙이니 입금 칩과 뒤엉켜 안 읽혔다. 임명은 자주 하는 일이 아니라
+//   따로 열어서 한 번에 정리하는 게 맞다. 승인된 멤버만 대상이다(대기자는 아직 멤버가 아니다).
+window.sqStaffPicker = async function (sid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const me = (auth.currentUser || {}).uid;
+  if (!s || me !== s.hostUid) return;
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = Object.keys(mem).filter(u => u !== s.hostUid && mem[u].status !== 'left' && mem[u].status !== 'invited');
+  if (!list.length) { showToast('아직 승인된 멤버가 없어요'); return; }
+  window._sqStaffPick = {};
+  list.forEach(u => { window._sqStaffPick[u] = !!mem[u].staff; });
+  let el = document.getElementById('sq-staff'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-staff';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40025;background:rgba(0,0,0,.86);display:flex;align-items:flex-end;justify-content:center';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:22px 20px 26px;max-height:86vh;display:flex;flex-direction:column">
+      <div style="font-size:17px;font-weight:800;letter-spacing:-0.4px">운영진 임명</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px;line-height:1.6">
+        운영진은 <b style="color:#fff">누구에게든 범프로 출석을 찍어줄 수 있어요.</b><br>
+        여러 명을 세우면 줄을 서지 않아도 됩니다.</div>
+      <div style="flex:1;overflow-y:auto;margin:16px 0 4px;min-height:80px">
+        ${list.map(u => {
+          const m = mem[u];
+          return `<div onclick="window._sqStaffToggle('${u}')" data-pick="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;cursor:pointer">
+            <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 36) : ''}</div>
+            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
+            <div class="sq-pick-box" style="flex-shrink:0;width:23px;height:23px;border-radius:7px;border:1px solid ${m.staff ? '#FF6FB5' : 'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;color:#FF6FB5">
+              ${m.staff ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button onclick="document.getElementById('sq-staff').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">취소</button>
+        <button onclick="window.sqStaffApply('${sid}')" style="flex:1.4;background:none;border:1px solid rgba(255,111,181,.6);color:#FF6FB5;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">확인</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+};
+window._sqStaffToggle = function (uid) {
+  const p = window._sqStaffPick || {};
+  p[uid] = !p[uid];
+  const row = document.querySelector('#sq-staff [data-pick="' + uid + '"] .sq-pick-box');
+  if (!row) return;
+  row.style.borderColor = p[uid] ? '#FF6FB5' : 'rgba(255,255,255,.2)';
+  row.innerHTML = p[uid] ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : '';
+};
+window.sqStaffApply = async function (sid) {
+  const p = window._sqStaffPick || {}, mem = window._sqMembers || {};
+  const changed = Object.keys(p).filter(u => !!p[u] !== !!(mem[u] && mem[u].staff));
+  document.getElementById('sq-staff')?.remove();
+  if (!changed.length) return;
+  let ok = 0;
+  await Promise.all(changed.map(async u => {
+    try { await updateDoc(doc(db, 'squads', sid, 'members', u), { staff: !!p[u] }); ok++; } catch (e) {}
+  }));
+  showToast(ok === changed.length ? '운영진을 정했어요' : ok + '/' + changed.length + '명만 반영됐어요');
+};
+
 window.sqToggleStaff = async function (sid, uid, cur) {
   try {
     await updateDoc(doc(db,'squads',sid,'members',uid), { staff: !cur });
