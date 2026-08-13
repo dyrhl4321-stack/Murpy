@@ -20828,8 +20828,12 @@ window._sqRenderDetail = function () {
   const inviteBtn = `<button onclick="window.sqInviteSheet&&window.sqInviteSheet('${s.id}')" style="${sub}">초대하기</button>`;
   // 대기 중인 사람이 있으면 벙주에게 **한 번에 승인**을 내준다(대표 8-14).
   // 승인 전에는 범프해도 출석이 안 찍히므로, 20명이 몰리는 날엔 이게 첫 동작이어야 한다.
+  // ★운영진도 승인할 수 있다(대표 8-14). 20명이 한꺼번에 들어오는데 벙주 혼자 승인하면
+  //   현장에서 벙주가 폰만 붙들고 있게 된다. 지정은 벙주만 하므로 문이 넓어지는 건 아니다.
+  const _iAmStaff = !!(me && mem[me] && mem[me].staff);
+  const _canApprove = isHost || _iAmStaff;
   const _waitN = Object.keys(mem).filter(u => mem[u].status === 'invited').length;
-  const approveAllBtn = (isHost && _waitN)
+  const approveAllBtn = (_canApprove && _waitN)
     ? `<button onclick="window.sqApproveAll&&window.sqApproveAll('${s.id}')" style="width:100%;border:1px solid rgba(61,126,255,.55);background:none;color:#7aa8ff;border-radius:13px;padding:13px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">대기 중 ${_waitN}명 전원 승인</button>`
     : '';
   if (done) actions = '';
@@ -20897,7 +20901,7 @@ window._sqRenderDetail = function () {
              채움이 아니라 **테두리**로 알린다 — 반투명 면을 깔면 화면이 탁해진다. -->
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="font-size:10px;color:#F5C24B;font-weight:700">입금 ✓</span>' : '')}
-        ${wait && isHost ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
+        ${wait && _canApprove ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
         <!-- ★운영진 지정 (대표 8-14) — 벙주만, 자기 자신 제외(벙주는 이미 검증자다).
              운영진은 **누구든 보는 족족 범프로 출석을 찍어줄 수 있다.** 도장이 여러 갈래로
              동시에 퍼져서 20명이 한 줄로 기다리지 않는다.
@@ -21047,19 +21051,44 @@ window.sqTogglePaid = async function (sid, uid, cur) {
 //   ★보안규칙상 members 문서는 본인 또는 벙주만 쓸 수 있어서 이건 **벙주만** 할 수 있다.
 window.sqApproveAll = async function (sid) {
   const s = window._sqDoc; const me = (auth.currentUser || {}).uid;
-  if (!s || me !== s.hostUid) return;
   const mem = window._sqMembers || {};
+  // 벙주 또는 그 스쿼드의 운영진만. 보안규칙도 같은 조건으로 막혀 있다(화면만 믿지 않는다).
+  if (!s || !me || (me !== s.hostUid && !(mem[me] && mem[me].staff))) return;
   const waiting = Object.keys(mem).filter(u => mem[u].status === 'invited');
   if (!waiting.length) { showToast('대기 중인 사람이 없어요'); return; }
   const ok = window.murpyConfirm
     ? await window.murpyConfirm({ title: `대기 중 ${waiting.length}명을 모두 승인할까요?`, desc: '승인하면 바로 <b style="color:#fff">범프로 출석</b>할 수 있어요.<br>모르는 사람이 섞여 있으면 승인 후 내보낼 수 있어요.', confirmText: '전원 승인' })
     : confirm(`대기 중 ${waiting.length}명을 모두 승인할까요?`);
   if (!ok) return;
-  let done = 0;
-  await Promise.all(waiting.map(async u => {
-    try { await updateDoc(doc(db, 'squads', sid, 'members', u), { status: 'accepted' }); done++; } catch (e) {}
-  }));
-  showToast(done === waiting.length ? `${done}명 승인했어요` : `${done}/${waiting.length}명 승인했어요 · 나머지는 다시 눌러주세요`);
+  // ★한 트랜잭션으로 처리한다. 개별 승인(approveSquadMember)과 **같은 일**을 해야 한다 —
+  //   멤버 문서 status 만 바꾸고 스쿼드의 memberUids 를 안 채우면 인원수·정원 판정이 틀어진다.
+  //   정원을 넘는 만큼은 남겨두고 몇 명이 들어갔는지 정확히 알린다(조용히 자르지 않는다).
+  let added = 0, skipped = 0;
+  try {
+    await runTransaction(db, async tx => {
+      const sRef = doc(db, 'squads', sid);
+      const snap = await tx.get(sRef);
+      if (!snap.exists()) throw new Error('없는 스쿼드');
+      const d = snap.data();
+      const uids = [...(d.memberUids || [])];
+      const cap = d.capacity || 0;
+      const accept = [];
+      for (const u of waiting) {
+        if (uids.includes(u)) { accept.push(u); continue; }   // 이미 명단에 있으면 상태만 바꾼다
+        if (cap && uids.length >= cap) { skipped++; continue; }
+        uids.push(u); accept.push(u);
+      }
+      if (!accept.length) return;
+      tx.update(sRef, { memberUids: uids });
+      accept.forEach(u => tx.update(doc(db, 'squads', sid, 'members', u), { status: 'accepted' }));
+      added = accept.length;
+    });
+  } catch (e) {
+    console.error('approveAll', e);
+    showToast((e && e.message) || '승인하지 못했어요');
+    return;
+  }
+  showToast(skipped ? `${added}명 승인 · ${skipped}명은 정원이 차서 못 넣었어요` : `${added}명 승인했어요`);
 };
 // ★운영진 지정 (대표 8-14). 운영진은 **범프 검증자**가 된다 — 자기 출석 여부와 상관없이
 //   누구에게든 범프로 출석을 찍어줄 수 있다(bpAttend 의 iAmHost/otherOk 판정이 이걸 본다).
@@ -22145,6 +22174,11 @@ window.bumpPreview = function (mode, role, data) {
       other: { nick: '패수현' }, dt: 7, place: '', late: false, already: false,
       stacked: true, first: false, earned: 2, attend: true
     }, data || {}));
+  } else if (mode === 'scene') {
+    // 접촉 연출(경계 열림 → 캐릭터가 걸어가 실루엣 → 손바닥 → 섬광 → 교환)을 그대로 재생한다.
+    // 홍보용으로 '어떻게 넘어가는지'를 보여주려면 대기 화면만으로는 설명이 안 된다(대표 8-14).
+    bpOverlay('wait', data || {});
+    setTimeout(() => bpScene((data && data.otherCharacter) || (data && data.character) || null), 60);
   } else {
     bpOverlay('wait', data || {});
   }

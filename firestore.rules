@@ -212,11 +212,19 @@ service cloud.firestore {
       allow update: if signedIn();
       allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
 
-      // 멤버 문서 = 본인 or 벙주(승인/입금 토글)
+      // 멤버 문서 = 본인 or 벙주 or **운영진(staff)**  (승인/입금 토글)
+      // ★운영진 추가 (대표 8-14) — 근방단 정기모임은 20명이 한꺼번에 들어오는데
+      //   승인을 벙주 혼자 하면 현장에서 벙주가 폰만 붙들고 있게 된다.
+      //   운영진은 벙주가 직접 지정한 사람이고(staff 플래그는 벙주만 켤 수 있다),
+      //   그 스쿼드 안에서만 권한을 갖는다.
+      // ★exists() 로 먼저 확인한다 — 멤버 문서가 없는 사람이 부르면 get() 이 터져서
+      //   규칙 전체가 거부로 떨어진다. 필드도 get('staff', false) 로 기본값을 준다.
       match /members/{memberId} {
         allow read: if true;
         allow write: if signedIn() && (request.auth.uid == memberId
-                     || get(/databases/$(database)/documents/squads/$(squadId)).data.hostUid == request.auth.uid);
+                     || get(/databases/$(database)/documents/squads/$(squadId)).data.hostUid == request.auth.uid
+                     || (exists(/databases/$(database)/documents/squads/$(squadId)/members/$(request.auth.uid))
+                         && get(/databases/$(database)/documents/squads/$(squadId)/members/$(request.auth.uid)).data.get('staff', false) == true));
       }
 
       // 스쿼드 톡 (sys 메시지는 uid=null 허용)
