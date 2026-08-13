@@ -17532,7 +17532,13 @@ window.mwShot = function () {
 //   t = 체크인 대상 센터. null 이면 자유 촬영(센터명 대신 '오운완').
 // shotAt = 사진을 **찍은** 시각(유저 피드백 #18). 갤러리에서 고른 사진은 EXIF 에서 읽어 넘긴다.
 // 안 넘기면 현재 시각 — 카메라 탭에서 바로 찍는 경우가 그렇고, 그때는 그게 맞다.
-window._mwBuildStamp = async function (photo, t, caption, shotAt) {
+// kind = 'diet' 면 도장이 **식단완**으로 찍힌다(대표 8-13).
+//   안 넘기면 피드 컴포저가 고른 타입(window._composeType)을 따른다.
+//   ★체크인(t 가 있는 경우)과 카메라 탭은 언제나 운동이므로 'workout' 을 명시해 부른다 —
+//     컴포저에서 식단을 고른 뒤 카메라 탭에 들어가면 엉뚱하게 식단완이 찍히기 때문이다.
+window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
+  const _isDiet = (kind || window._composeType) === 'diet' && !t;
+  const _SEAL = _isDiet ? '식단완' : '오운완';
   try { await document.fonts.load("16px 'Galmuri11'"); await document.fonts.load("16px 'Galmuri14'"); } catch(e){}
   const W=1080, H=1350;                                     // 4:5 (인스타 최적)
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
@@ -17557,7 +17563,7 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt) {
   const _cap = (caption == null) ? null : String(caption).trim().replace(/\s+/g, ' ');
   let _head;
   if (t) _head = t.center.name;
-  else if (_cap === null) _head = '오운완';
+  else if (_cap === null) _head = _SEAL;
   else if (_cap === '') _head = '';
   else _head = _cap.length > 14 ? _cap.slice(0, 14) + '…' : _cap;
   // ★머릿줄 크기는 window._MCAM_HEAD_PX 하나로 관리한다. 화면 입력칸도 같은 값을 쓰므로
@@ -17567,7 +17573,7 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt) {
   x.font="30px 'Galmuri11',sans-serif"; x.fillStyle='#F5C24B';
   x.fillText(`${dstr}  ${tstr}`, 40, H-bar+118);
   x.font="24px 'Galmuri11',sans-serif"; x.fillStyle='#4a5266';
-  x.fillText('MURPY · 오운완 인증', 40, H-bar+164);
+  x.fillText('MURPY · ' + _SEAL + ' 인증', 40, H-bar+164);
   // 내 캐릭터 (현재 착장, 정면 정지) — 픽셀 그대로
   try {
     // ★유저 피드백 #5 — 사진에 찍히는 캐릭터가 빡빡이로 나오던 문제.
@@ -17597,7 +17603,7 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt) {
   x.font="34px 'Galmuri14','Galmuri11',sans-serif";
   const cnm=t?t.center.name:'MURPY';
   x.fillText(cnm.length>7?cnm.slice(0,7):cnm, 0, -26);
-  x.font="46px 'Galmuri14','Galmuri11',sans-serif"; x.fillText('오운완', 0, 26);
+  x.font="46px 'Galmuri14','Galmuri11',sans-serif"; x.fillText(_SEAL, 0, 26);
   x.font="24px 'Galmuri11',sans-serif"; x.fillText(dstr, 0, 68);
   x.globalAlpha=0.35; x.fillRect(-90,-4,26,7); x.fillRect(58,-52,18,6);   // 잉크 빠짐 질감
   x.restore(); x.textAlign='start';
@@ -17605,7 +17611,8 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt) {
 };
 window.mwCompose = async function (photo) {
   window.mwCloseCam();
-  window._mwStampData = await window._mwBuildStamp(photo, window._mwCkTarget);
+  // 카메라 탭·체크인은 언제나 운동 인증이다 — 컴포저의 식단 선택이 새어 들어오면 안 된다
+  window._mwStampData = await window._mwBuildStamp(photo, window._mwCkTarget, undefined, undefined, 'workout');
   window.mwShowStampResult();
 };
 // 브랜드 아이콘(인라인 SVG — 이모지·PNG 금지, 공식 컬러). 카톡=브라운 말풍선, 인스타=그라데이션 렌즈.
