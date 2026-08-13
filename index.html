@@ -5665,11 +5665,41 @@ const BOOST_OPTIONS = [
 ];
 
 // ===== NAVIGATION =====
+// ★★고아 오버레이 청소 (대표 8-14: "스쿼드 카드가 안 눌린다").
+//   전체화면 fixed 요소가 주인 화면 없이 남으면, 화면은 멀쩡히 보이는데 아무것도 안 눌린다.
+//   각 항목은 **주인이 없으면 존재할 수 없다**는 불변식으로만 지운다(멀쩡한 걸 지우지 않는다).
+//   무엇이 걸렸는지는 관리자에게만 알린다 — 원인을 알아야 근본을 고친다.
+window._sweepStuck = function (why) {
+  const gone = [];
+  const rm = id => { const e = document.getElementById(id); if (e) { e.remove(); gone.push(id); } };
+  try {
+    // 스쿼드 상세가 닫혔는데(_sqCurId 없음) DOM 에 남아 있으면 고아다
+    if (!window._sqCurId) { rm('sq-detail'); rm('sq-talk'); rm('sq-attend'); }
+    // 톡은 상세 안에서만 열린다 — 상세가 없으면 혼자 떠 있을 수 없다
+    if (!document.getElementById('sq-detail')) rm('sq-talk');
+    // 범프는 스쿼드 상세에서만 연다
+    if (!document.getElementById('sq-detail') && document.getElementById('bp-ov')) {
+      if (window.bumpClose) window.bumpClose(); else rm('bp-ov');
+      gone.push('bp-ov');
+    }
+    // 상세가 남아 있다면 z 가 내려간 채로 굳지 않았는지 되돌린다(sqMemberProfile 이 90 으로 내린다)
+    const d = document.getElementById('sq-detail');
+    if (d && d.style.zIndex === '90' && !document.querySelector('.panel.open')) d.style.zIndex = '890';
+  } catch (e) {}
+  if (gone.length) {
+    console.warn('[sweep]', why, gone);
+    try {
+      if (typeof isAdmin === 'function' && isAdmin() && window.showToast) showToast('걸린 화면 정리: ' + gone.join(', '));
+    } catch (e) {}
+  }
+};
+
 function goPage(name) {
   // ★떠 있으면 안 되는 전체화면 오버레이를 먼저 치운다 (대표 8-14: "버튼이 안 눌린다").
   //   범프 오버레이(#bp-ov)는 z-index 9600 이라 남아 있으면 앱 전체가 먹통처럼 보인다.
   //   탭을 옮기는 건 "그 화면을 떠난다"는 뜻이므로 여기서 정리하는 게 맞다.
   try { if (document.getElementById('bp-ov') && window.bumpClose) window.bumpClose(); } catch (e) {}
+  try { window._sweepStuck && window._sweepStuck('goPage:' + name); } catch (e) {}
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   // ★탭을 바꾸면 **항상 맨 위에서 시작**한다(대표 8-11).
@@ -20724,6 +20754,8 @@ window._sqClose = function () {
   window._sqCurId = null; window._sqStageInit = null; window._sqChars = {};
   clearTimeout(window._sqWalkT);
   const el = document.getElementById('sq-detail'); if (el) el.remove();
+  // 닫은 뒤 남은 게 있으면 여기서도 훑는다(_sqCurId 가 이미 null 이라 판정이 선다)
+  try { window._sweepStuck && window._sweepStuck('_sqClose'); } catch (e) {}
 };
 window.openSquadDetail = function (sid) {
   window._sqClose();
