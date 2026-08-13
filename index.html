@@ -5750,6 +5750,12 @@ function goPage(name) {
   // ★떠 있으면 안 되는 전체화면 오버레이를 먼저 치운다 (대표 8-14: "버튼이 안 눌린다").
   //   범프 오버레이(#bp-ov)는 z-index 9600 이라 남아 있으면 앱 전체가 먹통처럼 보인다.
   //   탭을 옮기는 건 "그 화면을 떠난다"는 뜻이므로 여기서 정리하는 게 맞다.
+  // ★★탭을 누르면 스쿼드 상세를 **반드시 닫는다** (대표 8-14 — 진단으로 확정).
+  //   증상: 스쿼드 카드가 안 눌림. 원인: #sq-detail(z890, fixed, 390x969)이 목록 위에 남아 있었다.
+  //   _sqCurId 가 살아 있어서 고아 청소기(_sqSweepStuck)도 '정상'으로 보고 안 치웠다.
+  //   탭 이동은 '그 화면을 떠난다'는 뜻이므로 상세가 살아 있을 이유가 없다.
+  //   ※상세를 여는 흐름(초대링크 등)은 goPage 뒤에 openSquadDetail 을 부르므로 영향 없다.
+  try { if (document.getElementById('sq-detail') && window._sqClose) window._sqClose(); } catch (e) {}
   try { if (document.getElementById('bp-ov') && window.bumpClose) window.bumpClose(); } catch (e) {}
   try { window._sweepStuck && window._sweepStuck('goPage:' + name); } catch (e) {}
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -20797,15 +20803,21 @@ window._sqClose = function () {
   //   #bp-ov 는 z-index 9600 이라 스쿼드 상세(890)와 목록 카드를 **전부 덮는다.**
   //   범프를 연 채로 뒤로 가거나 상세를 닫으면 오버레이만 화면에 남아, 앱 전체가 안 눌리는
   //   것처럼 보였다. bumpClose 는 센서·RTDB 정리까지 하므로 그냥 부르면 된다(중복 호출 안전).
-  try { window.bumpClose && window.bumpClose(); } catch (e) {}
-  window._sqVVOff && window._sqVVOff();
-  window._sqDocUnsub && window._sqDocUnsub(); window._sqDocUnsub = null;
-  window._sqMemUnsub && window._sqMemUnsub(); window._sqMemUnsub = null;
-  window._sqChatStop && window._sqChatStop();
-  window._sqRtLeave && window._sqRtLeave(window._sqCurId);
-  window._sqCurId = null; window._sqStageInit = null; window._sqChars = {};
-  clearTimeout(window._sqWalkT);
+  // ★★화면을 **가장 먼저** 지운다 (대표 8-14 — 이게 "카드가 안 눌린다"의 뿌리였다).
+  //   예전엔 구독 해제·RTDB 정리를 다 한 뒤 마지막에 지웠다. 그 중 하나라도 예외가 나면
+  //   **제거 줄에 도달하지 못해** #sq-detail(z890, fixed)이 목록 위에 그대로 남는다.
+  //   화면은 목록처럼 보이는데 손이 닿는 건 죽은 상세라, 아무것도 안 눌린다.
+  //   정리는 실패해도 되지만(다음에 다시 붙는다) **화면이 남는 건 앱이 죽는 것**이다.
+  const _sid = window._sqCurId;                 // RTDB 퇴장에 쓸 id 는 지우기 전에 챙겨둔다
   const el = document.getElementById('sq-detail'); if (el) el.remove();
+  window._sqCurId = null; window._sqStageInit = null; window._sqChars = {};
+  try { window.bumpClose && window.bumpClose(); } catch (e) {}
+  try { window._sqVVOff && window._sqVVOff(); } catch (e) {}
+  try { window._sqDocUnsub && window._sqDocUnsub(); } catch (e) {} window._sqDocUnsub = null;
+  try { window._sqMemUnsub && window._sqMemUnsub(); } catch (e) {} window._sqMemUnsub = null;
+  try { window._sqChatStop && window._sqChatStop(); } catch (e) {}
+  try { window._sqRtLeave && window._sqRtLeave(_sid); } catch (e) {}
+  try { clearTimeout(window._sqWalkT); } catch (e) {}
   // 닫은 뒤 남은 게 있으면 여기서도 훑는다(_sqCurId 가 이미 null 이라 판정이 선다)
   try { window._sweepStuck && window._sweepStuck('_sqClose'); } catch (e) {}
 };
