@@ -5666,6 +5666,10 @@ const BOOST_OPTIONS = [
 
 // ===== NAVIGATION =====
 function goPage(name) {
+  // ★떠 있으면 안 되는 전체화면 오버레이를 먼저 치운다 (대표 8-14: "버튼이 안 눌린다").
+  //   범프 오버레이(#bp-ov)는 z-index 9600 이라 남아 있으면 앱 전체가 먹통처럼 보인다.
+  //   탭을 옮기는 건 "그 화면을 떠난다"는 뜻이므로 여기서 정리하는 게 맞다.
+  try { if (document.getElementById('bp-ov') && window.bumpClose) window.bumpClose(); } catch (e) {}
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   // ★탭을 바꾸면 **항상 맨 위에서 시작**한다(대표 8-11).
@@ -20707,6 +20711,11 @@ window._sqVVOff = function () {
 
 // ---------- 상세 (실시간 문서·멤버 구독) ----------
 window._sqClose = function () {
+  // ★★범프 오버레이를 반드시 같이 치운다 (대표 8-14: "스쿼드 카드가 안 눌린다 · 화면이 먹통").
+  //   #bp-ov 는 z-index 9600 이라 스쿼드 상세(890)와 목록 카드를 **전부 덮는다.**
+  //   범프를 연 채로 뒤로 가거나 상세를 닫으면 오버레이만 화면에 남아, 앱 전체가 안 눌리는
+  //   것처럼 보였다. bumpClose 는 센서·RTDB 정리까지 하므로 그냥 부르면 된다(중복 호출 안전).
+  try { window.bumpClose && window.bumpClose(); } catch (e) {}
   window._sqVVOff && window._sqVVOff();
   window._sqDocUnsub && window._sqDocUnsub(); window._sqDocUnsub = null;
   window._sqMemUnsub && window._sqMemUnsub(); window._sqMemUnsub = null;
@@ -20883,8 +20892,14 @@ window._sqRenderDetailInner = function () {
   if (actions && (isHost || joined)) actions += `
     <button onclick="window.bumpDogam&&window.bumpDogam()" style="background:none;border:none;color:#8a93a8;
       font-size:12px;padding:4px 0 0;cursor:pointer;font-family:inherit">내 범프 도감 보기</button>`;
+  // ★신청자 본인 화면 — **꺼진 버튼을 두지 않는다**(대표 8-14: "회색으로 꺼져 있어서 오류난 것 같다").
+  //   누를 게 없는 상태인데 버튼 모양이면 고장으로 읽힌다. 상태는 글로 알린다.
   else if (myMem && myMem.status === 'invited') actions = `
-    <button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.5)">리더 승인 기다리는 중…</button>`;
+    <div style="text-align:center;padding:15px 12px;border:1px dashed rgba(255,255,255,.13);border-radius:13px">
+      <div style="font-size:13.5px;font-weight:700;color:#7aa8ff">참가 신청을 보냈어요</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.42);margin-top:5px;line-height:1.6">
+        리더나 운영진이 확인하면 바로 참가돼요<br>현장에서 바로 승인받으셔도 됩니다</div>
+    </div>`;
   else if (n >= s.capacity) actions = `<button disabled style="${btnCss};background:rgba(255,255,255,.07);color:rgba(255,255,255,.4)">정원 마감</button>`;
   else actions = `<button onclick="window.joinSquad('${s.id}')" style="${btnCss};background:var(--accent);color:#fff">${s.joinMode==='approval'?'참가 신청':'참가하기'}</button>`;
   // ★게스트에게 계정을 권하는 자리가 **머피월드 프로필 안에만** 있었다. 링크로 들어온 사람은
@@ -20929,7 +20944,10 @@ window._sqRenderDetailInner = function () {
           <!-- 회원이 아니면 못 여니 안내도 하지 않는다 — 눌러도 안 되는 말을 붙여두면 그게 버그로 보인다 -->
           ${(window._notMember && window._notMember()) ? '' : '<div style="font-size:10.5px;color:rgba(255,255,255,.32);margin-top:2px">눌러서 프로필 보기</div>'}
         </div>
-        ${stChip(m)}
+        <!-- ★승인할 수 있는 사람에겐 '대기중' 칩을 빼고 **승인 버튼만** 둔다(대표 8-14).
+             둘 다 두면 같은 말을 두 번 하고, 정작 눌러야 할 버튼이 묻힌다.
+             승인 권한이 없는 사람에게는 반대로 칩만 보인다 — 누를 게 없으니 상태만 알면 된다. -->
+        ${(wait && _canApprove) ? '' : stChip(m)}
         <!-- ★입금 토글도 골드로 통일하고 **면을 칠하지 않는다**(대표 8-12). 누를 수 있다는 건
              채움이 아니라 **테두리**로 알린다 — 반투명 면을 깔면 화면이 탁해진다. -->
         <!-- ★벙주든 아니든 **같은 모양**이어야 한다(대표 8-14: 벙마다 입금 표시가 달라 보였다).
