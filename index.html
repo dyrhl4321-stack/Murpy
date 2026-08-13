@@ -12231,6 +12231,12 @@ window.submitReport = async function (kind, targetId, ownerUid, ownerName) {
     // 글이면 대상 문서에도 표시를 남긴다(좋아요 likedBy 와 같은 방식). 3명이 차면 목록에서 빠진다.
     if (kind === 'feed' || kind === 'bamboo') {
       try { await updateDoc(doc(db, kind, targetId), { reportedBy: arrayUnion(me) }); } catch (e) { console.warn('reportedBy', e); }
+    } else if (kind === 'comment') {
+      // 댓글 대상 id = `부모컬렉션:글id:댓글id` (댓글은 하위 컬렉션이라 경로가 세 조각이다)
+      const [par, pid, cid] = String(targetId).split(':');
+      if (par && pid && cid) {
+        try { await updateDoc(doc(db, par, pid, 'comments', cid), { reportedBy: arrayUnion(me) }); } catch (e) { console.warn('reportedBy(comment)', e); }
+      }
     }
     document.getElementById('report-sheet')?.remove();
     window._reportReason = '';
@@ -12345,7 +12351,7 @@ window.showReportsAdmin = async function () {
         const reasons = [...new Set(g.items.map(i => i.reason))].join(', ');
         const details = g.items.filter(i => i.detail).map(i => `<div style="font-size:12px;color:#aab3c4;margin-top:5px;line-height:1.5">"${esc(i.detail)}"</div>`).join('');
         const canOpen = g.kind === 'feed' || g.kind === 'bamboo';
-        const canDelete = canOpen;
+        const canDelete = canOpen || g.kind === 'comment';   // 댓글은 열어 보진 못해도 지울 순 있다
         return `<div style="background:#14161c;border:1px solid ${auto ? 'rgba(255,77,103,0.35)' : 'rgba(255,255,255,0.08)'};border-radius:14px;padding:15px;margin-bottom:11px">
           <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
             <span style="font-size:11px;font-weight:700;color:#7aa8ff;background:rgba(61,126,255,0.14);border-radius:6px;padding:3px 8px">${kindLabel[g.kind] || esc(g.kind)}</span>
@@ -12368,15 +12374,26 @@ window._adminOpenReported = function (kind, targetId) {
   if (kind === 'bamboo') { goPage('bamboo'); setTimeout(() => window.openBambooDetail(targetId), 200); }
   else window.openFeedPost(targetId);
 };
+// 댓글은 하위 컬렉션이라 경로가 세 조각이다 — 대상 id 를 쪼개서 참조를 만든다
+window._reportedRef = function (kind, targetId) {
+  if (kind === 'comment') {
+    const [par, pid, cid] = String(targetId).split(':');
+    return (par && pid && cid) ? doc(db, par, pid, 'comments', cid) : null;
+  }
+  return doc(db, kind, targetId);
+};
 window._adminDeleteReported = async function (kind, targetId) {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const what = kind === 'comment' ? '댓글' : '글';
   const ok = window.murpyConfirm
-    ? await window.murpyConfirm({ title: '이 글을 지울까요?', desc: '지운 글은 <b style="color:#FF4D67">되돌릴 수 없어요.</b>', confirmText: '삭제' })
-    : confirm('이 글을 지울까요?');
+    ? await window.murpyConfirm({ title: `이 ${what}을 지울까요?`, desc: `지운 ${what}은 <b style="color:#FF4D67">되돌릴 수 없어요.</b>`, confirmText: '삭제' })
+    : confirm(`이 ${what}을 지울까요?`);
   if (!ok) return;
   try {
-    await deleteDoc(doc(db, kind, targetId));
-    showToast('글을 지웠어요');
+    const ref = window._reportedRef(kind, targetId);
+    if (!ref) { showToast('대상을 찾을 수 없어요'); return; }
+    await deleteDoc(ref);
+    showToast(what + '을 지웠어요');
     document.getElementById('reports-admin')?.remove();
     window.showReportsAdmin();
   } catch (e) { console.error(e); showToast('삭제 실패'); }
@@ -12385,9 +12402,8 @@ window._adminDeleteReported = async function (kind, targetId) {
 window._adminDismissReports = async function (kind, targetId) {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
   try {
-    if (kind === 'feed' || kind === 'bamboo') {
-      await updateDoc(doc(db, kind, targetId), { reportedBy: [] });
-    }
+    const ref = (kind === 'user') ? null : window._reportedRef(kind, targetId);
+    if (ref) await updateDoc(ref, { reportedBy: [] });
     const qs = await getDocs(query(collection(db, 'userReports'), where('kind', '==', kind), where('targetId', '==', targetId)));
     await Promise.all(qs.docs.map(d => updateDoc(d.ref, { status: 'dismissed' }).catch(() => {})));
     showToast('되살렸어요');
@@ -14631,20 +14647,30 @@ window.loadComments = async (postId) => {
       let authorUid = null;
       try { const ps = await getDoc(doc(db, 'bamboo', postId)); if (ps.exists()) authorUid = ps.data().userId; } catch (e) {}
       const anonMap = {}; let anonIdx = 0;
-      const _escA = s => (s || '').replace(/</g, '&lt;');
+      // ★`<` 만 막고 있었다 — 따옴표가 안 막히면 속성 안에 넣을 때 뚫린다. 전부 막는다.
+      const _escA = s => String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
       const labelFor = (c) => {
         if (c.userId && c.userId === authorUid) return { name: '글쓴이', author: true, custom: false };
         if (c.anonName) return { name: c.anonName, author: false, custom: true };
         if (!anonMap[c.userId]) { anonIdx++; anonMap[c.userId] = '익명' + anonIdx; }
         return { name: anonMap[c.userId], author: false, custom: false };
       };
-      list.innerHTML = bsnap.docs.map(d => d.data()).map(c => {
+      // 차단·신고 필터 + 신고 버튼. ★대숲은 익명이라 메뉴에 이름을 넘기지 않는다.
+      const _bMe = window.currentUser && window.currentUser.uid;
+      const _bjq = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const _bcs = window._visiblePosts(bsnap.docs.map(d => ({ _id: d.id, ...d.data() })));
+      if (!_bcs.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 익명 댓글을 남겨봐요</div>'; return; }
+      list.innerHTML = _bcs.map(c => {
         const lbl = labelFor(c);
         const isAuthor = lbl.author;
         const nameColor = isAuthor ? '#86efac' : (lbl.custom ? '#cdd6e4' : '#fff');
+        const mine = _bMe && c.userId === _bMe;
         return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
           <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${isAuthor ? 'rgba(74,222,128,0.18)' : 'rgba(255,255,255,0.06)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${isAuthor ? '#86efac' : 'rgba(255,255,255,0.4)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0 1 12 0v1"/></svg></div>
-          <div><span style="font-size:12px;font-weight:700;margin-right:6px;color:${nameColor}">${_escA(lbl.name)}</span><span style="font-size:13px;color:#fff">${c.text}</span></div>
+          <div style="flex:1;min-width:0"><span style="font-size:12px;font-weight:700;margin-right:6px;color:${nameColor}">${_escA(lbl.name)}</span><span style="font-size:13px;color:#fff;word-break:break-word">${_escA(c.text)}</span></div>
+          ${mine ? '' : `<button aria-label="댓글 더보기" onclick="window.openPostMenu('comment','bamboo:${_bjq(postId)}:${_bjq(c._id)}','${_bjq(c.userId||'')}','')" style="background:none;border:none;padding:2px 0 0 4px;color:rgba(255,255,255,0.26);cursor:pointer;font-family:inherit;flex-shrink:0;align-self:flex-start">${window.mIcon('kebab', { size:15, color:'rgba(255,255,255,0.26)' })}</button>`}
         </div>`;
       }).join('');
     } catch (e) {
@@ -14657,18 +14683,29 @@ window.loadComments = async (postId) => {
     const q = query(collection(db, 'feed', postId, 'comments'), orderBy('createdAt', 'asc'));
     const snap = await getDocs(q);
     if (snap.empty) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>'; return; }
-    const comments = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
+    // 차단한 사람 댓글 + 3명 이상 신고된 댓글은 뺀다(_visiblePosts 가 둘 다 본다)
+    const comments = window._visiblePosts(snap.docs.map(d => ({ _id: d.id, ...d.data() })));
+    if (!comments.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 댓글을 남겨봐요</div>'; return; }
+    const _me = window.currentUser && window.currentUser.uid;
+    // ★댓글 본문을 그대로 innerHTML 에 넣고 있었다(저장형 XSS) — 대숲 본문에서 고친 것과 같은 구멍이
+    //   피드 댓글에는 남아 있었다. 여기서 이스케이프한다.
+    const _cEsc = s => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const _jq = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     // 저장된 userPhoto로 즉시 렌더 (프사 조회 대기 안 함)
     const renderComment = c => {
       const displayPhoto = userPhotoCache.get(c.userId) || c.userPhoto || '';
+      const mine = _me && c.userId === _me;
       return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
         <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0">
           <img data-cav="${c.userId||''}" src="${displayPhoto ? window._cdnImg(displayPhoto,56) : ''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
         </div>
-        <div>
-          <span style="font-size:12px;font-weight:700;margin-right:6px">${c.userName||'익명'}</span>
-          <span style="font-size:13px;color:#fff">${c.text}</span>
+        <div style="flex:1;min-width:0">
+          <span style="font-size:12px;font-weight:700;margin-right:6px">${_cEsc(c.userName||'익명')}</span>
+          <span style="font-size:13px;color:#fff;word-break:break-word">${_cEsc(c.text)}</span>
         </div>
+        ${mine ? '' : `<button aria-label="댓글 더보기" onclick="window.openPostMenu('comment','feed:${_jq(postId)}:${_jq(c._id)}','${_jq(c.userId||'')}','${_jq(c.userName||'익명')}')" style="background:none;border:none;padding:2px 0 0 4px;color:rgba(255,255,255,0.26);cursor:pointer;font-family:inherit;flex-shrink:0;align-self:flex-start">${window.mIcon('kebab', { size:15, color:'rgba(255,255,255,0.26)' })}</button>`}
       </div>`;
     };
     list.innerHTML = comments.map(renderComment).join('');
