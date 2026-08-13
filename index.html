@@ -5675,22 +5675,39 @@ const BOOST_OPTIONS = [
 window._diagStuck = function () {
   const L = [];
   try {
-    const W = innerWidth, H = innerHeight;
-    // 화면 여러 지점에서 '실제로 손이 닿는 요소'를 본다 — 이게 카드가 아니면 그게 범인이다
-    [[W/2,H*0.35],[W/2,H*0.55],[W/2,H*0.75]].forEach(function (p, i) {
-      const el = document.elementFromPoint(p[0], p[1]);
-      L.push('탭지점' + (i+1) + ': ' + (el ? (el.tagName.toLowerCase()
-        + (el.id ? '#' + el.id : '')
-        + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '')) : '(없음)'));
+    const desc = function (e) {
+      if (!e) return '(없음)';
+      return e.tagName.toLowerCase()
+        + (e.id ? '#' + e.id : '')
+        + (e.className && typeof e.className === 'string' && e.className.trim()
+            ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+    };
+    const chain = function (e) {   // 이름 없는 div 는 부모까지 따라가야 정체가 보인다
+      const a = []; let n = e, i = 0;
+      while (n && n !== document.body && i++ < 6) { a.push(desc(n)); n = n.parentElement; }
+      return a.join(' < ');
+    };
+    // ★스쿼드 카드 하나하나에 대해 '그 자리를 실제로 누가 받는지' 본다.
+    //   카드가 아니면 그 요소가 곧 범인이다. 화면 한가운데를 찍는 것보다 정확하다.
+    const cards = [].slice.call(document.querySelectorAll('[onclick*="openSquadDetail"],[onclick*="sqClassPreview"]'));
+    L.push('스쿼드 카드 ' + cards.length + '개');
+    cards.slice(0, 4).forEach(function (c, i) {
+      const r = c.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) { L.push((i+1) + ') 크기0 (안 보임)'); return; }
+      const hit = document.elementFromPoint(r.left + r.width/2, r.top + Math.min(r.height/2, innerHeight - r.top - 4));
+      const ok = hit && (c === hit || c.contains(hit) || hit.contains(c));
+      L.push((i+1) + ') ' + (ok ? 'OK' : '★막힘 → ' + chain(hit))
+        + ' | pe=' + getComputedStyle(c).pointerEvents);
     });
-    // 화면을 덮을 수 있는 fixed 요소를 전부 훑는다
+    // 카드를 덮을 만한 fixed 요소 — 앱 폭(390px)이라 전체화면 기준으로 재면 안 잡힌다
     [].slice.call(document.querySelectorAll('body *')).forEach(function (e) {
       const cs = getComputedStyle(e);
-      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') return;
+      if ((cs.position !== 'fixed' && cs.position !== 'absolute') || cs.display === 'none' || cs.visibility === 'hidden') return;
+      if (cs.pointerEvents === 'none' || parseFloat(cs.opacity) === 0) return;
       const r = e.getBoundingClientRect();
-      if (r.width < innerWidth * 0.6 || r.height < innerHeight * 0.5) return;   // 전체화면급만
-      L.push('덮개: ' + (e.id ? '#' + e.id : e.tagName.toLowerCase())
-        + ' z=' + cs.zIndex + ' pe=' + cs.pointerEvents + ' op=' + cs.opacity);
+      if (r.width < 200 || r.height < innerHeight * 0.3) return;
+      L.push('덮개: ' + desc(e) + ' z=' + cs.zIndex + ' pos=' + cs.position
+        + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
     });
     L.push('_sqCurId=' + window._sqCurId + ' / _panelDepth=' + window._panelDepth);
     L.push('body.position=' + getComputedStyle(document.body).position
