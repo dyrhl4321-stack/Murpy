@@ -14741,7 +14741,14 @@ window.loadNotificationsFirestore = async () => {
   }
   el.innerHTML = '<div>' + [1,2].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:18px;width:70%;margin-bottom:8px"></div><div class="skeleton" style="height:14px;width:45%"></div></div>`).join('') + '</div>';
   try {
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(50));
+    // ★★내 알림만 가져온다(대표 리포트 2026-08-13: 배지엔 4개인데 목록은 비어 있었다).
+    //   예전엔 where 없이 `orderBy(createdAt desc) + limit(50)` 이라
+    //   **전체 사용자의 알림 중 최신 50개**를 받아 클라이언트에서 걸렀다.
+    //   그 50개가 남들 알림으로 차면 내 알림은 한 건도 안 남는다 —
+    //   유저가 늘수록 반드시 터지고, 활동이 뜸한 사람부터 걸린다(유꾸미).
+    //   ※where + orderBy 는 복합 인덱스가 필요하므로 **정렬은 아래에서 직접** 한다.
+    //     실시간 배지 리스너(startNotifListener)도 where 만 쓰므로 방식이 같아진다.
+    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid));
     const snap = await getDocs(q);
     // ★같은 알림이 두 번 뜨던 문제(대표 리포트 2026-08-04) — 표시 단계에서 걸러낸다.
     //   생성 쪽에 중복 방지가 없어 같은 행동이 두 번 기록될 수 있고, 이미 쌓인 문서도 있다.
@@ -14750,15 +14757,19 @@ window.loadNotificationsFirestore = async () => {
     const seenKey = new Set();
     const notifs = snap.docs
       .map(d => ({ _id: d.id, ...d.data() }))
+      // ★쿼리에서 orderBy 를 뺐으므로 여기서 최신순으로 세운다.
+      //   아래 중복 제거가 '먼저 만난 것이 최신'을 전제로 하기 때문에 순서가 곧 정확도다.
+      .sort((a, b) => ((b.createdAt && b.createdAt.seconds) || 0)
+                    - ((a.createdAt && a.createdAt.seconds) || 0))
       .filter(n => {
-        if (n.toUid !== user.uid) return false;
         const k = n.type === 'feed_comment'
           ? ['feed_comment', n.fromUid, n.postId || '', (n.commentText || '').slice(0, 40)].join('|')
           : [n.type || '', n.fromUid || '', n.postId || ''].join('|');
         if (seenKey.has(k)) return false;
         seenKey.add(k);
         return true;
-      });
+      })
+      .slice(0, 50);   // 화면에 뿌리는 건 최신 50건까지
     const unreadCount = notifs.filter(n => !n.read).length;
     const badge = document.getElementById('notif-badge');
     if (badge) { badge.textContent = unreadCount; badge.style.display = unreadCount > 0 ? 'flex' : 'none'; }
@@ -15136,9 +15147,11 @@ window.markAllFirestoreRead = async () => {
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   try {
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(50));
+    // ★여기도 같은 버그였다 — 남들 알림 50개만 훑어서 **내 알림이 안 읽혔고**
+    //   그래서 '모두 읽음'을 눌러도 배지가 안 사라졌다.
+    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid));
     const snap = await getDocs(q);
-    const unread = snap.docs.filter(d => d.data().toUid === user.uid && !d.data().read);
+    const unread = snap.docs.filter(d => !d.data().read);
     await Promise.all(unread.map(d => updateDoc(d.ref, { read: true })));
     window.loadNotificationsFirestore();
   } catch(e) { console.error(e); }
