@@ -20671,12 +20671,24 @@ window.sqEditSubmit = async function () {
 //   → 상세의 높이·위치를 **실제로 보이는 영역(visualViewport)** 에 맞춰준다. 그러면 밀 이유가 없다.
 window._sqVVFit = function () {
   const vv = window.visualViewport; if (!vv) return;
-  // 톡 방도 같이 맞춘다 — 안 그러면 키보드가 올라왔을 때 입력칸이 키보드 아래로 숨는다
+  // ★★키보드가 올라왔을 때만 손댄다 (대표 8-14: "아래로 쓸면 위로 감 · 화면이 먹통").
+  //   예전엔 조건 없이 top/height 를 visualViewport 에 맞췄다. 그런데 모바일 브라우저는
+  //   **스크롤할 때마다 주소창이 접히고 펴지면서** vv.offsetTop/height 가 바뀌고 scroll 이벤트가 뜬다.
+  //   그때마다 패널을 다시 앉히니, 스크롤한 만큼 패널이 따라 움직여 방향이 뒤집힌 것처럼 보였다.
+  //   내용이 짧아 스크롤이 없던 벙에서는 안 보이다가, 멤버가 많아 목록이 길어진 벙에서 드러났다.
+  //   → 키보드가 실제로 올라온 경우(뷰포트가 80px 넘게 줄어든 경우)에만 맞추고,
+  //     아니면 CSS 원래값(inset:0)으로 되돌린다.
+  const kbUp = vv.height < ((window.innerHeight || vv.height) - 80);
   ['sq-detail', 'sq-talk'].forEach(function (id) {
     const el = document.getElementById(id); if (!el) return;
-    el.style.top = (vv.offsetTop || 0) + 'px';
-    el.style.height = vv.height + 'px';
-    el.style.bottom = 'auto';
+    if (kbUp) {
+      // 톡 방도 같이 맞춘다 — 안 그러면 키보드가 올라왔을 때 입력칸이 키보드 아래로 숨는다
+      el.style.top = (vv.offsetTop || 0) + 'px';
+      el.style.height = vv.height + 'px';
+      el.style.bottom = 'auto';
+    } else {
+      el.style.top = ''; el.style.height = ''; el.style.bottom = '';
+    }
   });
 };
 window._sqVVOn = function () {
@@ -20741,7 +20753,20 @@ window.openSquadDetail = function (sid) {
     window._sqRenderDetail();
   }, e => console.warn('sq mem', e));
 };
+// ★렌더가 중간에 죽으면 화면이 반만 그려져 '먹통'으로만 보인다 — 원인을 알 수가 없다(대표 8-14).
+//   onSnapshot 콜백 안에서 도니 예외가 조용히 삼켜진다. 여기서 잡아 **관리자에게만** 보여준다.
 window._sqRenderDetail = function () {
+  try { window._sqRenderDetailInner(); }
+  catch (e) {
+    console.error('sq render', e);
+    try {
+      if (typeof isAdmin === 'function' && isAdmin() && window.showToast) {
+        showToast('스쿼드 렌더 오류: ' + ((e && e.message) || e));
+      }
+    } catch (_) {}
+  }
+};
+window._sqRenderDetailInner = function () {
   const s = window._sqDoc; if (!s) return;
   const el = document.getElementById('sq-detail'); if (!el) return;
   const me = (auth.currentUser || window.currentUser || {}).uid || null;
