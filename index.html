@@ -9315,7 +9315,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '557';
+window._SW_V = '558';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20974,13 +20974,15 @@ window._sqRenderDetailInner = function () {
   const _iAmStaff = !!(me && mem[me] && mem[me].staff);
   const _canApprove = isHost || _iAmStaff;
   const _waitN = Object.keys(mem).filter(u => mem[u].status === 'invited').length;
+  // ★자리는 **스쿼드 멤버 칸 머리줄**이다(대표 8-14). 액션 줄에 큰 버튼으로 두면
+  //   범프·출석코드 같은 주 동작과 무게가 같아지고, 승인은 멤버를 보면서 하는 일이다.
+  //   크기는 멤버 줄의 '승인' 버튼과 같은 급으로 작게.
   const approveAllBtn = (_canApprove && _waitN)
-    // ★주 동작이라 **꽉 찬 파랑**이다(대표 8-14). 테두리만 있으면 꺼진 버튼처럼 보인다.
-    //   틴트 금지 규칙은 '상태를 알리는 칩'에 대한 것이지, 누르는 버튼은 채우는 게 맞다.
-    ? `<button onclick="window.sqApproveAll&&window.sqApproveAll('${s.id}')" style="width:100%;border:none;background:var(--accent);color:#fff;border-radius:13px;padding:14px 0;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">대기 중 ${_waitN}명 전원 승인</button>`
+    // ★면을 칠하지 않는다 — 입금 토글과 같은 규칙(대표 8-14). 체크(✓)도 붙이지 않는다.
+    ? `<button onclick="window.sqApproveAll&&window.sqApproveAll('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.55);color:#7aa8ff;border-radius:10px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${_waitN}명 전원 승인</button>`
     : '';
   if (done) actions = '';
-  else if (isHost) actions = `${approveAllBtn}${bumpMain}
+  else if (isHost) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
       ${inviteBtn}
@@ -21057,7 +21059,9 @@ window._sqRenderDetailInner = function () {
              벙주만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
         ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
-        ${wait && _canApprove ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
+        <!-- ★면을 칠하지 않는다 — 입금 토글과 같은 규칙(대표 8-14). 체크(✓)도 안 붙인다.
+             흐림(opacity)은 이름·아바타에만 걸려 있어서 이 버튼은 또렷하게 보인다. -->
+        ${wait && _canApprove ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:none;border:1px solid rgba(61,126,255,.55);color:#7aa8ff;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">승인</button>` : ''}
         <!-- ★운영진 지정 (대표 8-14) — 벙주만, 자기 자신 제외(벙주는 이미 검증자다).
              운영진은 **누구든 보는 족족 범프로 출석을 찍어줄 수 있다.** 도장이 여러 갈래로
              동시에 퍼져서 20명이 한 줄로 기다리지 않는다.
@@ -21073,7 +21077,12 @@ window._sqRenderDetailInner = function () {
       </div>`; }).join('');
   if (mv) mv.innerHTML = `
     <!-- 인원 숫자의 파란색은 뺀다(대표가 목록 카드에서 이미 지적한 것과 같은 건). 인원은 정보=흰색 -->
-    <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin:2px 2px 4px">스쿼드 멤버 <span style="color:#fff">${n}</span>/${s.capacity}</div>
+    <!-- ★전원 승인은 여기 머리줄에 작게 둔다(대표 8-14) — 멤버를 보면서 하는 일이라 이 칸이 맞다.
+         액션 줄의 큰 버튼으로 두면 범프·출석코드와 무게가 같아져 버린다. -->
+    <div style="display:flex;align-items:center;gap:8px;margin:2px 2px 6px">
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${n}</span>/${s.capacity}</div>
+      ${approveAllBtn}
+    </div>
     <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 10px">${rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>'}</div>`;
   // --- 워킹 룸 스테이지 + 채팅 (한 번만 초기화) ---
   if (!window._sqStageInit || window._sqStageInit !== s.id) {
