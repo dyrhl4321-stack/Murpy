@@ -20765,6 +20765,7 @@ window._sqRenderDetail = function () {
   const esc = v => String(v||'').replace(/</g,'&lt;');
   // --- 히어로 ---
   const paidN = Object.values(mem).filter(m => m.paid).length;
+  const attendN = Object.values(mem).filter(m => m.checkedIn || m.checkinType === 'present' || m.checkinType === 'late').length;
   const hero = document.getElementById('sq-d-hero');
   if (hero) hero.innerHTML = `
     <!-- 숫자 알약 줄이 한 줄 늘어나서 172 로는 글씨가 잘린다 -->
@@ -20803,11 +20804,16 @@ window._sqRenderDetail = function () {
                <span style="color:rgba(255,255,255,.22)">·</span>
                <!-- ★입금 초록(#4ce88a)은 뺐다 — 부트스트랩 성공배지처럼 보였다(대표 8-12: "짜친다").
                     금액이 흰색이 된 뒤로 **이 줄의 골드는 입금 하나가 가져간다**(대표 8-12 확정).
-                    걷는 중에도 골드로 또렷하게 — 회색으로 깔면 안 읽힌다. 다 걷히면 ✓ 가 붙는다.
-                    ※초록은 이제 '진짜 몸이 움직인 것'(LIVE·오운완)에만 남긴다. -->
-               <span style="color:#F5C24B">입금 ${paidN}/${n}${paidN>=n && n>0 ? ' ✓' : ''}</span>`
+                    걷는 중에도 골드로 또렷하게 — 회색으로 깔면 안 읽힌다.
+                    ★★상단 요약에는 체크(✓)를 붙이지 않는다(대표 8-14). 여기는 **숫자를 읽는 자리**고,
+                      체크는 멤버 줄의 칩이 가진 표시다. 두 군데서 같은 말을 하면 지저분해진다. -->
+               <span style="color:#F5C24B">입금 ${paidN}/${n}</span>`
             : `<span style="color:rgba(255,255,255,.22)">·</span>
                <span style="color:rgba(255,255,255,.72)">무료</span>`}
+          <!-- ★출석 요약 = **초록**(대표 8-14). 몸이 실제로 움직인 것에만 쓰는 색이라 출석이 맞다.
+               여기도 체크(✓)는 붙이지 않는다 — 숫자만 읽는 자리다. 한 명도 없으면 아예 안 띄운다. -->
+          ${attendN > 0 ? `<span style="color:rgba(255,255,255,.22)">·</span>
+               <span style="color:#3dde7c">출석 ${attendN}/${n}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -20872,7 +20878,9 @@ window._sqRenderDetail = function () {
   // ★범프는 출석체크 전용이므로 '오운완'이 아니라 **출석 ✓** 다(대표 8-14).
   //   오운완은 운동 인증(피드·도장)의 말이고, 여기서 하는 일은 출석 확인이다.
   const stChip = m => {
-    const chip = (label, color, border) => `<span style="font-size:10px;color:${color};background:none;border:1px solid ${border};border-radius:10px;padding:2px 8px;font-weight:700">${label}</span>`;
+    // ★입금 칩과 **같은 규격**이어야 한다 — 한 줄에 나란히 놓이는데 크기가 다르면 어긋나 보인다.
+    //   (padding 5px 10px / font-size 10.5px / radius 10px — 입금 토글과 동일)
+    const chip = (label, color, border) => `<span style="font-size:10.5px;color:${color};background:none;border:1px solid ${border};border-radius:10px;padding:5px 10px;font-weight:700;flex-shrink:0">${label}</span>`;
     if (m.checkinType === 'late') return chip('지각 ✓', '#F5C24B', 'rgba(245,194,75,.5)');
     if (m.checkedIn || m.checkinType === 'present') return chip('출석 ✓', '#3dde7c', 'rgba(61,222,124,.45)');
     if (m.status === 'invited') return chip('대기중', 'rgba(255,255,255,.45)', 'rgba(255,255,255,.16)');
@@ -20899,8 +20907,10 @@ window._sqRenderDetail = function () {
         ${stChip(m)}
         <!-- ★입금 토글도 골드로 통일하고 **면을 칠하지 않는다**(대표 8-12). 누를 수 있다는 건
              채움이 아니라 **테두리**로 알린다 — 반투명 면을 깔면 화면이 탁해진다. -->
-        ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">${m.paid?'입금 ✓':'미입금'}</button>`
-          : (s.feeAmount>0 && m.paid ? '<span style="font-size:10px;color:#F5C24B;font-weight:700">입금 ✓</span>' : '')}
+        <!-- ★벙주든 아니든 **같은 모양**이어야 한다(대표 8-14: 벙마다 입금 표시가 달라 보였다).
+             벙주만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
+        ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
+          : (s.feeAmount>0 && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
         ${wait && _canApprove ? `<button onclick="window.approveSquadMember('${s.id}','${uid}')" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>` : ''}
         <!-- ★운영진 지정 (대표 8-14) — 벙주만, 자기 자신 제외(벙주는 이미 검증자다).
              운영진은 **누구든 보는 족족 범프로 출석을 찍어줄 수 있다.** 도장이 여러 갈래로
