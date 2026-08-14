@@ -1,0 +1,112 @@
+# iOS 빌드 → App Store Connect 업로드
+#
+# ★이 PC 는 윈도우라 Xcode 를 못 돌린다. 그래서 GitHub 이 빌려주는 macOS 러너에서 빌드한다.
+#   (PWABuilder 가 준 iOS 패키지 = WKWebView 로 murpy.app 을 띄우는 껍데기 + Firebase 푸시)
+#
+# ★서명은 **App Store Connect API 키** 방식이다. .p12 인증서·프로비저닝 프로파일을
+#   손으로 만들 필요가 없고, 만료 관리도 애플이 한다.
+#
+# 필요한 GitHub Secrets (Settings → Secrets and variables → Actions):
+#   ASC_KEY_ID        App Store Connect API 키의 Key ID       (예: ABC123DEFG)
+#   ASC_ISSUER_ID     같은 화면의 Issuer ID (UUID 형태)
+#   ASC_KEY_P8        내려받은 AuthKey_XXXX.p8 파일의 **내용 전체** (BEGIN/END 줄 포함)
+#   APPLE_TEAM_ID     Apple Developer → Membership 의 Team ID (10자리)
+#
+# 수동으로만 돈다(Actions 탭에서 Run workflow). 커밋할 때마다 빌드하면
+# 애플 업로드 횟수만 낭비되고 빌드 번호가 튄다.
+
+name: iOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "App Store Connect 에 업로드까지 할까요? (아니오 = 빌드만 확인)"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 버전 고정
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: CocoaPods 설치
+        working-directory: ios/src
+        run: pod install --repo-update
+
+      # 빌드 번호를 실행 번호로 자동 증가시킨다.
+      # 애플은 같은 빌드 번호를 두 번 받지 않는다 — 손으로 올리면 반드시 잊는다.
+      - name: 빌드 번호 = 실행 번호
+        working-directory: ios/src
+        run: |
+          agvtool new-version -all ${{ github.run_number }}
+
+      - name: 서명 키 준비
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_KEY_P8" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: 아카이브
+        working-directory: ios/src
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild -workspace Murpy.xcworkspace \
+                     -scheme Murpy \
+                     -configuration Release \
+                     -destination 'generic/platform=iOS' \
+                     -archivePath "$RUNNER_TEMP/Murpy.xcarchive" \
+                     -allowProvisioningUpdates \
+                     -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+                     -authenticationKeyID ${{ secrets.ASC_KEY_ID }} \
+                     -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }} \
+                     DEVELOPMENT_TEAM="$TEAM_ID" \
+                     archive
+
+      - name: ExportOptions 작성
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>uploadSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict></plist>
+          PLIST
+
+      - name: .ipa 내보내기
+        run: |
+          xcodebuild -exportArchive \
+                     -archivePath "$RUNNER_TEMP/Murpy.xcarchive" \
+                     -exportPath "$RUNNER_TEMP/export" \
+                     -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+                     -allowProvisioningUpdates \
+                     -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+                     -authenticationKeyID ${{ secrets.ASC_KEY_ID }} \
+                     -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }}
+
+      # 실패했을 때 폰에 넣어볼 수 있게 결과물을 남긴다
+      - name: .ipa 보관
+        uses: actions/upload-artifact@v4
+        with:
+          name: Murpy-ipa-${{ github.run_number }}
+          path: ${{ runner.temp }}/export/*.ipa
+          retention-days: 14
+
+      - name: App Store Connect 업로드
+        if: ${{ inputs.upload }}
+        run: |
+          xcrun altool --upload-app -f "$RUNNER_TEMP"/export/*.ipa -t ios \
+                       --apiKey ${{ secrets.ASC_KEY_ID }} \
+                       --apiIssuer ${{ secrets.ASC_ISSUER_ID }}
