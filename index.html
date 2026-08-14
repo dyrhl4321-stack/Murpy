@@ -1554,6 +1554,10 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>
         차단한 사람
       </button>
+      <button id="murpy-grant-btn" onclick="window.showMurpyGrant && window.showMurpyGrant()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+        머피 지급 (관리자)
+      </button>
       <button id="reports-admin-btn" onclick="window.showReportsAdmin && window.showReportsAdmin()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17v.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
         신고함 (관리자)
@@ -9323,7 +9327,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '577';
+window._SW_V = '578';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9512,6 +9516,8 @@ window.updateUI = function(user) {
     if (bannerBtn) bannerBtn.style.display = _adm ? 'flex' : 'none';
     const reportsBtn = document.getElementById('reports-admin-btn');
     if (reportsBtn) reportsBtn.style.display = _adm ? 'flex' : 'none';
+    const grantBtn = document.getElementById('murpy-grant-btn');
+    if (grantBtn) grantBtn.style.display = _adm ? 'flex' : 'none';
     const seeAllBtn = document.getElementById('match-seeall-btn');
     if (seeAllBtn) {
       seeAllBtn.style.display = _adm ? 'flex' : 'none';
@@ -12424,6 +12430,88 @@ window.loadBlockedList = async function () {
     </div>`;
   }));
   el.innerHTML = rows.join('');
+};
+
+// ===== 관리자: 머피 지급 (2026-08-14) =====
+// 대표 요청 — "마조리카가 계속 300머피 달랜다. 이왕이면 명단별로 체크하고 넣어주는 기능".
+// 이름으로 찾아 **여러 명을 체크해 한 번에** 넣는다. 보안규칙의 users 쓰기에 isAdmin 을 열었다.
+window.showMurpyGrant = async function () {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const el = document.createElement('div');
+  el.id = 'murpy-grant';
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-y:auto;padding:18px 16px 90px';
+  el.innerHTML = '<div style="color:#8a93a8;font-size:13px">불러오는 중…</div>';
+  document.body.appendChild(el);
+  let users = [];
+  try {
+    const qs = await getDocs(collection(db, 'users'));
+    users = qs.docs.map(d => ({ uid: d.id, ...d.data() }))
+      .filter(u => u.nickname)
+      .sort((a, b) => String(a.nickname).localeCompare(String(b.nickname), 'ko'));
+  } catch (e) {
+    el.innerHTML = '<div style="color:#ff8585;font-size:13px">불러오기 실패: ' + ((e && e.message) || '') + '</div>';
+    return;
+  }
+  window._grantAll = users; window._grantPick = {};
+  el.innerHTML = `
+    <button onclick="document.getElementById('murpy-grant').remove()" style="position:fixed;top:12px;right:12px;z-index:2;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:#fff;width:36px;height:36px;border-radius:50%;cursor:pointer;font-family:inherit">✕</button>
+    <div style="font-size:18px;font-weight:800;margin-bottom:4px">머피 지급</div>
+    <div style="font-size:12px;color:#8a93a8;margin-bottom:14px">이름으로 찾아 체크하고 한 번에 넣습니다 · 전체 ${users.length}명</div>
+    <input id="grant-q" oninput="window._grantRender()" placeholder="닉네임으로 찾기" autocomplete="off"
+      style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:11px;padding:12px;font-size:16px;outline:none;font-family:inherit">
+    <div id="grant-list" style="margin-top:12px"></div>
+    <!-- 하단 고정 바 — 목록이 길어도 지급 버튼에 손이 닿아야 한다 -->
+    <div style="position:fixed;left:0;right:0;bottom:0;max-width:390px;margin:0 auto;background:#0d1016;border-top:1px solid rgba(255,255,255,.08);padding:12px 16px 18px;display:flex;align-items:center;gap:9px">
+      <input id="grant-amt" type="number" value="300" min="1" max="100000"
+        style="flex:0 0 96px;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#F5C24B;border-radius:10px;padding:11px;font-size:16px;font-weight:800;text-align:center;outline:none;font-family:inherit">
+      <button onclick="window.murpyGrantRun()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:11px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">
+        <span id="grant-btn-t">선택한 사람에게 지급</span></button>
+    </div>`;
+  window._grantRender();
+};
+window._grantRender = function () {
+  const box = document.getElementById('grant-list'); if (!box) return;
+  const q = (document.getElementById('grant-q')?.value || '').trim().toLowerCase();
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = (window._grantAll || []).filter(u => !q || String(u.nickname).toLowerCase().includes(q));
+  const n = Object.keys(window._grantPick || {}).filter(k => window._grantPick[k]).length;
+  const t = document.getElementById('grant-btn-t');
+  if (t) t.textContent = n ? `${n}명에게 지급` : '선택한 사람에게 지급';
+  box.innerHTML = list.slice(0, 80).map(u => {
+    const on = !!(window._grantPick || {})[u.uid];
+    return `<div onclick="window._grantToggle('${u.uid}')" style="display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.nickname)}${u.guest ? ' <span style="font-size:10px;color:#F5C24B;font-weight:700">임시</span>' : ''}</div>
+        <div style="font-size:11px;color:#5d6678;margin-top:2px">보유 ${Number(u.credits || 0).toLocaleString()} 머피</div>
+      </div>
+      <div style="flex-shrink:0;width:23px;height:23px;border-radius:7px;border:1px solid ${on ? 'var(--accent)' : 'rgba(255,255,255,.2)'};display:flex;align-items:center;justify-content:center;color:var(--accent)">
+        ${on ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
+      </div>
+    </div>`;
+  }).join('') + (list.length > 80 ? '<div style="padding:12px;text-align:center;color:#5d6678;font-size:12px">이름으로 더 좁혀주세요</div>' : '');
+};
+window._grantToggle = function (uid) {
+  window._grantPick = window._grantPick || {};
+  window._grantPick[uid] = !window._grantPick[uid];
+  window._grantRender();
+};
+window.murpyGrantRun = async function () {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  const pick = Object.keys(window._grantPick || {}).filter(k => window._grantPick[k]);
+  const amt = Math.max(1, Math.min(100000, parseInt(document.getElementById('grant-amt')?.value, 10) || 0));
+  if (!pick.length) { showToast('받을 사람을 골라주세요'); return; }
+  const names = pick.map(u => (window._grantAll.find(x => x.uid === u) || {}).nickname).filter(Boolean);
+  const ok = window.murpyConfirm
+    ? await window.murpyConfirm({ title: `${pick.length}명에게 ${amt} 머피를 줄까요?`,
+        desc: names.slice(0, 6).join(', ') + (names.length > 6 ? ` 외 ${names.length - 6}명` : ''), confirmText: '지급' })
+    : confirm(`${pick.length}명에게 ${amt} 머피?`);
+  if (!ok) return;
+  let done = 0;
+  await Promise.all(pick.map(async uid => {
+    try { await updateDoc(doc(db, 'users', uid), { credits: increment(amt) }); done++; } catch (e) { console.warn('grant', uid, e); }
+  }));
+  showToast(done === pick.length ? `${done}명에게 ${amt} 머피 지급했어요` : `${done}/${pick.length}명만 지급됐어요`);
+  document.getElementById('murpy-grant')?.remove();
 };
 
 // ----- 관리자 신고함 -----
