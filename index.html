@@ -569,6 +569,16 @@
   .mw-progress { height:12px; background:#0e1320; border:3px solid #05070c; box-shadow:inset 2px 2px 0 rgba(0,0,0,.4) }
   .mw-progress i { display:block; height:100%; transition:width .5s steps(8) }
   .mw-blink { animation:mwBlink 1s steps(2) infinite } @keyframes mwBlink { 50% { opacity:0 } }
+  /* ★밀어서 승인 — 글자에 초록 빛이 흐른다(대표 8-14: "집중이 안 된다 · 그라디언트 효과가 있어도").
+     면을 칠하는 게 아니라 **글자 안에서만** 흐르므로 틴트 칩 금지 규칙과 부딪히지 않는다.
+     손잡이는 오른쪽으로 살짝 밀렸다 돌아오며 "이 방향으로 미세요"를 몸으로 알려준다. */
+  @keyframes sqShine { 0% { background-position:-140% 0 } 100% { background-position:240% 0 } }
+  .sq-slide-lbl { background:linear-gradient(100deg,#2a8f5b 0%,#3dde7c 40%,#d8ffe9 50%,#3dde7c 60%,#2a8f5b 100%);
+    background-size:220% 100%; -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent; animation:sqShine 2.4s linear infinite }
+  @keyframes sqNudge { 0%,72%,100% { transform:translateX(0) } 84% { transform:translateX(6px) } }
+  .sq-slide-knob { animation:sqNudge 2.4s ease-in-out infinite }
+  .sq-slide.dragging .sq-slide-knob { animation:none }
   .mw-stampcell { background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; padding:12px 6px 10px;
     display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer }
   .mw-stampcell.locked { opacity:.55 }
@@ -9315,7 +9325,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '563';
+window._SW_V = '564';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21090,10 +21100,20 @@ window._sqRenderDetailInner = function () {
   // ★승인 = **오른쪽으로 밀기**(대표 8-14). 칩 버튼은 입금 옆에서 존재감이 없었고,
   //   승인은 되돌리기 어려운 행동이라 '한 번 미는' 만큼의 무게가 맞다.
   //   미는 동안 뒤에서 초록 '승인' 바닥이 드러난다 — 출석과 같은 색(몸이 실제로 온 사람).
+  // ★카드 전체를 미는 게 아니라 **손잡이가 보이는 슬라이더**다 (대표 8-14, 쿠팡식).
+  //   카드를 통째로 미는 건 해보기 전엔 알 수 없다 — 손잡이가 있어야 "밀면 되는구나"가 읽힌다.
+  //   멤버 줄은 그대로 두고, 그 아래에 승인 슬라이더만 얹는다.
   const _swipeRow = (uid, m) => `
-    <div class="sq-swipe" data-uid="${uid}" data-sid="${s.id}" style="position:relative;overflow:hidden;border-radius:12px;touch-action:pan-y;margin:4px 0">
-      <div style="position:absolute;inset:0;display:flex;align-items:center;padding-left:15px;border:1px solid rgba(61,222,124,.35);border-radius:12px;color:#3dde7c;font-size:12px;font-weight:800;letter-spacing:-0.2px">승인 →</div>
-      <div class="sq-swipe-track" style="position:relative;background:#101420;border-radius:12px;transition:transform .18s ease">${_mkRow(uid, m, true)}</div>
+    <div style="padding:2px 0 6px">
+      ${_mkRow(uid, m, true)}
+      <div class="sq-slide" data-uid="${uid}" data-sid="${s.id}"
+        style="position:relative;height:38px;border-radius:11px;border:1px solid rgba(61,222,124,.3);overflow:hidden;touch-action:pan-y;margin:2px 2px 0;user-select:none">
+        <div class="sq-slide-fill" style="position:absolute;left:0;top:0;bottom:0;width:36px;background:rgba(61,222,124,.13);transition:width .18s ease"></div>
+        <div class="sq-slide-lbl" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;letter-spacing:-0.2px;pointer-events:none">밀어서 승인</div>
+        <div class="sq-slide-knob" style="position:absolute;left:3px;top:3px;width:32px;height:32px;border-radius:9px;background:#3dde7c;display:flex;align-items:center;justify-content:center;transition:transform .18s ease;will-change:transform">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06210f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </div>
+      </div>
     </div>`;
   const _waitBlock = _waitUids.length ? `
     <div style="display:flex;align-items:center;gap:8px;margin:16px 2px 6px">
@@ -21294,34 +21314,45 @@ window.sqApproveAll = async function (sid) {
 //   세로 스크롤을 막지 않으려고 컨테이너에 touch-action:pan-y 를 준다 —
 //   가로로 미는 동안만 우리가 가져가고, 위아래 스크롤은 브라우저에 그대로 넘긴다.
 window._sqBindSwipe = function () {
-  document.querySelectorAll('.sq-swipe:not([data-bound])').forEach(function (el) {
+  document.querySelectorAll('.sq-slide:not([data-bound])').forEach(function (el) {
     el.setAttribute('data-bound', '1');
-    const track = el.querySelector('.sq-swipe-track');
-    if (!track) return;
+    const knob = el.querySelector('.sq-slide-knob');
+    const fill = el.querySelector('.sq-slide-fill');
+    const lbl = el.querySelector('.sq-slide-lbl');
+    if (!knob) return;
+    const MAX = () => Math.max(40, (el.clientWidth || 300) - 38);   // 손잡이가 갈 수 있는 끝
+    const paint = function (v) {
+      knob.style.transform = 'translateX(' + v + 'px)';
+      if (fill) fill.style.width = (36 + v) + 'px';
+      if (lbl) lbl.style.opacity = String(Math.max(0, 1 - v / (MAX() * 0.8)));
+    };
     // ★방향을 **먼저 판정**한다 (대표 8-14: "슬라이드 하려니 전체 스크롤에 뻑이 난다").
     //   손을 대자마자 붙잡으면 세로로 넘기려던 손짓까지 우리가 먹어 스크롤이 걸린다.
     //   8px 움직일 때까지 아무것도 하지 않고, 그때 가로가 세로보다 크면 그때부터 우리 것이다.
     //   세로가 크면 'no' 로 확정하고 손 뗄 때까지 완전히 손을 뗀다 → 스크롤이 평소처럼 된다.
-    let x0 = null, y0 = 0, dx = 0, w = 0, fired = false, mode = null;   // mode: null(미정)|'x'|'no'
-    const reset = function () { x0 = null; dx = 0; mode = null; };
+    let x0 = null, y0 = 0, dx = 0, fired = false, mode = null;   // mode: null(미정)|'x'|'no'
+    const reset = function () { x0 = null; dx = 0; mode = null; el.classList.remove('dragging'); };
     const done = function () {
       if (x0 === null) return;
       if (mode !== 'x') { reset(); return; }
-      track.style.transition = 'transform .18s ease';
-      // 절반 넘게 밀어야 승인된다 — 스치듯 지나가는 손짓으로 승인되면 안 된다
-      if (dx > w * 0.55 && !fired) {
+      knob.style.transition = 'transform .18s ease';
+      if (fill) fill.style.transition = 'width .18s ease';
+      // 끝까지(85%) 밀어야 승인된다 — 스치듯 지나가는 손짓으로 승인되면 안 된다
+      if (dx > MAX() * 0.85 && !fired) {
         fired = true;
-        track.style.transform = 'translateX(' + w + 'px)';
+        paint(MAX());
+        if (lbl) { lbl.textContent = '승인됨'; lbl.style.opacity = '1'; lbl.classList.remove('sq-slide-lbl'); lbl.style.color = '#06210f'; }
         const sid = el.getAttribute('data-sid'), uid = el.getAttribute('data-uid');
-        setTimeout(function () { window.approveSquadMember && window.approveSquadMember(sid, uid); }, 150);
+        setTimeout(function () { window.approveSquadMember && window.approveSquadMember(sid, uid); }, 160);
       } else {
-        track.style.transform = 'translateX(0)';
+        paint(0);
+        el.classList.remove('dragging');   // 손잡이 힌트 애니메이션을 되살린다
       }
       reset();
     };
     el.addEventListener('pointerdown', function (e) {
       if (fired) return;
-      x0 = e.clientX; y0 = e.clientY; w = el.clientWidth || 300; dx = 0; mode = null;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; mode = null;
     });
     el.addEventListener('pointermove', function (e) {
       if (x0 === null || mode === 'no') return;
@@ -21330,11 +21361,13 @@ window._sqBindSwipe = function () {
         if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;      // 아직 방향을 모른다 — 가만히 둔다
         if (Math.abs(my) >= Math.abs(mx)) { mode = 'no'; return; }   // 세로다 → 스크롤에 넘긴다
         mode = 'x';
-        track.style.transition = 'none';
+        el.classList.add('dragging');
+        knob.style.transition = 'none';
+        if (fill) fill.style.transition = 'none';
         try { el.setPointerCapture(e.pointerId); } catch (_) {}
       }
-      dx = Math.max(0, mx);                                     // 왼쪽으로는 안 밀린다
-      track.style.transform = 'translateX(' + Math.min(dx, w) + 'px)';
+      dx = Math.min(Math.max(0, mx), MAX());                    // 왼쪽으로도, 끝 밖으로도 안 나간다
+      paint(dx);
     });
     el.addEventListener('pointerup', done);
     el.addEventListener('pointercancel', done);
