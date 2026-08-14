@@ -13,21 +13,51 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// ★★알림이 두 번 뜨던 원인 (대표 8-14: "푸시알람이 두 번씩 계속 뜸").
+//   서버가 notification 필드를 함께 보내면 **브라우저가 스스로 하나를 띄운다.**
+//   그런데 여기서 onBackgroundMessage 가 또 showNotification 을 불러 **두 번째**가 떴다.
+//   → 브라우저가 이미 띄웠으면(=payload.notification 이 있으면) 우리는 손대지 않는다.
+//     서버가 data 만 보내는 경우에만 우리가 띄운다. 어느 쪽이든 **정확히 한 번**이다.
 messaging.onBackgroundMessage(payload => {
-  const n = (payload && (payload.data || payload.notification)) || {};
+  if (payload && payload.notification) return;      // 브라우저가 이미 띄웠다
+  const n = (payload && payload.data) || {};
   self.registration.showNotification(n.title || '머피', {
     body: n.body || '',
-    icon: './icon.svg',
-    badge: './icon.svg',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     data: n,
-    tag: n.type || 'murpy'
+    tag: n.type || 'murpy',
+    renotify: true
   });
 });
 
+// ★★푸시를 누르면 **그 알림이 가리키는 화면**으로 간다 (대표 8-14: "푸시를 탭하면 항상 홈").
+//   예전엔 열려 있는 창을 focus 만 했다 — 그래서 늘 마지막에 보던 화면(대개 홈)이었다.
+//   앱이 ?n=<종류> 를 읽어 해당 화면으로 보내주므로, 여기서는 주소만 만들어 주면 된다.
+function routeUrl(d) {
+  d = d || {};
+  // FCM 이 스스로 띄운 알림은 data 가 한 겹 더 싸여 있다
+  if (d.FCM_MSG && d.FCM_MSG.data) d = d.FCM_MSG.data;
+  const q = new URLSearchParams();
+  if (d.type) q.set('n', d.type);
+  if (d.fromUid) q.set('f', d.fromUid);
+  if (d.postId) q.set('p', d.postId);
+  if (d.squadId) q.set('sq', d.squadId);
+  const qs = q.toString();
+  return 'https://murpy.app/' + (qs ? ('?' + qs) : '');
+}
+
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  const url = routeUrl(e.notification.data);
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-    for (const c of list) { if ('focus' in c) return c.focus(); }
-    if (clients.openWindow) return clients.openWindow('./');
+    // 이미 머피가 열려 있으면 그 창을 그 주소로 **돌려준다**(focus 만 하면 홈에 머문다)
+    for (const c of list) {
+      if (c.url && c.url.indexOf('murpy.app') !== -1) {
+        if ('navigate' in c) { return c.navigate(url).then(w => w && w.focus()).catch(() => c.focus()); }
+        return c.focus();
+      }
+    }
+    if (clients.openWindow) return clients.openWindow(url);
   }));
 });

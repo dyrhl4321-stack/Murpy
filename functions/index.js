@@ -89,6 +89,15 @@ function compose(n) {
                body: post ? `"${post}" 참가가 확정됐어요. 이제 만나러 가요`
                           : "참가 신청이 승인됐어요" };
 
+    // ── 머피 지급 ────────────────────────────────────────────
+    // ★대표 8-14: "관리자 머피 선물이 아직 기본 문구로 뜬다."
+    //   여기에 분기가 없어서 아래 default 로 떨어지고 있었다.
+    case "murpy_gift": {
+      const amt = Number(n.amount || 0).toLocaleString();
+      return { title: "머피가 도착했어요",
+               body: `관리자가 ${amt} 머피 선물을 보냈어요` };
+    }
+
     default:
       return { title: "머피", body: "새 소식이 도착했어요" };
   }
@@ -106,25 +115,24 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
 
   const message = {
     tokens,
+    // ★★data 만 보낸다 (대표 8-14: "푸시알람이 두 번씩 계속 뜸").
+    //   notification 필드를 같이 보내면 **브라우저가 스스로 하나를 띄우고**,
+    //   firebase-messaging-sw.js 의 onBackgroundMessage 가 또 하나를 띄워 두 번 떴다.
+    //   → 표시는 서비스워커 한 곳에서만 한다. 그래야 아이콘·클릭 이동까지 우리가 정한다.
+    // ★★postId·squadId 를 같이 실어 보낸다 — 눌렀을 때 **그 글/그 스쿼드**로 가야 한다
+    //   (대표 8-14: "푸시를 탭하면 항상 홈이다"). 서비스워커가 이 값으로 주소를 만든다.
     data: {
       type: String(n.type || ""),
       fromNickname: String(n.fromNickname || ""),
       fromUid: String(n.fromUid || ""),
       fromPhoto: String(n.fromPhoto || ""),
+      postId: String(n.postId || ""),
+      squadId: String(n.squadId || n.crewId || ""),
       title,
       body,
     },
-    notification: { title, body },
     webpush: {
-      // ★정식 도메인으로. 푸시를 누르면 열리는 주소이자 알림에 뜨는 아이콘이다.
-      //   아이콘도 SVG -> PNG 로 바꾼다 — 안드로이드 알림은 SVG 를 안 그리는 경우가 있다.
-      notification: {
-        icon: "https://murpy.app/icon-192.png",
-        badge: "https://murpy.app/icon-192.png",
-        // 같은 종류가 연달아 오면 알림함을 도배하지 않고 최신 것으로 겹쳐 쌓이게 한다
-        tag: String(n.type || "murpy"),
-        renotify: true,
-      },
+      headers: { Urgency: "high" },
       fcmOptions: { link: "https://murpy.app/" },
     },
   };

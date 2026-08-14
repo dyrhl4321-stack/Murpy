@@ -9346,7 +9346,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '589';
+window._SW_V = '590';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9749,6 +9749,46 @@ onAuthStateChanged(auth, async (user) => {
     }
   }
 });
+
+// 알림에서 글로 이동. postId 가 비어 있는 옛 알림만 홈으로 떨어뜨린다.
+window._notifGoPost = function (postId) {
+  if (postId && window.openFeedPost) { window.openFeedPost(postId); return; }
+  if (typeof goPage === 'function') goPage('home');
+};
+
+// ★★푸시 알림을 누르면 **그 알림이 가리키는 곳**으로 간다 (대표 8-14: "푸시를 탭하면 항상 홈").
+//   서비스워커가 murpy.app/?n=<종류>&f=<보낸사람>&p=<글id>&sq=<스쿼드id> 로 열어준다.
+//   여기서 그 값을 읽어 해당 화면으로 보낸다. 주소는 바로 지운다 — 새로고침 때 또 튀면 안 된다.
+(function () {
+  let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+  const t = q.get('n'); if (!t) return;
+  const f = q.get('f') || '', pid = q.get('p') || '';
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  setTimeout(function () {
+    try {
+      if (t === 'feed_like' || t === 'feed_comment') { window._notifGoPost(pid); return; }
+      if (t === 'bamboo_comment' || t === 'bamboo_request') {
+        goPage('bamboo');
+        if (pid && window.openCommentPanel) setTimeout(function () { window.openCommentPanel(pid, 'bamboo'); }, 250);
+        return;
+      }
+      if (t === 'chat' || t === 'match' || t === 'match_request' || t === 'match_accept') {
+        if (f && window.openChatWith) window.openChatWith(f, '', '');
+        else goPage('match');
+        return;
+      }
+      if (t === 'squad_invite' || t === 'squad_apply' || t === 'squad_approved') {
+        const sid = q.get('sq') || '';
+        if (sid && window.openSquadDetail) window.openSquadDetail(sid);
+        else goPage('squad');
+        return;
+      }
+      if (t === 'murpy_gift' || t === 'room_visit' || t === 'poke') { goPage('mw'); return; }
+      // 모르는 종류면 알림함을 연다 — 적어도 무슨 알림이었는지는 보인다
+      if (window.openPanel) openPanel('notif-panel');
+    } catch (e) { console.warn('notif route', e); }
+  }, 1200);
+})();
 
 // ★★초대 시트 안전망 (대표 8-14: "다른 직원 폰에서 바로 입장하기를 눌러도 초대가 안 뜨고,
 //   한 번 나갔다 들어가야 됐다"). 오늘 저녁 20명이 전부 이 길목을 지난다 — 한 번에 떠야 한다.
@@ -15585,7 +15625,9 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'feed_like') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('home')">
+        // ★홈 탭이 아니라 **그 글**로 간다 (대표 8-14: "누가 좋아요 눌렀는지 볼 수 있는 데로
+        //   가야지 왜 홈이냐"). 홈에 떨어뜨리면 어느 글이었는지 다시 찾아야 한다.
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window._notifGoPost('${safePostId}')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(255,90,110,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#ff5a6e" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
           </div>
@@ -15598,7 +15640,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       if (n.type === 'feed_comment') {
-        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('home')">
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window._notifGoPost('${safePostId}')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </div>
