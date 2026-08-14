@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '571';
+window._SW_V = '572';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21398,17 +21398,47 @@ window._sqBindSwipe = function () {
 // 근방단은 벙마다 "가슴/등/어깨/하체/자유" 와 "7시 팀/8시 팀", 뒷풀이 여부를 손으로 적어
 // 단톡방에 올린다. 그걸 **스쿼드 안에서** 각자 고르게 하고, 명단은 앱이 만들어 준다.
 // ★멤버 문서에 붙인다 — 보안규칙상 본인은 자기 문서를 쓸 수 있어서 규칙 수정이 필요 없다.
-window.SQ_PARTS = ['가슴', '등', '어깨', '하체', '자유'];
+// ★종목마다 나누는 축이 다르다 (대표 8-14).
+//   헬스는 **부위**로 나눠야 기구가 안 겹치고, 러닝은 **페이스**로 나눠야 같이 뛸 수 있다.
+//   여기 없는 종목은 팀 판을 아예 띄우지 않는다 — 나눌 축이 없는데 판만 뜨면 잡음이다.
+//   ※벙주가 끌 수도 있다(스쿼드 문서의 teamOff). 우리 모임만 쓰는 기능일 수 있어서다.
+window.SQ_TEAMS = {
+  gym:      { label: '오늘 운동 부위', unit: '',      opts: ['가슴', '등', '어깨', '하체', '자유'] },
+  running:  { label: '평균 페이스',    unit: '/km',   opts: ['4분대', '5분대', '6분대', '7분대', '천천히'] },
+  hiking:   { label: '오늘 페이스',    unit: '',      opts: ['빠르게', '보통', '천천히'] },
+  climbing: { label: '오늘 난이도',    unit: '',      opts: ['볼더링', '리드', '초보', '자유'] },
+  hyrox:    { label: '오늘 파트',      unit: '',      opts: ['런', '근력', '복합', '자유'] },
+  tennis:   { label: '구력',          unit: '',      opts: ['입문', '초급', '중급', '상급'] },
+  golf:     { label: '구력',          unit: '',      opts: ['입문', '초급', '중급', '상급'] }
+};
+window.SQ_TEAM_OF = function (s) {
+  if (!s || s.teamOff) return null;                       // 벙주가 껐다
+  const k = window._sqTypeKey ? window._sqTypeKey(s.exerciseType) : s.exerciseType;
+  return window.SQ_TEAMS[k] || null;                      // 축이 없는 종목(요가·댄스 등)은 안 띄운다
+};
+// 옛 코드 호환 — 헬스 부위 목록을 직접 쓰던 자리가 남아 있다
+window.SQ_PARTS = window.SQ_TEAMS.gym.opts;
 // ★부위 보드 — 스쿼드 톡에 띄우고, **누르면 바로 내 닉네임이 그 줄에 올라간다**(대표 8-14).
 //   따로 시트를 열어 고르게 하면 한 단계가 더 생긴다. 톡에서 보고 그 자리에서 누르는 게 맞다.
 //   저장은 **내 멤버 문서**에 한다 — 보안규칙상 본인은 자기 문서를 쓸 수 있어 규칙 수정이 필요 없다.
 window._sqPartBoardHtml = function (s, mem) {
-  const me = (auth.currentUser || {}).uid;
+  const me = (auth.currentUser || {}).uid || window._sqPreviewMe;
+  const T = window.SQ_TEAM_OF(s);
+  const isHost = !!(me && s && me === s.hostUid);
+  // 꺼져 있으면 벙주에게만 '켜기' 한 줄을 남긴다 — 켤 방법이 없으면 끈 순간 영영 못 켠다
+  if (!T) {
+    if (!isHost || !window.SQ_TEAMS[window._sqTypeKey ? window._sqTypeKey(s.exerciseType) : s.exerciseType]) return '';
+    return `<div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:8px">
+      <div style="flex:1;font-size:12px;color:rgba(255,255,255,.35)">팀 나누기가 꺼져 있어요</div>
+      <button onclick="window.sqTeamToggle('${s.id}',false)" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.5);color:#7aa8ff;border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">켜기</button>
+    </div>`;
+  }
+  const OPTS = T.opts;
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const live = Object.keys(mem || {}).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
   const joined = !!(me && mem[me] && mem[me].status !== 'left' && mem[me].status !== 'invited');
   const mine = (mem[me] || {}).part || '';
-  const rows = window.SQ_PARTS.map(function (pt) {
+  const rows = OPTS.map(function (pt) {
     const names = live.filter(u => (mem[u].part || '') === pt).map(u => window._sqRealName(mem[u]));
     const on = mine === pt;
     return `<div ${joined ? `onclick="window.sqPartTap('${s.id}','${pt}')"` : ''}
@@ -21423,8 +21453,9 @@ window._sqPartBoardHtml = function (s, mem) {
   return `
     <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="flex:1;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">오늘 운동 부위
+        <div style="flex:1;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">${T.label}
           ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
+        ${isHost ? `<button onclick="window.sqTeamToggle('${s.id}',true)" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.45);border-radius:9px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:6px">끄기</button>` : ''}
         ${(function () {
           // 벙주·운영진은 **남의 부위도 직접 배정**할 수 있어야 한다(대표 8-14) —
           // 현장에서 부위를 맞춰 짝을 짓는 건 결국 운영진이 한다. 규칙은 이미 열려 있다.
@@ -21441,6 +21472,16 @@ window._sqPartBoardHtml = function (s, mem) {
       </div>` : ''}
     </div>`;
 };
+// 벙주가 팀 나누기를 켜고 끈다 (대표 8-14: "우리 모임만 사용할 수도 있는 거잖아").
+window.sqTeamToggle = async function (sid, off) {
+  const s = window._sqDoc, me = (auth.currentUser || {}).uid;
+  if (!s || !me || me !== s.hostUid) return;
+  s.teamOff = !!off;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid), { teamOff: !!off }); }
+  catch (e) { s.teamOff = !off; window._sqChatPaintBoard && window._sqChatPaintBoard(); showToast('바꾸지 못했어요'); }
+};
+
 // 같은 부위를 다시 누르면 해제된다. 저장 전에 화면부터 바꿔 눌린 느낌이 바로 나게 한다.
 window.sqPartTap = async function (sid, part) {
   const me = (auth.currentUser || {}).uid; if (!me) return;
@@ -21554,7 +21595,8 @@ window.sqPartAssign = function (sid) {
 window._sqAssignRow = function (uid, m) {
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const cur = m.part || '';
-  const chips = window.SQ_PARTS.map(pt => {
+  const T = window.SQ_TEAM_OF(window._sqDoc) || window.SQ_TEAMS.gym;
+  const chips = T.opts.map(pt => {
     const on = cur === pt;
     return `<button onclick="window.sqAssignSet('${uid}','${pt}')" style="flex:1;min-width:0;background:none;border:1px solid ${on ? 'rgba(61,126,255,.65)' : 'rgba(255,255,255,.13)'};color:${on ? '#7aa8ff' : 'rgba(255,255,255,.5)'};border-radius:9px;padding:7px 0;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">${pt}</button>`;
   }).join('');
@@ -21629,7 +21671,8 @@ window.sqPartList = function (sid) {
     if (!inSlot.length) return '';
     const title = sl ? sl + ' 팀' : (slots.length ? '시간 미정' : '참석자');
     text += title + '\n';
-    const lines = window.SQ_PARTS.concat(['미정']).map(pt => {
+    const _T = window.SQ_TEAM_OF(s) || window.SQ_TEAMS.gym;
+    const lines = _T.opts.concat(['미정']).map(pt => {
       const names = inSlot.filter(u => (mem[u].part || '미정') === pt || (pt === '미정' && !mem[u].part))
         .map(u => window._sqRealName(mem[u]));
       if (pt === '미정' && !names.length) return '';
