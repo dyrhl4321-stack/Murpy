@@ -9346,7 +9346,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '588';
+window._SW_V = '589';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -17137,7 +17137,22 @@ window.mwWorldPanel = function (kind) {
   }
 };
 // ---------- 지도: 지금 운동 중인 머피들 (오늘 체크인 · 센터별) ----------
+// ★★캐릭터 설정이 비었거나 반쪽이면 기본 옷을 입혀서 돌려준다 (대표 8-14:
+//   "송윤석님 새로 입장하셨는데 왜 빡빡이 + 다 벗고 있냐").
+//   원인: 스쿼드 참가 시점에 getMyCharacter() 가 **아직 안 채워진 값**을 그대로 멤버 문서에
+//   박는다(_charState 하이드레이션 전이면 {} 나 null). 한 번 박히면 그 벙 내내 그 꼴이다.
+//   → 저장 쪽만 고치면 **이미 들어온 사람은 안 고쳐진다.** 표시 길목에서도 막는다.
+//   ★히든·헬토리(통짜 캐릭터)는 건드리면 안 된다 — _charEnsureDefaults 가 wearable 만 채운다.
+window._charSafe = function (cfg) {
+  if (!cfg || typeof cfg !== 'object' || !Object.keys(cfg).length) {
+    return Object.assign({}, window.CHAR_DEFAULT || {});
+  }
+  const c = Object.assign({}, cfg);
+  try { window._charEnsureDefaults && window._charEnsureDefaults(c); } catch (e) {}
+  return c;
+};
 window.mwMiniCharHtml = function (cfg, h, face) {
+  cfg = window._charSafe(cfg);
   h = h || 62;
   const w = Math.round(h * 141 / 224);
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg || window.CHAR_DEFAULT) : null;
@@ -21311,7 +21326,9 @@ window._sqRenderDetailInner = function () {
         <div onclick="${openMe}" style="flex-shrink:0;cursor:pointer;${wait?'opacity:.62':''}">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
         <div onclick="${openMe}" style="min-width:0;flex:1;cursor:pointer;${wait?'opacity:.62':''}">
           <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;color:#fff">
-            ${esc(window._sqShowName(m))} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
+            <!-- ★멤버 탭엔 닉네임만 (대표 8-14: "실명까지 뜨니 난잡하다").
+                 실명은 **톡 > 명단(부위 배정)** 에서만 괄호로 보이고, 고치는 것도 거기서 한다. -->
+            ${esc((m && m.nickname) || '익명')} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
             <!-- ★운영진도 **왕관**으로 표시한다 — 리더와 같은 자리, 같은 모양, 색만 다르다(대표 8-14).
                  리더 = 황금 왕관 / 운영진 = 핑크 왕관.
                  역할은 한눈에 읽히는 게 중요하고, 글자 배지보다 아이콘이 줄을 덜 잡아먹는다.
@@ -21431,7 +21448,8 @@ window.joinSquad = async function (sid) {
       if (instant) tx.update(sRef, { memberUids: [...(d.memberUids||[]), user.uid] });
       tx.set(doc(db,'squads',sid,'members',user.uid), {
         status: instant ? 'accepted' : 'invited', nickname: window._mwMyNick || '머피',
-        character: cfg, paid: false, joinedAt: serverTimestamp() });
+        // ★비었거나 반쪽인 채로 박지 않는다 — 한 번 박히면 그 벙 내내 빡빡이다(대표 8-14)
+        character: window._charSafe(cfg), paid: false, joinedAt: serverTimestamp() });
     });
     showToast('참가 완료!');
     return true;                          // 초대 수락 흐름이 성공 여부를 알아야 방으로 보낸다
