@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '575';
+window._SW_V = '576';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9410,11 +9410,22 @@ window._sqInviteSid = (function () {
 // ---------- Realtime Database (스쿼드 워킹 룸 위치 동기화 전용) ----------
 // 콘솔에서 RTDB를 asia-southeast1 리전으로 생성해야 함. 미생성/미연결이면 _SQUAD_RT_OFF=true → 룸은 정적 배치 폴백.
 window._SQUAD_RT_OFF = true;
+// ★연결 판정이 나기 전까지는 '꺼짐'이 아니라 '모름'이다 (대표 8-14).
+//   예전엔 시작값 true 를 그대로 믿고 정적 폴백이 **전원을 필드에 뿌렸다** —
+//   "가끔 전체 인원이 한꺼번에 필드에 있는 것처럼 뜬다"의 정체다.
+//   그 뒤 RTDB 가 붙어도 이미 놓인 캐릭터는 지워지지 않아 실시간이 반영이 안 됐다.
+window._rtProbeAt = Date.now();
 try {
   const rtdb = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
   window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove };
-  rtOnValue(rtRef(rtdb, '.info/connected'), s => { window._SQUAD_RT_OFF = !s.val(); });
-} catch (e) { console.warn('RTDB off', e); }
+  rtOnValue(rtRef(rtdb, '.info/connected'), s => {
+    const wasOff = window._SQUAD_RT_OFF;
+    window._SQUAD_RT_OFF = !s.val();
+    window._rtDecided = true;
+    // 폴백으로 뿌려둔 캐릭터를 걷어낸다 — 안 걷으면 실시간 인원 위에 유령이 겹친다
+    if (wasOff && !window._SQUAD_RT_OFF && window._sqClearStatic) window._sqClearStatic();
+  });
+} catch (e) { console.warn('RTDB off', e); window._rtDecided = true; }
 window.currentUser = null;
 const userPhotoCache = new Map(); // uid → photoURL, 로그아웃 시 clear
 
@@ -22295,8 +22306,26 @@ window._sqRoomInit = function (s) {
   // 구독보다 스테이지가 늦게 준비된 경우를 대비해 마지막 스냅샷으로 한 번 더 그린다
   if (window._sqRtLast) window._sqRenderRemotes(s.id, window._sqRtLast, me);
 };
+window._sqStaticPlaced = {};
+// 폴백으로 놓았던 캐릭터만 골라 치운다(실시간으로 들어온 사람은 건드리지 않는다)
+window._sqClearStatic = function () {
+  const placed = window._sqStaticPlaced || {};
+  Object.keys(placed).forEach(function (uid) {
+    const c = window._sqChars && window._sqChars[uid];
+    if (c && c.el) { try { c.el.remove(); } catch (e) {} }
+    if (window._sqChars) delete window._sqChars[uid];
+  });
+  window._sqStaticPlaced = {};
+};
 window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 멤버 정적 배치
   if (!window._SQUAD_RT_OFF) return;
+  // ★연결 판정이 아직 안 났으면 기다린다. 붙는 데 보통 1초 안쪽이고,
+  //   섣불리 뿌리면 전원이 필드에 서 있는 화면이 먼저 보인다.
+  if (!window._rtDecided && Date.now() - (window._rtProbeAt || 0) < 3000) {
+    clearTimeout(window._sqRoomSyncT);
+    window._sqRoomSyncT = setTimeout(function () { window._sqRoomSync(s, mem); }, 900);
+    return;
+  }
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
   const me = (auth.currentUser || {}).uid;
   const uids = Object.keys(mem || {}).filter(u => u !== me && mem[u].status !== 'left' && mem[u].status !== 'invited');
@@ -22304,7 +22333,7 @@ window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 �
   uids.forEach(uid => {
     const sp = spots[uid] || { x: 50, y: 70 };
     const c = window._sqCharEl(uid, mem[uid].nickname, mem[uid].character, 'down');
-    if (c && !c.placed) { c.placed = true; const B = window._sqWalkBox();
+    if (c && !c.placed) { c.placed = true; window._sqStaticPlaced[uid] = 1; const B = window._sqWalkBox();
       const q = window._sqAvoid(Math.max(B.x0, Math.min(B.x1, sp.x)), Math.max(B.y0, Math.min(B.y1, sp.y)), B);
       window._sqPlace(c, q.x, q.y, 0); }
   });
