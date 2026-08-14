@@ -9327,7 +9327,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '578';
+window._SW_V = '579';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -12508,7 +12508,18 @@ window.murpyGrantRun = async function () {
   if (!ok) return;
   let done = 0;
   await Promise.all(pick.map(async uid => {
-    try { await updateDoc(doc(db, 'users', uid), { credits: increment(amt) }); done++; } catch (e) { console.warn('grant', uid, e); }
+    try {
+      await updateDoc(doc(db, 'users', uid), { credits: increment(amt) });
+      // ★알림까지 보내야 받는 사람이 안다 (대표 8-14: "잔액만 올라가면 껐다 켜야 보인다").
+      //   notifications 는 실시간 구독(startNotifListener)이라 **그 자리에서 토스트가 뜬다.**
+      //   푸시는 서버(Functions)가 이 문서를 보고 쏜다 — 그쪽이 붙으면 잠금화면에도 뜬다.
+      await addDoc(collection(db, 'notifications'), {
+        toUid: uid, type: 'murpy_gift', amount: amt,
+        fromUid: (window.currentUser || {}).uid || '', fromNickname: '머피',
+        read: false, createdAt: serverTimestamp()
+      });
+      done++;
+    } catch (e) { console.warn('grant', uid, e); }
   }));
   showToast(done === pick.length ? `${done}명에게 ${amt} 머피 지급했어요` : `${done}/${pick.length}명만 지급됐어요`);
   document.getElementById('murpy-grant')?.remove();
@@ -13003,6 +13014,21 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'feed_like') showToast((n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast((n.fromNickname || '누군가') + '님이 댓글을 남겼어요');
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
+          else if (n.type === 'murpy_gift') {
+            // 축하 연출은 이미 있는 것을 쓴다(celebrateMurpy). 없으면 토스트로 떨어진다.
+            const amt = n.amount || 0;
+            const bal = ((window._creditState || {}).credits || 0) + amt;
+            if (window.celebrateMurpy) {
+              window.celebrateMurpy(bal, {
+                amount: amt,
+                title: '관리자가 ' + amt + ' 머피 선물을 보냈어요!'
+              });
+            } else showToast('관리자가 ' + amt + ' 머피 선물을 보냈어요!');
+            // 잔액을 그 자리에서 맞춘다 — 안 하면 껐다 켜야 숫자가 바뀐다
+            if (window._creditState) window._creditState.credits += amt;
+            if (window.renderCreditUI) window.renderCreditUI();
+            if (window.mwUpdateCoin) window.mwUpdateCoin();
+          }
           else if (n.type === 'chat') {
             const detailOpen = document.getElementById('chat-detail-panel')?.classList.contains('open');
             if (!(detailOpen && window._currentChatId === n.chatId)) {
@@ -15491,6 +15517,18 @@ window.loadNotificationsFirestore = async () => {
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님과 매칭됐어요! 같이 운동해봐요</div>
             <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'murpy_gift') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd">머피 <b style="color:#F5C24B">${Number(n.amount || 0).toLocaleString()}</b>이 선물로 도착했어요</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">관리자 선물</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;
