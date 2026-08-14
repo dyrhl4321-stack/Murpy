@@ -103,6 +103,18 @@ function compose(n) {
   }
 }
 
+// 알림 종류별로 눌렀을 때 열릴 주소. 앱(index.html)이 ?n= 을 읽어 화면을 고른다.
+function linkFor(n) {
+  const q = new URLSearchParams();
+  if (n.type) q.set("n", String(n.type));
+  if (n.fromUid) q.set("f", String(n.fromUid));
+  if (n.postId) q.set("p", String(n.postId));
+  const sid = n.squadId || n.crewId;
+  if (sid) q.set("sq", String(sid));
+  const qs = q.toString();
+  return "https://murpy.app/" + (qs ? "?" + qs : "");
+}
+
 exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) => {
   const n = event.data && event.data.data();
   if (!n || !n.toUid) return;
@@ -115,12 +127,13 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
 
   const message = {
     tokens,
-    // ★★data 만 보낸다 (대표 8-14: "푸시알람이 두 번씩 계속 뜸").
-    //   notification 필드를 같이 보내면 **브라우저가 스스로 하나를 띄우고**,
-    //   firebase-messaging-sw.js 의 onBackgroundMessage 가 또 하나를 띄워 두 번 떴다.
-    //   → 표시는 서비스워커 한 곳에서만 한다. 그래야 아이콘·클릭 이동까지 우리가 정한다.
-    // ★★postId·squadId 를 같이 실어 보낸다 — 눌렀을 때 **그 글/그 스쿼드**로 가야 한다
-    //   (대표 8-14: "푸시를 탭하면 항상 홈이다"). 서비스워커가 이 값으로 주소를 만든다.
+    // ★★data-only 로 보냈다가 **알림이 아예 안 떴다**(대표 8-14: "푸시알람 왜 갑자기 안 뜨냐").
+    //   표시를 서비스워커에 맡기려 했는데, 폰에 아직 옛 서비스워커가 남아 있거나
+    //   data-only 를 안 그려주는 브라우저가 있으면 **하나도 안 뜬다.**
+    //   안 뜨는 것은 두 번 뜨는 것보다 훨씬 나쁘다 — 되돌린다.
+    //   → notification 을 다시 보내 **브라우저가 확실히 하나 띄우게** 하고,
+    //     중복은 서비스워커 쪽 가드(payload.notification 이 있으면 안 띄움)로 막는다.
+    // ★★postId·squadId 도 같이 실어 보낸다 — 앱이 켜져 있을 때 쓰고, 이동은 아래 link 가 한다.
     data: {
       type: String(n.type || ""),
       fromNickname: String(n.fromNickname || ""),
@@ -131,13 +144,30 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
       title,
       body,
     },
+    notification: { title, body },
     webpush: {
       headers: { Urgency: "high" },
-      fcmOptions: { link: "https://murpy.app/" },
+      notification: {
+        // ★버전을 붙인다 — 안 붙이면 FCM·브라우저가 **글씨 있던 옛 로고**를 계속 쓴다
+        //   (대표 8-14: "푸시 로고도 murpy 글씨 제거된 앱아이콘 버전으로").
+        //   icon = 알림에 크게 뜨는 그림 / badge = 상태표시줄의 작은 실루엣. 아이콘 고치면 이 숫자도 올릴 것.
+        icon: "https://murpy.app/icon-192.png?v=595",
+        badge: "https://murpy.app/badge-72.png?v=595",
+        tag: String(n.type || "murpy"),
+        renotify: true,
+      },
+      // ★★푸시를 누르면 **그 알림이 가리키는 곳**으로 (대표 8-14: "탭하면 항상 홈이다").
+      //   예전엔 전부 murpy.app/ 였다. 앱이 ?n=<종류> 를 읽어 해당 화면으로 보낸다.
+      fcmOptions: { link: linkFor(n) },
     },
   };
 
   const res = await getMessaging().sendEachForMulticast(message);
+  // ★결과를 남긴다 — 8-14에 "알림이 안 뜬다"를 진단할 때 로그가 비어서 추측만 했다.
+  console.log(`push type=${n.type} to=${n.toUid} tokens=${tokens.length} ok=${res.successCount} fail=${res.failureCount}`);
+  res.responses.forEach((r, i) => {
+    if (!r.success) console.warn(`  실패 ${i}: ${r.error && r.error.code} ${r.error && r.error.message}`);
+  });
 
   // 만료/무효 토큰 정리
   const invalid = [];

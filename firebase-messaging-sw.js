@@ -25,8 +25,8 @@ messaging.onBackgroundMessage(payload => {
     body: n.body || '',
     // ★icon = 알림에 크게 뜨는 그림. badge = 상태표시줄의 작은 흑백 실루엣.
     //   둘 다 icon-192 를 쓰면 상태표시줄에 큰 로고가 우겨넣어져 뭉개진다(대표 8-14: "로고가 너무 크다").
-    icon: './icon-192.png',
-    badge: './badge-72.png',
+    icon: './icon-192.png?v=595',
+    badge: './badge-72.png?v=595',
     data: n,
     tag: n.type || 'murpy',
     renotify: true
@@ -50,6 +50,10 @@ function routeUrl(d) {
 }
 
 self.addEventListener('notificationclick', e => {
+  // ★FCM 이 스스로 띄운 알림(data 에 FCM_MSG 가 들어 있다)은 **클릭 처리도 FCM 이 한다**
+  //   (서버의 fcmOptions.link 로 열어준다). 여기서 또 열면 창이 두 개 뜬다. 손대지 않는다.
+  const _d = e.notification.data || {};
+  if (_d.FCM_MSG) return;
   e.notification.close();
   const url = routeUrl(e.notification.data);
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
