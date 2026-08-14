@@ -9346,7 +9346,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '586';
+window._SW_V = '587';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20991,6 +20991,18 @@ window._sqKbFix = function () {
 };
 // 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 한 번만 재면 0 이 나온다.
 // 기기마다 애니메이션 길이가 달라서 여러 번 다시 잰다(비용은 rect 읽기 몇 번뿐).
+// ★★진짜 원인 (대표 8-14 직접 찾음: "오늘 운동부위 명단을 끄면 채팅창이 올라온다").
+//   #sq-talk 은 세로 flex 인데 공지·부위 보드·입력줄이 전부 flex-shrink:0 이다.
+//   키보드가 올라와 높이가 줄면 줄어들 수 있는 건 채팅 목록(flex:1)뿐인데,
+//   그게 0 이 돼도 모자라면 **맨 아래 입력줄이 화면 밖으로 밀려난다.**
+//   부위 보드가 커질수록 심해진다 → 화면 짧은 폰에서 먼저 터진다. 뷰포트 계산 문제가 아니었다.
+//   → 입력하는 동안만 공지·부위 보드를 접는다. 어차피 칠 땐 안 본다.
+window._sqKbCompact = function (on) {
+  ['sq-notice-box', 'sq-part-board'].forEach(function (id) {
+    const b = document.getElementById(id); if (!b) return;
+    b.style.display = on ? 'none' : '';
+  });
+};
 window._sqKbWatch = function () {
   [0, 120, 260, 420, 650, 900].forEach(function (t) { setTimeout(window._sqKbFix, t); });
 };
@@ -22250,8 +22262,10 @@ window._sqTalkOpen = function () {
   // ★키보드 실측 보정을 붙인다 (위 _sqKbFix 설명 참조)
   const _ci = document.getElementById('sq-chat-input');
   if (_ci) {
-    _ci.addEventListener('focus', window._sqKbWatch);
-    _ci.addEventListener('blur', function () { setTimeout(window._sqKbReset, 60); });
+    _ci.addEventListener('focus', function () { window._sqKbCompact(true); window._sqKbWatch(); });
+    _ci.addEventListener('blur', function () {
+      setTimeout(function () { window._sqKbCompact(false); window._sqKbReset(); }, 60);
+    });
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', window._sqKbFix);
