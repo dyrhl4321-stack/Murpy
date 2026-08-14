@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '572';
+window._SW_V = '573';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20840,7 +20840,7 @@ window._sqClose = function () {
   // 닫은 뒤 남은 게 있으면 여기서도 훑는다(_sqCurId 가 이미 null 이라 판정이 선다)
   try { window._sweepStuck && window._sweepStuck('_sqClose'); } catch (e) {}
 };
-window.openSquadDetail = function (sid) {
+window.openSquadDetail = function (sid, preview) {
   window._sqClose();
   window._sqCurId = sid;
   let el = document.createElement('div'); el.id = 'sq-detail';
@@ -20861,6 +20861,9 @@ window.openSquadDetail = function (sid) {
     </div>`;
   document.body.appendChild(el);
   window._sqVVOn();          // 키보드가 올라와도 필드가 안 밀리게(아래 설명)
+  // ★가이드 캡처용 — 구독 없이 미리 넣어둔 데이터로 **진짜 화면**을 그대로 그린다.
+  //   (bumpPreview·sqSheetPreview 와 같은 취지: 새로 그리지 않고 실제 렌더를 부른다)
+  if (preview) { window._sqRenderDetail && window._sqRenderDetail(); return; }
   window._sqDoc = null; window._sqMembers = {}; window._sqHostStats = null;
   window._sqDocUnsub = onSnapshot(doc(db,'squads',sid), s => {
     if (!s.exists()) { showToast('삭제된 스쿼드예요'); window._sqClose(); return; }
@@ -21641,7 +21644,12 @@ window.sqSheetPreview = function (kind) {
   const M = mk('남성'), F = mk('여성');
   window._sqPreviewMe = 'host';
   window._sqCurId = 'preview';
-  window._sqDoc = { id: 'preview', hostUid: 'host', capacity: 25, feeAmount: 10000 };
+  const _at = new Date(); _at.setHours(19, 0, 0, 0);
+  window._sqDoc = { id: 'preview', hostUid: 'host', capacity: 25, feeAmount: 10000,
+    title: '근방단 8월 정모', location: '바이젝 휘트니스 역삼', exerciseType: 'gym',
+    scheduledAt: _at.getTime(), expiresAt: _at.getTime() + 3 * 3600 * 1000,
+    status: 'recruiting', joinMode: 'approval',
+    memberUids: ['host', 'u1', 'u2', 'u3', 'u4', 'u5'] };
   window._sqMembers = {
     host:  { nickname: '패수현', character: M, status: 'accepted', part: '등',  paid: true, after: true },
     u1:    { nickname: '박진한', character: M, status: 'accepted', part: '등',  paid: true },
@@ -21650,6 +21658,8 @@ window.sqSheetPreview = function (kind) {
     u4:    { nickname: '김준성', character: M, status: 'accepted', part: '하체', paid: false },
     u5:    { nickname: '신동혁', character: M, status: 'accepted', part: '',    paid: true }
   };
+  if (kind === 'detail') { window.openSquadDetail('preview', true); return; }
+  if (kind === 'detail-joined') { window._sqPreviewMe = 'u1'; window.openSquadDetail('preview', true); return; }
   if (kind === 'paid') window.sqPaidPicker('preview');
   else if (kind === 'list') window.sqPartList('preview');
   else if (kind === 'staff') window.sqStaffPicker('preview');
@@ -21722,9 +21732,13 @@ window.sqPaidPicker = function (sid) {
   if (!s) return;
   const isHost = !!(me && me === s.hostUid);
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // ★벙주 → 운영진 → 나머지 순 (대표 8-14). 돈 얘기는 **책임 순서대로** 읽히는 게 맞다.
+  //   낸 사람을 위로 올리면 매번 순서가 바뀌어 누가 어디 있었는지 못 찾는다.
+  const _rank = u => (u === s.hostUid ? 0 : (mem[u].staff ? 1 : 2));
   const list = Object.keys(mem)
     .filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited')
-    .sort((a, b) => (mem[b].paid ? 1 : 0) - (mem[a].paid ? 1 : 0));   // 낸 사람이 위로
+    .sort((a, b) => _rank(a) - _rank(b)
+      || String(mem[a].nickname || '').localeCompare(String(mem[b].nickname || ''), 'ko'));
   if (!list.length) { showToast('아직 멤버가 없어요'); return; }
   const paid = list.filter(u => mem[u].paid).length;
   let el = document.getElementById('sq-paid'); if (el) el.remove();
