@@ -23,8 +23,10 @@ messaging.onBackgroundMessage(payload => {
   const n = (payload && payload.data) || {};
   self.registration.showNotification(n.title || '머피', {
     body: n.body || '',
+    // ★icon = 알림에 크게 뜨는 그림. badge = 상태표시줄의 작은 흑백 실루엣.
+    //   둘 다 icon-192 를 쓰면 상태표시줄에 큰 로고가 우겨넣어져 뭉개진다(대표 8-14: "로고가 너무 크다").
     icon: './icon-192.png',
-    badge: './icon-192.png',
+    badge: './badge-72.png',
     data: n,
     tag: n.type || 'murpy',
     renotify: true
