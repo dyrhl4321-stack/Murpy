@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '570';
+window._SW_V = '571';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21063,7 +21063,7 @@ window._sqRenderDetailInner = function () {
         <div onclick="${openMe}" style="flex-shrink:0;cursor:pointer;${wait?'opacity:.62':''}">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 40) : ''}</div>
         <div onclick="${openMe}" style="min-width:0;flex:1;cursor:pointer;${wait?'opacity:.62':''}">
           <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;color:#fff">
-            ${esc(m.nickname)} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
+            ${esc(window._sqShowName(m))} ${uid===s.hostUid?crown:''} ${window._sqHostBadge ? window._sqHostBadge(uid) : ''}
             <!-- ★운영진도 **왕관**으로 표시한다 — 리더와 같은 자리, 같은 모양, 색만 다르다(대표 8-14).
                  리더 = 황금 왕관 / 운영진 = 핑크 왕관.
                  역할은 한눈에 읽히는 게 중요하고, 글자 배지보다 아이콘이 줄을 덜 잡아먹는다.
@@ -21409,7 +21409,7 @@ window._sqPartBoardHtml = function (s, mem) {
   const joined = !!(me && mem[me] && mem[me].status !== 'left' && mem[me].status !== 'invited');
   const mine = (mem[me] || {}).part || '';
   const rows = window.SQ_PARTS.map(function (pt) {
-    const names = live.filter(u => (mem[u].part || '') === pt).map(u => mem[u].nickname || '익명');
+    const names = live.filter(u => (mem[u].part || '') === pt).map(u => window._sqRealName(mem[u]));
     const on = mine === pt;
     return `<div ${joined ? `onclick="window.sqPartTap('${s.id}','${pt}')"` : ''}
       style="display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border-radius:10px;${joined ? 'cursor:pointer;' : ''}${on ? 'border:1px solid rgba(61,126,255,.5)' : 'border:1px solid transparent'}">
@@ -21418,7 +21418,7 @@ window._sqPartBoardHtml = function (s, mem) {
       <div style="flex:0 0 auto;font-size:11px;font-weight:700;color:rgba(255,255,255,.3)">${names.length || ''}</div>
     </div>`;
   }).join('');
-  const after = live.filter(u => mem[u].after).map(u => mem[u].nickname || '익명');
+  const after = live.filter(u => window._sqRealName && mem[u].after).map(u => window._sqRealName(mem[u]));
   const iAfter = !!(mem[me] || {}).after;
   return `
     <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
@@ -21470,26 +21470,30 @@ window._sqChatPaintBoard = function () {
 // ★부위 수동 배정 (벙주·운영진) — 대표 8-14:
 //   "오늘 운동 부위는 사실 운영진이 거의 조정해야 하니 참가자별로 수동 설정도 가능해야 한다."
 //   한 화면에서 사람마다 부위 칩을 눌러 바로 바꾼다. 저장은 그 즉시(닫기를 안 눌러도 된다).
-// ★멤버 닉네임 고치기 (벙주·운영진) — 대표 8-14:
-//   "공지를 안 읽고 아무 이름이나 적고 들어온 사람은 운영진이 닉네임 바꿀 수 있어야 한다."
-//   ★고치는 건 **이 스쿼드의 멤버 문서**다. 그 사람 계정 이름(users)은 건드리지 않는다 —
-//     남의 계정을 고칠 권한은 없고, 출석부가 쓰는 것도 이 멤버 문서 쪽이다.
+// ★실명 메모 (벙주·운영진) — 대표 8-14 확정: "덧붙이는 느낌으로 가자".
+//   본인이 적은 닉네임을 **덮어쓰지 않는다.** alias 를 따로 두고 옆에 괄호로 붙인다.
+//     화면  : ㅋㅋㅋ (박진한)
+//     명단  : 박진한   ← 출석부·복사에는 실명이 나간다
+//   덮어쓰면 본인 화면의 이름도 바뀌어 "왜 내 이름이 바뀌었지"가 된다. 덧붙이면 되돌리기도 쉽다
+//   (메모를 비우면 원래대로). 그 사람 계정 이름(users)은 어느 쪽이든 건드리지 않는다.
 window.sqRenameMember = function (sid, uid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
   const me = (auth.currentUser || {}).uid;
   if (!s || !me || !mem[uid]) return;
   if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 고칠 수 있어요'); return; }
-  const cur = mem[uid].nickname || '';
+  const cur = mem[uid].alias || '';
   let el = document.getElementById('sq-rename'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-rename';
   el.style.cssText = 'position:fixed;inset:0;z-index:40027;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
   el.onclick = ev => { if (ev.target === el) el.remove(); };
   el.innerHTML = `
     <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px">
-      <div style="font-size:16.5px;font-weight:800;letter-spacing:-0.4px">이름 고치기</div>
+      <div style="font-size:16.5px;font-weight:800;letter-spacing:-0.4px">실명 메모</div>
       <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px;line-height:1.6">
-        출석부에 올라가는 이름이에요<br>모임에서 부르는 이름으로 바꿔주세요</div>
-      <input id="sq-rename-in" maxlength="12" value="${String(cur).replace(/"/g, '&quot;')}" autocomplete="off"
+        본인이 적은 이름은 <b style="color:#cfd6e6">그대로 둡니다</b><br>
+        옆에 괄호로 붙고, <b style="color:#cfd6e6">출석부·명단에는 이 이름</b>이 나가요<br>
+        비우면 메모가 지워집니다</div>
+      <input id="sq-rename-in" maxlength="12" placeholder="예) 박진한" value="${String(cur).replace(/"/g, '&quot;')}" autocomplete="off"
         style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:13px;color:#fff;font-size:16px;text-align:center;outline:none;font-family:inherit;margin-top:16px">
       <div style="display:flex;gap:8px;margin-top:14px">
         <button onclick="document.getElementById('sq-rename').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">취소</button>
@@ -21502,19 +21506,25 @@ window.sqRenameMember = function (sid, uid) {
 window.sqRenameSave = async function (sid, uid) {
   const t = document.getElementById('sq-rename-in');
   const v = ((t && t.value) || '').trim().slice(0, 12);
-  if (v.length < 2) { showToast('이름은 2자 이상이에요'); return; }
+  if (v && v.length < 2) { showToast('이름은 2자 이상이에요'); return; }   // 비우면 메모 삭제
   const mem = window._sqMembers || {};
-  const prev = (mem[uid] || {}).nickname;
+  const prev = (mem[uid] || {}).alias || '';
   document.getElementById('sq-rename')?.remove();
-  if (mem[uid]) mem[uid].nickname = v;
+  if (mem[uid]) mem[uid].alias = v;
   window._sqRenderDetail && window._sqRenderDetail();
-  try { await updateDoc(doc(db, 'squads', sid, 'members', uid), { nickname: v }); showToast('이름을 바꿨어요'); }
-  catch (e) {
-    if (mem[uid]) mem[uid].nickname = prev;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try {
+    await updateDoc(doc(db, 'squads', sid, 'members', uid), { alias: v });
+    showToast(v ? '실명을 붙였어요' : '메모를 지웠어요');
+  } catch (e) {
+    if (mem[uid]) mem[uid].alias = prev;
     window._sqRenderDetail && window._sqRenderDetail();
     showToast('바꾸지 못했어요');
   }
 };
+// 화면용 = 원본 + (실명) / 명단용 = 실명 우선. 출석부에 나가는 건 실명이어야 한다.
+window._sqShowName = function (m) { return (m && m.alias) ? (m.nickname || '익명') + ' (' + m.alias + ')' : (m && m.nickname) || '익명'; };
+window._sqRealName = function (m) { return (m && (m.alias || m.nickname)) || '익명'; };
 
 window.sqPartAssign = function (sid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
@@ -21551,11 +21561,11 @@ window._sqAssignRow = function (uid, m) {
   return `<div data-arow="${uid}" style="padding:10px 2px;border-bottom:1px solid rgba(255,255,255,.05)">
     <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
       <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>
-      <div style="flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
+      <div style="flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqShowName(m))}</div>
       ${m.after ? '<span style="flex-shrink:0;font-size:10.5px;font-weight:700;color:#F5C24B">뒷풀이</span>' : ''}
       <!-- 아무 이름이나 적고 들어온 사람을 여기서 바로 고친다(대표 8-14) -->
-      <button onclick="window.sqRenameMember('${window._sqCurId}','${uid}')" aria-label="이름 고치기"
-        style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.5);border-radius:8px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">이름</button>
+      <button onclick="window.sqRenameMember('${window._sqCurId}','${uid}')" aria-label="실명 메모"
+        style="flex-shrink:0;background:none;border:1px solid ${m.alias ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)'};color:${m.alias ? '#F5C24B' : 'rgba(255,255,255,.5)'};border-radius:8px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">실명</button>
     </div>
     <div style="display:flex;gap:5px">${chips}</div>
   </div>`;
@@ -21621,7 +21631,7 @@ window.sqPartList = function (sid) {
     text += title + '\n';
     const lines = window.SQ_PARTS.concat(['미정']).map(pt => {
       const names = inSlot.filter(u => (mem[u].part || '미정') === pt || (pt === '미정' && !mem[u].part))
-        .map(u => mem[u].nickname || '익명');
+        .map(u => window._sqRealName(mem[u]));
       if (pt === '미정' && !names.length) return '';
       text += pt + ' : ' + names.join(', ') + '\n';
       return `<div style="font-size:13.5px;color:#c6cddb;line-height:1.9"><b style="color:#7aa8ff">${pt}</b> : ${esc(names.join(', '))}</div>`;
@@ -21629,7 +21639,7 @@ window.sqPartList = function (sid) {
     text += '\n';
     return `<div style="margin-bottom:16px"><div style="font-size:13px;font-weight:800;margin-bottom:5px">${esc(title)}</div>${lines}</div>`;
   }).join('');
-  const after = live.filter(u => mem[u].after).map(u => mem[u].nickname || '익명');
+  const after = live.filter(u => mem[u].after).map(u => window._sqRealName(mem[u]));
   if (after.length) text += '뒷풀이 : ' + after.join(', ') + '\n';
   window._sqPartText = text.trim();
   let el = document.getElementById('sq-partlist'); if (el) el.remove();
@@ -21691,7 +21701,7 @@ window.sqPaidPicker = function (sid) {
           const m = mem[u];
           return `<div ${isHost ? `onclick="window.sqPaidToggleIn('${sid}','${u}')"` : ''} data-paid="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;${isHost ? 'cursor:pointer' : ''}">
             <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 36) : ''}</div>
-            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">벙주</span>' : ''}</div>
+            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqShowName(m))}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">벙주</span>' : ''}</div>
             <span class="sq-paid-chip" style="flex-shrink:0;background:none;border:1px solid ${m.paid ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)'};color:${m.paid ? '#F5C24B' : 'rgba(255,255,255,.45)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700">${m.paid ? '입금 ✓' : '미입금'}</span>
           </div>`;
         }).join('')}
