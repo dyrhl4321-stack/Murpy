@@ -9327,7 +9327,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '580';
+window._SW_V = '581';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21316,6 +21316,7 @@ window._sqRenderDetailInner = function () {
   }
   window._sqQuickBar && window._sqQuickBar(s);   // 필드 밑 입력줄(참가 여부가 바뀌면 생기거나 사라진다)
   window._sqRoomSync && window._sqRoomSync(s, mem);   // 정적 폴백 갱신용 훅
+  window._sqRoomNotice && window._sqRoomNotice(s);   // 필드 위 고정 공지(비로그인도 보인다)
   // 문서가 갱신될 때마다 내 위치를 다시 올린다 — 참가 직후 memberUids가 채워지는 순간
   // 곧바로 남들 화면에 내가 뜬다(종전에는 나갔다 들어와야 보였다)
   window._sqRtSend && window._sqRtSend();
@@ -22075,7 +22076,16 @@ window._sqChatStop = function () {
 window._sqChatStart = function (sid) {
   window._sqChatStop();
   window._sqChatSid = sid; window._sqChatMsgs = [];
-  const q1 = query(collection(db,'squads',sid,'chat'), orderBy('at','desc'), limit(60));
+  // ★참가자가 아니면 **과거 로그를 안 받는다** — 딱 1건만 구독해서 새 말풍선만 뜨게 한다.
+  //   톡 방(전체 로그)은 UI 에서 참가자만 들어갈 수 있고, 여기서도 데이터를 안 끌어온다.
+  //   콜드유저에게 보이는 건 '지금 누가 뭐라고 했다' 한 줄이 잠깐 뜨는 것뿐이다(대표 8-14).
+  const _me = (auth.currentUser || {}).uid;
+  const _sd = window._sqDoc || {};
+  const _isMem = !!(_me && (_sd.memberUids || []).includes(_me));
+  //   ★1건만 받으면 여러 명이 동시에 떠들 때 마지막 하나만 보인다 — '왁자지껄'이 안 된다.
+  //     8건이면 겹쳐 들어와도 다 말풍선이 뜬다. 첫 스냅샷은 어차피 말풍선을 안 띄우므로(_sqChatReady)
+  //     **과거 대화가 화면에 나타나지는 않는다.**
+  const q1 = query(collection(db,'squads',sid,'chat'), orderBy('at','desc'), limit(_isMem ? 60 : 8));
   window._sqChatUnsub = onSnapshot(q1, qs => {
     // 새 메시지 → 워킹 룸 캐릭터 말풍선 (첫 스냅샷은 과거 로그라 스킵)
     if (window._sqChatReady) {
@@ -22510,6 +22520,26 @@ window._sqClearStatic = function () {
     if (window._sqChars) delete window._sqChars[uid];
   });
   window._sqStaticPlaced = {};
+};
+// ★필드 위 '리더의 고정 한마디' (대표 8-14 확정: 톡 전체가 아니라 **공지만** 공개).
+//   공지는 스쿼드 문서에 있고 그 문서는 이미 공개 읽기라 **비로그인도 보인다** — 규칙 변경이 없다.
+//   콜드유저가 필드에 사람들이 걸어다니는 걸 보면서 리더가 걸어둔 말을 같이 읽게 하는 게 목적이다.
+window._sqRoomNotice = function (s) {
+  const stage = document.getElementById('sq-room-stage'); if (!stage) return;
+  const txt = String((s && s.notice) || '').trim();
+  let el = document.getElementById('sq-room-notice');
+  if (!txt) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sq-room-notice';
+    // 필드 안내 문구(sq-room-hint)와 **같은 언어** — 그림 위에 얹히는 글은 이 상자를 쓴다
+    el.style.cssText = 'position:absolute;left:8px;right:8px;top:7px;z-index:8;pointer-events:none;'
+      + 'background:rgba(5,7,12,.62);color:#fff;border-left:3px solid #F5C24B;'
+      + "font-family:'Galmuri11',sans-serif;font-size:11px;line-height:1.55;padding:6px 9px;"
+      + 'white-space:pre-wrap;word-break:break-word;max-height:38%;overflow:hidden';
+    stage.appendChild(el);
+  }
+  el.textContent = txt;
 };
 window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 멤버 정적 배치
   if (!window._SQUAD_RT_OFF) return;
