@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '569';
+window._SW_V = '570';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -14278,7 +14278,13 @@ window.guestAskNick = async function () {
       <div style="font-size:12.5px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:18px">
         오늘은 <b style="color:#cfd6e6">이름만</b> 정하면 바로 시작해요<br>가입은 나중에 하셔도 돼요</div>
       <input id="guest-nick-in" maxlength="12" placeholder="닉네임" autocomplete="off"
-        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#fff;font-size:15px;text-align:center;outline:none;font-family:inherit;margin-bottom:10px">
+        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:14px;color:#fff;font-size:15px;text-align:center;outline:none;font-family:inherit;margin-bottom:8px">
+      <!-- ★공지를 안 읽고 아무 이름이나 적고 들어오는 걸 막는다(대표 8-14).
+           ★모임 이름을 박지 않는다 — 이 화면은 앞으로 어느 모임이든 보게 된다.
+             '모임에서 부르는 이름'이면 어디서나 맞는 말이고 뜻은 그대로 전달된다. -->
+      <div style="font-size:11.5px;color:rgba(255,255,255,.45);line-height:1.55;margin-bottom:10px">
+        <b style="color:#F5C24B">모임에서 부르는 이름</b>으로 적어주세요<br>
+        벙주가 출석부에서 누구인지 알아볼 수 있어야 해요</div>
       <!-- ★캐릭터 몸통은 성별로 정해진다. 안 물으면 전원 남캐로 시작한다(여자 게스트는 남캐로 굳는다).
            탭 한 번이라 이탈이 늘지 않고, 정식 가입자와 같은 규칙이 된다. -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -21464,6 +21470,52 @@ window._sqChatPaintBoard = function () {
 // ★부위 수동 배정 (벙주·운영진) — 대표 8-14:
 //   "오늘 운동 부위는 사실 운영진이 거의 조정해야 하니 참가자별로 수동 설정도 가능해야 한다."
 //   한 화면에서 사람마다 부위 칩을 눌러 바로 바꾼다. 저장은 그 즉시(닫기를 안 눌러도 된다).
+// ★멤버 닉네임 고치기 (벙주·운영진) — 대표 8-14:
+//   "공지를 안 읽고 아무 이름이나 적고 들어온 사람은 운영진이 닉네임 바꿀 수 있어야 한다."
+//   ★고치는 건 **이 스쿼드의 멤버 문서**다. 그 사람 계정 이름(users)은 건드리지 않는다 —
+//     남의 계정을 고칠 권한은 없고, 출석부가 쓰는 것도 이 멤버 문서 쪽이다.
+window.sqRenameMember = function (sid, uid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const me = (auth.currentUser || {}).uid;
+  if (!s || !me || !mem[uid]) return;
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 고칠 수 있어요'); return; }
+  const cur = mem[uid].nickname || '';
+  let el = document.getElementById('sq-rename'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-rename';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40027;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:330px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px">
+      <div style="font-size:16.5px;font-weight:800;letter-spacing:-0.4px">이름 고치기</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px;line-height:1.6">
+        출석부에 올라가는 이름이에요<br>모임에서 부르는 이름으로 바꿔주세요</div>
+      <input id="sq-rename-in" maxlength="12" value="${String(cur).replace(/"/g, '&quot;')}" autocomplete="off"
+        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:13px;color:#fff;font-size:16px;text-align:center;outline:none;font-family:inherit;margin-top:16px">
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button onclick="document.getElementById('sq-rename').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">취소</button>
+        <button onclick="window.sqRenameSave('${sid}','${uid}')" style="flex:1.3;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => { const i = document.getElementById('sq-rename-in'); if (i) { i.focus(); i.select(); } }, 120);
+};
+window.sqRenameSave = async function (sid, uid) {
+  const t = document.getElementById('sq-rename-in');
+  const v = ((t && t.value) || '').trim().slice(0, 12);
+  if (v.length < 2) { showToast('이름은 2자 이상이에요'); return; }
+  const mem = window._sqMembers || {};
+  const prev = (mem[uid] || {}).nickname;
+  document.getElementById('sq-rename')?.remove();
+  if (mem[uid]) mem[uid].nickname = v;
+  window._sqRenderDetail && window._sqRenderDetail();
+  try { await updateDoc(doc(db, 'squads', sid, 'members', uid), { nickname: v }); showToast('이름을 바꿨어요'); }
+  catch (e) {
+    if (mem[uid]) mem[uid].nickname = prev;
+    window._sqRenderDetail && window._sqRenderDetail();
+    showToast('바꾸지 못했어요');
+  }
+};
+
 window.sqPartAssign = function (sid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
   // _sqPreviewMe = 가이드 캡처용(로그인 없이 실제 시트를 그대로 띄운다). 평소엔 undefined 다.
@@ -21501,6 +21553,9 @@ window._sqAssignRow = function (uid, m) {
       <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>
       <div style="flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
       ${m.after ? '<span style="flex-shrink:0;font-size:10.5px;font-weight:700;color:#F5C24B">뒷풀이</span>' : ''}
+      <!-- 아무 이름이나 적고 들어온 사람을 여기서 바로 고친다(대표 8-14) -->
+      <button onclick="window.sqRenameMember('${window._sqCurId}','${uid}')" aria-label="이름 고치기"
+        style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.5);border-radius:8px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">이름</button>
     </div>
     <div style="display:flex;gap:5px">${chips}</div>
   </div>`;
