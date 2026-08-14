@@ -4222,6 +4222,9 @@ window.MW_DEV_ALWAYS = false;
 //   (상수로 미리 굳히면 항상 false 가 된다).
 window._mwAlwaysFx = function () {
   if (window.MW_DEV_ALWAYS) return true;
+  // ★관리자도 **끌 수 있어야 한다** (대표 8-14). 예전엔 isAdmin 이면 무조건 true 라
+  //   대표가 꺼도 입장 연출이 매번 떴다 — 테스트용으로 켜둔 게 본인에게만 안 꺼진 셈이다.
+  try { if (localStorage.getItem('mw_intro_off') === '1') return false; } catch (e) {}
   try { return (typeof isAdmin === 'function') && !!isAdmin(); } catch (e) { return false; }
 };
 window._mwIntroOff = function () {
@@ -4236,12 +4239,23 @@ window._mwFxRestoreSync = function () {
   try {
     off = localStorage.getItem('mw_intro_off') === '1' || localStorage.getItem('mw_portal_off') === '1';
   } catch (e) {}
-  b.style.display = off ? 'flex' : 'none';
+  // ★관리자에게는 **끄기도** 보인다(대표 8-14) — 켜져 있을 때 끌 방법이 마이페이지에 없었다.
+  //   일반 사용자는 연출 안에서 '다시 보지 않기'로 끄므로, 여기엔 켜기만 보이면 된다.
+  let adm = false;
+  try { adm = (typeof isAdmin === 'function') && !!isAdmin(); } catch (e) {}
+  b.style.display = (off || adm) ? 'flex' : 'none';
+  const lbl = b.lastChild;
+  if (lbl && lbl.nodeType === 3) lbl.textContent = off ? ' 머피월드 입장 연출 다시 켜기' : ' 머피월드 입장 연출 끄기';
 };
 window._mwFxRestore = function () {
-  try { localStorage.removeItem('mw_intro_off'); localStorage.removeItem('mw_portal_off'); } catch (e) {}
+  let off = false;
+  try { off = localStorage.getItem('mw_intro_off') === '1' || localStorage.getItem('mw_portal_off') === '1'; } catch (e) {}
+  try {
+    if (off) { localStorage.removeItem('mw_intro_off'); localStorage.removeItem('mw_portal_off'); }
+    else { localStorage.setItem('mw_intro_off', '1'); localStorage.setItem('mw_portal_off', '1'); }
+  } catch (e) {}
   window._mwFxRestoreSync();
-  if (window.showToast) showToast('머피월드 입장 연출을 다시 켰어요');
+  if (window.showToast) showToast(off ? '머피월드 입장 연출을 다시 켰어요' : '머피월드 입장 연출을 껐어요');
 };
 window.mwEnterFx = function () {
   const always = window._mwAlwaysFx();
@@ -9327,7 +9341,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '581';
+window._SW_V = '582';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -17740,7 +17754,7 @@ window.mwVisitRoom = async function (uid) {
              가운데 정렬된 가로줄이 두 개 쌓였다(대표 지적 2026-08-05). 여기로 내리면 밑이 한 줄로
              정리되고, 문구가 가리키는 대상(캐릭터) 바로 옆에 붙어 뭘 누르라는 건지도 바로 읽힌다.
              pointer-events:none — 이 칩이 캐릭터 탭을 가로채면 안 된다. -->
-        <div id="mw-rm-hint" style="position:absolute;left:50%;bottom:7px;transform:translateX(-50%);z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:4px 10px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#8a93a8;white-space:nowrap;pointer-events:none">캐릭터를 눌러보세요</div>
+        <div id="mw-rm-hint" style="position:absolute;left:50%;bottom:7px;transform:translateX(-50%);z-index:400;background:rgba(5,7,12,.78);border:2px solid #05070c;padding:4px 10px;font-family:'Galmuri11',sans-serif;font-size:10.5px;color:#cfd6e6;white-space:nowrap;pointer-events:none">캐릭터를 눌러보세요</div>
       </div>
       <!-- 실명 연결·스쿼드 초대는 **캐릭터를 눌러야** 나온다(링 메뉴). 여기 버튼을 따로 두면
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
@@ -17779,13 +17793,12 @@ window.mwVisitRoom = async function (uid) {
     vstage.insertAdjacentHTML('beforeend',
       `<div id="mw-vroom-owner"${_mine ? '' : ` onclick="window.mwOtherMenu('${uid}','${_nickJs}',event)"`}
         style="position:absolute;left:${((rp.tc+0.5)/N*100).toFixed(2)}%;top:${((rp.tr+1)/N*100).toFixed(2)}%;transform:translate(-50%,-100%);z-index:${10+rp.tr*10+5};display:flex;flex-direction:column;align-items:center;${_mine ? '' : 'cursor:pointer'}">${vBubble}${vTitleHtml}${window.mwMiniCharHtml(p.character, hpx, rp.face)}${vNick}</div>`);
-    // 힌트 칩은 방 안 하단 중앙에 있다. 방 주인이 아래쪽에 서 있으면 발밑 닉네임과 겹치므로
-    // 그럴 때만 우상단으로 피한다(좌상단은 TODAY 가 쓰고 있다).
+    // ★힌트는 **항상 하단 중앙**이다 (대표 8-14: "누구 폰에는 우측 상단에 뜬다 · 하단으로 통일").
+    //   원인은 폰이 아니라 **방 주인이 방 어디에 서 있느냐**였다 — 아래쪽(하단 4타일)에 서 있으면
+    //   발밑 닉네임과 겹친다고 우상단으로 피하게 해뒀는데, 그 결과 방마다 자리가 달라졌다.
+    //   자리가 옮겨다니면 "저게 뭐지"가 되고 안내로서 못 쓴다. 겹침은 칩을 살짝 띄워 피한다.
     const _hint = el.querySelector('#mw-rm-hint');
-    if (_hint && rp.tr >= N - 4) {
-      _hint.style.bottom = 'auto'; _hint.style.left = 'auto'; _hint.style.transform = 'none';
-      _hint.style.top = '8px'; _hint.style.right = '8px';
-    }
+    if (_hint && rp.tr >= N - 4) _hint.style.bottom = '30px';   // 발밑 닉네임 위로만 살짝
     // 내 방에서는 안내가 필요 없다 — 나한테 링 메뉴가 안 뜬다
     if (_mine && _hint) _hint.remove();
     if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(); }, 520);
