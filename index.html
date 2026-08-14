@@ -9346,7 +9346,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '587';
+window._SW_V = '588';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9749,6 +9749,24 @@ onAuthStateChanged(auth, async (user) => {
     }
   }
 });
+
+// ★★초대 시트 안전망 (대표 8-14: "다른 직원 폰에서 바로 입장하기를 눌러도 초대가 안 뜨고,
+//   한 번 나갔다 들어가야 됐다"). 오늘 저녁 20명이 전부 이 길목을 지난다 — 한 번에 떠야 한다.
+//   지금까지 시트는 **onAuthStateChanged 안에서만** 떴다. 그 콜백이 늦거나(카톡 인앱 브라우저·
+//   콜드 네트워크·서비스워커 첫 설치) 한 번도 안 불리면 화면엔 평소 홈만 남는다.
+//   원인이 무엇이든 **결과는 같아야 한다** → 2.2초 뒤에 아직 아무것도 안 떴으면 여기서 띄운다.
+//   이미 뜬 게 있으면(시트·닉네임·스쿼드 상세) 손대지 않으므로 두 번 뜰 일은 없다.
+if (window._sqInviteSid) {
+  setTimeout(function () {
+    if (!window._sqInviteSid || window._sqEnterChosen || window._sqSkipEnterSheet) return;
+    if (document.getElementById('sq-enter') || document.getElementById('guest-nick')
+        || document.getElementById('sq-detail')) return;
+    try { if (typeof dismissLanding === 'function') dismissLanding(); } catch (e) {}
+    const u = auth.currentUser;
+    if (u && !u.isAnonymous) { window.openSquadDetail && window.openSquadDetail(window._sqInviteSid); }
+    else if (window.sqEnterChoice) { window.sqEnterChoice(window._sqInviteSid, !!u); }
+  }, 2200);
+}
 
 // ★실패 사유를 사람이 읽을 수 있게 짜낸다.
 //   예전엔 e.message 만 봤는데, **카카오 SDK 가 던지는 오류에는 message 가 없다**
@@ -14362,6 +14380,7 @@ window.sqEnterChoice = async function (sid, asGuest) {
 };
 window.sqEnterAsGuest = async function (sid) {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._sqEnterChosen = true;   // 안전망이 뒤늦게 시트를 또 얹지 않게
   window._guestJustStarted = true;        // 방금 고른 것이므로 다시 묻지 않는다
   await window.startGuestInvite(sid);     // 실패해도 앱은 이미 평소 화면으로 떠 있다
 };
@@ -14370,6 +14389,7 @@ window.sqEnterAsGuest = async function (sid) {
 //   원래 쓰던 계정이 따로 있으면 못 붙는다(그 구글은 이미 다른 계정에 물려 있다).
 //   그래서 임시 계정을 버리고 로그인시킨다 — 버리기 전에 반드시 확인을 받는다.
 window.sqEnterSwitchAccount = async function () {
+  window._sqEnterChosen = true;
   if (!confirm('임시 계정으로 쌓인 오늘 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
   const el = document.getElementById('sq-enter'); if (el) el.remove();
   const g = document.getElementById('guest-nick'); if (g) g.remove();   // 게스트 화면 잔재 제거
@@ -14380,12 +14400,14 @@ window.sqEnterSwitchAccount = async function () {
 // 이미 있던 임시 계정 그대로 들어간다. 닉네임이 아직 없으면 그때 한 번만 묻는다.
 window.sqEnterKeepGuest = function (sid) {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._sqEnterChosen = true;   // 안전망이 뒤늦게 시트를 또 얹지 않게
   window._guestJustStarted = true;                  // 이제부터는 게스트 흐름이 맞다
   if (window.guestAskNick) window.guestAskNick();    // 닉네임이 이미 있으면 안 묻고 바로 방으로 간다
   else if (window.openSquadDetail) window.openSquadDetail(sid);
 };
 window.sqEnterAsMember = function () {
   const el = document.getElementById('sq-enter'); if (el) el.remove();
+  window._sqEnterChosen = true;   // 안전망이 뒤늦게 시트를 또 얹지 않게
   const g = document.getElementById('guest-nick'); if (g) g.remove();
   // 로그인에 성공하면 onAuthStateChanged 가 _sqInviteSid 를 보고 그 스쿼드로 데려간다
   if (window.requireLogin) requireLogin('로그인하면 초대받은 스쿼드로 바로 들어가요');
@@ -14408,12 +14430,20 @@ window.startGuestInvite = async function (sid) {
 // 게스트에게 닉네임만 받는다. 저장하면 바로 초대받은 스쿼드로 들어간다.
 window.guestAskNick = async function () {
   const user = auth.currentUser; if (!user) return;
-  // 이미 닉네임이 있으면(재방문) 묻지 않는다
-  try {
-    const s = await getDoc(doc(db, 'users', user.uid));
-    if (s.exists() && s.data().nickname) { window._guestGoSquad(); return; }
-  } catch (e) {}
+  // ★서버 응답을 기다리고 나서 띄우면 **입력창이 늦게 뜬다**(대표 8-14, 실기기).
+  //   getDoc 은 콜드 네트워크에서 1~3초가 걸린다. 그동안 화면엔 아무것도 없어서
+  //   "먹통인가?" 하고 사람이 나가버린다 — 정모 현장에서 20명이 동시에 겪을 자리다.
+  //   → 시트를 **먼저** 띄우고, 재방문 여부는 뒤에서 확인해 그때 닫는다.
+  //   (거의 전원이 첫 방문이라 대부분은 그대로 쓰는 게 맞다)
   let el = document.getElementById('guest-nick'); if (el) el.remove();
+  getDoc(doc(db, 'users', user.uid)).then(function (snap) {
+    if (snap.exists() && snap.data().nickname) {
+      const cur = document.getElementById('guest-nick');
+      // 사람이 벌써 뭔가 치고 있으면 뺏지 않는다
+      const typed = ((document.getElementById('guest-nick-in') || {}).value || '').trim();
+      if (cur && !typed) { cur.remove(); window._guestGoSquad(); }
+    }
+  }).catch(function () {});
   el = document.createElement('div'); el.id = 'guest-nick';
   el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
   el.innerHTML = `
