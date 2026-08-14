@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '567';
+window._SW_V = '568';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21414,6 +21414,13 @@ window._sqPartBoardHtml = function (s, mem) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
         <div style="flex:1;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">오늘 운동 부위
           ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
+        ${(function () {
+          // 벙주·운영진은 **남의 부위도 직접 배정**할 수 있어야 한다(대표 8-14) —
+          // 현장에서 부위를 맞춰 짝을 짓는 건 결국 운영진이 한다. 규칙은 이미 열려 있다.
+          const _m = mem[me] || {};
+          const can = !!(me && (me === s.hostUid || _m.staff));
+          return can ? `<button onclick="window.sqPartAssign('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.5);color:#7aa8ff;border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:6px">배정</button>` : '';
+        })()}
         <button onclick="window.sqPartList('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">명단 보기</button>
       </div>
       ${rows}
@@ -21447,6 +21454,66 @@ window._sqChatPaintBoard = function () {
   const box = document.getElementById('sq-part-board');
   const s = window._sqDoc; if (!box || !s) return;
   box.innerHTML = window._sqPartBoardHtml(s, window._sqMembers || {});
+};
+
+// ★부위 수동 배정 (벙주·운영진) — 대표 8-14:
+//   "오늘 운동 부위는 사실 운영진이 거의 조정해야 하니 참가자별로 수동 설정도 가능해야 한다."
+//   한 화면에서 사람마다 부위 칩을 눌러 바로 바꾼다. 저장은 그 즉시(닫기를 안 눌러도 된다).
+window.sqPartAssign = function (sid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const me = (auth.currentUser || {}).uid;
+  if (!s || !me) return;
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 배정할 수 있어요'); return; }
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const list = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
+  if (!list.length) { showToast('아직 멤버가 없어요'); return; }
+  let el = document.getElementById('sq-assign'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-assign';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40026;background:rgba(0,0,0,.88);display:flex;align-items:flex-end;justify-content:center';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:22px 20px 26px;max-height:88vh;display:flex;flex-direction:column">
+      <div style="font-size:17px;font-weight:800;letter-spacing:-0.4px">부위 배정</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px">사람마다 부위를 눌러서 바꿔주세요 · 바로 저장됩니다</div>
+      <div id="sq-assign-list" style="flex:1;overflow-y:auto;margin:14px 0 4px;min-height:100px">
+        ${list.map(u => window._sqAssignRow(u, mem[u])).join('')}
+      </div>
+      <button onclick="document.getElementById('sq-assign').remove()" style="margin-top:10px;width:100%;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.7);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button>
+    </div>`;
+  document.body.appendChild(el);
+  void esc;
+};
+window._sqAssignRow = function (uid, m) {
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const cur = m.part || '';
+  const chips = window.SQ_PARTS.map(pt => {
+    const on = cur === pt;
+    return `<button onclick="window.sqAssignSet('${uid}','${pt}')" style="flex:1;min-width:0;background:none;border:1px solid ${on ? 'rgba(61,126,255,.65)' : 'rgba(255,255,255,.13)'};color:${on ? '#7aa8ff' : 'rgba(255,255,255,.5)'};border-radius:9px;padding:7px 0;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">${pt}</button>`;
+  }).join('');
+  return `<div data-arow="${uid}" style="padding:10px 2px;border-bottom:1px solid rgba(255,255,255,.05)">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
+      <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 30) : ''}</div>
+      <div style="flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
+      ${m.after ? '<span style="flex-shrink:0;font-size:10.5px;font-weight:700;color:#F5C24B">뒷풀이</span>' : ''}
+    </div>
+    <div style="display:flex;gap:5px">${chips}</div>
+  </div>`;
+};
+window.sqAssignSet = async function (uid, part) {
+  const sid = window._sqCurId, mem = window._sqMembers || {};
+  if (!sid || !mem[uid]) return;
+  const cur = mem[uid].part || '';
+  const next = (cur === part) ? '' : part;      // 같은 걸 다시 누르면 해제
+  mem[uid].part = next;
+  const row = document.querySelector('#sq-assign [data-arow="' + uid + '"]');
+  if (row) row.outerHTML = window._sqAssignRow(uid, mem[uid]);
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid, 'members', uid), { part: next }); }
+  catch (e) {
+    mem[uid].part = cur; showToast('바꾸지 못했어요');
+    const r2 = document.querySelector('#sq-assign [data-arow="' + uid + '"]');
+    if (r2) r2.outerHTML = window._sqAssignRow(uid, mem[uid]);
+  }
 };
 
 // 부위별 명단 — 대표가 단톡방에 올리던 형식 그대로 만들어 주고, 복사까지 된다.
