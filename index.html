@@ -9327,7 +9327,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '579';
+window._SW_V = '580';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -14407,9 +14407,11 @@ window.guestAskNick = async function () {
       <!-- ★공지를 안 읽고 아무 이름이나 적고 들어오는 걸 막는다(대표 8-14).
            ★모임 이름을 박지 않는다 — 이 화면은 앞으로 어느 모임이든 보게 된다.
              '모임에서 부르는 이름'이면 어디서나 맞는 말이고 뜻은 그대로 전달된다. -->
+      <!-- ★모임을 한 번도 안 해본 사람도 알아들어야 한다(대표 8-14).
+           '벙주'·'출석부' 같은 모임 용어를 빼고, **왜 필요한지**만 남긴다. -->
       <div style="font-size:11.5px;color:rgba(255,255,255,.45);line-height:1.55;margin-bottom:10px">
-        <b style="color:#F5C24B">모임에서 부르는 이름</b>으로 적어주세요<br>
-        벙주가 출석부에서 누구인지 알아볼 수 있어야 해요</div>
+        <b style="color:#F5C24B">실명</b>으로 적어주세요<br>
+        참석 확인을 하는 사람이 알아볼 수 있어야 해요</div>
       <!-- ★캐릭터 몸통은 성별로 정해진다. 안 물으면 전원 남캐로 시작한다(여자 게스트는 남캐로 굳는다).
            탭 한 번이라 이탈이 늘지 않고, 정식 가입자와 같은 규칙이 된다. -->
       <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -20921,7 +20923,14 @@ window._sqVVFit = function () {
   //   내용이 짧아 스크롤이 없던 벙에서는 안 보이다가, 멤버가 많아 목록이 길어진 벙에서 드러났다.
   //   → 키보드가 실제로 올라온 경우(뷰포트가 80px 넘게 줄어든 경우)에만 맞추고,
   //     아니면 CSS 원래값(inset:0)으로 되돌린다.
-  const kbUp = vv.height < ((window.innerHeight || vv.height) - 80);
+  // ★★기준을 window.innerHeight 로 잡으면 **안드로이드에서 영영 안 걸린다** (대표 8-14:
+  //   "조재진 폰에서 스쿼드 톡 칠 때 키보드가 채팅창을 다 가린다").
+  //   안드로이드는 키보드가 올라오면 레이아웃 뷰포트까지 줄여서 innerHeight 도 같이 작아진다
+  //   → vv.height ≈ innerHeight 라 '키보드 올라옴' 판정이 성립하지 않는다.
+  //   아이폰은 innerHeight 가 그대로라 대표 폰에선 멀쩡했다 — 그래서 안 보이던 버그다.
+  //   → **지금까지 본 가장 큰 높이**를 기준선으로 삼는다. 키보드가 없을 때의 높이가 곧 기준이다.
+  window._vvMax = Math.max(window._vvMax || 0, vv.height, window.innerHeight || 0);
+  const kbUp = vv.height < (window._vvMax - 90);
   ['sq-detail', 'sq-talk'].forEach(function (id) {
     const el = document.getElementById(id); if (!el) return;
     if (kbUp) {
@@ -21058,8 +21067,9 @@ window._sqRenderDetailInner = function () {
   //   인원수를 넘어섰다. 출석 요약도 같은 구조라 같이 고친다.
   const _countable = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
   const paidN = _countable.filter(u => mem[u].paid).length;
+  // 출석 요약 = 실제로 온 사람(출석·지각)만. 취소·불참은 세지 않는다.
   const attendN = _countable.filter(u => {
-    const m = mem[u]; return m.checkedIn || m.checkinType === 'present' || m.checkinType === 'late';
+    const st = window._sqCheckState(mem[u]); return st === 'present' || st === 'late';
   }).length;
   const hero = document.getElementById('sq-d-hero');
   if (hero) hero.innerHTML = `
@@ -21175,14 +21185,18 @@ window._sqRenderDetailInner = function () {
   //   반투명 틴트를 깔면 어두운 배경 위에서 탁하게 뜨고 부트스트랩 배지처럼 보인다.
   // ★범프는 출석체크 전용이므로 '오운완'이 아니라 **출석 ✓** 다(대표 8-14).
   //   오운완은 운동 인증(피드·도장)의 말이고, 여기서 하는 일은 출석 확인이다.
+  // ★출석 상태는 **눌러서 순환**한다 (대표 8-14, 근방단이 gbdcrew 출첵앱에서 쓰던 방식 그대로).
+  //   미체크 → 출석 → 지각 → 취소 → 불참 → 미체크
+  //   7시·8시 팀처럼 시간대를 나눠 들어오면 출석 창 하나로는 뒷팀이 전부 지각으로 찍힌다.
+  //   범프는 '왔다'는 증거를 남기는 것이고, **판정은 사람이 고친다.**
+  //   벙주·운영진만 누를 수 있고, 나머지에겐 읽기 전용 칩이다.
+  const CK = window.SQ_CHECK_STATES;
   const stChip = m => {
-    // ★입금 칩과 **같은 규격**이어야 한다 — 한 줄에 나란히 놓이는데 크기가 다르면 어긋나 보인다.
-    //   (padding 5px 10px / font-size 10.5px / radius 10px — 입금 토글과 동일)
-    const chip = (label, color, border) => `<span style="font-size:10.5px;color:${color};background:none;border:1px solid ${border};border-radius:10px;padding:5px 10px;font-weight:700;flex-shrink:0">${label}</span>`;
-    if (m.checkinType === 'late') return chip('지각 ✓', '#F5C24B', 'rgba(245,194,75,.5)');
-    if (m.checkedIn || m.checkinType === 'present') return chip('출석 ✓', '#3dde7c', 'rgba(61,222,124,.45)');
-    if (m.status === 'invited') return chip('대기중', 'rgba(255,255,255,.45)', 'rgba(255,255,255,.16)');
-    return '';
+    const st = window._sqCheckState(m);
+    const d = CK[st]; if (!d) return '';
+    const base = `font-size:10.5px;color:${d.color};background:none;border:1px solid ${d.border};border-radius:10px;padding:5px 10px;font-weight:700;flex-shrink:0`;
+    if (!_canApprove || m.status === 'invited') return `<span style="${base}">${d.label}</span>`;
+    return `<button onclick="window.sqCycleCheck('${s.id}','${m._uid || ''}')" style="${base};cursor:pointer;font-family:inherit">${d.label}</button>`;
   };
   const crown = '<svg width="13" height="13" viewBox="0 0 24 24" fill="#F5C24B" style="flex-shrink:0"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-1.6 10H4.6z"/></svg>';
   // 운영진 = 같은 왕관, 핑크 (대표 8-14). 리더(황금)와 한눈에 구분되게 색만 다르다.
@@ -21191,6 +21205,7 @@ window._sqRenderDetailInner = function () {
   //   예전엔 한 목록에 섞여서 승인된 사람과 대기자가 와리가리 했다 — 리더 입장에서
   //   누굴 승인해야 하는지 훑어야 했고, 참여자 입장에선 몇 명이 실제로 오는지가 안 읽혔다.
   const _mkRow = (uid, m, wait) => {
+    m._uid = uid;   // stChip 이 누구를 바꾸는지 알아야 한다
       // ★캐릭터·이름을 누르면 그 사람 프로필(대표 8-11). 같이 운동할 사람이 누군지 보고 정하는 게
       //   이 목록의 목적인데, 예전엔 픽셀 캐릭터와 닉네임만 보이고 눌러도 아무 일이 없었다.
       const openMe = `window.sqMemberProfile('${uid}','${(m.nickname||'').replace(/'/g,"\\'").replace(/</g,'&lt;')}')`;
@@ -21536,6 +21551,53 @@ window._sqBindSwipe = function () {
     el.addEventListener('pointercancel', done);
     el.addEventListener('pointerleave', done);
   });
+};
+
+// ===== 출석 상태 순환 (대표 8-14) =====
+// 근방단이 gbdcrew 출첵앱에서 쓰던 방식 그대로: 미체크 → 출석 → 지각 → 취소 → 불참 → 미체크.
+// ★7시·8시 팀처럼 시간대를 나눠 들어오면 출석 창 하나로는 뒷팀이 전부 지각으로 찍힌다.
+//   범프는 '실제로 왔다'는 증거를 남기는 것이고, **최종 판정은 사람이 고친다.**
+window.SQ_CHECK_STATES = {
+  none:    { label: '미체크', color: 'rgba(255,255,255,.42)', border: 'rgba(255,255,255,.16)' },
+  present: { label: '출석 ✓', color: '#3dde7c', border: 'rgba(61,222,124,.45)' },
+  late:    { label: '지각 ✓', color: '#F5C24B', border: 'rgba(245,194,75,.5)'  },
+  cancel:  { label: '취소',   color: '#9aa3b6', border: 'rgba(154,163,182,.4)' },
+  absent:  { label: '불참',   color: '#FF6B7F', border: 'rgba(255,107,127,.45)' },
+  invited: { label: '대기중', color: 'rgba(255,255,255,.45)', border: 'rgba(255,255,255,.16)' }
+};
+const SQ_CHECK_ORDER = ['none', 'present', 'late', 'cancel', 'absent'];
+// 옛 문서 호환 — checkinType 이 없던 시절 데이터는 checkedIn 만 있다
+window._sqCheckState = function (m) {
+  if (!m) return 'none';
+  if (m.status === 'invited') return 'invited';
+  const t = m.checkinType;
+  if (t === 'late' || t === 'cancel' || t === 'absent' || t === 'present') return t;
+  return m.checkedIn ? 'present' : 'none';
+};
+window.sqCycleCheck = async function (sid, uid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const me = (auth.currentUser || {}).uid;
+  if (!s || !me || !uid || !mem[uid]) return;
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 바꿀 수 있어요'); return; }
+  const cur = window._sqCheckState(mem[uid]);
+  const i = SQ_CHECK_ORDER.indexOf(cur);
+  const next = SQ_CHECK_ORDER[(i < 0 ? 0 : i + 1) % SQ_CHECK_ORDER.length];
+  const prev = { checkinType: mem[uid].checkinType, checkedIn: mem[uid].checkedIn };
+  // 화면부터 바꾼다 — 눌린 느낌이 바로 나야 한다
+  mem[uid].checkinType = (next === 'none') ? '' : next;
+  mem[uid].checkedIn = (next === 'present' || next === 'late');
+  window._sqRenderDetail && window._sqRenderDetail();
+  try {
+    await updateDoc(doc(db, 'squads', sid, 'members', uid), {
+      checkinType: (next === 'none') ? '' : next,
+      checkedIn: (next === 'present' || next === 'late'),
+      checkFixedBy: me            // 사람이 고친 값이라는 표시 — 나중에 범프 기록과 구분된다
+    });
+  } catch (e) {
+    mem[uid].checkinType = prev.checkinType; mem[uid].checkedIn = prev.checkedIn;
+    window._sqRenderDetail && window._sqRenderDetail();
+    showToast('바꾸지 못했어요');
+  }
 };
 
 // ===== 부위·시간·뒷풀이 (대표 8-14) =====
