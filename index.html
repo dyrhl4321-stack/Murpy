@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '566';
+window._SW_V = '567';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21101,18 +21101,24 @@ window._sqRenderDetailInner = function () {
   // ★카드 전체를 미는 게 아니라 **손잡이가 보이는 슬라이더**다 (대표 8-14, 쿠팡식).
   //   카드를 통째로 미는 건 해보기 전엔 알 수 없다 — 손잡이가 있어야 "밀면 되는구나"가 읽힌다.
   //   멤버 줄은 그대로 두고, 그 아래에 승인 슬라이더만 얹는다.
-  const _swipeRow = (uid, m) => `
-    <div style="padding:2px 0 6px">
-      ${_mkRow(uid, m, true)}
+  // ★한 줄에 [캐릭터][닉네임][슬라이더] (대표 8-14: "카드가 너무 길다 · 닉네임 우측에 있어야").
+  //   손잡이도 키웠다 — 작아서 밀기 불편하다는 지적. 44px 줄 높이에 38px 손잡이.
+  const _swipeRow = (uid, m) => {
+    const nick = (m.nickname || '').replace(/'/g, "\\'").replace(/</g, '&lt;');
+    return `
+    <div style="display:flex;align-items:center;gap:9px;padding:6px 2px">
+      <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex-shrink:0;cursor:pointer">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 38) : ''}</div>
+      <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex:1;min-width:44px;cursor:pointer;font-size:13.5px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
       <div class="sq-slide" data-uid="${uid}" data-sid="${s.id}"
-        style="position:relative;height:38px;border-radius:11px;border:1px solid rgba(61,126,255,.32);overflow:hidden;touch-action:pan-y;margin:2px 2px 0;user-select:none">
-        <div class="sq-slide-fill" style="position:absolute;left:0;top:0;bottom:0;width:36px;background:rgba(61,126,255,.14);transition:width .18s ease"></div>
-        <div class="sq-slide-lbl" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;letter-spacing:-0.2px;pointer-events:none">밀어서 승인</div>
-        <div class="sq-slide-knob" style="position:absolute;left:3px;top:3px;width:32px;height:32px;border-radius:9px;background:var(--accent);display:flex;align-items:center;justify-content:center;transition:transform .18s ease;will-change:transform">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        style="position:relative;flex:0 0 168px;height:44px;border-radius:12px;border:1px solid rgba(61,126,255,.32);overflow:hidden;touch-action:pan-y;user-select:none">
+        <div class="sq-slide-fill" style="position:absolute;left:0;top:0;bottom:0;width:42px;background:rgba(61,126,255,.14);transition:width .18s ease"></div>
+        <div class="sq-slide-lbl" style="position:absolute;left:44px;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:-0.3px;pointer-events:none">밀어서 승인</div>
+        <div class="sq-slide-knob" style="position:absolute;left:3px;top:3px;width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;transition:transform .18s ease;will-change:transform">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
         </div>
       </div>
     </div>`;
+  };
   const _waitBlock = _waitUids.length ? `
     <div style="display:flex;align-items:center;gap:8px;margin:16px 2px 6px">
       <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">승인 대기 <span style="color:#7aa8ff">${_waitUids.length}</span>명</div>
@@ -21320,11 +21326,12 @@ window._sqBindSwipe = function () {
     const fill = el.querySelector('.sq-slide-fill');
     const lbl = el.querySelector('.sq-slide-lbl');
     if (!knob) return;
-    const MAX = () => Math.max(40, (el.clientWidth || 300) - 38);   // 손잡이가 갈 수 있는 끝
+    // 손잡이 38px + 좌우 여백 3px씩 → 갈 수 있는 끝은 트랙폭 - 44
+    const MAX = () => Math.max(40, (el.clientWidth || 168) - 44);
     const paint = function (v) {
       knob.style.transform = 'translateX(' + v + 'px)';
-      if (fill) fill.style.width = (36 + v) + 'px';
-      if (lbl) lbl.style.opacity = String(Math.max(0, 1 - v / (MAX() * 0.8)));
+      if (fill) fill.style.width = (42 + v) + 'px';
+      if (lbl) lbl.style.opacity = String(Math.max(0, 1 - v / (MAX() * 0.7)));
     };
     // ★방향을 **먼저 판정**한다 (대표 8-14: "슬라이드 하려니 전체 스크롤에 뻑이 난다").
     //   손을 대자마자 붙잡으면 세로로 넘기려던 손짓까지 우리가 먹어 스크롤이 걸린다.
