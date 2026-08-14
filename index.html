@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '568';
+window._SW_V = '569';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21108,9 +21108,14 @@ window._sqRenderDetailInner = function () {
     return `
     <div style="display:flex;align-items:center;gap:9px;padding:6px 2px">
       <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex-shrink:0;cursor:pointer">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 38) : ''}</div>
-      <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex:1;min-width:44px;cursor:pointer;font-size:13.5px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
+      <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex:1;min-width:38px;cursor:pointer;overflow:hidden">
+        <div style="font-size:13.5px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nickname)}</div>
+        <!-- ★대기자 줄에도 '눌러서 프로필 보기' 를 남긴다(대표 8-14) — 승인 전에 누구인지
+             확인하려면 프로필을 열어봐야 한다. 승인 판단에 꼭 필요한 안내다. -->
+        ${(window._notMember && window._notMember()) ? '' : '<div style="font-size:10.5px;color:rgba(255,255,255,.32);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">눌러서 프로필 보기</div>'}
+      </div>
       <div class="sq-slide" data-uid="${uid}" data-sid="${s.id}"
-        style="position:relative;flex:0 0 168px;height:44px;border-radius:12px;border:1px solid rgba(61,126,255,.32);overflow:hidden;touch-action:pan-y;user-select:none">
+        style="position:relative;flex:0 0 196px;height:44px;border-radius:12px;border:1px solid rgba(61,126,255,.32);overflow:hidden;touch-action:pan-y;user-select:none">
         <div class="sq-slide-fill" style="position:absolute;left:0;top:0;bottom:0;width:42px;background:rgba(61,126,255,.14);transition:width .18s ease"></div>
         <div class="sq-slide-lbl" style="position:absolute;left:44px;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;letter-spacing:-0.3px;pointer-events:none">밀어서 승인</div>
         <div class="sq-slide-knob" style="position:absolute;left:3px;top:3px;width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;transition:transform .18s ease;will-change:transform">
@@ -21327,7 +21332,7 @@ window._sqBindSwipe = function () {
     const lbl = el.querySelector('.sq-slide-lbl');
     if (!knob) return;
     // 손잡이 38px + 좌우 여백 3px씩 → 갈 수 있는 끝은 트랙폭 - 44
-    const MAX = () => Math.max(40, (el.clientWidth || 168) - 44);
+    const MAX = () => Math.max(40, (el.clientWidth || 196) - 44);
     const paint = function (v) {
       knob.style.transform = 'translateX(' + v + 'px)';
       if (fill) fill.style.width = (42 + v) + 'px';
@@ -21461,7 +21466,8 @@ window._sqChatPaintBoard = function () {
 //   한 화면에서 사람마다 부위 칩을 눌러 바로 바꾼다. 저장은 그 즉시(닫기를 안 눌러도 된다).
 window.sqPartAssign = function (sid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
-  const me = (auth.currentUser || {}).uid;
+  // _sqPreviewMe = 가이드 캡처용(로그인 없이 실제 시트를 그대로 띄운다). 평소엔 undefined 다.
+  const me = (auth.currentUser || {}).uid || window._sqPreviewMe;
   if (!s || !me) return;
   if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 배정할 수 있어요'); return; }
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -21514,6 +21520,33 @@ window.sqAssignSet = async function (uid, part) {
     const r2 = document.querySelector('#sq-assign [data-arow="' + uid + '"]');
     if (r2) r2.outerHTML = window._sqAssignRow(uid, mem[uid]);
   }
+};
+
+// ★가이드 캡처용 미리보기 — 로그인 없이 **진짜 시트**를 그대로 띄운다(bumpPreview 와 같은 취지).
+//   새로 그리지 않는다: 데이터만 넣고 실제 함수를 부른다. 앱과 화면이 다를 수가 없다.
+window.sqSheetPreview = function (kind) {
+  const mk = (g) => {
+    const c = Object.assign({}, window.CHAR_DEFAULT || {},
+      { body: window._charBodyForGender ? window._charBodyForGender(g) : 'human' });
+    if (window._charEnsureDefaults) window._charEnsureDefaults(c);
+    return c;
+  };
+  const M = mk('남성'), F = mk('여성');
+  window._sqPreviewMe = 'host';
+  window._sqCurId = 'preview';
+  window._sqDoc = { id: 'preview', hostUid: 'host', capacity: 25, feeAmount: 10000 };
+  window._sqMembers = {
+    host:  { nickname: '패수현', character: M, status: 'accepted', part: '등',  paid: true, after: true },
+    u1:    { nickname: '박진한', character: M, status: 'accepted', part: '등',  paid: true },
+    u2:    { nickname: '전은수', character: F, status: 'accepted', part: '어깨', paid: true },
+    u3:    { nickname: '최다윤', character: F, status: 'accepted', part: '하체', paid: true, after: true },
+    u4:    { nickname: '김준성', character: M, status: 'accepted', part: '하체', paid: false },
+    u5:    { nickname: '신동혁', character: M, status: 'accepted', part: '',    paid: true }
+  };
+  if (kind === 'paid') window.sqPaidPicker('preview');
+  else if (kind === 'list') window.sqPartList('preview');
+  else if (kind === 'staff') window.sqStaffPicker('preview');
+  else window.sqPartAssign('preview');
 };
 
 // 부위별 명단 — 대표가 단톡방에 올리던 형식 그대로 만들어 주고, 복사까지 된다.
