@@ -9346,7 +9346,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '584';
+window._SW_V = '585';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -20966,6 +20966,42 @@ window._sqVVFit = function () {
     }
   });
 };
+// ★★키보드 최종 방어선 (대표 8-14, 정모 4시간 전).
+//   위 _sqVVFit 은 "브라우저가 visualViewport 를 정직하게 알려준다"는 **가정** 위에 있다.
+//   조재진 폰에서 계속 안 먹은 이유가 그 가정이다 — 카톡 인앱 브라우저·일부 안드로이드 웹뷰는
+//   키보드가 떠도 resize 이벤트를 안 주거나 늦게 준다. 그럼 아무리 식을 고쳐도 안 돈다.
+//   → 여기서는 **계산을 안 한다. 눈으로 잰다.**
+//     입력칸의 실제 화면 좌표(getBoundingClientRect)가 보이는 영역 아래로 내려갔으면,
+//     내려간 만큼 패널을 그대로 위로 올린다. 브라우저가 뭘 알려주든 상관이 없다.
+//   ★아이폰에서 안전한 이유: 이미 안 가려져 있으면 잰 값이 0 이라 **아무 것도 안 한다.**
+//     (8-14에 viewport 를 건드렸다가 대표 폰이 오히려 가려진 사고 → 두 번은 안 낸다)
+window._sqKbLift = 0;
+window._sqKbFix = function () {
+  const el = document.getElementById('sq-talk');
+  const inp = document.getElementById('sq-chat-input');
+  if (!el || !inp) return;
+  const vv = window.visualViewport;
+  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : (window.innerHeight || 0);
+  const cur = window._sqKbLift || 0;
+  // 지금 올려둔 만큼을 되돌린 '원래' 바닥 — 안 빼면 잴 때마다 누적돼 패널이 계속 올라간다
+  const rawBottom = inp.getBoundingClientRect().bottom + cur;
+  let lift = Math.ceil(rawBottom - visBottom + 6);   // 6px = 키보드에 딱 붙지 않게
+  if (!(lift > 0)) lift = 0;
+  if (lift > (window.innerHeight || 9999)) lift = 0; // 이상값 방어
+  if (lift === cur) return;
+  window._sqKbLift = lift;
+  el.style.transform = lift ? ('translateY(-' + lift + 'px)') : '';
+};
+// 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 한 번만 재면 0 이 나온다.
+// 기기마다 애니메이션 길이가 달라서 여러 번 다시 잰다(비용은 rect 읽기 몇 번뿐).
+window._sqKbWatch = function () {
+  [0, 120, 260, 420, 650, 900].forEach(function (t) { setTimeout(window._sqKbFix, t); });
+};
+window._sqKbReset = function () {
+  const el = document.getElementById('sq-talk');
+  window._sqKbLift = 0;
+  if (el) el.style.transform = '';
+};
 window._sqVVOn = function () {
   const vv = window.visualViewport; if (!vv || window._sqVVBound) return;
   window._sqVVBound = true;
@@ -22214,6 +22250,17 @@ window._sqTalkOpen = function () {
   const _rw = document.getElementById('sq-room-wrap');
   if (_rw) _rw.style.visibility = 'hidden';
   window._sqVVFit && window._sqVVFit();      // 방금 만든 톡 방도 보이는 영역에 맞춘다
+  // ★키보드 실측 보정을 붙인다 (위 _sqKbFix 설명 참조)
+  const _ci = document.getElementById('sq-chat-input');
+  if (_ci) {
+    _ci.addEventListener('focus', window._sqKbWatch);
+    _ci.addEventListener('blur', function () { setTimeout(window._sqKbReset, 60); });
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', window._sqKbFix);
+    window.visualViewport.addEventListener('scroll', window._sqKbFix);
+  }
+  window.addEventListener('resize', window._sqKbFix);
   window._sqChatPaint();
   window._sqChatGateApply();
 };
