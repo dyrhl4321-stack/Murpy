@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '565';
+window._SW_V = '566';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21130,6 +21130,8 @@ window._sqRenderDetailInner = function () {
     ${card(rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>')}
     ${_waitBlock}`;
   window._sqBindSwipe && window._sqBindSwipe();
+  // 멤버 문서가 갱신될 때마다 부위 보드도 같이 그린다 — 남이 고른 게 실시간으로 올라온다
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
   // --- 워킹 룸 스테이지 + 채팅 (한 번만 초기화) ---
   if (!window._sqStageInit || window._sqStageInit !== s.id) {
     window._sqStageInit = s.id;
@@ -21374,6 +21376,128 @@ window._sqBindSwipe = function () {
   });
 };
 
+// ===== 부위·시간·뒷풀이 (대표 8-14) =====
+// 근방단은 벙마다 "가슴/등/어깨/하체/자유" 와 "7시 팀/8시 팀", 뒷풀이 여부를 손으로 적어
+// 단톡방에 올린다. 그걸 **스쿼드 안에서** 각자 고르게 하고, 명단은 앱이 만들어 준다.
+// ★멤버 문서에 붙인다 — 보안규칙상 본인은 자기 문서를 쓸 수 있어서 규칙 수정이 필요 없다.
+window.SQ_PARTS = ['가슴', '등', '어깨', '하체', '자유'];
+// ★부위 보드 — 스쿼드 톡에 띄우고, **누르면 바로 내 닉네임이 그 줄에 올라간다**(대표 8-14).
+//   따로 시트를 열어 고르게 하면 한 단계가 더 생긴다. 톡에서 보고 그 자리에서 누르는 게 맞다.
+//   저장은 **내 멤버 문서**에 한다 — 보안규칙상 본인은 자기 문서를 쓸 수 있어 규칙 수정이 필요 없다.
+window._sqPartBoardHtml = function (s, mem) {
+  const me = (auth.currentUser || {}).uid;
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const live = Object.keys(mem || {}).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
+  const joined = !!(me && mem[me] && mem[me].status !== 'left' && mem[me].status !== 'invited');
+  const mine = (mem[me] || {}).part || '';
+  const rows = window.SQ_PARTS.map(function (pt) {
+    const names = live.filter(u => (mem[u].part || '') === pt).map(u => mem[u].nickname || '익명');
+    const on = mine === pt;
+    return `<div ${joined ? `onclick="window.sqPartTap('${s.id}','${pt}')"` : ''}
+      style="display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border-radius:10px;${joined ? 'cursor:pointer;' : ''}${on ? 'border:1px solid rgba(61,126,255,.5)' : 'border:1px solid transparent'}">
+      <div style="flex:0 0 42px;font-size:12.5px;font-weight:800;color:${on ? '#7aa8ff' : 'rgba(255,255,255,.55)'}">${pt}</div>
+      <div style="flex:1;min-width:0;font-size:12.5px;color:${names.length ? '#c6cddb' : 'rgba(255,255,255,.22)'};line-height:1.65">${names.length ? esc(names.join(', ')) : '—'}</div>
+      <div style="flex:0 0 auto;font-size:11px;font-weight:700;color:rgba(255,255,255,.3)">${names.length || ''}</div>
+    </div>`;
+  }).join('');
+  const after = live.filter(u => mem[u].after).map(u => mem[u].nickname || '익명');
+  const iAfter = !!(mem[me] || {}).after;
+  return `
+    <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="flex:1;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">오늘 운동 부위
+          ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
+        <button onclick="window.sqPartList('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">명단 보기</button>
+      </div>
+      ${rows}
+      ${joined ? `<div onclick="window.sqAfterTap('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;margin-top:4px;border-top:1px solid rgba(255,255,255,.06);cursor:pointer">
+        <div style="flex:0 0 42px;font-size:12.5px;font-weight:800;color:${iAfter ? '#F5C24B' : 'rgba(255,255,255,.55)'}">뒷풀이</div>
+        <div style="flex:1;min-width:0;font-size:12.5px;color:${after.length ? '#c6cddb' : 'rgba(255,255,255,.22)'};line-height:1.65">${after.length ? esc(after.join(', ')) : '—'}</div>
+      </div>` : ''}
+    </div>`;
+};
+// 같은 부위를 다시 누르면 해제된다. 저장 전에 화면부터 바꿔 눌린 느낌이 바로 나게 한다.
+window.sqPartTap = async function (sid, part) {
+  const me = (auth.currentUser || {}).uid; if (!me) return;
+  const mem = window._sqMembers || {};
+  const cur = (mem[me] || {}).part || '';
+  const next = (cur === part) ? '' : part;
+  if (mem[me]) mem[me].part = next;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid, 'members', me), { part: next }); }
+  catch (e) { if (mem[me]) mem[me].part = cur; showToast('저장하지 못했어요'); }
+};
+window.sqAfterTap = async function (sid) {
+  const me = (auth.currentUser || {}).uid; if (!me) return;
+  const mem = window._sqMembers || {};
+  const next = !((mem[me] || {}).after);
+  if (mem[me]) mem[me].after = next;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid, 'members', me), { after: next }); }
+  catch (e) { if (mem[me]) mem[me].after = !next; showToast('저장하지 못했어요'); }
+};
+window._sqChatPaintBoard = function () {
+  const box = document.getElementById('sq-part-board');
+  const s = window._sqDoc; if (!box || !s) return;
+  box.innerHTML = window._sqPartBoardHtml(s, window._sqMembers || {});
+};
+
+// 부위별 명단 — 대표가 단톡방에 올리던 형식 그대로 만들어 주고, 복사까지 된다.
+window.sqPartList = function (sid) {
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const live = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
+  if (!live.length) { showToast('아직 멤버가 없어요'); return; }
+  // 시간 팀 → 부위 순으로 묶는다. 시간을 안 적은 사람은 '시간 미정' 으로 모은다.
+  const slots = [...new Set(live.map(u => (mem[u].slot || '').trim()).filter(Boolean))].sort();
+  const groups = slots.concat(['']);
+  let text = '';
+  const blocks = groups.map(sl => {
+    const inSlot = live.filter(u => ((mem[u].slot || '').trim()) === sl);
+    if (!inSlot.length) return '';
+    const title = sl ? sl + ' 팀' : (slots.length ? '시간 미정' : '참석자');
+    text += title + '\n';
+    const lines = window.SQ_PARTS.concat(['미정']).map(pt => {
+      const names = inSlot.filter(u => (mem[u].part || '미정') === pt || (pt === '미정' && !mem[u].part))
+        .map(u => mem[u].nickname || '익명');
+      if (pt === '미정' && !names.length) return '';
+      text += pt + ' : ' + names.join(', ') + '\n';
+      return `<div style="font-size:13.5px;color:#c6cddb;line-height:1.9"><b style="color:#7aa8ff">${pt}</b> : ${esc(names.join(', '))}</div>`;
+    }).filter(Boolean).join('');
+    text += '\n';
+    return `<div style="margin-bottom:16px"><div style="font-size:13px;font-weight:800;margin-bottom:5px">${esc(title)}</div>${lines}</div>`;
+  }).join('');
+  const after = live.filter(u => mem[u].after).map(u => mem[u].nickname || '익명');
+  if (after.length) text += '뒷풀이 : ' + after.join(', ') + '\n';
+  window._sqPartText = text.trim();
+  let el = document.getElementById('sq-partlist'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'sq-partlist';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40025;background:rgba(0,0,0,.86);display:flex;align-items:flex-end;justify-content:center';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = `
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:22px 20px 26px;max-height:86vh;display:flex;flex-direction:column">
+      <div style="font-size:17px;font-weight:800;letter-spacing:-0.4px">부위별 명단</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px">각자 고른 부위·시간으로 자동 정리됩니다</div>
+      <div style="flex:1;overflow-y:auto;margin:16px 0 4px;min-height:80px">${blocks}
+        ${after.length ? `<div style="padding-top:10px;border-top:1px solid rgba(255,255,255,.07);font-size:13.5px;color:#c6cddb"><b style="color:#F5C24B">뒷풀이</b> : ${esc(after.join(', '))}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button onclick="window.sqPartCopy()" style="flex:1.4;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">명단 복사</button>
+        <button onclick="document.getElementById('sq-partlist').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  void s;
+};
+window.sqPartCopy = function () {
+  const t = window._sqPartText || '';
+  if (!t) { showToast('복사할 내용이 없어요'); return; }
+  try {
+    navigator.clipboard.writeText(t).then(function () { showToast('명단을 복사했어요'); },
+      function () { showToast('복사하지 못했어요'); });
+  } catch (e) { showToast('복사하지 못했어요'); }
+};
+
 // ★입금 현황 (대표 8-14) — 상단 '입금 N/M' 을 누르면 **누가 냈는지** 보이고,
 //   벙주는 그 자리에서 체크를 고칠 수 있다. 멤버 줄의 작은 칩만으로는 훑기 어렵다.
 //   내보낸 사람·대기자는 목록에 없다(그들이 세어져서 '입금 5/4' 가 나왔다).
@@ -21605,6 +21729,10 @@ window._sqTalkOpen = function () {
       ${canEdit ? '<button onclick="window.sqTalkClear()" style="flex-shrink:0;background:rgba(255,255,255,.07);border:none;color:rgba(255,255,255,.6);font-size:11.5px;font-weight:700;border-radius:9px;padding:7px 11px;cursor:pointer;font-family:inherit">정리</button>' : ''}
     </div>
     <div id="sq-notice-box" style="flex-shrink:0">${window._sqNoticeHtml(notice, canEdit)}</div>
+    <!-- ★부위 보드 (대표 8-14) — 공지 바로 아래. 참석자가 자기 부위를 **여기서 바로** 누른다.
+         근방단은 벙마다 가슴/등/어깨/하체/자유를 손으로 적어 단톡방에 올렸는데,
+         그걸 앱이 모아 주고 '명단 보기'에서 그 형식 그대로 복사할 수 있다. -->
+    <div id="sq-part-board" style="flex-shrink:0">${window._sqPartBoardHtml ? window._sqPartBoardHtml(s, window._sqMembers || {}) : ''}</div>
     <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
     <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
       <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
