@@ -9323,7 +9323,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '573';
+window._SW_V = '574';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21433,7 +21433,7 @@ window._sqPartBoardHtml = function (s, mem) {
     if (!isHost || !window.SQ_TEAMS[window._sqTypeKey ? window._sqTypeKey(s.exerciseType) : s.exerciseType]) return '';
     return `<div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:8px">
       <div style="flex:1;font-size:12px;color:rgba(255,255,255,.35)">팀 나누기가 꺼져 있어요</div>
-      <button onclick="window.sqTeamToggle('${s.id}',false)" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.5);color:#7aa8ff;border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">켜기</button>
+      <button onclick="window.sqTeamToggle('${s.id}',false)" style="flex-shrink:0;background:none;border:none;padding:3px 0;color:rgba(255,255,255,.62);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">켜기</button>
     </div>`;
   }
   const OPTS = T.opts;
@@ -21455,19 +21455,26 @@ window._sqPartBoardHtml = function (s, mem) {
   const iAfter = !!(mem[me] || {}).after;
   return `
     <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="flex:1;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">${T.label}
-          ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
-        ${isHost ? `<button onclick="window.sqTeamToggle('${s.id}',true)" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.45);border-radius:9px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:6px">끄기</button>` : ''}
-        ${(function () {
-          // 벙주·운영진은 **남의 부위도 직접 배정**할 수 있어야 한다(대표 8-14) —
-          // 현장에서 부위를 맞춰 짝을 짓는 건 결국 운영진이 한다. 규칙은 이미 열려 있다.
-          const _m = mem[me] || {};
-          const can = !!(me && (me === s.hostUid || _m.staff));
-          return can ? `<button onclick="window.sqPartAssign('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.5);color:#7aa8ff;border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:6px">배정</button>` : '';
-        })()}
-        <button onclick="window.sqPartList('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:9px;padding:4px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">명단 보기</button>
-      </div>
+      ${(function () {
+        // ★칩 세 개를 나란히 두니 색이 제각각이라 눈에 걸렸다(대표 8-14).
+        //   테두리를 전부 걷고 **조용한 글자 버튼 + 가운뎃점**으로 통일한다.
+        //   면을 칠하지 않는 앱 규칙과도 맞고, 정작 주인공인 부위 줄이 살아난다.
+        //   순서 = 배정 → 명단 → 끄기. 자주 쓰는 것이 왼쪽, 되돌리기 어려운 것이 오른쪽.
+        const _m = mem[me] || {};
+        const canAssign = !!(me && (me === s.hostUid || _m.staff));
+        const link = (label, onclick, dim) =>
+          `<button onclick="${onclick}" style="background:none;border:none;padding:3px 0;font-family:inherit;cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:-0.2px;color:rgba(255,255,255,${dim ? '.34' : '.62'})">${label}</button>`;
+        const dot = '<span style="color:rgba(255,255,255,.16);font-size:11px">·</span>';
+        const acts = [];
+        if (canAssign) acts.push(link('배정', `window.sqPartAssign('${s.id}')`));
+        acts.push(link('명단', `window.sqPartList('${s.id}')`));
+        if (isHost) acts.push(link('끄기', `window.sqTeamToggle('${s.id}',true)`, true));
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="flex:1;min-width:0;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">${T.label}
+            ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
+          <div style="flex-shrink:0;display:flex;align-items:center;gap:7px">${acts.join(dot)}</div>
+        </div>`;
+      })()}
       ${rows}
       ${joined ? `<div onclick="window.sqAfterTap('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 11px;margin-top:4px;border-top:1px solid rgba(255,255,255,.06);cursor:pointer">
         <div style="flex:0 0 42px;font-size:12.5px;font-weight:800;color:${iAfter ? '#F5C24B' : 'rgba(255,255,255,.55)'}">뒷풀이</div>
