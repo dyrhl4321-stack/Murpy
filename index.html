@@ -9404,7 +9404,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '599';
+window._SW_V = '600';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -21489,11 +21489,14 @@ window._sqRenderDetailInner = function () {
   //   승인은 아래 **승인 대기 구역에서 한 명씩 오른쪽으로 밀어서** 한다.
   //   함수(sqApproveAll)는 남겨둔다 — 대기 구역이 자리를 잡았으니 필요해지면 거기 붙이면 된다.
   if (done) actions = '';
-  else if (isHost) actions = `${bumpMain}
+  // ★운영진도 출석 코드·QR 을 쓸 수 있게 한다 (대표 8-15).
+  //   '운동 종료'는 벙을 닫는 행위라 벙주에게 남긴다.
+  else if (isHost || _iAmStaff) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
       ${inviteBtn}
-      <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>
+      ${isHost ? `<button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>`
+               : `<button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>`}
     </div>`;
   else if (joined) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
@@ -23071,7 +23074,11 @@ window.sqBubblePinToggle = function () {
 // ---------- 출석 (호스트: 코드 발급 / 멤버: 코드 입력 → 도장 팝) ----------
 window.sqStartAttend = async function (sid) {
   const s = window._sqDoc; const me = (auth.currentUser || {}).uid;
-  if (!s || me !== s.hostUid) return;
+  // ★운영진도 출석 코드·QR 을 쓴다 (대표 8-15).
+  //   현장에서 20명을 벙주 혼자 받을 수 없다. 지정은 벙주만 하므로 문이 넓어지는 것도 아니다.
+  //   (수정 권한은 보안규칙에서 이미 그 스쿠에드의 staff 에게 열려 있다)
+  const _mem = window._sqMembers || {};
+  if (!s || !me || (me !== s.hostUid && !(_mem[me] && _mem[me].staff))) return;
   let code = s.checkinCode, expiry = s.checkinCodeExpiry;
   const now = Date.now();
   if (!code || !expiry || now > expiry) {
@@ -23193,7 +23200,22 @@ window.sqComplete = async function (sid) {
 // 색 규칙: 개시자(호스트)=골드 / 참여자=파랑. ★캐릭터 본체는 절대 물들이지 않는다.
 // TH(감지 임계) — 실측 접촉 충격은 15.6~38.4였다. 11은 가벼운 흔들림까지 잡아 오탐이 났다(대표 지적).
 //   16으로 올리고 상승 급격도 조건도 0.55→0.72로 조인다. 놓친 접촉은 사후 조회가 건진다.
-const BP = { TH: 16, RETRO: 10, QUIET: 2.2, RISE: 0.72, PAIR_MS: 150, COOL: 800, BUF_MS: 2500 };
+// ★PAIR_MS 150 -> 260 (대표 8-15: "30% 정도 확률로 실패").
+//   150 은 폰 2대로 쟰 실측(중앙값 17ms, 최대 100ms)에서 나온 값이다.
+//   현장은 다르다 — 20대가 같은 상황을 보내면 RTDB 왕복이 밀리고,
+//   시계 보정(serverTimeOffset)도 폰마다 십수 ms 씩 어깋난다. 그 둘이 같은 방향으로
+//   곹치면 진짜 접촉이어도 150 을 넘기기 쉬우다.
+//   ★넓히면 엉뚝한 쌍이 잡힐 위험이 늘지만, 짝은 이미 **Δt 가 가장 작은 사람**을 고른다.
+//   순차 검증은 아래 bumpDiag 로 실측해서 다음에 수치로 정한다(지금은 감이 아니라 데이터가 없다).
+const BP = { TH: 16, RETRO: 10, QUIET: 2.2, RISE: 0.72, PAIR_MS: 260, COOL: 800, BUF_MS: 2500 };
+// ★계측 (대표 8-15: "로그 보고 분석해서 고쳐봐").
+//   어제는 **실패 기록이 하나도 없었다.** 성공한 범프도 Δt 를 안 남겨서
+//   "왜 안 됐는지"를 코드로 추정할 수밖에 없었다. 다음부터는 숫자로 말한다.
+let bpDbg = null;
+function bpDbgNew(role) {
+  bpDbg = { role: role, peaks: 0, maxMag: 0, thFail: 0, quietFail: 0, riseFail: 0,
+            retroTry: 0, retroOk: 0, dts: [], peers: 0, perm: '?', t0: Date.now() };
+}
 // ★경계는 두 사람이 '서로 반대쪽'이어야 한다 (대표 실기기 검증 2026-07-30).
 //   폰을 세로로 쥐고 마주 서서 맥주잔 부딪치듯 짠! 하면 내 폰의 왼쪽 옆면과
 //   상대 폰의 오른쪽 옆면이 맞닿는다. 그래야 두 화면이 좌우로 나란히 이어져
@@ -23231,17 +23253,47 @@ function bpQuietBefore(t) {
 }
 function bpOrient(e) { if (typeof e.alpha === 'number') bpOri = { a: e.alpha, b: e.beta || 0, g: e.gamma || 0 }; }
 
+// ★현장에서 **내 폰이 감지를 하긴 하는지** 바로 보이게 한다 (대표 8-15).
+//   어제는 안 되면 이유를 알 길이 없어 그냥 다시 부딪힐 수밖에 없었다.
+//   감지 0 이면 내 폰 문제(권한·세기), 감지는 되는데 안 붙으면 짝 판정 문제다.
+function bpDbgPaint() {
+  const el = document.getElementById('bp-dbg'); if (!el || !bpDbg) return;
+  el.textContent = '감지 ' + bpDbg.peaks + '회 · 최대 ' + bpDbg.maxMag
+    + ' · 상대 ' + bpDbg.peers + '명'
+    + (bpDbg.quietFail ? ' · 움직임중 ' + bpDbg.quietFail : '')
+    + (bpDbg.retroOk ? ' · 되짚기 ' + bpDbg.retroOk : '');
+}
+// 한 번의 범프 시도를 내 계정에 남긴다(최근 20건). 내 문서라 규칙 변경이 필요 없다.
+async function bpDbgSave(outcome) {
+  try {
+    const u = auth.currentUser; if (!u || !bpDbg) return;
+    const rec = Object.assign({}, bpDbg, {
+      outcome: outcome, sid: bpSid || '', ms: Date.now() - bpDbg.t0,
+      at: new Date().toISOString(),
+      dts: (bpDbg.dts || []).slice(0, 8),
+      ua: (navigator.userAgent || '').slice(0, 80)
+    });
+    const snap = await getDoc(doc(db, 'users', u.uid));
+    const prev = (snap.exists() && snap.data().bumpDiag) || [];
+    await setDoc(doc(db, 'users', u.uid), { bumpDiag: [rec].concat(prev).slice(0, 20) }, { merge: true });
+  } catch (e) {}
+}
 function bpOnMotion(e) {
   const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
   const mag = Math.sqrt(g.x * g.x + g.y * g.y + g.z * g.z), now = Date.now();
   bpBuf.push({ t: now, mag });
   while (bpBuf.length && now - bpBuf[0].t > BP.BUF_MS) bpBuf.shift();
-  if (bpDone || mag < BP.TH || now - bpLastPeak < BP.COOL) return;
+  if (bpDbg && mag > bpDbg.maxMag) bpDbg.maxMag = Math.round(mag * 10) / 10;
+  if (bpDone || now - bpLastPeak < BP.COOL) return;
+  if (mag < BP.TH) { if (bpDbg) bpDbg.thFail++; return; }
   // 흔들기는 '천천히 커지고 계속 시끄럽다', 부딪힘은 '조용하다 한순간에 튄다'
   const recent = bpBuf.slice(-5);
   const rise = recent.length >= 2 ? mag - Math.min(...recent.map(s => s.mag)) : 0;
-  if (bpQuietBefore(now) >= BP.QUIET || rise < BP.TH * BP.RISE) return;
+  if (bpQuietBefore(now) >= BP.QUIET) { if (bpDbg) bpDbg.quietFail++; bpDbgPaint(); return; }
+  if (rise < BP.TH * BP.RISE) { if (bpDbg) bpDbg.riseFail++; bpDbgPaint(); return; }
   bpLastPeak = now;
+  if (bpDbg) bpDbg.peaks++;
+  bpDbgPaint();
   bpPublish(bpNow(), mag);
 }
 function bpPublish(at, mag) {
@@ -23251,13 +23303,20 @@ function bpPublish(at, mag) {
 // 사후 조회 — 상대는 잡았는데 내가 못 잡은 접촉을, 그 시각만 낮은 임계로 되짚는다.
 // 상대 신호가 있을 때만 열리므로 혼자 흔든 건 걸리지 않는다(정적도 조건은 그대로).
 function bpRetro(otherAt) {
+  if (bpDbg) bpDbg.retroTry++;
   const tLocal = otherAt - bpOff;
   if (Math.abs(tLocal - bpLastPeak) < 500) return false;
   const win = bpBuf.filter(s => Math.abs(s.t - tLocal) <= 200);
   if (!win.length) return false;
   let pk = win[0]; win.forEach(s => { if (s.mag > pk.mag) pk = s; });
-  if (pk.mag < BP.RETRO || bpQuietBefore(pk.t) >= BP.QUIET) return false;
+  // ★'그 전에 조용했나' 조건을 여기서만 뻐다 (대표 8-15:
+  //   "한 명은 되고 한 명은 안 되는 경우도 있었다").
+  //   되짚기는 **상대가 이미 피크를 올렸을 때만** 열린다 — 근거가 밖에 있다.
+  //   그런데도 내 폰이 "조용했어야 한다"를 요구하면, 걸어오면서·떠들면서
+  //   부딪친 사람은 영영 안 잡힌다. 혼자 흔든 것이 아니라는 보장은 상대 신호가 한다.
+  if (pk.mag < BP.RETRO) return false;
   bpLastPeak = pk.t;
+  if (bpDbg) { bpDbg.retroOk++; bpDbgPaint(); }
   bpPublish(pk.t + bpOff, pk.mag);
   return true;
 }
@@ -23281,9 +23340,20 @@ async function bpEnsureWindow(sid, s) {
 
 window.bumpOpen = async function (sid) {
   const user = auth.currentUser; if (!user) { showToast('로그인이 필요해요'); return; }
-  if (!window._rt || window._SQUAD_RT_OFF) { showToast('실시간 연결이 안 돼요'); return; }
+  // ★★연결을 **기다려준다** (대표 8-15: "30% 확률로 실패").
+  //   예전엔 그 자리에서 바로 토스트만 띄우고 끝났다. 스쿠에드를 열자마자
+  //   범프를 누르면 RTDB 가 아직 안 붙은 상태라 그냥 튀긴다 — 현장에선
+  //   "다시 눌러보세요" 말고는 설명할 길이 없다. 3초까지 기다렸다가 안 되면 그때 말한다.
+  if (!window._rt) { showToast('실시간 연결이 안 돼요'); return; }
+  if (window._SQUAD_RT_OFF) {
+    bpOverlay('wait');
+    const t0 = Date.now();
+    while (window._SQUAD_RT_OFF && Date.now() - t0 < 3000) await new Promise(r => setTimeout(r, 120));
+    if (window._SQUAD_RT_OFF) { bpMsg('실시간 연결이 안 돼요 · 잠시 뒤 다시 눌러주세요'); return; }
+  }
   const s = window._sqDoc;
   bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0;
+  bpDbgNew((s && user.uid === s.hostUid) ? 'host' : 'guest');
   bpRole = (s && user.uid === s.hostUid) ? 'host' : 'guest';
   // ★출석의 '여부'와 '시각'을 분리한다.
   //   여부 = 범프(위조하기 어려운 강한 증거) / 시각 = 이 화면을 연 순간(= 현장 도착).
@@ -23301,6 +23371,7 @@ window.bumpOpen = async function (sid) {
   const pO = need(window.DeviceOrientationEvent) ? DeviceOrientationEvent.requestPermission() : Promise.resolve('granted');
   pM.then(r => {
     if (r !== 'granted') {
+      if (bpDbg) { bpDbg.perm = String(r); bpDbgSave('perm-denied'); }
       // ★막힌 사람에게만 길을 보여준다 (2026-08-14). 앞단에서 미리 경고하면 잘 되는
       //   대부분에게 마찰만 준다 — 대표 실측상 카톡 링크로도 범프는 성공해 왔다.
       //   인앱 브라우저라면 '기본 브라우저로 열기'가 대부분의 해결책이다.
@@ -23311,6 +23382,7 @@ window.bumpOpen = async function (sid) {
           : '<br><span style="font-size:11px">설정 > Safari > 동작 및 방향 접근</span>'));
       return;
     }
+    if (bpDbg) bpDbg.perm = 'granted';
     bpMotion = bpOnMotion; window.addEventListener('devicemotion', bpMotion);
   }).catch(() => bpMsg('센서를 켤 수 없어요'));
   pO.then(r => { if (r === 'granted') window.addEventListener('deviceorientation', bpOrient); }).catch(() => {});
@@ -23331,6 +23403,7 @@ window.bumpOpen = async function (sid) {
       const all = snap.val() || {}, mine = all[user.uid];
       const others = Object.values(all).filter(p => p && p.uid !== user.uid);
       bpPeers(others.length);
+      if (bpDbg) bpDbg.peers = Math.max(bpDbg.peers, others.length);
       if (bpDone) return;
       const hit = others.filter(o => o.peakAt);
       if (!hit.length) return;
@@ -23348,6 +23421,7 @@ window.bumpOpen = async function (sid) {
           bpRetro(o.peakAt);   // 내가 놓친 접촉이면 되짚어 본다(갱신되면 다시 들어온다)
           continue;
         }
+        if (bpDbg && bpDbg.dts.length < 8) bpDbg.dts.push(dt);
         if (dt < bestDt) { bestDt = dt; best = o; }
       }
       if (best) {
@@ -23360,6 +23434,8 @@ window.bumpOpen = async function (sid) {
 };
 
 window.bumpClose = function () {
+  // ★닫는 순간 결과를 남긴다 — 성공보다 **실패한 시도**가 분석에 필요하다(대표 8-15).
+  try { if (bpDbg && !bpDbg._saved) { bpDbg._saved = 1; bpDbgSave(bpDone ? 'closed-after' : 'gave-up'); } } catch (e) {}
   bpDone = true;
   if (bpMotion) { window.removeEventListener('devicemotion', bpMotion); bpMotion = null; }
   window.removeEventListener('deviceorientation', bpOrient);
@@ -23396,6 +23472,7 @@ async function bpSucceed(other, dt) {
     return;
   }
   await bpScene(await charP);
+  try { if (bpDbg && !bpDbg._saved) { bpDbg._saved = 1; bpDbg.dt = dt; bpDbgSave('ok'); } } catch (e) {}
   const bk = await bpSaveBumper(other, place);
   const _att = bpAttendCredit; bpAttendCredit = 0;
   const earned = (await bpEarn(bk.stacked, bk.first)) + _att;
@@ -23626,6 +23703,10 @@ function bpOverlay(mode, data) {
           ${bpRole === 'host' ? '리더는 누구에게든 도장을 찍어줄 수 있어요' : '리더나 이미 도장을 받은 사람과 맞대세요'}</div>
         <div id="bp-peers" style="font-size:12px;color:${c};margin-top:10px">상대를 기다리는 중…</div>
         <div id="bp-msg" style="font-size:12px;color:#E4472E;margin-top:8px;line-height:1.6"></div>
+        <!-- ★내 폰이 감지를 하긴 하는지 현장에서 바로 보인다 (대표 8-15).
+             감지 0 → 내 폰 문제(권한·세게 안 뚜음) / 감지는 되는데 안 붙음 → 짝 판정 문제.
+             작게·흐리게 둔다 — 범프 자체가 연출이라 숫자가 주인공이 되면 안 된다. -->
+        <div id="bp-dbg" style="font-size:10.5px;color:#3d4456;margin-top:10px;font-family:inherit"></div>
       </div>
       <button onclick="window.bumpClose()" style="position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
         z-index:18;background:rgba(255,255,255,.08);color:#cfd6e6;border:none;border-radius:12px;
