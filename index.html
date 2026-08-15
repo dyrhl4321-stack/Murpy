@@ -5729,6 +5729,15 @@ const BOOST_OPTIONS = [
 //   지금까지는 서버 로그·토큰만 보고 기기 상태를 추측했다 — 기기에서 보면 한 줄로 끝난다.
 window._diagPush = async function () {
   const L = [];
+  try {
+    // ★index.html 의 _SW_V 와 sw.js 의 실제 버전이 어깋나면 **새 코드가 폰에 안 간다.**
+    //   예전에 384 에 멈춰 며칠을 헤맸 적이 있다 — 눈으로 확인하지 말고 여기서 읽는다.
+    const sw = await (await fetch('./sw.js?probe=' + Date.now(), { cache: 'no-store' })).text();
+    const m = sw.match(/murpy-v(\d+)/);
+    const real = m ? m[1] : '?';
+    L.push('빌드: index _SW_V=' + (window._SW_V || '?') + ' / sw.js=' + real
+      + (real !== String(window._SW_V) ? '  ★어깋남' : ''));
+  } catch (e) { L.push('sw.js 버전 확인 실패'); }
   L.push('알림 권한: ' + (window.Notification ? Notification.permission : '지원 안 함'));
   L.push('푸시 등록: ' + (window._pushOk ? '성공' : '실패/미실행'));
   if (window._pushErr) L.push('★등록 오류: ' + window._pushErr);
@@ -9414,7 +9423,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '604';
+window._SW_V = '605';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
