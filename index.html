@@ -9423,7 +9423,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '605';
+window._SW_V = '606';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -14523,12 +14523,32 @@ window.obComplete = async () => {
   const bio = document.getElementById('ob-bio').value.trim();
   try {
     if (!test) {
-      await setDoc(doc(db, 'users', user.uid), {
-        nickname, birth, age, gender: window._obData.gender,
+      // ★★가입 성별로 몸통을 **이 쓰기에서 같이** 정한다 (대표 8-16:
+      //   "여자로 가입했는데 머피월드 들어가면 남캐다").
+      //   지금까지는 loadUserProfile 의 '성별 몸통 백필'에 맡겨둔는데,
+      //   그건 로그인 순간(성별이 아직 없는 때) 만들어진 남캐를 나중에 고치는 순서라
+      //   한 박자구가 난다. 순서에 기대지 말고 **고른 그 자리에서** 박는다.
+      //   ★몸통은 유저가 고르는 게 아니라 가입 성별로 정해진다(대표 확정).
+      //   단, 헬토리·히든처럼 성별 개념이 없는 통짜 캐릭터를 골라둔 경우엔 손대지 않는다.
+      const _obG = window._obData.gender;
+      const _curCh = (window._charState && window._charState.character) || {};
+      const _curBody = _curCh.body || 'human';
+      const _bodyDef = (window._CHAR_BODIES || {})[_curBody] || {};
+      let _obChar = null;
+      if (_bodyDef.gender || !_curCh.body) {           // 성별 몸통이거나 아직 비어 있을 때만
+        _obChar = Object.assign({}, window.CHAR_DEFAULT, _curCh,
+          { body: window._charBodyForGender(_obG) });
+        // 다른 성별 전용 아이템을 벗기고 그 몸통의 기본옷을 채운다(벌거벗지 않게)
+        if (window._charEnsureDefaults) window._charEnsureDefaults(_obChar);
+      }
+      await setDoc(doc(db, 'users', user.uid), Object.assign({
+        nickname, birth, age, gender: _obG,
         purpose: window._obData.purpose, workoutTime: window._obData.times,
         sports: window._obData.sports,
         district, bio, onboardingComplete: true, updatedAt: serverTimestamp()
-      }, { merge: true });
+      }, _obChar ? { character: _obChar } : {}), { merge: true });
+      // 화면 쪽 상태도 같이 바꾼다 — 안 그러면 이번 세션은 남캐로 그려진다
+      if (_obChar && window._charState) window._charState.character = _obChar;
       if (window.currentUser) window.currentUser.nickname = nickname;
     }
     window._obTestMode = false;
