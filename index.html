@@ -9404,7 +9404,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '600';
+window._SW_V = '601';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -23207,7 +23207,15 @@ window.sqComplete = async function (sid) {
 //   곹치면 진짜 접촉이어도 150 을 넘기기 쉬우다.
 //   ★넓히면 엉뚝한 쌍이 잡힐 위험이 늘지만, 짝은 이미 **Δt 가 가장 작은 사람**을 고른다.
 //   순차 검증은 아래 bumpDiag 로 실측해서 다음에 수치로 정한다(지금은 감이 아니라 데이터가 없다).
-const BP = { TH: 16, RETRO: 10, QUIET: 2.2, RISE: 0.72, PAIR_MS: 260, COOL: 800, BUF_MS: 2500 };
+// ★감지 문턱값을 살짝 낮춘다 = 더 쉽게 잡힌다 (대표 8-15 지시).
+//   TH 16 -> 14 : 젖자기 가속도(중력 포함). 가만히 들면 9.8 이므로,
+//   16 은 '쉬는 것보다 6.2 만큼 튀기'였고 14 는 4.2 만큼이다. 약하게 맞댁 사람을 받기 위함.
+//   RISE 0.72 -> 0.64 : '직전보다 얼마나 갑자기 튀었나'. 같이 안 낮추면
+//   TH 만 낮춰도 여기서 그대로 막혀 효과가 없다(기준이 TH 에 비례하기 때문).
+//   RETRO 10 -> 9 : 되짚기 문턱도 같은 비율로.
+//   ★QUIET(직전 정적도)는 안 건드린다 — 그것까지 풀면 발걸음·주머니 흔들림이 들어온다.
+//   오작동이 늘어나는지는 bumpDiag 의 감지횟수·최대세기로 다음에 확인한다.
+const BP = { TH: 14, RETRO: 9, QUIET: 2.2, RISE: 0.64, PAIR_MS: 260, COOL: 800, BUF_MS: 2500 };
 // ★계측 (대표 8-15: "로그 보고 분석해서 고쳐봐").
 //   어제는 **실패 기록이 하나도 없었다.** 성공한 범프도 Δt 를 안 남겨서
 //   "왜 안 됐는지"를 코드로 추정할 수밖에 없었다. 다음부터는 숫자로 말한다.
@@ -23269,6 +23277,7 @@ async function bpDbgSave(outcome) {
     const u = auth.currentUser; if (!u || !bpDbg) return;
     const rec = Object.assign({}, bpDbg, {
       outcome: outcome, sid: bpSid || '', ms: Date.now() - bpDbg.t0,
+      th: BP.TH, rise: BP.RISE, pair: BP.PAIR_MS,   // 어떤 설정으로 돌았는지 같이 남긴다
       at: new Date().toISOString(),
       dts: (bpDbg.dts || []).slice(0, 8),
       ua: (navigator.userAgent || '').slice(0, 80)
