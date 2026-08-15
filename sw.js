@@ -1,10 +1,11 @@
-﻿// 諛고룷留덈떎 ??踰꾩쟾???щ젮???먮룞 ?덈쾭???곸슜(?덈줈怨좎묠)???숈옉??const CACHE_NAME = 'murpy-v604';
-const STATIC_CACHE = 'murpy-static-v604';
-const CDN_CACHE = 'murpy-cdn-v604';
-// ?대?吏 罹먯떆??踰꾩쟾 ??遺숈엫 ??肄붾뱶/HTML 諛고룷?대룄 ?좎?(URL??怨?踰꾩쟾)
+// 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
+const CACHE_NAME = 'murpy-v605';
+const STATIC_CACHE = 'murpy-static-v605';
+const CDN_CACHE = 'murpy-cdn-v605';
+// 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
-// ???쒖옉 ??利됱떆 罹먯떆??濡쒖뺄 ?뚯씪
+// 앱 시작 시 즉시 캐시할 로컬 파일
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -15,7 +16,7 @@ const STATIC_ASSETS = [
   './logo-nukki.png',
 ];
 
-// CDN ?ㅽ겕由쏀듃 (踰꾩쟾 怨좎젙 ???곴뎄 罹먯떆)
+// CDN 스크립트 (버전 고정 → 영구 캐시)
 const CDN_HOSTS = [
   'www.gstatic.com',
   't1.kakaocdn.net',
@@ -47,7 +48,7 @@ self.addEventListener('fetch', e => {
 
   const url = new URL(e.request.url);
 
-  // Firestore / Firebase Auth API ???ㅽ듃?뚰겕留?(?ㅼ떆媛??곗씠??
+  // Firestore / Firebase Auth API → 네트워크만 (실시간 데이터)
   if (url.hostname.includes('firestore.googleapis.com') ||
       url.hostname.includes('identitytoolkit.googleapis.com') ||
       url.hostname.includes('securetoken.googleapis.com') ||
@@ -56,7 +57,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // ?꾨줈???쇰뱶 ?대?吏 (weserv 由ъ궗?댁쫰, imgBB) ??罹먯떆 ?곗꽑 (URL??怨?踰꾩쟾)
+  // 프로필/피드 이미지 (weserv 리사이즈, imgBB) → 캐시 우선 (URL이 곧 버전)
   if (url.hostname.includes('images.weserv.nl') || url.hostname.includes('ibb.co')) {
     e.respondWith(
       caches.open(IMG_CACHE).then(async cache => {
@@ -70,7 +71,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // CDN ?ㅽ겕由쏀듃 ??罹먯떆 ?곗꽑 (踰꾩쟾 怨좎젙 ?뚯씪)
+  // CDN 스크립트 → 캐시 우선 (버전 고정 파일)
   if (CDN_HOSTS.some(h => url.hostname.includes(h))) {
     e.respondWith(
       caches.open(CDN_CACHE).then(async cache => {
@@ -84,8 +85,10 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // HTML ?뚯씪 ???ㅽ듃?뚰겕 ?곗꽑 (??긽 理쒖떊 踰꾩쟾)
-  // ?꿤ache:'no-store' 濡?諛쏅뒗?? 洹몃깷 fetch ?섎㈃ 釉뚮씪?곗? HTTP 罹먯떆? GitHub Pages CDN ??  //   ??index.html ??洹몃?濡?二쇨린 ?뚮Ц?? sw 踰꾩쟾???щ젮???붾㈃????쾶 諛붾뚯뿀??  //   (??? "?몄떆??寃?怨꾩냽 ??쾶 諛섏쁺?쒕떎"). no-store 硫?留ㅻ쾲 ?먮낯源뚯? 媛꾨떎.
+  // HTML 파일 → 네트워크 우선 (항상 최신 버전)
+  // ★cache:'no-store' 로 받는다. 그냥 fetch 하면 브라우저 HTTP 캐시와 GitHub Pages CDN 이
+  //   옛 index.html 을 그대로 주기 때문에, sw 버전을 올려도 화면이 늦게 바뀌었다
+  //   (대표: "푸시한 게 계속 늦게 반영된다"). no-store 면 매번 원본까지 간다.
   if (url.origin === self.location.origin && (url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/')) {
     e.respondWith(
       fetch(e.request, { cache: 'no-store' }).then(res => {
@@ -97,7 +100,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // 湲고? 濡쒖뺄 ?뺤쟻 ?뚯씪 ??罹먯떆 ?곗꽑
+  // 기타 로컬 정적 파일 → 캐시 우선
   if (url.origin === self.location.origin) {
     e.respondWith(
       caches.open(STATIC_CACHE).then(async cache => {
@@ -110,7 +113,3 @@ self.addEventListener('fetch', e => {
     );
   }
 });
-
-
-
-
