@@ -1636,6 +1636,12 @@
         <span style="margin:0 7px;color:rgba(255,255,255,0.15)">·</span>
         <a href="/privacy" target="_blank" rel="noopener" style="color:rgba(255,255,255,0.4);text-decoration:none">개인정보처리방침</a>
         <div style="margin-top:6px;font-size:11px;color:rgba(255,255,255,0.2)">문의 murpyapp@gmail.com</div>
+        <!-- ★계정 삭제 — 애플·구글 모두 스토어 필수 항목이다(없으면 심사 반려).
+             파괴적 동작이라 로그아웃과 **떨어뜨려** 맨 아래 가장 조용한 자리에 둔다. -->
+        <button id="delete-account-btn" onclick="window.askDeleteAccount()"
+                style="display:none;background:none;border:none;margin-top:18px;padding:6px;
+                       font-family:inherit;font-size:11.5px;color:rgba(255,255,255,0.22);
+                       text-decoration:underline;text-underline-offset:3px;cursor:pointer">계정 삭제</button>
       </div>
     </div>
     <div id="my-photos" style="display:none">
@@ -9320,6 +9326,23 @@ function googleLogout() {
   document.dispatchEvent(logoutEvent);
 }
 
+// ===== 계정 삭제 (스토어 필수) =====
+// ★확인창은 **새로 만들지 않는다** — 기존 confirm/토스트 그대로.
+//   되돌릴 수 없는 동작이라 두 번 묻고, 두 번째는 무엇이 남는지까지 밝힌다.
+window.askDeleteAccount = function () {
+  if (!window.currentUser) return;
+  if (!confirm('계정을 삭제하면 되돌릴 수 없어요.\n\n'
+             + '· 프로필과 사진, 내가 쓴 글이 사라져요\n'
+             + '· 가지고 있는 머피도 함께 사라져요\n\n'
+             + '계속할까요?')) return;
+  if (!confirm('마지막 확인이에요.\n\n'
+             + '벙 출석·입금 기록과 주고받은 대화는\n'
+             + '다른 분들의 기록이기도 해서 남지만,\n'
+             + "내 이름 대신 '탈퇴한 사용자'로 보여요.\n\n"
+             + '정말 삭제할까요?')) return;
+  window.deleteMyAccount();
+};
+
 async function handleCrewCoverUpload(input) {
   const file = input.files[0];
   if (!file) return;
@@ -9381,7 +9404,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '597';
+window._SW_V = '598';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9529,6 +9552,9 @@ window.updateUI = function(user) {
       window._setHeaderAvatar((user.firestorePhotoURL || user.photoURL) || '');
       if (loginBtn) loginBtn.style.display = 'none';
       if (logoutBtn) logoutBtn.style.display = 'block';
+      // 계정 삭제는 로그인한 사람에게만 (임시 계정은 지울 게 없다)
+      const delBtn = document.getElementById('delete-account-btn');
+      if (delBtn) delBtn.style.display = window._notMember && window._notMember() ? 'none' : 'inline-block';
       const heartBtn = document.getElementById('header-interest-btn');
       if (heartBtn) heartBtn.style.display = 'flex';   // 로그인 시 하트 상시 표시 (알림은 _loadInterestPanel에서)
       document.querySelectorAll('.modal-overlay').forEach(el => {
@@ -9539,6 +9565,8 @@ window.updateUI = function(user) {
       });
     } else {
       window._setHeaderAvatar('');
+      const delBtnOut = document.getElementById('delete-account-btn');
+      if (delBtnOut) delBtnOut.style.display = 'none';
       if (loginBtn) loginBtn.style.display = 'flex';
       if (logoutBtn) logoutBtn.style.display = 'none';
       const badge = document.getElementById('notif-badge');
@@ -9739,6 +9767,8 @@ onAuthStateChanged(auth, async (user) => {
     if (window.loadCentersFirestore) window.loadCentersFirestore();
     if (window.startNotifListener) window.startNotifListener(user.uid);
     if (window.initPush) window.initPush(user.uid);
+    // 알림을 받을 수 있는데 안 켜둔 사람에게만 한 줄 (위 _pushBarMaybe 설명)
+    setTimeout(function () { window._pushBarMaybe && window._pushBarMaybe(); }, 4000);
     // 로그인 상태: 로고 잠깐만 보여주고 빠르게 진입
     setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 500);
     // 초대 링크로 들어온 정식 계정은 그 스쿼드로 바로 보낸다(게스트는 닉네임 저장 후에 간다)
@@ -9869,6 +9899,64 @@ window._kakaoErrText = function (e) {
     catch(e) { console.error('카카오 토큰 로그인 실패:', e); showToast('카카오 로그인 실패: ' + window._kakaoErrText(e)); }
   }
 })();
+
+// ===== 계정 삭제 실행 =====
+// 설계: docs/superpowers/specs/2026-08-13-privacy-terms-account-deletion-design.md
+//
+// ★원칙 — **내 것은 지우고, 남과 얽힌 것은 익명화한다.**
+//   전부 하드 삭제하면 벙주 정산(출석·입금)이 깨지고 상대 화면의 대화가 반쪽만 남는다.
+//   개인정보보호법상 식별정보를 없애면 파기로 인정되므로 식별정보만 확실히 지운다.
+//
+// ★순서가 중요하다 — 중간에 끊겼을 때 최악은 **개인정보가 남는 것**이다.
+//   그래서 콘텐츠보다 users 익명화를 **먼저** 한다. 1번만 끝나면 이름·사진은 이미 없다.
+window.deleteMyAccount = async function () {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) return;
+  const uid = user.uid;
+  showToast('계정을 삭제하는 중이에요...');
+
+  // ① 개인정보부터 지운다 (문서 자체는 남긴다 — 통째로 지우면 남의 화면이 '알 수 없음'으로 깨진다)
+  try {
+    await setDoc(doc(db, 'users', uid), {
+      deleted: true, deletedAt: serverTimestamp(),
+      nickname: '탈퇴한 사용자', photoURL: '', photos: [], workoutPhotos: [],
+      bio: '', birth: null, age: null, gender: '', district: '',
+      sports: [], purpose: '', workoutTime: [],
+      fcmTokens: [], faceVerified: false, credits: 0
+    }, { merge: true });
+  } catch (e) { console.error('프로필 삭제 실패', e); }
+
+  // ② 내가 쓴 것들. 한 곳이 실패해도 다음으로 넘어간다 — 여기서 멈추면 반만 지워진다.
+  const mine = [
+    ['feed', 'uid'], ['bamboo', 'uid'], ['checkins', 'uid'],
+    ['likes', 'from'], ['notifications', 'toUid'], ['notifications', 'fromUid'],
+  ];
+  for (const [col, field] of mine) {
+    try {
+      const snap = await getDocs(query(collection(db, col), where(field, '==', uid)));
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref).catch(() => {})));
+    } catch (e) { console.warn('삭제 건너뜀', col, field, e); }
+  }
+
+  // ③ 로그인 계정 자체. 이걸 지워야 같은 구글/카카오로 다시 들어와도 **새 사람**이 된다.
+  try {
+    await deleteUser(user);
+  } catch (e) {
+    // 오래 로그인해 둔 경우 애플·구글이 재인증을 요구한다.
+    // ★이때도 ①②는 이미 끝나 있어 개인정보는 남지 않는다.
+    if (e && e.code === 'auth/requires-recent-login') {
+      showToast('보안을 위해 다시 로그인한 뒤 한 번만 더 눌러주세요');
+      try { await signOut(auth); } catch (_) {}
+      setTimeout(() => location.reload(), 1200);
+      return;
+    }
+    console.error('계정 삭제 실패', e);
+  }
+
+  showToast('계정이 삭제됐어요. 그동안 고마웠어요');
+  try { if (typeof closePanel === 'function') closePanel('mypage-panel'); } catch (e) {}
+  setTimeout(() => location.replace('/'), 1500);
+};
 
 // 로그아웃 이벤트 연결
 document.addEventListener('murpy-logout', async () => {
@@ -13186,14 +13274,66 @@ window.stopNotifListener = () => {
 // ↓↓↓ Firebase 콘솔 > 프로젝트설정 > 클라우드 메시징 > "웹 푸시 인증서" 의 키 페어(공개키)를 붙여넣으세요
 const FCM_VAPID_KEY = "BMIfmPuTl5_Y_fpNQDZ9NaS9s7G7l-bhqRSDTmIQwM87GG_YZNxIirVehM8K640bpDei8Ixlzu6g_itK077lhnw";
 let _messaging = null;
-window.initPush = async (uid) => {
+// ★★알림 켜기 — 반드시 **사용자 탭** 안에서 불려야 한다 (대표 8-14).
+//   iOS 는 페이지 로드 중의 requestPermission 을 조용히 무시한다 — 팝업이 아예 안 뜼다.
+//   그래서 "알림이 안 와요"가 되면 유저는 원인을 알 길이 없다.
+window.enablePush = async function () {
+  try {
+    if (!('Notification' in window)) {
+      showToast('이 화면에선 알림을 켜지 못해요 · 홈 화면에 추가해서 열어주세요');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      showToast('알림이 꺼져 있어요 · 설정 > 알림 > 머피에서 켜주세요');
+      return;
+    }
+    const uid = (window.currentUser || {}).uid || (window.auth && window.auth.currentUser && window.auth.currentUser.uid);
+    await window.initPush(uid, true);          // true = 지금은 팝업을 띄워도 되는 순간이다
+    if (window._pushOk) { showToast('알림을 켰어요'); window._pushBarHide(true); }
+    else showToast('알림을 켜지 못했어요 · ' + (window._pushErr || '다시 시도해주세요'));
+  } catch (e) { showToast('알림을 켜지 못했어요'); }
+};
+window._pushBarHide = function (forever) {
+  const b = document.getElementById('push-bar'); if (b) b.remove();
+  if (forever) { try { localStorage.setItem('murpy_push_bar_off', '1'); } catch (e) {} }
+};
+// 알림을 받을 수 있는데 안 켜둔 사람에게만 한 줄 띄운다.
+window._pushBarMaybe = function () {
+  try {
+    if (document.getElementById('push-bar')) return;
+    if (localStorage.getItem('murpy_push_bar_off')) return;
+    if (!window.currentUser) return;
+    if (!('Notification' in window)) return;              // 브라우저 탭은 안내해도 방법이 없다
+    if (Notification.permission !== 'default') return;    // 이미 허용/거부한 사람은 건드리지 않는다
+    const el = document.createElement('div');
+    el.id = 'push-bar';
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(68px + env(safe-area-inset-bottom));z-index:9000;max-width:366px;margin:0 auto;background:#0d1016;border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px 13px;display:flex;align-items:center;gap:10px';
+    el.innerHTML =
+      '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:12.5px;font-weight:700;color:#fff">알림을 켜면 놓치지 않아요</div>'
+      + '<div style="font-size:11px;color:rgba(255,255,255,.42);margin-top:2px">벙 승인 · 스쿠에드 톡 · 머피 선물</div>'
+      + '</div>'
+      + '<button onclick="window.enablePush()" style="flex-shrink:0;background:none;border:1px solid rgba(61,126,255,.6);color:#7aa8ff;border-radius:10px;padding:7px 12px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">켜기</button>'
+      + '<button onclick="window._pushBarHide(true)" aria-label="닫기" style="flex-shrink:0;background:none;border:none;color:rgba(255,255,255,.3);font-size:15px;padding:6px 2px;cursor:pointer;font-family:inherit">×</button>';
+    document.body.appendChild(el);
+  } catch (e) {}
+};
+window.initPush = async (uid, ask) => {
   if (!FCM_VAPID_KEY) return; // VAPID 키 없으면 비활성 (지금은 인앱 팝업만 동작)
   try {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
     if (!(await isSupported())) return;
     const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './firebase-cloud-messaging-push-scope' });
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') return;
+    // ★★판업은 사용자가 뭐라도 눌렀을 때만 뜼다 (대표 8-14: "알림 허용 팝업이 안 뜼다").
+    //   iOS 는 requestPermission 을 **탭(사용자 제스처) 안에서** 부를 때만 팝업을 띄운다.
+    //   지금처럼 앱이 켜질 때 자동으로 부르면 **조용히 무시**된다 — 유저는 영문도 모른다.
+    //   → 자동 호출에서는 이미 허용된 경우만 진행하고,
+    //     안 된 사람에겐 화면에 버튼을 띄워 그걸 누르게 한다(enablePush).
+    if (Notification.permission !== 'granted') {
+      if (!ask) { window._pushErr = '권한 미허용 (사용자가 버튼을 눌러야 팝업이 뜼다)'; return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { window._pushErr = '권한 ' + perm; return; }
+    }
     _messaging = getMessaging(app);
     const token = await getToken(_messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     window._pushTok = token || '';                     // ?diag=1 에서 이 기기의 토큰을 확인한다
@@ -13242,6 +13382,13 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
 
   let d = {};
   try { const us = await getDoc(doc(db, 'users', userId)); if (us.exists()) d = us.data(); } catch (e) {}
+  // ★탈퇴한 사람은 프로필을 열지 않는다 — 문서는 남아 있지만(남의 화면이 깨지지 않게)
+  //   빈 껍데기라 열어봐야 아무것도 없다.
+  if (d.deleted) {
+    closePanel('user-profile-panel');
+    showToast('탈퇴한 사용자예요');
+    return;
+  }
   const name = d.nickname || userName || '익명';
   const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
   const isSelf = userId === window.currentUser?.uid;
