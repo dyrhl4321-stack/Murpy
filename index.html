@@ -5710,6 +5710,27 @@ const BOOST_OPTIONS = [
 // ★★진단: murpy.app/?diag=1 로 열면 **무엇이 화면을 덮고 있는지** 팝업으로 보여준다.
 //   화면이 안 눌리는 상태에서도 동작한다 — 주소만 열면 되고 아무것도 누를 필요가 없다.
 //   (대표 8-14: "카드가 보이는데 안 눌린다"의 원인을 내가 재현 못 해서 만든 것)
+// ★푸시 상태 진단 (대표 8-14). "안 뜬다"를 폰에서 직접 읽을 수 있게 한다.
+//   지금까지는 서버 로그·토큰만 보고 기기 상태를 추측했다 — 기기에서 보면 한 줄로 끝난다.
+window._diagPush = async function () {
+  const L = [];
+  L.push('알림 권한: ' + (window.Notification ? Notification.permission : '지원 안 함'));
+  L.push('푸시 등록: ' + (window._pushOk ? '성공' : '실패/미실행'));
+  if (window._pushErr) L.push('★등록 오류: ' + window._pushErr);
+  L.push('이 기기 토큰: ' + (window._pushTok ? window._pushTok.slice(0, 22) + '…' : '없음'));
+  L.push('홈화면 앱으로 실행: ' + (window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone ? '예' : '아니오 (브라우저 탭)'));
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    L.push('서비스워커 ' + regs.length + '개');
+    regs.forEach(function (r) {
+      const w = r.active || r.waiting || r.installing;
+      L.push('  · ' + (w ? w.scriptURL.split('/').pop() : '?') + ' [' + (w ? w.state : '?') + ']'
+        + (r.waiting ? ' ★대기중(새 버전이 아직 적용 안 됨)' : ''));
+      });
+  } catch (e) { L.push('서비스워커 조회 실패: ' + e); }
+  return L.join(String.fromCharCode(10));
+};
 window._diagStuck = function () {
   const L = [];
   try {
@@ -5755,7 +5776,14 @@ window._diagStuck = function () {
 };
 try {
   if (new URLSearchParams(location.search).get('diag') === '1') {
-    window.addEventListener('load', function () { setTimeout(window._diagStuck, 2500); });
+    window.addEventListener('load', function () {
+      setTimeout(window._diagStuck, 2500);
+      // ★푸시 상태는 따로 한 장 더 (대표 8-14: "내 폰에서만 알림이 안 뜬다").
+      //   권한·토큰·서비스워커를 **그 폰에서 직접** 읽어야 원인이 한 줄로 나온다.
+      setTimeout(function () {
+        window._diagPush().then(function (t) { alert('[푸시 진단]' + String.fromCharCode(10,10) + t); });
+      }, 3400);
+    });
   }
 } catch (e) {}
 
@@ -9353,7 +9381,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '596';
+window._SW_V = '597';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -9405,7 +9433,7 @@ if ('serviceWorker' in navigator) {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
@@ -13168,13 +13196,21 @@ window.initPush = async (uid) => {
     if (perm !== 'granted') return;
     _messaging = getMessaging(app);
     const token = await getToken(_messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    window._pushTok = token || '';                     // ?diag=1 에서 이 기기의 토큰을 확인한다
     if (token && uid) await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+    window._pushOk = !!token;
     onMessage(_messaging, payload => {
       const n = (payload && (payload.data || payload.notification)) || {};
       if (n.type === 'match') _showMatchPopup({ fromNickname: n.fromNickname, fromUid: n.fromUid, fromPhoto: n.fromPhoto });
       else showToast((n.title || n.body || '새 알림이 도착했어요'));
     });
-  } catch (e) {}
+  } catch (e) {
+    // ★예전엔 통째로 삼켰다 (대표 8-14: "내 폰에서만 알림이 안 뜬다" 를 며칠 추적한 이유).
+    //   권한 거부든 토큰 실패든 아무 흔적이 없어서 기기에서 무슨 일이 났는지 알 방법이 없었다.
+    //   앱 화면은 그대로 두되(알림은 부가기능이라 앱을 막으면 안 된다) **자국은 남긴다.**
+    window._pushErr = (e && (e.code || e.message)) || String(e);
+    console.warn('initPush 실패', e);
+  }
 };
 
 // ===== 상대방 프로필 (소개팅 카드 + 인스타 피드, 매칭 잠금/해제) =====
