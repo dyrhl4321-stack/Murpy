@@ -28,14 +28,26 @@ import os
 
 from PIL import Image
 
-SCALE = 2
+# ★소스를 48px -> **16px** 로, 배수를 2배 -> **4배**로 바꿨다 (대표 8-17).
+#   "좀더 에셋들을 자체 고퀄화는 안 되려나. 그리고 덤벨들 지금 보니까 너무 큼."
+#   둘이 같은 답이었다. 이 팩은 16/32/48px 세 버전이 다 들어 있다:
+#       48px x2배 -> 덤벨 96x42, 아트픽셀 2px   (크고, 격자가 우리와 다름)
+#       32px x4배 -> 덤벨 128x56, 아트픽셀 4px  (더 큼)
+#       16px x4배 -> **덤벨 64x28, 아트픽셀 4px**  <- 이것
+#   우리 가구는 32px 원본을 4배로 쓰므로 아트픽셀이 4px 다. 16px x4배면 그 격자에
+#   정확히 편입되고, 동시에 크기가 2/3 로 줄어든다. 두 지적이 한 번에 풀린다.
+#   ★'고퀄화'는 원본에 없는 디테일을 만드는 것이라 다시 그리는 것 외엔 방법이 없다.
+#     48px 쪽이 디테일은 많지만 격자가 어긋나 오히려 겉돌았다(방 배경에 올려 확인).
+#     그래서 디테일을 조금 포기하고 **격자 일치**를 택했다.
+SCALE = 4
 ALPHA_CUT = 128
 # ★우리 가구의 최암부(테두리) 색. char/rooms/pi_*.png 전수 실재이다.
 OUR_OUTLINE = (44, 13, 14)
 ROOMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rooms')
 
-GYM = '8_Gym_Singles_Shadowless_48x48/Gym_Singles_Shadowless_48x48_%d.png'
-MUS = '6_Music_and_Sport_Shadowless_48x48/Music_and_Sport_Singles_Shadowless_48x48_%d.png'
+# 16px 팩은 폴더·파일이름에 해상도 접미사가 없다
+GYM = '8_Gym_Singles_Shadowless/Gym_Singles_Shadowless_%d.png'
+MUS = '6_Music_and_Sport_Shadowless/Music_and_Sport_Singles_Shadowless_%d.png'
 
 # (파일명, 표시이름, 원본경로템플릿, 번호)
 # ★이름은 **확대해서 보고** 붙였다. 앞서 '주방 카운터'·'하이 테이블'을 쓰임새로 지어내
