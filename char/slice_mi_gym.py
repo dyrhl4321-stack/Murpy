@@ -30,6 +30,8 @@ from PIL import Image
 
 SCALE = 2
 ALPHA_CUT = 128
+# ★우리 가구의 최암부(테두리) 색. char/rooms/pi_*.png 전수 실재이다.
+OUR_OUTLINE = (44, 13, 14)
 ROOMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rooms')
 
 GYM = '8_Gym_Singles_Shadowless_48x48/Gym_Singles_Shadowless_48x48_%d.png'
@@ -58,6 +60,39 @@ ITEMS = [
     ('mi_kettlebell',    '케틀벨',        GYM, 155),   # 손잡이 달린 것
     ('mi_speaker',       '스피커',        MUS, 183),   # 체크무늬는 그릴 텍스처다(반투명 0, 10색 실측)
 ]
+
+
+def warm_to_our_palette(im):
+    """LimeZu 의 **침가운 재톤회색·남버라 테두리**를 우리 계열로 당긴다.
+
+    대표 8-17: "LimeZu 랑 너무 안 달라붙는다. 그림체가 확 자펌화 된다."
+    ★처음엔 원인을 '아트 픽셀 톰드 불일치'로 봤다(우리 4px vs 이 팝 2px).
+      그래서 1/2 로 줄인 뒤 4배하는 안을 만들어 방 배경에 올려봤는데
+      **거의 동일해 보이지 않았다.** 가설이 혀렸다.
+    진짜 원인은 **색**이었다. 방 전증(바닥·목재·캐릭터)은 따땻한 갈색인데
+    운동기구만 침가운 증회색이고, 테두리도 우린 진한 갈색이 아니라 남보라였다.
+
+    방식 (물건을 나무색으로 칠하지 않는다 — 쓰는 쓰로 보여야 한다)
+      1) 가장 어려운 14% 계층 = 테두리 -> 우리 테두리색으로 교새
+      2) 나머지는 파럸 기울기만 건얰다(B 를 R 쪽으로 당김) + 아주 조금 따땻하게.
+         명암 관계는 그대로 둔다 — 파럸만 붐서 중성 회색이 된다.
+    """
+    import numpy as np
+    a = np.array(im.convert('RGBA')).astype(int)
+    m = a[:, :, 3] >= ALPHA_CUT
+    if not m.any():
+        return im
+    rgb = a[:, :, :3]
+    lum = rgb.sum(2)
+    lo = np.percentile(lum[m], 14)
+    isout = m & (lum <= lo)
+    r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    body = m & ~isout
+    a[:, :, 0] = np.where(body, np.clip(r * 1.04, 0, 255).astype(int), r)
+    a[:, :, 1] = np.where(body, (g * 0.94 + r * 0.06).astype(int), g)
+    a[:, :, 2] = np.where(body, (r * 0.62 + b * 0.38).astype(int), b)
+    a[isout] = [OUR_OUTLINE[0], OUR_OUTLINE[1], OUR_OUTLINE[2], 255]
+    return Image.fromarray(a.astype('uint8'), 'RGBA')
 
 
 def solid_bbox(im):
@@ -95,6 +130,7 @@ def main():
         im = im.crop(bb)                       # 여백 제거 — 남기면 배치 좌표가 실제 형태와 어긋난다
         r, g, b, a = im.split()
         im = Image.merge('RGBA', (r, g, b, a.point(lambda v: 255 if v >= ALPHA_CUT else 0)))
+        im = warm_to_our_palette(im)      # ★키우기 전에 보정한다(확대 후면 테두리 밀도 판정이 달라진다)
         w, h = im.size
         big = im.resize((w * SCALE, h * SCALE), Image.NEAREST)
         big.save(os.path.join(args.out, name + '.png'))
