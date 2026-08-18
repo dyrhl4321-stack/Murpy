@@ -5702,7 +5702,8 @@ window.mwPortal = function () {
       <div style="position:absolute;top:50%;left:50%;width:150px;height:150px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(245,194,75,0.22),transparent 66%);pointer-events:none"></div>
       <div class="mfg-token" style="position:relative"></div>
     </div>
-    <div style="font-size:19px;font-weight:800;margin-bottom:4px;letter-spacing:-0.3px">머피 10개를 받았어요</div>
+    <!-- 금액은 murpyFirstGuide 가 CREDIT_WELCOME 으로 채운다. 여기 적힌 10은 옛 값이라 계속 어긋났다 -->
+    <div id="mfg-title" style="font-size:19px;font-weight:800;margin-bottom:4px;letter-spacing:-0.3px">머피를 받았어요</div>
     <div style="font-size:12.5px;color:rgba(255,255,255,0.45);margin-bottom:18px">운동으로 쌓고, 매칭·대숲에 써요</div>
     <div style="display:flex;flex-direction:column;gap:1px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;margin-bottom:18px;text-align:left">
       <div class="mfg-row" style="display:flex;align-items:center;gap:13px;padding:13px 14px">
@@ -10358,6 +10359,9 @@ window.murpyFirstGuide = function () {
   if (!el) return;
   const tw = el.querySelector('.mfg-token');
   if (tw && window.murpyTokenSVG) tw.innerHTML = window.murpyTokenSVG(52);
+  // 가입 선물 금액은 상수에서 읽는다(HTML 에 박아두면 금액이 바뀔 때마다 어긋난다)
+  const _t = document.getElementById('mfg-title');
+  if (_t) _t.textContent = '머피 ' + CREDIT_WELCOME + '개를 받았어요';
   el.style.display = 'flex';
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 };
@@ -12308,15 +12312,20 @@ window.ensureCreditsInit = async (uid) => {
     if (typeof d.credits !== 'number') {
       // 몸통은 가입 성별에서 정해진다 ('여성'→human_f, 그 외→human).
       const _newChar = { ...window.CHAR_DEFAULT, body: window._charBodyForGender(d.gender) };
-      // ★신규 가입자는 여기서 주지 않는다 (대표 결정 2026-08-07).
-      //   **첫 피드를 올리는 순간** 300머피가 들어오면서 선물 팝업이 뜬다.
-      //   선물이 '보상'이 되어 첫 인증사진 작성을 밀어준다 — 조용히 넣어두면 받은 줄도 모른다.
-      //   betaGrantPending 이 그 표시다. 이게 true 면 접속 시 지급 로직은 건너뛴다.
-      // 임시 계정은 betaGrantPending 을 켜지 않는다 — 켜두면 나중에 선물 대상이 된다.
+      // ★가입 선물은 **두 번에 나눠** 들어온다 (대표 확인 8-18).
+      //   ① 가입하는 지금 = CREDIT_WELCOME(30). 잔액 0으로 시작하면 매칭도 대숲도 못 눌러
+      //      첫 화면이 잠긴 것처럼 보인다. 연료는 가입하는 자리에서 준다.
+      //   ② **첫 피드를 올리는 순간** = 300머피(betaGrantPending 이 그 표시).
+      //      선물이 '보상'이 되어 첫 인증사진 작성을 밀어준다.
+      //   ★8-07~8-18 사이엔 ①이 빠져 있었다(credits: 0). 그래서 온보딩 끝에 뜨는
+      //     "가입 축하 선물" 이펙트가 실제로는 한 푼도 안 들어온 채 떴다.
+      // 임시 계정은 선물도 betaGrantPending 도 없다 — 스쿼드 출첵만 하는 계정이고,
+      //   링크를 다시 누를 때마다 새 계정이 생겨 선물이 계속 나가는 꼴이 된다.
+      const _welcome = _anon ? 0 : CREDIT_WELCOME;
       await setDoc(ref, Object.assign(
-        { credits: 0, creditsLastEarned: '', character: _newChar, wardrobe: [...window.CHAR_FREE] },
+        { credits: _welcome, creditsLastEarned: '', character: _newChar, wardrobe: [...window.CHAR_FREE] },
         _anon ? {} : { betaGrantPending: true }), { merge: true });
-      window._creditState.credits = 0;
+      window._creditState.credits = _welcome;
       window._creditState.lastEarned = '';
       window._creditState.streak = 0;
       window._charState.character = _newChar;
@@ -14781,7 +14790,12 @@ window.obComplete = async () => {
     document.getElementById('onboarding-modal').style.display = 'none';
     if (!test) await window.loadUserProfile(user.uid);
     // 가입 선물: 머피 축하 연출 + 설명 가이드(핵심 기능으로 유도). 실사용은 1회.
-    if (window.celebrateMurpy) window.celebrateMurpy(10, { amount: 10, title: '가입 축하 선물!' });
+    // ★금액을 여기 적지 말 것 — 10 이 박혀 있던 탓에 선물이 30으로 오른 뒤에도 계속 10으로 떴다.
+    //   실제로 넣어주는 자리(ensureCreditsInit)와 **같은 상수**를 읽는다.
+    //   임시 계정은 선물 대상이 아니라 연출도 띄우지 않는다.
+    const _obAnon = !!(auth.currentUser && auth.currentUser.isAnonymous);
+    if (window.celebrateMurpy && !_obAnon)
+      window.celebrateMurpy(CREDIT_WELCOME, { amount: CREDIT_WELCOME, title: '가입 축하 선물!' });
     if (!test) {
       try { localStorage.setItem('murpy_credit_intro', '1'); } catch (e) {}
       // 머피월드 홍보 팝업 armed — 이번(가입) 세션엔 안 뜨고 다음 재방문 세션부터
