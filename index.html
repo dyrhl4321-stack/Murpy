@@ -842,7 +842,7 @@
   .sq-body { position:relative }
   .mw-aur { position:absolute; left:50%; transform:translateX(-50%); width:103%;
     background-repeat:no-repeat; background-size:600% 100%; image-rendering:pixelated;
-    animation:mwAurSpin .66s steps(6) infinite; pointer-events:none }
+    animation:mwAurSpin .66s steps(6, jump-none) infinite; pointer-events:none }
   /* ★뒤 겹은 z-index **-1**. 0 으로 두면 안 가려진다 — 절대배치 요소는 z-index:0 이어도
        일반 콘텐츠(캐릭터 스프라이트)보다 **위에** 그려진다(대표 8-18: "후방쪽으로는
        캐릭터한테 가려져야 함"). 음수라야 캐릭터 뒤로 내려간다.
@@ -857,6 +857,14 @@
        느낌이 아니라 깜빡깜빡 하냐"). 퍼센트 위치는 픽셀 이동이 아니라
        **(컨테이너 폭 − 이미지 폭)** 기준이라, 6배 이미지에선 한 칸이 아니라 5배 폭만큼
        튄다. 0%→100% 로 가야 steps(6) 이 0/20/40/60/80/100% = 여섯 칸에 정확히 떨어진다. */
+  /* ★★steps(6) 은 기본이 jump-end 라서 진행값이 0, 1/6, 2/6, 3/6, 4/6, 5/6 으로 나온다.
+       그런데 0%→100% 는 프레임 **6칸이 아니라 5칸** 이동이다(퍼센트 배경위치는
+       컨테이너폭−이미지폭 기준이고, 6배 이미지면 그게 −5칸이다).
+       그래서 한 칸이 5/6=0.833 프레임씩 움직여 **매 프레임이 두 프레임의 잘린 조각**이 되고,
+       고리가 오른쪽으로 밀리며 여러 개가 지나가는 것처럼 보였다
+       (대표 8-19: "6개를 냅다 우측으로 재생시킨 느낌", 그 전엔 "무빙워크처럼 흘러간다").
+       jump-none 이면 0/0.2/0.4/0.6/0.8/1.0 → 정확히 프레임 0~5 에 떨어진다.
+       ★steps() 의 기본값을 믿지 말 것. 스프라이트 재생엔 jump-none 이다. */
   @keyframes mwAurSpin { from { background-position-x:0% } to { background-position-x:100% } }
   .sq-nick { font-size:9px; color:#fff; background:rgba(5,7,12,.72); padding:1px 5px 2px; margin-top:1px; max-width:70px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'Galmuri11',sans-serif }
@@ -3146,6 +3154,10 @@ window.mwPlateShake = function () {
 // 합판을 밟았다 — 달그락 + 말 걸기. 실제로 여는 건 두드리기(mwPlateTap)다.
 window.mwPlateStep = async function () {
   if (window._mwPlateBusy) return;
+  // ★두드리는 중(또는 이미 열리는 중)에 실수로 다시 밟으면 첫 대화창이 다시 깔려
+  //   두드리기를 방해한다(대표 8-19). 진행 중이면 달그락만 주고 말은 안 건다.
+  if (window._plateTaps > 0 || window._plateState !== 'closed'
+      || document.getElementById('mw-fieldtalk')) { window.mwPlateShake(); return; }
   window.mwPlateShake();
   const season = window._seasonEnsureMonth ? window._seasonEnsureMonth() : '';
   const meta = (window.FIELD_AURAS || {})[season];
@@ -3201,7 +3213,7 @@ window.mwPlateOpen = async function (season, meta) {
     if (ok) {
       window.mwSeasonCelebrate({
         id: 'aura_' + season, name: meta.name, title: meta.title, desc: meta.desc,
-        src: 'char/fx/aur_' + meta.color + '_preview.png?v=1', w: 140, h: 45
+        src: 'char/fx/aur_' + meta.color + '_preview.png?v=2', w: 116, h: 96
       });
     }
   } finally { window._mwPlateBusy = false; }
@@ -3327,7 +3339,7 @@ window.mwRoomEdit = function () {
             // ★틴트 칩 금지 — 색면 배지를 쓰지 않는다. 켜짐은 글자색으로만 구분한다
             //   (정답 모양 = 스쿼드 '입금 ✓' 토글). 골드는 별점·코인 자리라 안 쓴다.
             const lit = (k === on);
-            return `<button onclick="window.mwAuraToggle('${k}')"${lit ? '' : ' style="opacity:.72"'}><span class="thumb"><img src="char/fx/aur_${m.color}_preview.png?v=1" draggable="false"></span><span>${m.name}</span><span style="font-size:9.5px;background:none;color:${lit ? '#7AA4FF' : 'rgba(255,255,255,.3)'}">${lit ? '켜짐' : '꺼짐'}</span></button>`;
+            return `<button onclick="window.mwAuraToggle('${k}')"${lit ? '' : ' style="opacity:.72"'}><span class="thumb"><img src="char/fx/aur_${m.color}_preview.png?v=2" draggable="false"></span><span>${m.name}</span><span style="font-size:9.5px;background:none;color:${lit ? '#7AA4FF' : 'rgba(255,255,255,.3)'}">${lit ? '켜짐' : '꺼짐'}</span></button>`;
           }).join('')}
           </div>`;
       })()}
@@ -3662,8 +3674,8 @@ window._reditSave = async function () {
 // ★여기(블록 3)는 모듈이 아니라 arrayUnion 을 못 쓴다. 지급은 블록 5의 window.mwPlateGrant.
 //   상수를 블록 5 뒤쪽에 두면 로드 중 mwRenderFurn 이 먼저 돌아 합판이 안 그려진다 → 여기 둔다.
 window.FIELD_AURAS = {
-  '2026-08': { color: 'blue', name: '바닥의 불', title: '합판을 연 자',
-               desc: '헬스장 바닥 아래에서 꺼내온 불꽃. 발밑에서 조용히 돈다.' }
+  '2026-08': { color: 'blue', name: '헬창의 기운', title: '합판을 연 자',
+               desc: '헬스장 바닥 아래에서 꺼내온 기운. 발밑을 한 바퀴 돈다.' }
 };
 // ★이번 달 키가 여기 없으면 합판은 안 열린다("그냥 낡은 합판이다"로 끝난다).
 //   첫 노출 시점은 코드가 아니라 이 줄로 정해진다.
@@ -9920,7 +9932,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '631';
+window._SW_V = '632';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
