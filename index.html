@@ -21896,7 +21896,33 @@ window.renderSquadPage = async function () {
     return;
   }
   const now = Date.now();
-  root.innerHTML = rows.map(s => {
+  // ★인기 스쿼드 (대표 8-18) — 목록 맨 위에 3개.
+  //   명예의 전당(사람 랭킹)과 자리를 나눈 이유: 여기는 자랑이 아니라 **참가**가 목적이라
+  //   누르면 프로필이 아니라 스쿼드 상세로 가야 한다.
+  //   ★2명 이상만 센다 — 1명이면 '인기'가 아니라 그냥 방금 열린 스쿼드다(스쿼드장 혼자).
+  //   나중에 정기반이 다시 열리면 자연스럽게 여기 올라온다.
+  let hotHtml = '';
+  try {
+    const hot = rows.filter(function (s) { return !s._cls && (s.memberUids || []).length >= 2; })
+                    .sort(function (a, b) { return (b.memberUids || []).length - (a.memberUids || []).length; })
+                    .slice(0, 3);
+    if (hot.length) {
+      hotHtml = '<div style="margin-bottom:14px">'
+        + '<div style="font-size:12.5px;font-weight:800;color:rgba(255,255,255,0.55);margin-bottom:8px;letter-spacing:-0.2px">인기 스쿼드</div>'
+        + hot.map(function (s, i) {
+            const n = (s.memberUids || []).length;
+            const ttl = String(s.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<div onclick="window.openSquadDetail('${s.id}')" style="display:flex;align-items:center;gap:11px;`
+              + `padding:11px 13px;margin-bottom:6px;border:1px solid rgba(255,255,255,0.09);border-radius:12px;cursor:pointer">`
+              + `<span style="width:18px;flex-shrink:0;text-align:center;font-size:13px;font-weight:800;color:rgba(255,255,255,0.45)">${i + 1}</span>`
+              + `<span style="flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttl}</span>`
+              + `<span style="flex-shrink:0;font-size:12px;font-weight:700;color:rgba(255,255,255,0.6)">${n}/${s.capacity}명</span>`
+              + `</div>`;
+          }).join('')
+        + '</div>';
+    }
+  } catch (e) { console.warn('인기 스쿼드', e); }
+  root.innerHTML = hotHtml + rows.map(s => {
     const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
     const n = (s.memberUids||[]).length, full = n >= s.capacity;
     const live = now >= s.scheduledAt && now < (s.expiresAt||0);
