@@ -23331,7 +23331,7 @@ window._mwAurApply = function (body, color) {
     body.appendChild(d);
   });
 };
-window._sqCharEl = function (uid, nick, cfg, dir, title) {   // uid별 캐릭터 DOM 재사용 (dir/cfg 바뀔 때만 리렌더)
+window._sqCharEl = function (uid, nick, cfg, dir, title, aura) {   // uid별 캐릭터 DOM 재사용 (dir/cfg/aura 바뀔 때만 리렌더)
   const stage = document.getElementById('sq-room-stage'); if (!stage) return null;
   let c = window._sqChars[uid];
   if (!c || !c.el.isConnected) {
@@ -23340,14 +23340,14 @@ window._sqCharEl = function (uid, nick, cfg, dir, title) {   // uid별 캐릭터
     stage.appendChild(el);
     c = window._sqChars[uid] = { el, dir: null, cfgJson: '~', nick: null, title: '~', bubbleT: null };
   }
-  const cj = JSON.stringify(cfg || null);
+  const cj = JSON.stringify(cfg || null) + '|' + (aura || '');   // ★aura 를 빼면 켜고 꺼도 안 바뀐다
   if (c.dir !== dir || c.cfgJson !== cj) {
     c.dir = dir; c.cfgJson = cj;
     const face = dir === 'down' ? undefined : dir;
     c.el.querySelector('.sq-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, 46, face) : '';
     // ★아우라는 innerHTML 을 갈아치운 **뒤에** 다시 얹는다 — 위 한 줄이 자식을 통째로 날린다.
     //   (여기 말고 바깥에 붙이면 칭호 유무에 따라 세로 위치가 흔들린다)
-    window._mwAurApply && window._mwAurApply(c.el.querySelector('.sq-body'), window._mwAurOf(uid));
+    window._mwAurApply && window._mwAurApply(c.el.querySelector('.sq-body'), window._mwAurOf(uid, aura));
   }
   if (c.nick !== nick) { c.nick = nick; c.el.querySelector('.sq-nick').textContent = nick || '머피'; }
   // 머리 위 칭호 — 프레즌스로 온 값은 남의 데이터라 카탈로그 검증 필수. textContent라 주입 안전.
@@ -23378,7 +23378,7 @@ window._sqWalkTo = function (x, y) {
   const dir = Math.abs(dx) * 0.9 > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
   const dist = Math.hypot(dx * 1.79, dy);              // 스테이지 비율 보정(1% x ≠ 1% y)
   const dur = Math.max(0.25, Math.min(2.6, dist * 0.028));
-  const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, dir, window._myTitle);
+  const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, dir, window._myTitle, (window._seasonState || {}).auraOn || '');
   if (!c) return;
   c.el.classList.add('walking');
   window._sqPlace(c, x, y, dur);
@@ -23481,7 +23481,7 @@ window._sqRoomInit = function (s) {
   if (joined && me) {   // 입장 연출: 하단 화면 밖에서 걸어 들어옴
     const sx = 34 + Math.random() * 32, sy = 70 + Math.random() * 16;
     window._sqMyPos = { x: sx, y: 108, dir: 'up' };
-    const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle);
+    const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle, (window._seasonState || {}).auraOn || '');
     if (c) { window._sqPlace(c, sx, 108, 0); requestAnimationFrame(() => requestAnimationFrame(() => window._sqWalkTo(sx, sy))); }
   }
   window._sqRtJoin && window._sqRtJoin(s.id, s);
@@ -23534,7 +23534,7 @@ window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 �
   const spots = window.mwFieldPlace ? window.mwFieldPlace(uids, s.id) : {};
   uids.forEach(uid => {
     const sp = spots[uid] || { x: 50, y: 70 };
-    const c = window._sqCharEl(uid, mem[uid].nickname, mem[uid].character, 'down');
+    const c = window._sqCharEl(uid, mem[uid].nickname, mem[uid].character, 'down', '', '');   // 정적 폴백 — 남의 장착값을 알 길이 없다
     if (c && !c.placed) { c.placed = true; window._sqStaticPlaced[uid] = 1; const B = window._sqWalkBox();
       const q = window._sqAvoid(Math.max(B.x0, Math.min(B.x1, sp.x)), Math.max(B.y0, Math.min(B.y1, sp.y)), B);
       window._sqPlace(c, q.x, q.y, 0); }
@@ -23576,6 +23576,7 @@ window._sqRtJoin = function (sid, sArg) {
     try { R.set(meRef, { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, dir: p.dir || 'down',
       moving: !!p.moving, nick: window._mwMyNick || '머피',
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+      aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       character: window.getMyCharacter ? window.getMyCharacter() : null, t: Date.now() }); } catch(e) {}
   };
   window._sqRtSend = send;
@@ -23613,7 +23614,7 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     if (uid === myUid) return;
     const p = all[uid] || {};
     const first = !seen[uid];
-    const c = window._sqCharEl(uid, p.nick, p.character, p.dir || 'down', p.title);
+    const c = window._sqCharEl(uid, p.nick, p.character, p.dir || 'down', p.title, p.aura);
     if (!c) return;
     const x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
     if (first) {   // 처음 보이는 멤버: 하단에서 걸어 들어오는 것처럼
