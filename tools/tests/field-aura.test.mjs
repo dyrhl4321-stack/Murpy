@@ -65,3 +65,15 @@ for (const k in w.FIELD_AURAS) {
 assert(w._PLATE_TAPS_1 > 0 && w._PLATE_TAPS_2 > 0);
 
 console.log('field-aura.test.mjs: 밟기 판정·물러설 칸·색 화이트리스트 전부 통과 OK');
+
+// 8) 상태 그릇에 아우라 자리가 있어야 한다
+const stLine = grab(/window\._seasonState = \{.*?ready: false \};/, '_seasonState');
+assert(/auras:\s*\[\]/.test(stLine), '_seasonState 에 auras 배열이 없다');
+assert(/auraOn:\s*''/.test(stLine), '_seasonState 에 auraOn 이 없다');
+
+// 9) users 문서에서 fieldAuras / aura 를 읽어와야 한다
+assert(/_seasonState\.auras = Array\.isArray\(d\.fieldAuras\)/.test(src),
+  'users 문서의 fieldAuras 를 읽지 않는다');
+assert(/_seasonState\.auraOn = \(typeof d\.aura === 'string'\)/.test(src),
+  'users 문서의 aura 를 읽지 않는다');
+console.log('  + 소유/장착 상태 로드 OK');
