@@ -2101,6 +2101,24 @@
   </div>
 </div>
 
+<!-- 덤벨 피하기 (헬스장 필드 1인 미니게임).
+     ★필드 걷기 로직을 안 건드리려고 **별도 오버레이**로 만든다 — 헬스장 필드는
+       다른 창이 합판 히든 오브젝트를 넣는 중이다. -->
+<div id="dodge-screen" style="display:none;position:fixed;inset:0;z-index:2300;background:#05070c;max-width:390px;margin:0 auto;overflow:hidden;touch-action:none;font-family:'Galmuri11',sans-serif">
+  <div id="dodge-bg" style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat;image-rendering:pixelated;opacity:.45"></div>
+  <div id="dodge-field" style="position:absolute;inset:0"></div>
+  <div style="position:absolute;left:12px;top:12px;z-index:5;font-size:15px;color:#fff;text-shadow:0 2px 4px #000"><span id="dodge-score">0</span></div>
+  <button onclick="window.dodgeClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
+  <div id="dodge-over" style="display:none;position:absolute;inset:0;z-index:6;background:rgba(5,7,12,.86);flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center">
+    <div style="font-size:20px;font-weight:800;color:#fff">게임 오버</div>
+    <div id="dodge-result" style="font-size:14px;color:#cfd6e6;line-height:1.7"></div>
+    <div style="display:flex;gap:9px">
+      <button onclick="window.dodgeOpen()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px 22px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">다시 하기</button>
+      <button onclick="window.dodgeClose()" style="background:rgba(255,255,255,.08);color:#cfd6e6;border:none;border-radius:12px;padding:13px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">그만</button>
+    </div>
+  </div>
+</div>
+
 <!-- 명예의 전당 — 활동이 많은 사람이 눈에 띄는 유일한 자리.
      ★새 UI 문법을 만들지 않는다: .panel / .panel-header / .panel-body / .tab-bar / .tab-btn 재사용.
      설계 = docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md -->
@@ -3866,6 +3884,7 @@ window.charSetField = function (key) {
   const cm = document.getElementById('mw-charmenu'); if (cm) cm.remove();   // 필드 바뀌면 링 메뉴 접기
   const bar = document.getElementById('mw-field-bar');
   if (bar) bar.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.f === key); });
+  window.dodgeFieldBtn && window.dodgeFieldBtn(key);   // 헬스장에서만 게임 시작 버튼
 };
 window._charTileGeom = function () {
   const room = document.getElementById('charworld-room');
@@ -11648,6 +11667,110 @@ window.dodgeTick = function (s, dt, targetX) {
   }
   if (s.alive) s.score += D.SC_PER_SEC * (dt / 1000);
   return s;
+};
+// ---- 화면 ----
+// ★낙하 물체는 DOM 이다. Canvas 로 옮기면 캐릭터를 Canvas 에 다시 그려야 하고,
+//   그러면 레이어 합성·조합 규칙이 두 벌이 된다(_charRenderTo 하나로만 그린다는 규칙).
+// ★지금은 에셋이 없어 색 네모로 그린다. 재미는 그림이 아니라 속도·간격에서 나오므로
+//   먼저 돌려보고 숫자를 잡은 뒤 그림을 붙인다.
+window._dodgeKindCss = {
+  dumbbell: 'background:#e5484d;border-radius:3px',
+  protein:  'background:#3dde7c;border-radius:3px',
+  chicken:  'background:#F5C24B;border-radius:50%'
+};
+window._dodgeS = null; window._dodgeRaf = 0; window._dodgeTargetX = null; window._dodgeLast = 0;
+window.dodgeOpen = function () {
+  const el = document.getElementById('dodge-screen'); if (!el) return;
+  const bg = document.getElementById('dodge-bg');
+  if (bg) bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')";
+  document.getElementById('dodge-over').style.display = 'none';
+  el.style.display = 'block';
+  window._dodgeS = window.dodgeNew(Date.now());
+  window._dodgeTargetX = null; window._dodgeLast = 0;
+  window._dodgeBind();
+  cancelAnimationFrame(window._dodgeRaf);
+  window._dodgeRaf = requestAnimationFrame(window._dodgeFrame);
+};
+window.dodgeClose = function () {
+  cancelAnimationFrame(window._dodgeRaf); window._dodgeRaf = 0;
+  const el = document.getElementById('dodge-screen'); if (el) el.style.display = 'none';
+  window._dodgeS = null;
+};
+// 조작 — **손가락 추종**(대표 8-19 확정). 화면 아무 데나 눌러 좌우로 움직이면
+// 캐릭터가 그 x 를 따라온다. 탭투워크(스쿼드식)는 도착 시간 때문에 피하기가 성립하지 않고,
+// 조이스틱(머피월드 필드식)은 한 단계 멀고 화면 아래(떨어지는 걸 보는 자리)를 가린다.
+window._dodgeBind = function () {
+  const el = document.getElementById('dodge-screen'); if (!el || el._bound) return;
+  el._bound = true;
+  const toLogic = function (clientX) {
+    const host = document.getElementById('dodge-field');
+    const r = host.getBoundingClientRect();
+    return ((clientX - r.left) / (r.width || 1)) * window.DODGE.W;
+  };
+  const set = function (e) {
+    const t = e.touches ? e.touches[0] : e;
+    window._dodgeTargetX = toLogic(t.clientX);
+    if (e.cancelable) e.preventDefault();
+  };
+  const off = function () { window._dodgeTargetX = null; };   // 떼면 그 자리에 선다
+  el.addEventListener('touchstart', set, { passive: false });
+  el.addEventListener('touchmove', set, { passive: false });
+  el.addEventListener('touchend', off, { passive: true });
+  el.addEventListener('touchcancel', off, { passive: true });
+  el.addEventListener('mousedown', set);
+  el.addEventListener('mousemove', function (e) { if (e.buttons) set(e); });
+  el.addEventListener('mouseup', off);
+};
+window._dodgeFrame = function (ts) {
+  const s = window._dodgeS; if (!s) return;
+  if (!window._dodgeLast) window._dodgeLast = ts;
+  const dt = Math.min(50, ts - window._dodgeLast);      // 탭 전환 뒤 한 번에 튀는 것을 막는다
+  window._dodgeLast = ts;
+  window.dodgeTick(s, dt, window._dodgeTargetX);
+  window._dodgePaint(s);
+  if (s.alive) window._dodgeRaf = requestAnimationFrame(window._dodgeFrame);
+  else window._dodgeEnd(s);
+};
+window._dodgePaint = function (s) {
+  const D = window.DODGE, host = document.getElementById('dodge-field'); if (!host) return;
+  const W = host.clientWidth || 360, H = host.clientHeight || 640;
+  const px = function (v) { return (v / D.W) * W; };
+  let html = '';
+  for (const it of s.items) {
+    html += '<div style="position:absolute;left:' + px(it.x - D.ITEM_W / 2).toFixed(1) + 'px;top:'
+      + (it.y / 100 * H).toFixed(1) + 'px;width:' + px(D.ITEM_W).toFixed(1) + 'px;height:'
+      + px(D.ITEM_W).toFixed(1) + 'px;' + window._dodgeKindCss[it.kind] + '"></div>';
+  }
+  let ch = '';
+  try {
+    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, 72, s.face) || '';
+  } catch (e) {}
+  html += '<div style="position:absolute;left:' + px(s.x).toFixed(1) + 'px;top:'
+    + (0.88 * H).toFixed(1) + 'px;transform:translate(-50%,-100%)">' + ch + '</div>';
+  host.innerHTML = html;
+  const sc = document.getElementById('dodge-score');
+  if (sc) sc.textContent = Math.floor(s.score);
+};
+window._dodgeEnd = function (s) {
+  const score = Math.floor(s.score);
+  const r = document.getElementById('dodge-result');
+  if (r) r.textContent = score + '점';
+  const o = document.getElementById('dodge-over'); if (o) o.style.display = 'flex';
+  window.dodgeSave && window.dodgeSave(score);
+};
+// 헬스장 필드에서만 뜨는 시작 버튼. ★필드에 닿는 것은 이 함수 하나뿐이다.
+//   .mw-fieldchip 은 조이스틱 예외 목록에 이미 들어 있어서 눌러도 걷기가 안 걸린다.
+window.dodgeFieldBtn = function (key) {
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  let b = document.getElementById('dodge-start');
+  if (key !== 'gym') { if (b) b.remove(); return; }
+  if (b) return;
+  b = document.createElement('button');
+  b.id = 'dodge-start'; b.className = 'mw-fieldchip'; b.style.top = '52px';
+  b.textContent = '덤벨 피하기';
+  b.onclick = function (e) { e.stopPropagation(); window.dodgeOpen(); };
+  room.appendChild(b);
 };
 // ===== 덤벨 피하기 끝 =====
 // ===== 닉네임 중복 검사 =====
