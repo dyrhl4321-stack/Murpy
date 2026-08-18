@@ -866,6 +866,9 @@
        jump-none 이면 0/0.2/0.4/0.6/0.8/1.0 → 정확히 프레임 0~5 에 떨어진다.
        ★steps() 의 기본값을 믿지 말 것. 스프라이트 재생엔 jump-none 이다. */
   @keyframes mwAurSpin { from { background-position-x:0% } to { background-position-x:100% } }
+  /* ★아우라를 켜면 이름표를 고리 아래로 내린다 (대표 8-19: "이름표에 하단부 이팩트가 다 가려버림").
+     스쿼드 캐릭터는 .sq-body 폭이 46 으로 고정이라 앞겹 높이도 고정(46*1.03*45/140 ≈ 15px)이다. */
+  .sq-char.mw-aur-on .sq-nick { margin-top:16px }
   .sq-nick { font-size:9px; color:#fff; background:rgba(5,7,12,.72); padding:1px 5px 2px; margin-top:1px; max-width:70px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'Galmuri11',sans-serif }
   .sq-bubble { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:#101624;
@@ -3910,6 +3913,14 @@ window._charApplyPos = function () {
   }
   const nk = (ui || host).querySelector('.cw-nick');
   if (nk) nk.textContent = window._mwMyNick || '머피';
+  // ★아우라가 켜져 있으면 이름표를 고리 아래로 내린다 (대표 8-19).
+  //   필드 캐릭터 폭은 화면 크기에 따라 달라지므로(타일 t 기반) 그때그때 계산한다.
+  //   지름을 키우는 게 아니라 이름표를 비켜 주는 것이다 — 키워도 이름표는 그대로라 또 겹친다.
+  if (nk) {
+    const _aur = window._mwAurOf ? window._mwAurOf((window.currentUser || {}).uid, '') : '';
+    const _fh = _aur && window._MW_AUR_FRONT_H ? window._MW_AUR_FRONT_H(w) : 0;
+    nk.style.top = 'calc(100% + ' + (_fh ? _fh + 2 : 1) + 'px)';
+  }
   const sheets = window._charEquippedSheets(cfg);
   const bottomZ = window._charBottomZ(cfg);
   host.querySelectorAll('.cw-layer').forEach(function (el) {
@@ -23770,6 +23781,11 @@ window._mwAurOf = function (uid, fromPresence) {
 // 뒤/앞 두 겹을 붙인다. 색 이름은 파일명에 그대로 들어가므로 화이트리스트로 막는다
 // (프레즌스로 남의 값이 올 수 있는 자리라 그대로 쓰면 경로 주입이 된다).
 window._MW_AUR_COLORS = ['blue'];
+// 아우라 앞겹(발밑 아래로 내려오는 절반)의 높이. CSS 의 width:103% + aspect-ratio 140/45 와
+// **같은 식**이어야 한다 — 여기서 어긋나면 이름표가 고리를 덮거나 너무 멀리 떨어진다.
+// ★이 값이 필요한 이유: 이름표가 발밑 바로 아래에 붙어 앞겹을 거의 다 덮었다(대표 8-19).
+//   앱 실측으로 필드 캐릭터 폭이 약 47px 이라 앞겹이 15px 인데 이름표가 13px 였다.
+window._MW_AUR_FRONT_H = function (parentW) { return Math.round((parentW || 0) * 1.03 * 45 / 140); };
 window._mwAurApply = function (body, color) {
   if (!body) return;
   body.querySelectorAll('.mw-aur').forEach(function (n) { n.remove(); });
@@ -23798,7 +23814,10 @@ window._sqCharEl = function (uid, nick, cfg, dir, title, aura) {   // uid별 캐
     c.el.querySelector('.sq-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, 46, face) : '';
     // ★아우라는 innerHTML 을 갈아치운 **뒤에** 다시 얹는다 — 위 한 줄이 자식을 통째로 날린다.
     //   (여기 말고 바깥에 붙이면 칭호 유무에 따라 세로 위치가 흔들린다)
-    window._mwAurApply && window._mwAurApply(c.el.querySelector('.sq-body'), window._mwAurOf(uid, aura));
+    const _aurC = window._mwAurOf(uid, aura);
+    window._mwAurApply && window._mwAurApply(c.el.querySelector('.sq-body'), _aurC);
+    // ★아우라가 켜져 있으면 닉네임을 고리 아래로 내린다 — 안 내리면 이름표가 앞겹을 덮는다.
+    c.el.classList.toggle('mw-aur-on', !!_aurC);
   }
   if (c.nick !== nick) { c.nick = nick; c.el.querySelector('.sq-nick').textContent = nick || '머피'; }
   // 머리 위 칭호 — 프레즌스로 온 값은 남의 데이터라 카탈로그 검증 필수. textContent라 주입 안전.
