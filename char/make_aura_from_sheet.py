@@ -58,24 +58,46 @@ def key_and_shrink(src):
     return out
 
 
-def build(sheet_path, name, ell_top=167, shift=39):
+def build(sheet_path, name, ell_top=167, shift=39, rx=66):
     frames = key_and_shrink(Image.open(sheet_path))
     back = Image.new('RGBA', (W * FRAMES, H), (0, 0, 0, 0))
     front = Image.new('RGBA', (W * FRAMES, H), (0, 0, 0, 0))
+    # ★★지면 타원(갈색 고리)은 **버린다** — 대표 8-18: "저딴식으로 원이 들어가면
+    #   안된다고, 무슨 훌라후프같잖아. 스킬 이펙트처럼 느껴지게 해야한다고."
+    #   선으로 그린 원이 바닥에 있으면 그 순간 '고리 안에 서 있는 캐릭터'가 된다.
+    #
+    # ★★★그렇다고 **수평선으로 자르면 안 된다** (대표 8-18, 두 번째 지적):
+    #   "밑부분을 저렇게 수평으로 자르는 게 아니라, 캐릭터 발바닥 주변을 두르는
+    #    원형으로 하단부가 나와야 하잖아."
+    #   맞다. 밑동이 일직선이면 불꽃이 벽처럼 서고 발을 두르지 않는다.
+    #   → 열(x)마다 **타원 곡선의 y** 로 자른다. 그러면 밑동이 발을 도는 곡선이 된다.
+    #
+    # ★내리는 양도 고정이면 안 된다. 먼 호와 가까운 호의 간격은
+    #   가운데가 제일 넓고(2*ry) 양끝에서 0 으로 만난다. 그래서 열마다 다르게 내린다.
+    ry = shift / 2.0                  # shift = 두 호 사이 최대 간격 = 단축(2*ry)
+    cx, cy = W / 2.0 - 2, ell_top + ry
     for i, f in enumerate(frames):
-        # ★★지면 타원(갈색 고리)은 **버린다** — 대표 8-18: "저딴식으로 원이 들어가면
-        #   안된다고, 무슨 훌라후프같잖아. 스킬 이펙트처럼 느껴지게 해야한다고."
-        #   선으로 그린 원이 바닥에 있으면 그 순간 '고리 안에 서 있는 캐릭터'가 된다.
-        #   원근은 **불꽃 두 띠의 높이 차이**만으로 만든다(먼 쪽은 위, 가까운 쪽은 아래).
-        flame = f.crop((0, 0, W, ell_top))          # 타원 윗선 위 = 불꽃만
-        b = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        b.paste(flame, (0, 0), flame)
-        back.paste(b, (i * W, 0))
-        # 같은 불꽃을 타원 단축만큼 내리면 가까운 쪽 호에서 자란 불꽃이 된다.
-        # 새로 그리는 게 아니라 내리는 것이라 **높이가 저절로 같다.**
-        cell = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        cell.paste(flame, (0, shift), flame)
-        front.paste(cell, (i * W, 0))
+        src = f.load()
+        fb = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        ff = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        pb, pf = fb.load(), ff.load()
+        for x in range(W):
+            u = (x - cx) / float(rx)
+            if abs(u) > 1.0:
+                continue                      # 타원 밖 열은 불꽃이 설 자리가 없다
+            k = (1.0 - u * u) ** 0.5
+            y_far = int(round(cy - ry * k))    # 먼 호 (뒤) — 여기가 뒷불의 밑동
+            gap = int(round(2 * ry * k))       # 두 호 사이 간격: 가운데 최대, 양끝 0
+            for y in range(H):
+                p = src[x, y]
+                if p[3] == 0 or y > y_far:     # 곡선 아래(=타원 안쪽)는 버린다
+                    continue
+                pb[x, y] = p                   # BACK: 곡선 위 불꽃 그대로
+                y2 = y + gap                   # FRONT: 같은 불꽃을 가까운 호로 내린다
+                if 0 <= y2 < H:
+                    pf[x, y2] = p
+        back.paste(fb, (i * W, 0))
+        front.paste(ff, (i * W, 0))
     os.makedirs(OUT, exist_ok=True)
     back.save(os.path.join(OUT, 'aura_%s_back.png' % name))
     front.save(os.path.join(OUT, 'aura_%s_front.png' % name))
@@ -88,4 +110,5 @@ if __name__ == '__main__':
         sys.exit(1)
     build(sys.argv[1], sys.argv[2],
           int(sys.argv[3]) if len(sys.argv) > 3 else 167,
-          int(sys.argv[4]) if len(sys.argv) > 4 else 39)
+          int(sys.argv[4]) if len(sys.argv) > 4 else 39,
+          int(sys.argv[5]) if len(sys.argv) > 5 else 66)
