@@ -122,4 +122,6 @@ console.log('  + 합판 렌더 OK');
 // 12) ★합판이 조이스틱 예외 목록에 있어야 탭이 통한다 (상자가 무반응이던 그 버그)
 const joy = grab(/const onS = \(e\) => \{ if \(e\.target\.closest\([^)]*\)\) return;/, '조이스틱 제외 선택자');
 assert(/\.mw-plate/.test(joy), '합판이 조이스틱 예외 목록에 없다 -> 탭해도 무반응');
+// 대화창도 방 안에 있다 — 안 넣으면 다음 줄로 넘기려고 눌러도 조이스틱이 먼저 먹는다
+assert(/#mw-fieldtalk/.test(joy), '대화창이 조이스틱 예외 목록에 없다 -> 눌러도 안 넘어간다');
 console.log('  + 조이스틱 예외 OK');
