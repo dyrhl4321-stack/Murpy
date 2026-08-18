@@ -824,6 +824,19 @@
   .sq-char { position:absolute; transform:translate(-50%,-100%); display:flex; flex-direction:column; align-items:center;
     pointer-events:none; will-change:left,top; transition:left .4s linear, top .4s linear }
   .sq-char.walking .sq-body > div > div { animation:mwWalk4 .55s step-end infinite }
+  /* ★발밑 아우라 고리 (외부 에셋 aura pack, 상업 사용 허용 확인 2026-08-18).
+       원본 96x96 6프레임에서 고리(31x28)만 잘라 **가로4 세로2**로 키운 것 = 124x28.
+       세로까지 4배로 키우면 고리가 서서 훌라후프처럼 보인다(대표 지적) — 납작해야 바닥에 눕는다.
+     ★두 겹인 이유: 고리라서 가로로 반 자르면 위=캐릭터 뒤, 아래=캐릭터 앞이다.
+       앞뒤를 안 가르면 발 앞을 지나는 호가 다리에 가려 '고리'로 안 읽힌다.
+     ★두 겹을 **같은 애니메이션 한 벌**로 돌린다. APNG 두 개면 프레임이 서로 어긋난다. */
+  .sq-body { position:relative }
+  .mw-aur { position:absolute; left:50%; transform:translateX(-50%); width:270%; aspect-ratio:124/28;
+    background-repeat:no-repeat; background-size:600% 100%; image-rendering:pixelated;
+    animation:mwAurSpin .66s steps(6) infinite; pointer-events:none }
+  .mw-aur-b { bottom:0; z-index:0 }          /* 뒤 — 캐릭터보다 아래 */
+  .mw-aur-f { top:100%; z-index:3 }          /* 앞 — 캐릭터보다 위 */
+  @keyframes mwAurSpin { from { background-position:0 0 } to { background-position:-600% 0 } }
   .sq-nick { font-size:9px; color:#fff; background:rgba(5,7,12,.72); padding:1px 5px 2px; margin-top:1px; max-width:70px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'Galmuri11',sans-serif }
   .sq-bubble { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:#101624;
@@ -23078,6 +23091,35 @@ window._sqAvoid = function (x, y, box) {
   return { x, y };
 };
 window._sqChars = {};
+// ===== 발밑 아우라 고리 =====
+// ★스쿼드 필드 전용이다(대표 확정 8-18: "스쿼드에서 보이게 할 수 있는 필드 전용 아이템").
+//   톡 아바타·프로필·남의 방 구경에는 안 붙인다 — 캐릭터를 그리는 자리가 여러 곳인데
+//   다 건드리면 조합 규칙이 갈라진다([[_charRenderTo 하나로만]] 과 같은 이유).
+// ★지금은 **소유 판정이 없다.** 히든 오브젝트(헬스장 바닥 합판) 흐름이 붙으면
+//   users 문서의 소유 필드를 보게 바꾼다. 그때까지는 아래 시험 스위치로만 켠다.
+//   시험: murpy.app/?aur=1  (색을 바꾸려면 ?aur=blue 처럼)
+window._AUR_TEST = (function () {
+  try { return new URLSearchParams(location.search).get('aur') || ''; } catch (e) { return ''; }
+})();
+window._mwAurOf = function (uid) {
+  if (!window._AUR_TEST) return '';
+  return window._AUR_TEST === '1' ? 'blue' : window._AUR_TEST;
+};
+// 뒤/앞 두 겹을 붙인다. 색 이름은 파일명에 그대로 들어가므로 화이트리스트로 막는다
+// (프레즌스로 남의 값이 올 수 있는 자리라 그대로 쓰면 경로 주입이 된다).
+window._MW_AUR_COLORS = ['blue'];
+window._mwAurApply = function (body, color) {
+  if (!body) return;
+  body.querySelectorAll('.mw-aur').forEach(function (n) { n.remove(); });
+  if (!color || window._MW_AUR_COLORS.indexOf(color) < 0) return;
+  ['b', 'f'].forEach(function (side) {
+    const d = document.createElement('div');
+    d.className = 'mw-aur mw-aur-' + side;
+    d.style.backgroundImage = "url('char/fx/aurring_" + color +
+      (side === 'b' ? '_back' : '_front') + ".png?v=1')";
+    body.appendChild(d);
+  });
+};
 window._sqCharEl = function (uid, nick, cfg, dir, title) {   // uid별 캐릭터 DOM 재사용 (dir/cfg 바뀔 때만 리렌더)
   const stage = document.getElementById('sq-room-stage'); if (!stage) return null;
   let c = window._sqChars[uid];
@@ -23092,6 +23134,9 @@ window._sqCharEl = function (uid, nick, cfg, dir, title) {   // uid별 캐릭터
     c.dir = dir; c.cfgJson = cj;
     const face = dir === 'down' ? undefined : dir;
     c.el.querySelector('.sq-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, 46, face) : '';
+    // ★아우라는 innerHTML 을 갈아치운 **뒤에** 다시 얹는다 — 위 한 줄이 자식을 통째로 날린다.
+    //   (여기 말고 바깥에 붙이면 칭호 유무에 따라 세로 위치가 흔들린다)
+    window._mwAurApply && window._mwAurApply(c.el.querySelector('.sq-body'), window._mwAurOf(uid));
   }
   if (c.nick !== nick) { c.nick = nick; c.el.querySelector('.sq-nick').textContent = nick || '머피'; }
   // 머리 위 칭호 — 프레즌스로 온 값은 남의 데이터라 카탈로그 검증 필수. textContent라 주입 안전.
