@@ -58,7 +58,7 @@ def key_and_shrink(src):
     return out
 
 
-def build(sheet_path, name, ell_top=167, shift=39, rx=66):
+def build(sheet_path, name, ell_top=176, shift=54, rx=68, front_len=62):
     frames = key_and_shrink(Image.open(sheet_path))
     back = Image.new('RGBA', (W * FRAMES, H), (0, 0, 0, 0))
     front = Image.new('RGBA', (W * FRAMES, H), (0, 0, 0, 0))
@@ -88,14 +88,36 @@ def build(sheet_path, name, ell_top=167, shift=39, rx=66):
             k = (1.0 - u * u) ** 0.5
             y_far = int(round(cy - ry * k))    # 먼 호 (뒤) — 여기가 뒷불의 밑동
             gap = int(round(2 * ry * k))       # 두 호 사이 간격: 가운데 최대, 양끝 0
+            # 이 열에서 불꽃이 시작되는 꼭대기
+            ytop = None
+            for y in range(H):
+                if src[x, y][3] != 0 and y <= y_far:
+                    ytop = y
+                    break
+            if ytop is None:
+                continue
+            span = max(1, y_far - ytop)
+            # ★FRONT 는 **내리는 게 아니라 늘린다** (대표 8-18 세 번째 지적:
+            #   "앞에 있는 몇 불꽃은 캐릭터의 정강이 부분 뒤로 오히려 숨어진다").
+            #   통째로 내리면 꼭대기까지 같이 내려가 앞 불꽃이 **짧아진다.**
+            #   가까운 쪽은 원래 더 커 보여야 한다 → 꼭대기는 두고 밑동만 가까운 호까지
+            #   끌어내려 세로로 늘린다. 그래야 발 앞에서 시작해 정강이를 타고 오른다.
+            # ★앞 불꽃의 **최종 길이를 직접 못 박는다.**
+            #   원본 쪽에만 상한을 걸었더니 늘린 뒤 다시 길어져 목까지 올라왔다.
+            #   밑동은 가까운 호(=발바닥)에 붙이고, 거기서 front_len 만큼만 위로 올린다.
+            y_near = y_far + gap                       # 가까운 호 = 앞 불꽃의 밑동
+            k2 = front_len / float(span)
             for y in range(H):
                 p = src[x, y]
                 if p[3] == 0 or y > y_far:     # 곡선 아래(=타원 안쪽)는 버린다
                     continue
                 pb[x, y] = p                   # BACK: 곡선 위 불꽃 그대로
-                y2 = y + gap                   # FRONT: 같은 불꽃을 가까운 호로 내린다
+                y2 = int(round(y_near - (y_far - y) * k2))
                 if 0 <= y2 < H:
                     pf[x, y2] = p
+                    # 늘리면 픽셀 사이가 벌어진다 — 아래 한 칸을 같이 채워 끊김을 막는다
+                    if k2 > 1.15 and y2 + 1 < H and pf[x, y2 + 1][3] == 0:
+                        pf[x, y2 + 1] = p
         back.paste(fb, (i * W, 0))
         front.paste(ff, (i * W, 0))
     os.makedirs(OUT, exist_ok=True)
@@ -111,4 +133,5 @@ if __name__ == '__main__':
     build(sys.argv[1], sys.argv[2],
           int(sys.argv[3]) if len(sys.argv) > 3 else 167,
           int(sys.argv[4]) if len(sys.argv) > 4 else 39,
-          int(sys.argv[5]) if len(sys.argv) > 5 else 66)
+          int(sys.argv[5]) if len(sys.argv) > 5 else 68,
+          int(sys.argv[6]) if len(sys.argv) > 6 else 62)
