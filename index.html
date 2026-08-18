@@ -11594,11 +11594,17 @@ window._seasonEnsureMonth = function () {
 window.DODGE = {
   W: 100,             // 게임판 가로(논리 단위, 화면 폭에 비례해서만 그린다)
   PLAYER_W: 12,       // 캐릭터 판정 폭
-  PLAYER_SPEED: 62,   // 초당 이동
+  // ★대표 8-19 "이동 속도도 빨라야 할 것 같다 / 순간이동까진 아니어도 좀 더 속도감 있게"
+  //   → 62 -> 130. 판 폭이 100 이니 **화면 끝에서 끝까지 약 0.77초**다.
+  //   손가락은 그 구간을 0.1초면 긋는다 — 그래서 여전히 캐릭터가 따라오는 게 보이고,
+  //   "빨리 못 옮기는" 긴장이 남는다. 순간이동(상한 없음)이면 게임이 사라진다.
+  //   밀도를 같이 올렸으니(GAP0 900->760) 손이 빨라진 만큼 물건도 많아진다.
+  PLAYER_SPEED: 130,  // 초당 이동
   FALL0: 34,          // 처음 낙하 속도(초당)
   FALL_UP: 1.9,       // 1분마다 이만큼 곱해진다
-  GAP0: 900,          // 처음 생성 간격(ms)
-  GAP_MIN: 260,       // 아무리 빨라져도 이보다 촘촘해지지 않는다
+  // ★밀도 = 생성 간격. 대표 8-19 "살짝만 더 높여" → 900 -> 760 (약 18% 촘촘)
+  GAP0: 760,          // 처음 생성 간격(ms)
+  GAP_MIN: 240,       // 아무리 빨라져도 이보다 촘촘해지지 않는다
   GAP_DOWN: 0.55,     // 1분마다 간격에 곱해진다
   MAX_ITEMS: 12,      // 동시 표시 상한(저사양 폰 보호). 넘으면 생성을 건너뛴다
   ITEM_W: 11,         // 물건 판정 폭
@@ -11707,7 +11713,17 @@ window._dodgeBind = function () {
     const r = host.getBoundingClientRect();
     return ((clientX - r.left) / (r.width || 1)) * window.DODGE.W;
   };
+  // ★버튼 위에서는 조작을 잡지 않는다.
+  //   리스너가 화면 **전체**에 걸려 있고 preventDefault 를 하는데, 버튼(나가기·다시하기·그만)이
+  //   그 화면 안에 있어서 **탭이 통째로 먹혔다**(대표 8-19: "다시하기·그만하기가 안 눌린다").
+  //   preventDefault 는 뒤따르는 click 까지 취소한다 — 터치도 마우스도 같이 죽는다.
+  // ★죽은 뒤에도 잡지 않는다. 게임 오버 화면이 떠 있는데 뒤에서 캐릭터가 따라다니면 안 된다.
+  const skip = function (e) {
+    if (e.target && e.target.closest && e.target.closest('button')) return true;
+    return !window._dodgeS || !window._dodgeS.alive;
+  };
   const set = function (e) {
+    if (skip(e)) return;
     const t = e.touches ? e.touches[0] : e;
     window._dodgeTargetX = toLogic(t.clientX);
     if (e.cancelable) e.preventDefault();
