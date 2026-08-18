@@ -23733,6 +23733,10 @@ window.sqComplete = async function (sid) {
 const BP = { TH: 16, SOFT: 10.8, SOFT_PAIR_MS: 130, RETRO: 10, QUIET: 3.6, RISE: 0.72, PAIR_MS: 260, COOL: 350, BUF_MS: 2500 };
 let bpPeerSigAt = 0;   // 상대가 마지막으로 피크를 올린 시각(내 시계)
 let bpSoftHintAt = 0;  // '살짝 닿았어요' 코칭을 마지막으로 띄운 시각(글자 떨림 방지)
+// ★지금 이 방에 들어와 있는 상대 수. **코칭을 띄울지 말지의 유일한 근거**다 (대표 8-18).
+//   '상대를 기다리는 중…' 인데 "살짝 닿았어요" 가 뜨면, 맞댈 상대가 아직 없는데도
+//   내가 뭘 잘못한 것처럼 읽힌다. 폰을 집어들거나 주머니에서 꺼내는 동작만으로도 떴다.
+let bpPeerN = 0;
 function bpPeerRecent() { return Date.now() - bpPeerSigAt < 1800; }
 // ★계측 (대표 8-15: "로그 보고 분석해서 고쳐봐").
 //   어제는 **실패 기록이 하나도 없었다.** 성공한 범프도 Δt 를 안 남겨서
@@ -23762,7 +23766,7 @@ window.bumpIconHtml = function (sz) {
     + `width:${Math.max(2, 2 * u)}px;height:${h * u}px;background:currentColor;opacity:.85;border-radius:1px;`
     + `transform:rotate(${deg}deg);transform-origin:bottom center"></span>`;
   return `<span style="position:relative;display:inline-block;width:${s}px;height:${s}px;flex-shrink:0">
-    <span style="position:absolute;inset:0;background:url('char/fx/palm.png') no-repeat center/contain;
+    <span style="position:absolute;inset:0;background:url('char/fx/palm.png?v=2') no-repeat center/contain;
       image-rendering:pixelated;filter:drop-shadow(0 1px 0 rgba(0,0,0,.35))"></span>
     ${line(3, -4, 6, -30)}${line(11, -6, 7, 0)}${line(19, -4, 6, 30)}</span>`;
 };
@@ -23822,7 +23826,10 @@ function bpOnMotion(e) {
     // ★bpLastPeak 도 안 찍는다 — 찍으면 COOL(350ms) 동안 **진짜 타격이 막힌다.**
     //   살짝 닿고 바로 제대로 치는 게 사람의 실제 동작 순서다(8-15 에 고쳤던 그 버그).
     //   대신 힌트만 따로 눌러 둔다(매 샘플마다 다시 뜨면 글자가 떨린다).
-    if (mag >= BP.SOFT && now - bpSoftHintAt > 1500) {
+    // ★상대가 붙기 전에는 아무 말도 하지 않는다(대표 8-18).
+    //   약한 튀김은 어차피 짝 후보로 안 올라간다(8-18) — 즉 '처리'는 원래 안 된다.
+    //   유일하게 보이던 게 이 한 줄이었고, 그게 혼자 반응하는 것처럼 보이게 만들었다.
+    if (bpPeerN >= 1 && mag >= BP.SOFT && now - bpSoftHintAt > 1500) {
       bpSoftHintAt = now;
       if (bpDbg) { bpDbg.soft = (bpDbg.soft || 0) + 1; }
       bpHint('살짝 닿았어요 · 조금만 더 세게 부딪쳐 주세요');
@@ -23903,7 +23910,7 @@ window.bumpOpen = async function (sid) {
     if (window._SQUAD_RT_OFF) { bpMsg('실시간 연결이 안 돼요 · 잠시 뒤 다시 눌러주세요'); return; }
   }
   const s = window._sqDoc;
-  bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0;
+  bpSid = sid; bpDone = false; bpUsed = {}; bpBuf = []; bpLastPeak = 0; bpPeerN = 0; bpSoftHintAt = 0;
   bpDbgNew((s && user.uid === s.hostUid) ? 'host' : 'guest');
   bpRole = (s && user.uid === s.hostUid) ? 'host' : 'guest';
   // ★출석의 '여부'와 '시각'을 분리한다.
@@ -24317,6 +24324,7 @@ function bpOverlay(mode, data) {
 }
 function bpMsg(html) { const m = document.getElementById('bp-msg'); if (m) m.innerHTML = html; }
 function bpPeers(n) {
+  bpPeerN = n;                       // 코칭 게이트가 이 값을 본다
   const p = document.getElementById('bp-peers');
   if (p) { p.textContent = n >= 1 ? '상대 연결됨 — 이제 맞대세요' : '상대를 기다리는 중…'; p.style.color = n >= 1 ? '#4ade80' : bpColor(); }
 }
@@ -24409,7 +24417,7 @@ function bpImpact(big) {
 function bpPalm(stage, side, color) {
   const p = document.createElement('div');
   p.style.cssText = `position:absolute;${side}:-14%;top:50%;translate:0 -50%;width:58%;aspect-ratio:256/290;`
-    + `z-index:16;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png') no-repeat center/contain;`
+    + `z-index:16;pointer-events:none;image-rendering:pixelated;background:url('char/fx/palm.png?v=2') no-repeat center/contain;`
     + `filter:drop-shadow(0 0 6px #fff) drop-shadow(0 0 18px #FFF3CC) drop-shadow(0 0 40px ${BP_SEAM});`
     + (side === 'right' ? 'scale:-1 1;' : '');
   stage.appendChild(p);
