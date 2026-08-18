@@ -23293,18 +23293,28 @@ window._sqAvoid = function (x, y, box) {
 };
 window._sqChars = {};
 // ===== 발밑 아우라 고리 =====
-// ★스쿼드 필드 전용이다(대표 확정 8-18: "스쿼드에서 보이게 할 수 있는 필드 전용 아이템").
+// ★붙이는 곳은 **두 군데뿐**이다 — 스쿼드 워킹룸(_sqCharEl)과 머피월드 내 필드(_charApplyPos).
 //   톡 아바타·프로필·남의 방 구경에는 안 붙인다 — 캐릭터를 그리는 자리가 여러 곳인데
 //   다 건드리면 조합 규칙이 갈라진다([[_charRenderTo 하나로만]] 과 같은 이유).
-// ★지금은 **소유 판정이 없다.** 히든 오브젝트(헬스장 바닥 합판) 흐름이 붙으면
-//   users 문서의 소유 필드를 보게 바꾼다. 그때까지는 아래 시험 스위치로만 켠다.
-//   시험: murpy.app/?aur=1  (색을 바꾸려면 ?aur=blue 처럼)
+//   시험 스위치: murpy.app/?aur=1  (색을 바꾸려면 ?aur=blue 처럼)
 window._AUR_TEST = (function () {
   try { return new URLSearchParams(location.search).get('aur') || ''; } catch (e) { return ''; }
 })();
-window._mwAurOf = function (uid) {
-  if (!window._AUR_TEST) return '';
-  return window._AUR_TEST === '1' ? 'blue' : window._AUR_TEST;
+// 누구에게 어떤 색 아우라를 그릴지. ★내 것과 남의 것을 다른 데서 읽는다.
+//   내 캐릭터 = 내 users 문서에서 읽어둔 장착값(_seasonState.auraOn)
+//   남        = 스쿼드 프레즌스에 실려 온 값(fromPresence)
+// 어느 쪽이든 _mwAurColor 를 반드시 통과시킨다 — 색 이름이 파일 경로로 들어가는 자리라
+// 카탈로그·화이트리스트를 안 거치면 남이 보낸 문자열로 경로가 만들어진다.
+window._mwAurOf = function (uid, fromPresence) {
+  if (window._AUR_TEST) {
+    const c = (window._AUR_TEST === '1') ? 'blue' : window._AUR_TEST;
+    return (window._MW_AUR_COLORS || []).indexOf(c) >= 0 ? c : '';
+  }
+  const me = (window.currentUser || {}).uid;
+  const key = (uid && me && uid === me)
+    ? ((window._seasonState || {}).auraOn || '')
+    : (fromPresence || '');
+  return window._mwAurColor(key);
 };
 // 뒤/앞 두 겹을 붙인다. 색 이름은 파일명에 그대로 들어가므로 화이트리스트로 막는다
 // (프레즌스로 남의 값이 올 수 있는 자리라 그대로 쓰면 경로 주입이 된다).

@@ -77,3 +77,23 @@ assert(/_seasonState\.auras = Array\.isArray\(d\.fieldAuras\)/.test(src),
 assert(/_seasonState\.auraOn = \(typeof d\.aura === 'string'\)/.test(src),
   'users 문서의 aura 를 읽지 않는다');
 console.log('  + 소유/장착 상태 로드 OK');
+
+// 10) _mwAurOf — 내 것은 내 문서에서, 남의 것은 프레즌스에서
+const w2 = { _MW_AUR_COLORS: ['blue'], currentUser: { uid: 'me' },
+             _seasonState: { auraOn: '2026-08' }, _AUR_TEST: '' };
+new Function('window', grab(/window\.FIELD_AURAS = \{[\s\S]*?\n\};/, 'FIELD_AURAS'))(w2);
+new Function('window', grab(/window\._mwAurColor = function[\s\S]*?\n\};/, '_mwAurColor'))(w2);
+new Function('window', grab(/window\._mwAurOf = function[\s\S]*?\n\};/, '_mwAurOf'))(w2);
+
+assert.strictEqual(w2._mwAurOf('me', ''), 'blue', '내 장착값을 안 본다');
+assert.strictEqual(w2._mwAurOf('other', '2026-08'), 'blue', '남의 프레즌스 값을 안 본다');
+assert.strictEqual(w2._mwAurOf('other', ''), '', '안 켠 남에게 아우라가 뜬다');
+assert.strictEqual(w2._mwAurOf('other', '2099-01'), '', '카탈로그에 없는 값이 통과함');
+assert.strictEqual(w2._mwAurOf('other', '../fx/x'), '', '경로 주입이 통과함');
+w2._seasonState.auraOn = '';
+assert.strictEqual(w2._mwAurOf('me', ''), '', '껐는데도 내 아우라가 뜬다');
+w2._AUR_TEST = 'nosuch';
+assert.strictEqual(w2._mwAurOf('me', ''), '', '시험 스위치가 화이트리스트를 안 탄다');
+w2._AUR_TEST = '1';
+assert.strictEqual(w2._mwAurOf('me', ''), 'blue');
+console.log('  + _mwAurOf 소유 판정 OK');
