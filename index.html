@@ -8383,12 +8383,18 @@ window._checkBirth = function (birth) {
   return { ok: true, age: age };
 };
 
-function obNextStep() {
+async function obNextStep() {
   const nickname = document.getElementById('ob-nickname').value.trim();
   if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
   if (!window._obData.gender) { showToast('성별을 선택해주세요'); return; }
   const _b = window._checkBirth(document.getElementById('ob-birth').value);
   if (!_b.ok) { showToast(_b.msg); return; }
+  // ★중복 검사는 **맨 마지막**에 한다 — 유일하게 네트워크를 타는 검사라, 앞의 값들이
+  //   틀렸는데도 쿼리를 먼저 날리면 느리기만 하고 얻는 게 없다.
+  //   내 uid 는 nickTaken 이 직접 구한다(이 블록은 auth 를 못 본다).
+  if (window.nickTaken && await window.nickTaken(nickname)) {
+    showToast('이미 쓰고 있는 닉네임이에요'); return;
+  }
   document.getElementById('ob-step-1').style.display = 'none';
   document.getElementById('ob-step-2').style.display = 'block';
   document.getElementById('ob-dot-1').style.background = 'rgba(255,255,255,0.25)';
@@ -11560,6 +11566,31 @@ window._seasonEnsureMonth = function () {
   return season;
 };
 // 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
+// ===== 닉네임 중복 검사 =====
+// 지금까지 검사가 아예 없었다(온보딩은 maxlength=10 과 '2자 이상'만 봤다) — 같은 닉을
+// 여러 개 만들 수 있었다. 명예의 전당·랭킹이 사람을 **이름으로** 보여주기 시작하면서
+// 중복이 바로 티가 난다(대표 8-19에 직접 물어봤다).
+//
+// ★막는 자리는 둘이다 — 온보딩(obNextStep)과 프로필 수정(saveProfile).
+//   한 곳만 막으면 가입한 뒤 바꾸면 그만이라 우회로가 남는다.
+// ★이미 같은 닉을 쓰는 기존 유저는 건드리지 않는다. 신규·변경만 막는다 —
+//   지금 와서 남의 닉네임을 강제로 바꾸게 하는 게 중복보다 큰 사고다.
+// ★★쿼리가 실패하면 **통과시킨다.** 네트워크가 흔들려서 가입이 막히는 게 중복보다 훨씬 나쁘다.
+//   이건 편의 기능이지 보안 게이트가 아니다(돈이 빠지는 자리가 아니다).
+window.nickTaken = async function (nick, myUid) {
+  const n = String(nick || '').trim();
+  if (!n) return false;
+  // ★내 uid 는 여기서 직접 구한다. 호출부(obNextStep)는 **classic 블록**이라 auth 를 못 본다 —
+  //   거기서 구하게 두면 빈 값이 되고, 온보딩을 다시 여는 사람(기존 닉네임이 미리 채워진다)이
+  //   **자기 닉에 자기가 막힌다.**
+  const me = myUid || ((auth.currentUser || window.currentUser || {}).uid) || '';
+  try {
+    const qs = await getDocs(query(collection(db, 'users'), where('nickname', '==', n), limit(2)));
+    // 내 문서는 빼고 센다 — 프로필 수정에서 닉을 안 바꾸고 저장하는 경우가 대부분인데,
+    // 그때 '이미 사용 중'이 뜨면 저장 자체가 막힌다.
+    return qs.docs.some(function (d) { return d.id !== me; });
+  } catch (e) { console.warn('nickTaken', e); return false; }
+};
 // ===== 명예의 전당 (랭킹) — 순수 계산부 =====
 // ★Firestore 를 모른다. 넘겨받은 배열만 본다 — 그래야 node 로 검증할 수 있다.
 //   설계: docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md
@@ -15616,6 +15647,11 @@ window.saveProfile = async () => {
   const nickname = document.getElementById('edit-nickname').value.trim();
   if (!nickname || nickname.length < 2) { showToast('닉네임은 2자 이상이에요'); return; }
   const _prevNick = (window._cachedProfile && window._cachedProfile.nickname) || '';
+  // 온보딩만 막으면 가입한 뒤 여기서 바꾸면 그만이다 — 같은 검사를 건다.
+  // 안 바꿨으면 쿼리 자체를 안 날린다(대부분은 다른 항목만 고치러 들어온다).
+  if (nickname !== _prevNick && window.nickTaken && await window.nickTaken(nickname, user.uid)) {
+    showToast('이미 쓰고 있는 닉네임이에요'); return;
+  }
   // #15 — 생년월일. 입력칸이 비어 있으면 **기존 값을 그대로 둔다.**
   //   null 을 그냥 쓰면 이미 넣어둔 생년월일이 지워진다(다른 항목만 고치러 들어와도 날아간다).
   const _birthIn = document.getElementById('edit-birth').value || '';
