@@ -125,3 +125,42 @@ assert(/\.mw-plate/.test(joy), '합판이 조이스틱 예외 목록에 없다 -
 // 대화창도 방 안에 있다 — 안 넣으면 다음 줄로 넘기려고 눌러도 조이스틱이 먼저 먹는다
 assert(/#mw-fieldtalk/.test(joy), '대화창이 조이스틱 예외 목록에 없다 -> 눌러도 안 넘어간다');
 console.log('  + 조이스틱 예외 OK');
+
+// 13) ★고리 두 겹이 **같은 픽셀만큼** 올라가야 한다 — 각자 제 높이 기준이라 %가 다르다.
+//     한쪽만 고치면 고리가 위아래로 갈라진다.
+const cssF = grab(/\.mw-aur-f \{[^}]*\}/, '.mw-aur-f');
+const cssB = grab(/\.mw-aur-b \{[^}]*\}/, '.mw-aur-b');
+const liftF = +cssF.match(/translateY\(-([\d.]+)%\)/)[1];
+const liftB = +cssB.match(/translateY\(-([\d.]+)%\)/)[1];
+// 앞겹 45 / 뒤겹 75 → 같은 px 이 되려면 liftB = liftF * 45/75
+assert(Math.abs(liftB - liftF * 45 / 75) < 0.01,
+  `고리 두 겹의 올린 양이 다르다 (앞 ${liftF}% / 뒤 ${liftB}%) → 고리가 갈라진다`);
+
+// 14) CSS 의 올린 양과 JS 의 _MW_AUR_LIFT 가 같아야 한다 — 어긋나면 이름표가 다시 고리를 덮는다
+const liftJs = +grab(/window\._MW_AUR_LIFT = ([\d.]+);/, '_MW_AUR_LIFT').match(/= ([\d.]+);/)[1];
+assert(Math.abs(liftJs - liftF / 100) < 0.001,
+  `CSS 는 ${liftF}% 인데 JS _MW_AUR_LIFT 는 ${liftJs} 다 → 이름표 위치가 어긋난다`);
+
+// 15) ★스쿼드 이름표는 margin 이 아니라 transform 이어야 한다.
+//     .sq-char 는 translate(-50%,-100%) 라 **아래끝이 기준점**이다 — margin 으로 요소가
+//     길어지면 캐릭터가 그만큼 위로 떠올라 벽을 뚫고 올라간 것처럼 보인다(8-19 실제 버그).
+const sqNick = grab(/\.sq-char\.mw-aur-on \.sq-nick \{[^}]*\}/, '.sq-char.mw-aur-on .sq-nick');
+assert(/transform:\s*translateY/.test(sqNick), '스쿼드 이름표가 transform 이 아니다');
+assert(!/margin-top/.test(sqNick),
+  '스쿼드 이름표에 margin-top 이 있다 → 캐릭터가 벽 위로 떠오른다');
+
+// 16) '안 씀' 버튼이 아우라도 봐야 한다 (아우라만 켠 히든 캐릭터에서 안 눌리던 버그)
+assert(/const auraOn = \(slot === 'acc'\) && !!\(\(window\._seasonState \|\| \{\}\)\.auraOn\)/.test(src),
+  "'안 씀' 판정이 아우라를 안 본다");
+assert(/const off = isMask \? !window\._charDraft\.mask : \(!window\._charDraft\[slot\] && !auraOn\)/.test(src),
+  "'안 씀' 착용중 표시가 아우라를 안 본다");
+
+// 17) '안 씀' 이 아우라까지 벗겨야 한다 (둘 다 켰을 때 하나만 벗던 버그)
+assert(/slot === 'acc' && window\.mwAuraSet && \(window\._seasonState \|\| \{\}\)\.auraOn\) window\.mwAuraSet\(''\)/.test(src),
+  "'안 씀' 이 아우라를 안 벗긴다");
+
+// 18) 끄는 길은 한 벌이어야 한다 — mwAuraToggle 도 mwAuraSet 을 거친다
+assert(/window\.mwAuraToggle = async function[\s\S]{0,400}?return window\.mwAuraSet\(/.test(src),
+  'mwAuraToggle 이 mwAuraSet 을 안 쓴다 → 끄는 길이 두 벌이 된다');
+
+console.log('  + 고리 위치·이름표·안 씀 버튼 OK');

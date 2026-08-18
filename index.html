@@ -851,8 +851,15 @@
   .sq-char { z-index:1 }
   /* ★두 겹의 세로 비율이 다르다 — 가르는 자리가 그림의 절반이 아니라 **고리의 세로 중심**이라
        위(뒤)가 더 길다. 위쪽엔 솟는 불꽃이 들어 있기 때문이다. */
-  .mw-aur-b { bottom:0; z-index:-1; aspect-ratio:140/75 }   /* 뒤 — 캐릭터에 가려진다 */
-  .mw-aur-f { top:100%; z-index:3; aspect-ratio:140/45 }    /* 앞 — 캐릭터 위로 지나간다 */
+  /* ★고리를 **앞겹 높이의 50%** 만큼 위로 올린다 (대표 8-19: "캐릭터가 좀더 원중앙쪽으로
+       올수있게"). 안 올리면 고리 중심이 정확히 발밑이라 몸이 통째로 원 위에 서 있고,
+       발끝~고리 아래끝 거리가 멀어 보인다.
+     ★두 겹이 **같은 픽셀만큼** 올라가야 안 갈라진다. 각자 제 높이 기준이라 %가 다르다 —
+       앞 50% = 뒤 30% (높이비 45:75). 한쪽만 고치면 고리가 어긋난다.
+     ★JS 의 window._MW_AUR_LIFT 와 **같은 값**이어야 한다(이름표를 그만큼 덜 내린다).
+       어긋나면 이름표가 다시 고리를 덮는다 — tools/tests/field-aura.test.mjs 가 지킨다. */
+  .mw-aur-b { bottom:0; z-index:-1; aspect-ratio:140/75; transform:translateX(-50%) translateY(-30%) }
+  .mw-aur-f { top:100%; z-index:3; aspect-ratio:140/45; transform:translateX(-50%) translateY(-50%) }
   /* ★★background-position 을 -600% 로 돌리면 **깜빡인다**(대표 8-18: "왜 불꽃이 도는
        느낌이 아니라 깜빡깜빡 하냐"). 퍼센트 위치는 픽셀 이동이 아니라
        **(컨테이너 폭 − 이미지 폭)** 기준이라, 6배 이미지에선 한 칸이 아니라 5배 폭만큼
@@ -867,8 +874,12 @@
        ★steps() 의 기본값을 믿지 말 것. 스프라이트 재생엔 jump-none 이다. */
   @keyframes mwAurSpin { from { background-position-x:0% } to { background-position-x:100% } }
   /* ★아우라를 켜면 이름표를 고리 아래로 내린다 (대표 8-19: "이름표에 하단부 이팩트가 다 가려버림").
-     스쿼드 캐릭터는 .sq-body 폭이 46 으로 고정이라 앞겹 높이도 고정(46*1.03*45/140 ≈ 15px)이다. */
-  .sq-char.mw-aur-on .sq-nick { margin-top:16px }
+     .sq-body 폭이 46 고정이라 앞겹 15px, 그중 절반(50%)을 올렸으니 8px 만 비켜주면 된다.
+     ★★margin 이 아니라 **transform** 이어야 한다 (대표 8-19 버그 제보).
+       .sq-char 는 translate(-50%,-100%) 라 **아래끝이 기준점**이다 → margin 으로 요소가
+       길어지면 캐릭터가 그만큼 위로 떠올라 **벽을 뚫고 올라간 것처럼** 보였다.
+       transform 은 레이아웃 높이를 안 바꾸므로 캐릭터 위치가 그대로다. */
+  .sq-char.mw-aur-on .sq-nick { transform:translateY(8px) }
   .sq-nick { font-size:9px; color:#fff; background:rgba(5,7,12,.72); padding:1px 5px 2px; margin-top:1px; max-width:70px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'Galmuri11',sans-serif }
   .sq-bubble { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:#101624;
@@ -4352,7 +4363,12 @@ window.charSlot = function (slot, btn) {
   }
   if (['hair', 'top', 'bottom', 'shoes', 'acc', 'hat', 'mask'].includes(slot)) {
     const isMask = slot === 'mask';
-    const off = isMask ? !window._charDraft.mask : !window._charDraft[slot];
+    // ★악세사리 칸에는 스프라이트 악세사리 말고 **캐릭터 이펙트(아우라)** 도 같이 산다.
+    //   아우라만 켜져 있으면 _charDraft.acc 는 비어 있어서 '안 씀'이 착용중으로 보이고,
+    //   눌러도 아무 일이 없었다(대표 8-19). 히든 캐릭터는 아예 아우라만 켤 수 있어 더 그렇다.
+    //   둘 다 꺼져 있을 때만 '안 씀'이 착용중이다.
+    const auraOn = (slot === 'acc') && !!((window._seasonState || {}).auraOn);
+    const off = isMask ? !window._charDraft.mask : (!window._charDraft[slot] && !auraOn);
     const onclick = isMask ? 'window.charClearMask()' : "window.charClearSlot('" + slot + "')";
     grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
@@ -4361,6 +4377,11 @@ window.charClearMask = function () { if (!window._charDraft) return; window._cha
 window.charClearSlot = function (slot) {
   if (!window._charDraft) return;
   window._charDraft[slot] = null;
+  // ★악세사리는 **둘 다** 벗는다 — 스프라이트 악세사리 + 캐릭터 이펙트(아우라).
+  //   하나만 벗기면 '안 씀'을 눌렀는데 아우라가 남아 있어 버튼이 안 먹은 것처럼 보인다
+  //   (대표 8-19: "두개다 쓰면 안씀버튼은 다 벗겨야하는데 하나만 벗기는듯").
+  //   mwAuraSet 은 모듈 블록에 있어 window 로 건너간다. 그 안에서 다시 그려 준다.
+  if (slot === 'acc' && window.mwAuraSet && (window._seasonState || {}).auraOn) window.mwAuraSet('');
   window._charRenderAvatar(); window._charApplyPos();   // 프리뷰 + 걷는 캐릭터 반영
   window._charAutoSave();                                // 벗는 것도 저장돼야 한다(#16)
   window.charSlot(slot, document.querySelector('#charworld-slot-tabs .tab-btn.active'));
@@ -10021,7 +10042,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '632';
+window._SW_V = '633';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -11455,21 +11476,24 @@ window.mwPlateGrant = async function (season, meta) {
 };
 // 아우라 켜기/끄기. 한 번에 하나만 켠다(aura 가 단일 값이다).
 window.mwAuraToggle = async function (key) {
-  const user = window.currentUser; if (!user) return;
   const st = window._seasonState || {};
   if ((st.auras || []).indexOf(key) < 0) return;         // 안 가진 건 못 켠다
-  const next = (st.auraOn === key) ? '' : key;
+  return window.mwAuraSet((st.auraOn === key) ? '' : key);
+};
+// 아우라를 **특정 값으로** 맞춘다(''=끔). 토글과 '안 씀' 버튼이 둘 다 이걸 쓴다 —
+// 끄는 길이 두 벌이 되면 한쪽만 고치는 사고가 난다.
+window.mwAuraSet = async function (next) {
+  const user = window.currentUser; if (!user) return;
+  const st = window._seasonState || {};
+  if ((st.auraOn || '') === (next || '')) return;        // 이미 그 상태면 쓰지 않는다
   try { await window._seasonWrite(user.uid, { aura: next }); }
   catch (e) { console.warn('aura toggle', e); return; }
   st.auraOn = next;
   window._charApplyPos && window._charApplyPos();         // 내 필드에 즉시 반영
   window._sqRtSend && window._sqRtSend();                 // 스쿼드 필드면 남에게도 즉시
-  // ★mwRoomEdit() 를 다시 부르면 안 된다 — 그 함수가 _reditDraft 를 **저장된** 방으로
-  //   되돌리기 때문에, 가구를 옮기던 중(저장 전)에 아우라를 켜면 배치가 통째로 날아간다.
-  //   그래서 카탈로그를 다시 그리지 않고 버튼 표시만 직접 고친다.
   // 꾸미기 > 악세사리 그리드를 다시 그려 '켜짐' 표시를 갱신한다.
-  // ★mwRoomEdit() 을 부르면 안 된다 — 그 함수는 _reditDraft 를 저장된 방으로 되돌려
-  //   배치 중이던 가구를 날린다(8-19에 실제로 그랬다).
+  // ★mwRoomEdit() 을 부르면 안 된다 — 그 함수는 _reditDraft 를 **저장된** 방으로 되돌려
+  //   배치 중이던 가구를 통째로 날린다(8-19에 실제로 그랬다).
   if (window._charSlot === 'acc' && window.charSlot && window._charDraft) window.charSlot('acc');
 };
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
@@ -24026,7 +24050,11 @@ window._MW_AUR_COLORS = ['blue'];
 // **같은 식**이어야 한다 — 여기서 어긋나면 이름표가 고리를 덮거나 너무 멀리 떨어진다.
 // ★이 값이 필요한 이유: 이름표가 발밑 바로 아래에 붙어 앞겹을 거의 다 덮었다(대표 8-19).
 //   앱 실측으로 필드 캐릭터 폭이 약 47px 이라 앞겹이 15px 인데 이름표가 13px 였다.
-window._MW_AUR_FRONT_H = function (parentW) { return Math.round((parentW || 0) * 1.03 * 45 / 140); };
+window._MW_AUR_LIFT = 0.5;   // 고리를 앞겹 높이의 몇 배만큼 위로 올릴지. ★CSS .mw-aur-f 와 같아야 한다
+window._MW_AUR_FRONT_H = function (parentW) {
+  // 발밑 **아래로 실제로 내려오는** 높이 = 앞겹 높이 − 올린 만큼. 이름표는 여기까지만 비켜주면 된다.
+  return Math.round((parentW || 0) * 1.03 * 45 / 140 * (1 - window._MW_AUR_LIFT));
+};
 window._mwAurApply = function (body, color) {
   if (!body) return;
   body.querySelectorAll('.mw-aur').forEach(function (n) { n.remove(); });
