@@ -11566,6 +11566,90 @@ window._seasonEnsureMonth = function () {
   return season;
 };
 // 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
+// ===== 덤벨 피하기 (헬스장 필드 1인 미니게임) =====
+// 설계: docs/superpowers/specs/2026-08-19-dumbbell-dodge-minigame-design.md
+// ★판정을 DOM·Firestore 를 모르는 순수 함수로 뗀다 — 이 저장소엔 테스트 러너가 없어서
+//   게임 규칙을 검증할 방법이 이것뿐이다. 화면은 이 결과를 그리기만 한다.
+// ★튜닝 값은 전부 여기 모은다. 재미는 숫자로 못 정하고 대표가 실기기에서 고쳐야 한다 —
+//   흩어져 있으면 고칠 때마다 코드를 뒤져야 한다.
+window.DODGE = {
+  W: 100,             // 게임판 가로(논리 단위, 화면 폭에 비례해서만 그린다)
+  PLAYER_W: 12,       // 캐릭터 판정 폭
+  PLAYER_SPEED: 62,   // 초당 이동
+  FALL0: 34,          // 처음 낙하 속도(초당)
+  FALL_UP: 1.9,       // 1분마다 이만큼 곱해진다
+  GAP0: 900,          // 처음 생성 간격(ms)
+  GAP_MIN: 260,       // 아무리 빨라져도 이보다 촘촘해지지 않는다
+  GAP_DOWN: 0.55,     // 1분마다 간격에 곱해진다
+  MAX_ITEMS: 12,      // 동시 표시 상한(저사양 폰 보호). 넘으면 생성을 건너뛴다
+  ITEM_W: 11,         // 물건 판정 폭
+  P_DUMBBELL: 0.5, P_PROTEIN: 0.35,   // 나머지는 치킨
+  SC_PROTEIN: 10, SC_CHICKEN: -15, SC_PER_SEC: 1,
+  GIFT_AT: 0,         // ★한정 오브젝트 기준점. 0 = 꺼짐. 대표가 몇 판 해본 뒤 정한다
+  MAX_SCORE: 9999     // 이보다 큰 점수는 랭킹에서 버린다(조작 방어)
+};
+// 시드 난수 — 테스트가 재현 가능해야 한다. Math.random 을 쓰면 같은 판을 두 번 못 돌린다.
+window._dodgeRnd = function (s) {
+  s.rnd = (s.rnd * 1664525 + 1013904223) >>> 0;
+  return s.rnd / 4294967296;
+};
+window.dodgeNew = function (seed) {
+  return { t: 0, score: 0, x: window.DODGE.W / 2, alive: true, items: [],
+           spawnAt: window.DODGE.GAP0, rnd: (seed >>> 0) || 1, hit: null, face: 'down' };
+};
+// dt = 지난 ms, targetX = 손가락의 논리 x(0~W) | null(입력 없음)
+// ★손가락 추종 방식이다(대표 8-19 확정). 탭투워크는 도착까지 걸리는 시간 때문에
+//   피하기가 성립하지 않고, 조이스틱은 손가락→스틱→캐릭터로 한 단계 멀고 화면 아래를 가린다.
+//   ★단 순간이동은 안 시킨다 — 최고 속도를 걸어야 "빨리 못 옮기는" 긴장이 남는다.
+window.dodgeTick = function (s, dt, targetX) {
+  const D = window.DODGE;
+  if (!s.alive) return s;
+  s.hit = null;
+  s.t += dt;
+  // 난이도: 1분마다 빨라지고 촘촘해진다
+  const mins = s.t / 60000;
+  const fall = D.FALL0 * Math.pow(D.FALL_UP, mins);
+  const gap = Math.max(D.GAP_MIN, D.GAP0 * Math.pow(D.GAP_DOWN, mins));
+  // 이동 — 손가락 쪽으로 가되 한 틱에 갈 수 있는 거리를 넘지 않는다
+  if (targetX != null) {
+    const want = Math.max(D.PLAYER_W / 2, Math.min(D.W - D.PLAYER_W / 2, targetX));
+    const step = D.PLAYER_SPEED * (dt / 1000);
+    const d = want - s.x;
+    if (Math.abs(d) <= step) s.x = want;
+    else { s.x += (d < 0 ? -step : step); }
+    if (Math.abs(d) > 0.5) s.face = d < 0 ? 'left' : 'right';
+  }
+  s.x = Math.max(D.PLAYER_W / 2, Math.min(D.W - D.PLAYER_W / 2, s.x));
+  // 생성
+  s.spawnAt -= dt;
+  if (s.spawnAt <= 0) {
+    s.spawnAt += gap;
+    if (s.items.length < D.MAX_ITEMS) {
+      const r = window._dodgeRnd(s);
+      const kind = r < D.P_DUMBBELL ? 'dumbbell' : (r < D.P_DUMBBELL + D.P_PROTEIN ? 'protein' : 'chicken');
+      s.items.push({ id: (s.rnd % 100000) + '_' + Math.round(s.t),
+                     kind: kind, x: D.ITEM_W / 2 + window._dodgeRnd(s) * (D.W - D.ITEM_W), y: 0 });
+    }
+  }
+  // 낙하 + 충돌. 뒤에서부터 지운다(앞에서 지우면 인덱스가 밀린다)
+  for (let i = s.items.length - 1; i >= 0; i--) {
+    const it = s.items[i];
+    it.y += fall * (dt / 1000);
+    const near = Math.abs(it.x - s.x) < (D.PLAYER_W + D.ITEM_W) / 2;
+    if (it.y >= 88 && it.y <= 100 && near) {          // 캐릭터 높이대(88~100)에서만 닿는다
+      if (it.kind === 'dumbbell') { s.alive = false; s.hit = 'dumbbell'; s.items.splice(i, 1); break; }
+      s.score += (it.kind === 'protein') ? D.SC_PROTEIN : D.SC_CHICKEN;
+      if (s.score < 0) s.score = 0;                    // 점수는 0 아래로 안 내려간다
+      s.hit = it.kind;
+      s.items.splice(i, 1);
+      continue;
+    }
+    if (it.y > 110) s.items.splice(i, 1);              // 바닥 밑으로 나간 것은 즉시 버린다
+  }
+  if (s.alive) s.score += D.SC_PER_SEC * (dt / 1000);
+  return s;
+};
+// ===== 덤벨 피하기 끝 =====
 // ===== 닉네임 중복 검사 =====
 // 지금까지 검사가 아예 없었다(온보딩은 maxlength=10 과 '2자 이상'만 봤다) — 같은 닉을
 // 여러 개 만들 수 있었다. 명예의 전당·랭킹이 사람을 **이름으로** 보여주기 시작하면서
