@@ -2076,6 +2076,20 @@
 
 
 <!-- 나에게 관심 보낸 사람 패널 -->
+<!-- 주간 명예의 전당 팝업 (대표 8-18). 헬토리 홍보 팝업과 같은 문법(.mfg-card 재사용). -->
+<div id="hof-popup" style="display:none;position:fixed;inset:0;z-index:10047;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
+  <div class="mfg-card" style="max-width:344px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:26px 22px;text-align:center">
+    <div id="hof-pop-kind" style="font-size:11.5px;font-weight:800;letter-spacing:1px;color:var(--accent);margin-bottom:12px"></div>
+    <div id="hof-pop-char" style="display:flex;justify-content:center;align-items:flex-end;min-height:104px;margin-bottom:12px"></div>
+    <div id="hof-pop-nick" style="font-size:19px;font-weight:800;letter-spacing:-0.3px;margin-bottom:3px"></div>
+    <div id="hof-pop-n" style="font-size:12.5px;color:rgba(255,255,255,0.45);margin-bottom:14px"></div>
+    <div id="hof-pop-msg" style="display:none;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.8);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:12px 14px;margin-bottom:18px"></div>
+    <button class="mfg-btn" onclick="window.hofPopupClose();openPanel('hof-panel')" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">명예의 전당 보기</button>
+    <button onclick="window.hofPopupClose()" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer;margin-top:9px;padding:4px">닫기</button>
+    <button onclick="window.hofPopupClose(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.25);font-size:11.5px;cursor:pointer;margin-top:2px;padding:4px">다시 보지 않기</button>
+  </div>
+</div>
+
 <!-- 명예의 전당 — 활동이 많은 사람이 눈에 띄는 유일한 자리.
      ★새 UI 문법을 만들지 않는다: .panel / .panel-header / .panel-body / .tab-bar / .tab-btn 재사용.
      설계 = docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md -->
@@ -6037,11 +6051,11 @@ window.mwPortal = function () {
 <!-- 머피 첫 적립 안내 (평생 1회) -->
 <style>
 @keyframes mfg-in{from{opacity:0;transform:scale(.94) translateY(10px)}to{opacity:1;transform:none}}
-#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card{animation:mfg-in .36s cubic-bezier(.2,.8,.25,1) both}
+#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:mfg-in .36s cubic-bezier(.2,.8,.25,1) both}
 .mfg-btn{transition:transform .12s ease}
 .mfg-btn:active{transform:scale(.97)}
 .mfg-row:active{background:rgba(255,255,255,0.03)}
-@media (prefers-reduced-motion:reduce){#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card{animation:none}}
+@media (prefers-reduced-motion:reduce){#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:none}}
 /* 콜드유저 코치마크: 네온 테두리(한바퀴 계속 삭, 색 지정) + 온보딩식 흰 말풍선 */
 @property --coach-a{syntax:'<angle>';inherits:false;initial-value:0deg}
 .coach-neon::after{content:'';position:absolute;inset:-3px;border-radius:16px;padding:3px;pointer-events:none;background:conic-gradient(from var(--coach-a),transparent 0 64%,var(--coach-glow,rgba(61,126,255,0.18)) 76%,var(--coach-c,#3D7EFF) 91%,var(--coach-c2,#D3E2FF) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:coachBeam 1.7s linear infinite}
@@ -6452,7 +6466,7 @@ function goPage(name) {
   //   알릴 내용은 카드 화면과 '다 봤어요' 화면 안에서 이미 다 보인다.
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
-  if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); if (window.loadHofLine) window.loadHofLine(); }
+  if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); if (window.loadHofLine) window.loadHofLine(); if (window._maybeHofPopup) setTimeout(window._maybeHofPopup, 1500); }
   if (name === 'char' && window.renderCharSpace) { window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx(); }
   // 머피월드 = 몰입 모드: 헤더 즉시 숨김, 로고 광택은 포털이 걷힌 뒤(_mwWorldReveal)
   if (name === 'char') {
@@ -11663,6 +11677,54 @@ window.loadHofLine = async function () {
     + `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">`
     + `이번 달 인증 1위 <b style="color:#fff">${esc(rows[0].nick)}</b>${mineTxt}</span>`
     + `<span style="flex-shrink:0;color:rgba(255,255,255,0.3)">&rsaquo;</span></div>`;
+};
+// 그 달의 몇 번째 주 (ISO 주차가 아니다 — 종목 회전이 월 카운터와 같은 주기를 돌아야 한다)
+window._hofWeek = function (d) { return Math.min(4, Math.floor((d.getDate() - 1) / 7) + 1); };
+window._hofWeekKey = function (d) { return window.mwSeasonKey(d) + '-W' + window._hofWeek(d); };
+// ★주차마다 종목을 돌린다. 카운터가 월 누적이라 월초에 앞선 사람이 그 달 내내 1위다 —
+//   같은 얼굴이 4주 연속 뜨면 첫 주만 재밌고 그다음은 광고가 된다. 네 명이 돌아가며 주인공이 된다.
+//   5주차(29~31일)는 4주차로 접는다 — 종목이 넷이라 다섯 번째 칸이 없다.
+window._HOF_WEEK_KIND = { 1: 'feed', 2: 'checkin', 3: 'host', 4: 'attend' };
+window.hofPopupClose = function (forever) {
+  const el = document.getElementById('hof-popup'); if (el) { el.style.display = 'none'; el.classList.remove('show'); }
+  if (forever) { try { localStorage.setItem('hof_popup', 'off'); } catch (e) {} }
+};
+window.showHofPopup = async function (kind) {
+  const el = document.getElementById('hof-popup'); if (!el) return false;
+  const data = await window.loadHof();
+  const rows = data.rows[kind] || []; if (!rows.length) return false;
+  const top = rows[0], def = window.HOF_KINDS[kind];
+  document.getElementById('hof-pop-kind').textContent = '이번 주의 ' + def.label + ' 1위';
+  document.getElementById('hof-pop-nick').textContent = String(top.nick || '');
+  document.getElementById('hof-pop-n').textContent = top.n + def.unit + (top.sub ? ' · ' + top.sub : '');
+  let ch = '';
+  try {
+    const cfg = window._hofChar && window._hofChar[top.uid];
+    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, 104) || '';
+  } catch (e) {}
+  document.getElementById('hof-pop-char').innerHTML = ch;
+  // 차단한 사람이 1위면 한마디는 숨긴다(이름·기록은 그대로 — 스펙 7장)
+  const blocked = window._isBlocked ? window._isBlocked(top.uid) : false;
+  const msg = blocked ? '' : ((window._hofMsg || {})[top.uid] || '');
+  const mEl = document.getElementById('hof-pop-msg');
+  mEl.style.display = msg ? '' : 'none';
+  mEl.textContent = msg;                       // ★textContent — 남이 쓴 글이다
+  el.style.display = 'flex';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  return true;
+};
+// 월요일 첫 접속 1회. 같은 주에 두 번 뜨지 않게 주차 키를 적어둔다.
+window._maybeHofPopup = async function () {
+  try {
+    if (localStorage.getItem('hof_popup') === 'off') return;
+    if (!window.currentUser) return;
+    const d = new Date();
+    if (d.getDay() !== 1) return;                        // 월요일만
+    const key = window._hofWeekKey(d);
+    if (localStorage.getItem('hof_popup_week') === key) return;
+    const ok = await window.showHofPopup(window._HOF_WEEK_KIND[window._hofWeek(d)] || 'feed');
+    if (ok) localStorage.setItem('hof_popup_week', key);
+  } catch (e) { console.warn('hof popup', e); }
 };
 // ===== 명예의 전당 끝 =====
 window.mwBumpMonthly = async function (axis) {
