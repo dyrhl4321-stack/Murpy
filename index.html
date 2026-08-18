@@ -922,6 +922,17 @@
   .mw-dossier { background:#0e1015; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     padding:16px 16px 18px; font-family:'GalmuriMono11','Galmuri11',monospace; color:#cfd6e6;
     font-size:13px; line-height:1.85; white-space:pre-wrap; word-break:break-all; min-height:120px }
+  /* 필드 하단 대화창 — 환세취호전/포켓몬식. 상자 스킨(.mw-dossier)을 그대로 쓰고 자리만 잡는다.
+     ★#charworld-room 안쪽 아래에 붙는다(화면 전체가 아니다). 필드를 벗어나지 않는다. */
+  #mw-fieldtalk { position:absolute; left:8px; right:8px; bottom:8px; z-index:60;
+    min-height:0; padding:11px 12px 12px; font-size:12px; line-height:1.7; cursor:pointer;
+    animation:mwFtIn .12s steps(2) }
+  @keyframes mwFtIn { from { transform:translateY(6px); opacity:0 } }
+  /* 다음 줄 표시 — 기하문자(▼)는 픽셀폰트에서 깨진다. CSS 삼각형으로 그린다. */
+  #mw-fieldtalk .mw-ft-caret { position:absolute; right:10px; bottom:8px; width:0; height:0;
+    border-left:5px solid transparent; border-right:5px solid transparent;
+    border-top:6px solid #7AA4FF; animation:mwFtBob .7s steps(2) infinite }
+  @keyframes mwFtBob { 50% { transform:translateY(3px) } }
   .mw-hidden-glitch { animation:mwGlitch .5s steps(3) 2 }
   @keyframes mwGlitch { 33%{ transform:translate(-2px,1px); filter:hue-rotate(25deg) } 66%{ transform:translate(2px,-1px) } }
   /* 판정 = '기밀 해제' 붉은 스탬프 + 검열바가 좌→우로 벗겨지며 칭호가 드러남.
@@ -17401,10 +17412,41 @@ window.mwTypewriter = function (el, lines, opts) {
   return new Promise(res => {
     let i = 0;
     const t = setInterval(() => {
+      // opts.stop() 이 true 면 남은 글자를 즉시 다 보여주고 끝낸다(탭으로 건너뛰기).
+      // 기존 호출부(mwHiddenReveal)는 stop 을 안 넘기므로 동작이 그대로다.
+      if (opts.stop && opts.stop()) { el.textContent = text; clearInterval(t); res(); return; }
       el.textContent = text.slice(0, ++i);
       if (opts.tick && i % 2 === 0 && navigator.vibrate) { try { navigator.vibrate(4); } catch (e) {} }
       if (i >= text.length) { clearInterval(t); res(); }
     }, speed);
+  });
+};
+// 필드 하단 대화창. lines = **화면 단위** 배열(한 항목이 한 화면, 안에서 '\n'로 줄바꿈).
+// 타자기가 도는 중에 탭하면 그 화면을 즉시 다 보여주고, 다 나온 뒤 탭하면 다음 화면으로 간다.
+// ★상자 스킨은 .mw-dossier 를 그대로 쓴다(히든 캐릭터 연출이 쓰는 그 상자). 새 박스를 만들지 않는다.
+window.mwFieldTalk = function (lines) {
+  return new Promise(function (resolve) {
+    const room = document.getElementById('charworld-room');
+    if (!room || !lines || !lines.length) return resolve();
+    const old = document.getElementById('mw-fieldtalk'); if (old) old.remove();
+    const el = document.createElement('div');
+    el.id = 'mw-fieldtalk'; el.className = 'mw-dossier';
+    el.innerHTML = '<span class="mw-ft-body"></span><i class="mw-ft-caret" style="display:none"></i>';
+    room.appendChild(el);
+    const body = el.querySelector('.mw-ft-body'), caret = el.querySelector('.mw-ft-caret');
+    let i = 0, typing = false, skip = false;
+    const show = async function () {
+      typing = true; caret.style.display = 'none'; skip = false;
+      await window.mwTypewriter(body, [lines[i]], { tick: true, speed: 45, stop: function () { return skip; } });
+      typing = false; caret.style.display = '';
+    };
+    el.addEventListener('click', function () {
+      if (typing) { skip = true; return; }            // 타자기 건너뛰기
+      i++;
+      if (i >= lines.length) { el.remove(); resolve(); return; }
+      show();
+    });
+    show();
   });
 };
 // ---------- 히든 캐릭터 '비밀 관찰 파일 → 기밀 해제' 등장 연출 ----------
