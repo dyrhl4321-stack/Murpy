@@ -19336,6 +19336,12 @@ window.loadHomeTrending = async () => {
 
   try {
     const cards = [];
+    // ★대표 본인 계정 2개는 홈 '지금 인기' 전체에서 뺀다(대표 8-18) — 인기 캐릭터·인기 룸·
+    //   운동 열정러. 운영자가 1등을 차지하면 유저에겐 겨룰 상대가 아니라 벽이다.
+    //   ※uid 가 더 튼튼하지만 지금 없어 닉네임으로 건다 — uid 를 받으면 바로 교체할 것.
+    //   ※★닉네임 중복 검사가 앱에 없다(온보딩은 길이만 본다) → 같은 닉을 남이 만들면
+    //     그 사람도 같이 빠진다. 중복 검사를 넣기 전까지 남는 구멍이다.
+    const EXCLUDE_NICK = ['패수현', '김현수'];
 
     // ★크루 → 스쿼드로 교체(크루는 휴면). 캐릭터·센터 체크인 카드 추가 (대표 지시 2026-08-03).
     //   실패해도 나머지 카드는 뜨게 각각 catch 로 감싼다.
@@ -19347,7 +19353,13 @@ window.loadHomeTrending = async () => {
       safe(getDocs(query(collection(db, 'squads'),
         where('expiresAt', '>', Date.now()), orderBy('expiresAt', 'asc'), limit(30)))),
       safe(getDocs(query(collection(db, 'bamboo'), limit(10)))),
-      safe(getDocs(query(collection(db, 'users'), limit(20)))),
+      // ★★limit(20) 무정렬이었다 (대표 8-18: "잘 꾸민 사람이 인기에 안 뜬다").
+      //   정렬이 없으면 Firestore 는 **문서 id(uid) 순**으로 준다 = 사실상 uid 앞쪽 20명.
+      //   회원이 46명이 넘으니 뒤쪽 사람은 **후보에 아예 안 들어왔다.** 아무리 잘 꾸며도
+      //   계산 대상이 아니었다. 바로 위 스쿼드 쿼리에 같은 버그를 8-11 에 고친 기록이 있는데
+      //   users 는 그대로 뒀다. → 전부 읽는다(46명이면 한 번에 읽어도 무시할 수준).
+      //   ※사람이 500명쯤 되면 상위 20명만 담은 집계 문서로 바꿀 것.
+      safe(getDocs(collection(db, 'users'))),
       safe(getDocs(query(collection(db, 'checkins'), limit(80))))
     ]);
 
@@ -19443,15 +19455,37 @@ window.loadHomeTrending = async () => {
         try { const s = await getDoc(doc(db, 'users', uid, 'roomstat', mwTodayKey())); return Math.max(0, (s.exists() && s.data().count) || 0); }
         catch (e) { return 0; }
       };
-      const all = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(u => u.uid !== _meU && u.nickname);
+      // ★대표 본인 계정 2개는 '인기'에서 뺀다(대표 8-18). 운영자가 1등을 차지하면
+      //   유저 입장에선 겨룰 상대가 아니라 벽이다.
+      //   ※uid 가 더 튼튼하지만 지금 손에 없어 닉네임으로 건다 — uid 를 받으면 바로 교체할 것.
+      //   ※★닉네임 중복 검사가 앱에 없다(온보딩은 길이만 본다) → 같은 닉을 남이 만들면
+      //     그 사람도 같이 빠진다. 중복 검사를 넣기 전까지 남는 구멍이다.
+      // '갖춰 입은 슬롯 수' — 기본 지급 의상과 **다른** 것을 입은 칸만 센다.
+      //   보유 수(wardrobe)로 줄을 세우면 '많이 가진 사람'이 이긴다(주석에도 그렇게 적혀 있는데
+      //   후보를 좁힐 때 결국 그 기준을 썼다). 카드가 해야 할 일은 "저렇게 되고 싶다"를 만드는
+      //   것이라, 사놓고 안 입은 사람이 아니라 **실제로 갖춰 입은 사람**이 떠야 한다.
+      const DRESS_SLOTS = ['bottom', 'shoes', 'top', 'hair', 'hat', 'acc', 'mask'];
+      const dressedN = (c) => {
+        if (!c) return 0;
+        const d = window.CHAR_DEFAULT || {};
+        return DRESS_SLOTS.filter(k => c[k] && c[k] !== d[k]).length;
+      };
+      const all = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
+        .filter(u => u.uid !== _meU && u.nickname
+                  && !u.deleted && EXCLUDE_NICK.indexOf(u.nickname) < 0);
 
+      // 점수 = 좋아요×3 + 갖춰 입은 칸×1.0 + 보유 수×0.2
+      //   보유 수를 남긴 건 대표 판단 — "많이 가진 것도 신경 쓴 것"이다. 다만 **가산점**이다.
+      //   후보를 좁힐 때도 같은 잣대를 쓴다(예전엔 보유 수로만 좁혀서, 점수식을 고쳐도
+      //   보유 부자가 아니면 애초에 후보에 못 들었다).
+      const cScore = (u, like) => (like || 0) * 3 + dressedN(u.character) * 1.0
+                                + ((u.wardrobe || []).length) * 0.2;
       const dressed = await Promise.all(
-        all.filter(u => u.character && (u.wardrobe || []).length > 0)
-           .sort((a, b) => ((b.wardrobe || []).length) - ((a.wardrobe || []).length))
+        all.filter(u => u.character && dressedN(u.character) > 0)
+           .sort((a, b) => cScore(b, 0) - cScore(a, 0))
            .slice(0, CAND)
            .map(async u => ({ u, like: await likeCnt(u.uid, 'char') })));
-      dressed.sort((a, b) => (b.like * 3 + (b.u.wardrobe || []).length * 0.2)
-                           - (a.like * 3 + (a.u.wardrobe || []).length * 0.2));
+      dressed.sort((a, b) => cScore(b.u, b.like) - cScore(a.u, a.like));
       dressed.slice(0, 1).forEach(({ u, like }) => {
         let charHtml = '';
         try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
@@ -19462,7 +19496,7 @@ window.loadHomeTrending = async () => {
           inner: `<div style="position:absolute;inset:0;background:linear-gradient(165deg,#232a3d,#0d1018);display:flex;align-items:flex-end;justify-content:center;padding-bottom:38px">${charHtml}</div>`,
           title: esc(u.nickname || ''),
           // 좋아요가 아직 0이면 숫자를 자랑할 게 없다 → 보유 아이템으로 대체
-          meta: like > 0 ? `<span>좋아요 ${like}</span>` : `<span>아이템 ${(u.wardrobe || []).length}개</span>`
+          meta: like > 0 ? `<span>좋아요 ${like}</span>` : `<span>${dressedN(u.character)}칸 갖춰 입음</span>`
         }));
       });
 
@@ -19477,7 +19511,12 @@ window.loadHomeTrending = async () => {
            .sort((a, b) => nFurn(b.room) - nFurn(a.room))
            .slice(0, CAND)
            .map(async u => ({ u, like: await likeCnt(u.uid, 'room'), vis: await visitCnt(u.uid) })));
-      const rScore = (x) => x.like * 3 + x.vis * 1 + nFurn(x.u.room) * 0.2;
+      // ★가구 수 ×0.2 → ×1.0 (대표 8-18: "가구를 많이 넣었다는 것 자체가 많이 신경 쓴 것").
+      //   좋아요·방문이 대부분 0인 지금은 사실상 이 항목이 순위를 정한다. 그게 맞다 —
+      //   가구는 시간과 머피가 드는 실제 노력이다.
+      //   ※도배 어뷰징은 구조적으로 막혀 있다 — 방에는 슬롯 상한(MW_SLOT_*)이 있고
+      //     늘리려면 머피를 쓴다(COST_SLOT_EXT). 상한이 곧 브레이크다.
+      const rScore = (x) => x.like * 3 + x.vis * 1 + nFurn(x.u.room) * 1.0;
       roomy.sort((a, b) => rScore(b) - rScore(a));
       if (roomy[0]) {
         const { u, like, vis } = roomy[0];
@@ -19557,7 +19596,8 @@ window.loadHomeTrending = async () => {
     const mFlame = '<span style="color:#F5C24B;display:inline-flex;flex-shrink:0"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>';
     const _me = window.currentUser && window.currentUser.uid;
     const runners = !usersSnap ? [] : usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
-      .filter(u => u.uid !== _me && (u.photoURL || u.firestorePhotoURL) && u.nickname && (u.streak || 0) >= 2)
+      .filter(u => u.uid !== _me && (u.photoURL || u.firestorePhotoURL) && u.nickname && (u.streak || 0) >= 2
+                && !u.deleted && EXCLUDE_NICK.indexOf(u.nickname) < 0)
       .sort((a, b) => (b.streak || 0) - (a.streak || 0));
     runners.slice(0, 2).forEach(u => {   // 카드가 늘어서(스쿼드·캐릭터·센터 추가) 4→2로 줄임
       const photo = u.photoURL || u.firestorePhotoURL || '';
