@@ -9475,7 +9475,7 @@ window.askDeleteAccount = function () {
              + '· 가지고 있는 머피도 함께 사라져요\n\n'
              + '계속할까요?')) return;
   if (!confirm('마지막 확인이에요.\n\n'
-             + '벙 출석·입금 기록과 주고받은 대화는\n'
+             + '스쿼드 출석·입금 기록과 주고받은 대화는\n'
              + '다른 분들의 기록이기도 해서 남지만,\n'
              + "내 이름 대신 '탈퇴한 사용자'로 보여요.\n\n"
              + '정말 삭제할까요?')) return;
@@ -9543,7 +9543,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '622';
+window._SW_V = '623';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -13486,9 +13486,8 @@ window._pushBarMaybe = function () {
       +   '<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:22px"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
       +   '<div style="font-size:21px;font-weight:800;color:#fff;letter-spacing:-0.5px;margin-bottom:10px">알림을 켜주세요</div>'
       +   '<div style="font-size:13.5px;color:rgba(255,255,255,.45);line-height:1.85">'
-      +     '벙 승인이 났을 때<br>스쿠에드 톡에 새 소식이 있을 때<br>머피가 도착했을 때'
+      +     '스쿼드 참가 승인이 났을 때<br>스쿼드 톡에 새 소식이 있을 때<br>머피가 도착했을 때'
       +   '</div>'
-      +   '<div style="font-size:11.5px;color:rgba(255,255,255,.24);line-height:1.7;margin-top:20px">알림을 켜두면 앱을 안 열어도<br>오늘 벙이 어떻게 되는지 바로 알 수 있어요</div>'
       + '</div>'
       + '<div style="flex-shrink:0;padding:0 0 calc(34px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;box-sizing:border-box">'
       +   '<button onclick="window.enablePush()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px">알림 켜기</button>'
@@ -20418,19 +20417,21 @@ window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무�
 // ★고치는 법: 아래 배열만 손보면 된다. weekday 0=일 ~ 6=토.
 // ★img 를 주면 종목 필드 대신 그 사진을 쓴다. 실제 활동 사진이 필드보다 훨씬 세다(대표 8-11).
 //   규격 1080x415(2.6:1) · 왼쪽 55%는 어두워야 한다(제목·부제가 거기 얹힌다).
+// ★★★8-18 대표 지시: **자동으로 만들어지는 것 금지.**
+//   "자동으로 계속 아침 정규반 만들어지는데 이거 아니야."
+//   매주 월요일이 오면 '근방단 아침 정규 헬스반' 회차가 목록에 저절로 다시 섰다.
+//   실제로 그 주에 안 여는데도 카드가 서고, 누가 누르면 그 자리에서 스쿼드가 열려버린다.
+//   → 배열을 **비워 둔다.** 엔진(_sqNextOcc·회차 계산)은 그대로 남겨두므로,
+//     다시 켤 일이 생기면 아래 주석의 모양대로 한 줄만 넣으면 된다. 지금은 아무것도 안 뜬다.
+//   ※모임은 이제 전부 **사람이 직접 연다.** 홍보는 아래 SQUAD_ADS 카드가 맡는다.
 window.SQUAD_CLASSES = [
-  // ★실제로 돌아가는 벙이다(대표 8-11). **매주 월요일 07:00** 이 정규다.
-  //   단 8/17(월)은 대체공휴일이라 **이번 주만 8/18(화)로 옮긴다** → moves.
-  //   앞으로도 공휴일에 걸리면 moves 에 '원래날짜':'옮긴날짜' 한 줄만 더하면 된다.
-  // ★occSid = 그 회차의 **이미 열려 있는 진짜 벙 문서 id**. 주면 카드가 새로 만들지 않고
-  //   그 벙으로 바로 들어간다. 8/18 회차는 대표가 직접 만들어 둔 것이 있어서 여기 물린다.
-  //   다음 회차(8/24)부터는 없으므로 참가하는 순간 'cls_gbd_am_gym_2026-08-24' 로 새로 열린다.
-  { id: 'gbd_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 1, hour: 7, min: 0,
-    moves: { '2026-08-17': '2026-08-18' },
-    occSid: { '2026-08-18': 'oscXZllyBvvsojNndePC' },
-    durH: 1.5, location: '근방단 지정 헬스장', capacity: 30, level: '누구나',
-    img: 'char/promo/ad_gym_morning.jpg?v=2',
-    memo: '아침에 모여서 같이 합니다. 처음 오셔도 됩니다.' }
+  // (다시 켤 때의 모양 — 지금은 쓰지 않는다)
+  // { id: 'gbd_am_gym', name: '근방단 아침 정규 헬스반', type: 'gym', weekday: 1, hour: 7, min: 0,
+  //   moves: { '2026-08-17': '2026-08-18' },          // 공휴일 등으로 그 주만 옮길 때
+  //   occSid: { '2026-08-18': 'oscXZllyBvvsojNndePC' }, // 이미 열어둔 진짜 문서로 물릴 때
+  //   durH: 1.5, location: '근방단 지정 헬스장', capacity: 30, level: '누구나',
+  //   img: 'char/promo/ad_gym_morning.jpg?v=2',
+  //   memo: '아침에 모여서 같이 합니다. 처음 오셔도 됩니다.' }
   // ★type 은 SQUAD_TYPES 의 키와 정확히 같아야 한다(gym·running·golf·tennis·climbing·hyrox·hiking).
   //   'run' 이라고 썼다가 필드가 헬스로 떨어졌다 — squadFieldSrc 가 모르는 키는 gym 으로 폴백한다.
   // ※'수요일 저녁 러닝반'·'토요일 오전 헬스반'은 대표 지시로 뺐다(8-11). 실제로 안 돌아가는
@@ -20451,10 +20452,10 @@ window.SQUAD_ADS = [
   // ★sid = 이 카드가 가리키는 **진짜 벙 문서 id**. 주면 눌렀을 때 그 벙으로 바로 들어간다.
   //   예전엔 홍보 카드가 '스쿼드 만들기'로 떨어져서, 누리쌤 벙을 보고 누른 사람이
   //   엉뚱하게 자기 벙을 만드는 화면을 봤다(대표 8-11: "다 연동되어야 한다").
-  { img: 'char/promo/ad_yoga.jpg?v=2', tag: '8/22 토', title: '누리쌤 요가벙',
+  { img: 'char/promo/ad_yoga.jpg?v=2', tag: '8/22 토', title: '누리쌤 요가 스쿼드',
     sub: '처음이어도 괜찮아요 · 매트는 준비돼 있어요', cta: '보러가기',
     sid: 'fDezyUdJoUkBCMepB0qi' },
-  { img: 'char/promo/ad_dance.jpg?v=2', tag: '근방단', title: '춤벙, 이번에도 열립니다',
+  { img: 'char/promo/ad_dance.jpg?v=2', tag: '근방단', title: '댄스 스쿼드, 이번에도 열립니다',
     sub: '해본 적 없어도 됩니다 · 근방단 정기 모임', cta: '보러가기',
     href: 'https://www.instagram.com/gbd_project' },
   { img: 'char/promo/ad_hiking.jpg?v=2', tag: '등산', title: '주말 아침, 산에서 만나요',
@@ -20679,7 +20680,7 @@ window.showBannerAdmin = async function () {
       </div>
       <img id="bn-prev" style="display:none;width:100%;border-radius:10px;margin-bottom:10px">
       <input id="bn-tag" maxlength="10" placeholder="태그 (예: 근방단)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
-      <input id="bn-title" maxlength="24" placeholder="제목 (예: 춤벙, 이번에도 열립니다)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
+      <input id="bn-title" maxlength="24" placeholder="제목 (예: 댄스 스쿼드, 이번에도 열립니다)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
       <input id="bn-sub" maxlength="34" placeholder="한 줄 설명" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
       <input id="bn-cta" maxlength="8" placeholder="버튼 글씨 (기본: 보러가기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
       <input id="bn-href" placeholder="누르면 갈 주소 (비우면 스쿼드 만들기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:12px;font-family:inherit">
@@ -21171,7 +21172,16 @@ window.openSquadCreate = function () {
       ${lbl('정원')}
       <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px">
         <button onclick="window._sqCap(-1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">−</button>
-        <span style="flex:1;text-align:center;font-size:16px;font-weight:800;color:#fff"><b id="sq-c-cap">4</b>명</span>
+        <!-- ★숫자를 **직접 친다** (대표 8-18: "- + 일일이 다 눌러야 하는 게 개귀찮음").
+             30명짜리 모임을 만들려면 + 를 26번 눌러야 했다. − + 는 잔손질용으로 남긴다.
+             ★type=text + inputmode=numeric — type=number 는 폰마다 화살표가 붙고
+               한글 자판에서 이상한 값이 들어간다. 숫자만 남기는 건 아래에서 직접 한다. -->
+        <span style="flex:1;display:flex;align-items:center;justify-content:center;gap:1px">
+          <input id="sq-c-cap" type="text" inputmode="numeric" maxlength="2" value="4"
+            onfocus="this.select()" oninput="window._sqCapType(this)" onblur="window._sqCapFix(this)"
+            style="width:52px;text-align:center;font-size:16px;font-weight:800;color:#fff;background:none;border:none;border-bottom:1.5px solid rgba(255,255,255,.22);padding:2px 0;font-family:inherit">
+          <span style="font-size:16px;font-weight:800;color:#fff">명</span>
+        </span>
         <button onclick="window._sqCap(1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">+</button>
       </div>
       ${lbl('운동 강도')}
@@ -21238,11 +21248,27 @@ window._sqPickJoin = function (k) {
 // ★상한 8 → 30 (대표 8-11). 근방단 정기모임처럼 큰 모임도 여기서 출석을 찍는다.
 window._sqCap = function (d) {
   window._sqForm.capacity = Math.max(2, Math.min(30, window._sqForm.capacity + d));
-  const el = document.getElementById('sq-c-cap'); if (el) el.textContent = window._sqForm.capacity;
+  const el = document.getElementById('sq-c-cap'); if (el) el.value = window._sqForm.capacity;
+};
+// ★타이핑 중에는 **가두지 않는다.** 30 을 치려고 '3' 을 눌렀는데 그 순간 최소값 2 로
+//   고쳐버리면 이어서 친 '0' 이 '20' 이 된다. 범위는 손을 뗄 때(_sqCapFix) 한 번만 맞춘다.
+window._sqCapType = function (el) {
+  const raw = String(el.value).replace(/[^0-9]/g, '').slice(0, 2);
+  if (raw !== el.value) el.value = raw;
+  const n = parseInt(raw, 10);
+  if (!isNaN(n)) window._sqForm.capacity = n;
+};
+window._sqCapFix = function (el) {
+  const n = parseInt(String(el.value).replace(/[^0-9]/g, ''), 10);
+  window._sqForm.capacity = isNaN(n) ? 4 : Math.max(2, Math.min(30, n));
+  el.value = window._sqForm.capacity;
 };
 window._sqSubmitCreate = async function () {
   const user = auth.currentUser; if (!user) return;
   const f = window._sqForm;
+  // ★정원 칸에 커서를 둔 채 바로 '만들기'를 누르면 blur 가 안 뜨는 폰이 있다.
+  //   그럼 범위를 안 맞춘 값(빈칸·1·99)이 그대로 저장된다 → 여기서 한 번 더 맞춘다.
+  const _capEl = document.getElementById('sq-c-cap'); if (_capEl) window._sqCapFix(_capEl);
   const title = (document.getElementById('sq-c-title').value||'').trim();
   const loc = (document.getElementById('sq-c-loc').value||'').trim();
   const date = document.getElementById('sq-c-date').value, time = document.getElementById('sq-c-time').value;
@@ -21333,7 +21359,13 @@ window.sqEditOpen = function (sid) {
       ${lbl('정원')}
       <div style="display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 14px">
         <button onclick="window._sqECap(-1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">−</button>
-        <span style="flex:1;text-align:center;font-size:16px;font-weight:800;color:#fff"><b id="sq-e-cap">${window._sqEdit.capacity}</b>명</span>
+        <!-- 만들기 화면과 같은 방식으로 직접 친다 (대표 8-18) -->
+        <span style="flex:1;display:flex;align-items:center;justify-content:center;gap:1px">
+          <input id="sq-e-cap" type="text" inputmode="numeric" maxlength="2" value="${window._sqEdit.capacity}"
+            onfocus="this.select()" oninput="window._sqECapType(this)" onblur="window._sqECapFix(this)"
+            style="width:52px;text-align:center;font-size:16px;font-weight:800;color:#fff;background:none;border:none;border-bottom:1.5px solid rgba(255,255,255,.22);padding:2px 0;font-family:inherit">
+          <span style="font-size:16px;font-weight:800;color:#fff">명</span>
+        </span>
         <button onclick="window._sqECap(1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">+</button>
       </div>
       <div style="font-size:10.5px;color:rgba(255,255,255,.35);margin:6px 2px 0">지금 ${n}명 들어와 있어요 · 그보다 적게는 못 줄여요</div>
@@ -21363,7 +21395,22 @@ window.sqEditOpen = function (sid) {
 window._sqECap = function (d) {
   const e = window._sqEdit; if (!e) return;
   e.capacity = Math.max(e.min, Math.min(30, e.capacity + d));
-  const el = document.getElementById('sq-e-cap'); if (el) el.textContent = e.capacity;
+  const el = document.getElementById('sq-e-cap'); if (el) el.value = e.capacity;
+};
+// 만들기 화면과 같다. 다만 하한이 2 가 아니라 **지금 들어와 있는 인원(e.min)** 이다 —
+// 이미 5명이 있는데 3명으로 줄이면 누구를 내보낼지가 정해지지 않는다.
+window._sqECapType = function (el) {
+  const e = window._sqEdit; if (!e) return;
+  const raw = String(el.value).replace(/[^0-9]/g, '').slice(0, 2);
+  if (raw !== el.value) el.value = raw;
+  const n = parseInt(raw, 10);
+  if (!isNaN(n)) e.capacity = n;
+};
+window._sqECapFix = function (el) {
+  const e = window._sqEdit; if (!e) return;
+  const n = parseInt(String(el.value).replace(/[^0-9]/g, ''), 10);
+  e.capacity = isNaN(n) ? e.min : Math.max(e.min, Math.min(30, n));
+  el.value = e.capacity;
 };
 window._sqEPickThumb = async function (input) {
   const f = input && input.files && input.files[0]; if (!f) return;
@@ -21412,6 +21459,8 @@ window.sqDelete = async function () {
 };
 window.sqEditSubmit = async function () {
   const e = window._sqEdit; if (!e) return;
+  // 커서를 정원 칸에 둔 채 저장을 눌러도 범위가 맞도록 (만들기 화면과 같은 이유)
+  const _capEl = document.getElementById('sq-e-cap'); if (_capEl) window._sqECapFix(_capEl);
   const title = (document.getElementById('sq-e-title').value || '').trim();
   const loc = (document.getElementById('sq-e-loc').value || '').trim();
   const date = document.getElementById('sq-e-date').value, time = document.getElementById('sq-e-time').value;
@@ -22003,9 +22052,9 @@ window.sqKickMember = async function (sid, uid, nick) {
   // ★벙주 또는 그 스쿼드의 운영진(대표 8-14). 화면만 믿지 않고 여기서도 판정한다.
   const _mem = window._sqMembers || {};
   const _canKick = !!(s && s.id === sid && (s.hostUid === user.uid || (_mem[user.uid] && _mem[user.uid].staff)));
-  if (!_canKick) { showToast('벙주와 운영진만 내보낼 수 있어요'); return; }
+  if (!_canKick) { showToast('스쿼드장과 운영진만 내보낼 수 있어요'); return; }
   if (uid === user.uid) { showToast('나가려면 아래 나가기를 눌러주세요'); return; }
-  if (uid === s.hostUid) { showToast('벙주는 내보낼 수 없어요'); return; }
+  if (uid === s.hostUid) { showToast('스쿼드장은 내보낼 수 없어요'); return; }
   const ok = window.murpyConfirm
     ? await window.murpyConfirm({ title: (nick || '이 사람') + '을 내보낼까요?',
         desc: '다시 참가 신청은 할 수 있어요', confirmText: '내보내기' })
@@ -22182,7 +22231,7 @@ window.sqCycleCheck = async function (sid, uid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
   const me = (auth.currentUser || {}).uid;
   if (!s || !me || !uid || !mem[uid]) return;
-  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 바꿀 수 있어요'); return; }
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('스쿼드장과 운영진만 바꿀 수 있어요'); return; }
   const cur = window._sqCheckState(mem[uid]);
   const i = SQ_CHECK_ORDER.indexOf(cur);
   const next = SQ_CHECK_ORDER[(i < 0 ? 0 : i + 1) % SQ_CHECK_ORDER.length];
@@ -22338,7 +22387,7 @@ window.sqRenameMember = function (sid, uid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
   const me = (auth.currentUser || {}).uid;
   if (!s || !me || !mem[uid]) return;
-  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 고칠 수 있어요'); return; }
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('스쿼드장과 운영진만 고칠 수 있어요'); return; }
   const cur = mem[uid].alias || '';
   let el = document.getElementById('sq-rename'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-rename';
@@ -22389,7 +22438,7 @@ window.sqPartAssign = function (sid) {
   // _sqPreviewMe = 가이드 캡처용(로그인 없이 실제 시트를 그대로 띄운다). 평소엔 undefined 다.
   const me = (auth.currentUser || {}).uid || window._sqPreviewMe;
   if (!s || !me) return;
-  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('벙주와 운영진만 배정할 수 있어요'); return; }
+  if (!(me === s.hostUid || (mem[me] || {}).staff)) { showToast('스쿼드장과 운영진만 배정할 수 있어요'); return; }
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const list = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
   if (!list.length) { showToast('아직 멤버가 없어요'); return; }
@@ -22566,13 +22615,13 @@ window.sqPaidPicker = function (sid) {
         <div style="font-size:13px;font-weight:800;color:#F5C24B">${paid}/${list.length}</div>
       </div>
       <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px">
-        ${isHost ? '눌러서 입금을 체크하거나 해제할 수 있어요' : '벙주만 체크할 수 있어요'}</div>
+        ${isHost ? '눌러서 입금을 체크하거나 해제할 수 있어요' : '스쿼드장만 체크할 수 있어요'}</div>
       <div style="flex:1;overflow-y:auto;margin:16px 0 4px;min-height:80px">
         ${list.map(u => {
           const m = mem[u];
           return `<div ${isHost ? `onclick="window.sqPaidToggleIn('${sid}','${u}')"` : ''} data-paid="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;${isHost ? 'cursor:pointer' : ''}">
             <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 36) : ''}</div>
-            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqShowName(m))}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">벙주</span>' : ''}</div>
+            <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqShowName(m))}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">스쿼드장</span>' : ''}</div>
             <span class="sq-paid-chip" style="flex-shrink:0;background:none;border:1px solid ${m.paid ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)'};color:${m.paid ? '#F5C24B' : 'rgba(255,255,255,.45)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700">${m.paid ? '입금 ✓' : '미입금'}</span>
           </div>`;
         }).join('')}
@@ -22828,7 +22877,7 @@ window.sqTalkClear = async function () {
   const s = window._sqDoc || {};
   const me = (auth.currentUser || {}).uid;
   const ok = !!(me && (me === s.hostUid || (typeof isAdmin === 'function' && isAdmin())));
-  if (!ok) { showToast('벙주만 정리할 수 있어요'); return; }
+  if (!ok) { showToast('스쿼드장만 정리할 수 있어요'); return; }
   const n = (window._sqChatMsgs || []).length;
   if (!n) { showToast('정리할 대화가 없어요'); return; }
   if (!confirm('지난 대화 ' + n + '개를 지울까요?\n공지는 그대로 남아요.\n되돌릴 수 없어요.')) return;
@@ -22847,7 +22896,7 @@ window.sqTalkClear = async function () {
     showToast(total + '개를 정리했어요');
   } catch (e) {
     console.error('talk clear', e);
-    showToast('정리하지 못했어요 — 보안규칙에 벙주 삭제 권한이 있는지 확인하세요');
+    showToast('정리하지 못했어요 — 보안규칙에 스쿼드장 삭제 권한이 있는지 확인하세요');
   }
   if (btn) { btn.disabled = false; btn.textContent = '정리'; }
 };
@@ -23497,8 +23546,20 @@ window.sqComplete = async function (sid) {
 //   ★더 큰 문제: 안 되면 사람은 **바로 다시 친다.** 그럼 직전 타격의 울림이
 //   그 창에 남아 **재시도가 전부 거부**된다. COOL 800ms 도 같은 방향으로 막았다.
 //   → 둘 다 풀고, 상대 신호가 방금 있었으면 정적도는 **아예 안 따진다**(근거가 밖에 있다).
-const BP = { TH: 14, SOFT: 10.8, SOFT_PAIR_MS: 130, RETRO: 9, QUIET: 3.6, RISE: 0.64, PAIR_MS: 260, COOL: 350, BUF_MS: 2500 };
+// ★★★8-18 되돌림 — "오늘 해보니까 너무 민감하더라"(대표).
+//   8-15 에 세 번에 걸쳐 문턱을 풀었는데(TH 16->14, RISE 0.72->0.64, RETRO 10->9,
+//   그리고 약한 접촉 SOFT 를 후보로 올림), 실전에서 오탐이 났다.
+//   → **감지 문턱 세 개만** 8-15 이전으로 되돌린다. TH 16 / RISE 0.72 / RETRO 10.
+//   ★같이 안 되돌리는 것 (이유가 다르다 — 민감도가 아니라 '진짜 접촉이 거부되던' 버그였다):
+//     · PAIR_MS 260 — 20명 현장에서 RTDB 왕복·시계 보정이 겹쳐 150 을 넘기던 것(30% 실패)
+//     · COOL 350 · QUIET 3.6 — 세게 치라고 시켜놓고 세게 치면 거부하던 것,
+//       안 되면 다시 치는데 직전 울림 때문에 재시도가 전부 막히던 것
+//     이 둘을 같이 되돌리면 8-15 에 고친 실패들이 그대로 돌아온다.
+//   ★SOFT 는 값은 남기되 **후보로는 안 올린다**(아래 bpOnMotion 참조).
+//     약하게 닿은 사람에게 "더 세게"라고 알려주는 코칭 문턱으로만 쓴다.
+const BP = { TH: 16, SOFT: 10.8, SOFT_PAIR_MS: 130, RETRO: 10, QUIET: 3.6, RISE: 0.72, PAIR_MS: 260, COOL: 350, BUF_MS: 2500 };
 let bpPeerSigAt = 0;   // 상대가 마지막으로 피크를 올린 시각(내 시계)
+let bpSoftHintAt = 0;  // '살짝 닿았어요' 코칭을 마지막으로 띄운 시각(글자 떨림 방지)
 function bpPeerRecent() { return Date.now() - bpPeerSigAt < 1800; }
 // ★계측 (대표 8-15: "로그 보고 분석해서 고쳐봐").
 //   어제는 **실패 기록이 하나도 없었다.** 성공한 범프도 Δt 를 안 남겨서
@@ -23580,13 +23641,18 @@ function bpOnMotion(e) {
   if (bpDone || now - bpLastPeak < BP.COOL) return;
   if (mag < BP.TH) {
     if (bpDbg) bpDbg.thFail++;
-    // ★에어드롭처럼 가만히 대는 사람 (대표 8-15 관찰). 약해도 후보로 올리고,
-    //   무엇을 달리해야 하는지 **그 자리에서** 알려준다.
-    if (mag >= BP.SOFT) {
-      bpLastPeak = now;
+    // ★에어드롭처럼 가만히 대는 사람 (대표 8-15 관찰). 무엇을 달리해야 하는지
+    //   **그 자리에서** 알려준다 — 다음엔 제대로 친다.
+    // ★★8-18: 약한 튀김을 **후보로 올리던 것을 뺐다**(대표: "너무 민감").
+    //   약한 신호는 걸음·주머니에서 폰 꺼내기 같은 생활 동작과 구분이 안 돼서,
+    //   옆에 있기만 해도 짝이 잡히는 일이 났다. 코칭 한 줄만 남긴다.
+    // ★bpLastPeak 도 안 찍는다 — 찍으면 COOL(350ms) 동안 **진짜 타격이 막힌다.**
+    //   살짝 닿고 바로 제대로 치는 게 사람의 실제 동작 순서다(8-15 에 고쳤던 그 버그).
+    //   대신 힌트만 따로 눌러 둔다(매 샘플마다 다시 뜨면 글자가 떨린다).
+    if (mag >= BP.SOFT && now - bpSoftHintAt > 1500) {
+      bpSoftHintAt = now;
       if (bpDbg) { bpDbg.soft = (bpDbg.soft || 0) + 1; }
       bpHint('살짝 닿았어요 · 조금만 더 세게 부딪쳐 주세요');
-      bpPublish(bpNow(), mag, true);
     }
     return;
   }
