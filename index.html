@@ -11437,8 +11437,16 @@ window.HOF_MONTH = function () { return window.mwSeasonKey(new Date()); };
 window.HOF_KINDS = {
   feed:    { label: '인증',    unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).feed || 0; } },
   checkin: { label: '체크인',  unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).checkin || 0; } },
-  // ★스쿼드장만 월 구분이 없다(hostStats 는 누적). 스펙 9-(4) 참고 — 지금은 그대로 간다.
-  host:    { label: '스쿼드장', unit: '회', get: function (u) { return (u.hostStats || {}).completed || 0; } },
+  // ★스쿼드장만 월 구분이 없다(hostStats 는 누적). 스펙 9-(4) 참고.
+  // ★★기준을 completed(종료 버튼을 누른 횟수) → hosted(연 횟수)로 바꿨다 (대표 8-19 지적:
+  //   "스쿼드장 왜 조재진 1명이고 1회로 되어 있지"). 조재진은 실제로 열고 종료까지 눌렀다 —
+  //   버그가 아니라 **completed 가 지표가 못 되는 것**이었다. sqComplete 는 스쿼드장이
+  //   '운동 종료'를 직접 눌러야만 오르는데 대부분 안 누른다(대표 계정도 개설 37 / 완료 6).
+  //   그래서 목록에 사실상 한 명만 남았다. 여는 것 자체가 스쿼드장이 한 일이라 hosted 로 센다.
+  //   완료 횟수는 버리지 않고 줄 아래 작게 같이 보여준다(sub).
+  host:    { label: '스쿼드장', unit: '회',
+             get: function (u) { return (u.hostStats || {}).hosted || 0; },
+             sub: function (u) { const c = (u.hostStats || {}).completed || 0; return c ? '완료 ' + c + '회' : ''; } },
   attend:  { label: '스쿼드 참가', unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).squad || 0; } }
 };
 // 줄 세우기. 0회·탈퇴·닉네임 없음·대표 계정은 뺀다.
@@ -11451,7 +11459,10 @@ window._hofRank = function (users, kind, month) {
         && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0
         && def.get(u, month) > 0;
     })
-    .map(function (u) { return { uid: u.uid, nick: u.nickname, n: def.get(u, month) }; })
+    .map(function (u) {
+      return { uid: u.uid, nick: u.nickname, n: def.get(u, month),
+               sub: def.sub ? def.sub(u) : '' };          // 부가 표시(스쿼드장의 '완료 N회' 등)
+    })
     .sort(function (a, b) { return (b.n - a.n) || String(a.nick).localeCompare(String(b.nick), 'ko'); })
     .map(function (r, i) { r.rank = i + 1; return r; });
 };
@@ -11512,27 +11523,82 @@ window.loadHofPanel = async function () {
     return;
   }
   // ★등수는 **색이 아니라 크기·굵기**로 구분한다 — 골드(#F5C24B)는 별점·코인 전용이다.
+  // ★★캐릭터를 같이 세운다 (대표 8-19: "이름만 쳐있으니까 짜치잖아").
+  //   이름만 있는 목록은 우리 앱의 물건이 아니다 — 머피월드 캐릭터가 이 앱의 얼굴이다.
+  //   렌더는 기존 mwMiniCharHtml 하나만 쓴다(새 렌더 경로를 만들면 조합 규칙이 빠져 깨진다).
+  //   1~3위는 크게(58) 세우고 나머지는 작게(40) — 등수 차이가 크기로도 읽힌다.
+  const HOF_TOP = 3;
   const row = function (r, me) {
-    const big = r.rank <= 3;
+    const big = r.rank <= HOF_TOP;
     const nickJs = String(r.nick || '').replace(/['\\]/g, '');   // onclick 인자에 들어가므로 따옴표를 뺀다
     const bg = me ? 'background:rgba(61,126,255,0.07);border-top:1px solid rgba(255,255,255,0.09)'
                   : 'border-bottom:1px solid rgba(255,255,255,0.05)';
-    const numCss = `width:26px;flex-shrink:0;text-align:center;font-size:${big ? '17px' : '13px'};`
+    const numCss = `width:22px;flex-shrink:0;text-align:center;font-size:${big ? '18px' : '13px'};`
                  + `font-weight:${big ? '900' : '600'};color:${big ? '#fff' : 'rgba(255,255,255,0.4)'}`;
     const meTag = me ? ' <span style="font-size:11px;font-weight:600;color:var(--accent)">나</span>' : '';
-    return `<div onclick="openUserProfile('${r.uid}','${nickJs}','')" style="display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;${bg}">`
+    let ch = '';
+    try {
+      const cfg = window._hofChar && window._hofChar[r.uid];
+      if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, big ? 58 : 40) || '';
+    } catch (e) {}
+    // ★1~3위만 한마디를 보여준다 (대표 8-19). 차단한 사람 글은 숨긴다 — 이름·기록은 그대로.
+    const blocked = window._isBlocked ? window._isBlocked(r.uid) : false;
+    const msg = (big && !blocked) ? ((window._hofMsg || {})[r.uid] || '') : '';
+    const msgHtml = msg
+      ? `<div style="font-size:11.5px;color:rgba(255,255,255,0.5);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(msg)}</div>`
+      : (r.sub ? `<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:3px">${esc(r.sub)}</div>` : '');
+    return `<div onclick="openUserProfile('${r.uid}','${nickJs}','')" style="display:flex;align-items:center;gap:10px;padding:${big ? '12px' : '9px'} 16px;cursor:pointer;${bg}">`
       + `<span style="${numCss}">${r.rank}</span>`
-      + `<span style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.nick)}${meTag}</span>`
-      + `<span style="flex-shrink:0;font-size:13.5px;font-weight:800">${r.n}<span style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.45)">${def.unit}</span></span>`
+      + `<div style="width:${big ? 37 : 26}px;height:${big ? 58 : 40}px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:center">${ch}</div>`
+      + `<div style="flex:1;min-width:0">`
+      +   `<div style="font-size:${big ? '14.5px' : '13.5px'};font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.nick)}${meTag}</div>`
+      +   msgHtml
+      + `</div>`
+      + `<span style="flex-shrink:0;font-size:${big ? '15px' : '13px'};font-weight:800">${r.n}<span style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.45)">${def.unit}</span></span>`
       + `</div>`;
   };
   let html = rows.slice(0, 10).map(function (r) { return row(r, r.uid === myUid); }).join('');
   // 10위 밖이면 내 줄을 맨 아래에 붙인다 — 내 등수가 보여야 "한 칸만 올리면 되는데"가 생긴다
   const mine = window._hofMyRank(rows, myUid);
   if (mine && mine.rank > 10) {
-    html += row({ uid: myUid, nick: (window.currentUser || {}).nickname || '나', n: mine.n, rank: mine.rank }, true);
+    html += row({ uid: myUid, nick: (window.currentUser || {}).nickname || '나', n: mine.n, rank: mine.rank, sub: '' }, true);
+  }
+  // ★1~3위면 한마디를 쓸 수 있다 (대표 8-19). 이 글은 목록과 주간 팝업으로 남에게 보인다.
+  if (mine && mine.rank <= HOF_TOP) {
+    const cur = (window._hofMsg || {})[myUid] || '';
+    html += `<div style="padding:14px 16px;border-top:1px solid rgba(255,255,255,0.09)">`
+      + `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.55);margin-bottom:7px">`
+      +   `${mine.rank}위 한마디 <span style="font-weight:600;color:rgba(255,255,255,0.3)">· 모두에게 보여요</span></div>`
+      + `<div style="display:flex;gap:7px">`
+      +   `<input id="hof-msg-input" maxlength="30" value="${esc(cur)}" placeholder="30자까지"`
+      +   ` style="flex:1;min-width:0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;padding:11px 13px;color:#fff;font-size:13.5px;outline:none;font-family:inherit">`
+      +   `<button onclick="window.hofSaveMsg()" style="flex-shrink:0;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:0 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">저장</button>`
+      + `</div></div>`;
   }
   listEl.innerHTML = html;
+};
+// 한마디 저장. 30자 제한은 화면과 저장 **양쪽**에서 건다(화면만 믿지 않는다).
+window.hofSaveMsg = async function () {
+  const el = document.getElementById('hof-msg-input'); if (!el) return;
+  const user = auth.currentUser || window.currentUser; if (!user) return;
+  const msg = (el.value || '').trim().slice(0, 30);
+  try {
+    await updateDoc(doc(db, 'users', user.uid), { hofMsg: msg });
+    if (!window._hofMsg) window._hofMsg = {};
+    window._hofMsg[user.uid] = msg;                       // 캐시도 같이 — 목록이 바로 바뀐다
+    showToast(msg ? '한마디를 남겼어요' : '한마디를 지웠어요');
+    window.loadHofPanel();
+  } catch (e) { console.error('hofMsg', e); showToast('저장 실패'); }
+};
+// ★관리자 삭제 경로. 이 글은 남에게 보이는 자유 텍스트라 지울 방법이 없으면 안 된다.
+//   규칙상 관리자는 남의 users 문서를 쓸 수 있다(firestore.rules: isOwner || isAdmin).
+window.adminClearHofMsg = async function (uid) {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  try {
+    await updateDoc(doc(db, 'users', uid), { hofMsg: '' });
+    if (window._hofMsg) delete window._hofMsg[uid];
+    showToast('한마디를 지웠어요'); window.loadHofPanel();
+  } catch (e) { console.error('hofMsg admin', e); showToast('실패'); }
 };
 // ===== 명예의 전당 끝 =====
 window.mwBumpMonthly = async function (axis) {
