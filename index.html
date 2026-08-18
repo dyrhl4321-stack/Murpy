@@ -3467,8 +3467,50 @@ window._reditSave = async function () {
   if (navigator.vibrate) navigator.vibrate(12);
   if (window._charPersistRoom) window._charPersistRoom(data);
 };
+// ===== 필드 히든 오브젝트 (헬스장 바닥 합판) =====
+// 스펙: docs/superpowers/specs/2026-08-18-field-hidden-artifact-design.md
+// 합판을 밟으면 말이 걸리고, 두드려서 열면 발밑 아우라를 얻는다.
+// ★상자 시스템(mwSeasonCheck)을 타지 않는다. 규칙 위반이 아니라 **적용 대상이 다르다** —
+//   상자는 '방에 배달되는 가구'용이고 이건 캐릭터에 붙는 이펙트라 방에 놓을 물건이 아니다.
+//   공룡(cond 비우고 직접 지급)과도 다른 경우다. 헷갈리지 말 것.
+// ★여기(블록 3)는 모듈이 아니라 arrayUnion 을 못 쓴다. 지급은 블록 5의 window.mwPlateGrant.
+//   상수를 블록 5 뒤쪽에 두면 로드 중 mwRenderFurn 이 먼저 돌아 합판이 안 그려진다 → 여기 둔다.
+window.FIELD_AURAS = {
+  '2026-08': { color: 'blue', name: '바닥의 불', title: '합판을 연 자',
+               desc: '헬스장 바닥 아래에서 꺼내온 불꽃. 발밑에서 조용히 돈다.' }
+};
+// ★이번 달 키가 여기 없으면 합판은 안 열린다("그냥 낡은 합판이다"로 끝난다).
+//   첫 노출 시점은 코드가 아니라 이 줄로 정해진다.
+
+// 필드 핫스팟. x/y/w/h 는 field_gym.png(1024x1024) 좌표계 실측값 — 합판 그림이 박힌 자리다.
+// ★tr 은 [7,7] 하나여야 한다. 다 열릴 때 캐릭터가 tr 8 로 물러서는데,
+//   tr 8 도 트리거면 물러서자마자 다시 발동해 무한루프가 된다.
+window._FIELD_SPOTS = {
+  gym: { plate: { tc: [11, 12], tr: [7, 7], x: 727, y: 494, w: 103, h: 73 } }
+};
+window._PLATE_TAPS_1 = 10;   // 여기까지 두드리면 살짝 열린다
+window._PLATE_TAPS_2 = 30;   // 살짝 열린 뒤 여기서 다 열린다 (누적 40)
+
+// 밟은 칸이 핫스팟인가. 순수함수 (tools/tests/field-aura.test.mjs)
+window._mwPlateHit = function (fieldKey, tc, tr) {
+  const spots = (window._FIELD_SPOTS || {})[fieldKey];
+  if (!spots) return '';
+  for (const id in spots) {
+    const s = spots[id];
+    if (tc >= s.tc[0] && tc <= s.tc[1] && tr >= s.tr[0] && tr <= s.tr[1]) return id;
+  }
+  return '';
+};
+// 시즌 키 -> 아우라 색. ★반드시 화이트리스트를 통과시킨다 —
+//   이 값이 그대로 파일 경로에 들어가고, 남의 프레즌스로 실려 오는 자리다.
+window._mwAurColor = function (key) {
+  const meta = (window.FIELD_AURAS || {})[key];
+  if (!meta) return '';
+  return (window._MW_AUR_COLORS || []).indexOf(meta.color) >= 0 ? meta.color : '';
+};
+
 // ===== 필드(맵) + 타일 충돌: 한 칸씩 이동, 막힌 칸(#)엔 못 감(포켓몬/쯔꾸르식) =====
-window._FIELD_BORDER = ["################","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","################"];
+window._FIELD_BORDER =["################","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","################"];
 window._FIELDS = {
   home: {
     name: '내 방', src: "char/fields/field_room.png?v=1", grid: 16,
@@ -15731,7 +15773,8 @@ window.loadBamboo = async (tab) => {
         : '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 글이 없어요</div>';
       return;
     }
-    // ★글 본문을 그대로 innerHTML 에 넣고 있었다(저장형 XSS). 누가 <script>·onerror 를 적으면
+    // ★글 본문을 그대로 innerHTML 에 넣고 있었다(저장형 XSS). 누가 스크립트 태그·onerror 를 적으면
+    //   (★여기에 여는 태그를 그대로 쓰면 tools/dogam-syntax-check.mjs 가 유령 블록으로 읽어 거짓 경보를 낸다)
     //   그 글을 보는 **모든 사람의 브라우저에서** 실행된다. 여기서 이스케이프한다.
     //   줄바꿈은 escape 하면 사라지므로 white-space:pre-wrap 으로 살린다.
     const _bEsc = s => String(s == null ? '' : s)
