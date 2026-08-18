@@ -3213,6 +3213,7 @@ window.mwPlateOpen = async function (season, meta) {
     if (ok) {
       window.mwSeasonCelebrate({
         id: 'aura_' + season, name: meta.name, title: meta.title, desc: meta.desc,
+        label: '캐릭터 이펙트 획득', fx: true,
         src: 'char/fx/aur_' + meta.color + '_preview.png?v=2', w: 116, h: 96
       });
     }
@@ -3326,23 +3327,8 @@ window.mwRoomEdit = function () {
             `<button onclick="window._reditAdd('${r.id}')"><span class="thumb"><img src="${r.src}"${r.thumbH ? ` style="height:${r.thumbH}px"` : ''} draggable="false"></span><span>${r.name}</span></button>`).join('')}
           </div>`;
       })()}
-      ${(() => {
-        // 캐릭터 이펙트(필드 아우라) — 방에 놓는 가구가 아니라 **캐릭터에 켜는 것**이라
-        // _reditAdd 가 아니라 mwAuraToggle 을 부른다. 가진 게 없으면 칸을 아예 안 그린다
-        // (한정 오브젝트와 같은 규칙).
-        const auras = ((window._seasonState || {}).auras || []).filter(k => (window.FIELD_AURAS || {})[k]);
-        if (!auras.length) return '';
-        const on = (window._seasonState || {}).auraOn || '';
-        return `<div class="mw-redit-cathead">캐릭터 이펙트<span>${auras.length}</span></div>
-          <div class="mw-redit-cat">${auras.map(k => {
-            const m = window.FIELD_AURAS[k];
-            // ★틴트 칩 금지 — 색면 배지를 쓰지 않는다. 켜짐은 글자색으로만 구분한다
-            //   (정답 모양 = 스쿼드 '입금 ✓' 토글). 골드는 별점·코인 자리라 안 쓴다.
-            const lit = (k === on);
-            return `<button onclick="window.mwAuraToggle('${k}')"${lit ? '' : ' style="opacity:.72"'}><span class="thumb"><img src="char/fx/aur_${m.color}_preview.png?v=2" draggable="false"></span><span>${m.name}</span><span style="font-size:9.5px;background:none;color:${lit ? '#7AA4FF' : 'rgba(255,255,255,.3)'}">${lit ? '켜짐' : '꺼짐'}</span></button>`;
-          }).join('')}
-          </div>`;
-      })()}
+      <!-- ★캐릭터 이펙트(아우라)는 여기(방 꾸미기)가 아니라 **꾸미기 > 악세사리** 에 있다
+           (대표 8-19). 방에 놓는 물건이 아니라 캐릭터에 켜는 것이다. charSlot('acc') 참고. -->
       <!-- ★저장 버튼은 **스크롤해도 하단에 붙어 있다**(대표 8-17: "있는 줄 모르고 빠져나간다").
            예전엔 아이템 목록 맨 끝에 있어서, 목록이 길면 끝까지 내려야 보였다.
            position:fixed 대신 sticky 를 쓴다 — 이 패널 안에서만 붙어 있어야 하고,
@@ -4261,6 +4247,25 @@ window.charSlot = function (slot, btn) {
     } else sub = '<span class="mw-sub gold">' + window._mwCoinImg + i.price + '</span>';
     return `<button class="mw-card${equipped ? ' equipped' : ''}" onclick="window.charPick('${i.id}')"><div style="width:54px;height:54px">${preview}</div><span class="mw-name">${i.name}</span>${sub}</button>`;
   }).join('');
+  // ★캐릭터 이펙트(필드 아우라)는 **악세사리 탭 끝**에 붙인다 (대표 8-19).
+  //   CHAR_ITEMS 에 넣으면 _charDraft.acc 로 들어가 스프라이트 겹으로 그려지려 해서 깨진다 —
+  //   아우라는 별도 CSS 겹(.mw-aur)이라 카드 문법만 같이 쓰고 토글은 mwAuraToggle 이 한다.
+  if (slot === 'acc') {
+    const auras = ((window._seasonState || {}).auras || []).filter(k => (window.FIELD_AURAS || {})[k]);
+    const on = (window._seasonState || {}).auraOn || '';
+    if (auras.length) {
+      grid.insertAdjacentHTML('beforeend', auras.map(function (k) {
+        const m = window.FIELD_AURAS[k], lit = (k === on);
+        const Q = String.fromCharCode(39);   // 따옴표가 3중으로 겹치는 자리라 코드로 만든다
+        return '<button class="mw-card' + (lit ? ' equipped' : '') + '" onclick="window.mwAuraToggle(' + Q + k + Q + ')">'
+          + '<div style="width:54px;height:54px;display:flex;align-items:center;justify-content:center">'
+          + '<img src="char/fx/aur_' + m.color + '_preview.png?v=2" alt="" style="width:54px;height:54px;object-fit:contain;image-rendering:pixelated"></div>'
+          + '<span class="mw-name">' + m.name + '</span>'
+          + (lit ? '<span class="mw-sub on">켜짐</span>' : '<span class="mw-sub">보유</span>')
+          + '</button>';
+      }).join(''));
+    }
+  }
   if (['hair', 'top', 'bottom', 'shoes', 'acc', 'hat', 'mask'].includes(slot)) {
     const isMask = slot === 'mask';
     const off = isMask ? !window._charDraft.mask : !window._charDraft[slot];
@@ -11378,13 +11383,10 @@ window.mwAuraToggle = async function (key) {
   // ★mwRoomEdit() 를 다시 부르면 안 된다 — 그 함수가 _reditDraft 를 **저장된** 방으로
   //   되돌리기 때문에, 가구를 옮기던 중(저장 전)에 아우라를 켜면 배치가 통째로 날아간다.
   //   그래서 카탈로그를 다시 그리지 않고 버튼 표시만 직접 고친다.
-  document.querySelectorAll('#mw-wpanel button[onclick^="window.mwAuraToggle("]').forEach(function (b) {
-    const m = (b.getAttribute('onclick') || '').match(/mwAuraToggle\('([^']+)'\)/);
-    const lit = !!(m && m[1] === next);
-    b.style.opacity = lit ? '1' : '.72';
-    const tag = b.lastElementChild;
-    if (tag) { tag.textContent = lit ? '켜짐' : '꺼짐'; tag.style.color = lit ? '#7AA4FF' : 'rgba(255,255,255,.3)'; }
-  });
+  // 꾸미기 > 악세사리 그리드를 다시 그려 '켜짐' 표시를 갱신한다.
+  // ★mwRoomEdit() 을 부르면 안 된다 — 그 함수는 _reditDraft 를 저장된 방으로 되돌려
+  //   배치 중이던 가구를 날린다(8-19에 실제로 그랬다).
+  if (window._charSlot === 'acc' && window.charSlot && window._charDraft) window.charSlot('acc');
 };
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
 window._seasonEnsureMonth = function () {
@@ -11552,7 +11554,7 @@ window._mwSeasonModalNext = function () {
   el.innerHTML = `
     <div style="width:100%;max-width:360px;background:#1b2233;border:3px solid #05070c;
                 box-shadow:0 0 0 2px ${it.kind === 'hidden' ? '#B48BFF' : '#F5C24B'}, 0 10px 0 rgba(5,6,10,.45);padding:20px 18px;text-align:center">
-      <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:${it.kind === 'hidden' ? '#C9A8FF' : '#F5C24B'};letter-spacing:1px;margin-bottom:14px">${it.kind === 'hidden' ? '히든 오브젝트 획득' : '이번 달 한정 획득'}</div>
+      <div style="font-family:'Galmuri14',sans-serif;font-size:12px;color:${it.kind === 'hidden' ? '#C9A8FF' : '#F5C24B'};letter-spacing:1px;margin-bottom:14px">${it.label || (it.kind === 'hidden' ? '히든 오브젝트 획득' : '이번 달 한정 획득')}</div>
       <div style="min-height:${it.hd ? Math.min(cap, 180) : it.h * sc}px;display:flex;align-items:center;justify-content:center;margin-bottom:14px">
         ${art}
       </div>
@@ -11561,8 +11563,8 @@ window._mwSeasonModalNext = function () {
       ${it._earned ? `<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;background:rgba(245,194,75,.1);
         border:1px solid rgba(245,194,75,.35);padding:6px 12px">${window.murpyTokenSVG ? window.murpyTokenSVG(14) : ''}
         <span style="font-size:12px;color:#F5C24B;font-weight:800">한정 획득 보너스 +${it._earned} 머피</span></div>` : ''}
-      <button onclick="window.mwSeasonModalGoRoom()" style="width:100%;font-family:inherit;cursor:pointer;
-              border:2px solid #05070c;background:#3D7EFF;color:#fff;font-size:13px;padding:11px;margin-bottom:7px">방에 놓으러 가기</button>
+      <button onclick="${it.fx ? 'window.mwSeasonModalGoDress()' : 'window.mwSeasonModalGoRoom()'}" style="width:100%;font-family:inherit;cursor:pointer;
+              border:2px solid #05070c;background:#3D7EFF;color:#fff;font-size:13px;padding:11px;margin-bottom:7px">${it.fx ? '꾸미기에서 켜기' : '방에 놓으러 가기'}</button>
       <button onclick="window._mwSeasonModalNext()" style="width:100%;font-family:inherit;cursor:pointer;
               border:2px solid #05070c;background:#1b2233;color:#8a93a8;font-size:12px;padding:9px">나중에</button>
     </div>`;
@@ -11576,6 +11578,20 @@ window.mwSeasonModalGoRoom = function () {
   const panel = document.getElementById('mw-wpanel'); if (panel) panel.remove();
   if (typeof goPage === 'function') goPage('char');
   setTimeout(function () { if (window.mwRoomEdit) window.mwRoomEdit(); }, 260);
+};
+// 캐릭터 이펙트는 방이 아니라 **꾸미기 > 악세사리** 에서 켠다 (대표 8-19)
+window.mwSeasonModalGoDress = function () {
+  const el = document.getElementById('mw-season-modal'); if (el) el.remove();
+  window._seasonQueue.length = 0;
+  const panel = document.getElementById('mw-wpanel'); if (panel) panel.remove();
+  if (typeof goPage === 'function') goPage('char');
+  setTimeout(function () {
+    if (window.charHubTab) window.charHubTab('dress');
+    if (window.charSlot) window.charSlot('acc');
+    // 악세사리 탭 버튼에도 active 를 옮긴다(탭 UI 가 안 따라오면 어디에 있는지 알 수 없다)
+    const tabs = document.querySelectorAll('#charworld-slot-tabs .tab-btn');
+    tabs.forEach(function (b) { b.classList.toggle('active', (b.textContent || '').trim() === '악세사리'); });
+  }, 300);
 };
 // 현재 시즌 아이템 판정. 조건 충족 + 미보유만 처리한다.
 window.mwSeasonCheck = async function () {
