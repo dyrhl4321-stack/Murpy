@@ -2051,6 +2051,21 @@
 
 
 <!-- 나에게 관심 보낸 사람 패널 -->
+<!-- 명예의 전당 — 활동이 많은 사람이 눈에 띄는 유일한 자리.
+     ★새 UI 문법을 만들지 않는다: .panel / .panel-header / .panel-body / .tab-bar / .tab-btn 재사용.
+     설계 = docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md -->
+<div class="panel" id="hof-panel">
+  <div class="panel-header">
+    <button class="back-btn" onclick="closePanel('hof-panel')">&larr;</button>
+    <span style="font-weight:700;font-size:16px">명예의 전당</span>
+    <span id="hof-month" style="margin-left:auto;font-size:11.5px;color:rgba(255,255,255,0.4)"></span>
+  </div>
+  <div style="padding:10px 16px 0">
+    <div class="tab-bar" id="hof-tabs"></div>
+  </div>
+  <div class="panel-body" id="hof-list"></div>
+</div>
+
 <div class="panel" id="interest-panel">
   <div class="panel-header">
     <button class="back-btn" onclick="closePanel('interest-panel')">←</button>
@@ -6387,6 +6402,7 @@ function openPanel(id) {
   if (id==='edit-profile-panel' && typeof initEditProfile === 'function') initEditProfile();
   if (id==='mypage-panel' && window.loadMyPageProfile) window.loadMyPageProfile();
   if (id==='blocked-panel' && window.loadBlockedList) window.loadBlockedList();
+  if (id==='hof-panel') { window.loadHofPanel && window.loadHofPanel(); }
 }
 function closePanel(id) {
   const _el = document.getElementById(id);
@@ -11410,6 +11426,55 @@ window.loadHof = async function (force) {
   Object.keys(window.HOF_KINDS).forEach(function (k) { rows[k] = window._hofRank(users, k, month); });
   window._hofCache = { at: now, month: month, rows: rows };
   return window._hofCache;
+};
+window._hofTab = 'feed';
+window.hofTab = function (kind) { window._hofTab = kind; window.loadHofPanel(); };
+window.loadHofPanel = async function () {
+  const listEl = document.getElementById('hof-list'); if (!listEl) return;
+  const tabsEl = document.getElementById('hof-tabs');
+  const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  // 탭 줄은 데이터를 기다리지 않고 먼저 그린다(빈 화면이 덜 어색하다)
+  if (tabsEl) {
+    tabsEl.innerHTML = Object.keys(window.HOF_KINDS).map(function (k) {
+      const on = k === window._hofTab;
+      const sel = on ? 'background:var(--accent);color:#fff;font-weight:800' : '';
+      return `<button class="tab-btn" onclick="window.hofTab('${k}')" style="${sel}"><span>${window.HOF_KINDS[k].label}</span></button>`;
+    }).join('');
+  }
+  listEl.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">불러오는 중…</div>';
+  const data = await window.loadHof();
+  const mEl = document.getElementById('hof-month');
+  if (mEl) mEl.textContent = (window._hofTab === 'host') ? '누적' : data.month.replace('-', '년 ') + '월';
+  const kind = window._hofTab, def = window.HOF_KINDS[kind], rows = data.rows[kind] || [];
+  const myUid = (window.currentUser || {}).uid || '';
+  if (!rows.length) {
+    listEl.innerHTML = '<div style="text-align:center;padding:40px 24px">'
+      + '<div style="font-size:13.5px;font-weight:700;color:rgba(255,255,255,.75);margin-bottom:5px">이번 달은 아직 비어 있어요</div>'
+      + '<div style="font-size:12px;color:rgba(255,255,255,.35)">첫 주인공이 되어보세요</div></div>';
+    return;
+  }
+  // ★등수는 **색이 아니라 크기·굵기**로 구분한다 — 골드(#F5C24B)는 별점·코인 전용이다.
+  const row = function (r, me) {
+    const big = r.rank <= 3;
+    const nickJs = String(r.nick || '').replace(/['\\]/g, '');   // onclick 인자에 들어가므로 따옴표를 뺀다
+    const bg = me ? 'background:rgba(61,126,255,0.07);border-top:1px solid rgba(255,255,255,0.09)'
+                  : 'border-bottom:1px solid rgba(255,255,255,0.05)';
+    const numCss = `width:26px;flex-shrink:0;text-align:center;font-size:${big ? '17px' : '13px'};`
+                 + `font-weight:${big ? '900' : '600'};color:${big ? '#fff' : 'rgba(255,255,255,0.4)'}`;
+    const meTag = me ? ' <span style="font-size:11px;font-weight:600;color:var(--accent)">나</span>' : '';
+    return `<div onclick="openUserProfile('${r.uid}','${nickJs}','')" style="display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;${bg}">`
+      + `<span style="${numCss}">${r.rank}</span>`
+      + `<span style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.nick)}${meTag}</span>`
+      + `<span style="flex-shrink:0;font-size:13.5px;font-weight:800">${r.n}<span style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.45)">${def.unit}</span></span>`
+      + `</div>`;
+  };
+  let html = rows.slice(0, 10).map(function (r) { return row(r, r.uid === myUid); }).join('');
+  // 10위 밖이면 내 줄을 맨 아래에 붙인다 — 내 등수가 보여야 "한 칸만 올리면 되는데"가 생긴다
+  const mine = window._hofMyRank(rows, myUid);
+  if (mine && mine.rank > 10) {
+    html += row({ uid: myUid, nick: (window.currentUser || {}).nickname || '나', n: mine.n, rank: mine.rank }, true);
+  }
+  listEl.innerHTML = html;
 };
 // ===== 명예의 전당 끝 =====
 window.mwBumpMonthly = async function (axis) {
