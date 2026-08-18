@@ -3708,7 +3708,9 @@ window._reditSave = async function () {
 // ★여기(블록 3)는 모듈이 아니라 arrayUnion 을 못 쓴다. 지급은 블록 5의 window.mwPlateGrant.
 //   상수를 블록 5 뒤쪽에 두면 로드 중 mwRenderFurn 이 먼저 돌아 합판이 안 그려진다 → 여기 둔다.
 window.FIELD_AURAS = {
-  '2026-08': { color: 'blue', name: '헬창의 기운', title: '합판을 연 자',
+  // ★칭호를 아이템 이름과 **똑같이** 뒀다(대표 8-19). 보통은 다르게 두지만
+  //   (아기 공룡 -> '공룡의 친구') 이건 '기운' 자체가 곧 정체성이라 같은 말이 낫다.
+  '2026-08': { color: 'blue', name: '헬창의 기운', title: '헬창의 기운',
                desc: '헬스장 바닥 아래에서 꺼내온 기운. 발밑을 한 바퀴 돈다.' }
 };
 // ★이번 달 키가 여기 없으면 합판은 안 열린다("그냥 낡은 합판이다"로 끝난다).
@@ -10042,7 +10044,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '633';
+window._SW_V = '634';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -11436,12 +11438,23 @@ window._seasonState = { season: '', counts: {}, inv: [], titles: [], box: [], au
 // 보안규칙상 임의 문자열 쓰기가 가능하므로 카탈로그에 실존하는 칭호만 그린다(주입 방지).
 window._myTitle = '';
 window._myRoomMsg = '';
-window.mwValidTitle = function (t) {
-  return (window.SEASON_ITEMS || []).some(s => s.title === t) ? t : '';
+// ★칭호가 실존하는지 보는 **유일한 관문**이다. 여기서 '' 을 돌려주면 그 칭호는
+//   칭호 탭 목록(mwTitlePick)에서도 빠지고 머리 위에도 안 뜬다 — 가진 사람 입장에선
+//   받았는데 사라진 것으로 보인다(대표 8-19: "칭호탭에서 누락되어있음").
+//   ★칭호를 주는 곳을 새로 만들면 **반드시 여기 목록에도 넣을 것.**
+//   지금 칭호를 주는 곳: SEASON_ITEMS(월간/히든 오브젝트) + FIELD_AURAS(필드 히든 아티팩트)
+window._mwTitleDefs = function () {
+  const out = (window.SEASON_ITEMS || []).slice();
+  const fa = window.FIELD_AURAS || {};
+  for (const k in fa) if (fa[k] && fa[k].title) out.push({ title: fa[k].title, kind: 'hidden' });
+  return out;
 };
-// 칭호 색: 일반=골드, 히든 출신(공룡의 친구)=연보라 — 유니크 레어티 느낌(대표 지시)
+window.mwValidTitle = function (t) {
+  return window._mwTitleDefs().some(s => s.title === t) ? t : '';
+};
+// 칭호 색: 일반=골드, 히든 출신(공룡의 친구·필드 아티팩트)=연보라 — 유니크 레어티 느낌(대표 지시)
 window.mwTitleColor = function (t) {
-  const it = (window.SEASON_ITEMS || []).find(s => s.title === t);
+  const it = window._mwTitleDefs().find(s => s.title === t);
   return (it && it.kind === 'hidden') ? '#C9A8FF' : '#F5C24B';
 };
 const _seasonBusy = new Set();   // 지급 처리 중인 아이템 (동시 실행 시 중복 지급 방지)
@@ -11479,6 +11492,25 @@ window.mwAuraToggle = async function (key) {
   const st = window._seasonState || {};
   if ((st.auras || []).indexOf(key) < 0) return;         // 안 가진 건 못 켠다
   return window.mwAuraSet((st.auraOn === key) ? '' : key);
+};
+// ★칭호 이름을 바꾸면 **이미 받은 사람은 새 칭호를 못 받는다** — 지급은 한 번뿐이라
+//   mwPlateGrant 가 다시 안 돈다. 옛 칭호는 카탈로그에서 사라져 목록에서도 빠진다.
+//   그래서 앱을 열 때 한 번, 가진 아우라의 칭호가 없으면 조용히 채워 준다.
+//   ★가진 것만 채운다. 안 가진 칭호를 주지 않는다. 이미 있으면 쓰지 않는다(idempotent).
+window.mwAuraTitleRepair = async function () {
+  const user = window.currentUser; if (!user) return;
+  const st = window._seasonState || {};
+  if (!st.ready || !(st.auras || []).length) return;
+  const need = [];
+  for (const k of st.auras) {
+    const meta = (window.FIELD_AURAS || {})[k];
+    if (meta && meta.title && (st.titles || []).indexOf(meta.title) < 0) need.push(meta.title);
+  }
+  if (!need.length) return;
+  try { await window._seasonWrite(user.uid, { titles: arrayUnion.apply(null, need) }); }
+  catch (e) { console.warn('aura title repair', e); return; }
+  st.titles = (st.titles || []).concat(need);
+  window._charApplyPos && window._charApplyPos();
 };
 // 아우라를 **특정 값으로** 맞춘다(''=끔). 토글과 '안 씀' 버튼이 둘 다 이걸 쓴다 —
 // 끄는 길이 두 벌이 되면 한쪽만 고치는 사고가 난다.
@@ -11825,7 +11857,7 @@ window._mwSeasonModalNext = function () {
         ${art}
       </div>
       <div style="font-family:'Galmuri14',sans-serif;font-size:16px;color:#fff;margin-bottom:${it.title ? '7px' : '16px'}">${it.name}</div>
-      ${it.title ? `<div style="font-size:11.5px;color:${it.kind === 'hidden' ? '#C9A8FF' : '#F5C24B'};margin-bottom:16px">칭호 · ${it.title}</div>` : ''}
+      ${it.title ? `<div style="font-size:11.5px;color:${it.kind === 'hidden' ? '#C9A8FF' : '#F5C24B'};margin-bottom:16px">${it.title === it.name ? '칭호로도 달 수 있어요' : '칭호 · ' + it.title}</div>` : ''}
       ${it._earned ? `<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;background:rgba(245,194,75,.1);
         border:1px solid rgba(245,194,75,.35);padding:6px 12px">${window.murpyTokenSVG ? window.murpyTokenSVG(14) : ''}
         <span style="font-size:12px;color:#F5C24B;font-weight:800">한정 획득 보너스 +${it._earned} 머피</span></div>` : ''}
@@ -13161,6 +13193,8 @@ window.ensureCreditsInit = async (uid) => {
       // 이 시점까지 못 받은 활동(로드 전 완료·부분 카운트로 놓친 임계값·다른 기기 적립)을 다시 판정한다.
       // mwSeasonCheck는 idempotent(이미 inv/box에 있는 id는 건너뜀)라 매 앱 오픈마다 실행해도 안전하다.
       if (window.mwSeasonCheck) window.mwSeasonCheck();
+      // 칭호 이름이 바뀐 아우라를 이미 가진 사람에게 새 칭호를 채워 준다(있으면 아무 것도 안 한다)
+      if (window.mwAuraTitleRepair) window.mwAuraTitleRepair();
     }
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;

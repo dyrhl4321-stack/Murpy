@@ -164,3 +164,36 @@ assert(/window\.mwAuraToggle = async function[\s\S]{0,400}?return window\.mwAura
   'mwAuraToggle 이 mwAuraSet 을 안 쓴다 → 끄는 길이 두 벌이 된다');
 
 console.log('  + 고리 위치·이름표·안 씀 버튼 OK');
+
+// 19) ★아우라 칭호가 칭호 탭에 떠야 한다 (대표 8-19: "칭호탭에서 누락되어있음")
+//     mwValidTitle 이 '' 을 돌려주면 목록(mwTitlePick)에서도 빠지고 머리 위에도 안 뜬다.
+const w4 = { SEASON_ITEMS: [{ title: '공룡의 친구', kind: 'hidden' }, { title: '보통칭호' }] };
+new Function('window', grab(/window\.FIELD_AURAS = \{[\s\S]*?\n\};/, 'FIELD_AURAS'))(w4);
+new Function('window', grab(/window\._mwTitleDefs = function[\s\S]*?\n\};/, '_mwTitleDefs'))(w4);
+new Function('window', grab(/window\.mwValidTitle = function[\s\S]*?\n\};/, 'mwValidTitle'))(w4);
+new Function('window', grab(/window\.mwTitleColor = function[\s\S]*?\n\};/, 'mwTitleColor'))(w4);
+
+for (const k in w4.FIELD_AURAS) {
+  const t = w4.FIELD_AURAS[k].title;
+  assert.strictEqual(w4.mwValidTitle(t), t, `아우라 칭호 '${t}' 가 칭호 탭에서 누락된다`);
+  assert.strictEqual(w4.mwTitleColor(t), '#C9A8FF', `아우라 칭호 '${t}' 색이 히든 보라가 아니다`);
+}
+// 기존 칭호는 그대로여야 한다 (회귀)
+assert.strictEqual(w4.mwValidTitle('공룡의 친구'), '공룡의 친구');
+assert.strictEqual(w4.mwTitleColor('공룡의 친구'), '#C9A8FF');
+assert.strictEqual(w4.mwTitleColor('보통칭호'), '#F5C24B');
+// 없는 칭호는 여전히 막아야 한다 (주입 방지 — 보안규칙상 임의 문자열 쓰기가 가능하다)
+assert.strictEqual(w4.mwValidTitle('아무거나'), '');
+assert.strictEqual(w4.mwValidTitle('<b>주입</b>'), '');
+console.log('  + 아우라 칭호 등록 OK');
+
+// 20) 칭호 이름이 바뀌어도 **이미 받은 사람**이 새 칭호를 받아야 한다
+//     (지급은 한 번뿐이라 mwPlateGrant 가 다시 안 돈다 — 보정이 없으면 영영 못 받는다)
+assert(/window\.mwAuraTitleRepair = async function/.test(src), '칭호 보정 함수가 없다');
+assert(/if \(window\.mwAuraTitleRepair\) window\.mwAuraTitleRepair\(\);/.test(src),
+  '칭호 보정을 users 문서 로드 뒤에 안 부른다 → 이미 받은 사람은 영영 못 받는다');
+// 안 가진 칭호를 주면 안 된다 (가진 아우라만 훑어야 한다)
+const rep = grab(/window\.mwAuraTitleRepair = async function[\s\S]*?\n\};/, 'mwAuraTitleRepair');
+assert(/for \(const k of st\.auras\)/.test(rep), '보정이 가진 아우라만 보지 않는다');
+assert(/indexOf\(meta\.title\) < 0/.test(rep), '보정이 이미 있는 칭호를 다시 쓴다');
+console.log('  + 칭호 보정 OK');
