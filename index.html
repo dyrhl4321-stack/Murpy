@@ -1284,6 +1284,10 @@
   <!-- 오늘 운동 인증 라이브 바 (카드) -->
   <div id="home-live-bar" style="display:none;margin:12px 16px 0"></div>
 
+  <!-- 명예의 전당 한 줄 (대표 8-18). 카드가 아니라 한 줄이라 피드를 밀어내지 않는다.
+       ★핵심은 1위가 아니라 **내 순위**다 — 1위만 보이면 남 얘기라 안 누른다. -->
+  <div id="home-hof-line" style="display:none;margin:10px 16px 0"></div>
+
   <!-- 피드 -->
   <div id="firebase-feed" style="padding-top:14px"></div>
   <div id="feed-sentinel"></div>
@@ -6448,7 +6452,7 @@ function goPage(name) {
   //   알릴 내용은 카드 화면과 '다 봤어요' 화면 안에서 이미 다 보인다.
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
-  if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); }
+  if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); if (window.loadHofLine) window.loadHofLine(); }
   if (name === 'char' && window.renderCharSpace) { window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx(); }
   // 머피월드 = 몰입 모드: 헤더 즉시 숨김, 로고 광택은 포털이 걷힌 뒤(_mwWorldReveal)
   if (name === 'char') {
@@ -11643,6 +11647,22 @@ window.adminClearHofMsg = async function (uid) {
     if (window._hofMsg) delete window._hofMsg[uid];
     showToast('한마디를 지웠어요'); window.loadHofPanel();
   } catch (e) { console.error('hofMsg admin', e); showToast('실패'); }
+};
+// 홈 한 줄. 이번 달 인증 1위 + 내 순위. 트로피가 '언제든 가는 문'이라면 이건 '지금 가고 싶게' 만든다.
+window.loadHofLine = async function () {
+  const el = document.getElementById('home-hof-line'); if (!el) return;
+  const data = await window.loadHof();
+  const rows = data.rows.feed || [];
+  if (!rows.length) { el.style.display = 'none'; return; }
+  const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  const mine = window._hofMyRank(rows, (window.currentUser || {}).uid || '');
+  const mineTxt = mine ? ` · 내 순위 <b style="color:#fff">${mine.rank}위</b>` : '';
+  el.style.display = '';
+  el.innerHTML = `<div onclick="openPanel('hof-panel')" style="display:flex;align-items:center;gap:8px;padding:11px 14px;`
+    + `border:1px solid rgba(255,255,255,0.09);border-radius:12px;cursor:pointer;font-size:12.5px;color:rgba(255,255,255,0.6)">`
+    + `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">`
+    + `이번 달 인증 1위 <b style="color:#fff">${esc(rows[0].nick)}</b>${mineTxt}</span>`
+    + `<span style="flex-shrink:0;color:rgba(255,255,255,0.3)">&rsaquo;</span></div>`;
 };
 // ===== 명예의 전당 끝 =====
 window.mwBumpMonthly = async function (axis) {
