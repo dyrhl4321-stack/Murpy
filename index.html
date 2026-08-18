@@ -11595,8 +11595,24 @@ window.loadHofPanel = async function () {
     const nickJs = String(r.nick || '').replace(/['\\]/g, '');   // onclick 인자에 들어가므로 따옴표를 뺀다
     const bg = me ? 'background:rgba(61,126,255,0.07);border-top:1px solid rgba(255,255,255,0.09)'
                   : 'border-bottom:1px solid rgba(255,255,255,0.05)';
-    const numCss = `width:22px;flex-shrink:0;text-align:center;font-size:${big ? '18px' : '13px'};`
-                 + `font-weight:${big ? '900' : '600'};color:${big ? '#fff' : 'rgba(255,255,255,0.4)'}`;
+    // ★1·2·3위는 금·은·동 메달 (대표 8-19: "숫자만 있으면 밋밋하니까").
+    //   이모지 금지 → 색 원판 + 숫자. 원판은 CSS 도형이라 에셋이 늘지 않는다.
+    //   ※골드(#F5C24B)는 원래 별점·코인 전용인데, '금메달'은 대표가 직접 지정한 예외다.
+    //   ※틴트 칩(반투명 색면)이 아니다 — **불투명 원판**이라 배지가 아니라 메달로 읽힌다.
+    // ★대표 8-19: 메달 + **캐릭터 뒤에 은은하게 깔리는 배경**을 같이 쓰고, 1·2·3등을 다 다르게.
+    //   [원판색, 숫자색, 캐릭터 뒤 번짐, 발밑 타원] — 금은 세게, 은은 중간, 동은 은은하게.
+    //   번짐은 **캐릭터 뒤**로만 깔린다(본체를 물들이지 않는다 — 범프 색 규칙과 같은 결).
+    const MEDAL = {
+      1: ['#F5C24B', '#4a3406', 'rgba(245,194,75,.34)', 'rgba(245,194,75,.30)'],
+      2: ['#C7CDD8', '#2b3038', 'rgba(199,205,216,.22)', 'rgba(199,205,216,.18)'],
+      3: ['#C8804A', '#3a1f0c', 'rgba(200,128,74,.16)', 'rgba(200,128,74,.13)']
+    };
+    const med = MEDAL[r.rank];
+    const numHtml = med
+      ? `<span style="width:24px;height:24px;flex-shrink:0;border-radius:50%;background:${med[0]};`
+        + `box-shadow:inset 0 -1.5px 0 rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;`
+        + `font-size:12.5px;font-weight:900;color:${med[1]};letter-spacing:-0.5px">${r.rank}</span>`
+      : `<span style="width:24px;flex-shrink:0;text-align:center;font-size:13px;font-weight:600;color:rgba(255,255,255,0.4)">${r.rank}</span>`;
     const meTag = me ? ' <span style="font-size:11px;font-weight:600;color:var(--accent)">나</span>' : '';
     let ch = '';
     try {
@@ -11610,8 +11626,15 @@ window.loadHofPanel = async function () {
       ? `<div style="font-size:11.5px;color:rgba(255,255,255,0.5);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(msg)}</div>`
       : (r.sub ? `<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:3px">${esc(r.sub)}</div>` : '');
     return `<div onclick="openUserProfile('${r.uid}','${nickJs}','')" style="display:flex;align-items:center;gap:10px;padding:${big ? '12px' : '9px'} 16px;cursor:pointer;${bg}">`
-      + `<span style="${numCss}">${r.rank}</span>`
-      + `<div style="width:${big ? 37 : 26}px;height:${big ? 58 : 40}px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:center">${ch}</div>`
+      + numHtml
+      + `<div style="position:relative;width:${big ? 48 : 26}px;height:${big ? 58 : 40}px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:center">`
+      +   (med
+            // 뒤 번짐 + 발밑 타원. 둘 다 캐릭터보다 아래 겹(z-index:0)이라 본체를 안 덮는다.
+            ? `<span style="position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(circle at 50% 62%, ${med[2]} 0%, transparent 68%)"></span>`
+              + `<span style="position:absolute;left:50%;bottom:1px;width:${big ? 34 : 20}px;height:7px;transform:translateX(-50%);z-index:0;pointer-events:none;border-radius:50%;background:radial-gradient(ellipse at center, ${med[3]} 0%, transparent 72%)"></span>`
+            : '')
+      +   `<span style="position:relative;z-index:1;display:flex;align-items:flex-end">${ch}</span>`
+      + `</div>`
       + `<div style="flex:1;min-width:0">`
       +   `<div style="font-size:${big ? '14.5px' : '13.5px'};font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.nick)}${meTag}</div>`
       +   msgHtml
