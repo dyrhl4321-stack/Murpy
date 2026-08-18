@@ -2915,7 +2915,7 @@ window.ROOM_ITEMS = [
   //   ★flat 이 상태마다 다르다 — 펴면 밟고 지나가는 바닥물건(flat), 말면 서 있는 물건이라
   //     그림자·앞뒤정렬·겹침·통행 판정이 전부 달라진다. 그래서 dirs 에 flat 을 실었다.
   { id:'mp_yogamat', cat:'gym', name:'요가 매트', src:'char/rooms/mp_yogamat.png?v=1', w:156, h:73, flat:true, price:15,
-    flip:['접기','펴기'],
+    flip:['접기','펴기'], flipMsg:['접을','펼칠'],   // flipMsg = 실패 토스트용 활용형
     dirs:[{ src:'char/rooms/mp_yogamat.png?v=1', w:156, h:73, flat:true },
           { src:'char/rooms/mp_yogamat_roll.png?v=1', w:36, h:104, sbw:36, flat:false }] },
   // ★옛 id — 이미 방에 놓아둔 사람 때문에 남겨둔다(지우면 그 배치가 조용히 사라진다).
@@ -3560,10 +3560,32 @@ window._reditRotate = function () {
   it.x = Math.max(0, Math.min(768 - after.w, Math.round(cx - after.w / 2)));
   it.y = Math.max(0, Math.min(768 - after.h, Math.round(by - after.h)));
 
+  // ★자리가 겹치면 **살짝 밀어서** 자리를 찾아본다 (대표 8-19 제보).
+  //   요가 매트가 대표적이다 — 펼친 상태는 flat 이라 겹침 판정을 아예 안 받아서 침대·탁자
+  //   위에도 놓인다. 그런데 접으면 실물 장애물이 되어 그 자리에서 바로 부딪힌다.
+  //   그때마다 "자리가 좁아요"로 튕기면 유저는 매트를 먼저 옮겨야 접을 수 있다 —
+  //   접기 한 번 하려고 두 번 일해야 한다. 가까운 빈자리로 조용히 밀어 준다.
   if (window._mwOverlaps && window._mwOverlaps(it, after, f)) {
-    it.d = prev.d; it.x = prev.x; it.y = prev.y;
-    showToast((base.flip ? '펼칠' : '돌릴') + ' 자리가 좁아요 · 조금 옮기고 다시 해보세요');
-    return;
+    const ox = it.x, oy = it.y;
+    let ok = false;
+    // 가까운 곳부터: 8px 씩 넓혀가며 8방향. 최대 한 타일 반(72px)까지만 — 그보다 멀리
+    // 옮기면 "내가 둔 자리가 아닌데?" 가 된다.
+    for (const r of [8, 16, 24, 32, 48, 72]) {
+      for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+        it.x = Math.max(0, Math.min(768 - after.w, ox + dx * r));
+        it.y = Math.max(0, Math.min(768 - after.h, oy + dy * r));
+        if (!window._mwOverlaps(it, after, f)) { ok = true; break; }
+      }
+      if (ok) break;
+    }
+    if (!ok) {
+      it.d = prev.d; it.x = prev.x; it.y = prev.y;
+      // ★문구는 **누른 버튼**을 따라간다. 접기를 눌렀는데 "펼칠 자리가 좁아요"가 뜨면
+      //   무엇이 실패한 건지 알 수가 없다(대표 8-19 제보).
+      const verb = (base.flipMsg && base.flipMsg[prev.d % base.flipMsg.length]) || '돌릴';
+      showToast(verb + ' 자리가 좁아요 · 조금 옮기고 다시 해보세요');
+      return;
+    }
   }
   window._reditPaint();
 };
@@ -10044,7 +10066,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '634';
+window._SW_V = '635';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).

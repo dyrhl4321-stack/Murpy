@@ -57,3 +57,52 @@ assert(shown.includes('mp_yogamat'), '카탈로그에 요가 매트가 없다');
 assert.strictEqual(new Set(shown).size, shown.length, '카탈로그에 중복 id 가 있다');
 
 console.log(`room-items.test.mjs: 요가 매트 접기/펴기·옛 id 보존·카탈로그 ${shown.length}종 전부 통과 OK`);
+
+// 7) 접기/펴기 실패 문구는 **누른 버튼**을 따라가야 한다 (대표 8-19: 접기를 눌렀는데 '펼칠'이 떴다)
+assert.deepStrictEqual(mat.flipMsg, ['접을', '펼칠'], '실패 토스트용 활용형(flipMsg)이 없다');
+assert.strictEqual(mat.flip.length, mat.flipMsg.length, 'flip 과 flipMsg 의 개수가 다르다');
+
+// 8) 겹치면 **살짝 밀어서** 자리를 찾아야 한다 — 못 찾을 때만 되돌린다
+//    (펼친 매트는 flat 이라 침대 위에도 놓인다. 접으면 장애물이 되어 그 자리에서 바로 부딪힌다)
+const w2 = { SEASON_ITEMS: [], _reditPaint: () => {} };
+const toasts = [];
+const grabW = (re, n) => { const m = src.match(re); assert(m, n + ' 못 찾음'); return m[0]; };
+for (const [re, n] of [
+  [/window\.ROOM_ITEMS = \[[\s\S]*?\n\];/, 'ROOM_ITEMS'],
+  [/window\.mwItemDef = function[\s\S]*?\n\};/, 'mwItemDef'],
+  [/window\.mwDefFor = function[\s\S]*?\n\};/, 'mwDefFor'],
+  [/window\._mwFootRect = function[\s\S]*?\n\};/, '_mwFootRect'],
+  [/window\._mwOnSurface = function[\s\S]*?\n\};/, '_mwOnSurface'],
+  [/window\._mwOverlaps = function[\s\S]*?\n\};/, '_mwOverlaps'],
+]) new Function('window', grabW(re, n))(w2);
+new Function('window', 'showToast',
+  grabW(/window\._reditRotate = function[\s\S]*?\n\};/, '_reditRotate'))(w2, m => toasts.push(m));
+
+function flip(list, sel) {
+  toasts.length = 0;
+  w2._reditDraft = { f: list }; w2._reditSel = sel;
+  const before = { ...list[sel] };
+  w2._reditRotate();
+  return { before, after: list[sel], toast: toasts[0] || '' };
+}
+
+// 빈 방 — 그냥 접힌다
+let r = flip([{ id: 'mp_yogamat', x: 300, y: 400, d: 0 }], 0);
+assert.strictEqual(r.after.d, 1, '빈 방에서도 안 접힌다');
+assert.strictEqual(r.toast, '', '빈 방인데 실패 토스트가 떴다');
+
+// 침대와 겹칠 때 — 밀어서라도 접혀야 한다
+r = flip([{ id: 'mp_yogamat', x: 300, y: 400, d: 0 },
+          { id: 'pi_bed_wood', x: 300, y: 330, d: 0 }], 0);
+assert.strictEqual(r.after.d, 1, '겹친다고 그냥 튕겼다 → 매트를 먼저 옮겨야 접을 수 있다');
+
+// 사방이 꽉 막히면 되돌리고, **접을** 이라고 말해야 한다
+const packed = [{ id: 'mp_yogamat', x: 300, y: 400, d: 0 }];
+for (let gx = 0; gx < 768; gx += 100) for (let gy = 250; gy < 620; gy += 60)
+  packed.push({ id: 'pi_bed_wood', x: gx, y: gy, d: 0 });
+r = flip(packed, 0);
+assert.strictEqual(r.after.d, 0, '자리가 없는데 접혔다');
+assert.strictEqual(r.after.x, 300, '실패했는데 위치가 안 돌아왔다');
+assert(/^접을 /.test(r.toast), `접기를 눌렀는데 문구가 '${r.toast}' 다`);
+
+console.log('  + 접기/펴기 밀어내기·실패 문구 OK');
