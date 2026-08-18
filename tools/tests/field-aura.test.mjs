@@ -118,3 +118,8 @@ assert(/gym_plate_floor/.test(w3.mwPlateHtml('closed')), '바닥 가리개가 �
 assert(/pointer-events:auto/.test(w3.mwPlateHtml('closed')), '합판이 탭을 못 받는다');
 assert(/gym_plate_closed/.test(w3.mwPlateHtml('nonsense')), '모르는 상태가 closed 로 안 떨어진다');
 console.log('  + 합판 렌더 OK');
+
+// 12) ★합판이 조이스틱 예외 목록에 있어야 탭이 통한다 (상자가 무반응이던 그 버그)
+const joy = grab(/const onS = \(e\) => \{ if \(e\.target\.closest\([^)]*\)\) return;/, '조이스틱 제외 선택자');
+assert(/\.mw-plate/.test(joy), '합판이 조이스틱 예외 목록에 없다 -> 탭해도 무반응');
+console.log('  + 조이스틱 예외 OK');
