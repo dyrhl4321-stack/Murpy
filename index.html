@@ -3172,6 +3172,7 @@ window.mwPlateTap = async function () {
     return;
   }
   if (window._plateState === 'ajar' && window._plateTaps >= window._PLATE_TAPS_2) {
+    window._mwPlateBusy = true;   // ★여기서 즉시 잠근다 — await 사이에 탭이 또 들어오면 컷신이 두 번 돈다
     await window.mwPlateOpen(season, meta);
   }
 };
@@ -3194,6 +3195,9 @@ window.mwPlateOpen = async function (season, meta) {
     const ok = await window.mwPlateGrant(season, meta);
     await window.mwPlateFlash();
     window._plateState = 'closed'; window._plateTaps = 0; window.mwPlateSet('closed');
+    // ★캐릭터를 코드로 옮겼으니 밟기 기록을 비운다. 안 비우면 _plateOn 이 'plate' 로 남아
+    //   컷신 뒤 처음 다시 밟을 때 한 번 조용히 넘어간다(대화창이 안 뜬다).
+    window._plateOn = '';
     if (ok) {
       window.mwSeasonCelebrate({
         id: 'aura_' + season, name: meta.name, title: meta.title, desc: meta.desc,
@@ -9916,7 +9920,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '630';
+window._SW_V = '631';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -17732,7 +17736,10 @@ window.mwFieldTalk = function (lines) {
   return new Promise(function (resolve) {
     const room = document.getElementById('charworld-room');
     if (!room || !lines || !lines.length) return resolve();
+    // ★옛 대화창이 매달려 있으면 그 promise 를 먼저 풀어준다 — 안 풀면 그걸 await 하던
+    //   mwPlateOpen 이 영원히 안 끝나고 _mwPlateBusy 가 켜진 채 남아 캐릭터가 못 움직인다.
     const old = document.getElementById('mw-fieldtalk'); if (old) old.remove();
+    if (window._ftResolve) { const _r = window._ftResolve; window._ftResolve = null; _r(); }
     const el = document.createElement('div');
     el.id = 'mw-fieldtalk'; el.className = 'mw-dossier';
     el.innerHTML = '<span class="mw-ft-body"></span><i class="mw-ft-caret" style="display:none"></i>';
@@ -17744,12 +17751,27 @@ window.mwFieldTalk = function (lines) {
       await window.mwTypewriter(body, [lines[i]], { tick: true, speed: 45, stop: function () { return skip; } });
       typing = false; caret.style.display = '';
     };
-    el.addEventListener('click', function () {
+    const advance = function (ev) {
+      if (ev) { ev.stopPropagation(); if (ev.cancelable) ev.preventDefault(); }
       if (typing) { skip = true; return; }            // 타자기 건너뛰기
       i++;
-      if (i >= lines.length) { el.remove(); resolve(); return; }
+      if (i >= lines.length) {
+        el.remove();
+        if (window._ftResolve === resolve) window._ftResolve = null;
+        resolve(); return;
+      }
       show();
-    });
+    };
+    // ★조이스틱이 **방(부모)** 에 touchstart 로 걸려 있어 preventDefault 로 합성 click 을
+    //   죽인다(대표 8-19: "이동키가 먼저 탭돼서 클릭이 안 돼"). 그래서 여기서 전파를 끊는다 —
+    //   자식이 먼저 받고 stopPropagation 하면 방의 핸들러는 아예 안 돈다.
+    //   조이스틱 예외 선택자(#mw-fieldtalk)는 방어 2겹째로 남겨둔다.
+    // ★touchend 에서 preventDefault 를 부르므로 뒤따르는 click 은 안 생긴다(이중 진행 방지).
+    el.addEventListener('touchstart', function (ev) { ev.stopPropagation(); }, { passive: false });
+    el.addEventListener('touchend', advance, { passive: false });
+    el.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+    el.addEventListener('click', advance);
+    window._ftResolve = resolve;
     show();
   });
 };
