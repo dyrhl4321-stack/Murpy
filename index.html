@@ -11330,7 +11330,16 @@ window.mwAuraToggle = async function (key) {
   st.auraOn = next;
   window._charApplyPos && window._charApplyPos();         // 내 필드에 즉시 반영
   window._sqRtSend && window._sqRtSend();                 // 스쿼드 필드면 남에게도 즉시
-  window.mwRoomEdit && window.mwRoomEdit();               // 카탈로그를 다시 그려 켜짐 표시 갱신
+  // ★mwRoomEdit() 를 다시 부르면 안 된다 — 그 함수가 _reditDraft 를 **저장된** 방으로
+  //   되돌리기 때문에, 가구를 옮기던 중(저장 전)에 아우라를 켜면 배치가 통째로 날아간다.
+  //   그래서 카탈로그를 다시 그리지 않고 버튼 표시만 직접 고친다.
+  document.querySelectorAll('#mw-wpanel button[onclick^="window.mwAuraToggle("]').forEach(function (b) {
+    const m = (b.getAttribute('onclick') || '').match(/mwAuraToggle\('([^']+)'\)/);
+    const lit = !!(m && m[1] === next);
+    b.style.opacity = lit ? '1' : '.72';
+    const tag = b.lastElementChild;
+    if (tag) { tag.textContent = lit ? '켜짐' : '꺼짐'; tag.style.color = lit ? '#7AA4FF' : 'rgba(255,255,255,.3)'; }
+  });
 };
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
 window._seasonEnsureMonth = function () {
@@ -11342,6 +11351,43 @@ window._seasonEnsureMonth = function () {
   return season;
 };
 // 활동 1건 적립. axis: 'feed'|'bamboo'|'matchOk'|'squad'|'checkin'
+// ===== 명예의 전당 (랭킹) — 순수 계산부 =====
+// ★Firestore 를 모른다. 넘겨받은 배열만 본다 — 그래야 node 로 검증할 수 있다.
+//   설계: docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md
+// 대표 본인 계정 2개는 모든 랭킹·인기에서 뺀다. 운영자가 1등이면 유저에겐 벽이다.
+// ★홈 '지금 인기'(loadHomeTrending)도 이 상수를 쓴다. 두 벌이 되면 한쪽만 고치는 사고가 난다.
+window.HOF_EXCLUDE_UID = ['3ojRNNyRutYE4IDQn2GrJDcXz0Q2', 'h0I8ms36owTByTACh6gSw3sgCrf1'];
+// ★mwSeasonKey() 를 **인자 없이** 부르면 관리자 시즌 실험실 오버라이드를 탄다.
+//   랭킹이 그걸 타면 대표가 시즌을 실험하는 동안 전 유저의 기준 달이 같이 바뀐다.
+window.HOF_MONTH = function () { return window.mwSeasonKey(new Date()); };
+window.HOF_KINDS = {
+  feed:    { label: '인증',    unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).feed || 0; } },
+  checkin: { label: '체크인',  unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).checkin || 0; } },
+  // ★스쿼드장만 월 구분이 없다(hostStats 는 누적). 스펙 9-(4) 참고 — 지금은 그대로 간다.
+  host:    { label: '스쿼드장', unit: '회', get: function (u) { return (u.hostStats || {}).completed || 0; } },
+  attend:  { label: '스쿼드 참가', unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).squad || 0; } }
+};
+// 줄 세우기. 0회·탈퇴·닉네임 없음·대표 계정은 뺀다.
+// 동점은 **닉네임 가나다순** — 무작위면 볼 때마다 순서가 바뀌어 등수가 신뢰를 잃는다.
+window._hofRank = function (users, kind, month) {
+  const def = window.HOF_KINDS[kind]; if (!def) return [];
+  return (users || [])
+    .filter(function (u) {
+      return u && u.nickname && !u.deleted && !u.isAnonymous
+        && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0
+        && def.get(u, month) > 0;
+    })
+    .map(function (u) { return { uid: u.uid, nick: u.nickname, n: def.get(u, month) }; })
+    .sort(function (a, b) { return (b.n - a.n) || String(a.nick).localeCompare(String(b.nick), 'ko'); })
+    .map(function (r, i) { r.rank = i + 1; return r; });
+};
+// 내 줄. 10위 밖이어도 화면 맨 아래에 고정해서 보여주려고 따로 뽑는다.
+window._hofMyRank = function (rows, uid) {
+  if (!uid) return null;
+  for (let i = 0; i < (rows || []).length; i++) if (rows[i].uid === uid) return { rank: rows[i].rank, n: rows[i].n };
+  return null;
+};
+// ===== 명예의 전당 끝 =====
 window.mwBumpMonthly = async function (axis) {
   const user = auth.currentUser || window.currentUser;
   if (!user || !axis) return;
