@@ -3100,6 +3100,101 @@ window.mwPlateSet = function (state) {
   el.style.top = ((s.y + s.h - h) / F * 100).toFixed(3) + '%';
   el.style.height = (h / F * 100).toFixed(3) + '%';
 };
+window._plateState = 'closed';
+window._plateTaps = 0;
+window._plateOn = '';          // 지금 밟고 있는 스팟(칸을 벗어나야 초기화)
+window._mwPlateBusy = false;   // 컷신 중 조작 잠금
+
+window._mwWait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+// 두드릴 때마다 달그락. ★두드리는 맛은 소유 여부와 상관없이 준다 —
+//   이미 가진 사람이 눌렀는데 아무 반응도 없으면 그냥 그림이 된다(공룡에서 얻은 규칙).
+window.mwPlateShake = function () {
+  const el = document.getElementById('mw-plate'); if (!el) return;
+  el.style.transition = 'transform .09s steps(2)';
+  el.style.transform = 'translate(1px,-2px)';
+  setTimeout(function () { el.style.transform = 'translate(-1px,1px)'; }, 90);
+  setTimeout(function () { el.style.transform = 'none'; }, 180);
+  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+};
+
+// 합판을 밟았다 — 달그락 + 말 걸기. 실제로 여는 건 두드리기(mwPlateTap)다.
+window.mwPlateStep = async function () {
+  if (window._mwPlateBusy) return;
+  window.mwPlateShake();
+  const season = window._seasonEnsureMonth ? window._seasonEnsureMonth() : '';
+  const meta = (window.FIELD_AURAS || {})[season];
+  const had = ((window._seasonState || {}).auras || []).indexOf(season) >= 0;
+  if (!meta) { await window.mwFieldTalk(['그냥 낡은 합판이다.']); return; }
+  if (had)   { await window.mwFieldTalk(['아까 열어본 그 합판이다.']); return; }
+  await window.mwFieldTalk(['헬스장 바닥 한쪽이 조금 이상하다..', '한번 눌러볼까?']);
+};
+
+window.mwPlateTap = async function () {
+  if (window._mwPlateBusy) return;
+  window.mwPlateShake();
+  const season = window._seasonEnsureMonth ? window._seasonEnsureMonth() : '';
+  const meta = (window.FIELD_AURAS || {})[season];
+  if (!meta) return;
+  const st = window._seasonState || {};
+  if ((st.auras || []).indexOf(season) >= 0) return;                 // 이미 가짐 — 달그락만
+  // ★임시(익명) 계정에는 주지 않는다. 그 계정을 버리면 아이템도 같이 사라져 억울해진다(공룡과 같은 규칙).
+  if (!window.currentUser || (window.isTempAccount && window.isTempAccount())) return;
+  window._plateTaps++;
+  if (window._plateState === 'closed' && window._plateTaps >= window._PLATE_TAPS_1) {
+    window._plateState = 'ajar'; window.mwPlateSet('ajar'); window._plateTaps = 0;
+    await window.mwFieldTalk(['조금만 더 하면 열릴 거 같다..']);
+    return;
+  }
+  if (window._plateState === 'ajar' && window._plateTaps >= window._PLATE_TAPS_2) {
+    await window.mwPlateOpen(season, meta);
+  }
+};
+
+// 다 열린다 — 캐릭터가 한 칸 뒤로 물러서고, 구멍이 드러나고, 섬광 뒤 다시 닫힌다.
+window.mwPlateOpen = async function (season, meta) {
+  window._mwPlateBusy = true;                    // 컷신 동안 조작 잠금
+  try {
+    // ★캐릭터가 구멍에 빠진 것처럼 보이지 않게 한 칸 물러선다(대표 8-18).
+    //   점프가 아니라 아래로 한 칸 걷기다. 물러선 칸(tr 8)은 트리거가 아니라 재발동하지 않는다.
+    const p = window._charPos;
+    if (window._charWalkable && window._charWalkable(p.tc, p.tr + 1)) {
+      p.tr += 1; p.face = 'up'; window._charApplyPos && window._charApplyPos();
+      const av = document.getElementById('charworld-avatar');
+      if (av) { av.style.scale = '0.95 1.04'; setTimeout(function () { av.style.scale = '1 1'; }, 140); }
+    }
+    window._plateState = 'open'; window.mwPlateSet('open');
+    await window._mwWait(260);
+    await window.mwFieldTalk(['합판 아래에서 무언가 빛나고 있다.']);
+    const ok = await window.mwPlateGrant(season, meta);
+    await window.mwPlateFlash();
+    window._plateState = 'closed'; window._plateTaps = 0; window.mwPlateSet('closed');
+    if (ok) {
+      window.mwSeasonCelebrate({
+        id: 'aura_' + season, name: meta.name, title: meta.title, desc: meta.desc,
+        src: 'char/fx/aur_' + meta.color + '_preview.png?v=1', w: 140, h: 45
+      });
+    }
+  } finally { window._mwPlateBusy = false; }
+};
+
+// 흰 섬광 한 번. 그림이 아니라 CSS 다.
+window.mwPlateFlash = function () {
+  return new Promise(function (res) {
+    const room = document.getElementById('charworld-room'); if (!room) return res();
+    const f = document.createElement('div');
+    f.style.cssText = 'position:absolute;inset:0;z-index:80;background:#fff;opacity:0;'
+      + 'pointer-events:none;transition:opacity .12s linear';
+    room.appendChild(f);
+    requestAnimationFrame(function () {
+      f.style.opacity = '1';
+      setTimeout(function () {
+        f.style.transition = 'opacity .34s ease-out'; f.style.opacity = '0';
+        setTimeout(function () { f.remove(); res(); }, 360);
+      }, 120);
+    });
+  });
+};
 window.mwRenderFurn = function () {
   window.mwUpdateQuestBadge && window.mwUpdateQuestBadge();   // 상자 유무가 곧 탭 배지
   window._mwComputeBlocked && window._mwComputeBlocked();     // 충돌 오버레이 갱신(렌더 시점)
@@ -3603,6 +3698,9 @@ window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
+  // 합판은 전부 지나가는 상태다 — 필드를 떠나면 그림·탭 수를 되돌린다
+  window._plateState = 'closed'; window._plateTaps = 0; window._plateOn = '';
+  const _ft = document.getElementById('mw-fieldtalk'); if (_ft) _ft.remove();
   const room = document.getElementById('charworld-room');
   if (room) room.style.backgroundImage = "url('" + f.src + "')";
   const st = f.start || { tc: 7, tr: 8 };
@@ -3769,6 +3867,7 @@ window._charApplyPos = function () {
   window._mwAurApply && window._mwAurApply(host, window._mwAurOf((window.currentUser || {}).uid, ''));
 };
 window.charMove = function (dx, dy) {
+  if (window._mwPlateBusy) return;   // 합판 컷신 중엔 조작을 막는다(드래그로 구멍을 뚫고 지나간다)
   const prev = window._charPos.face;
   if (dx < 0) window._charPos.face = 'left'; else if (dx > 0) window._charPos.face = 'right';
   else if (dy < 0) window._charPos.face = 'up'; else if (dy > 0) window._charPos.face = 'down';
@@ -3776,6 +3875,13 @@ window.charMove = function (dx, dy) {
   const ntc = window._charPos.tc + dx, ntr = window._charPos.tr + dy;
   const canMove = window._charWalkable(ntc, ntr);
   if (canMove) { window._charPos.tc = ntc; window._charPos.tr = ntr; }
+  // ★히든 오브젝트 밟기. 이동에 성공했을 때만 보고, 칸을 벗어났다 다시 들어와야 재발동한다
+  //   (같은 칸에서 걸음마다 반복되면 대화창이 계속 뜬다).
+  if (canMove) {
+    const _hit = window._mwPlateHit ? window._mwPlateHit(window._curField, window._charPos.tc, window._charPos.tr) : '';
+    if (!_hit) window._plateOn = '';
+    else if (window._plateOn !== _hit) { window._plateOn = _hit; window.mwPlateStep && window.mwPlateStep(); }
+  }
   if (window._curField === 'home' && window._mwQueueRoomPos) window._mwQueueRoomPos();   // 방 좌표·방향 저장(디바운스)
   // 걸음 프레임(1↔2), 이동 끝나면 정지 프레임(0)
   window._charStepToggle = !window._charStepToggle;
@@ -11175,6 +11281,39 @@ window._seasonLab = { on: false, key: '' };
 window._seasonWrite = async function (uid, upd) {
   if (window._seasonLab.on) return;
   await updateDoc(doc(db, 'users', uid), upd);
+};
+// 합판 보상 지급 — 소유(fieldAuras)에 넣고 **바로 켜준다**(aura). 얻자마자 꺼져 있으면
+// 획득 모달을 닫는 순간 아무 일도 안 일어난 것처럼 보인다. 끄는 건 꾸미기에서 한다.
+// ★쓰기가 성공했을 때만 로컬에 반영한다 — 실패한 쓰기를 먼저 반영하면 새로고침에 사라지는 유령 지급이 된다.
+// ★여기는 모듈 블록이라 arrayUnion 을 쓸 수 있다. 부르는 쪽(mwPlateOpen)은 모듈 밖이라
+//   window.mwPlateGrant 로 건너온다. 반대로 저기서 arrayUnion 을 쓰면 ReferenceError 다.
+window.mwPlateGrant = async function (season, meta) {
+  const user = window.currentUser; if (!user || !season || !meta) return false;
+  try {
+    const upd = { fieldAuras: arrayUnion(season), aura: season };
+    if (meta.title) upd.titles = arrayUnion(meta.title);
+    await window._seasonWrite(user.uid, upd);
+  } catch (e) { console.warn('aura grant', e); return false; }
+  const st = window._seasonState;
+  if ((st.auras || []).indexOf(season) < 0) st.auras = (st.auras || []).concat(season);
+  st.auraOn = season;
+  if (meta.title && (st.titles || []).indexOf(meta.title) < 0) st.titles = (st.titles || []).concat(meta.title);
+  window._charApplyPos && window._charApplyPos();          // 내 필드 캐릭터에 즉시 반영
+  window._sqRtSend && window._sqRtSend();                  // 스쿼드 필드면 남에게도 즉시
+  return true;
+};
+// 아우라 켜기/끄기. 한 번에 하나만 켠다(aura 가 단일 값이다).
+window.mwAuraToggle = async function (key) {
+  const user = window.currentUser; if (!user) return;
+  const st = window._seasonState || {};
+  if ((st.auras || []).indexOf(key) < 0) return;         // 안 가진 건 못 켠다
+  const next = (st.auraOn === key) ? '' : key;
+  try { await window._seasonWrite(user.uid, { aura: next }); }
+  catch (e) { console.warn('aura toggle', e); return; }
+  st.auraOn = next;
+  window._charApplyPos && window._charApplyPos();         // 내 필드에 즉시 반영
+  window._sqRtSend && window._sqRtSend();                 // 스쿼드 필드면 남에게도 즉시
+  window.mwRoomEdit && window.mwRoomEdit();               // 카탈로그를 다시 그려 켜짐 표시 갱신
 };
 // 달이 바뀌면 로컬 카운터를 새 달로 리셋 (Firestore는 달마다 별도 키라 그대로 둔다)
 window._seasonEnsureMonth = function () {
