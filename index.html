@@ -3057,10 +3057,44 @@ window.mwFurnHtml = function (roomData, edit) {
       + `<img src="${def.src}" data-idx="${idx}" draggable="false" style="position:absolute;left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${edit?'pointer-events:auto;cursor:grab;touch-action:none;':'pointer-events:none;'}">`;
   }).join('');
 };
+// ---- 헬스장 바닥 합판 (필드 히든 오브젝트) ----
+// 그림 세 장의 높이가 다르다(closed 73 / ajar 89 / open 122). 셋 다 **밑변을 바닥선에 붙여**
+// 발자국이 안 흔들리게 한다 — 위쪽으로만 커진다.
+// ★합판은 배경(field_gym.png)에 이미 그려져 있다 → gym_plate_floor 로 덮은 위에 올린다.
+//   안 덮으면 흔들 때 원본이 밑에서 비친다. field_gym.png 원본은 안 건드린다.
+window._PLATE_H = { closed: 73, ajar: 89, open: 122 };
+window.mwPlateHtml = function (state) {
+  const s = ((window._FIELD_SPOTS || {}).gym || {}).plate;
+  if (!s) return '';
+  const F = 1024;                                   // field_gym.png 좌표계
+  const pc = function (v) { return (v / F * 100).toFixed(3) + '%'; };
+  const st = window._PLATE_H[state] ? state : 'closed';
+  const h = window._PLATE_H[st];
+  const top = s.y + s.h - h;                        // 밑변 = s.y + s.h (바닥선)
+  return '<img src="char/fields/gym_plate_floor.png?v=1" alt="" style="position:absolute;'
+       + 'left:' + pc(s.x) + ';top:' + pc(s.y) + ';width:' + pc(s.w) + ';height:' + pc(s.h)
+       + ';z-index:4;pointer-events:none">'
+       + '<img id="mw-plate" class="mw-plate" src="char/fields/gym_plate_' + st + '.png?v=1" alt=""'
+       + ' onclick="window.mwPlateTap&&window.mwPlateTap()" style="position:absolute;'
+       + 'left:' + pc(s.x) + ';top:' + pc(top) + ';width:' + pc(s.w) + ';height:' + pc(h)
+       + ';z-index:5;pointer-events:auto;cursor:pointer">';
+};
+// 그림만 갈아끼운다. 통째로 다시 그리면 탭 카운트 중에 깜빡이고 onclick 이 새로 붙는다.
+window.mwPlateSet = function (state) {
+  const el = document.getElementById('mw-plate'); if (!el) return;
+  const s = ((window._FIELD_SPOTS || {}).gym || {}).plate; if (!s) return;
+  const st = window._PLATE_H[state] ? state : 'closed';
+  const h = window._PLATE_H[st], F = 1024;
+  el.src = 'char/fields/gym_plate_' + st + '.png?v=1';
+  el.style.top = ((s.y + s.h - h) / F * 100).toFixed(3) + '%';
+  el.style.height = (h / F * 100).toFixed(3) + '%';
+};
 window.mwRenderFurn = function () {
   window.mwUpdateQuestBadge && window.mwUpdateQuestBadge();   // 상자 유무가 곧 탭 배지
   window._mwComputeBlocked && window._mwComputeBlocked();     // 충돌 오버레이 갱신(렌더 시점)
   const el = document.getElementById('mw-furn'); if (!el) return;
+  // 헬스장 = 바닥 합판(히든 오브젝트). 필드를 떠나면 _plateState 가 초기화된다.
+  if (window._curField === 'gym') { el.innerHTML = window.mwPlateHtml(window._plateState || 'closed'); return; }
   if (window._curField !== 'home') { el.innerHTML = ''; return; }
   const box = (window._seasonState && window._seasonState.box) || [];
   el.innerHTML = window.mwFurnHtml(window._myRoom) + window.mwBoxHtml(box, true);

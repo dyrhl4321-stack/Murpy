@@ -97,3 +97,24 @@ assert.strictEqual(w2._mwAurOf('me', ''), '', '시험 스위치가 화이트리�
 w2._AUR_TEST = '1';
 assert.strictEqual(w2._mwAurOf('me', ''), 'blue');
 console.log('  + _mwAurOf 소유 판정 OK');
+
+// 11) 합판 HTML — 세 상태 모두 **밑변이 같은 자리**여야 한다(발자국이 안 흔들린다)
+const w3 = {};
+new Function('window', grab(/window\._FIELD_SPOTS = \{[\s\S]*?\n\};/, '_FIELD_SPOTS'))(w3);
+new Function('window', grab(/window\._PLATE_H = \{[^}]*\};/, '_PLATE_H'))(w3);
+new Function('window', grab(/window\.mwPlateHtml = function[\s\S]*?\n\};/, 'mwPlateHtml'))(w3);
+const bottomOf = (html) => {
+  const m = html.match(/id="mw-plate"[\s\S]*?top:([\d.]+)%[\s\S]*?height:([\d.]+)%/);
+  assert(m, 'mw-plate 의 top/height 를 못 읽음');
+  return +m[1] + +m[2];
+};
+const b1 = bottomOf(w3.mwPlateHtml('closed'));
+for (const st of ['ajar', 'open']) {
+  assert(Math.abs(bottomOf(w3.mwPlateHtml(st)) - b1) < 0.01, st + ' 의 밑변이 어긋난다');
+}
+const widthOf = h => +h.match(/id="mw-plate"[\s\S]*?width:([\d.]+)%/)[1];
+assert.strictEqual(widthOf(w3.mwPlateHtml('ajar')), widthOf(w3.mwPlateHtml('closed')));
+assert(/gym_plate_floor/.test(w3.mwPlateHtml('closed')), '바닥 가리개가 없다');
+assert(/pointer-events:auto/.test(w3.mwPlateHtml('closed')), '합판이 탭을 못 받는다');
+assert(/gym_plate_closed/.test(w3.mwPlateHtml('nonsense')), '모르는 상태가 closed 로 안 떨어진다');
+console.log('  + 합판 렌더 OK');
