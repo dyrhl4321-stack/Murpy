@@ -11766,7 +11766,12 @@ window.DODGE = {
   //   ★핵심은 "가만히 못 있게 만드는 것". 지금은 안전한 틈에 자리 잡고 버티는 게 최선인데,
   //     아저씨가 붙으면 계속 움직여야 한다. 움직이면서 피하는 게 진짜 실력이다.
   //   ★속도가 캐릭터(130)보다 한참 느리다 — 도망치면 반드시 벗어난다. 그래서 억울하지 않다.
-  UNCLE_SPEED: 42,    // 초당 가로 이동(내 x 를 따라온다)
+  // ★그대로 따라오면 '추적기'지 사람이 아니다(대표 8-19: "자체적인 움직임으로 나한테 와야 해").
+  //   자기 리듬으로 좌우로 떠다니고(WOBBLE), 거기에 **약한** 끌림(HOME)만 더한다.
+  //   그래서 옆으로 스쳐 지나가기도 하고, 결국은 다가온다 — 버블보블 유령처럼.
+  UNCLE_WOBBLE: 52,   // 자기 리듬으로 떠다니는 폭(초당)
+  UNCLE_HOME: 17,     // 나를 향한 끌림(초당). WOBBLE 보다 작아야 '따라온다'가 아니라 '다가온다'
+  UNCLE_WOB_MS: 1400, // 좌우로 한 번 왕복하는 데 걸리는 시간
   // ★★위에서 내려온다 (대표 8-19: "아저씨는 위에서 서서히 떨어지는 느낌으로").
   //   바닥에서 걸어오게 했더니 **손가락이 캐릭터를 잡고 있어서 아재가 가려 안 보였다.**
   //   위에서 내려오면 손가락 위쪽이라 계속 보이고, 다가오는 게 미리 읽힌다.
@@ -11877,7 +11882,7 @@ window.dodgeTick = function (s, dt, targetX) {
   // ── 훈수충 아재 ──
   // 위에서 서서히 내려오며 내 x 를 따라온다. 일을 마치면 올라가 사라졌다가 다시 온다.
   if (s.alive && lv.uncleAt && !s.uncle && s.t >= (s.uncleNext || lv.uncleAt)) {
-    s.uncle = { x: s.x, y: D.UNCLE_Y0, born: s.t, out: false };
+    s.uncle = { x: s.x, y: D.UNCLE_Y0, born: s.t, out: false, ph: (s.t % 6283) / 1000 };
   }
   if (s.alive && s.uncle) {
     const u = s.uncle;
@@ -11890,9 +11895,11 @@ window.dodgeTick = function (s, dt, targetX) {
       //   가만히 박혀 있지 않고 살아 있는 것처럼 보인다. 좌우는 아래에서 내 x 를 따라간다.
       u.y = Math.min(D.PLAYER_Y, u.y + D.UNCLE_FALL * (dt / 1000));
       if (u.y >= D.PLAYER_Y - 0.5) u.y = D.PLAYER_Y - 3 + Math.sin(s.t / 260) * 3;
-      const step = D.UNCLE_SPEED * (dt / 1000);
+      // 자기 리듬(떠다님) + 약한 끌림. 둘을 더해 움직인다.
+      const wob = Math.sin((s.t - u.born) / D.UNCLE_WOB_MS * 6.283 + u.ph) * D.UNCLE_WOBBLE;
       const d = s.x - u.x;
-      if (Math.abs(d) <= step) u.x = s.x; else u.x += (d < 0 ? -step : step);
+      const home = Math.max(-1, Math.min(1, d / 20)) * D.UNCLE_HOME;
+      u.x = Math.max(0, Math.min(D.W, u.x + (wob + home) * (dt / 1000)));
       // 내 몸통 높이까지 내려왔고 가로도 겹치면 잡힌다.
       // ★느려진 동안에는 다시 안 잡힌다 — 안 그러면 붙어서 영영 못 움직인다.
       const lowEnough = u.y >= D.PLAYER_Y - D.PLAYER_H;
@@ -12203,7 +12210,10 @@ window._dodgePaint = function (s) {
       // ★캐릭터와 같은 덩치로 맞춘다(대표 8-19). 우리 캐릭터 칸(141x224)엔 좌우 여백이 있는데
       //   아재는 딱 맞게 잘라서, 같은 높이로 그리면 더 홀쭉해 보인다.
       //   1.25배로 그리면 **폭이 캐릭터와 거의 같아지고** 어른답게 조금 더 크다.
-      const uh = chH * 1.25, uw = uh * (62 / 132);
+      // ★★가로세로 비율은 **시트 그대로** 써야 한다(char/game/uncle.png = 246x140, 한 칸 82x140).
+      //   62/132(=0.47)로 잡아놨던 게 실제 0.586보다 좁아서, 그림이 가로로 눌려
+      //   **세로로 길쭉해 보였다**(대표 8-19: "왤케 크고 긴 것 같지"). 크기가 아니라 비율 문제였다.
+      const uh = chH * 1.1, uw = uh * (82 / 140);
       // ★transform 을 **한 번에** 쓴다. 두 번 쓰면 뒤엣것이 앞엣것을 덮어써서
       //   자리 잡는 translate 가 날아가고 아재가 캐릭터 아래로 밀린다(대표 8-19 지적).
       // ★정면 걷기 프레임이라 좌우를 뒤집지 않는다 — 위에서 이쪽을 보고 내려온다.
