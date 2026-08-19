@@ -12017,6 +12017,11 @@ window._dodgeCheckArt = function () {
   const um = new Image();
   um.onload = function () { window._dodgeUncleArt = true; };
   um.src = 'char/game/uncle.png?v=1';
+  // ★붙잡고 훈수 둘 때 쓰는 **옆모습** (대표 8-19: "달라붙었을 땐 옆모습 써야 함").
+  //   칸이 정면과 똑같은 82x140 이라 URL 만 갈아끼우면 된다.
+  const sm = new Image();
+  sm.onload = function () { window._dodgeUncleSide = true; };
+  sm.src = 'char/game/uncle_side.png?v=1';
 };
 window._dodgePaintStart = function () {
   window._dodgeCheckArt();
@@ -12119,7 +12124,7 @@ window.dodgeGo = function () {
   // 고정 DOM 의 기억을 지운다 — 안 지우면 이전 판의 방향·프레임이 남는다
   ['dodge-me', 'dodge-uncle', 'dodge-nag'].forEach(function (id) {
     const e = document.getElementById(id);
-    if (e) { e._face = null; e._fr = null; e._t = null; e._hurt = null; e.classList.remove('dodge-hurt'); }
+    if (e) { e._face = null; e._fr = null; e._t = null; e._hurt = null; e._sheet = null; e.classList.remove('dodge-hurt'); }
   });
   const _un = document.getElementById('dodge-uncle'); if (_un) _un.style.display = 'none';
   const _ng = document.getElementById('dodge-nag'); if (_ng) _ng.style.display = 'none';
@@ -12237,11 +12242,13 @@ window._dodgePaint = function (s) {
       unEl.style.top = (s.uncle.y / 100 * H).toFixed(1) + 'px';
       unEl.style.transform = 'translate(-50%,-100%)' + flip;
       if (window._dodgeUncleArt) {
-        if (!unEl._art) {
-          unEl.style.background = "url('char/game/uncle.png?v=1') no-repeat";
+        // 붙잡고 있을 땐 옆모습, 그 외엔 정면. 시트가 **바뀔 때만** 손댄다(매 프레임 쓰면 깜빡인다).
+        const sheet = (s.uncle.grab && window._dodgeUncleSide) ? 'uncle_side' : 'uncle';
+        if (unEl._sheet !== sheet) {
+          unEl.style.background = "url('char/game/" + sheet + ".png?v=1') no-repeat";
           unEl.style.backgroundSize = '300% 100%';
           unEl.style.borderRadius = '';
-          unEl._art = true;
+          unEl._sheet = sheet; unEl._fr = null;
         }
         const fr = Math.floor(s.t / 180) % 3;      // 걷기 3프레임
         if (unEl._fr !== fr) { unEl.style.backgroundPosition = (fr * 50) + '% 0'; unEl._fr = fr; }
