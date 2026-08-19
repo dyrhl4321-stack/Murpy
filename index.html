@@ -2181,6 +2181,11 @@
   <div id="dodge-over" style="display:none;position:absolute;inset:0;z-index:6;background:rgba(5,7,12,.86);flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center">
     <div style="font-size:20px;font-weight:800;color:#fff">게임 오버</div>
     <div id="dodge-result" style="font-size:14px;color:#cfd6e6;line-height:1.7"></div>
+    <!-- ★공유는 **이미 만들어 둔 것을 그대로 쓴다** (대표 8-19: "머피캠 공유 버튼 그거 그대로 활용").
+         .mw-share/.mw-sbtn 문법과 mwShareKakao/mwShareSheet/mwSaveStamp 를 재사용한다 —
+         새 문법을 만들면 이 화면만 혼자 논다. 안이 비어 있는 건 아이콘(_MW_BRAND)을
+         JS 로 채우기 때문이다. -->
+    <div id="dodge-share" style="display:none;width:100%;max-width:300px"></div>
     <div style="display:flex;gap:9px">
       <button onclick="window.dodgeGo()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px 22px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">다시 하기</button>
       <button onclick="window.dodgeOpen()" style="background:rgba(255,255,255,.08);color:#cfd6e6;border:none;border-radius:12px;padding:13px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">난이도</button>
@@ -12310,6 +12315,7 @@ window._dodgeEnd = function (s) {
        + (isBest && score > 0 ? '<br><span style="color:#3dde7c;font-weight:700">최고 기록!</span>'
                               : '<br><span style="color:rgba(255,255,255,.4)">내 최고 ' + (window._dodgeBest || 0) + '점</span>');
   const o = document.getElementById('dodge-over'); if (o) o.style.display = 'flex';
+  window._dodgeShowShare && window._dodgeShowShare(score, Math.floor(s.t / 1000), lv.name);
   window.dodgeSave && window.dodgeSave(score);
 };
 // 헬스장 필드에서만 뜨는 시작 버튼. ★필드에 닿는 것은 이 함수 하나뿐이다.
@@ -12324,6 +12330,89 @@ window.dodgeFieldBtn = function (key) {
   b.textContent = '덤벨 피하기';
   b.onclick = function (e) { e.stopPropagation(); window.dodgeOpen(); };
   room.appendChild(b);
+};
+// ===== 기록 공유 =====
+// ★새로 만드는 건 **카드 그림 하나뿐**이다. 공유 동작(카톡·인스타·저장)은 머피캠이 쓰는
+//   mwShareKakao / mwShareSheet / mwSaveStamp 를 그대로 부른다. 셋 다 window._mwStampData
+//   하나만 보고 돌아가므로, 거기에 이 카드를 넣어 주면 끝이다(대표 8-19: "그거 그대로 활용").
+// ★카톡 썸네일이 뜨려면 공개 URL 이 있어야 한다 → _mwKakaoPrep 이 미리 올려 둔다.
+//   업로드가 끝날 때까지 카톡 버튼은 흐리다(prep). imgBB 가 죽으면 12초 뒤 공유시트로 떨어진다.
+window._dodgeCardImg = function (score, sec, lvName, cb) {
+  const W = 1080, H = 1350;                     // 카톡 피드 썸네일 비율 — 머피캠 스탬프와 같게
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const load = function (src) {
+    return new Promise(function (res) {
+      const im = new Image();
+      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = src;
+    });
+  };
+  Promise.all([load('char/game/dodge_title.png?v=2'), load('char/ui/ui_logo.png?v=1')]).then(function (r) {
+    const art = r[0], logo = r[1];
+    x.fillStyle = '#05070c'; x.fillRect(0, 0, W, H);
+    if (art) {                                   // cover — 위를 살린다(제목이 위에 있다)
+      const k = Math.max(W / art.width, H / art.height);
+      x.drawImage(art, (W - art.width * k) / 2, 0, art.width * k, art.height * k);
+    }
+    // 아래를 눌러 글자가 읽히게 한다. 위는 안 건드려야 그림이 산다.
+    const g = x.createLinearGradient(0, H * 0.3, 0, H);
+    g.addColorStop(0, 'rgba(5,7,12,0)'); g.addColorStop(.5, 'rgba(5,7,12,.78)'); g.addColorStop(1, 'rgba(5,7,12,.97)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+
+    x.textAlign = 'center';
+    const nick = window._mwMyNick || (window.currentUser && window.currentUser.nickname) || '';
+    let y = H - 430;
+    if (nick) {
+      x.font = "38px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.6)';
+      x.fillText(nick, W / 2, y);
+    }
+    y += 130;
+    x.font = "150px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle = '#fff';
+    x.fillText(String(score), W / 2, y);
+    x.font = "44px 'Galmuri11',sans-serif"; x.fillStyle = '#F5C24B';
+    // '점'은 숫자 오른쪽에 붙인다. 숫자 폭이 자릿수마다 달라지므로 재서 붙여야
+    // 한 자리든 네 자리든 간격이 같다(고정 오프셋을 쓰면 한 자리일 때 멀찍이 떨어진다).
+    x.fillText('점', W / 2 + x.measureText(String(score)).width / 2 + 46, y);
+    y += 78;
+    x.font = "40px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.72)';
+    x.fillText('난이도 ' + lvName + '  ·  ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' 버팀', W / 2, y);
+    // 아래 띠 — 여기가 설치 유도다. 본 사람이 어디로 가야 하는지 적어 둔다.
+    y = H - 96;
+    x.font = "36px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
+    x.fillText('덤벨 피하기 · murpy.app', W / 2, y);
+    // 좌상단 from MURPYWORLD — 시작화면과 같은 자리, 같은 규칙(로고는 원본 그대로)
+    if (logo) {
+      const lh = 46, lw = logo.width * lh / logo.height;
+      x.textAlign = 'left';
+      x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = '#05070c';
+      x.fillText('from', 46, 76);
+      x.drawImage(logo, 130, 76 - lh + 10, lw, lh);
+    }
+    cb(cv.toDataURL('image/jpeg', 0.9));
+  });
+};
+window._dodgeShowShare = function (score, sec, lvName) {
+  const host = document.getElementById('dodge-share'); if (!host) return;
+  const B = window._MW_BRAND || {};
+  host.style.display = 'none';
+  window._dodgeCardImg(score, sec, lvName, function (data) {
+    window._mwStampData = data;
+    // 카톡 카드 문구 — 기록 자랑 + 설치 유도 (대표 8-19)
+    window._mwShareMeta = {
+      title: '덤벨 피하기 ' + score + '점!',
+      desc: '머피월드에서 훈수충 아재를 피해 보세요',
+      btn: '나도 해보기',
+    };
+    host.innerHTML = '<div class="mw-share-lbl" style="text-align:center;margin:6px 3px 9px">내 기록 자랑하기</div>'
+      + '<div class="mw-share">'
+      + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+      + '<button id="dodge-kkbtn" class="mw-sbtn" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+      + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
+      + '</div>';
+    host.style.display = '';
+    window._mwKakaoPrep && window._mwKakaoPrep();   // 카톡용 공개 URL 미리 올려 둔다
+  });
 };
 // 최고점만 갱신한다(매 판 쓰면 낭비다).
 // plays(총 판수)는 **'재밌는지'를 판정할 유일한 숫자**라 매 판 올린다 — 최고점만으로는
@@ -20824,6 +20913,7 @@ window.mwShowStampResult = function () {
       <button onclick="window._mwOverlayClose()">닫기</button>
     </div>`);
   const box=document.querySelector('#mw-ck-overlay .mw-ck-box'); if (box) box.classList.add('stamp');   // 결과 화면은 크게
+  window._mwShareMeta = null;                     // 카메라는 기본 문구 (게임이 바꿔 둔 게 남지 않게)
   window._mwKakaoPrep && window._mwKakaoPrep();   // 카톡용 공개 URL 미리 업로드(탭 시 즉시·동기 공유)
 };
 window.mwSaveStamp = async function () {
@@ -20858,12 +20948,13 @@ window._mwKakaoPrep = function () {
   window._mwStampUrl = null;
   window._mwKakaoReady = false;                       // 업로드 끝나야 true → 그동안은 버튼 흐림
   const data = window._mwStampData;
-  const b0 = document.getElementById('mw-kkbtn'); if (b0) b0.classList.add('prep');
+  // 카톡 버튼은 두 군데에 있다(머피캠 결과·덤벨 피하기 결과). 있는 것 전부에 건다.
+  document.querySelectorAll('#mw-kkbtn, #dodge-kkbtn').forEach(function (e) { e.classList.add('prep'); });
   const done = (url) => {
     if (window._mwStampData !== data) return;         // 그 사이 다시 찍었으면 무시
     window._mwStampUrl = url || null;
     window._mwKakaoReady = true;
-    const b = document.getElementById('mw-kkbtn'); if (b) b.classList.remove('prep');
+    document.querySelectorAll('#mw-kkbtn, #dodge-kkbtn').forEach(function (e) { e.classList.remove('prep'); });
   };
   if (!data) { window._mwKakaoReady = true; return; }
   // ★타임아웃이 없으면 imgBB 가 응답 없이 매달릴 때 done() 이 영영 안 불려서
@@ -20895,16 +20986,18 @@ window.mwShareKakao = function (btn) {
   //   옛 주소를 정리하는 순간 그 카드들이 전부 죽는다.
   //   ※ 이 도메인은 카카오 개발자센터 플랫폼(Web 사이트 도메인)에 등록돼 있어야 한다.
   const APP = 'https://murpy.app/';
+  // 카메라 말고 다른 데서도 이 함수를 쓴다(덤벨 피하기 기록 공유) → 문구만 갈아 끼운다.
+  const M = window._mwShareMeta || {};
   try {
     Kakao.Share.sendDefault({
       objectType: 'feed',
       content: {
-        title: '오운완 인증!',
-        description: 'MURPY 픽셀 카메라로 남긴 오늘의 운동',
+        title: M.title || '오운완 인증!',
+        description: M.desc || 'MURPY 픽셀 카메라로 남긴 오늘의 운동',
         imageUrl: window._mwStampUrl, imageWidth: 1080, imageHeight: 1350,
         link: { mobileWebUrl: APP, webUrl: APP },
       },
-      buttons: [{ title: '머피 구경하기', link: { mobileWebUrl: APP, webUrl: APP } }],
+      buttons: [{ title: M.btn || '머피 구경하기', link: { mobileWebUrl: APP, webUrl: APP } }],
     });
   } catch (e) { console.warn('kakao share', e); window.mwShareSheet(); }
 };
