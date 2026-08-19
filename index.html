@@ -11593,7 +11593,18 @@ window._seasonEnsureMonth = function () {
 //   흩어져 있으면 고칠 때마다 코드를 뒤져야 한다.
 window.DODGE = {
   W: 100,             // 게임판 가로(논리 단위, 화면 폭에 비례해서만 그린다)
-  PLAYER_W: 12,       // 캐릭터 판정 폭
+  PLAYER_W: 12,       // 캐릭터가 벽에 막히는 폭(이동 한계). 판정 폭이 아니다
+  // ★★판정 폭은 **보이는 것보다 좁아야 한다** (대표 8-19: "안 닿았는데 죽는다,
+  //   특히 떨어지는 것 틈으로 빠져나갈 때 판정이 개판").
+  //   원인 = mwMiniCharHtml(cfg,72) 가 만드는 상자는 45px 인데 **그 안에서 실제로 그려진
+  //   몸통은 절반쯤**이고 나머지는 투명이다. 그런데 상자 전체를 판정에 썼다.
+  //   물건도 마찬가지로 네모 안이 다 차 있지 않다.
+  //   → 둘 다 **보이는 알맹이**만큼으로 좁힌다. 합이 11.5 -> 7 로 줄었다.
+  PLAYER_HIT_W: 6,    // 캐릭터 몸통 실폭(판정용)
+  ITEM_HIT_W: 8,      // 물건 알맹이 폭(판정용). 그리는 폭은 ITEM_W
+  // 캐릭터가 서 있는 자리. 발끝 = PLAYER_Y, 키 = PLAYER_H (둘 다 논리 단위)
+  // ★그리는 크기도 이 값에서 나온다 — 따로 두면 판정과 그림이 어긋난다(그게 이번 버그였다)
+  PLAYER_Y: 88, PLAYER_H: 10,
   // ★대표 8-19 "이동 속도도 빨라야 할 것 같다 / 순간이동까진 아니어도 좀 더 속도감 있게"
   //   → 62 -> 130. 판 폭이 100 이니 **화면 끝에서 끝까지 약 0.77초**다.
   //   손가락은 그 구간을 0.1초면 긋는다 — 그래서 여전히 캐릭터가 따라오는 게 보이고,
@@ -11660,8 +11671,13 @@ window.dodgeTick = function (s, dt, targetX) {
   for (let i = s.items.length - 1; i >= 0; i--) {
     const it = s.items[i];
     it.y += fall * (dt / 1000);
-    const near = Math.abs(it.x - s.x) < (D.PLAYER_W + D.ITEM_W) / 2;
-    if (it.y >= 88 && it.y <= 100 && near) {          // 캐릭터 높이대(88~100)에서만 닿는다
+    // ★판정은 두 상자가 **실제로 겹칠 때만**.
+    //   x = 알맹이끼리의 반폭 합 / y = 물건 상자와 캐릭터 몸통 구간이 겹치는가.
+    //   예전엔 `it.y >= 88` 이라 **물건 윗변이 발 높이에 왔을 때** 판정이 났다 —
+    //   즉 물건이 몸을 다 지나 발까지 내려온 뒤에야 죽었다. 그림과 어긋날 수밖에 없다.
+    const nearX = Math.abs(it.x - s.x) < (D.PLAYER_HIT_W + D.ITEM_HIT_W) / 2;
+    const nearY = (it.y + D.ITEM_W) > (D.PLAYER_Y - D.PLAYER_H) && it.y < D.PLAYER_Y;
+    if (nearX && nearY) {
       if (it.kind === 'dumbbell') { s.alive = false; s.hit = 'dumbbell'; s.items.splice(i, 1); break; }
       s.score += (it.kind === 'protein') ? D.SC_PROTEIN : D.SC_CHICKEN;
       if (s.score < 0) s.score = 0;                    // 점수는 0 아래로 안 내려간다
@@ -11757,13 +11773,16 @@ window._dodgePaint = function (s) {
       + (it.y / 100 * H).toFixed(1) + 'px;width:' + px(D.ITEM_W).toFixed(1) + 'px;height:'
       + px(D.ITEM_W).toFixed(1) + 'px;' + window._dodgeKindCss[it.kind] + '"></div>';
   }
+  // ★그리는 크기·자리를 **판정과 같은 상수**에서 뽑는다. 예전엔 72px·0.88 을 따로 적어둬서
+  //   판정(논리 단위)과 그림(픽셀)이 어긋났고, 그게 "안 닿았는데 죽는다"의 절반이었다.
+  const chH = Math.round(D.PLAYER_H / 100 * H);
   let ch = '';
   try {
     const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
-    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, 72, s.face) || '';
+    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, chH, s.face) || '';
   } catch (e) {}
   html += '<div style="position:absolute;left:' + px(s.x).toFixed(1) + 'px;top:'
-    + (0.88 * H).toFixed(1) + 'px;transform:translate(-50%,-100%)">' + ch + '</div>';
+    + (D.PLAYER_Y / 100 * H).toFixed(1) + 'px;transform:translate(-50%,-100%)">' + ch + '</div>';
   host.innerHTML = html;
   const sc = document.getElementById('dodge-score');
   if (sc) sc.textContent = Math.floor(s.score);
