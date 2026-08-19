@@ -2117,7 +2117,13 @@
   <button onclick="window.dodgeClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
   <!-- 시작화면 (대표 8-19). ★누르면 바로 시작하지 않는다 — 처음 하는 사람은 조작을 모른다.
        게임 화면을 살짝 흐린 배경으로 깔고 그 위에 난이도·안내·시작을 얹는다. -->
-  <div id="dodge-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background:rgba(5,7,12,.72);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:26px;text-align:center">
+  <div id="dodge-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background:#05070c;flex-direction:column;align-items:center;justify-content:flex-end;gap:16px;padding:26px;text-align:center;overflow:hidden">
+    <!-- ★타이틀 그림은 **화면 전체 배경**이다 (대표 8-19: "풀배경으로 해야 위에 from 머피월드가 붙지").
+         정사각 카드로 넣었던 게 틀렸다 — 그러면 로고·버튼이 그림 밖에 떠 있게 된다. -->
+    <div id="dodge-art-bg" style="display:none;position:absolute;inset:0;background:center/cover no-repeat;pointer-events:none"></div>
+    <!-- 아래쪽 가림막 — 그림 위에 글자·버튼이 앉으므로 아래를 눌러 읽히게 한다.
+         (그림을 통째로 어둡게 덮으면 애써 뽑은 그림이 죽는다. 아래만 눌러야 위쪽 제목이 산다) -->
+    <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(5,7,12,0) 34%,rgba(5,7,12,.62) 62%,rgba(5,7,12,.9) 100%)"></div>
     <!-- ★'from MURPYWORLD' — 기존 로고 에셋(char/ui/ui_logo.png)을 그대로 얹는다 (대표 8-19).
          AI 로 글자를 그리게 하면 깨지고 브랜드도 안 맞는다. DOM 이라 항상 또렷하고,
          나중에 다른 게임 타이틀에도 그대로 재사용된다. -->
@@ -2127,8 +2133,7 @@
     </div>
     <!-- ★두 장으로 나눈다 (대표 8-19): ①타이틀 -> ②설명 -> 게임.
          한 장에 다 넣으면 타이틀 아트가 작아지고 설명도 묻힌다. -->
-    <div id="dodge-pane-title" class="dodge-pane" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%">
-      <div id="dodge-title-art" style="display:none;width:100%;max-width:300px;aspect-ratio:1/1;background:center/contain no-repeat;border-radius:16px"></div>
+    <div id="dodge-pane-title" class="dodge-pane" style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%;margin-top:auto">
       <div id="dodge-title-txt" style="font-size:24px;font-weight:900;color:#fff;letter-spacing:-.5px">덤벨 피하기</div>
       <div style="width:100%;max-width:280px">
         <div style="font-size:11.5px;color:rgba(255,255,255,.45);margin-bottom:7px;font-weight:700">난이도</div>
@@ -6186,38 +6191,36 @@ window.mwPortal = function () {
      "차례로 자리를 잡는" 느낌을 만든다. 게임 시작화면은 이 한 박자가 인상을 정한다. */
 @keyframes dodgeScreenIn{from{opacity:0}to{opacity:1}}
 @keyframes dodgePaneIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
-/* ★두둥쾅 — 타이틀이 크게 들이닥쳤다가 착 내려앉는다 (대표 8-19).
-   1.45배로 흐릿하게 들어와 -> .94 로 지나쳐 눌렸다가 -> 1.04 로 튕기고 -> 1 에 안착.
-   지나쳤다 돌아오는 이 한 번이 '쾅' 을 만든다. 그냥 커지기만 하면 밋밋하다. */
-@keyframes dodgeArtPunch{
-  0%{opacity:0;transform:scale(1.45)}
-  50%{opacity:1;transform:scale(.94)}
-  72%{transform:scale(1.05)}
-  86%{transform:scale(.985)}
-  100%{transform:scale(1)}
+/* ★등장 = 확대 -> 축소 -> 정지 (대표 8-19 2차).
+   1차에 튕김(overshoot)과 화면 흔들림을 넣었더니 "팍! 끊기는 느낌"이라 반려됐다.
+   튕기지 않는다. 되돌아오지 않는다. **한 방향으로 천천히 줄어들다 멈춘다.**
+   ease-out 계열(끝이 아주 느린 곡선)이라 마지막에 스르르 서는 느낌이 난다. */
+@keyframes dodgeArtIn{
+  0%{opacity:0;transform:scale(1.22)}
+  35%{opacity:1}
+  100%{opacity:1;transform:scale(1)}
 }
-/* 타이틀이 내려앉는 순간 화면이 한 번 '쿵' 흔들린다 */
-@keyframes dodgeThud{0%,54%{transform:translateY(0)}60%{transform:translateY(5px)}68%{transform:translateY(-2px)}76%,100%{transform:translateY(0)}}
 #dodge-start-screen.in{animation:dodgeScreenIn .34s ease both}
-#dodge-pane-title.in{animation:dodgeThud .72s ease both}
-.dodge-pane.in > *{animation:dodgePaneIn .42s cubic-bezier(.2,.8,.25,1) both}
-/* ★나머지는 타이틀이 착지한 **뒤에** 차례로 붙는다 — 두둥(그림) 쾅(나머지) */
-.dodge-pane.in > *:nth-child(1){animation-delay:.02s}
-.dodge-pane.in > *:nth-child(2){animation-delay:.09s}
-.dodge-pane.in > *:nth-child(3){animation-delay:.16s}
-.dodge-pane.in > *:nth-child(4){animation-delay:.23s}
-.dodge-pane.in > *:nth-child(5){animation-delay:.30s}
-.dodge-pane.in > *:nth-child(6){animation-delay:.36s}
-#dodge-pane-title.in > *{animation-delay:.44s}
-#dodge-pane-title.in > *:last-child{animation-delay:.56s}
-.dodge-pane.in > #dodge-title-art{animation:dodgeArtPunch .66s cubic-bezier(.2,.8,.25,1) both;animation-delay:0s}
+#dodge-art-bg.in{animation:dodgeArtIn 1.5s cubic-bezier(.16,.84,.24,1) both}
+.dodge-pane.in > *{animation:dodgePaneIn .5s cubic-bezier(.2,.8,.25,1) both}
+/* 그림이 자리를 잡는 동안 기다렸다가, 그 뒤에 차례로 올라온다 */
+#dodge-pane-howto.in > *:nth-child(1){animation-delay:.04s}
+#dodge-pane-howto.in > *:nth-child(2){animation-delay:.12s}
+#dodge-pane-howto.in > *:nth-child(3){animation-delay:.20s}
+#dodge-pane-howto.in > *:nth-child(4){animation-delay:.28s}
+#dodge-pane-howto.in > *:nth-child(5){animation-delay:.36s}
+.dodge-pane.in > *:nth-child(1){animation-delay:.55s}
+.dodge-pane.in > *:nth-child(2){animation-delay:.65s}
+.dodge-pane.in > *:nth-child(3){animation-delay:.75s}
+.dodge-pane.in > *:nth-child(4){animation-delay:.85s}
+.dodge-pane.in > *:nth-child(5){animation-delay:.95s}
+.dodge-pane.in > *:nth-child(6){animation-delay:1.05s}
 /* 난이도 버튼도 눌리는 느낌 (대표: 버튼 다 애니메이션) */
 .dodge-lv-btn{transition:transform .07s ease, background .12s ease, border-color .12s ease}
 .dodge-lv-btn:active{transform:translateY(2px) scale(.97)}
 @media (prefers-reduced-motion:reduce){
   .dodge-cta{animation:none}
-  #dodge-start-screen.in,#dodge-pane-title.in,.dodge-pane.in > *,
-  .dodge-pane.in > #dodge-title-art{animation:none}
+  #dodge-start-screen.in,#dodge-art-bg.in,.dodge-pane.in > *{animation:none}
 }
 #murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:mfg-in .36s cubic-bezier(.2,.8,.25,1) both}
 .mfg-btn{transition:transform .12s ease}
@@ -11875,11 +11878,11 @@ window._dodgeCheckArt = function () {
 };
 window._dodgePaintStart = function () {
   window._dodgeCheckArt();
-  const art = document.getElementById('dodge-title-art');
+  const art = document.getElementById('dodge-art-bg');
   const txt = document.getElementById('dodge-title-txt');
   if (art && txt) {
     if (window._dodgeArt) {
-      art.style.backgroundImage = "url('char/game/dodge_title.png?v=1')";
+      art.style.backgroundImage = "url('char/game/dodge_title.png?v=2')";
       art.style.display = ''; txt.style.display = 'none';
     } else { art.style.display = 'none'; txt.style.display = ''; }
   }
@@ -11924,6 +11927,9 @@ window.dodgeOpen = function () {
   if (ss) { ss.style.display = 'flex'; ss.classList.remove('in'); void ss.offsetWidth; ss.classList.add('in'); }
   window._dodgeShowPane('dodge-pane-title');
   window._dodgePaintStart();
+  // 배경 그림도 등장 애니메이션을 다시 건다(확대 -> 축소 -> 정지)
+  const ab = document.getElementById('dodge-art-bg');
+  if (ab && window._dodgeArt) { ab.classList.remove('in'); void ab.offsetWidth; ab.classList.add('in'); }
   window._dodgeBind();
 };
 // 장을 보여주며 등장 애니메이션을 **다시 건다**.
