@@ -11787,12 +11787,16 @@ window.dodgePickLv = function (k) {
 // ★파일이 있는지 미리 받아서 확인한다 — 없으면 글자 제목 그대로 둔다(에셋 전에도 화면이 돈다).
 //   제목 글씨는 **그림 안에 AI 가 그린 것**을 쓰고, MURPYWORLD 로고만 우리 에셋을 얹는다(대표 8-19).
 window._dodgeArt = null;                 // null=아직 모름 / true=있음 / false=없음
+window._dodgeBgOk = false;               // 전용 인게임 배경이 있나
 window._dodgeCheckArt = function () {
   if (window._dodgeArt !== null) return;
   window._dodgeArt = false;
   const im = new Image();
   im.onload = function () { window._dodgeArt = true; window._dodgePaintStart(); };
   im.src = 'char/game/dodge_title.png?v=1';
+  const bgim = new Image();
+  bgim.onload = function () { window._dodgeBgOk = true; };
+  bgim.src = 'char/game/dodge_bg.png?v=1';
 };
 window._dodgePaintStart = function () {
   window._dodgeCheckArt();
@@ -11825,8 +11829,14 @@ window._dodgePaintStart = function () {
 // 화면을 연다 = **시작화면**을 띄운다. 바로 시작하지 않는다(대표 8-19).
 window.dodgeOpen = function () {
   const el = document.getElementById('dodge-screen'); if (!el) return;
+  // 전용 배경(char/game/dodge_bg.png)이 있으면 그걸 쓰고, 없으면 헬스장 필드로 떨어진다.
+  // ★전용 배경은 게임용으로 그려서 가운데가 비어 있다 → 떨어지는 물건이 잘 보인다.
+  //   그래서 흐리게 덮을 필요가 적어 opacity 도 올린다.
   const bg = document.getElementById('dodge-bg');
-  if (bg) bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')";
+  if (bg) {
+    if (window._dodgeBgOk) { bg.style.backgroundImage = "url('char/game/dodge_bg.png?v=1')"; bg.style.opacity = '.72'; }
+    else { bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')"; bg.style.opacity = '.45'; }
+  }
   document.getElementById('dodge-over').style.display = 'none';
   el.style.display = 'block';
   cancelAnimationFrame(window._dodgeRaf); window._dodgeRaf = 0;
