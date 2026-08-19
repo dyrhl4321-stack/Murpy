@@ -11780,7 +11780,7 @@ window.DODGE = {
   // ★일을 마치면 사라진다. 안 그러면 한 번 나온 뒤 영영 붙어 있다(대표: "언제 다시 없어짐").
   UNCLE_STAY: 16000,  // 못 잡으면 이만큼 있다가 올라가 사라진다
   UNCLE_AGAIN: 20000, // 사라진 뒤 이만큼 있다가 다시 온다(대표 8-19: 20초 간격)
-  UNCLE_OUT: 90,      // 사라질 때 올라가는 속도(빠르게)
+  UNCLE_OUT: 26,      // 사라질 때 올라가는 속도. ★느리게 — 빠르면 '도망'처럼 보인다(대표 8-19)
   UNCLE_HIT_W: 10,    // 잡히는 폭
   // ★★잡혀도 안 죽는다 — **깜빡이면서 느려진다** (대표 8-19).
   //   즉사로 두면 벽에 몰렸을 때 도망칠 데가 없어 억울하다(테스트가 실제로 그 상황을 잡아냈다).
@@ -11788,7 +11788,10 @@ window.DODGE = {
   //   즉 아재는 직접 죽이지 않고 **덤벨에 맞을 확률을 올린다.** 그게 더 무섭다.
   UNCLE_SLOW_MS: 3000,   // 잡히면 이만큼 느려진다(대표 8-19: 3초)
   UNCLE_SLOW_MUL: 0.45,  // 그동안의 속도 배율
-  UNCLE_BACK: 24,        // 잡은 뒤 아재가 물러나는 거리(연속으로 다시 안 잡히게)
+  // ★잡히면 **달라붙는다** (대표 8-19: "만지고 튀는 느낌이 아니라 옆에 달라붙어 꼼짝 못하게").
+  //   튕겨 올라가면 '스쳤나?' 싶고 벌을 받는 느낌이 안 난다. 훈수는 붙잡고 두는 것이다.
+  UNCLE_GRAB_OFF: 8,     // 붙잡는 동안 내 옆 이만큼에 붙어 같이 움직인다
+  UNCLE_BACK: 24,        // (미사용) 예전에 물러나던 거리
   GIFT_AT: 0,         // ★한정 오브젝트 기준점. 0 = 꺼짐. 대표가 몇 판 해본 뒤 정한다
   MAX_SCORE: 9999     // 이보다 큰 점수는 랭킹에서 버린다(조작 방어)
 };
@@ -11882,7 +11885,7 @@ window.dodgeTick = function (s, dt, targetX) {
   // ── 훈수충 아재 ──
   // 위에서 서서히 내려오며 내 x 를 따라온다. 일을 마치면 올라가 사라졌다가 다시 온다.
   if (s.alive && lv.uncleAt && !s.uncle && s.t >= (s.uncleNext || lv.uncleAt)) {
-    s.uncle = { x: s.x, y: D.UNCLE_Y0, born: s.t, out: false, ph: (s.t % 6283) / 1000 };
+    s.uncle = { x: s.x, y: D.UNCLE_Y0, born: s.t, out: false, grab: 0, side: -1, ph: (s.t % 6283) / 1000 };
   }
   if (s.alive && s.uncle) {
     const u = s.uncle;
@@ -11890,6 +11893,13 @@ window.dodgeTick = function (s, dt, targetX) {
       // 훈수 다 두고 올라간다
       u.y -= D.UNCLE_OUT * (dt / 1000);
       if (u.y < D.UNCLE_Y0 - 15) { s.uncle = null; s.uncleNext = s.t + D.UNCLE_AGAIN; }
+    } else if (u.grab) {
+      // ── 붙잡고 훈수 두는 중 ──
+      // 내 옆에 딱 붙어 **같이 움직인다.** 떠다님도 끌림도 없다 — 이때만 완전히 추종한다.
+      // 나는 이미 느려져 있어서(UNCLE_SLOW_MUL) 떼어내려 해도 잘 안 떨어진다.
+      u.x = Math.max(0, Math.min(D.W, s.x + u.side * D.UNCLE_GRAB_OFF));
+      u.y = D.PLAYER_Y - 2 + Math.sin(s.t / 200) * 1.2;
+      if (s.t >= u.grab + D.UNCLE_SLOW_MS) u.out = true;   // 훈수가 끝나야 놓아준다
     } else {
       // ★버블버블 유령처럼 **떠다닌다** (대표 8-19). 내려온 뒤엔 위아래로 살짝 흔들려서
       //   가만히 박혀 있지 않고 살아 있는 것처럼 보인다. 좌우는 아래에서 내 x 를 따라간다.
@@ -11906,7 +11916,9 @@ window.dodgeTick = function (s, dt, targetX) {
       if (!slowed && lowEnough && Math.abs(u.x - s.x) < (D.PLAYER_HIT_W + D.UNCLE_HIT_W) / 2) {
         s.slowUntil = s.t + D.UNCLE_SLOW_MS;
         s.hit = 'uncle';
-        u.out = true;                       // 한 마디 하고 올라간다
+        // 튕겨 나가지 않는다. 붙잡는다 — 내가 있던 쪽 옆에 붙어 훈수가 끝날 때까지 따라온다.
+        u.grab = s.t;
+        u.side = (u.x <= s.x) ? -1 : 1;
       } else if (s.t - u.born > D.UNCLE_STAY) {
         u.out = true;                       // 못 잡으면 알아서 물러난다
       }
