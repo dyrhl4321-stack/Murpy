@@ -2113,6 +2113,13 @@
        터치는 전부 #dodge-screen 이 직접 받게 한다. -->
   <div id="dodge-bg" style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat;image-rendering:pixelated;opacity:.45;pointer-events:none"></div>
   <div id="dodge-field" style="position:absolute;inset:0;pointer-events:none"></div>
+  <!-- ★아재와 내 캐릭터는 **고정 DOM** 이다 (대표 8-19: "아재도 깜빡거린다").
+       #dodge-field 는 매 프레임 innerHTML 을 갈아끼우는데, 거기에 두면 그림이 매번
+       다시 그려져 깜빡인다. 떨어지는 물건은 어차피 매번 바뀌니 그대로 두고,
+       계속 살아 있는 둘만 밖으로 뺀다. -->
+  <div id="dodge-uncle" style="display:none;position:absolute;pointer-events:none"></div>
+  <div id="dodge-me" style="position:absolute;pointer-events:none"></div>
+  <div id="dodge-nag" style="display:none;position:absolute;transform:translate(-50%,-100%);white-space:nowrap;background:#fff;color:#10131c;border:2px solid #05070c;padding:3px 8px;font-size:11px;font-weight:700;font-family:'Galmuri11',sans-serif;pointer-events:none"></div>
   <div style="position:absolute;left:12px;top:12px;z-index:5;font-size:15px;color:#fff;text-shadow:0 2px 4px #000"><span id="dodge-score">0</span></div>
   <button onclick="window.dodgeClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
   <!-- 시작화면 (대표 8-19). ★누르면 바로 시작하지 않는다 — 처음 하는 사람은 조작을 모른다.
@@ -11754,14 +11761,23 @@ window.DODGE = {
   ITEM_W: 16,         // 물건 그리는 폭
   P_DUMBBELL: 0.5, P_PROTEIN: 0.35,   // 나머지는 치킨
   SC_PROTEIN: 10, SC_CHICKEN: -15, SC_PER_SEC: 1,
-  // ★★훈수 아저씨 (대표 8-19). 상 난이도에서만 나온다.
+  // ★★훈수충 아재 (대표 8-19). 상 난이도에서만 나온다.
   //   왜 넣나: 밀도만 올려 어렵게 만들면 **피할 길 없는 배치가 무작위로** 나온다 = 운빨이다.
   //   죽어도 "내가 못했네"가 아니라 "저건 못 피하지"가 된다.
   //   아저씨는 어디 있는지 보이고 어디로 올지 읽힌다 → 대응이 실력이 된다.
   //   ★핵심은 "가만히 못 있게 만드는 것". 지금은 안전한 틈에 자리 잡고 버티는 게 최선인데,
   //     아저씨가 붙으면 계속 움직여야 한다. 움직이면서 피하는 게 진짜 실력이다.
   //   ★속도가 캐릭터(130)보다 한참 느리다 — 도망치면 반드시 벗어난다. 그래서 억울하지 않다.
-  UNCLE_SPEED: 42,    // 초당 이동
+  UNCLE_SPEED: 42,    // 초당 가로 이동(내 x 를 따라온다)
+  // ★★위에서 내려온다 (대표 8-19: "아저씨는 위에서 서서히 떨어지는 느낌으로").
+  //   바닥에서 걸어오게 했더니 **손가락이 캐릭터를 잡고 있어서 아재가 가려 안 보였다.**
+  //   위에서 내려오면 손가락 위쪽이라 계속 보이고, 다가오는 게 미리 읽힌다.
+  UNCLE_Y0: -25,      // 화면 위 바깥에서 시작
+  UNCLE_FALL: 13,     // 초당 내려오는 속도(느리게 — 보고 대응할 시간을 준다)
+  // ★일을 마치면 사라진다. 안 그러면 한 번 나온 뒤 영영 붙어 있다(대표: "언제 다시 없어짐").
+  UNCLE_STAY: 16000,  // 못 잡으면 이만큼 있다가 올라가 사라진다
+  UNCLE_AGAIN: 14000, // 사라진 뒤 이만큼 있다가 다시 온다
+  UNCLE_OUT: 90,      // 사라질 때 올라가는 속도(빠르게)
   UNCLE_HIT_W: 10,    // 잡히는 폭
   // ★★잡혀도 안 죽는다 — **깜빡이면서 느려진다** (대표 8-19).
   //   즉사로 두면 벽에 몰렸을 때 도망칠 데가 없어 억울하다(테스트가 실제로 그 상황을 잡아냈다).
@@ -11781,7 +11797,7 @@ window.DODGE = {
 //     대신 점수도 1.6 -> 2.5 배. 어려운 만큼 값이 나와야 고를 이유가 생긴다.
 //     ※하·중은 그대로 둔다 — 처음 하는 사람이 붙을 자리가 있어야 한다.
 window.DODGE_LV = {
-  //   ★8-19 3차: 상에 훈수 아저씨를 넣으면서 **밀도를 되돌린다**(gap .42 -> .62, fall 1.75 -> 1.5).
+  //   ★8-19 3차: 상에 훈수충 아재를 넣으면서 **밀도를 되돌린다**(gap .42 -> .62, fall 1.75 -> 1.5).
   //     둘 다 두면 '운빨 + 아저씨'가 된다. 물건은 줄이고 압박은 아저씨가 만든다.
   //   uncleAt = 아저씨가 나오는 시각(ms). 0 이면 안 나온다.
   easy: { key: 'easy', name: '하', gap: 1.35, fall: 0.85, mul: 0.7, uncleAt: 0 },
@@ -11797,7 +11813,7 @@ window.dodgeNew = function (seed, lvKey) {
   const lv = window.DODGE_LV[lvKey] || window.DODGE_LV.mid;
   return { t: 0, score: 0, x: window.DODGE.W / 2, alive: true, items: [],
            spawnAt: window.DODGE.GAP0 * lv.gap, rnd: (seed >>> 0) || 1, hit: null, face: 'down',
-           lv: lv.key, uncle: null, slowUntil: 0 };
+           lv: lv.key, uncle: null, uncleNext: 0, slowUntil: 0 };
 };
 // dt = 지난 ms, targetX = 손가락의 논리 x(0~W) | null(입력 없음)
 // ★손가락 추종 방식이다(대표 8-19 확정). 탭투워크는 도착까지 걸리는 시간 때문에
@@ -11860,22 +11876,35 @@ window.dodgeTick = function (s, dt, targetX) {
     }
     if (it.y > 110) s.items.splice(i, 1);              // 바닥 밑으로 나간 것은 즉시 버린다
   }
-  // ── 훈수 아저씨 ──
-  if (s.alive && lv.uncleAt && s.t >= lv.uncleAt && !s.uncle) {
-    // 내가 있는 쪽의 **반대편**에서 걸어 들어온다. 바로 옆에서 튀어나오면 억울하다.
-    s.uncle = { x: (s.x < D.W / 2) ? (D.W + 10) : -10 };
+  // ── 훈수충 아재 ──
+  // 위에서 서서히 내려오며 내 x 를 따라온다. 일을 마치면 올라가 사라졌다가 다시 온다.
+  if (s.alive && lv.uncleAt && !s.uncle && s.t >= (s.uncleNext || lv.uncleAt)) {
+    s.uncle = { x: s.x, y: D.UNCLE_Y0, born: s.t, out: false };
   }
   if (s.alive && s.uncle) {
-    const step = D.UNCLE_SPEED * (dt / 1000);
-    const d = s.x - s.uncle.x;
-    if (Math.abs(d) <= step) s.uncle.x = s.x;
-    else s.uncle.x += (d < 0 ? -step : step);
-    // 이미 느려진 동안에는 다시 안 잡힌다 — 안 그러면 붙어서 영영 못 움직인다
-    if (!slowed && Math.abs(s.uncle.x - s.x) < (D.PLAYER_HIT_W + D.UNCLE_HIT_W) / 2) {
-      s.slowUntil = s.t + D.UNCLE_SLOW_MS;
-      s.hit = 'uncle';
-      // 훈수 한 마디 하고 물러난다. 안 물러나면 느려진 나를 계속 따라붙는다
-      s.uncle.x += (s.uncle.x < s.x ? -D.UNCLE_BACK : D.UNCLE_BACK);
+    const u = s.uncle;
+    if (u.out) {
+      // 훈수 다 두고 올라간다
+      u.y -= D.UNCLE_OUT * (dt / 1000);
+      if (u.y < D.UNCLE_Y0 - 15) { s.uncle = null; s.uncleNext = s.t + D.UNCLE_AGAIN; }
+    } else {
+      // ★버블버블 유령처럼 **떠다닌다** (대표 8-19). 내려온 뒤엔 위아래로 살짝 흔들려서
+      //   가만히 박혀 있지 않고 살아 있는 것처럼 보인다. 좌우는 아래에서 내 x 를 따라간다.
+      u.y = Math.min(D.PLAYER_Y, u.y + D.UNCLE_FALL * (dt / 1000));
+      if (u.y >= D.PLAYER_Y - 0.5) u.y = D.PLAYER_Y - 3 + Math.sin(s.t / 260) * 3;
+      const step = D.UNCLE_SPEED * (dt / 1000);
+      const d = s.x - u.x;
+      if (Math.abs(d) <= step) u.x = s.x; else u.x += (d < 0 ? -step : step);
+      // 내 몸통 높이까지 내려왔고 가로도 겹치면 잡힌다.
+      // ★느려진 동안에는 다시 안 잡힌다 — 안 그러면 붙어서 영영 못 움직인다.
+      const lowEnough = u.y >= D.PLAYER_Y - D.PLAYER_H;
+      if (!slowed && lowEnough && Math.abs(u.x - s.x) < (D.PLAYER_HIT_W + D.UNCLE_HIT_W) / 2) {
+        s.slowUntil = s.t + D.UNCLE_SLOW_MS;
+        s.hit = 'uncle';
+        u.out = true;                       // 한 마디 하고 올라간다
+      } else if (s.t - u.born > D.UNCLE_STAY) {
+        u.out = true;                       // 못 잡으면 알아서 물러난다
+      }
     }
   }
   if (s.alive) s.score += D.SC_PER_SEC * lv.mul * (dt / 1000);
@@ -11926,12 +11955,22 @@ window.dodgePickLv = function (k) {
 //   → 그림이 도착하면 이 함수를 다시 불러 칠한다. 화면이 열려 있어도 그 자리에서 바뀐다.
 window._dodgeApplyBg = function () {
   const bg = document.getElementById('dodge-bg'); if (!bg) return;
-  if (window._dodgeBgOk) {
-    bg.style.backgroundImage = "url('char/game/dodge_bg.jpg?v=1')"; bg.style.opacity = '.62';
-  } else {
-    bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')"; bg.style.opacity = '.45';
-  }
+  // ★★탐지에 기대지 않는다. 파일이 있는 걸 아는데 "미리 받아보고 있으면 쓴다"로 만들었더니
+  //   타이밍에 따라 옛 필드가 그대로 남았다(대표 8-19: "아직 예전 배경이잖아").
+  //   그냥 **새 배경을 쓴다.** 정말 못 받았을 때만 onerror 로 옛 필드로 떨어진다.
+  bg.style.backgroundImage = "url('char/game/dodge_bg.jpg?v=2')";
+  bg.style.opacity = '.62';
 };
+// 새 배경을 못 받으면(파일 없음·네트워크) 그때만 옛 필드로 떨어진다
+(function () {
+  if (typeof Image === 'undefined') return;      // node 하네스에서 이 블록을 eval 한다
+  const probe = new Image();
+  probe.onerror = function () {
+    const bg = document.getElementById('dodge-bg'); if (!bg) return;
+    bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')"; bg.style.opacity = '.45';
+  };
+  probe.src = 'char/game/dodge_bg.jpg?v=2';
+})();
 window._dodgeArt = null;                 // null=아직 모름 / true=있음 / false=없음
 window._dodgeBgOk = false;               // 전용 인게임 배경이 있나
 window._dodgeCheckArt = function () {
@@ -11947,9 +11986,6 @@ window._dodgeCheckArt = function () {
     window._dodgePaintStart();
   };
   im.src = 'char/game/dodge_title.png?v=2';
-  const bgim = new Image();
-  bgim.onload = function () { window._dodgeBgOk = true; window._dodgeApplyBg(); };
-  bgim.src = 'char/game/dodge_bg.jpg?v=1';   // 배경은 투명이 필요 없다 → JPEG (436KB -> 66KB)
   const um = new Image();
   um.onload = function () { window._dodgeUncleArt = true; };
   um.src = 'char/game/uncle.png?v=1';
@@ -12052,6 +12088,13 @@ window.dodgeHowto = function () {
 window.dodgeGo = function () {
   const ss = document.getElementById('dodge-start-screen'); if (ss) ss.style.display = 'none';
   document.getElementById('dodge-over').style.display = 'none';
+  // 고정 DOM 의 기억을 지운다 — 안 지우면 이전 판의 방향·프레임이 남는다
+  ['dodge-me', 'dodge-uncle', 'dodge-nag'].forEach(function (id) {
+    const e = document.getElementById(id);
+    if (e) { e._face = null; e._fr = null; e._t = null; e._hurt = null; e.classList.remove('dodge-hurt'); }
+  });
+  const _un = document.getElementById('dodge-uncle'); if (_un) _un.style.display = 'none';
+  const _ng = document.getElementById('dodge-nag'); if (_ng) _ng.style.display = 'none';
   window._dodgeS = window.dodgeNew(Date.now(), window._dodgeLv);
   window._dodgeTargetX = null; window._dodgeLast = 0;
   cancelAnimationFrame(window._dodgeRaf);
@@ -12125,36 +12168,67 @@ window._dodgePaint = function (s) {
     const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
     if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, chH, s.face) || '';
   } catch (e) {}
-  // ★훈수충 아재. 그림(char/game/uncle.png)이 있으면 쓰고, 없으면 색 덩어리로 돈다 —
-  //   에셋을 기다리느라 판정을 못 보면 안 된다.
-  if (s.uncle) {
-    // 그림 비율 62:132 을 지킨다. 폭을 판정폭에 억지로 맞추면 아저씨가 홀쭉해진다
-    const uh = chH * 1.08, uw = uh * (62 / 132);
-    // 시트는 **오른쪽을 보고 있다.** 아재가 내 왼쪽에 있으면 오른쪽으로 가는 중이니 그대로,
-    // 내 오른쪽에 있으면 왼쪽으로 가는 중이니 뒤집는다.
-    const face = (s.uncle.x <= s.x) ? '' : 'transform:scaleX(-1);';
-    // ★그림은 걷기 3프레임 가로 스트립이다(62x132 x3). 시간으로 칸을 고른다.
-    //   프레임을 s.t 로 정해야 화면을 다시 그려도 안 흔들린다.
-    //   ★칸마다 따로 자르지 않고 3프레임 합집합 상자로 잘랐다 — 안 그러면 걸을 때 들썩인다.
-    const fr = Math.floor(s.t / 180) % 3;
-    const body = window._dodgeUncleArt
-      ? "background:url('char/game/uncle.png?v=1') no-repeat;background-size:300% 100%;"
-        + 'background-position:' + (fr * 50) + '% 0;'
-      : 'background:radial-gradient(circle at 50% 42%, #d8a15f 0%, #a9713a 62%, transparent 72%);border-radius:44% 44% 38% 38%;';
-    // 말풍선 — 3.2초마다 한 마디씩. s.t 로 정해서 프레임마다 안 흔들린다
-    const nag = window._DODGE_NAG[Math.floor(s.t / 3200) % window._DODGE_NAG.length];
-    html += '<div style="position:absolute;left:' + px(s.uncle.x).toFixed(1) + 'px;top:'
-      + (D.PLAYER_Y / 100 * H).toFixed(1) + 'px;transform:translate(-50%,-100%);'
-      + 'width:' + uw.toFixed(1) + 'px;height:' + uh.toFixed(1) + 'px;' + body + face + '"></div>'
-      + '<div style="position:absolute;left:' + px(s.uncle.x).toFixed(1) + 'px;top:'
-      + (D.PLAYER_Y / 100 * H - uh - 8).toFixed(1) + 'px;transform:translate(-50%,-100%);'
-      + 'white-space:nowrap;background:#fff;color:#10131c;border:2px solid #05070c;padding:3px 8px;'
-      + 'font-size:11px;font-weight:700;font-family:\'Galmuri11\',sans-serif">' + nag + '</div>';
+  host.innerHTML = html;                      // 떨어지는 물건만 매 프레임 다시 그린다
+
+  // ── 내 캐릭터 (고정 DOM) ──
+  const meEl = document.getElementById('dodge-me');
+  if (meEl) {
+    // 그림은 방향이 바뀔 때만 다시 만든다 — 매 프레임 만들면 깜빡인다
+    if (meEl._face !== s.face) { meEl.innerHTML = ch; meEl._face = s.face; }
+    meEl.style.left = px(s.x).toFixed(1) + 'px';
+    meEl.style.top = (D.PLAYER_Y / 100 * H).toFixed(1) + 'px';
+    meEl.style.transform = 'translate(-50%,-100%)';
+    const hurt = s.slowUntil > s.t;
+    if (meEl._hurt !== hurt) { meEl.classList.toggle('dodge-hurt', hurt); meEl._hurt = hurt; }
   }
-  const hurt = (s.slowUntil > s.t) ? ' class="dodge-hurt"' : '';
-  html += '<div' + hurt + ' style="position:absolute;left:' + px(s.x).toFixed(1) + 'px;top:'
-    + (D.PLAYER_Y / 100 * H).toFixed(1) + 'px;transform:translate(-50%,-100%)">' + ch + '</div>';
-  host.innerHTML = html;
+
+  // ── 훈수충 아재 (고정 DOM) ──
+  const unEl = document.getElementById('dodge-uncle');
+  const nagEl = document.getElementById('dodge-nag');
+  if (unEl) {
+    if (!s.uncle) { unEl.style.display = 'none'; if (nagEl) nagEl.style.display = 'none'; }
+    else {
+      // ★크기 — 우리 캐릭터 칸(141x224)엔 좌우 여백이 있는데 아재는 딱 맞게 잘라서,
+      //   같은 높이면 더 홀쭉해 보인다(대표 8-19: "왜 이렇게 작냐").
+      //   높이를 1.4배로 키우면 폭이 캐릭터와 비슷해지면서 '덩치 큰 어른'으로 읽힌다.
+      // ★캐릭터와 같은 덩치로 맞춘다(대표 8-19). 우리 캐릭터 칸(141x224)엔 좌우 여백이 있는데
+      //   아재는 딱 맞게 잘라서, 같은 높이로 그리면 더 홀쭉해 보인다.
+      //   1.25배로 그리면 **폭이 캐릭터와 거의 같아지고** 어른답게 조금 더 크다.
+      const uh = chH * 1.25, uw = uh * (62 / 132);
+      // ★transform 을 **한 번에** 쓴다. 두 번 쓰면 뒤엣것이 앞엣것을 덮어써서
+      //   자리 잡는 translate 가 날아가고 아재가 캐릭터 아래로 밀린다(대표 8-19 지적).
+      // ★정면 걷기 프레임이라 좌우를 뒤집지 않는다 — 위에서 이쪽을 보고 내려온다.
+      const flip = '';
+      unEl.style.display = '';
+      unEl.style.width = uw.toFixed(1) + 'px';
+      unEl.style.height = uh.toFixed(1) + 'px';
+      unEl.style.left = px(s.uncle.x).toFixed(1) + 'px';
+      unEl.style.top = (s.uncle.y / 100 * H).toFixed(1) + 'px';
+      unEl.style.transform = 'translate(-50%,-100%)' + flip;
+      if (window._dodgeUncleArt) {
+        if (!unEl._art) {
+          unEl.style.background = "url('char/game/uncle.png?v=1') no-repeat";
+          unEl.style.backgroundSize = '300% 100%';
+          unEl.style.borderRadius = '';
+          unEl._art = true;
+        }
+        const fr = Math.floor(s.t / 180) % 3;      // 걷기 3프레임
+        if (unEl._fr !== fr) { unEl.style.backgroundPosition = (fr * 50) + '% 0'; unEl._fr = fr; }
+      } else if (!unEl._ph) {
+        unEl.style.background = 'radial-gradient(circle at 50% 42%, #d8a15f 0%, #a9713a 62%, transparent 72%)';
+        unEl.style.borderRadius = '44% 44% 38% 38%';
+        unEl._ph = true;
+      }
+      // 훈수 말풍선 — 3.2초마다 한 마디. 글자가 바뀔 때만 건드린다
+      if (nagEl) {
+        const nag = window._DODGE_NAG[Math.floor(s.t / 3200) % window._DODGE_NAG.length];
+        if (nagEl._t !== nag) { nagEl.textContent = nag; nagEl._t = nag; }
+        nagEl.style.display = '';
+        nagEl.style.left = px(s.uncle.x).toFixed(1) + 'px';
+        nagEl.style.top = (s.uncle.y / 100 * H - uh - 8).toFixed(1) + 'px';
+      }
+    }
+  }
   const sc = document.getElementById('dodge-score');
   if (sc) sc.textContent = Math.floor(s.score);
 };
