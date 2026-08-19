@@ -11788,6 +11788,22 @@ window.dodgeFieldBtn = function (key) {
   b.onclick = function (e) { e.stopPropagation(); window.dodgeOpen(); };
   room.appendChild(b);
 };
+// 최고점만 갱신한다(매 판 쓰면 낭비다).
+// plays(총 판수)는 **'재밌는지'를 판정할 유일한 숫자**라 매 판 올린다 — 최고점만으로는
+// 한 번 하고 안 돌아온 건지 매일 하는 건지 구분이 안 된다.
+window.dodgeSave = async function (score) {
+  const user = auth.currentUser || window.currentUser; if (!user) return;
+  const n = Math.max(0, Math.min(window.DODGE.MAX_SCORE, Math.floor(score || 0)));
+  try {
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    const cur = ((snap.exists() && snap.data().games) || {}).dodge || {};
+    const upd = { 'games.dodge.plays': increment(1), 'games.dodge.lastAt': Date.now() };
+    if (n > (cur.best || 0)) upd['games.dodge.best'] = n;
+    await updateDoc(ref, upd);
+    window._hofCache = null;                 // 최고점이 바뀌었을 수 있다 → 랭킹을 다시 읽게 한다
+  } catch (e) { console.warn('dodgeSave', e); }
+};
 // ===== 덤벨 피하기 끝 =====
 // ===== 닉네임 중복 검사 =====
 // 지금까지 검사가 아예 없었다(온보딩은 maxlength=10 과 '2자 이상'만 봤다) — 같은 닉을
@@ -11843,7 +11859,16 @@ window.HOF_KINDS = {
   host:    { label: '스쿼드장', unit: '회',
              get: function (u) { return (u.hostStats || {}).hosted || 0; },
              sub: function (u) { const c = (u.hostStats || {}).completed || 0; return c ? '완료 ' + c + '회' : ''; } },
-  attend:  { label: '스쿼드 참가', unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).squad || 0; } }
+  // ★탭이 5개가 되면서 '스쿼드 참가'가 잘린다 → '참가'로 줄인다
+  attend:  { label: '참가', unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).squad || 0; } },
+  // ★게임 탭 (대표 8-19 지정). 나중에 테니스·골프가 붙을 자리다 — game 이름을 머리글에 쓴다.
+  //   ※말이 안 되는 점수는 버린다. 랭킹은 남에게 보이는 자리라, 큰 수를 한 번 써넣고
+  //     그 탭을 영구 점유하는 것을 막는다. 돈이 안 걸려도 이 정도는 한다.
+  dodge:   { label: '게임', unit: '점', game: '덤벨 피하기',
+             get: function (u) {
+               const n = ((u.games || {}).dodge || {}).best || 0;
+               return (n > 0 && n <= window.DODGE.MAX_SCORE) ? n : 0;
+             } }
 };
 // 줄 세우기. 0회·탈퇴·닉네임 없음·대표 계정은 뺀다.
 // 동점은 **닉네임 가나다순** — 무작위면 볼 때마다 순서가 바뀌어 등수가 신뢰를 잃는다.
@@ -11909,7 +11934,10 @@ window.loadHofPanel = async function () {
   listEl.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">불러오는 중…</div>';
   const data = await window.loadHof();
   const mEl = document.getElementById('hof-month');
-  if (mEl) mEl.textContent = (window._hofTab === 'host') ? '누적' : data.month.replace('-', '년 ') + '월';
+  // 스쿼드장(누적)·게임(최고점)은 월 개념이 없다 — '이번 달'이라고 적으면 거짓말이 된다
+  const _kd = window.HOF_KINDS[window._hofTab] || {};
+  if (mEl) mEl.textContent = _kd.game ? _kd.game
+         : (window._hofTab === 'host' ? '누적' : data.month.replace('-', '년 ') + '월');
   const kind = window._hofTab, def = window.HOF_KINDS[kind], rows = data.rows[kind] || [];
   const myUid = (window.currentUser || {}).uid || '';
   if (!rows.length) {
