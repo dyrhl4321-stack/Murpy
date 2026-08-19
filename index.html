@@ -16480,9 +16480,40 @@ window.submitFeedPost = async function() {
     const formData = new FormData();
     formData.append('image', file, 'photo.jpg'); // 이미 크롭+JPEG 압축된 blob — 재압축 불필요(속도)
     formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
-    const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
-    const json = await res.json();
-    if (!json.success) { showToast('사진 업로드 실패'); restore(); return; }
+    // ★여기만 타임아웃도 오류 안내도 없었다 (대표 8-19 제보: 다른 폰에서 "Failed to fetch").
+    //   ①fetch 는 기본 타임아웃이 없다 → 응답이 안 오면 '공유 중...' 인 채로 하염없이 매달렸다.
+    //   ②실패하면 개발자 영어(Failed to fetch)가 그대로 토스트에 나갔다. 유저는 뭘 할지 모른다.
+    //   바로 위 uploadImgbb 는 이미 둘 다 하고 있었는데 이 경로만 빠져 있었다.
+    //   ※Failed to fetch = 서버가 거절한 게 아니라 **요청이 출발조차 못 한 것**이다
+    //     (네트워크 끊김 / DNS / 인앱브라우저 차단). 그래서 안내가 서로 달라야 한다.
+    let res;
+    {
+      const ac = ('AbortController' in window) ? new AbortController() : null;
+      const timer = ac ? setTimeout(function () { ac.abort(); }, 30000) : null;
+      try {
+        res = await fetch('https://api.imgbb.com/1/upload',
+          Object.assign({ method: 'POST', body: formData }, ac ? { signal: ac.signal } : {}));
+      } catch (e) {
+        if (timer) clearTimeout(timer);
+        const inApp = !!(window._isInApp && window._isInApp());
+        // ★"네트워크 연결 실패"라고만 쓰면 **거짓말이 될 수 있다.** 2026-08-19 에 실제로 터진 건
+        //   imgBB 점검이었다 — 점검 페이지는 HTML 이고 CORS 헤더가 없어서 브라우저가 응답을
+        //   읽기 전에 막는다. 그러면 우리 쪽엔 '연결 실패'와 똑같이 보인다. 구분이 불가능하므로
+        //   **둘 다 포함하는 말**로 쓴다("사진 서버에 연결하지 못했어요").
+        showToast(e && e.name === 'AbortError'
+          ? '사진 서버가 30초 안에 응답하지 않아요 · 잠시 후 다시 시도해 주세요'
+          : ('사진 서버에 연결하지 못했어요 · 잠시 후 다시 시도해 주세요'
+             + (inApp ? ' (안 되면 기본 브라우저에서 열어보세요)' : '')));
+        restore(); return;
+      }
+      if (timer) clearTimeout(timer);
+    }
+    let json = null;
+    try { json = await res.json(); } catch (e) { showToast('사진 업로드 실패 · 응답을 읽지 못했어요 (HTTP ' + res.status + ')'); restore(); return; }
+    if (!json || !json.success) {
+      showToast('사진 업로드 실패 · ' + ((json && json.error && (json.error.message || json.error)) || ('HTTP ' + res.status)));
+      restore(); return;
+    }
 
     let _totalCount = 0;
     try { const _fc = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid))); _totalCount = _fc.size + 1; } catch (e) {}
