@@ -11919,6 +11919,19 @@ window.dodgePickLv = function (k) {
 // 타이틀 아트가 들어오면 글자 제목 대신 그림을 쓴다.
 // ★파일이 있는지 미리 받아서 확인한다 — 없으면 글자 제목 그대로 둔다(에셋 전에도 화면이 돈다).
 //   제목 글씨는 **그림 안에 AI 가 그린 것**을 쓰고, MURPYWORLD 로고만 우리 에셋을 얹는다(대표 8-19).
+// 배경을 지금 상태대로 다시 칠한다.
+// ★★대표 8-19: "배경필드가 왜 갑자기 또 옛날 필드냐" — **경쟁 조건**이었다.
+//   dodgeOpen 이 배경을 정하는 시점엔 새 배경(dodge_bg.jpg)이 아직 로딩 중이라 _dodgeBgOk 가
+//   false 다. 확인은 그 뒤에 시작되는데 **한 번 정하면 다시 안 바꿔서** 첫 실행은 항상 옛 필드였다.
+//   → 그림이 도착하면 이 함수를 다시 불러 칠한다. 화면이 열려 있어도 그 자리에서 바뀐다.
+window._dodgeApplyBg = function () {
+  const bg = document.getElementById('dodge-bg'); if (!bg) return;
+  if (window._dodgeBgOk) {
+    bg.style.backgroundImage = "url('char/game/dodge_bg.jpg?v=1')"; bg.style.opacity = '.62';
+  } else {
+    bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')"; bg.style.opacity = '.45';
+  }
+};
 window._dodgeArt = null;                 // null=아직 모름 / true=있음 / false=없음
 window._dodgeBgOk = false;               // 전용 인게임 배경이 있나
 window._dodgeCheckArt = function () {
@@ -11935,7 +11948,7 @@ window._dodgeCheckArt = function () {
   };
   im.src = 'char/game/dodge_title.png?v=2';
   const bgim = new Image();
-  bgim.onload = function () { window._dodgeBgOk = true; };
+  bgim.onload = function () { window._dodgeBgOk = true; window._dodgeApplyBg(); };
   bgim.src = 'char/game/dodge_bg.jpg?v=1';   // 배경은 투명이 필요 없다 → JPEG (436KB -> 66KB)
   const um = new Image();
   um.onload = function () { window._dodgeUncleArt = true; };
@@ -11979,16 +11992,13 @@ window._dodgePaintStart = function () {
 // 화면을 연다 = **시작화면**을 띄운다. 바로 시작하지 않는다(대표 8-19).
 window.dodgeOpen = function () {
   const el = document.getElementById('dodge-screen'); if (!el) return;
+  window._dodgeCheckArt();          // 그림들을 먼저 확인 시작(첫 실행부터 제대로 뜨게)
   // 전용 배경(char/game/dodge_bg.png)이 있으면 그걸 쓰고, 없으면 헬스장 필드로 떨어진다.
   // ★★배경 그림은 **제대로 진하게** 받는다. 죽이는 건 여기서 한다 —
   //   그림을 흐리게 뽑으면 되돌릴 수 없다(날아간 디테일은 못 살린다).
   //   8-19 에 프롬프트에 "훨씬 연하게"라고 썼다가 아예 안 보이는 그림이 나왔다.
   //   ★이 숫자가 조절 손잡이다. 배경이 세서 물건이 묻히면 낮추고, 밋밋하면 올린다.
-  const bg = document.getElementById('dodge-bg');
-  if (bg) {
-    if (window._dodgeBgOk) { bg.style.backgroundImage = "url('char/game/dodge_bg.jpg?v=1')"; bg.style.opacity = '.62'; }
-    else { bg.style.backgroundImage = "url('char/fields/field_gym.png?v=1')"; bg.style.opacity = '.45'; }
-  }
+  window._dodgeApplyBg();
   document.getElementById('dodge-over').style.display = 'none';
   el.style.display = 'block';
   cancelAnimationFrame(window._dodgeRaf); window._dodgeRaf = 0;
