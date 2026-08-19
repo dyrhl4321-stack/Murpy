@@ -2112,7 +2112,15 @@
   <!-- 시작화면 (대표 8-19). ★누르면 바로 시작하지 않는다 — 처음 하는 사람은 조작을 모른다.
        게임 화면을 살짝 흐린 배경으로 깔고 그 위에 난이도·안내·시작을 얹는다. -->
   <div id="dodge-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background:rgba(5,7,12,.72);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:26px;text-align:center">
-    <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.5px">덤벨 피하기</div>
+    <!-- ★'from MURPYWORLD' — 기존 로고 에셋(char/ui/ui_logo.png)을 그대로 얹는다 (대표 8-19).
+         AI 로 글자를 그리게 하면 깨지고 브랜드도 안 맞는다. DOM 이라 항상 또렷하고,
+         나중에 다른 게임 타이틀에도 그대로 재사용된다. -->
+    <div style="position:absolute;left:14px;top:14px;display:flex;align-items:center;gap:5px;opacity:.62;pointer-events:none">
+      <span style="font-size:9px;color:#cfd6e6;letter-spacing:.5px">from</span>
+      <img src="char/ui/ui_logo.png?v=1" alt="MURPY WORLD" style="height:13px;width:auto;display:block">
+    </div>
+    <div id="dodge-title-art" style="display:none;width:100%;max-width:280px;aspect-ratio:1/1;background:center/contain no-repeat;border-radius:16px"></div>
+    <div id="dodge-title-txt" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.5px">덤벨 피하기</div>
     <!-- 무엇을 피하고 무엇을 먹는지 그림으로 먼저 보여준다. 글보다 빠르다 -->
     <div style="display:flex;gap:16px;align-items:center;justify-content:center">
       <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
@@ -11775,7 +11783,27 @@ window.dodgePickLv = function (k) {
   try { localStorage.setItem('dodge_lv', k); } catch (e) {}
   window._dodgePaintStart();
 };
+// 타이틀 아트가 들어오면 글자 제목 대신 그림을 쓴다.
+// ★파일이 있는지 미리 받아서 확인한다 — 없으면 글자 제목 그대로 둔다(에셋 전에도 화면이 돈다).
+//   제목 글씨는 **그림 안에 AI 가 그린 것**을 쓰고, MURPYWORLD 로고만 우리 에셋을 얹는다(대표 8-19).
+window._dodgeArt = null;                 // null=아직 모름 / true=있음 / false=없음
+window._dodgeCheckArt = function () {
+  if (window._dodgeArt !== null) return;
+  window._dodgeArt = false;
+  const im = new Image();
+  im.onload = function () { window._dodgeArt = true; window._dodgePaintStart(); };
+  im.src = 'char/game/dodge_title.png?v=1';
+};
 window._dodgePaintStart = function () {
+  window._dodgeCheckArt();
+  const art = document.getElementById('dodge-title-art');
+  const txt = document.getElementById('dodge-title-txt');
+  if (art && txt) {
+    if (window._dodgeArt) {
+      art.style.backgroundImage = "url('char/game/dodge_title.png?v=1')";
+      art.style.display = ''; txt.style.display = 'none';
+    } else { art.style.display = 'none'; txt.style.display = ''; }
+  }
   const row = document.getElementById('dodge-lv-row'); if (!row) return;
   row.innerHTML = ['easy', 'mid', 'hard'].map(function (k) {
     const lv = window.DODGE_LV[k], on = k === window._dodgeLv;
