@@ -104,3 +104,16 @@ assert(/dodgeGuestSave\(/.test(save) && /dodgeGuestMerge\(/.test(save),
 assert(/dodgeGuestSave\([\s\S]{0,200}?return;/.test(save),
   '게스트 보관 뒤 return 이 없다 → Firestore 코드로 흘러간다');
 console.log('  + dodgeSave 게스트 경로 OK');
+
+// 10) 게스트 닉네임 저장이 끝난 뒤 **어디로 갈지**를 부르는 쪽이 정할 수 있어야 한다
+//     (스쿼드에서 왔으면 스쿼드로, 게임에서 왔으면 게임으로)
+const gogo = grab(/window\._guestGoSquad = function[\s\S]*?\n\};/, '_guestGoSquad');
+assert(/_guestAfter/.test(gogo), '_guestGoSquad 에 콜백 훅이 없다 → 게임에서 와도 스쿼드로 간다');
+assert(/window\._guestAfter = null/.test(gogo), '콜백을 비우지 않는다 → 다음 번에 또 불린다');
+// 콜백이 없으면 지금 동작 그대로여야 한다(스쿼드 흐름 무영향)
+assert(/_sqInviteSid/.test(gogo), '스쿼드 흐름이 사라졌다');
+
+// 11) 승격 함수 — 옮기고 나면 폰 보관분을 비운다
+const pro = grab(/window\.dodgeGuestPromote = async function[\s\S]*?\n\};/, 'dodgeGuestPromote');
+assert(/dodgeGuestClear\(\)/.test(pro), '옮긴 뒤 폰 보관분을 안 비운다 → 두 벌이 남는다');
+console.log('  + 점수 승격·콜백 훅 OK');

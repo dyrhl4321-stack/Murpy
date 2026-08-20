@@ -702,6 +702,8 @@
   @keyframes mwCoachBob { 50% { transform:translateX(-50%) translateY(-4px) } }
   /* 같이 노는 방의 남의 캐릭터. 내 캐릭터와 같은 발밑 기준으로 앉는다. */
   .mw-rc { display:flex; flex-direction:column; align-items:center; }
+  .mw-rc-title { font-family:'Galmuri11',sans-serif; font-size:8.5px; white-space:nowrap; margin-bottom:1px;
+    text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c; }
   .mw-rc-bub { max-width:120px; text-align:center; line-height:1.45; background:#fff; color:#10131c;
     border:2px solid #05070c; padding:2px 6px; font-size:9.5px; font-weight:600; margin-bottom:3px;
     font-family:'Galmuri11',sans-serif; }
@@ -12606,6 +12608,32 @@ window.dodgeSave = async function (score, sec, lvKey) {
     window._hofCache = null;                 // 최고점이 바뀌었을 수 있다 → 랭킹을 다시 읽게 한다
   } catch (e) { console.warn('dodgeSave', e); }
 };
+// 폰에 들고 있던 게스트 점수를 지금 계정으로 옮긴다. 옮겼으면 true.
+// ★쓰기가 성공했을 때만 폰 보관분을 비운다 — 실패했는데 비우면 기록이 통째로 증발한다.
+window.dodgeGuestPromote = async function () {
+  const user = auth.currentUser || window.currentUser; if (!user) return false;
+  const g = window.dodgeGuestLoad();
+  if (!g || !(g.best > 0)) { window.dodgeGuestClear(); return false; }
+  try {
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    const cur = ((snap.exists() && snap.data().games) || {}).dodge || {};
+    const recs = (Array.isArray(g.recent) ? g.recent : [])
+      .concat(Array.isArray(cur.recent) ? cur.recent : [])
+      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); })
+      .slice(0, window.DODGE_RECS_MAX);
+    await updateDoc(ref, {
+      'games.dodge.best': Math.max(cur.best || 0, g.best || 0),
+      'games.dodge.plays': increment(g.plays || 1),
+      'games.dodge.recent': recs,
+      'games.dodge.lastAt': Date.now()
+    });
+  } catch (e) { console.warn('dodge promote', e); return false; }
+  window.dodgeGuestClear();
+  window._dodgeBest = Math.max(window._dodgeBest || 0, g.best || 0);
+  window._hofCache = null;                   // 최고점이 바뀌었을 수 있다 → 랭킹을 다시 읽게 한다
+  return true;
+};
 // 내 기록 장. ★한 판 끝난 그 순간에만 공유되면 기회가 한 번뿐이다 — 지난 신기록도
 //   언제든 다시 꺼내 공유할 수 있어야 바이럴이 된다(대표 8-20).
 window.dodgeRecs = async function () {
@@ -16913,7 +16941,7 @@ window.mwRoomInviteBtn = function (key) {
   if (!b) {
     b = document.createElement('button');
     b.id = 'mw-invite-chip'; b.className = 'mw-fieldchip';
-    b.style.top = '95px';
+    b.style.top = '9px';        // ★룸 **우측 상단**. 95px 는 어중간해서 눈에 안 들어왔다(대표 8-20)
     room.appendChild(b);
   }
   // ★회원 여부로 칩을 **만들지 말지** 정하면 안 된다. 첫 렌더 때는 currentUser 가 아직
@@ -16931,44 +16959,43 @@ window.mwRoomInviteBtn = function (key) {
 
 // 초대 카드 그림 — 카톡 썸네일용. 덤벨 피하기 기록 카드와 **같은 방식**이다.
 window._mwRoomCardImg = function (nick, cb) {
+  // ★빈 방 배경만 깔면 밋밋하다(대표 8-20). 같이 찍기 카드가 쓰는 _mwDrawRoom 을
+  //   그대로 써서 **내 가구·접지 그림자·내 캐릭터**를 담는다. 초대장이 곧 방 자랑이다.
   const W = 1080, H = 1350;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
-  const load = function (src) {
-    return new Promise(function (res) {
-      const im = new Image();
-      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
-      im.src = src;
-    });
-  };
-  Promise.all([load('char/fields/field_room.png?v=1'), load('char/ui/ui_logo.png?v=1')]).then(function (r) {
-    const bg = r[0], logo = r[1];
-    x.fillStyle = '#0e1320'; x.fillRect(0, 0, W, H);
-    if (bg) {
-      const k = Math.max(W / bg.width, H / bg.height);
-      x.imageSmoothingEnabled = false;                 // 픽셀 그림은 뭉개지 않는다
-      x.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
-    }
-    const g = x.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, 'rgba(5,7,12,.55)'); g.addColorStop(.45, 'rgba(5,7,12,.72)'); g.addColorStop(1, 'rgba(5,7,12,.95)');
-    x.fillStyle = g; x.fillRect(0, 0, W, H);
+  const PX = 60, PY = 66, PW = 960, PH = 1112;         // 인화지
+  const S = 900, SX = PX + 30, SY = PY + 30;           // 방(정사각)
+  x.fillStyle = '#05070c'; x.fillRect(0, 0, W, H);
+  x.save();
+  x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 26; x.shadowOffsetY = 10;
+  x.fillStyle = '#f4f1ea'; x.fillRect(PX, PY, PW, PH);
+  x.restore();
+  // 내 저장 좌표에 내 캐릭터를 세운다(방을 열지 않아도 카드가 만들어져야 한다)
+  const rp = window._myRoomPos || { tc: 7, tr: 8, face: 'down' };
+  const me = [{ nick: nick, character: window.getMyCharacter ? window.getMyCharacter() : null,
+                x: (rp.tc + 0.5) / 16 * 100, y: (Math.max(3, rp.tr) + 1) / 16 * 100 }];
+  window._mwDrawRoom(x, SX, SY, S, window._myRoom, me).then(function () {
     x.textAlign = 'center';
-    x.font = "44px 'Galmuri11',sans-serif"; x.fillStyle = '#7aa8ff';
-    x.fillText('머피룸 초대', W / 2, H / 2 - 90);
-    x.font = "76px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle = '#fff';
-    x.fillText(nick + '님의 방', W / 2, H / 2 + 20);
-    x.font = "40px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.7)';
-    x.fillText('놀러 오세요', W / 2, H / 2 + 96);
-    x.font = "36px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
-    x.fillText('murpy.app', W / 2, H - 96);
+    x.font = "34px 'Galmuri11',sans-serif"; x.fillStyle = '#7aa8ff';
+    x.fillText('머피룸 초대', W / 2, SY + S + 62);
+    x.font = "40px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle = '#20242e';
+    x.fillText(nick + '님의 방에 놀러 오세요', W / 2, SY + S + 114);
+    return new Promise(function (res) {
+      const im = new Image(); im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = 'char/ui/ui_logo.png?v=1';
+    });
+  }).then(function (logo) {
+    x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.85)';
+    x.font = "34px 'Galmuri11',sans-serif";
+    x.fillText('가입 없이 바로 입장 · murpy.app', W / 2, H - 58);
     if (logo) {
-      const lh = 46, lw = logo.width * lh / logo.height;
-      x.textAlign = 'left';
-      x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
-      x.fillText('from', 46, 76);
-      x.drawImage(logo, 130, 76 - lh + 10, lw, lh);
+      const lh = 42, lw = logo.width * lh / logo.height;
+      x.textAlign = 'left'; x.font = "28px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.8)';
+      x.fillText('from', 46, PY - 20);
+      x.drawImage(logo, 122, PY - 20 - lh + 9, lw, lh);
     }
-    cb(cv.toDataURL('image/jpeg', 0.9));
+    cb(cv.toDataURL('image/jpeg', 0.92));
   });
 };
 
@@ -16976,16 +17003,25 @@ window._mwRoomCardImg = function (nick, cb) {
 window.mwRoomShareLink = async function () {
   const url = window._mwRoomLink((auth.currentUser || {}).uid);
   const nick = window._mwMyNick || '머피';
+  // 보내고 나면 시트는 할 일이 끝났다 — 남아 있으면 또 눌러야 하나 싶어진다(대표 8-20)
+  const _close = function () { const e = document.getElementById('mw-room-invite'); if (e) e.remove(); };
   try {
-    if (navigator.share) { await navigator.share({ title: '머피룸 초대', text: nick + '님의 방에 놀러 오세요', url: url }); return; }
+    if (navigator.share) { await navigator.share({ title: '머피룸 초대', text: nick + '님의 방에 놀러 오세요', url: url }); _close(); return; }
     await navigator.clipboard.writeText(url);
-    showToast('초대 링크를 복사했어요');
+    showToast('초대 링크를 복사했어요'); _close();
   } catch (e) {
     if (e && e.name === 'AbortError') return;
     showToast('링크: ' + url);
   }
 };
 
+// 공유를 부르고 나면 초대 시트를 닫는다. ★공용 함수(mwShareKakao 등)는 안 건드린다 —
+//   다른 창이 같은 함수를 쓰고 있어서 거기 손대면 충돌한다.
+window._mwInviteThen = function (fn, arg) {
+  try { fn && fn(arg); } finally {
+    setTimeout(function () { const e = document.getElementById('mw-room-invite'); if (e) e.remove(); }, 350);
+  }
+};
 window.mwRoomInviteShare = function () {
   const me = auth.currentUser; if (!me) { window.memberGate && window.memberGate('초대하려면 로그인이 필요해요'); return; }
   const nick = window._mwMyNick || '머피';
@@ -16998,8 +17034,8 @@ window.mwRoomInviteShare = function () {
     + '<div style="font-size:17px;font-weight:800;margin-bottom:5px">' + nick + '님의 방</div>'
     + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:16px">최대 4명까지 같이 놀 수 있어요<br>머피가 없어도 가입 없이 들어와요</div>'
     + '<div class="mw-share">'
-    + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
-    + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 초대">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+    + '<button class="mw-sbtn" onclick="window._mwInviteThen(window.mwShareSheet)" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+    + '<button class="mw-sbtn mw-kk" onclick="window._mwInviteThen(window.mwShareKakao,this)" aria-label="카카오톡으로 초대">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
     + '<button class="mw-sbtn sv" onclick="window.mwRoomShareLink()" aria-label="링크 공유">' + (B.ln || '') + '<span>링크</span></button>'
     + '</div>'
     + '<button onclick="var e=document.getElementById(&quot;mw-room-invite&quot;);if(e)e.remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:15px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
@@ -17162,6 +17198,7 @@ window._mwRlSend = function () {
       nick: window._mwMyNick || '머피',
       guest: !!u.isAnonymous,
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+      aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       character: window.getMyCharacter ? window.getMyCharacter() : null,
       msg: window._mwRl.msg || null,
       shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
@@ -17207,16 +17244,34 @@ window._mwRlRender = function (all) {
       el.className = 'mw-rc'; el.dataset.uid = uid;
       el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
         + 'transition:left .18s linear, top .18s linear';
-      el.innerHTML = '<div class="mw-rc-bub" style="display:none"></div><div class="mw-rc-body"></div>'
-        + '<span class="mw-cfd-nick"></span>';
+      el.innerHTML = '<div class="mw-rc-bub" style="display:none"></div>'
+        + '<div class="mw-rc-title" style="display:none"></div>'
+        + '<div class="mw-rc-body"></div><span class="mw-cfd-nick"></span>';
       room.appendChild(el);
       c = chars[uid] = { el: el, cfg: '~', face: null, nick: null };
     }
-    const cj = JSON.stringify(v.character || null);
+    // ★아우라까지 키에 넣어야 켜고 끈 게 반영된다(_sqCharEl 이 같은 이유로 그렇게 한다)
+    const cj = JSON.stringify(v.character || null) + '|' + (v.aura || '');
     if (c.cfg !== cj || c.face !== v.face || c.h !== DH) {
       c.cfg = cj; c.face = v.face; c.h = DH;
       const face = v.face === 'down' ? undefined : v.face;
-      c.el.querySelector('.mw-rc-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, DH, face) : '';
+      const body = c.el.querySelector('.mw-rc-body');
+      body.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, DH, face) : '';
+      // ★발밑 아우라는 innerHTML 을 갈아치운 **뒤에** 얹는다 — 위 한 줄이 자식을 통째로 날린다.
+      const _aur = window._mwAurOf ? window._mwAurOf(uid, v.aura) : '';
+      window._mwAurApply && window._mwAurApply(body, _aur);
+      c.el.classList.toggle('mw-aur-on', !!_aur);
+    }
+    // 머리 위 칭호 — 남의 데이터라 카탈로그 검증 필수(textContent 라 주입은 안전)
+    const vt = window.mwValidTitle ? window.mwValidTitle(v.title || '') : '';
+    if (c.title !== vt) {
+      c.title = vt;
+      const te = c.el.querySelector('.mw-rc-title');
+      if (te) {
+        te.textContent = vt ? '<' + vt + '>' : '';
+        te.style.display = vt ? '' : 'none';
+        if (vt && window.mwTitleColor) te.style.color = window.mwTitleColor(vt);
+      }
     }
     const nk = String(v.nick || '머피') + (v.guest ? ' (손님)' : '');
     if (c.nick !== nk) {
@@ -17257,7 +17312,7 @@ window._mwRlRender = function (all) {
   if (together && !shotBtn) {
     shotBtn = document.createElement('button');
     shotBtn.id = 'mw-shot-chip'; shotBtn.className = 'mw-fieldchip';
-    shotBtn.style.top = '138px'; shotBtn.textContent = '같이 찍기';
+    shotBtn.style.top = '52px'; shotBtn.textContent = '같이 찍기';
     shotBtn.onclick = function (e) { e.stopPropagation(); window.mwRoomShot(); };
     room.appendChild(shotBtn);
   } else if (!together && shotBtn) { shotBtn.remove(); }
@@ -17651,6 +17706,10 @@ window.guestSaveNick = async function () {
 };
 window._guestGoSquad = function () {
   if (typeof dismissLanding === 'function') dismissLanding();
+  // ★부른 쪽이 '끝나고 어디로 갈지'를 정할 수 있게 한다 (덤벨 피하기에서 닉네임을 받는 경우).
+  //   안 정했으면 아래 스쿼드 흐름 그대로다 — 기존 동작은 한 글자도 안 바뀐다.
+  const after = window._guestAfter;
+  if (after) { window._guestAfter = null; try { after(); } catch (e) { console.warn('guest after', e); } return; }
   const sid = window._sqInviteSid;
   if (sid && window.openSquadDetail) setTimeout(function () { window.openSquadDetail(sid); }, 300);
 };
