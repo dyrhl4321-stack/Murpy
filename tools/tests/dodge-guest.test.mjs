@@ -199,3 +199,18 @@ assert(/documentElement\.style\.overflow = 'hidden'/.test(open), 'dodgeOpen 이 
 const close = grab(/window\.dodgeClose = function[\s\S]*?\n\};/, 'dodgeClose');
 assert(/documentElement\.style\.overflow = ''/.test(close), 'dodgeClose 가 스크롤 잠금을 안 푼다');
 console.log('  + 카톡 인앱 화면 높이·스크롤 잠금 OK');
+
+// 21) ★게임 링크로 들어왔으면 스쿼드 닉네임 시트를 띄우면 안 된다 (대표 8-20)
+const chk = grab(/async function checkAndSetNickname\(user\)[\s\S]*?\n\}/, 'checkAndSetNickname');
+assert(/if \(window\._dodgeFromLink\) return;/.test(chk),
+  '게임 링크로 들어와도 스쿼드 닉네임 시트가 뜬다');
+// guestAskNick 을 부르기 **전에** 빠져야 한다
+assert(chk.indexOf('_dodgeFromLink') < chk.indexOf('guestAskNick'),
+  '게임 방어선이 guestAskNick 뒤에 있다');
+
+// 22) ★UI 를 재사용해도 **문구는 그 화면 것**이어야 한다 (대표 8-20).
+//     "실명으로 적어주세요 · 참석 확인" 은 출첵이 있는 스쿼드에서만 맞는 말이다.
+const sheet = grab(/window\.guestAskNick = async function[\s\S]*?\n\};/, 'guestAskNick');
+assert(/\$\{window\._sqInviteSid \? `<div[^`]*실명/.test(sheet),
+  '실명 안내가 스쿼드일 때만 나오지 않는다 → 게임에서도 참석 확인 얘기가 뜬다');
+console.log('  + 스쿼드 시트 차단·문구 분리 OK');
