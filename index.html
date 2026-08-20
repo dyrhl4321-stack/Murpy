@@ -4457,6 +4457,8 @@ window.charMove = function (dx, dy) {
     poke:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M7 2h2v6h2v2h1v3H6v-1H4v-2H3V8h2v2h2z"/></svg>',
     chat:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/><path fill="#141a28" d="M4 5h2v2H4zM7 5h2v2H7zM10 5h2v2h-2z"/></svg>',
     face:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M6 2h4v4H6zM4 8h8v6H4z"/></svg>',
+    // 강퇴 = 문 + 밖으로 나가는 화살표. 붉은색은 되돌릴 수 없는 행동이라는 뜻이다.
+    kick:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 1h7v14H2zM7 7h1v2H7z"/><path fill="#E4472E" d="M11 7h4v2h-4zM12 5h2v2h-2zM12 9h2v2h-2z"/></svg>',
   };
   window.mwCharMenu = function () {
     const old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
@@ -17541,8 +17543,16 @@ window.mwRoomEnterSwitchAccount = async function () {
 window.MW_ROOM_CAP = 4;            // 주인 포함 정원
 window.MW_ROOM_MSG_MS = 6000;      // 말풍선이 떠 있는 시간
 window.mwRoomCountdownMs = 3200;
-window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
-window._mwRoomAlive = function (v) { return v && (Date.now() - (v.t || 0) < 90000); };
+window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, beatT: 0 };
+// ★★한번 들어온 사람은 **나가기를 누르기 전까지 필드에 남는다** (대표 8-20).
+//   예전엔 90초 동안 위치 전송이 없으면 지웠다 — 가만히 서 있기만 해도 남 화면에서 증발했다.
+//   메이플처럼 캐릭터가 계속 그 자리에 있어야 "사람이 사는 방"으로 읽히고, 처음 들어온
+//   사람이 "빈방이네" 하고 나가지 않는다. 잠수는 잠수로 보이면 되지 사라지면 안 된다.
+//   여기 남은 12시간은 **청소용**이다 — 나가기를 안 누르고 영영 안 돌아온 노드를 걷어낸다.
+window.MW_ROOM_TTL_MS = 12 * 3600 * 1000;
+window._mwRoomAlive = function (v) { return !!v && (Date.now() - (v.t || 0) < window.MW_ROOM_TTL_MS); };
+// 지금 실제로 붙어 있는가(잠수 아닌가). 화면에 그릴지 말지가 아니라 **누구를 강퇴할지**의 기준이다.
+window._mwRoomOnline = function (v) { return !!v && !v.off && (Date.now() - (v.t || 0) < 70000); };
 
 // ---- 초대로 들어가기 / 나오기 ----
 window.mwRoomEnterField = async function (uid) {
@@ -17556,11 +17566,41 @@ window.mwRoomEnterField = async function (uid) {
     //   (mwVisitRoom 이 같은 이유로 이미 그렇게 한다).
     try { const q = await getDocFromServer(doc(db, 'users', uid)); d = q.exists() ? q.data() : {}; }
     catch (e) { try { const q2 = await getDoc(doc(db, 'users', uid)); d = q2.exists() ? q2.data() : {}; } catch (e2) {} }
+    // ★쫓겨난 방에는 다시 못 들어간다. 안 막으면 들어가자마자 강퇴 감시가 또 튕겨내
+    //   무한 왕복이 된다(대표 8-20 강퇴 요구의 뒷면이다).
+    try {
+      const R = window._rt;
+      if (R) {
+        const k = await new Promise(function (res) {
+          R.onValue(R.ref(R.db, 'roomLive/' + uid + '/kick/' + me.uid), function (sn) { res(sn.val()); }, { onlyOnce: true });
+        });
+        if (k) { showToast('이 방에는 들어갈 수 없어요'); window._mwRoomForget(); return; }
+      }
+    } catch (e) {}
     window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null };
+    window._mwRoomRemember(uid);      // 앱을 껐다 켜도 이 방으로 돌아온다
   }
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
   goPage('char');            // ★머피월드 페이지 id 는 'char' 다. 'mw' 는 없는 페이지라 화면이 까매진다
   window.charSetField && window.charSetField('home');
+  window._mwRoomRestoring = 0;
+};
+// ★방 주인이 손님 하나를 내보낸다 (대표 8-20).
+//   나가기를 누르기 전엔 방에 계속 남는 구조라, 방주에게 치울 수단이 반드시 있어야 한다.
+//   `kick/{uid}` 표시를 먼저 남기고 노드를 지운다 — 표시가 없으면 그쪽 심장박동이
+//   자기 노드를 곧바로 되살려서 강퇴가 안 먹는다.
+window.mwRoomKick = async function (uid, nick) {
+  const R = window._rt, u = auth.currentUser;
+  if (!R || !u || window._mwRl.owner !== u.uid) return;
+  if (uid === u.uid) return;
+  try {
+    await R.set(R.ref(R.db, 'roomLive/' + u.uid + '/kick/' + uid), Date.now());
+    await R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/players/' + uid));
+    showToast(String(nick || '머피') + '님을 내보냈어요');
+  } catch (e) {
+    console.warn('kick', e);
+    showToast('내보내지 못했어요 · 잠시 뒤에 다시');
+  }
 };
 window.mwRoomLeaveField = function () {
   // 주인이면 = 방을 닫는다. 손님들에게 알리고 초대 모드를 끈다.
@@ -17569,15 +17609,47 @@ window.mwRoomLeaveField = function () {
     window._mwPartyOn = false;
     window._mwRl.end = Date.now();
     window._mwRlSend();                                   // 손님이 이걸 보고 같이 나온다
-    setTimeout(function () { window._mwRl.end = null; window._mwRlSend(); }, 4000);
+    // ★방을 닫으면 **방 전체를 지운다.** 이제 사람이 안 사라지는 구조라, 안 지우면
+    //   지난 손님들이 유령으로 계속 쌓여 다음에 방을 열 때 정원을 잡아먹는다.
+    //   손님들이 end 표시를 보고 나갈 시간을 준 뒤(4초) 치운다.
+    setTimeout(function () {
+      const R = window._rt, u = auth.currentUser;
+      window._mwRl.end = null;
+      if (R && u && window._mwRl.owner === u.uid) {
+        try { R.remove(R.ref(R.db, 'roomLive/' + u.uid)); } catch (e) {}
+      } else { window._mwRlSend(); }
+      window._mwRoomForget();
+    }, 4000);
     document.body.classList.remove('mw-party');
     window._charApplyPos && window._charApplyPos();
     showToast('방을 닫았어요');
     return;
   }
+  // 손님이 나가기 = 그때 비로소 내 노드를 지운다(앱 종료로는 안 지워진다)
+  const R = window._rt, u = auth.currentUser;
+  if (R && u && window._mwRl.ref) { try { R.remove(window._mwRl.ref); } catch (e) {} }
+  window._mwRoomForget();
   window._mwVisit = null;
   window._mwPartyOn = false;
   window.charSetField && window.charSetField('home');     // 내 방으로 복귀
+};
+// ---- 앱을 껐다 켜도 방에 남아 있다 ----
+// ★"앱 종료해도 나가기 버튼을 눌러야 방에서 나가서 본인 방으로 들어가게" (대표 8-20).
+//   서버 쪽 노드는 이미 안 지워진다. 남은 건 **내 앱이 그 방으로 다시 들어가는 것**이다.
+window._MW_ROOM_KEY = 'mw_room_in';
+window._mwRoomRemember = function (ownerUid) {
+  try { localStorage.setItem(window._MW_ROOM_KEY, JSON.stringify({ uid: ownerUid, at: Date.now() })); } catch (e) {}
+};
+window._mwRoomForget = function () {
+  try { localStorage.removeItem(window._MW_ROOM_KEY); } catch (e) {}
+};
+window._mwRoomRemembered = function () {
+  try {
+    const v = JSON.parse(localStorage.getItem(window._MW_ROOM_KEY) || 'null');
+    if (!v || !v.uid) return null;
+    if (Date.now() - (v.at || 0) > window.MW_ROOM_TTL_MS) { window._mwRoomForget(); return null; }
+    return v.uid;
+  } catch (e) { return null; }
 };
 
 // ---- presence ----
@@ -17602,8 +17674,22 @@ window._mwRlJoin = function (ownerUid) {
   if (!u) return;
 
   const meRef = R.ref(R.db, base + '/' + u.uid);
-  try { R.onDisconnect(meRef).remove(); } catch (e) {}
+  // ★끊겼다고 **지우지 않는다.** 앱을 내리거나 화면을 꺼도 캐릭터는 방에 그대로 서 있어야 한다
+  //   (대표 8-20: "앱 종료해도 나가기 버튼을 눌러야 방에서 나가야 한다").
+  //   대신 '지금 붙어 있진 않다'는 표시만 남긴다 — 방주가 유령을 골라 강퇴할 때 쓴다.
+  try { R.onDisconnect(meRef).update({ off: 1 }); } catch (e) {}
   window._mwRl.ref = meRef;
+  window._mwRlBeat();
+  // ★강퇴 감시 — 방주가 내 노드를 지우면 그걸 신호로 삼아 방에서 나온다.
+  //   안 보면 다음 심장박동이 내 노드를 되살려서 강퇴가 안 먹는다.
+  const kickRef = R.ref(R.db, 'roomLive/' + ownerUid + '/kick/' + u.uid);
+  const unsubK = R.onValue(kickRef, function (sn) {
+    if (!sn.val() || window._mwRl.owner !== ownerUid) return;
+    if (u.uid === ownerUid) return;                    // 주인은 자기 방에서 안 쫓겨난다
+    showToast('방에서 나가게 됐어요');
+    window.mwRoomLeaveField && window.mwRoomLeaveField();
+  });
+  window._mwRl.unsubK = function () { try { unsubK(); } catch (e) {} };
   // 정원은 **들어가기 전에 한 번만** 본다. 계속 감시하면 남이 잠깐 깜빡일 때 나를 튕겨낸다.
   R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
@@ -17615,12 +17701,14 @@ window._mwRlJoin = function (ownerUid) {
 };
 window._mwRlLeave = function () {
   const R = window._rt;
+  clearInterval(window._mwRl.beatT);
   if (R && window._mwRl.ref) { try { R.remove(window._mwRl.ref); } catch (e) {} }
   window._mwRl.unsub && window._mwRl.unsub();
+  window._mwRl.unsubK && window._mwRl.unsubK();
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null };
+  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null, beatT: 0 };
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
@@ -17641,9 +17729,18 @@ window._mwRlSend = function () {
       pin: !!window._mwBubblePin,       // 고정이면 남의 화면에서도 안 걷힌다
       end: window._mwRl.end || null,    // 주인이 방을 닫았다는 표시(자리 비움과 구분)
       shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
+      off: null,                              // 돌아왔다 — onDisconnect 가 켜둔 표시를 끈다
       t: Date.now(),
     });
   } catch (e) { console.warn('roomLive send', e); }
+};
+// ★가만히 서 있어도 계속 살아 있다고 알린다. 안 하면 '지금 붙어 있는가'(_mwRoomOnline)가
+//   가만있는 사람을 잠수로 본다. 캐릭터가 사라지지는 않지만 강퇴 목록에 억울하게 오른다.
+window._mwRlBeat = function () {
+  clearInterval(window._mwRl.beatT);
+  window._mwRl.beatT = setInterval(function () {
+    if (window._mwRl.ref) window._mwRlSend(); else clearInterval(window._mwRl.beatT);
+  }, 25000);
 };
 // ★이동 훅. _charApplyPos 는 위치·모습이 바뀔 때마다 불리므로 여기 하나만 잡으면
 //   조이스틱이든 무엇이든 전부 덮인다(원본은 안 고친다).
@@ -17854,6 +17951,14 @@ window._mwRlRender = function (all) {
 window.mwRoomFieldSync = function (key) {
   if (key !== 'home') { window._mwRlLeave(); return; }
   const u = auth.currentUser; if (!u) return;
+  // ★앱을 껐다 켜도 **있던 방으로 돌아간다** (대표 8-20). 나가기를 누른 적이 없으면
+  //   서버의 내 노드는 아직 그 방에 있다 — 화면만 안 따라가면 남들 눈엔 잠수로 보인다.
+  const _back = window._mwRoomRemembered && window._mwRoomRemembered();
+  if (_back && _back !== u.uid && !window._mwVisit && !window._mwRoomRestoring) {
+    window._mwRoomRestoring = 1;
+    window.mwRoomEnterField && window.mwRoomEnterField(_back);
+    return;
+  }
   // ★주인은 **자기 홈 필드에 서 있는 동안** presence 를 낸다. 그래야 손님이 보는
   //   '주인이 자리를 비웠어요'가 정확해진다(예전엔 주인이 자기 방 패널을 열어야만 잡혔다).
   window._mwRlJoin(window._mwVisit ? window._mwVisit.uid : u.uid);
@@ -21786,6 +21891,13 @@ window.mwOtherMenu = async function (uid, nick, ev) {
     { k: 'poke',  t: '콕 찌르기',   dx: R + 12,  dy: 4, fn: "window.mwPoke('" + U + "','" + N + "')" },
     { k: 'squad', t: '스쿼드 초대', dx: 0, dy: R + 22, fn: "window.mwSquadInvite('" + U + "','" + N + "')" },
   ];
+  // ★내 방에 와 있는 사람이면 **내보내기**를 하나 더 단다 (대표 8-20).
+  //   이제 사람이 나가기를 누르기 전엔 방에 계속 남으므로, 방주가 치울 수단이 없으면
+  //   모르는 사람이 눌러앉아 정원을 먹는다. 대각선 자리라 십자 4개와 안 겹친다.
+  if (window._mwRl && window._mwRl.owner === me.uid && (window._mwRl.last || {})[uid]) {
+    acts.push({ k: 'kick', t: '내보내기', dx: R * 0.72 + 14, dy: R * 0.72 + 18,
+                fn: "window.mwRoomKick('" + U + "','" + N + "')" });
+  }
 
   // ★닉네임 라벨을 여기서 띄우지 않는다 — 방 안 캐릭터는 이미 **칭호=머리 위 / 닉네임=발밑**으로
   //   떠 있다(오버월드·센터필드와 같은 문법). 메뉴가 하나 더 띄우면 이름이 두 번 보인다.
@@ -27034,7 +27146,10 @@ window._sqRtJoin = function (sid, sArg) {
     return !!(s && (s.memberUids || []).includes(u.uid));
   };
   const meRef = R.ref(R.db, 'squadRooms/' + sid + '/players/' + u.uid);
-  try { R.onDisconnect(meRef).remove(); } catch(e) {}
+  // ★끊겼다고 지우지 않는다 — 스쿼드가 끝나기 전까지 캐릭터는 필드에 남아 있어야 한다
+  //   (대표 8-20: "들어갔는데 필드에 인원이 없으면 빈방인가 하고 나간다").
+  //   잠수는 잠수로 보이면 된다. 사라지면 콜드스타터가 그냥 나가버린다.
+  try { R.onDisconnect(meRef).update({ off: 1 }); } catch(e) {}
   const send = () => {
     if (!isMember()) return;                                  // 구경꾼은 읽기만
     const p = window._sqMyPos || { x: 50, y: 78, dir: 'down' };
@@ -27042,7 +27157,9 @@ window._sqRtJoin = function (sid, sArg) {
       moving: !!p.moving, nick: window._mwMyNick || '머피',
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
-      character: window.getMyCharacter ? window.getMyCharacter() : null, t: Date.now() }); } catch(e) {}
+      character: window.getMyCharacter ? window.getMyCharacter() : null,
+      off: null,                                         // 돌아왔다 — onDisconnect 표시를 끈다
+      t: Date.now() }); } catch(e) {}
   };
   window._sqRtSend = send;
   send();
@@ -27064,9 +27181,13 @@ window._sqRtJoin = function (sid, sArg) {
   }, e => console.warn('rt players', e));
   window._sqRtUnsub = () => { try { unsub(); } catch(e) {} };
 };
-window._sqRtLeave = function (sid) {
+// ★★패널을 닫는 것과 **필드를 떠나는 것**은 다른 일이다 (대표 8-20).
+//   지금까지 _sqClose 가 이걸 부르면서 노드를 지웠다 — 스쿼드 상세를 닫기만 해도
+//   남들 화면에서 내 캐릭터가 증발했다. 그래서 필드가 늘 비어 보였다.
+//   기본은 **구독만 끊는다.** 진짜로 뺄 때(스쿼드 종료·탈퇴)만 hard 로 부른다.
+window._sqRtLeave = function (sid, hard) {
   const u = auth.currentUser;
-  if (window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
+  if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
   window._sqOnMove = null; window._sqRtSend = null;
   clearTimeout(window._sqMoveT);
@@ -27078,6 +27199,8 @@ window._sqRenderRemotes = function (sid, all, myUid) {
   Object.keys(all).forEach(uid => {
     if (uid === myUid) return;
     const p = all[uid] || {};
+    // 나가기를 안 누르고 영영 안 돌아온 노드는 청소한다(머피룸과 같은 12시간).
+    if (p.t && now - p.t > (window.MW_ROOM_TTL_MS || 43200000)) return;
     const first = !seen[uid];
     const c = window._sqCharEl(uid, p.nick, p.character, p.dir || 'down', p.title, p.aura);
     if (!c) return;
