@@ -6207,6 +6207,10 @@ window.mwPortal = function () {
 /* 게임 CTA 버튼 — 진짜 모바일 게임처럼 (대표 8-19).
    ★앱에 이미 있는 문법을 쓴다: 꾸미기 저장 버튼의 '하드 테두리 + 눌리면 내려앉음'.
      새 문법을 만들면 이 화면만 혼자 논다. */
+/* 같이 찍기 — 3·2·1 과 플래시 (대표 8-20: "화면캡쳐가 아니라 특별해야 한다") */
+@keyframes mwCdPop{0%{opacity:0;transform:scale(1.9)}40%{opacity:1}100%{opacity:.9;transform:scale(1)}}
+@keyframes mwFlash{0%{opacity:0}12%{opacity:.95}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){#mw-rm-cd{animation:none!important}}
 @keyframes dodgeCta{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-3px) scale(1.045)}}
 /* 빛이 훑고 지나간다 — "여기를 눌러라"가 한눈에 읽힌다.
    ★버튼 자신의 animation 은 아래 장(pane) 규칙이 덮어쓰므로, 이건 ::before 에 건다.
@@ -16985,6 +16989,14 @@ window.mwRoomLiveJoin = function (ownerUid) {
 
   if (!u) return;                                  // 비로그인은 보기만
 
+  // ★폰마다 시계가 다르다. 3·2·1 을 **같이** 세려면 공통 시계가 있어야 한다 —
+  //   스쿼드 범프가 쓰는 그 값을 그대로 쓴다.
+  // ★한 번만 건다. 방에 들어갈 때마다 걸면 리스너가 쌓인다(해제할 자리도 없다).
+  //   값은 _mwRl 이 아니라 바깥에 둔다 — 방을 나갈 때 _mwRl 이 통째로 갈리기 때문이다.
+  if (!window._mwSrvOffOn) {
+    window._mwSrvOffOn = 1;
+    try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._mwSrvOff = sn.val() || 0; }); } catch (e) {}
+  }
   const meRef = R.ref(R.db, base + '/' + u.uid);
   try { R.onDisconnect(meRef).remove(); } catch (e) {}
   // 첫 자리 — 주인은 저장된 자리, 손님은 문 쪽에서 조금씩 흩어져 선다
@@ -17005,6 +17017,8 @@ window.mwRoomLiveJoin = function (ownerUid) {
         // ★채팅은 **presence 에 얹어 보낸다.** 따로 노드를 파면 구독도 정리도 하나 더 생기는데,
         //   방 안 한마디는 기록이 필요 없다(스쿼드 필드톡과 같은 성격). 나가면 같이 사라진다.
         msg: window._mwRl.msg || null,
+        // 촬영 신호. 값은 **찍을 시각(서버 시계)** 이다 — 받는 쪽이 자기 시계로 환산해 같이 센다.
+        shot: window._mwRl.shot || null,
         t: Date.now(),
       });
     } catch (e) { console.warn('roomLive send', e); }
@@ -17127,6 +17141,19 @@ window._mwRoomRender = function (all) {
     c.el.style.zIndex = 10 + Math.round(v.y / 100 * 16) * 10 + 5;
   });
   // 같이 있는 사람이 있을 때만 채팅줄을 보여준다
+  // ★촬영 신호 — 누가 눌렀든 **방에 있는 전원**이 같은 시각에 센다.
+  //   같은 신호로 두 번 세지 않게 마지막으로 처리한 시각을 들고 있는다.
+  let shotAt = 0;
+  Object.keys(all).forEach(function (k) {
+    const v = all[k];
+    if (v && v.shot && v.shot.at > shotAt) shotAt = v.shot.at;
+  });
+  const nowSrv = Date.now() + (window._mwSrvOff || 0);
+  if (shotAt && shotAt !== window._mwRl.lastShot && shotAt > nowSrv - 1000) {
+    window._mwRl.lastShot = shotAt;
+    window._mwRoomCountdown(shotAt);
+  }
+
   const together = Object.keys(seen).length > 1 && !!auth.currentUser;
   const chatRow = document.getElementById('mw-rm-chat');
   if (chatRow) chatRow.style.display = together ? 'flex' : 'none';
@@ -17313,7 +17340,39 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
   });
 };
 
-window.mwRoomShot = function () {
+// 3·2·1 그리고 플래시. ★혼자 캡처한 게 아니라 **다 같이 겪은 사건**이어야 한다(대표 8-20).
+window.mwRoomCountdownMs = 3200;
+window._mwRoomCountdown = function (atSrv) {
+  const stage = document.getElementById('mw-vroom-stage'); if (!stage) return;
+  let ov = document.getElementById('mw-rm-cd'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'mw-rm-cd';
+  ov.style.cssText = 'position:absolute;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;'
+    + 'pointer-events:none;font-family:\'Galmuri14\',\'Galmuri11\',sans-serif;font-size:96px;color:#fff;'
+    + 'text-shadow:0 4px 0 #05070c,0 0 18px rgba(0,0,0,.7)';
+  stage.appendChild(ov);
+  const tick = function () {
+    const left = atSrv - (Date.now() + (window._mwSrvOff || 0));
+    if (left <= 0) { ov.remove(); window._mwRoomFlash(stage); window._mwRoomCapture(); return; }
+    const n = Math.ceil(left / 1000);
+    if (ov._n !== n) {
+      ov._n = n; ov.textContent = String(n);
+      ov.style.animation = 'none'; void ov.offsetWidth;        // 숫자마다 다시 튀게
+      ov.style.animation = 'mwCdPop .5s cubic-bezier(.2,.8,.25,1) both';
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+};
+window._mwRoomFlash = function (stage) {
+  const f = document.createElement('div');
+  f.style.cssText = 'position:absolute;inset:0;z-index:960;background:#fff;pointer-events:none;'
+    + 'animation:mwFlash .5s ease-out both';
+  stage.appendChild(f);
+  setTimeout(function () { f.remove(); }, 520);
+};
+// 찍는 순간의 방을 그대로 담는다. ★신호를 보낸 사람만이 아니라 **각자 자기 화면에서** 만든다 —
+//   그래야 넷이 다 카드를 갖고 각자 공유할 수 있다(고리가 4배가 된다).
+window._mwRoomCapture = function () {
   const all = window._mwRl.last || {};
   const owner = window._mwRl.owner;
   // 지금 방에 있는 사람만. 주인을 맨 앞에 세운다(주인의 방이다).
@@ -17345,6 +17404,20 @@ window.mwRoomShot = function () {
       + '</div>';
     window._mwKakaoPrep && window._mwKakaoPrep();
   });
+};
+// 버튼 = **신호만 쏜다.** 찍는 건 위에서 전원이 동시에 한다.
+window.mwRoomShot = function () {
+  if (!auth.currentUser) { window.memberGate && window.memberGate('같이 찍으려면 로그인이 필요해요'); return; }
+  if (window._mwRl.cap) { showToast('구경 중에는 못 찍어요'); return; }
+  const at = Date.now() + (window._mwSrvOff || 0) + window.mwRoomCountdownMs;
+  window._mwRl.shot = { at: at };
+  window._mwRl.send && window._mwRl.send();
+  // 신호는 곧 거둔다 — 안 지우면 다음 위치 전송마다 옛 신호가 따라붙어 또 찍힌다.
+  clearTimeout(window._mwRl.shotT);
+  window._mwRl.shotT = setTimeout(function () {
+    window._mwRl.shot = null;
+    window._mwRl.send && window._mwRl.send();
+  }, window.mwRoomCountdownMs + 1200);
 };
 // ===== 같이 찍기 끝 =====
 
