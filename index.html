@@ -17493,8 +17493,20 @@ window.mwRoomEnterField = async function (uid) {
   window.charSetField && window.charSetField('home');
 };
 window.mwRoomLeaveField = function () {
-  if (!window._mwVisit) return;
+  // 주인이면 = 방을 닫는다. 손님들에게 알리고 초대 모드를 끈다.
+  if (!window._mwVisit) {
+    if (!window._mwPartyOn) return;
+    window._mwPartyOn = false;
+    window._mwRl.end = Date.now();
+    window._mwRlSend();                                   // 손님이 이걸 보고 같이 나온다
+    setTimeout(function () { window._mwRl.end = null; window._mwRlSend(); }, 4000);
+    document.body.classList.remove('mw-party');
+    window._charApplyPos && window._charApplyPos();
+    showToast('방을 닫았어요');
+    return;
+  }
   window._mwVisit = null;
+  window._mwPartyOn = false;
   window.charSetField && window.charSetField('home');     // 내 방으로 복귀
 };
 
@@ -17538,7 +17550,7 @@ window._mwRlLeave = function () {
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
+  window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null };
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
@@ -17557,6 +17569,7 @@ window._mwRlSend = function () {
       character: window.getMyCharacter ? window.getMyCharacter() : null,
       msg: window._mwRl.msg || null,
       pin: !!window._mwBubblePin,       // 고정이면 남의 화면에서도 안 걷힌다
+      end: window._mwRl.end || null,    // 주인이 방을 닫았다는 표시(자리 비움과 구분)
       shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
       t: Date.now(),
     });
@@ -17684,7 +17697,20 @@ window._mwRlRender = function (all) {
   // ★주인도 손님이 오면 같은 화면이어야 한다. 손님한테만 켜면 주인은 채팅을 못 친다.
   //   그래서 '남의 방에 와 있다' 또는 '내 방에 누가 와 있다' 둘 중 하나면 켠다.
   const visiting = window._mwIsVisiting();
-  const party = (window._curField === 'home') && (visiting || Object.keys(seen).length > 0);
+  // ★★한 번 켜지면 **유지한다** (대표 8-20). 손님이 잠깐 끊겨도 화면이 오가지 않는다.
+  //   끄는 건 주인이 '나가기' 를 누를 때뿐이다.
+  if (!visiting && Object.keys(seen).length > 0) window._mwPartyOn = true;
+  const party = (window._curField === 'home') && (visiting || !!window._mwPartyOn);
+
+  // ★주인이 방을 닫으면 손님도 같이 나온다. '잠깐 끊긴 것'과 구분해야 하므로
+  //   주인이 **명시적으로 남긴 end 표시**를 본다(그냥 사라진 건 자리 비움일 뿐이다).
+  const ow = all[window._mwRl.owner];
+  if (visiting && ow && ow.end && Date.now() - ow.end < 30000 && !window._mwRl.ended) {
+    window._mwRl.ended = 1;
+    showToast('주인이 방을 닫았어요');
+    setTimeout(function () { window.mwRoomLeaveField && window.mwRoomLeaveField(); }, 300);
+    return;
+  }
   if (document.body.classList.contains('mw-party') !== party) {
     document.body.classList.toggle('mw-party', party);
     // 위아래 줄이 생기면 무대 크기가 바뀐다 → 타일 계산을 다시 시킨다(안 하면 캐릭터가 어긋난다)
@@ -17697,7 +17723,8 @@ window._mwRlRender = function (all) {
   if (barEl) {
     const btns = barEl.querySelectorAll('button');
     if (btns[0]) btns[0].style.display = visiting ? 'none' : '';   // 초대는 내 방에서만
-    if (btns[2]) btns[2].style.display = visiting ? '' : 'none';   // 나가기는 남의 방에서만
+    // ★나가기는 **주인에게도** 보여야 한다 — 방을 닫는 유일한 방법이다(대표 8-20).
+    if (btns[1]) btns[1].textContent = visiting ? '나가기' : '방 닫기';
   }
 
   // ── 대화 기록 ──
