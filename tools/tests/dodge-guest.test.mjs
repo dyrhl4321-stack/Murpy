@@ -214,3 +214,28 @@ const sheet = grab(/window\.guestAskNick = async function[\s\S]*?\n\};/, 'guestA
 assert(/\$\{window\._sqInviteSid \? `<div[^`]*실명/.test(sheet),
   '실명 안내가 스쿼드일 때만 나오지 않는다 → 게임에서도 참석 확인 얘기가 뜬다');
 console.log('  + 스쿼드 시트 차단·문구 분리 OK');
+
+// 23) ★이름은 **계정 없이** 받는다 (대표 8-20 확정)
+//     먼저 받으면 링크 누른 사람이 아무 이유도 없이 입력창을 만난다.
+//     그렇다고 이름이 없으면 공유 카드·도전장에 이름이 안 박혀 고리가 약하다.
+const nickSave = grab(/window\.dodgeNickSave = function[\s\S]*?\n\};/, 'dodgeNickSave');
+assert(!/signInAnonymously|createUser|updateDoc|setDoc/.test(nickSave),
+  '이름을 받으면서 계정을 만들거나 서버에 쓴다 → 계정 없이 받기로 한 설계와 다르다');
+assert(/localStorage\.setItem/.test(nickSave), '이름을 폰에 저장하지 않는다');
+
+// 24) 공유 카드·링크가 그 이름을 써야 한다 (안 그러면 이름을 받은 의미가 없다)
+const card = grab(/window\._dodgeCardImg = function[\s\S]*?\n\};/, '_dodgeCardImg');
+assert(/dodgeNickGet/.test(card), '공유 카드가 게임 이름을 안 쓴다');
+const show2 = grab(/window\._dodgeShowShare = function[\s\S]*?\n\};/, '_dodgeShowShare');
+assert(/link: window\.dodgeMakeLink\(window\.dodgeNickGet/.test(show2), '도전장 링크가 게임 이름을 안 쓴다');
+const ig2 = grab(/window\.dodgeShareIG = function[\s\S]*?\n\};/, 'dodgeShareIG');
+assert(/dodgeNickGet/.test(ig2), '인스타 복사 링크가 게임 이름을 안 쓴다');
+
+// 25) 게임오버 안내에 스쿼드 문구가 새어 들어오면 안 된다
+const keep = grab(/window\._dodgeRefreshKeep = function[\s\S]*?\n\};/, '_dodgeRefreshKeep');
+// ★주석은 빼고 **실제로 화면에 나가는 문자열만** 본다 — 주석에 '실명·참석 쓰지 말 것' 이라고
+//   적어두면 그것까지 잡혀서 테스트가 헛돈다.
+const keepCode = keep.split('\n').filter(l => !l.trim().startsWith('//')).join(' ');
+assert(!/실명|참석/.test(keepCode), '게임 화면에 스쿼드 문구(실명·참석)가 들어갔다');
+assert(/뭐라고 부를까요/.test(keep), '이름 묻는 칸이 없다');
+console.log('  + 계정 없는 이름·공유 반영 OK');
