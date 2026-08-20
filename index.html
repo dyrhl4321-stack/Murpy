@@ -3973,6 +3973,7 @@ window.charSetField = function (key) {
   const bar = document.getElementById('mw-field-bar');
   if (bar) bar.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.f === key); });
   window.dodgeFieldBtn && window.dodgeFieldBtn(key);   // 헬스장에서만 게임 시작 버튼
+  window.mwRoomInviteBtn && window.mwRoomInviteBtn(key); // 내 방에서만 친구 초대 버튼
 };
 window._charTileGeom = function () {
   const room = document.getElementById('charworld-room');
@@ -10340,6 +10341,11 @@ const provider = new GoogleAuthProvider();
 window._sqInviteSid = (function () {
   try { return new URLSearchParams(location.search).get('sq') || ''; } catch (e) { return ''; }
 })();
+// 머피룸 초대 링크 — https://murpy.app/?room=<주인uid>
+// ★스쿼드(?sq=)와 같은 자리에서 읽는다. 판정하는 곳이 여럿이라 한 번만 읽어 들고 있어야 한다.
+window._mwRoomInvite = (function () {
+  try { return new URLSearchParams(location.search).get('room') || ''; } catch (e) { return ''; }
+})();
 // ---------- Realtime Database (스쿼드 워킹 룸 위치 동기화 전용) ----------
 // 콘솔에서 RTDB를 asia-southeast1 리전으로 생성해야 함. 미생성/미연결이면 _SQUAD_RT_OFF=true → 룸은 정적 배치 폴백.
 window._SQUAD_RT_OFF = true;
@@ -10629,11 +10635,20 @@ onAuthStateChanged(auth, async (user) => {
     if (window._sqInviteSid && !user.isAnonymous && window.openSquadDetail) {
       setTimeout(function () { window.openSquadDetail(window._sqInviteSid); }, 900);
     }
+    // 방 초대 링크(?room=)도 같은 규칙이다
+    if (window._mwRoomInvite && !user.isAnonymous && window.mwVisitRoom) {
+      setTimeout(function () { window.mwVisitRoom(window._mwRoomInvite); }, 900);
+    }
     // ★★한 번 게스트로 들어온 적이 있으면 그 임시 계정이 폰에 남는다. 그래서 다음에 링크를 눌러도
     //   **묻지도 않고 임시 계정으로** 들어가 버렸다(대표 8-11). 이미 계정이 있는 사람에게는
     //   여기서 다시 물어야 한다. 방금 게스트로 시작한 경우(_guestJustStarted)는 묻지 않는다.
     if (window._sqInviteSid && user.isAnonymous && !window._guestJustStarted && window.sqEnterChoice) {
       setTimeout(function () { window.sqEnterChoice(window._sqInviteSid, true); }, 800);
+    }
+    if (window._mwRoomInvite && user.isAnonymous && window.mwRoomEnterChoice) {
+      // 방금 게스트로 고른 경우엔 묻지 않고 바로 방으로 보낸다
+      if (window._guestJustStarted) setTimeout(function () { window.mwVisitRoom && window.mwVisitRoom(window._mwRoomInvite); }, 800);
+      else setTimeout(function () { window.mwRoomEnterChoice(window._mwRoomInvite, true); }, 800);
     }
     window._guestJustStarted = false;
     // 비로그인 상태에서 막혔던 의도가 있으면 로그인 직후 1회 재개
@@ -10653,7 +10668,10 @@ onAuthStateChanged(auth, async (user) => {
     //   가입 없이 바로 / 이미 머피 회원이면 로그인 — 둘 다 열어둔다. 예전엔 무조건 익명이라
     //   **이미 계정이 있는 사람이 자기 기록과 끊긴 새 임시 계정으로 들어갔다.**
     //   ★앱은 위에서 이미 평소대로 띄워놨고 시트만 얹는다 — 이게 실패해도 흰 화면이 안 된다.
-    if (window._sqInviteSid && window.sqEnterChoice && !window._sqSkipEnterSheet) {
+    if (window._mwRoomInvite && window.mwRoomEnterChoice) {
+      setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
+      setTimeout(() => window.mwRoomEnterChoice(window._mwRoomInvite), 520);
+    } else if (window._sqInviteSid && window.sqEnterChoice && !window._sqSkipEnterSheet) {
       setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
       setTimeout(() => window.sqEnterChoice(window._sqInviteSid), 520);
     } else if (window._sqSkipEnterSheet) {
@@ -10715,6 +10733,17 @@ window._notifGoPost = function (postId) {
 //   콜드 네트워크·서비스워커 첫 설치) 한 번도 안 불리면 화면엔 평소 홈만 남는다.
 //   원인이 무엇이든 **결과는 같아야 한다** → 2.2초 뒤에 아직 아무것도 안 떴으면 여기서 띄운다.
 //   이미 뜬 게 있으면(시트·닉네임·스쿼드 상세) 손대지 않으므로 두 번 뜰 일은 없다.
+// 방 초대도 같은 안전망을 둔다 (카톡 인앱 브라우저·콜드 네트워크에서 콜백이 늦는다)
+if (window._mwRoomInvite) {
+  setTimeout(function () {
+    if (!window._mwRoomInvite || window._mwRoomChosen) return;
+    if (document.getElementById('mw-room-enter') || document.getElementById('mw-wpanel')) return;
+    try { if (typeof dismissLanding === 'function') dismissLanding(); } catch (e) {}
+    const u = auth.currentUser;
+    if (u && !u.isAnonymous) { window.mwVisitRoom && window.mwVisitRoom(window._mwRoomInvite); }
+    else if (window.mwRoomEnterChoice) { window.mwRoomEnterChoice(window._mwRoomInvite, !!u); }
+  }, 2200);
+}
 if (window._sqInviteSid) {
   setTimeout(function () {
     if (!window._sqInviteSid || window._sqEnterChosen || window._sqSkipEnterSheet) return;
@@ -16755,6 +16784,168 @@ window.sqEnterAsMember = function () {
   else if (window.openModal) openModal('login-method-modal');
 };
 
+// ===== 머피룸 초대 =====
+// 설계 = docs/superpowers/specs/2026-08-20-murpy-room-together-design.md
+// ★새 UI 를 만들지 않는다. 초대장 화면은 스쿼드 초대장(sqEnterChoice)과 **같은 시트**이고
+//   라벨·문구만 방 버전이다. 공유 버튼은 머피캠·덤벨 피하기가 쓰는 .mw-share 그대로.
+window._mwRoomLink = function (uid) { return 'https://murpy.app/?room=' + encodeURIComponent(uid || ''); };
+
+// 내 방(홈 필드)에서만 뜨는 초대 칩. ★필드에 닿는 것은 이 함수 하나뿐이다.
+window.mwRoomInviteBtn = function (key) {
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  let b = document.getElementById('mw-invite-chip');
+  // 임시 계정은 초대할 방이 없다(그 계정을 버리면 방도 같이 사라진다)
+  if (key !== 'home' || (window._notMember && window._notMember())) { if (b) b.remove(); return; }
+  if (b) return;
+  b = document.createElement('button');
+  b.id = 'mw-invite-chip'; b.className = 'mw-fieldchip'; b.style.top = '95px';
+  b.textContent = '친구 초대';
+  b.onclick = function (e) { e.stopPropagation(); window.mwRoomInviteShare(); };
+  room.appendChild(b);
+};
+
+// 초대 카드 그림 — 카톡 썸네일용. 덤벨 피하기 기록 카드와 **같은 방식**이다.
+window._mwRoomCardImg = function (nick, cb) {
+  const W = 1080, H = 1350;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const load = function (src) {
+    return new Promise(function (res) {
+      const im = new Image();
+      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = src;
+    });
+  };
+  Promise.all([load('char/fields/field_room.png?v=1'), load('char/ui/ui_logo.png?v=1')]).then(function (r) {
+    const bg = r[0], logo = r[1];
+    x.fillStyle = '#0e1320'; x.fillRect(0, 0, W, H);
+    if (bg) {
+      const k = Math.max(W / bg.width, H / bg.height);
+      x.imageSmoothingEnabled = false;                 // 픽셀 그림은 뭉개지 않는다
+      x.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
+    }
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(5,7,12,.55)'); g.addColorStop(.45, 'rgba(5,7,12,.72)'); g.addColorStop(1, 'rgba(5,7,12,.95)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.textAlign = 'center';
+    x.font = "44px 'Galmuri11',sans-serif"; x.fillStyle = '#7aa8ff';
+    x.fillText('머피룸 초대', W / 2, H / 2 - 90);
+    x.font = "76px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle = '#fff';
+    x.fillText(nick + '님의 방', W / 2, H / 2 + 20);
+    x.font = "40px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.7)';
+    x.fillText('놀러 오세요', W / 2, H / 2 + 96);
+    x.font = "36px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
+    x.fillText('murpy.app', W / 2, H - 96);
+    if (logo) {
+      const lh = 46, lw = logo.width * lh / logo.height;
+      x.textAlign = 'left';
+      x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
+      x.fillText('from', 46, 76);
+      x.drawImage(logo, 130, 76 - lh + 10, lw, lh);
+    }
+    cb(cv.toDataURL('image/jpeg', 0.9));
+  });
+};
+
+// 링크를 시스템 공유시트로. ★파일이 아니라 **주소**를 보낸다 — mwShareSheet 는 파일용이라 못 쓴다.
+window.mwRoomShareLink = async function () {
+  const url = window._mwRoomLink((auth.currentUser || {}).uid);
+  const nick = window._mwMyNick || '머피';
+  try {
+    if (navigator.share) { await navigator.share({ title: '머피룸 초대', text: nick + '님의 방에 놀러 오세요', url: url }); return; }
+    await navigator.clipboard.writeText(url);
+    showToast('초대 링크를 복사했어요');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    showToast('링크: ' + url);
+  }
+};
+
+window.mwRoomInviteShare = function () {
+  const me = auth.currentUser; if (!me) { window.memberGate && window.memberGate('초대하려면 로그인이 필요해요'); return; }
+  const nick = window._mwMyNick || '머피';
+  const B = window._MW_BRAND || {};
+  let el = document.getElementById('mw-room-invite'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-room-invite';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:24px';
+  el.innerHTML = '<div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 20px 22px;text-align:center">'
+    + '<div style="font-size:11px;color:#7aa8ff;font-weight:800;margin-bottom:6px">머피룸 초대</div>'
+    + '<div style="font-size:17px;font-weight:800;margin-bottom:5px">' + nick + '님의 방</div>'
+    + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:16px">최대 4명까지 같이 놀 수 있어요<br>머피가 없어도 가입 없이 들어와요</div>'
+    + '<div class="mw-share">'
+    + '<button id="dodge-kkbtn" class="mw-sbtn" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 초대">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+    + '<button class="mw-sbtn sv" onclick="window.mwRoomShareLink()" aria-label="링크 공유">' + (B.sv || '') + '<span>링크</span></button>'
+    + '</div>'
+    + '<button onclick="var e=document.getElementById(&quot;mw-room-invite&quot;);if(e)e.remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:15px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
+    + '</div>';
+  document.body.appendChild(el);
+  // 카톡 썸네일용 카드를 만들어 미리 올려 둔다(누르는 순간 바로 열리게)
+  window._mwRoomCardImg(nick, function (data) {
+    window._mwStampData = data;
+    window._mwShareMeta = {
+      title: nick + '님의 머피룸 초대',
+      desc: '가입 없이 바로 들어와서 같이 놀아요',
+      btn: '방에 들어가기',
+      link: window._mwRoomLink(me.uid),
+    };
+    window._mwKakaoPrep && window._mwKakaoPrep();
+  });
+};
+
+// ---------- 받는 쪽 ----------
+// ★스쿼드 초대장과 **같은 시트**다. asGuest = 이미 임시 계정으로 들어와 있는 폰.
+window.mwRoomEnterChoice = async function (ownerUid, asGuest) {
+  if (!ownerUid) return;
+  let p = null;
+  try { const d = await getDoc(doc(db, 'users', ownerUid)); if (d.exists()) p = d.data(); } catch (e) {}
+  const esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  const nick = (p && p.nickname) || '머피';
+  let el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-room-enter';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:24px';
+  el.innerHTML = '<div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden">'
+    + '<div style="padding:24px 20px 22px;text-align:center">'
+    + '<div style="font-size:11px;color:#7aa8ff;font-weight:800;margin-bottom:6px">머피룸 초대</div>'
+    + '<div style="font-size:17px;font-weight:800;margin-bottom:5px">' + esc(nick) + '님의 방</div>'
+    + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">눌러서 놀러 가세요</div>'
+    + '<button onclick="window.mwRoomEnter' + (asGuest ? 'KeepGuest' : 'AsGuest') + '(&quot;' + ownerUid + '&quot;)"'
+    + ' style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">'
+    + (asGuest ? '임시계정으로 입장' : '가입 없이 바로 입장') + '</button>'
+    + '<button onclick="' + (asGuest ? 'window.mwRoomEnterSwitchAccount()' : 'window.mwRoomEnterAsMember()') + '"'
+    + ' style="width:100%;background:rgba(255,255,255,.07);color:#fff;border:none;border-radius:12px;padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">이미 머피 회원이에요 · 로그인</button>'
+    + '<button onclick="var e=document.getElementById(&quot;mw-room-enter&quot;);if(e)e.remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:13px 0 0;cursor:pointer;font-family:inherit">그냥 둘러볼게요</button>'
+    + '</div></div>';
+  document.body.appendChild(el);
+};
+window.mwRoomEnterAsGuest = async function (ownerUid) {
+  const el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  window._mwRoomChosen = true;
+  window._guestJustStarted = true;
+  if (auth.currentUser) { window.mwVisitRoom && window.mwVisitRoom(ownerUid); return; }
+  try { await signInAnonymously(auth); }        // onAuthStateChanged 가 이어받아 방으로 보낸다
+  catch (e) { console.error('익명 로그인 실패', e); showToast('바로 입장하지 못했어요 · 로그인하고 들어와주세요'); }
+};
+window.mwRoomEnterKeepGuest = function (ownerUid) {
+  const el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  window._mwRoomChosen = true; window._guestJustStarted = true;
+  window.mwVisitRoom && window.mwVisitRoom(ownerUid);
+};
+window.mwRoomEnterAsMember = function () {
+  const el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  window._mwRoomChosen = true;
+  if (window.requireLogin) requireLogin('로그인하면 초대받은 방으로 바로 들어가요');
+  else if (window.openModal) openModal('login-method-modal');
+};
+// 임시 계정 -> 내 계정으로 갈아타기 (스쿼드와 같은 이유로 '연결'이 아니라 '갈아타기'다)
+window.mwRoomEnterSwitchAccount = async function () {
+  window._mwRoomChosen = true;
+  if (!confirm('임시 계정으로 쌓인 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
+  const el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
+  if (window.requireLogin) requireLogin('로그인하면 초대받은 방으로 바로 들어가요');
+};
+// ===== 머피룸 초대 끝 =====
+
 // ★성공하면 true. 실패하면 false 를 돌려줘 **부르는 쪽이 평소 화면으로 떨어뜨리게** 한다.
 window.startGuestInvite = async function (sid) {
   if (auth.currentUser) { window.openSquadDetail && window.openSquadDetail(sid); return true; }
@@ -20254,7 +20445,11 @@ window.mwVisitRoom = async function (uid) {
   // ★남의 방 구경은 **회원부터**다(대표 8-12). 비로그인도 임시 계정도 여기서 막힌다.
   //   예전엔 임시 계정이 방을 열기만 해도 머피가 적립됐다 — 애초에 못 들어가야 맞다.
   //   화면은 새로 만들지 않는다. 기존 로그인 팝업(구글·카카오)이 그대로 뜬다.
-  if (window._notMember && window._notMember()) {
+  // ★초대장을 들고 온 사람은 통과시킨다 (대표 8-20). 8-12 의 '남의 방 구경은 회원부터'는
+  //   **아무 방이나 눌러서 들어가는 것**을 막는 규칙이었다. 초대 링크는 주인이 부른 것이라
+  //   다르다 — 오히려 여기서 막으면 초대가 성립하지 않는다.
+  //   방 안에서 뭔가를 하려고 누르는 순간(방명록·링 메뉴)에는 그대로 게이트가 걸린다.
+  if (window._notMember && window._notMember() && window._mwRoomInvite !== uid) {
     window._mwJoinGate ? window._mwJoinGate('머피의 방을 구경하려면')
                        : (window.memberGate && window.memberGate('머피의 방을 구경하려면 로그인이 필요해요'));
     return;
@@ -21065,9 +21260,10 @@ window.mwShareKakao = function (btn) {
   //   남에게 나가는 링크는 murpy.app 이어야 한다 — 카톡에 옛 주소가 찍혀 퍼지면 나중에
   //   옛 주소를 정리하는 순간 그 카드들이 전부 죽는다.
   //   ※ 이 도메인은 카카오 개발자센터 플랫폼(Web 사이트 도메인)에 등록돼 있어야 한다.
-  const APP = 'https://murpy.app/';
-  // 카메라 말고 다른 데서도 이 함수를 쓴다(덤벨 피하기 기록 공유) → 문구만 갈아 끼운다.
+  // 카메라 말고 다른 데서도 이 함수를 쓴다(덤벨 피하기 기록·머피룸 초대) → 문구와 주소를 갈아 끼운다.
   const M = window._mwShareMeta || {};
+  // ★방 초대는 **그 방으로 바로 가는 주소**여야 한다. 홈으로 보내면 초대가 성립하지 않는다.
+  const APP = M.link || 'https://murpy.app/';
   try {
     Kakao.Share.sendDefault({
       objectType: 'feed',
