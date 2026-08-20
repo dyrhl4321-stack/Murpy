@@ -6724,7 +6724,15 @@ function goPage(name) {
   if (name === 'match') renderMatch();
   if (name === 'center') renderCenters();
   if (name === 'home') { if (window.renderFeedFilterBar) window.renderFeedFilterBar(); if (window.renderStreakUI) window.renderStreakUI(); if (window.loadHofLine) window.loadHofLine(); if (window._maybeHofPopup) setTimeout(window._maybeHofPopup, 1500); }
-  if (name === 'char' && window.renderCharSpace) { window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx(); }
+  if (name === 'char' && window.renderCharSpace) {
+    window.renderCharSpace(); if (window.mwEnterFx) window.mwEnterFx();
+    // ★charSetField 는 **필드를 바꿀 때만** 불린다. 머피월드를 처음 열면 안 불려서
+    //   초대칩이 안 생기고 주인 presence 도 안 붙었다(대표 8-20: "초대 버튼 어디 감").
+    requestAnimationFrame(function () {
+      window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField);
+      window.mwRoomFieldSync && window.mwRoomFieldSync(window._curField);
+    });
+  }
   // 머피월드 = 몰입 모드: 헤더 즉시 숨김, 로고 광택은 포털이 걷힌 뒤(_mwWorldReveal)
   if (name === 'char') {
     document.body.classList.add('mw-full');
@@ -8207,11 +8215,8 @@ window.renderMyMurpy = function () {
     +     '<img src="char/ui/coin_big.png" alt="" style="width:13px;height:13px;image-rendering:pixelated">'
     +     '<span style="font-size:11px;font-weight:800;color:#F5C24B;font-family:\'Galmuri11\',inherit">'
     +       credits + '</span></div>'
-    //    칭호 (우상단)
-    +   (title ? '<div style="position:absolute;top:9px;right:9px;background:rgba(6,8,14,0.76);'
-    +     'border:1px solid rgba(255,255,255,0.16);border-radius:20px;padding:4px 9px;font-size:10px;'
-    +     'font-weight:700;color:rgba(255,255,255,0.85);font-family:\'Galmuri11\',inherit;z-index:210">'
-    +     esc(title) + '</div>' : '')
+    //    ★칭호는 여기 없다. 머피월드처럼 **캐릭터 머리 위**에 <칭호> 로 붙는다(대표 8-20).
+    //      우상단 칩으로 두면 이 화면만 혼자 다른 문법이 된다.
     + '</div>'
     // ── 꾸미기 버튼
     + '<button onclick="closePanel(\'mypage-panel\');goPage(\'char\')" '
@@ -8275,6 +8280,13 @@ window.renderMyMurpy = function () {
       const tr = Math.max(3, rp.tr);   // 벽 3타일 이전에 저장된 옛 좌표 보정(벽에 박혀 보인다)
       let ch = '';
       try { ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(cfg, hpx, rp.face) : '') || ''; } catch (e) {}
+      // 머리 위 칭호 — 머피월드·남의 방과 같은 모양(<칭호>, 색은 칭호별)
+      const _tc = (title && window.mwTitleColor) ? window.mwTitleColor(title) : '#F5C24B';
+      const titleHtml = title
+        ? '<div style="font-family:Galmuri11,sans-serif;font-size:8.5px;color:' + _tc + ';'
+          + 'white-space:nowrap;text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c;margin-bottom:1px">'
+          + '&lt;' + esc(title) + '&gt;</div>'
+        : '';
       const msg = String(window._myRoomMsg || '').slice(0, 30);
       const bubble = msg
         ? '<div style="max-width:120px;text-align:center;line-height:1.45;background:#fff;color:#10131c;'
@@ -8285,7 +8297,7 @@ window.renderMyMurpy = function () {
         '<div class="my-mw-char" style="position:absolute;left:' + ((rp.tc + 0.5) / N * 100).toFixed(2) + '%;'
         + 'top:' + ((tr + 1) / N * 100).toFixed(2) + '%;transform:translate(-50%,-100%);'
         + 'z-index:' + (10 + tr * 10 + 5) + ';display:flex;flex-direction:column;align-items:center">'
-        + bubble + ch + '</div>');
+        + bubble + titleHtml + ch + '</div>');
     };
     if (stage.clientWidth) place(); else requestAnimationFrame(place);
   }
