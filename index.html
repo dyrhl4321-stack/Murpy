@@ -607,6 +607,30 @@
   .mw-inkstamp.big { width:74px; height:74px } .mw-inkstamp.big i { font-size:17px }
   /* 몰입 모드: 머피월드에선 앱 헤더 숨김 (알림·로고 = 세계관 밖 요소) */
   body.mw-full .header { display:none }
+  /* ===== 사진 인화 (대표 8-20) =====
+     ★기다리는 동안 화면을 가리지 않는다. 얇은 띠 하나만 뜨고 계속 놀 수 있다.
+       다 되면 폴라로이드가 툭 튀어나온다 — '깜짝 선물' 느낌은 기다림이 안 보여야 산다. */
+  #mw-dev-strip { display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:200px;
+    z-index:130; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
+    font-family:'Galmuri11',sans-serif; font-size:11.5px; padding:7px 13px; white-space:nowrap;
+    box-shadow:0 4px 0 rgba(0,0,0,.4) }
+  #mw-dev-strip.on { display:block }
+  #mw-dev-strip .dot { display:inline-block; animation:mwDevDot 1.2s steps(4,end) infinite }
+  @keyframes mwDevDot { 0%{opacity:.25} 50%{opacity:1} 100%{opacity:.25} }
+  /* 인화된 사진 — 실제 폴라로이드처럼 살짝 기울어 떨어진다 */
+  @keyframes mwPolaDrop {
+    0%   { opacity:0; transform:translateY(-38px) rotate(-9deg) scale(.86) }
+    62%  { opacity:1 }
+    100% { opacity:1; transform:translateY(0) rotate(-2.5deg) scale(1) }
+  }
+  #mw-pola { position:fixed; inset:0; z-index:40030; display:flex; align-items:center; justify-content:center;
+    padding:26px; background:rgba(0,0,0,.82) }
+  #mw-pola .pola-card { width:100%; max-width:320px; background:#f4f1ea; padding:14px 14px 0;
+    box-shadow:0 18px 44px rgba(0,0,0,.6); animation:mwPolaDrop .78s cubic-bezier(.2,.9,.3,1) both }
+  #mw-pola .pola-card img { width:100%; display:block; image-rendering:auto }
+  #mw-pola .pola-cap { font-family:'Galmuri11',sans-serif; font-size:12px; color:#4a4336;
+    text-align:center; padding:13px 4px 15px }
+  @media (prefers-reduced-motion:reduce){ #mw-pola .pola-card{ animation:none } }
   /* ===== 초대 전용 화면 ===== */
   body.mw-party .header,
   body.mw-party .bottom-nav,
@@ -6424,6 +6448,7 @@ window.mwPortal = function () {
 <!-- ===== 초대 전용 화면 (대표 8-20) =====
      방 이름줄과 대화창은 **화면 밖**에 둔다. 방 안에 넣으면 조이스틱이 그 위를 먹고
      좁은 무대를 또 가린다. 대화 모양은 스쿼드 톡 그대로다 — 새 문법을 만들지 않는다. -->
+<div id="mw-dev-strip">사진 인화 중<span class="dot">…</span> 다 되면 알려드릴게요</div>
 <div id="mw-party-bar">
   <span class="pt-name" id="mw-party-name">머피룸</span>
   <button onclick="window.mwRoomInviteShare&&window.mwRoomInviteShare()">초대</button>
@@ -17757,7 +17782,6 @@ window._mwRoomFlash = function (stage) {
 window._mwRoomCapture = function () {
   const all = window._mwRl.last || {};
   const owner = window._mwRl.owner;
-  // 지금 방에 있는 사람만. 주인을 맨 앞에 세운다(주인의 방이다).
   const uids = Object.keys(all).filter(function (k) { return window._mwRoomAlive(all[k]); });
   uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
@@ -17767,15 +17791,11 @@ window._mwRoomCapture = function () {
              x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
-  // ★필드엔 붙일 자리가 없다 → 시트로 띄운다. 초대 시트와 같은 문법이다.
-  let host = document.getElementById('mw-room-shot');
-  if (host) host.remove();
-  host = document.createElement('div'); host.id = 'mw-room-shot';
-  host.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.88);display:flex;'
-    + 'align-items:center;justify-content:center;padding:22px';
-  host.innerHTML = '<div style="color:#8a93a8;font-size:13px">사진 만드는 중…</div>';
-  document.body.appendChild(host);
+  // ★가리지 않는다. 얇은 띠만 띄우고 방으로 돌려보낸다 — 그동안 계속 논다.
+  const strip = document.getElementById('mw-dev-strip');
+  if (strip) strip.classList.add('on');
   window._mwRoomShotImg(list, ownerNick, function (data) {
+    if (strip) strip.classList.remove('on');
     window._mwStampData = data;
     window._mwShareMeta = {
       title: ownerNick + '님의 머피룸에서 한 컷',
@@ -17783,19 +17803,32 @@ window._mwRoomCapture = function () {
       btn: '방에 들어가기',
       link: window._mwRoomLink(owner),
     };
-    const B = window._MW_BRAND || {};
-    host.innerHTML = '<div style="width:100%;max-width:340px">'
-      + '<div class="mw-polaroid" style="margin-bottom:10px"><img src="' + data + '" style="width:100%;display:block"></div>'
-      + '<div class="mw-share">'
-      + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
-      + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
-      + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
-      + '</div>'
-      + '<button onclick="var e=document.getElementById(&quot;mw-room-shot&quot;);if(e)e.remove()" style="width:100%;background:none;border:none;color:rgba(255,255,255,.4);font-size:12.5px;padding:14px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
-      + '</div>';
+    window._mwPolaShow(data, list.map(function (pl) { return pl.nick; }));
     window._mwKakaoPrep && window._mwKakaoPrep();
   });
 };
+// 인화된 사진이 툭 떨어진다. ★이건 '결과 보고'가 아니라 **깜짝 선물**이다 —
+//   방에 있던 사람 전부의 화면에서 각자 이렇게 뜬다.
+window._mwPolaShow = function (data, nicks) {
+  const B = window._MW_BRAND || {};
+  let el = document.getElementById('mw-pola'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-pola';
+  const cap = (nicks && nicks.length) ? nicks.slice(0, 4).join('  ·  ') : '';
+  el.innerHTML = '<div style="width:100%;max-width:320px">'
+    + '<div class="pola-card"><img src="' + data + '" alt="같이 찍은 사진">'
+    + '<div class="pola-cap">' + '</div></div>'
+    + '<div class="mw-share" style="margin-top:16px">'
+    + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+    + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+    + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
+    + '</div>'
+    + '<button onclick="var e=document.getElementById(&quot;mw-pola&quot;);if(e)e.remove()" style="width:100%;background:none;border:none;color:rgba(255,255,255,.42);font-size:12.5px;padding:15px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
+    + '</div>';
+  // 캡션은 남의 닉네임이라 textContent 로만 넣는다
+  const c = el.querySelector('.pola-cap'); if (c) c.textContent = cap;
+  document.body.appendChild(el);
+};
+
 // 버튼 = **신호만 쏜다.** 찍는 건 위에서 전원이 동시에 한다.
 window.mwRoomShot = function () {
   if (!auth.currentUser) { window.memberGate && window.memberGate('같이 찍으려면 로그인이 필요해요'); return; }
