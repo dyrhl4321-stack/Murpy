@@ -4163,7 +4163,9 @@ window._charApplyPos = function () {
   }
   const bl = (ui || host).querySelector('.cw-bubble');
   if (bl) {
-    const msg = (window._curField === 'home') ? (window._myRoomMsg || '') : '';
+    // ★남의 방에서는 내 말풍선을 안 띄운다 (대표 8-20) — 내 방에 걸어둔 한마디가
+    //   남의 방까지 따라다니면 이상하다. 방 안 대화는 아래 대화창이 맡는다.
+    const msg = (window._curField === 'home' && !window._mwIsVisiting()) ? (window._myRoomMsg || '') : '';
     bl.textContent = msg;
     bl.style.display = msg ? '' : 'none';
     bl.style.bottom = (tl && tl.style.display !== 'none') ? 'calc(100% + 17px)' : 'calc(100% + 3px)';
@@ -4398,7 +4400,7 @@ window.charMove = function (dx, dy) {
     //   안 넣으면 눌러도 아무 일이 안 일어난다. 방 전체가 조이스틱이라 touchstart 에서
     //   preventDefault 가 걸리면 합성 click 이 취소되기 때문이다(상자가 무반응이던 그 원인).
     //   ★방 안에 **탭으로 반응해야 하는 것**을 새로 얹을 때마다 여기에 추가할 것.
-    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu, .mw-rc, #mw-roomchat')) return;
+    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu, .mw-rc')) return;
       const t = e.touches ? e.touches[0] : e; act = true; jx = t.clientX; jy = t.clientY;
       place(jx, jy); joy.classList.add('show'); hil(null);
       const c = document.getElementById('mw-movecoach'); if (c) { c.remove(); try{localStorage.setItem('mw_movecoach','1');}catch(err){} }
@@ -17354,8 +17356,8 @@ window._mwRlLeave = function () {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
   window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
-  const bar = document.getElementById('mw-roomchat'); if (bar) bar.style.display = 'none';
-  const sc = document.getElementById('mw-shot-chip'); if (sc) sc.remove();
+  document.body.classList.remove('mw-party');
+  const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
 };
 window._mwRlSend = function () {
@@ -17474,18 +17476,52 @@ window._mwRlRender = function (all) {
   //   서로 상대 칸이라 못 움직이는 상태가 된다(기존 _mwUnstick 이 빈 칸을 찾아준다).
   const mp = window._charPos;
   if (mp && tiles.has(mp.tr * 16 + mp.tc) && window._mwUnstick) window._mwUnstick();
-  // 채팅 바 · 같이 찍기 — 같이 있는 사람이 있을 때만
-  const together = !!Object.keys(seen).length && !!auth.currentUser && !window._mwRl.cap;
-  const bar = document.getElementById('mw-roomchat');
-  if (bar) bar.style.display = together ? 'flex' : 'none';
-  let shotBtn = document.getElementById('mw-shot-chip');
-  if (together && !shotBtn) {
-    shotBtn = document.createElement('button');
-    shotBtn.id = 'mw-shot-chip'; shotBtn.className = 'mw-fieldchip';
-    shotBtn.style.top = '52px'; shotBtn.textContent = '같이 찍기';
-    shotBtn.onclick = function (e) { e.stopPropagation(); window.mwRoomShot(); };
-    room.appendChild(shotBtn);
-  } else if (!together && shotBtn) { shotBtn.remove(); }
+  // ── 초대 전용 화면 켜고 끄기 ──
+  // ★주인도 손님이 오면 같은 화면이어야 한다. 손님한테만 켜면 주인은 채팅을 못 친다.
+  //   그래서 '남의 방에 와 있다' 또는 '내 방에 누가 와 있다' 둘 중 하나면 켠다.
+  const visiting = window._mwIsVisiting();
+  const party = (window._curField === 'home') && (visiting || Object.keys(seen).length > 0);
+  if (document.body.classList.contains('mw-party') !== party) {
+    document.body.classList.toggle('mw-party', party);
+    // 위아래 줄이 생기면 무대 크기가 바뀐다 → 타일 계산을 다시 시킨다(안 하면 캐릭터가 어긋난다)
+    setTimeout(function () { window._charApplyPos && window._charApplyPos(); }, 60);
+  }
+  const nameEl = document.getElementById('mw-party-name');
+  if (nameEl) nameEl.textContent = visiting ? (window._mwVisit.nick + '님의 머피룸') : '내 머피룸';
+  const barEl = document.getElementById('mw-party-bar');
+  if (barEl) {
+    const btns = barEl.querySelectorAll('button');
+    if (btns[0]) btns[0].style.display = visiting ? 'none' : '';   // 초대는 내 방에서만
+    if (btns[2]) btns[2].style.display = visiting ? '' : 'none';   // 나가기는 남의 방에서만
+  }
+
+  // ── 대화 기록 ──
+  // ★말은 presence 에 실려 오고 6초면 걷힌다(기록용 노드가 없다). 그래서 **본 것을 여기서
+  //   쌓아 둔다.** 방에 있는 동안만 남으면 충분하고, RTDB 쓰기가 하나도 안 늘어난다.
+  const log = window._mwRl.log || (window._mwRl.log = []);
+  const seenMsg = window._mwRl.seenMsg || (window._mwRl.seenMsg = {});
+  Object.keys(all).forEach(function (uid) {
+    const v = all[uid]; if (!v || !v.msg || !v.msg.text) return;
+    const key = uid + '_' + v.msg.t;
+    if (seenMsg[key]) return;
+    seenMsg[key] = 1;
+    log.unshift({ nick: String(v.nick || '머피'), text: String(v.msg.text).slice(0, 40) });
+    if (log.length > 60) log.pop();
+    window._mwRl.logDirty = 1;
+  });
+  if (window._mwRl.logDirty) {
+    window._mwRl.logDirty = 0;
+    const le = document.getElementById('mw-party-log');
+    if (le) {
+      le.innerHTML = '';
+      log.forEach(function (m) {
+        const d = document.createElement('div'); d.className = 'pl';
+        const b2 = document.createElement('b'); b2.textContent = m.nick;
+        d.appendChild(b2); d.appendChild(document.createTextNode(m.text));   // 남의 글 = 노드로만
+        le.appendChild(d);
+      });
+    }
+  }
 
   // 촬영 신호 — 누가 눌렀든 방에 있는 전원이 같은 시각에 센다
   let shotAt = 0;
@@ -17509,7 +17545,7 @@ window.mwRoomFieldSync = function (key) {
 
 // ---- 방 안 한마디 ----
 window.mwRoomSay = function () {
-  const inp = document.getElementById('mw-roomchat-input'); if (!inp) return;
+  const inp = document.getElementById('mw-party-input'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
   if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
   inp.value = ''; inp.blur();
