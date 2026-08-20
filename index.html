@@ -663,17 +663,14 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ★머피월드 안이니 **픽셀 문법**이다 (대표 8-20). 말풍선 편집창과 같은 규칙 —
      바탕 #0e1320, 테두리 3px #05070c, 버튼은 .mw-btn, 글씨는 Galmuri.
      둥근 회색 입력창은 일반 탭 문법이라 여기 오면 혼자 논다. */
-  #mw-party-chat { display:none; flex-direction:column; margin:12px 0 0;
-    background:#0b0e16; border-top:3px solid #05070c }
+  #mw-party-chat { display:none; flex-direction:column; margin:0 }
   body.mw-party #mw-party-chat { display:flex }
-  #mw-party-log { height:148px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:8px; padding:11px 13px }
+  #mw-party-log { height:132px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:8px;
+    margin:10px 13px 0; padding:9px 11px; background:#0b0e16; border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350 }
   #mw-party-log .pl { font-family:'Galmuri11',sans-serif; font-size:11.5px; line-height:1.6; color:#cfd6e6 }
   #mw-party-log .pl b { color:#7aa8ff; margin-right:6px }
   #mw-party-log .pl-empty { font-family:'Galmuri11',sans-serif; font-size:11px; color:#4a5266; text-align:center; padding:14px 0 }
-  #mw-party-row { display:flex; gap:7px; padding:0 13px 13px }
-  #mw-party-row input { flex:1; min-width:0; background:#0e1320; border:3px solid #05070c; color:#fff;
-    padding:11px 12px; font-size:16px; outline:none; font-family:'Galmuri11',sans-serif }
-  #mw-party-row input::placeholder { color:#4a5266 }
+  #mw-party-row { display:flex; gap:4px; padding:6px 13px 0 }
   /* 하단탭이 없으니 아래 여백을 줄인다 */
   body.mw-party #page-char { padding-bottom:24px }
   /* ===== 월드바 — 다크 모던(자체 CSS) + 제미나이 소스는 로고·아이콘·코인만 ===== */
@@ -1622,11 +1619,11 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   </div>
   <!-- ★방 바로 아래. 스쿼드 톡과 같은 자리다 — 말풍선은 순간이고 기록은 여기 남는다. -->
   <div id="mw-party-chat">
+    <!-- ★스쿼드 워킹룸의 입력줄(_sqQuickBar)과 **같은 물건**이다. 입력 + 고정 + 말하기.
+         자리도 같다 — 방 바로 밑. 필드 안에 넣으면 입력줄이 깔린 자리로 캐릭터가
+         못 걸어간다(스쿼드에서 이미 겪고 밖으로 뺐다). -->
+    <div id="mw-party-row"></div>
     <div id="mw-party-log"></div>
-    <div id="mw-party-row">
-      <input id="mw-party-input" maxlength="40" placeholder="여기 있는 사람에게 말 걸기…" onkeydown="if(event.key==='Enter')window.mwRoomSay()">
-      <button class="mw-btn mw-btn-sm" onmousedown="event.preventDefault()" onclick="window.mwRoomSay&&window.mwRoomSay()">보내기</button>
-    </div>
   </div>
   <div style="padding:10px 16px 0">
     <div class="tab-bar" id="charworld-hub-tabs">
@@ -4228,7 +4225,7 @@ window._charApplyPos = function () {
     // ★방에서 친 한마디는 **내 캐릭터 머리 위**에 뜬다 (대표 8-20). 남들이 보는 것과 같은 모양이다.
     //   내 방에 걸어둔 말풍선(roomMsg)은 남의 방까지 따라다니면 안 되므로 방문 중엔 안 쓴다.
     const _live = (window._mwRl && window._mwRl.msg) || null;
-    const _fresh = _live && (Date.now() - (_live.t || 0) < (window.MW_ROOM_MSG_MS || 6000));
+    const _fresh = _live && (window._mwBubblePin || (Date.now() - (_live.t || 0) < (window.MW_ROOM_MSG_MS || 6000)));
     const msg = _fresh ? _live.text
               : ((window._curField === 'home' && !window._mwIsVisiting()) ? (window._myRoomMsg || '') : '');
     bl.textContent = msg;
@@ -17551,6 +17548,7 @@ window._mwRlSend = function () {
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       character: window.getMyCharacter ? window.getMyCharacter() : null,
       msg: window._mwRl.msg || null,
+      pin: !!window._mwBubblePin,       // 고정이면 남의 화면에서도 안 걷힌다
       shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
       t: Date.now(),
     });
@@ -17633,7 +17631,7 @@ window._mwRlRender = function (all) {
       };
     }
     const bub = c.el.querySelector('.mw-rc-bub');
-    const fresh = v.msg && v.msg.text && (Date.now() - (v.msg.t || 0) < window.MW_ROOM_MSG_MS);
+    const fresh = v.msg && v.msg.text && (v.pin || (Date.now() - (v.msg.t || 0) < window.MW_ROOM_MSG_MS));
     if (bub) {
       if (fresh) { bub.textContent = String(v.msg.text).slice(0, 40); bub.style.display = ''; }
       else bub.style.display = 'none';
@@ -17664,6 +17662,7 @@ window._mwRlRender = function (all) {
     // 위아래 줄이 생기면 무대 크기가 바뀐다 → 타일 계산을 다시 시킨다(안 하면 캐릭터가 어긋난다)
     setTimeout(function () { window._charApplyPos && window._charApplyPos(); }, 60);
   }
+  if (party) window.mwRoomQuickBar();
   const nameEl = document.getElementById('mw-party-name');
   if (nameEl) nameEl.textContent = visiting ? (window._mwVisit.nick + '님의 머피룸') : '내 머피룸';
   const barEl = document.getElementById('mw-party-bar');
@@ -17722,6 +17721,60 @@ window.mwRoomFieldSync = function (key) {
 };
 
 // ---- 방 안 한마디 ----
+// ★스쿼드 워킹룸 입력줄(_sqQuickBar)과 같은 물건. 그 인라인 스타일을 그대로 옮겼다 —
+//   각진 테두리(2px #05070c + 바깥 2px #2b3350), 높이 34, 라운드 0.
+//   ★입력 글씨는 기본 폰트 16px 이다. Galmuri 를 16px 로 키우면 획이 뭉개지고,
+//     11px 로 두면 iOS 가 입력할 때 화면을 확대한다. 픽셀 느낌은 테두리와 버튼이 낸다.
+window._mwBubblePin = false;
+window.mwRoomQuickBar = function () {
+  const host = document.getElementById('mw-party-row'); if (!host) return;
+  const on = window._mwBubblePin;
+  let bar = document.getElementById('mw-quick-bar');
+  if (bar) {   // 이미 있으면 다시 만들지 않는다(치던 글자가 날아간다). 고정 색만 갱신.
+    const pin = document.getElementById('mw-quick-pin');
+    if (pin) {
+      pin.style.background = on ? '#F5C24B' : 'rgba(255,255,255,.06)';
+      pin.style.color = on ? '#3a2a00' : 'rgba(255,255,255,.7)';
+    }
+    return;
+  }
+  bar = document.createElement('div');
+  bar.id = 'mw-quick-bar';
+  bar.style.cssText = 'display:flex;gap:4px;width:100%';
+  bar.innerHTML =
+    '<input id="mw-party-input" maxlength="40" placeholder="한마디 하면 머리 위에 떠요" autocomplete="off"'
+    + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(255,255,255,.06);'
+    + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
+    + 'outline:none;font-family:inherit;border-radius:0"'
+    + ' onkeydown="if(event.key===\'Enter\')window.mwRoomSay()">'
+    + '<button id="mw-quick-pin" onmousedown="event.preventDefault()" onclick="window.mwBubblePinToggle()" aria-label="말풍선 고정"'
+    + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
+    + (on ? 'background:#F5C24B;color:#3a2a00;' : 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);')
+    + "border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:0;font-size:11px;cursor:pointer;"
+    + "font-family:'Galmuri11',sans-serif;border-radius:0\">고정</button>"
+    // ★onmousedown 을 막아야 한다 — 안 막으면 누르는 순간 입력칸이 포커스를 잃고
+    //   키보드가 내려갔다 올라오면서 화면이 들썩인다(스쿼드에서 겪은 그것).
+    + '<button onmousedown="event.preventDefault()" onclick="window.mwRoomSay()"'
+    + ' style="flex-shrink:0;box-sizing:border-box;height:34px;background:var(--accent);border:2px solid #05070c;'
+    + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
+    + "font-family:'Galmuri11',sans-serif;border-radius:0\">말하기</button>";
+  host.appendChild(bar);
+  window._sqNoJump && window._sqNoJump(document.getElementById('mw-party-input'));
+};
+// 고정 = 내 말풍선이 안 사라진다. 스쿼드의 sqBubblePinToggle 과 같은 뜻이다.
+window.mwBubblePinToggle = function () {
+  window._mwBubblePin = !window._mwBubblePin;
+  window.mwRoomQuickBar();
+  if (window._mwBubblePin) { clearTimeout(window._mwRl.msgT); clearTimeout(window._mwRl.msgClr); }
+  else if (window._mwRl.msg) {          // 풀면 곧 걷힌다
+    window._mwRl.msgT = setTimeout(function () {
+      window._mwRl.msg = null; window._mwRlSend();
+      window._charApplyPos && window._charApplyPos();
+    }, 600);
+  }
+  window._mwRlSend();
+  showToast(window._mwBubblePin ? '말풍선을 고정했어요' : '말풍선 고정을 풀었어요');
+};
 window.mwRoomSay = function () {
   const inp = document.getElementById('mw-party-input'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
@@ -17731,10 +17784,14 @@ window.mwRoomSay = function () {
   window._mwRlSend();
   window._charApplyPos && window._charApplyPos();          // 내 머리 위에 바로 띄운다
   clearTimeout(window._mwRl.msgClr);
-  window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); },
-                                   (window.MW_ROOM_MSG_MS || 6000) + 80);   // 시간 지나면 걷는다
+  if (!window._mwBubblePin) {
+    window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); },
+                                     (window.MW_ROOM_MSG_MS || 6000) + 80);   // 시간 지나면 걷는다
+  }
   clearTimeout(window._mwRl.msgT);
-  window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, window.MW_ROOM_MSG_MS);
+  if (!window._mwBubblePin) {          // 고정을 켰으면 안 걷는다
+    window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, window.MW_ROOM_MSG_MS);
+  }
 };
 // ===== 머피룸 실시간 끝 =====
 
