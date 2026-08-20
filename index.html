@@ -17288,6 +17288,35 @@ window.mwRoomShareLink = async function () {
   }
 };
 
+// 인스타는 게시물에 링크를 못 싣는다 → **주소를 클립보드에 넣고** 공유시트를 연다.
+// 스토리에 붙여넣으면 그게 초대장이 된다(덤벨 피하기 dodgeShareIG 와 같은 방식).
+// ★그쪽 함수를 고쳐 쓰지 않고 따로 뒀다 — 다른 창이 그 구역을 만지고 있다.
+window._mwShareIG = function (url) {
+  const go = function () {
+    showToast('링크도 복사했어요 · 스토리에 붙여넣으세요');
+    window.mwShareSheet && window.mwShareSheet();
+  };
+  if (!url) { go(); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(go, go);
+    } else {
+      const ta = document.createElement('textarea');   // 옛 브라우저·비보안 컨텍스트 폴백
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      go();
+    }
+  } catch (e) { go(); }
+};
+window.mwRoomInviteIG = function () {
+  window._mwShareIG(window._mwRoomLink((auth.currentUser || {}).uid));
+};
+// 같이 찍은 사진도 같은 규칙이다 — 그 방으로 가는 주소를 같이 복사한다
+window.mwRoomShotIG = function () {
+  window._mwShareIG((window._mwShareMeta || {}).link || '');
+};
 // 공유를 부르고 나면 초대 시트를 닫는다. ★공용 함수(mwShareKakao 등)는 안 건드린다 —
 //   다른 창이 같은 함수를 쓰고 있어서 거기 손대면 충돌한다.
 window._mwInviteThen = function (fn, arg) {
@@ -17307,7 +17336,7 @@ window.mwRoomInviteShare = function () {
     + '<div style="font-size:17px;font-weight:800;margin-bottom:5px">' + nick + '님의 방</div>'
     + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:16px">최대 4명까지 같이 놀 수 있어요<br>머피가 없어도 가입 없이 들어와요</div>'
     + '<div class="mw-share">'
-    + '<button class="mw-sbtn" onclick="window._mwInviteThen(window.mwShareSheet)" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+    + '<button class="mw-sbtn" onclick="window._mwInviteThen(window.mwRoomInviteIG)" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
     + '<button class="mw-sbtn mw-kk" onclick="window._mwInviteThen(window.mwShareKakao,this)" aria-label="카카오톡으로 초대">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
     + '<button class="mw-sbtn sv" onclick="window.mwRoomShareLink()" aria-label="링크 공유">' + (B.ln || '') + '<span>링크</span></button>'
     + '</div>'
@@ -17897,7 +17926,7 @@ window._mwPolaShow = function (data, nicks) {
     +   '<div class="pola-cap"></div>'
     + '</div>'
     + '<div class="mw-share" style="margin-top:16px">'
-    + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+    + '<button class="mw-sbtn" onclick="window.mwRoomShotIG()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
     + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
     + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
     + '</div>'
