@@ -117,3 +117,19 @@ assert(/_sqInviteSid/.test(gogo), '스쿼드 흐름이 사라졌다');
 const pro = grab(/window\.dodgeGuestPromote = async function[\s\S]*?\n\};/, 'dodgeGuestPromote');
 assert(/dodgeGuestClear\(\)/.test(pro), '옮긴 뒤 폰 보관분을 안 비운다 → 두 벌이 남는다');
 console.log('  + 점수 승격·콜백 훅 OK');
+
+// 12) ★카톡 카드가 게임으로 가야 한다 — 지금은 link 가 비어 홈으로 떨어진다
+const show = grab(/window\._dodgeShowShare = function[\s\S]*?\n\};/, '_dodgeShowShare');
+assert(/link:\s*window\.dodgeMakeLink\(/.test(show),
+  '_mwShareMeta 에 도전장 링크가 없다 → 카톡 카드가 홈으로 간다');
+// 카드 그림·문구는 손대지 않았는지 (대표 지시)
+assert(/title: '덤벨 피하기 ' \+ score \+ '점!'/.test(show), '카톡 제목 문구가 바뀌었다');
+assert(/btn: '나도 해보기'/.test(show), '카톡 버튼 문구가 바뀌었다');
+assert(/_dodgeCardImg\(/.test(show), '카드 그림 호출이 사라졌다');
+
+// 13) 인스타 버튼은 링크도 같이 복사한다 (버튼 3칸은 그대로)
+assert(/onclick="window\.dodgeShareIG\(/.test(show), '인스타 버튼이 링크를 안 복사한다');
+const ig = grab(/window\.dodgeShareIG = function[\s\S]*?\n\};/, 'dodgeShareIG');
+assert(/clipboard/.test(ig), '클립보드 복사가 없다');
+assert(/mwShareSheet\(\)/.test(ig), '공유시트를 안 연다');
+console.log('  + 공유 링크·인스타 복사 OK');

@@ -12566,10 +12566,13 @@ window._dodgeShowShare = function (score, sec, lvName, hostId) {
       title: '덤벨 피하기 ' + score + '점!',
       desc: '머피월드에서 훈수충 아재를 피해 보세요',
       btn: '나도 해보기',
+      // ★이게 없으면 mwShareKakao 가 기본값(홈)으로 떨어진다 — 받은 사람이 게임에 못 닿는다.
+      //   머피월드 → 헬스장 필드까지 찾아가야 해서 사실상 아무도 안 온다(대표 8-20).
+      link: window.dodgeMakeLink(window._mwMyNick || '', score),
     };
     host.innerHTML = '<div class="mw-share-lbl" style="text-align:center;margin:6px 3px 9px">내 기록 자랑하기</div>'
       + '<div class="mw-share">'
-      + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+      + '<button class="mw-sbtn" onclick="window.dodgeShareIG(' + score + ')" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
       + '<button id="dodge-kkbtn" class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
       + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
       + '</div>';
@@ -12685,6 +12688,30 @@ window._dodgeRefreshKeep = function () {
   }
   host.style.display = 'none';
   host.innerHTML = '';
+};
+// 인스타는 사진만 올라가고 링크는 안 따라간다 — 유저가 스토리에 직접 붙여야 한다(대표 8-20).
+// 그래서 공유시트를 열기 **전에** 링크를 클립보드에 넣어 둔다.
+// ★복사는 반드시 **탭 제스처 안에서** 해야 브라우저가 허용한다. 공유시트를 연 뒤엔 막힌다.
+// ★네이티브(앱스토어)로 가도 이 버튼은 남는다 — instagram-stories:// 로 스토리를 바로 열 수는
+//   있지만 링크 자동 첨부는 메타 승인 파트너만 된다고 알려져 있다.
+window.dodgeShareIG = function (score) {
+  const url = window.dodgeMakeLink(window._mwMyNick || '', score || 0);
+  const go = function () {
+    showToast('링크도 복사했어요 · 스토리에 붙여넣으세요');
+    window.mwShareSheet && window.mwShareSheet();
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(go, go);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      go();
+    }
+  } catch (e) { go(); }
 };
 // 내 기록 장. ★한 판 끝난 그 순간에만 공유되면 기회가 한 번뿐이다 — 지난 신기록도
 //   언제든 다시 꺼내 공유할 수 있어야 바이럴이 된다(대표 8-20).
