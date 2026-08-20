@@ -669,14 +669,26 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      둥근 회색 입력창은 일반 탭 문법이라 여기 오면 혼자 논다. */
   #mw-party-chat { display:none; flex-direction:column; margin:0 }
   body.mw-party #mw-party-chat { display:flex }
-  #mw-party-log { height:132px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:8px;
+  #mw-party-log { overflow-y:auto; display:flex; flex-direction:column-reverse; gap:8px;
     margin:10px 13px 0; padding:9px 11px; background:#0b0e16; border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350 }
   #mw-party-log .pl { font-family:'Galmuri11',sans-serif; font-size:11.5px; line-height:1.6; color:#cfd6e6 }
   #mw-party-log .pl b { color:#7aa8ff; margin-right:6px }
   #mw-party-log .pl-empty { font-family:'Galmuri11',sans-serif; font-size:11px; color:#4a5266; text-align:center; padding:14px 0 }
   #mw-party-row { display:flex; gap:4px; padding:6px 13px 0 }
-  /* 하단탭이 없으니 아래 여백을 줄인다 */
-  body.mw-party #page-char { padding-bottom:24px }
+  /* ★★대화 상자는 **폰 밑단까지 내려온다** (대표 8-20: "밑단까지 안 채워지고 중간에서 끊겼다").
+     예전엔 height:132px 로 못 박아 놔서 그 아래가 통째로 빈 공간이었다.
+     page 를 세로 flex 로 만들고 남는 높이를 대화 상자가 먹는다 — 폰이 길든 짧든 딱 맞는다.
+     ※min-height 라서 방이 크면 페이지는 여전히 스크롤된다(대표 8-20에 정한 규칙 유지). */
+  body.mw-party #page-char { padding-bottom:0; min-height:100dvh; display:flex; flex-direction:column }
+  body.mw-party #mw-party-chat { flex:1; min-height:0;
+    padding-bottom:max(12px, env(safe-area-inset-bottom)) }
+  body.mw-party #mw-party-log { flex:1; min-height:104px; margin-bottom:0 }
+  /* ★키보드가 올라오면 **화면은 그대로 두고 입력줄만** 키보드 바로 위로 올린다 (대표 8-20:
+     "화면 위로 밀려서 개불편하다 · 화면 고정으로 가야 한다").
+     bottom 값은 JS 가 visualViewport 로 실측해 넣는다 — 폰마다 키보드 높이가 다르다. */
+  body.mw-kb #mw-party-row { position:fixed; left:0; right:0; z-index:70;
+    max-width:390px; margin:0 auto; padding:8px 13px;
+    background:#0b0e16; border-top:3px solid #05070c }
   /* ===== 월드바 — 다크 모던(자체 CSS) + 제미나이 소스는 로고·아이콘·코인만 ===== */
   .mw-worldbar { display:flex; align-items:center; gap:10px; padding:14px 16px 11px;
     padding-top:max(14px, env(safe-area-inset-top)); font-family:'Galmuri11',sans-serif;
@@ -17589,6 +17601,12 @@ window.mwRoomEnterField = async function (uid) {
 //   나가기를 누르기 전엔 방에 계속 남는 구조라, 방주에게 치울 수단이 반드시 있어야 한다.
 //   `kick/{uid}` 표시를 먼저 남기고 노드를 지운다 — 표시가 없으면 그쪽 심장박동이
 //   자기 노드를 곧바로 되살려서 강퇴가 안 먹는다.
+// 방 대화 기록 비우기 — 화면과 메모리 양쪽. 방을 열 때도 한 번 부른다.
+window._mwRoomLogClear = function () {
+  window._mwRl.log = []; window._mwRl.seenMsg = {}; window._mwRl.logDirty = 0;
+  const le = document.getElementById('mw-party-log');
+  if (le) le.innerHTML = '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
+};
 window.mwRoomKick = async function (uid, nick) {
   const R = window._rt, u = auth.currentUser;
   if (!R || !u || window._mwRl.owner !== u.uid) return;
@@ -17607,6 +17625,11 @@ window.mwRoomLeaveField = function () {
   if (!window._mwVisit) {
     if (!window._mwPartyOn) return;
     window._mwPartyOn = false;
+    // ★방을 닫으면 **그 방에서 친 대화도 없앤다** (대표 8-20).
+    //   기록은 RTDB 가 아니라 _mwRl.log(클라이언트)에 쌓인다. 주인은 방을 닫아도
+    //   자기 홈 필드에 그대로 있어서 _mwRlLeave 를 안 타므로, 여기서 직접 비워야 한다.
+    //   안 비우면 다음에 방을 열었을 때 지난 손님과 나눈 말이 그대로 떠 있다.
+    window._mwRoomLogClear();
     window._mwRl.end = Date.now();
     window._mwRlSend();                                   // 손님이 이걸 보고 같이 나온다
     // ★방을 닫으면 **방 전체를 지운다.** 이제 사람이 안 사라지는 구조라, 안 지우면
@@ -17970,6 +17993,59 @@ window.mwRoomFieldSync = function (key) {
 //   각진 테두리(2px #05070c + 바깥 2px #2b3350), 높이 34, 라운드 0.
 //   ★입력 글씨는 기본 폰트 16px 이다. Galmuri 를 16px 로 키우면 획이 뭉개지고,
 //     11px 로 두면 iOS 가 입력할 때 화면을 확대한다. 픽셀 느낌은 테두리와 버튼이 낸다.
+// ===== 방 입력줄 키보드 대응 =====
+// ★대표 8-20: "한마디 창 누르면 키보드가 열리면서 화면이 위로 밀려서 개불편하다.
+//   창 조금 밑에 여유 두고 키보드가 튀어나오게, 화면 고정으로 가야 한다."
+//
+// 스쿼드(_sqVVFit/_sqKbFix)는 **붙박이 패널**이라 패널째 앉히면 됐다. 방 화면은 다르다 —
+// 페이지가 통째로 스크롤되는 구조라(대표 8-20에 그렇게 정했다) 패널째 옮길 수가 없다.
+// → 여기서는 **입력줄 하나만** 키보드 바로 위에 붙박이로 띄운다. 그러면 브라우저가
+//   입력칸을 보이려고 화면을 밀 이유 자체가 없어져서 방이 제자리에 그대로 있는다.
+//
+// ★계산하지 않고 **잰다**(스쿼드에서 배운 것). 아이폰·안드로이드·카톡 인앱브라우저가
+//   키보드 높이를 저마다 다르게 알려주므로 visualViewport 의 **실제 아랫변**만 쓴다.
+//   vv 를 못 믿는 환경(값이 안 바뀌는 웹뷰)에서는 **아무 것도 안 한다** — 원래 동작 그대로다.
+//   (8-14에 뷰포트 식을 건드렸다가 대표 폰이 오히려 가려진 사고가 있었다. 두 번은 안 낸다)
+window.MW_KB_GAP = 10;             // 입력줄과 키보드 사이 여유
+window._mwKbFit = function () {
+  const row = document.getElementById('mw-party-row');
+  const vv = window.visualViewport;
+  if (!row || !vv || !window._mwKbOn) return;
+  const ih = window.innerHeight || vv.height;
+  const gap = Math.round(ih - ((vv.offsetTop || 0) + vv.height));   // 키보드가 먹은 높이
+  if (gap < 80) {                                   // 키보드가 안 올라왔다(또는 내려갔다)
+    document.body.classList.remove('mw-kb'); row.style.bottom = '';
+    const le0 = document.getElementById('mw-party-log');
+    if (le0) le0.style.paddingBottom = '';
+    return;
+  }
+  document.body.classList.add('mw-kb');
+  row.style.bottom = (gap + window.MW_KB_GAP) + 'px';
+  // ★대화 상자는 키보드 뒤까지 뻗어 있다. 그냥 두면 **가장 최근 말이 키보드에 가린다**
+  //   (목록이 column-reverse 라 최신 글이 상자 맨 아래에 있다).
+  //   상자를 줄이지 말고 **아래 여백을 키보드+입력줄만큼** 줘서 글을 위로 밀어 올린다.
+  const le = document.getElementById('mw-party-log');
+  if (le) le.style.paddingBottom = (gap + window.MW_KB_GAP + row.offsetHeight + 12) + 'px';
+};
+window._mwKbStart = function () {
+  if (!window.visualViewport) return;      // 못 믿는 환경 = 손대지 않는다
+  window._mwKbOn = 1;
+  const vv = window.visualViewport;
+  vv.addEventListener('resize', window._mwKbFit);
+  vv.addEventListener('scroll', window._mwKbFit);
+  // 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 기기마다 애니메이션이 달라 여러 번 잰다.
+  [0, 90, 200, 340, 520, 800].forEach(function (t) { setTimeout(window._mwKbFit, t); });
+};
+window._mwKbEnd = function () {
+  const vv = window.visualViewport;
+  if (vv) { vv.removeEventListener('resize', window._mwKbFit); vv.removeEventListener('scroll', window._mwKbFit); }
+  window._mwKbOn = 0;
+  document.body.classList.remove('mw-kb');
+  const row = document.getElementById('mw-party-row');
+  if (row) row.style.bottom = '';   // ★인라인 cssText 가 없는 요소라 '' 로 지워도 안전하다
+  const le = document.getElementById('mw-party-log');
+  if (le) le.style.paddingBottom = '';
+};
 window._mwBubblePin = false;
 window.mwRoomQuickBar = function () {
   const host = document.getElementById('mw-party-row'); if (!host) return;
@@ -17991,6 +18067,7 @@ window.mwRoomQuickBar = function () {
     + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(255,255,255,.06);'
     + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
     + 'outline:none;font-family:inherit;border-radius:0"'
+    + ' onfocus="window._mwKbStart&&window._mwKbStart()" onblur="window._mwKbEnd&&window._mwKbEnd()"'
     + ' onkeydown="if(event.key===\'Enter\')window.mwRoomSay()">'
     + '<button id="mw-quick-pin" onmousedown="event.preventDefault()" onclick="window.mwBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
