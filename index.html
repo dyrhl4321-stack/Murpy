@@ -12578,8 +12578,17 @@ window._dodgeShowShare = function (score, sec, lvName, hostId) {
 window.DODGE_RECS_MAX = 20;   // 이보다 오래된 판은 버린다 — 문서가 무한정 커지면 안 된다
 window._dodgeRecs = null;     // 로컬 캐시(null = 아직 안 읽음)
 window.dodgeSave = async function (score, sec, lvKey) {
-  const user = auth.currentUser || window.currentUser; if (!user) return;
+  const user = auth.currentUser || window.currentUser;
   const n = Math.max(0, Math.min(window.DODGE.MAX_SCORE, Math.floor(score || 0)));
+  // ★계정이 없어도 **버리지 않는다.** 링크로 들어온 사람은 계정이 없는 채로 한 판을 한다 —
+  //   여기서 버리면 "기록 남기기"를 눌러도 남길 게 없다. 폰에 들고 있다가 계정이 생기면 옮긴다.
+  if (!user) {
+    const rec = { s: n, t: Math.max(0, Math.floor(sec || 0)), lv: lvKey || 'mid', at: Date.now() };
+    const merged = window.dodgeGuestMerge(window.dodgeGuestLoad(), rec, window.DODGE_RECS_MAX);
+    window.dodgeGuestSave(merged);
+    window._dodgeBest = Math.max(window._dodgeBest || 0, merged.best || 0);   // 시작화면 표시용
+    return;
+  }
   try {
     const ref = doc(db, 'users', user.uid);
     const snap = await getDoc(ref);

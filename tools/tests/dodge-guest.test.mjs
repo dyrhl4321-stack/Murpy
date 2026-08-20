@@ -93,3 +93,14 @@ const fixed = w.dodgeGuestMerge({ best: 'x', recent: 'nope' }, { s: 10, t: 1, lv
 assert.strictEqual(fixed.best, 10, '망가진 best 를 복구 못 한다');
 assert(Array.isArray(fixed.recent), '망가진 recent 를 배열로 못 되돌린다');
 console.log('  + 게스트 점수 보관 OK');
+
+// 9) 계정이 없어도 점수를 버리지 않는다
+const save = grab(/window\.dodgeSave = async function[\s\S]*?\n\};/, 'dodgeSave');
+assert(!/if \(!user\) return;/.test(save),
+  'dodgeSave 가 계정 없으면 그냥 버린다 → 비회원 최고점이 사라진다');
+assert(/dodgeGuestSave\(/.test(save) && /dodgeGuestMerge\(/.test(save),
+  'dodgeSave 가 계정 없을 때 폰에 보관하지 않는다');
+// 보관 뒤에는 반드시 return — 그 아래 Firestore 코드로 흘러가면 터진다
+assert(/dodgeGuestSave\([\s\S]{0,200}?return;/.test(save),
+  '게스트 보관 뒤 return 이 없다 → Firestore 코드로 흘러간다');
+console.log('  + dodgeSave 게스트 경로 OK');
