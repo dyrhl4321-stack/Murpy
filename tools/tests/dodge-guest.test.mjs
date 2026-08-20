@@ -243,8 +243,10 @@ console.log('  + 계정 없는 이름·공유 반영 OK');
 //     이름 없이 공유하면 카드에도 도전장에도 이름이 안 박혀 고리가 끊긴다.
 //     순서를 화면으로 강제한다: 닉네임 → 공유하기 → 그때 인스타·카톡·저장이 나온다.
 const show3 = grab(/window\._dodgeShowShare = function[\s\S]*?\n\};/, '_dodgeShowShare');
-assert(/_gate = \(hostId !== 'dodge-rec-share'\) && !\(window\.dodgeNickGet/.test(show3),
-  '이름이 없어도 공유 버튼이 바로 뜬다');
+assert(/const _gate = \(hostId !== 'dodge-rec-share'\) && !_real && !window\._dodgeShared;/.test(show3),
+  '게스트인데 공유 버튼이 바로 뜬다 — 게이트가 이름 유무로 걸려 있으면 한 번 넣은 뒤로 영영 안 걸린다');
+assert(/window\._dodgeShared = false;/.test(src), '판마다 게이트를 다시 잠그지 않는다');
+assert(/window\._dodgeShared = true;/.test(src), '공유하기를 눌러도 게이트가 안 열린다');
 assert(/host\.style\.display = _gate \? 'none' : ''/.test(show3), '공유 버튼을 가리지 않는다');
 
 // 27) 이름을 저장하면 **그 이름으로 카드를 다시 만들고** 공유 버튼을 연다
