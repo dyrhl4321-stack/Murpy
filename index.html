@@ -611,10 +611,14 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ===== 사진 인화 (대표 8-20) =====
      ★기다리는 동안 화면을 가리지 않는다. 얇은 띠 하나만 뜨고 계속 놀 수 있다.
        다 되면 폴라로이드가 툭 튀어나온다 — '깜짝 선물' 느낌은 기다림이 안 보여야 산다. */
-  #mw-dev-strip { display:none; position:fixed; left:50%; transform:translateX(-50%); bottom:24px;
-    z-index:130; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
+  /* ★하단탭 **위**에 앉힌다. bottom:24px 은 탭바(높이 78 + 안전영역) 한가운데라
+     매칭·홈 아이콘을 통째로 덮었다(대표 8-20). 탭바가 없는 초대 모드에서만 바닥에 붙는다. */
+  #mw-dev-strip { display:none; position:fixed; left:50%; transform:translateX(-50%);
+    bottom:calc(86px + env(safe-area-inset-bottom, 0px));
+    z-index:45; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; padding:7px 13px; white-space:nowrap;
     box-shadow:0 4px 0 rgba(0,0,0,.4) }
+  body.mw-party #mw-dev-strip { bottom:calc(20px + env(safe-area-inset-bottom, 0px)) }
   #mw-dev-strip.on { display:block }
   #mw-dev-strip .dot { display:inline-block; animation:mwDevDot 1.2s steps(4,end) infinite }
   @keyframes mwDevDot { 0%{opacity:.25} 50%{opacity:1} 100%{opacity:.25} }
@@ -774,7 +778,13 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      내 캐릭터가 머리 위 UI 를 #charworld-headui 로 밖에 뺀 이유와 같은 문제다(8-18).
      → 위(말풍선·칭호)는 bottom:100%, 아래(닉네임)는 top:100% 로 **상자 밖**에 띄운다. */
   .mw-rc { position:absolute }
+  /* ★★width:max-content 가 **반드시** 있어야 한다. 이 상자는 붙박이(absolute)라 폭이
+     '들어갈 수 있는 만큼'으로 정해지는데, 부모(.mw-rc)가 캐릭터 폭(≈47px)이고 left:50% 라
+     쓸 수 있는 폭이 **23px** 밖에 안 된다 → 말풍선 글자가 한 자씩 줄바꿈돼 **세로로 선다**
+     (대표 8-20: "어떤 상대방 말풍선은 세로로 정렬돼서 나온다"). 짧은 말은 우연히 들어가서
+     '어떤 것만' 그래 보였던 것이다. 내 말풍선(.cw-bubble)엔 이미 이 줄이 있다. */
   .mw-rc-top { position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
+    width:max-content; max-width:120px;
     display:flex; flex-direction:column; align-items:center; pointer-events:none }
   .mw-rc .mw-rc-body { position:absolute; inset:0 }
   /* ★아우라(헬창의 기운)를 켜면 이름표를 고리 아래로 내린다 — 안 내리면 이름표가 고리 앞겹을
@@ -788,7 +798,7 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-rc.walking .mw-rc-body > div > div { animation:mwWalk4 .55s step-end infinite }
   .mw-rc-title { font-family:'Galmuri11',sans-serif; font-size:8.5px; white-space:nowrap; margin-bottom:1px;
     text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c; }
-  .mw-rc-bub { max-width:120px; text-align:center; line-height:1.45; background:#fff; color:#10131c;
+  .mw-rc-bub { width:max-content; max-width:100%; text-align:center; line-height:1.45; background:#fff; color:#10131c;
     border:2px solid #05070c; padding:2px 6px; font-size:9.5px; font-weight:600; margin-bottom:3px;
     font-family:'Galmuri11',sans-serif; }
   .mw-fieldchip { position:absolute; right:9px; top:9px; z-index:200; display:flex; align-items:center; gap:6px;
@@ -1625,7 +1635,11 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
              캐릭터와 **같은 상자**(left/top/width/height)를 _charApplyPos 가 복사해주므로
              CSS(bottom:100% 등)는 그대로 살고, 위치 전환도 캐릭터와 같은 시간으로 따라간다.
              ※바운스(translate 1px)·스쿼시(scale)는 일부러 안 따라간다 — 글자는 안 흔들리는 게 낫다. -->
-        <div id="charworld-headui" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear;pointer-events:none;z-index:400"></div>
+        <!-- ★z-index 는 _charApplyPos 가 **캐릭터와 같은 값(+1)** 으로 매 프레임 넣는다.
+             400 으로 못 박아 뒀더니 가구 z(최대 ~170)를 전부 넘어서, 내 칭호·말풍선·이름표만
+             책장·냉장고를 **뚫고 앞으로 나왔다**(대표 8-20). 남의 캐릭터는 줄(row) 기준 z 라
+             제대로 가려지는데 나만 안 가려져서 두 화면이 갈라졌다. 아래 값은 첫 프레임용 초기값. -->
+        <div id="charworld-headui" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear;pointer-events:none;z-index:16"></div>
         <!-- ★#mw-ringcoach 제거(2026-08-03). 스포트라이트 코치마크(_COACH_MARKS.char, 황금 강조형)가
              "내 캐릭터를 톡! 누르면 메뉴가 열려요"로 **같은 말을 이미 한다.** 둘 다 띄우니
              자리까지 겹쳐서(bottom 13px) 안내가 서로를 가렸다. 강조형 하나로 통일한다. -->
@@ -4223,6 +4237,9 @@ window._charApplyPos = function () {
   if (ui) {
     ui.style.left = host.style.left; ui.style.top = host.style.top;
     ui.style.width = w + 'px'; ui.style.height = DH + 'px';
+    // ★z 도 같이 옮긴다. 안 옮기면 이름표만 가구를 뚫고 앞으로 나온다(대표 8-20).
+    //   +1 = 내 몸통 바로 앞. 가구와의 앞뒤는 몸통과 **똑같이** 판정된다.
+    ui.style.zIndex = (10 + window._charPos.tr * 10 + 5) + 1;
   }
   const face = window._charPos.face || 'down';
   host.style.transform = 'none';   // 4방향 시트(좌·우 따로) → 미러 없음(꽁지머리 반전 버그 제거)
@@ -17709,10 +17726,24 @@ window._mwRlRender = function (all) {
     c.x = nx; c.y = ny;
     c.el.style.left = nx + 'px';
     c.el.style.top = ny + 'px';
-    c.el.style.zIndex = 10 + v.tr * 10 + 5;
+    // ★★앞뒤(z)는 **도착한 뒤에** 바꾼다 (대표 8-20: "상대방 캐릭터가 원래 부딪혀야 할
+    //   충돌맵보다 조금 더 밑에서 숨는다"). 충돌맵도, 그려지는 자리도 이제 양쪽이 같다.
+    //   남은 건 **시간차**였다 — 위치는 걸어가는 애니메이션(0.2~0.46초)으로 천천히 움직이는데
+    //   z 만 즉시 윗줄 값으로 바뀐다. 그 사이 캐릭터는 아직 가구선 아래에 서 있는 그림인데
+    //   깊이는 이미 가구 뒤라, **부딪혀야 할 선보다 한참 밑에서 가구에 파묻힌 채로 걸어간다.**
+    //   내 캐릭터는 전환이 사실상 없어서 나만 멀쩡했다 → '상대방 캐릭터만' 그래 보인 것이다.
+    //   ※멀리 튄 경우(far)는 전환이 0초라 바로 적용한다.
+    const nz = 10 + v.tr * 10 + 5;
+    if (c.z == null || far) {
+      clearTimeout(c.zT); c.z = nz; c.el.style.zIndex = nz;
+    } else if (nz !== c.z) {
+      clearTimeout(c.zT);
+      c.zT = setTimeout(function () { c.z = nz; c.el.style.zIndex = nz; }, gap);
+    }
   });
   Object.keys(chars).forEach(function (uid) {
     if (seen[uid]) return;
+    clearTimeout(chars[uid].stopT); clearTimeout(chars[uid].zT);
     chars[uid].el.remove(); delete chars[uid];
   });
   window._mwRlTiles = tiles;
@@ -17885,12 +17916,42 @@ window.mwRoomSay = function () {
 // 캐릭터 한 명을 canvas 에 그린다.
 // ★시트는 3열x4행이고 1행(0)이 정면이다. 칸 크기는 **그림에서 재서** 쓴다 —
 //   141x224 로 못 박으면 나중에 2배 시트가 들어왔을 때 조용히 어긋난다.
+// ★한 번 받은 그림은 들고 있는다. 안 그러면 **찍을 때마다** 캐릭터 시트를 전부 다시
+//   받아서 디코딩한다 — 4명이면 옷 시트만 28장(≈2.8MB)이라 폰에서 몇 초가 그냥 날아간다
+//   (대표 8-20: "인화 속도가 너무 느리다"). 같은 방에서 두 번째 찍을 땐 이게 0이 된다.
+//   ※실패한 건 캐시에서 빼서 다음에 다시 받게 한다. 무한정 쌓이지 않게 상한을 둔다.
+window._mwImgCache = window._mwImgCache || new Map();
+window._MW_IMG_CACHE_MAX = 90;
 window._mwLoadImg = function (src) {
-  return new Promise(function (res) {
+  const c = window._mwImgCache;
+  const hit = c.get(src);
+  if (hit) return hit;
+  const p = new Promise(function (res) {
     const im = new Image();
-    im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+    im.onload = function () { res(im); };
+    im.onerror = function () { c.delete(src); res(null); };
     im.src = src;
   });
+  if (c.size >= window._MW_IMG_CACHE_MAX) c.delete(c.keys().next().value);   // 가장 오래된 것부터
+  c.set(src, p);
+  return p;
+};
+// ★찍기 전 3.2초(카운트다운) 동안 필요한 그림을 **미리 다 받아둔다.**
+//   지금까지는 플래시가 터진 **뒤에야** 받기 시작해서, 기다림이 통째로 눈에 보였다.
+//   여기서 데워두면 _mwRoomShotImg 는 이미 받아둔 것으로 바로 그린다.
+window._mwShotPrefetch = function () {
+  try {
+    window._mwLoadImg('char/fields/field_room.png?v=1');
+    window._mwLoadImg('char/ui/ui_logo.png?v=1');
+    window._mwLoadImg('char/ui/polaroid_frame.png?v=1');
+    const rd = window._mwRoomShown ? window._mwRoomShown() : null;
+    const zs = (window._mwFurnZ && rd) ? window._mwFurnZ((rd && rd.f) || []) : [];
+    zs.forEach(function (q) { if (q && q.def) window._mwLoadImg(q.def.src); });
+    const all = (window._mwRl && window._mwRl.last) || {};
+    Object.keys(all).forEach(function (k) {
+      if (window._mwRoomAlive && window._mwRoomAlive(all[k])) window._mwLoadCharSheets(all[k].character);
+    });
+  } catch (e) {}
 };
 // 캐릭터 한 명의 레이어 그림들을 **미리 받아둔다**. 그려 넣는 건 아래 _mwPaintChar 가 한다 —
 // ★canvas 는 그린 순서가 곧 z 라, 가구와 사람을 z 로 섞어 한 번에 칠해야 한다.
@@ -18047,6 +18108,8 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
 window.mwRoomCountdownMs = 3200;
 window._mwRoomCountdown = function (atSrv) {
   const stage = document.getElementById('charworld-room'); if (!stage) return;
+  window._mwShotPrefetch && window._mwShotPrefetch();   // ★기다리는 3.2초를 로딩에 쓴다
+
   let ov = document.getElementById('mw-rm-cd'); if (ov) ov.remove();
   ov = document.createElement('div'); ov.id = 'mw-rm-cd';
   ov.style.cssText = 'position:absolute;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;'
