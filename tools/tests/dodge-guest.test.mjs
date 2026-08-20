@@ -105,18 +105,29 @@ assert(/dodgeGuestSave\([\s\S]{0,200}?return;/.test(save),
   '게스트 보관 뒤 return 이 없다 → Firestore 코드로 흘러간다');
 console.log('  + dodgeSave 게스트 경로 OK');
 
-// 10) 게스트 닉네임 저장이 끝난 뒤 **어디로 갈지**를 부르는 쪽이 정할 수 있어야 한다
-//     (스쿼드에서 왔으면 스쿼드로, 게임에서 왔으면 게임으로)
+// 10) ★게임은 임시계정을 만들지 않는다 — **정식 가입**으로 보낸다 (대표 8-20).
+//     스쿼드는 '가입 없이 출첵만' 이 목적이라 임시계정이 맞지만, 게임은 가입 유도가 목적이다.
+const rec = grab(/window\.dodgeSaveRecord = function[\s\S]*?\n\};/, 'dodgeSaveRecord');
+assert(!/signInAnonymously/.test(rec), '게임이 임시계정을 만든다 → 가입할 이유가 사라진다');
+assert(!/guestAskNick/.test(rec),
+  "게임이 스쿼드용 닉네임 시트를 쓴다 → '실명으로 적어주세요 · 참석 확인' 문구가 뜬다");
+assert(/openModal\('login-method-modal'\)/.test(rec), '로그인 시트를 안 띄운다');
+// 스쿼드 흐름은 원래대로여야 한다 (내가 넣었던 훅도 도로 걷어냈다)
 const gogo = grab(/window\._guestGoSquad = function[\s\S]*?\n\};/, '_guestGoSquad');
-assert(/_guestAfter/.test(gogo), '_guestGoSquad 에 콜백 훅이 없다 → 게임에서 와도 스쿼드로 간다');
-assert(/window\._guestAfter = null/.test(gogo), '콜백을 비우지 않는다 → 다음 번에 또 불린다');
-// 콜백이 없으면 지금 동작 그대로여야 한다(스쿼드 흐름 무영향)
 assert(/_sqInviteSid/.test(gogo), '스쿼드 흐름이 사라졌다');
+assert(!/_guestAfter/.test(gogo), '안 쓰는 훅이 남아 있다');
+// 정식 계정이 되면 점수를 옮기는 감시자가 있어야 한다
+assert(/onAuthStateChanged\(auth, function \(u\) \{[\s\S]{0,240}?dodgeGuestPromote/.test(src),
+  '로그인 뒤 점수를 옮기는 감시자가 없다 → 가입해도 점수가 안 따라온다');
+
+// 10-b) ★게임 캐릭터가 맨몸(빡빡이)이면 안 된다 (대표 8-20)
+assert(/const cfg = real \? window\.getMyCharacter\(\) : Object\.assign\(\{\}, window\.CHAR_DEFAULT/.test(src),
+  '정식 계정이 아닐 때 기본 캐릭터로 안 떨어진다 → 빡빡이가 나온다');
 
 // 11) 승격 함수 — 옮기고 나면 폰 보관분을 비운다
 const pro = grab(/window\.dodgeGuestPromote = async function[\s\S]*?\n\};/, 'dodgeGuestPromote');
 assert(/dodgeGuestClear\(\)/.test(pro), '옮긴 뒤 폰 보관분을 안 비운다 → 두 벌이 남는다');
-console.log('  + 점수 승격·콜백 훅 OK');
+console.log('  + 정식가입 흐름·점수 승격 OK');
 
 // 12) ★카톡 카드가 게임으로 가야 한다 — 지금은 link 가 비어 홈으로 떨어진다
 const show = grab(/window\._dodgeShowShare = function[\s\S]*?\n\};/, '_dodgeShowShare');

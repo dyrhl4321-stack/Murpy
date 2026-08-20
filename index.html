@@ -12483,7 +12483,12 @@ window._dodgePaint = function (s) {
   const chH = Math.round(D.PLAYER_H / 100 * H);
   let ch = '';
   try {
-    const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+    // ★정식 계정이 아니면 **기본 남자 머피**로 그린다 (대표 8-20: "왜 빡빡이냐").
+    //   온보딩을 안 거친 계정은 character 가 비어 있거나 반쪽이라 맨몸(빡빡이)이 나온다.
+    //   링크로 들어온 사람이 처음 보는 화면이라 여기가 첫인상이다 — 맨몸이면 안 된다.
+    const real = auth.currentUser && !auth.currentUser.isAnonymous
+      && window._charState && window._charState.character;
+    const cfg = real ? window.getMyCharacter() : Object.assign({}, window.CHAR_DEFAULT || {});
     if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, chH, s.face) || '';
   } catch (e) {}
   host.innerHTML = html;                      // 떨어지는 물건만 매 프레임 다시 그린다
@@ -12748,43 +12753,44 @@ window.dodgeGuestPromote = async function () {
   window._hofCache = null;                   // 최고점이 바뀌었을 수 있다 → 랭킹을 다시 읽게 한다
   return true;
 };
-// 게임오버의 「기록 남기기」 — 계정이 없으면 임시계정을 만들고 닉네임을 받는다.
-// ★닉네임 시트는 스쿼드가 쓰던 guestAskNick 을 그대로 쓴다. 새 화면을 만들지 않는다.
-//   끝나고 스쿼드로 가버리지 않게 _guestAfter 로 돌아올 곳을 정해 둔다.
-window.dodgeSaveRecord = async function () {
-  if (auth.currentUser) { await window.dodgeGuestPromote(); window._dodgeRefreshKeep(); return; }
-  try { await signInAnonymously(auth); }
-  catch (e) { console.error('익명 로그인 실패', e); showToast('기록을 남기지 못했어요 · 잠시 후 다시'); return; }
-  window._guestJustStarted = true;          // 스쿼드 흐름이 초대 시트를 다시 띄우지 않게
-  window._guestAfter = function () {
-    window.dodgeGuestPromote().then(function () {
-      window._dodgeRefreshKeep();
-      showToast('기록을 남겼어요');
-    });
-  };
-  window.guestAskNick && window.guestAskNick();
+// 게임오버의 「기록 남기기」 — **정식 가입으로 보낸다** (대표 8-20).
+// ★스쿼드 초대와 다르다. 스쿼드는 '가입 없이 출첵만' 이 목적이라 임시계정이 맞지만,
+//   게임은 **가입 유도가 목적**이다. 임시계정으로 받으면 정작 가입할 이유가 사라진다.
+//   그래서 하단에서 올라오는 로그인 시트(카톡·구글) → 온보딩으로 바로 잇는다.
+// ★guestAskNick 을 안 쓴다 — 그 시트 문구가 스쿼드 전용이다
+//   ("실명으로 적어주세요 · 참석 확인을 하는 사람이 알아볼 수 있어야 해요").
+//   게임에서 그 말이 뜨면 무슨 소린지 알 수가 없다.
+// 점수는 로그인이 끝나면 아래 감시자가 알아서 옮긴다.
+window.dodgeSaveRecord = function () {
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
+    window.dodgeGuestPromote().then(function () { window._dodgeRefreshKeep(); });
+    return;
+  }
+  if (window.openModal) window.openModal('login-method-modal');
 };
+// 정식 계정이 되는 순간 폰에 들고 있던 점수를 옮긴다.
+// ★**내 리스너를 따로 단다.** 기존 onAuthStateChanged 안에 끼워 넣지 않는다 —
+//   거기는 다른 창이 작업 중인 자리다. Firebase 는 리스너를 여럿 달 수 있다.
+//   dodgeGuestPromote 는 들고 있는 게 없으면 바로 빠지므로 매번 불려도 싸다.
+onAuthStateChanged(auth, function (u) {
+  if (!u || u.isAnonymous) return;
+  window.dodgeGuestPromote().then(function (moved) {
+    if (moved) { window._dodgeRefreshKeep && window._dodgeRefreshKeep(); showToast('게임 기록을 옮겼어요'); }
+  });
+});
 // 게임오버 아래쪽 안내를 지금 상태에 맞게 다시 그린다.
 window._dodgeRefreshKeep = function () {
   const host = document.getElementById('dodge-keep'); if (!host) return;
   const u = auth.currentUser;
   const btn = 'width:100%;border:none;border-radius:12px;padding:13px;font-size:13.5px;'
     + 'font-weight:800;cursor:pointer;font-family:inherit';
-  if (!u) {
-    // 계정이 아예 없다 — 필요한 건 가입이 아니라 **먼저 기록 남기기**다.
+  if (!u || u.isAnonymous) {
+    // 계정이 없거나 임시계정 — 둘 다 **정식 가입**으로 보낸다(대표 8-20).
     host.style.display = '';
     host.innerHTML = '<button onclick="window.dodgeSaveRecord()" style="' + btn
-      + ';background:var(--accent);color:#fff">기록 남기기</button>'
+      + ';background:var(--accent);color:#fff">기록 남기고 랭킹 오르기</button>'
       + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:7px;line-height:1.6">'
-      + '닉네임만 정하면 이 점수가 남아요</div>';
-    return;
-  }
-  if (u.isAnonymous) {
-    // ★틴트 칩 금지 — 색면 배지를 쓰지 않는다. 글자색과 테두리로만.
-    host.style.display = '';
-    host.innerHTML = '<div style="background:none;border:1px solid rgba(255,255,255,.14);'
-      + 'border-radius:12px;padding:11px 13px;font-size:11.5px;color:rgba(255,255,255,.55);line-height:1.65">'
-      + '랭킹에 올리려면 <b style="color:#cfd6e6">가입</b>이 필요해요</div>';
+      + '가입하면 이 점수가 그대로 남아요</div>';
     return;
   }
   host.style.display = 'none';
@@ -17972,10 +17978,6 @@ window.guestSaveNick = async function () {
 };
 window._guestGoSquad = function () {
   if (typeof dismissLanding === 'function') dismissLanding();
-  // ★부른 쪽이 '끝나고 어디로 갈지'를 정할 수 있게 한다 (덤벨 피하기에서 닉네임을 받는 경우).
-  //   안 정했으면 아래 스쿼드 흐름 그대로다 — 기존 동작은 한 글자도 안 바뀐다.
-  const after = window._guestAfter;
-  if (after) { window._guestAfter = null; try { after(); } catch (e) { console.warn('guest after', e); } return; }
   const sid = window._sqInviteSid;
   if (sid && window.openSquadDetail) setTimeout(function () { window.openSquadDetail(sid); }, 300);
 };
