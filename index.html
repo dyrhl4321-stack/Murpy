@@ -11824,6 +11824,37 @@ window._seasonEnsureMonth = function () {
 //   게임 규칙을 검증할 방법이 이것뿐이다. 화면은 이 결과를 그리기만 한다.
 // ★튜닝 값은 전부 여기 모은다. 재미는 숫자로 못 정하고 대표가 실기기에서 고쳐야 한다 —
 //   흩어져 있으면 고칠 때마다 코드를 뒤져야 한다.
+
+// ===== 미가입자 바이럴 링크 =====
+// 스펙: docs/superpowers/specs/2026-08-20-dodge-guest-viral-design.md
+// murpy.app/?game=dodge&n=<닉네임>&s=<점수>  → 로그인 없이 바로 게임 + 도전장 표시
+// ★값은 **남이 고칠 수 있다.** 링크를 손으로 바꿔 s=999999 를 넣을 수 있으므로 여기서 자른다.
+//   닉네임의 태그 문자는 **지우지 않는다** — 지우면 '<' 를 쓴 진짜 닉네임이 망가진다.
+//   막는 건 넣을 때다: 화면에는 반드시 textContent 로만 넣는다.
+window.dodgeParseLink = function (search) {
+  const off = { on: false, nick: '', score: 0 };
+  let q;
+  try { q = new URLSearchParams(search || ''); } catch (e) { return off; }
+  if (q.get('game') !== 'dodge') return off;      // ?room= ?sq= 등 남의 링크를 가로채지 않는다
+  let nick = '';
+  try { nick = q.get('n') || ''; } catch (e) { nick = ''; }
+  const raw = parseInt(q.get('s'), 10);
+  const max = (window.DODGE && window.DODGE.MAX_SCORE) || 9999;
+  return {
+    on: true,
+    nick: String(nick).slice(0, 12),
+    score: (isFinite(raw) && raw > 0) ? Math.min(max, Math.floor(raw)) : 0
+  };
+};
+// ★공유 링크는 **항상 정식 주소**로 만든다(mwShareKakao 와 같은 규칙). 지금 앱을 어디서
+//   열었든 남에게 나가는 링크는 murpy.app 이어야 한다 — 옛 주소가 퍼지면 나중에 그 카드들이 죽는다.
+window.dodgeMakeLink = function (nick, score) {
+  const max = (window.DODGE && window.DODGE.MAX_SCORE) || 9999;
+  const s = Math.max(0, Math.min(max, Math.floor(score || 0)));
+  let u = 'https://murpy.app/?game=dodge&s=' + s;
+  if (nick) u += '&n=' + encodeURIComponent(String(nick).slice(0, 12));
+  return u;
+};
 window.DODGE = {
   W: 100,             // 게임판 가로(논리 단위, 화면 폭에 비례해서만 그린다)
   PLAYER_W: 12,       // 캐릭터가 벽에 막히는 폭(이동 한계). 판정 폭이 아니다
