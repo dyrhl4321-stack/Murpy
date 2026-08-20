@@ -768,6 +768,9 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   @keyframes mwCoachBob { 50% { transform:translateX(-50%) translateY(-4px) } }
   /* 같이 노는 방의 남의 캐릭터. 내 캐릭터와 같은 발밑 기준으로 앉는다. */
   .mw-rc { display:flex; flex-direction:column; align-items:center; }
+  /* ★걸을 때 다리가 움직여야 '걷는다'로 읽힌다. 스쿼드(.sq-char.walking)와 같은 규칙·같은
+     키프레임(mwWalk4)을 쓴다 — 남의 캐릭터는 프레임을 따로 받지 않으므로 CSS 가 돌린다. */
+  .mw-rc.walking .mw-rc-body > div > div { animation:mwWalk4 .55s step-end infinite }
   .mw-rc-title { font-family:'Galmuri11',sans-serif; font-size:8.5px; white-space:nowrap; margin-bottom:1px;
     text-shadow:0 1px 0 #05070c,1px 0 0 #05070c,-1px 0 0 #05070c; }
   .mw-rc-bub { max-width:120px; text-align:center; line-height:1.45; background:#fff; color:#10131c;
@@ -17595,13 +17598,16 @@ window._mwRlRender = function (all) {
       const el = document.createElement('div');
       // ★.mw-rc = 조이스틱 예외. 남의 캐릭터를 누르면 걷는 게 아니라 링 메뉴가 떠야 한다.
       el.className = 'mw-rc'; el.dataset.uid = uid;
+      // ★전환 시간은 **고정하지 않는다.** 위치는 200ms 넘는 간격으로 오는데 0.18초짜리
+      //   전환을 걸면 '휙 갔다가 멈춰서 기다린다'가 반복돼 뚝뚝 끊겨 보인다(대표 8-20).
+      //   실제로 온 간격만큼 걸어가게 하면 이어진다 — 스쿼드가 _sqPlace 에서 쓰는 방식이다.
       el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
-        + 'transition:left .18s linear, top .18s linear';
+        + 'transition:left .2s linear, top .2s linear';
       el.innerHTML = '<div class="mw-rc-bub" style="display:none"></div>'
         + '<div class="mw-rc-title" style="display:none"></div>'
         + '<div class="mw-rc-body"></div><span class="mw-cfd-nick"></span>';
       room.appendChild(el);
-      c = chars[uid] = { el: el, cfg: '~', face: null, nick: null };
+      c = chars[uid] = { el: el, cfg: '~', face: null, nick: null, x: null, y: null, px: null, py: null, lastT: 0, stopT: 0 };
     }
     // ★아우라까지 키에 넣어야 켜고 끈 게 반영된다(_sqCharEl 이 같은 이유로 그렇게 한다)
     const cj = JSON.stringify(v.character || null) + '|' + (v.aura || '');
@@ -17644,8 +17650,25 @@ window._mwRlRender = function (all) {
     // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
     const w = Math.round(DH * 141 / 224);
     c.el.style.width = w + 'px';
-    c.el.style.left = ((v.tc + 0.5) * t - w / 2) + 'px';
-    c.el.style.top = ((v.tr + 1) * t - DH) + 'px';
+    // 이번 갱신까지 걸린 시간만큼 걸어가게 한다(너무 짧거나 길면 잘라낸다)
+    const now = Date.now();
+    const gap = c.lastT ? Math.max(120, Math.min(460, now - c.lastT)) : 200;
+    c.lastT = now;
+    const nx = ((v.tc + 0.5) * t - w / 2), ny = ((v.tr + 1) * t - DH);
+    // ★멀리 튀었으면(오래 끊겼다 들어온 경우) 걸어가는 대신 그 자리에 놓는다.
+    //   안 그러면 방을 가로질러 미끄러진다.
+    const far = Math.abs(nx - (c.x == null ? nx : c.x)) > t * 4 || Math.abs(ny - (c.y == null ? ny : c.y)) > t * 4;
+    c.el.style.transitionDuration = far ? '0s' : (gap / 1000).toFixed(2) + 's';
+    // 자리가 바뀌었으면 걷는 중. 멈추면 잠시 뒤 선다.
+    if (nx !== c.px || ny !== c.py) {
+      c.px = nx; c.py = ny;
+      c.el.classList.add('walking');
+      clearTimeout(c.stopT);
+      c.stopT = setTimeout(function () { c.el.classList.remove('walking'); }, gap + 140);
+    }
+    c.x = nx; c.y = ny;
+    c.el.style.left = nx + 'px';
+    c.el.style.top = ny + 'px';
     c.el.style.zIndex = 10 + v.tr * 10 + 5;
   });
   Object.keys(chars).forEach(function (uid) {
