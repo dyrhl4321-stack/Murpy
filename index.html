@@ -17560,7 +17560,11 @@ window.mwRoomEnterSwitchAccount = async function () {
 //   조이스틱·충돌맵(_mwBlocksOf)·타일 좌표가 전부 거기 이미 있다. 여기서 하는 일은
 //   **누가 어디 서 있는지 주고받는 것**뿐이다.
 window.MW_ROOM_CAP = 4;            // 주인 포함 정원
-window.MW_ROOM_MSG_MS = 6000;      // 말풍선이 떠 있는 시간
+// 말풍선이 떠 있는 시간. 6초는 너무 짧았다 — 상대가 고개 돌린 사이에 사라졌다(대표 8-20).
+window.MW_ROOM_MSG_MS = 15000;
+// ★사진에 찍히는 창은 **훨씬 넓다.** 화면에서 걷힌 뒤에 눌러도 '방금 한 말'은 남는다.
+//   찍히는 게 타이밍 싸움이 되면 안 된다(대표 8-20: "타이밍 문제는 아니라고").
+window.MW_SHOT_MSG_MS = 90000;
 window.mwRoomCountdownMs = 3200;
 window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, beatT: 0 };
 // ★★한번 들어온 사람은 **나가기를 누르기 전까지 필드에 남는다** (대표 8-20).
@@ -18141,10 +18145,12 @@ window.mwRoomSay = function () {
     window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); },
                                      (window.MW_ROOM_MSG_MS || 6000) + 80);   // 시간 지나면 걷는다
   }
+  // ★★한 말을 **지우지 않는다** (대표 8-20: "폴라로이드에 말풍선이 안 뜬다").
+  //   예전엔 MW_ROOM_MSG_MS 뒤에 `_mwRl.msg = null` 로 통째로 날렸다. 그러면 사진이
+  //   참조할 데이터 자체가 없어져서, 조금만 늦게 찍으면 말풍선이 못 찍혔다.
+  //   **띄울지 말지는 이미 나이(t)로 판정한다**(_charApplyPos·_mwRlRender 둘 다).
+  //   그러니 값은 그대로 두고 화면만 걷으면 된다 — 사진은 더 넓은 창으로 같은 값을 본다.
   clearTimeout(window._mwRl.msgT);
-  if (!window._mwBubblePin) {          // 고정을 켰으면 안 걷는다
-    window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, window.MW_ROOM_MSG_MS);
-  }
 };
 // ===== 머피룸 실시간 끝 =====
 
@@ -18254,14 +18260,16 @@ window._mwPaintShadow = function (x, it, def, F, S, ox, oy) {
   x.restore();
 };
 
-// 말풍선 한 개. ★앱의 .mw-rc-bub 을 **비율 그대로** 옮긴다 —
-//   캐릭터 키(h) 기준으로 글씨 0.128 · 최대폭 1.616 · 테두리 0.027 · 머리 위 여백 0.040.
-//   숫자를 새로 정하면 사진과 화면의 말풍선이 갈라진다.
+// 말풍선 한 개(사진 전용). 모양 문법은 앱의 .mw-rc-bub 과 같다 — 흰 바탕·검은 각테두리·꼬리.
+// ★단 **크기는 앱보다 크다.** 앱 비율(글씨 0.128)을 그대로 쓰면 1080폭 카드가 폰에서
+//   390pt 로 줄어들 때 글씨가 6.7pt 가 돼 **안 읽힌다**(실제 렌더로 확인).
+//   화면 속 말풍선은 옆에서 잠깐 보는 것이고, 사진 속 말풍선은 **남에게 보내는 것**이라
+//   기준이 다르다. 0.20 이면 폰에서 약 11pt 로 읽힌다.
 window._mwPaintBubble = function (x, cx, headY, h, text, minY) {
   const t = String(text || ''); if (!t) return;
   x.save();                      // ★font·textAlign 을 되돌린다 — 뒤에 그리는 캡션이 물려받으면 어긋난다
-  const fs = Math.max(11, Math.round(h * 0.128));
-  const maxW = h * 1.616, padX = h * 0.081, padY = h * 0.034, bw = Math.max(2, Math.round(h * 0.027));
+  const fs = Math.max(13, Math.round(h * 0.20));
+  const maxW = h * 2.0, padX = h * 0.09, padY = h * 0.045, bw = Math.max(2, Math.round(h * 0.030));
   x.font = fs + "px 'Galmuri11',sans-serif";
   // 한글은 띄어쓰기가 없을 수 있다 → 글자 단위로 접는다
   const lines = []; let cur = '';
@@ -18273,7 +18281,7 @@ window._mwPaintBubble = function (x, cx, headY, h, text, minY) {
   const lh = Math.round(fs * 1.45);
   let w = 0; lines.forEach(function (l) { w = Math.max(w, x.measureText(l).width); });
   const bwid = Math.round(w + padX * 2), bhei = Math.round(lines.length * lh + padY * 2);
-  const tail = Math.round(h * 0.054);
+  const tail = Math.round(h * 0.062);
   const bx = Math.round(cx - bwid / 2);
   // ★위쪽 줄에 선 사람은 말풍선이 사진 밖으로 나간다(구멍 밖은 안 그려진다).
   //   잘려서 안 보이느니 머리 쪽으로 조금 내려붙는 게 낫다 — 사진은 읽혀야 한다.
@@ -18506,7 +18514,7 @@ window._mwRoomCapture = function () {
     // ★말풍선도 같이 담는다. 판정은 **화면에 떠 있는 규칙과 똑같이** 한다 —
     //   사진에만 있고 화면엔 없는 말이 생기면 그게 더 이상하다.
     const _m = all[k].msg;
-    const _say = (_m && _m.text && (all[k].pin || (Date.now() - (_m.t || 0) < window.MW_ROOM_MSG_MS)))
+    const _say = (_m && _m.text && (all[k].pin || (Date.now() - (_m.t || 0) < window.MW_SHOT_MSG_MS)))
                ? String(_m.text).slice(0, 40) : '';
     return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest, say: _say,
              x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
@@ -18594,21 +18602,9 @@ window._mwShotArm = function (atSrv) {
   window._mwRl.lastShot = atSrv;
   window._mwShotUntil = Date.now() + window.mwRoomCountdownMs + window.MW_DEV_MS + window.MW_SHOT_COOL_MS;
   window._mwShotBtnSync();
-  // ★★찍는 동안 내 말풍선을 **붙잡는다** (대표 8-20: "찍었을 때 채팅도 같이 찍혀야
-  //   찍는 맛이 있다"). 말풍선은 6초면 걷히는데 카운트다운만 3.2초다 — 한마디 치고
-  //   버튼을 누르면 플래시 전에 사라져서 사진에 안 남는다.
-  //   각자 자기 것만 붙잡으므로 방에 있는 전원의 말이 그대로 남는다.
-  const _m = window._mwRl.msg;
-  if (_m && _m.text) {
-    _m.t = Date.now();
-    clearTimeout(window._mwRl.msgT); clearTimeout(window._mwRl.msgClr);
-    const _hold = window.mwRoomCountdownMs + 2200;
-    window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); }, _hold + 80);
-    if (!window._mwBubblePin) {
-      window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, _hold);
-    }
-    window._mwRlSend();
-  }
+  // ★여기서 msg.t 를 새로 찍으면 **안 된다.** 대화 기록은 `uid + '_' + msg.t` 로 중복을
+  //   거르므로, t 를 바꾸면 같은 말이 기록에 한 줄 더 쌓인다(75b42e1 에서 내가 낸 버그).
+  //   찍히는 문제는 값을 안 지우는 것으로 이미 해결됐다 — 여기선 아무것도 안 만진다.
   window._mwRoomCountdown(atSrv);
 };
 window.mwRoomShot = function () {
