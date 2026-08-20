@@ -767,7 +767,18 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     animation:mwCoachBob 1.6s ease-in-out infinite }
   @keyframes mwCoachBob { 50% { transform:translateX(-50%) translateY(-4px) } }
   /* 같이 노는 방의 남의 캐릭터. 내 캐릭터와 같은 발밑 기준으로 앉는다. */
-  .mw-rc { display:flex; flex-direction:column; align-items:center; }
+  /* ★★상자는 **몸통 크기 그대로**여야 한다 (대표 8-20: "상대방 화면에서 내 캐릭터가
+     더 아래로 내려가 가구에 숨는다"). 말풍선·칭호를 상자 **안**에 두면 그게 있는 사람만
+     몸통이 그만큼 아래로 밀린다 — 발이 타일 바닥선에서 벗어나고, 그 결과 z 는 그대로인데
+     그림만 내려가 가구에 더 파묻힌다. 충돌맵이 다른 게 아니라 **그려지는 자리**가 달랐다.
+     내 캐릭터가 머리 위 UI 를 #charworld-headui 로 밖에 뺀 이유와 같은 문제다(8-18).
+     → 위(말풍선·칭호)는 bottom:100%, 아래(닉네임)는 top:100% 로 **상자 밖**에 띄운다. */
+  .mw-rc { position:absolute }
+  .mw-rc-top { position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; pointer-events:none }
+  .mw-rc .mw-rc-body { position:absolute; inset:0 }
+  .mw-rc > .mw-cfd-nick { position:absolute; left:50%; top:100%; transform:translateX(-50%);
+    white-space:nowrap; pointer-events:none }
   /* ★걸을 때 다리가 움직여야 '걷는다'로 읽힌다. 스쿼드(.sq-char.walking)와 같은 규칙·같은
      키프레임(mwWalk4)을 쓴다 — 남의 캐릭터는 프레임을 따로 받지 않으므로 CSS 가 돌린다. */
   .mw-rc.walking .mw-rc-body > div > div { animation:mwWalk4 .55s step-end infinite }
@@ -17616,8 +17627,8 @@ window._mwRlRender = function (all) {
       //   실제로 온 간격만큼 걸어가게 하면 이어진다 — 스쿼드가 _sqPlace 에서 쓰는 방식이다.
       el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
         + 'transition:left .2s linear, top .2s linear';
-      el.innerHTML = '<div class="mw-rc-bub" style="display:none"></div>'
-        + '<div class="mw-rc-title" style="display:none"></div>'
+      el.innerHTML = '<div class="mw-rc-top"><div class="mw-rc-bub" style="display:none"></div>'
+        + '<div class="mw-rc-title" style="display:none"></div></div>'
         + '<div class="mw-rc-body"></div><span class="mw-cfd-nick"></span>';
       room.appendChild(el);
       c = chars[uid] = { el: el, cfg: '~', face: null, nick: null, x: null, y: null, px: null, py: null, lastT: 0, stopT: 0 };
@@ -17663,6 +17674,7 @@ window._mwRlRender = function (all) {
     // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
     const w = Math.round(DH * 141 / 224);
     c.el.style.width = w + 'px';
+    c.el.style.height = DH + 'px';        // ★높이를 안 주면 내용물 따라 늘어나 발이 어긋난다
     // 이번 갱신까지 걸린 시간만큼 걸어가게 한다(너무 짧거나 길면 잘라낸다)
     const now = Date.now();
     const gap = c.lastT ? Math.max(120, Math.min(460, now - c.lastT)) : 200;
