@@ -17002,6 +17002,9 @@ window.mwRoomLiveJoin = function (ownerUid) {
         guest: !!(u.isAnonymous),
         title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
         character: window.getMyCharacter ? window.getMyCharacter() : null,
+        // ★채팅은 **presence 에 얹어 보낸다.** 따로 노드를 파면 구독도 정리도 하나 더 생기는데,
+        //   방 안 한마디는 기록이 필요 없다(스쿼드 필드톡과 같은 성격). 나가면 같이 사라진다.
+        msg: window._mwRl.msg || null,
         t: Date.now(),
       });
     } catch (e) { console.warn('roomLive send', e); }
@@ -17023,7 +17026,9 @@ window.mwRoomLiveJoin = function (ownerUid) {
   //   그중 하나가 패널을 갈아치울 때 RTDB 에 내가 남는다. 무대가 사라졌으면 스스로 나간다.
   clearInterval(window._mwRl.watch);
   window._mwRl.watch = setInterval(function () {
-    if (!document.getElementById('mw-vroom-stage')) window.mwRoomLiveLeave();
+    if (!document.getElementById('mw-vroom-stage')) { window.mwRoomLiveLeave(); return; }
+    // ★남이 조용하면 갱신이 안 와서 말풍선이 안 걷힌다. 들고 있는 마지막 스냅샷으로 다시 그린다.
+    if (window._mwRl.last) window._mwRoomRender(window._mwRl.last);
   }, 2000);
 
   // 방 안 이동 — 화면을 누르면 그 자리로 걸어간다(스쿼드 탭투워크와 같은 조작)
@@ -17042,6 +17047,22 @@ window.mwRoomLiveJoin = function (ownerUid) {
       window._mwRl.send && window._mwRl.send();
     });
   }
+};
+
+window.MW_ROOM_MSG_MS = 6000;      // 말풍선이 떠 있는 시간
+window.mwRoomSay = function () {
+  const inp = document.getElementById('mw-rm-chat-input'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
+  if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
+  inp.value = '';
+  window._mwRl.msg = { text: t, t: Date.now() };
+  window._mwRl.send && window._mwRl.send();
+  // 시간이 지나면 스스로 걷힌다. 안 지우면 다음 위치 전송에 옛 말이 다시 따라붙는다.
+  clearTimeout(window._mwRl.msgT);
+  window._mwRl.msgT = setTimeout(function () {
+    window._mwRl.msg = null;
+    window._mwRl.send && window._mwRl.send();
+  }, window.MW_ROOM_MSG_MS);
 };
 
 window.mwRoomLiveLeave = function () {
@@ -17077,7 +17098,9 @@ window._mwRoomRender = function (all) {
     if (!c || !c.el.isConnected) {
       const el = document.createElement('div');
       el.className = 'sq-char'; el.dataset.uid = uid;
-      el.innerHTML = '<div class="sq-body"></div><span class="mw-cfd-nick"></span>';
+      el.innerHTML = '<div class="mw-rl-bub" style="display:none;max-width:120px;text-align:center;line-height:1.45;'
+        + 'background:#fff;color:#10131c;border:2px solid #05070c;padding:2px 6px;font-size:9.5px;font-weight:600;margin-bottom:3px"></div>'
+        + '<div class="sq-body"></div><span class="mw-cfd-nick"></span>';
       stage.appendChild(el);
       c = chars[uid] = { el: el, cfg: '~', dir: null, nick: null };
     }
@@ -17090,9 +17113,19 @@ window._mwRoomRender = function (all) {
     // 남의 데이터라 textContent 로만 넣는다(주입 방지)
     const nk = String(v.nick || '머피') + (v.guest ? ' (손님)' : '');
     if (c.nick !== nk) { c.nick = nk; c.el.querySelector('.mw-cfd-nick').textContent = nk; }
+    // 말풍선 — 남의 글이라 textContent 로만 넣는다(주입 방지)
+    const bub = c.el.querySelector('.mw-rl-bub');
+    const fresh = v.msg && v.msg.text && (Date.now() - (v.msg.t || 0) < window.MW_ROOM_MSG_MS);
+    if (bub) {
+      if (fresh) { bub.textContent = String(v.msg.text).slice(0, 40); bub.style.display = ''; }
+      else bub.style.display = 'none';
+    }
     c.el.style.left = v.x + '%'; c.el.style.top = v.y + '%';
     c.el.style.zIndex = 10 + Math.round(v.y);
   });
+  // 같이 있는 사람이 있을 때만 채팅줄을 보여준다
+  const chatRow = document.getElementById('mw-rm-chat');
+  if (chatRow) chatRow.style.display = (Object.keys(seen).length > 1 && auth.currentUser) ? 'flex' : 'none';
   // 나간 사람 치우기
   Object.keys(chars).forEach(function (uid) {
     if (seen[uid]) return;
@@ -20539,6 +20572,12 @@ document.addEventListener('visibilitychange', () => {
 window.mwOtherMenu = async function (uid, nick, ev) {
   const old = document.getElementById('mw-othermenu'); if (old) old.remove();
   const me = window.currentUser;
+  // ★링 메뉴 안은 전부 회원 기능이다(채팅·스쿼드 초대·좋아요). 임시 계정도 막는다.
+  if (window._notMember && window._notMember()) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    window.memberGate && window.memberGate('머피와 이야기하려면 로그인이 필요해요');
+    return;
+  }
   if (!me) { showToast('로그인이 필요해요'); return; }
   if (me.uid === uid) return;
   if (ev && ev.stopPropagation) ev.stopPropagation();
@@ -20659,6 +20698,12 @@ window.mwVisitRoom = async function (uid) {
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
       <!-- 방 좋아요는 **방을 보고 있는 여기서** 누른다. 캐릭터 정보 창까지 들어가서 누르면
            한 바퀴 돌아가는 셈이라 대상과 버튼이 어긋난다(캐릭터 좋아요는 정보 창 안에 있다). -->
+      <!-- 방 안 채팅. ★따로 채팅방을 만들지 않는다 — 말풍선이 캐릭터 머리 위에 뜨고 사라진다.
+           같이 있는 사람이 없으면 숨는다(혼자 있는 방에 입력창이 떠 있으면 뭐 하라는 건지 모른다). -->
+      <div id="mw-rm-chat" style="display:none;gap:7px;margin:2px 0 10px">
+        <input id="mw-rm-chat-input" maxlength="40" placeholder="같이 있는 사람에게 한마디…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:10px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
+        <button class="mw-btn mw-btn-sm" onclick="window.mwRoomSay()">보내기</button>
+      </div>
       <div id="mw-rm-like" style="display:flex;justify-content:center;margin:2px 0 15px"></div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
@@ -21045,6 +21090,12 @@ window.mwMyRoomStat = async function () {
 };
 window.mwGbWrite = async function (uid) {
   const me = auth.currentUser || window.currentUser;
+  // ★임시 계정(초대로 들어온 손님)도 여기서 막는다. 방은 구경하게 두고 **남기는 것**부터
+  //   회원이다 — 계정을 버리면 방명록만 남고 주인이 누구였는지 물어볼 수도 없다.
+  if (window._notMember && window._notMember()) {
+    window.memberGate && window.memberGate('방명록을 남기려면 로그인이 필요해요');
+    return;
+  }
   if (!me) { showToast('로그인이 필요해요'); return; }
   const input = document.getElementById('mw-gb-input');
   const text = (input && input.value || '').trim(); if (!text) return;
