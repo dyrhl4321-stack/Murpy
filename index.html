@@ -777,8 +777,12 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-rc-top { position:absolute; left:50%; bottom:100%; transform:translateX(-50%);
     display:flex; flex-direction:column; align-items:center; pointer-events:none }
   .mw-rc .mw-rc-body { position:absolute; inset:0 }
-  .mw-rc > .mw-cfd-nick { position:absolute; left:50%; top:100%; transform:translateX(-50%);
-    white-space:nowrap; pointer-events:none }
+  /* ★아우라(헬창의 기운)를 켜면 이름표를 고리 아래로 내린다 — 안 내리면 이름표가 고리 앞겹을
+     덮는다(8-19에 정한 규칙). 지금까지 이 규칙이 .sq-char 에만 있어서 **방에서는 클래스만
+     붙고 아무 일도 안 일어났다.** 내 캐릭터와 남의 캐릭터에 **같이** 건다 — 한쪽만 내려가면
+     내 화면과 남의 화면에서 이름표 자리가 갈라진다(대표 8-20).
+     ★transform 을 한 줄에 같이 쓴다. 따로 쓰면 뒤엣것이 가운데 정렬(-50%)을 지운다. */
+  .mw-aur-on > .cw-nick { transform:translate(-50%, 8px) }
   /* ★걸을 때 다리가 움직여야 '걷는다'로 읽힌다. 스쿼드(.sq-char.walking)와 같은 규칙·같은
      키프레임(mwWalk4)을 쓴다 — 남의 캐릭터는 프레임을 따로 받지 않으므로 CSS 가 돌린다. */
   .mw-rc.walking .mw-rc-body > div > div { animation:mwWalk4 .55s step-end infinite }
@@ -4274,7 +4278,11 @@ window._charApplyPos = function () {
   });
   // ★아우라 — 캐릭터 겹을 다 그린 **뒤에** 형제 DOM 으로 얹는다. 렌더 경로를 새로 만들지 않는다.
   //   스쿼드 워킹룸(_sqCharEl)과 같은 _mwAurApply 를 쓰므로 두 곳의 모양이 갈라지지 않는다.
-  window._mwAurApply && window._mwAurApply(host, window._mwAurOf((window.currentUser || {}).uid, ''));
+  const _myAur = window._mwAurOf ? window._mwAurOf((window.currentUser || {}).uid, '') : '';
+  window._mwAurApply && window._mwAurApply(host, _myAur);
+  // 아우라를 켜면 이름표를 내린다 — 남의 화면에서 보이는 내 모습과 같아야 한다
+  const _ui = document.getElementById('charworld-headui');
+  if (_ui) _ui.classList.toggle('mw-aur-on', !!_myAur);
 };
 window.charMove = function (dx, dy) {
   if (window._mwPlateBusy) return;   // 합판 컷신 중엔 조작을 막는다(드래그로 구멍을 뚫고 지나간다)
@@ -17631,9 +17639,12 @@ window._mwRlRender = function (all) {
       //   실제로 온 간격만큼 걸어가게 하면 이어진다 — 스쿼드가 _sqPlace 에서 쓰는 방식이다.
       el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
         + 'transition:left .2s linear, top .2s linear';
+      // ★칭호·이름표는 **내 캐릭터와 같은 클래스**(.cw-title/.cw-nick)를 쓴다.
+      //   따로 만들면 아우라 켰을 때 이름표를 내리는 규칙 같은 게 한쪽에만 먹어서
+      //   내 화면과 남의 화면에서 위치가 갈라진다(대표 8-20 — 스쿼드에서 겪은 그 현상).
       el.innerHTML = '<div class="mw-rc-top"><div class="mw-rc-bub" style="display:none"></div>'
-        + '<div class="mw-rc-title" style="display:none"></div></div>'
-        + '<div class="mw-rc-body"></div><span class="mw-cfd-nick"></span>';
+        + '<div class="cw-title" style="display:none;position:static;transform:none;margin:0"></div></div>'
+        + '<div class="mw-rc-body"></div><span class="cw-nick"></span>';
       room.appendChild(el);
       c = chars[uid] = { el: el, cfg: '~', face: null, nick: null, x: null, y: null, px: null, py: null, lastT: 0, stopT: 0 };
     }
@@ -17653,7 +17664,7 @@ window._mwRlRender = function (all) {
     const vt = window.mwValidTitle ? window.mwValidTitle(v.title || '') : '';
     if (c.title !== vt) {
       c.title = vt;
-      const te = c.el.querySelector('.mw-rc-title');
+      const te = c.el.querySelector('.cw-title');
       if (te) {
         te.textContent = vt ? '<' + vt + '>' : '';
         te.style.display = vt ? '' : 'none';
@@ -17663,7 +17674,7 @@ window._mwRlRender = function (all) {
     const nk = String(v.nick || '머피') + (v.guest ? ' (손님)' : '');
     if (c.nick !== nk) {
       c.nick = nk;
-      c.el.querySelector('.mw-cfd-nick').textContent = nk;      // 남의 글 = textContent 로만
+      c.el.querySelector('.cw-nick').textContent = nk;      // 남의 글 = textContent 로만
       c.el.onclick = function (e) {
         e.stopPropagation();
         window.mwOtherMenu && window.mwOtherMenu(uid, String(v.nick || '머피'), e);
