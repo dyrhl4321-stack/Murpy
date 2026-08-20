@@ -632,15 +632,15 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     padding:26px; background:rgba(0,0,0,.82) }
   /* ★인화지는 대표가 뽑아준 그림(char/ui/polaroid_frame.png, 320x472)이다. CSS 로 흉내내던 걸 갈아끼웠다.
      사진 창 위치는 그림에서 **실측한 값**이다 — 눈대중으로 맞추면 테두리가 겹치거나 뜬다. */
-  #mw-pola .pola-card { position:relative; width:100%; max-width:320px; aspect-ratio:320/472;
+  /* ★★프레임을 여기서 또 씌우지 않는다 (대표 8-20). _mwRoomShotImg 가 만든 그림에
+     이미 필름이 들어 있다 — 여기서 polaroid_frame.png 를 한 겹 더 얹고 그 **구멍에**
+     카드를 밀어넣고 있었다. 구멍이 더 작고 비율도 달라서 위아래가 잘려나갔고
+     ('from Murpy' 가 그래서 사라졌다), 액자 속 액자가 되어 인화 느낌이 죽었다.
+     → 만든 그림을 **있는 그대로** 보여준다. 공유되는 그림과 화면이 완전히 같아진다. */
+  #mw-pola .pola-card { position:relative; width:100%; max-width:330px; aspect-ratio:1080/1350;
     filter:drop-shadow(0 18px 30px rgba(0,0,0,.6));
     animation:mwPolaDrop .78s cubic-bezier(.2,.9,.3,1) both }
-  #mw-pola .pola-shot { position:absolute; left:8.762%; top:9.665%; width:82.337%; height:66.337%;
-    object-fit:cover; display:block }
-  #mw-pola .pola-frame { position:absolute; inset:0; width:100%; height:100%;
-    image-rendering:pixelated; pointer-events:none }
-  #mw-pola .pola-cap { position:absolute; left:6%; right:6%; top:80%; font-family:'Galmuri11',sans-serif;
-    font-size:12px; color:#4a4336; text-align:center; line-height:1.5 }
+  #mw-pola .pola-shot { display:block; width:100%; height:100%; object-fit:contain }
   @media (prefers-reduced-motion:reduce){ #mw-pola .pola-card{ animation:none } }
   /* ===== 초대 전용 화면 ===== */
   /* ★조각조각 숨기지 말고 **덩어리째** 숨긴다. mw-worldbar 에 로고와 '머피 +' 가 같이 살고,
@@ -18290,52 +18290,104 @@ window._mwDrawSeal = function (x, cx, cy, ownerNick, n) {
   x.textBaseline = 'alphabetic';   // 아래 캐션이 이 값을 물려받으면 글자가 뜨다
 };
 window._mwRoomShotImg = function (list, ownerNick, cb) {
+  // ★★2026-08-20 재작업 (대표: "from Murpy 글씨가 프레임에 가려진다 · 폴라로이드 레이아웃
+  //   안에 우리 머피월드가 들어간 느낌밖에 안 난다 · 진짜 인화한 느낌을 내고 싶다").
+  //   원인은 **폴라로이드가 두 겹**이었다. 여기서 이미 흰 인화지·캡션·로고까지 다 그려
+  //   완성한 카드를, 화면(_mwPolaShow)이 또 polaroid_frame.png 의 **구멍에 밀어넣었다.**
+  //   구멍은 카드보다 작고 비율도 달라서 object-fit:cover 가 위아래를 잘라냈다 — 'from' 이
+  //   그래서 사라졌고, 전체가 액자 속 액자라 '템플릿에 스샷 붙인' 느낌이 났다.
+  //   → 이제 **여기서 프레임 그림까지 직접 그린다.** 필름은 한 겹뿐이고,
+  //     글씨(from / OO님의 머피룸 / murpy.app)는 전부 **필름 바깥**에 앉는다.
   const W = 1080, H = 1350;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
-  // ★폴라로이드. 방은 정사각인데 카드는 4:5 라 그냥 넣으면 위아래가 남는다.
-  //   흰 테두리 안에 정사각 사진을 넣고 아래 여백에 캡션을 두면 비율이 자연스럽게 풀리고,
-  //   동시에 '화면 캡처'가 아니라 '사진'이 된다(.mw-polaroid 와 같은 문법).
-  const PX = 60, PY = 66, PW = 960, PH = 1112;         // 흰 틀
-  const S = 900, SX = PX + 30, SY = PY + 30;           // 사진(정사각)
+  // 필름 자리 — 그림 원본은 320x472, 구멍은 (29,46)에서 262x312 다(알파 실측).
+  const FW = 720, FH = Math.round(FW * 472 / 320);        // 720 x 1062
+  const FX = Math.round((W - FW) / 2), FY = 104;
+  const hx = FX + FW * 29 / 320, hy = FY + FH * 46 / 472;
+  const hw = FW * 262 / 320, hh = FH * 312 / 472;
   x.fillStyle = '#05070c'; x.fillRect(0, 0, W, H);
-  x.save();
-  x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 26; x.shadowOffsetY = 10;
-  x.fillStyle = '#f4f1ea'; x.fillRect(PX, PY, PW, PH);  // 살짝 따뜻한 흰색 = 인화지
-  x.restore();
 
-  window._mwDrawRoom(x, SX, SY, S, window._mwRoomShown(), list).then(function () {
-    window._mwDrawSeal(x, SX + S - 150, SY + S - 110, ownerNick, list.length);
-    // 캡션 — 인화지 아래 여백
-    x.textAlign = 'center'; x.fillStyle = '#20242e';
-    x.font = "40px 'Galmuri14','Galmuri11',sans-serif";
-    x.fillText(ownerNick + '님의 머피룸', W / 2, SY + S + 74);
-    const names = list.map(function (pl) { return String(pl.nick || '머피').slice(0, 8); }).join('  ·  ');
-    x.fillStyle = '#6b7280'; x.font = "28px 'Galmuri11',sans-serif";
-    x.fillText(names.slice(0, 46), W / 2, SY + S + 124);
-    // 인화지 밖 — 어디로 가면 되는지
-    return Promise.all([new Promise(function (res) {
-      const im = new Image(); im.onload = function () { res(im); }; im.onerror = function () { res(null); };
-      im.src = 'char/ui/ui_logo.png?v=1';
-    })]);
-  }).then(function (r) {
-    const logo = r[0];
-    x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.85)';
-    x.font = "34px 'Galmuri11',sans-serif";
-    x.fillText('같이 놀러 오세요 · murpy.app', W / 2, H - 58);
-    if (logo) {
-      const lh = 42, lw = logo.width * lh / logo.height;
-      x.textAlign = 'left'; x.font = "28px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.8)';
-      x.fillText('from', 46, PY - 20);
-      x.drawImage(logo, 122, PY - 20 - lh + 9, lw, lh);
-    }
-    cb(cv.toDataURL('image/jpeg', 0.92));
+  return Promise.all([
+    window._mwLoadImg('char/ui/polaroid_frame.png?v=1'),
+    window._mwLoadImg('char/ui/ui_logo.png?v=1'),
+  ]).then(function (r) {
+    const frame = r[0], logo = r[1];
+    // ── 구멍 안 = 사진. 방은 정사각인데 구멍은 세로로 길다(0.84) →
+    //    **높이를 채우고 좌우를 똑같이 잘라낸다.** 사진이니까 잘리는 게 자연스럽다.
+    x.save();
+    x.beginPath(); x.rect(hx, hy, hw, hh); x.clip();
+    const S = hh, ox = hx - (S - hw) / 2, oy = hy;
+    return window._mwDrawRoom(x, ox, oy, S, window._mwRoomShown(), list).then(function () {
+      // ── 인화 느낌은 여기서 난다. 셋 다 구멍 안에만 건다.
+      x.fillStyle = 'rgba(255,226,180,.07)';                 // 인화지 특유의 따뜻한 물
+      x.fillRect(hx, hy, hw, hh);
+      const vg = x.createRadialGradient(hx + hw / 2, hy + hh / 2, hh * 0.30,
+                                        hx + hw / 2, hy + hh / 2, hh * 0.78);
+      vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.30)');
+      x.fillStyle = vg; x.fillRect(hx, hy, hw, hh);          // 가장자리가 살짝 어두워진다
+      try {
+        const pt = x.createPattern(window._mwGrain(), 'repeat');
+        if (pt) { x.fillStyle = pt; x.fillRect(hx, hy, hw, hh); }   // 필름 입자
+      } catch (e) {}
+      x.restore();
+
+      // ── 필름 그림. 사진 **위에** 얹어야 안쪽 테두리가 사진 가장자리를 덮는다.
+      if (frame) {
+        x.save();
+        x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 30; x.shadowOffsetY = 12;
+        x.imageSmoothingEnabled = false;                      // 픽셀 그림 = 뭉개지 않는다
+        x.drawImage(frame, FX, FY, FW, FH);
+        x.restore();
+      }
+      // 흰 여백에 도장 하나. 비워두면 '템플릿'처럼 보이고, 찍혀 있으면 **실물**로 읽힌다.
+      window._mwDrawSeal(x, FX + FW * 0.72, FY + FH * 0.875, ownerNick, list.length);
+      // 인화지 위를 스치는 빛. 물성이 생긴다.
+      const sh = x.createLinearGradient(FX, FY, FX + FW, FY + FH);
+      sh.addColorStop(0, 'rgba(255,255,255,0)');
+      sh.addColorStop(0.42, 'rgba(255,255,255,.11)');
+      sh.addColorStop(0.72, 'rgba(255,255,255,0)');
+      x.fillStyle = sh; x.fillRect(FX, FY, FW, FH);
+
+      // ── 글씨는 전부 **필름 바깥** (대표 8-20).
+      // 위: from + 머피 로고 (가운데 정렬 한 덩어리)
+      x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+      x.font = "28px 'Galmuri11',sans-serif";
+      const fw = x.measureText('from').width;
+      const lh = 40, lw = logo ? Math.round(logo.width * lh / logo.height) : 0;
+      const tot = fw + 14 + lw, tx = Math.round((W - tot) / 2), ty = 68;
+      x.fillStyle = 'rgba(255,255,255,.62)'; x.fillText('from', tx, ty);
+      if (logo) x.drawImage(logo, tx + fw + 14, ty - lh + 9, lw, lh);
+      // 아래: 누구 방인지 · 같이 있던 사람 · 어디로 오면 되는지
+      x.textAlign = 'center';
+      x.font = "40px 'Galmuri14','Galmuri11',sans-serif"; x.fillStyle = '#f0ece2';
+      x.fillText(ownerNick + '님의 머피룸', W / 2, FY + FH + 58);
+      const names = list.map(function (pl) { return String(pl.nick || '머피').slice(0, 8); }).join('  ·  ');
+      x.font = "28px 'Galmuri11',sans-serif"; x.fillStyle = '#8b93a6';
+      x.fillText(names.slice(0, 46), W / 2, FY + FH + 102);
+      x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.72)';
+      x.fillText('같이 놀러 오세요 · murpy.app', W / 2, FY + FH + 152);
+      cb(cv.toDataURL('image/jpeg', 0.92));
+    });
   }).catch(function (e) {
     // ★한 줄만 터져도 사진이 영영 안 나오던 자리다(_mwDrawSeal 이 없어서 그랬다).
-    //   조용히 매달려 있지 말고 **반드시 끝낸다** — 부르는 쪽이 띄를 걷고 사람에게 말한다.
+    //   조용히 매달려 있지 말고 **반드시 끝낸다** — 부르는 쪽이 띠를 걷고 사람에게 말한다.
     console.error('[room] 인화 실패', e);
     cb(null);
   });
+};
+// 필름 입자. 96x96 짜리 한 장을 만들어 두고 무늬로 깔면 값이 거의 안 든다.
+window._mwGrain = function () {
+  if (window._mwGrainCv) return window._mwGrainCv;
+  const n = 96, c = document.createElement('canvas'); c.width = c.height = n;
+  const g = c.getContext('2d'), im = g.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) {
+    const v = 128 + (Math.random() * 64 - 32);
+    im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v;
+    im.data[i * 4 + 3] = 24;                    // 아주 옅게 — 진하면 사진이 지저분해진다
+  }
+  g.putImageData(im, 0, 0);
+  window._mwGrainCv = c; return c;
 };
 
 // 3·2·1 그리고 플래시. ★혼자 캡처한 게 아니라 **다 같이 겪은 사건**이어야 한다(대표 8-20).
@@ -18427,11 +18479,9 @@ window._mwPolaShow = function (data, nicks) {
   let el = document.getElementById('mw-pola'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-pola';
   const cap = (nicks && nicks.length) ? nicks.slice(0, 4).join('  ·  ') : '';
-  el.innerHTML = '<div style="width:100%;max-width:320px">'
+  el.innerHTML = '<div style="width:100%;max-width:330px">'
     + '<div class="pola-card">'
     +   '<img class="pola-shot" src="' + data + '" alt="같이 찍은 사진">'
-    +   '<img class="pola-frame" src="char/ui/polaroid_frame.png?v=1" alt="">'
-    +   '<div class="pola-cap"></div>'
     + '</div>'
     + '<div class="mw-share" style="margin-top:16px">'
     + '<button class="mw-sbtn" onclick="window.mwRoomShotIG()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
@@ -18440,8 +18490,6 @@ window._mwPolaShow = function (data, nicks) {
     + '</div>'
     + '<button onclick="var e=document.getElementById(&quot;mw-pola&quot;);if(e)e.remove()" style="width:100%;background:none;border:none;color:rgba(255,255,255,.42);font-size:12.5px;padding:15px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
     + '</div>';
-  // 캡션은 남의 닉네임이라 textContent 로만 넣는다
-  const c = el.querySelector('.pola-cap'); if (c) c.textContent = cap;
   document.body.appendChild(el);
 };
 
@@ -21972,8 +22020,22 @@ window.mwOtherMenu = async function (uid, nick, ev) {
   //   이제 사람이 나가기를 누르기 전엔 방에 계속 남으므로, 방주가 치울 수단이 없으면
   //   모르는 사람이 눌러앉아 정원을 먹는다. 대각선 자리라 십자 4개와 안 겹친다.
   if (window._mwRl && window._mwRl.owner === me.uid && (window._mwRl.last || {})[uid]) {
-    acts.push({ k: 'kick', t: '내보내기', dx: R * 0.72 + 14, dy: R * 0.72 + 18,
+    acts.push({ k: 'kick', t: '내보내기', dx: 0, dy: 0,
                 fn: "window.mwRoomKick('" + U + "','" + N + "')" });
+  }
+  // ★다섯 개가 되면 십자 배치가 무너진다 — 내보내기와 스쿼드 초대가 겹쳤다(대표 8-20).
+  //   넷일 때의 십자는 그대로 두고(검증된 배치다), **다섯일 때만 정오각형**으로 다시 앉힌다.
+  //   위 꼭짓점부터 시계방향 72도씩. 반지름 74 면 이웃 간격이 87px 라 버튼(58px)이 안 닿는다.
+  if (acts.length === 5) {
+    //  acts = [맨위, 캐릭터정보, 콕찌르기, 스쿼드초대, 내보내기]
+    //  자리 = 위 / 우상 / 우하 / 좌하 / 좌상 — 되돌릴 수 없는 '내보내기'를 맨 위에서 가장 멀리 둔다
+    const seq = [acts[0], acts[2], acts[3], acts[4], acts[1]];
+    const Rp = 74;
+    seq.forEach(function (a, i) {
+      const ang = (-90 + i * 72) * Math.PI / 180;
+      a.dx = Math.round(Rp * Math.cos(ang));
+      a.dy = Math.round(Rp * Math.sin(ang)) + 4;
+    });
   }
 
   // ★닉네임 라벨을 여기서 띄우지 않는다 — 방 안 캐릭터는 이미 **칭호=머리 위 / 닉네임=발밑**으로
