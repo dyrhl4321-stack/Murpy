@@ -60,3 +60,36 @@ const bare = w.dodgeMakeLink('', 0);
 assert(bare.startsWith('https://murpy.app/?game=dodge'));
 
 console.log('dodge-guest.test.mjs: 링크 파싱·만들기 통과 OK');
+
+// 8) 게스트 점수 보관 — Firestore 의 games.dodge 와 **같은 모양**이어야 옮길 때 변환이 없다
+new Function('window', grab(/window\.dodgeGuestMerge = function[\s\S]*?\n\};/, 'dodgeGuestMerge'))(w);
+
+let g = w.dodgeGuestMerge(null, { s: 120, t: 30, lv: 'mid', at: 1000 }, 20);
+assert.strictEqual(g.best, 120, '첫 기록이 최고점이 안 된다');
+assert.strictEqual(g.plays, 1);
+assert.strictEqual(g.recent.length, 1);
+
+// 더 낮은 점수를 내도 최고점은 안 내려간다
+g = w.dodgeGuestMerge(g, { s: 50, t: 12, lv: 'mid', at: 2000 }, 20);
+assert.strictEqual(g.best, 120, '낮은 점수가 최고점을 덮었다');
+assert.strictEqual(g.plays, 2);
+
+// 최신 판이 **앞**에 온다
+assert.strictEqual(g.recent[0].s, 50, '최신 판이 맨 앞이 아니다');
+
+// 더 높은 점수는 갱신된다
+g = w.dodgeGuestMerge(g, { s: 300, t: 60, lv: 'hard', at: 3000 }, 20);
+assert.strictEqual(g.best, 300);
+
+// max 를 넘으면 오래된 것부터 버린다
+let many = null;
+for (let i = 0; i < 30; i++) many = w.dodgeGuestMerge(many, { s: i, t: i, lv: 'mid', at: i }, 20);
+assert.strictEqual(many.recent.length, 20, '보관 개수를 안 자른다');
+assert.strictEqual(many.recent[0].s, 29, '최신이 맨 앞이 아니다');
+
+// 망가진 보관분이 들어와도 안 터진다 (localStorage 는 사람이 고칠 수 있다)
+assert.doesNotThrow(() => w.dodgeGuestMerge({ best: 'x', recent: 'nope' }, { s: 10, t: 1, lv: 'mid', at: 1 }, 20));
+const fixed = w.dodgeGuestMerge({ best: 'x', recent: 'nope' }, { s: 10, t: 1, lv: 'mid', at: 1 }, 20);
+assert.strictEqual(fixed.best, 10, '망가진 best 를 복구 못 한다');
+assert(Array.isArray(fixed.recent), '망가진 recent 를 배열로 못 되돌린다');
+console.log('  + 게스트 점수 보관 OK');

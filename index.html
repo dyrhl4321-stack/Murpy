@@ -11855,6 +11855,35 @@ window.dodgeMakeLink = function (nick, score) {
   if (nick) u += '&n=' + encodeURIComponent(String(nick).slice(0, 12));
   return u;
 };
+// ---- 계정이 없는 동안의 점수 보관 ----
+// ★Firestore 의 users/{uid}.games.dodge 와 **같은 모양**으로 들고 있는다.
+//   모양이 다르면 계정이 생겼을 때 변환하다 어긋난다.
+window.DODGE_GUEST_KEY = 'murpy_dodge_guest';
+// 순수 함수 — localStorage 를 모른다(그래야 node 로 검증할 수 있다).
+window.dodgeGuestMerge = function (cur, rec, max) {
+  const c = (cur && typeof cur === 'object') ? cur : {};
+  const oldBest = (typeof c.best === 'number' && isFinite(c.best)) ? c.best : 0;
+  const oldRecent = Array.isArray(c.recent) ? c.recent : [];
+  const oldPlays = (typeof c.plays === 'number' && isFinite(c.plays)) ? c.plays : 0;
+  const s = Math.max(0, Math.floor((rec && rec.s) || 0));
+  return {
+    best: Math.max(oldBest, s),
+    plays: oldPlays + 1,
+    recent: [rec].concat(oldRecent).slice(0, max || 20),
+    lastAt: (rec && rec.at) || Date.now()
+  };
+};
+window.dodgeGuestLoad = function () {
+  try { return JSON.parse(localStorage.getItem(window.DODGE_GUEST_KEY) || 'null'); }
+  catch (e) { return null; }
+};
+window.dodgeGuestSave = function (o) {
+  try { localStorage.setItem(window.DODGE_GUEST_KEY, JSON.stringify(o)); } catch (e) {}
+};
+// ★옮기고 나면 반드시 비운다. 두 벌로 남으면 어느 게 진짜인지 알 수 없어진다.
+window.dodgeGuestClear = function () {
+  try { localStorage.removeItem(window.DODGE_GUEST_KEY); } catch (e) {}
+};
 window.DODGE = {
   W: 100,             // 게임판 가로(논리 단위, 화면 폭에 비례해서만 그린다)
   PLAYER_W: 12,       // 캐릭터가 벽에 막히는 폭(이동 한계). 판정 폭이 아니다
