@@ -20,7 +20,7 @@ new Function('window', grab(/window\.dodgeParseLink = function[\s\S]*?\n\};/, 'd
 new Function('window', grab(/window\.dodgeMakeLink = function[\s\S]*?\n\};/, 'dodgeMakeLink'))(w);
 
 // 1) 정상 링크
-let r = w.dodgeParseLink('?game=dodge&n=%ED%8C%A8%EC%88%98%ED%98%84&s=320');
+let r = w.dodgeParseLink('?game=dodge&nick=%ED%8C%A8%EC%88%98%ED%98%84&s=320');
 assert.strictEqual(r.on, true, '게임 링크를 못 알아본다');
 assert.strictEqual(r.nick, '패수현');
 assert.strictEqual(r.score, 320);
@@ -39,11 +39,11 @@ assert.strictEqual(w.dodgeParseLink('?game=dodge&s=3.7').score, 3);
 assert.strictEqual(w.dodgeParseLink('?game=dodge').score, 0, '점수가 없으면 0');
 
 // 4) 닉네임 — 12자로 자르고, 없으면 빈 문자열
-assert.strictEqual(w.dodgeParseLink('?game=dodge&n=' + encodeURIComponent('가'.repeat(30))).nick.length, 12);
+assert.strictEqual(w.dodgeParseLink('?game=dodge&nick=' + encodeURIComponent('가'.repeat(30))).nick.length, 12);
 assert.strictEqual(w.dodgeParseLink('?game=dodge').nick, '');
 // 태그 문자는 그대로 돌려준다 — 지우는 게 아니라 **넣을 때 textContent 로** 막는다.
 // 여기서 지우면 '<' 를 쓴 진짜 닉네임이 망가진다.
-assert.strictEqual(w.dodgeParseLink('?game=dodge&n=' + encodeURIComponent('<b>')).nick, '<b>');
+assert.strictEqual(w.dodgeParseLink('?game=dodge&nick=' + encodeURIComponent('<b>')).nick, '<b>');
 
 // 5) 깨진 URL 인코딩에도 안 터진다
 assert.doesNotThrow(() => w.dodgeParseLink('?game=dodge&n=%E0%A4%A'));
@@ -149,3 +149,19 @@ assert(/textContent/.test(boot), '도전장을 textContent 로 안 넣는다');
 // 주소를 지워야 새로고침 때 또 안 튄다
 assert(/replaceState/.test(boot), '주소를 안 지운다 → 새로고침마다 게임이 다시 뜬다');
 console.log('  + 링크 부팅·온보딩 미루기 OK');
+
+// 17) ★★게임 링크가 **다른 기능의 URL 파라미터를 침범하면 안 된다** (대표 8-20 실제 사고)
+//     `n` 은 푸시 알림이 알림 종류로 쓰는 자리다. 거기에 닉네임을 넣었더니
+//     알림 라우터가 '모르는 알림'으로 보고 알림함을 열어버렸다.
+const mk = w.dodgeMakeLink('패수현', 320);
+for (const taken of ['n', 'f', 'p', 'sq', 'sqa', 'sched', 'room', 'from', 'code', 'c', 'attend', 'aur']) {
+  assert(!new RegExp('[?&]' + taken + '=').test(mk),
+    `게임 링크가 이미 쓰이는 파라미터 '${taken}' 를 침범한다: ${mk}`);
+}
+assert(/[?&]nick=/.test(mk), '닉네임은 nick 자리여야 한다');
+// 반대로, 알림 링크(?n=)를 게임이 가로채도 안 된다
+assert.strictEqual(w.dodgeParseLink('?n=feed_like&p=abc').on, false, '알림 링크를 게임이 가로챈다');
+// 알림 라우터가 보는 n 을 우리가 읽지 않는지 (소스에서 직접 확인)
+const parse = grab(/window\.dodgeParseLink = function[\s\S]*?\n\};/, 'dodgeParseLink');
+assert(!/get\('n'\)/.test(parse), "dodgeParseLink 가 알림용 n 을 읽는다 → 알림함이 열린다");
+console.log('  + URL 파라미터 충돌 방어 OK');
