@@ -16946,6 +16946,163 @@ window.mwRoomEnterSwitchAccount = async function () {
 };
 // ===== 머피룸 초대 끝 =====
 
+// ===== 머피룸 실시간 (같이 있기) =====
+// 설계 = docs/superpowers/specs/2026-08-20-murpy-room-together-design.md
+// ★스쿼드 워킹룸(squadRooms/{sid}/players)과 **같은 구조**다. presence + onDisconnect +
+//   쓰로틀 전송 + CSS 보간. 캐릭터 DOM 도 같은 문법(.sq-char/.sq-nick)을 쓴다 —
+//   새 문법을 만들면 이 화면만 혼자 논다.
+window.MW_ROOM_CAP = 4;          // 주인 포함 정원 (대표 8-20)
+window._mwRl = { owner: null, unsub: null, chars: {}, pos: null, cap: false };
+
+// 바닥 안쪽으로만. 벽(위 3타일)과 가장자리를 피한다.
+window._mwRoomClamp = function (x, y) {
+  return { x: Math.max(9, Math.min(91, x)), y: Math.max(27, Math.min(93, y)) };
+};
+// 오래된 유령을 버린다. onDisconnect 가 놓친 경우(탭 강제종료 등)가 있다.
+window._mwRoomAlive = function (v) { return v && (Date.now() - (v.t || 0) < 90000); };
+
+window.mwRoomLiveJoin = function (ownerUid) {
+  if (!window._rt || !ownerUid) return;
+  const R = window._rt, u = auth.currentUser;
+  window.mwRoomLiveLeave();                       // 방을 갈아탈 때 앞 방을 확실히 정리한다
+  window._mwRl.owner = ownerUid;
+  const base = 'roomLive/' + ownerUid + '/players';
+
+  // 구독은 언제나 건다. ★쓰기(내 위치)만 조건부다 —
+  //   스쿼드에서 구독까지 막았다가 '빈 필드'만 보이는 사고가 있었다(8-14).
+  const unsub = R.onValue(R.ref(R.db, base), function (snap) {
+    const all = snap.val() || {};
+    window._mwRl.last = all;
+    window._mwRoomRender(all);
+  }, function (e) { console.warn('roomLive players', e); });
+  window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
+
+  if (!u) return;                                  // 비로그인은 보기만
+
+  const meRef = R.ref(R.db, base + '/' + u.uid);
+  try { R.onDisconnect(meRef).remove(); } catch (e) {}
+  // 첫 자리 — 주인은 저장된 자리, 손님은 문 쪽에서 조금씩 흩어져 선다
+  const seed = (u.uid === ownerUid) ? { x: 50, y: 62 } : { x: 30 + (Date.now() % 40), y: 86 };
+  window._mwRl.pos = window._mwRoomClamp(seed.x, seed.y);
+  window._mwRl.pos.dir = 'down';
+
+  const send = function () {
+    if (window._mwRl.cap) return;                  // 정원이 찼으면 안 들어간다
+    const p = window._mwRl.pos || { x: 50, y: 80, dir: 'down' };
+    try {
+      R.set(meRef, {
+        x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, dir: p.dir || 'down',
+        nick: window._mwMyNick || '머피',
+        guest: !!(u.isAnonymous),
+        title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+        character: window.getMyCharacter ? window.getMyCharacter() : null,
+        t: Date.now(),
+      });
+    } catch (e) { console.warn('roomLive send', e); }
+  };
+  window._mwRl.send = send;
+
+  // ★정원 판정은 **들어가기 전에** 한 번만 읽어서 한다. 계속 감시하면 남이 잠깐
+  //   깜빡일 때 나를 튕겨낸다.
+  R.onValue(R.ref(R.db, base), function (snap) {
+    const all = snap.val() || {};
+    const live = Object.keys(all).filter(function (k) { return k !== u.uid && window._mwRoomAlive(all[k]); });
+    if (live.length >= window.MW_ROOM_CAP) {
+      window._mwRl.cap = true;
+      window._mwRoomNotice(String(window.MW_ROOM_CAP) + '명이 이미 놀고 있어요 · 구경만 할 수 있어요');
+    } else { send(); }
+  }, { onlyOnce: true });
+
+  // ★#mw-wpanel 은 여러 화면이 돌려 쓴다(꾸미기·이동·캐릭터 정보). 닫기 버튼만 고쳐 놓으면
+  //   그중 하나가 패널을 갈아치울 때 RTDB 에 내가 남는다. 무대가 사라졌으면 스스로 나간다.
+  clearInterval(window._mwRl.watch);
+  window._mwRl.watch = setInterval(function () {
+    if (!document.getElementById('mw-vroom-stage')) window.mwRoomLiveLeave();
+  }, 2000);
+
+  // 방 안 이동 — 화면을 누르면 그 자리로 걸어간다(스쿼드 탭투워크와 같은 조작)
+  const stage = document.getElementById('mw-vroom-stage');
+  if (stage && !stage._rlBound) {
+    stage._rlBound = 1;
+    stage.addEventListener('click', function (e) {
+      if (!auth.currentUser || window._mwRl.cap) return;
+      if (e.target.closest('#mw-vroom-owner, .sq-char, .mw-sbox, .mw-plate')) return;   // 누를 게 따로 있는 것들
+      const r = stage.getBoundingClientRect();
+      const q = window._mwRoomClamp((e.clientX - r.left) / r.width * 100, (e.clientY - r.top) / r.height * 100);
+      const cur = window._mwRl.pos || q;
+      const dx = q.x - cur.x, dy = q.y - cur.y;
+      q.dir = Math.abs(dx) * 0.9 > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      window._mwRl.pos = q;
+      window._mwRl.send && window._mwRl.send();
+    });
+  }
+};
+
+window.mwRoomLiveLeave = function () {
+  clearInterval(window._mwRl.watch);
+  const R = window._rt, u = auth.currentUser, o = window._mwRl.owner;
+  if (R && u && o) { try { R.remove(R.ref(R.db, 'roomLive/' + o + '/players/' + u.uid)); } catch (e) {} }
+  window._mwRl.unsub && window._mwRl.unsub();
+  Object.keys(window._mwRl.chars).forEach(function (k) {
+    const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
+  });
+  window._mwRl = { owner: null, unsub: null, chars: {}, pos: null, cap: false, watch: 0 };
+};
+
+// 방 안 한 줄 안내 (정원참 · 주인 부재). ★새 토스트를 만들지 않고 방 안 칩 자리를 쓴다.
+window._mwRoomNotice = function (txt) {
+  const hint = document.getElementById('mw-rm-hint');
+  if (hint) { hint.textContent = txt; hint.style.display = ''; return; }
+  showToast && showToast(txt);
+};
+
+window._mwRoomRender = function (all) {
+  const stage = document.getElementById('mw-vroom-stage'); if (!stage) return;
+  const owner = window._mwRl.owner;
+  const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
+  const hpx = Math.round((stage.clientWidth || 300) * 3.3 / N);
+  const chars = window._mwRl.chars;
+  const seen = {};
+  Object.keys(all).forEach(function (uid) {
+    const v = all[uid];
+    if (!window._mwRoomAlive(v)) return;
+    seen[uid] = 1;
+    let c = chars[uid];
+    if (!c || !c.el.isConnected) {
+      const el = document.createElement('div');
+      el.className = 'sq-char'; el.dataset.uid = uid;
+      el.innerHTML = '<div class="sq-body"></div><span class="mw-cfd-nick"></span>';
+      stage.appendChild(el);
+      c = chars[uid] = { el: el, cfg: '~', dir: null, nick: null };
+    }
+    const cj = JSON.stringify(v.character || null);
+    if (c.cfg !== cj || c.dir !== v.dir) {
+      c.cfg = cj; c.dir = v.dir;
+      const face = v.dir === 'down' ? undefined : v.dir;
+      c.el.querySelector('.sq-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, hpx, face) : '';
+    }
+    // 남의 데이터라 textContent 로만 넣는다(주입 방지)
+    const nk = String(v.nick || '머피') + (v.guest ? ' (손님)' : '');
+    if (c.nick !== nk) { c.nick = nk; c.el.querySelector('.mw-cfd-nick').textContent = nk; }
+    c.el.style.left = v.x + '%'; c.el.style.top = v.y + '%';
+    c.el.style.zIndex = 10 + Math.round(v.y);
+  });
+  // 나간 사람 치우기
+  Object.keys(chars).forEach(function (uid) {
+    if (seen[uid]) return;
+    chars[uid].el.remove(); delete chars[uid];
+  });
+  // ★주인이 실제로 들어와 있으면 저장된 자리에 박아둔 정적 캐릭터를 감춘다 — 안 그러면 둘로 보인다.
+  const stat = document.getElementById('mw-vroom-owner');
+  if (stat) stat.style.display = seen[owner] ? 'none' : '';
+  // 주인이 없으면 알려준다(들어오는 것 자체는 막지 않는다 — 대표 8-20: 언제든 입장)
+  if (!seen[owner] && auth.currentUser && auth.currentUser.uid !== owner) {
+    window._mwRoomNotice('주인이 자리를 비웠어요');
+  }
+};
+// ===== 머피룸 실시간 끝 =====
+
+
 // ★성공하면 true. 실패하면 false 를 돌려줘 **부르는 쪽이 평소 화면으로 떨어뜨리게** 한다.
 window.startGuestInvite = async function (sid) {
   if (auth.currentUser) { window.openSquadDetail && window.openSquadDetail(sid); return true; }
@@ -20481,7 +20638,7 @@ window.mwVisitRoom = async function (uid) {
     ? `<span style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:${_tColor};border:2px solid #05070c;background:#1a2233;padding:3px 7px;margin-left:8px;flex-shrink:0">${_title}</span>`
     : '';
   el.innerHTML = `
-    <div class="mw-wpanel-head"><b>${nick}의 방</b>${_titleHtml}<button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
+    <div class="mw-wpanel-head"><b>${nick}의 방</b>${_titleHtml}<button class="mw-wclose" onclick="window._mwRoomClose&&window._mwRoomClose()">✕</button></div>
     <div class="mw-wpanel-body">
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
@@ -20539,6 +20696,9 @@ window.mwVisitRoom = async function (uid) {
     if (_mine && _hint) _hint.remove();
     if (!_mine) setTimeout(function () { window._mwRoomCoach && window._mwRoomCoach(); }, 520);
   }
+  // ★실시간으로 같이 있기 (1단계 b). 정적인 방 위에 **얹는다** —
+  //   방을 새로 만들지 않으므로 가구·방명록·TODAY 는 그대로 돌아간다.
+  window.mwRoomLiveJoin && window.mwRoomLiveJoin(uid);
   // TODAY 카운트 — ★**1인 1일 1회**. 예전엔 방을 열 때마다 increment 해서, 같은 사람이
   //   새로고침만 해도 숫자가 올랐다(대표 지적 2026-08-04). 방문 표식 문서를 만들 때만 센다.
   //   표식 생성과 카운트 증가는 **한 트랜잭션**이어야 한다 — 따로 하면 중간에 끊겼을 때
@@ -20759,6 +20919,9 @@ window._mwSqInvSend = async function (uid, nick, sid, title) {
 };
 
 window._mwRoomClose = function () {
+  // ★방을 나가면 RTDB 에서도 빠져야 한다. 이 함수는 닫기 버튼 말고도 여러 곳이 부른다
+  //   (링 메뉴 '채팅하기', 매칭 성사) — 그래서 정리는 **여기 한 곳**에 둔다.
+  window.mwRoomLiveLeave && window.mwRoomLiveLeave();
   const w = document.getElementById('mw-wpanel'); if (w) w.remove();
 };
 // ★방 패널은 z-index 880, 프로필·채팅 패널은 100 이다. sendLike 가 매칭 성사 시 프로필을 여는데
