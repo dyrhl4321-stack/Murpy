@@ -700,6 +700,11 @@
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; white-space:nowrap;
     animation:mwCoachBob 1.6s ease-in-out infinite }
   @keyframes mwCoachBob { 50% { transform:translateX(-50%) translateY(-4px) } }
+  /* 같이 노는 방의 남의 캐릭터. 내 캐릭터와 같은 발밑 기준으로 앉는다. */
+  .mw-rc { display:flex; flex-direction:column; align-items:center; }
+  .mw-rc-bub { max-width:120px; text-align:center; line-height:1.45; background:#fff; color:#10131c;
+    border:2px solid #05070c; padding:2px 6px; font-size:9.5px; font-weight:600; margin-bottom:3px;
+    font-family:'Galmuri11',sans-serif; }
   .mw-fieldchip { position:absolute; right:9px; top:9px; z-index:200; display:flex; align-items:center; gap:6px;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; cursor:pointer; padding:8px 11px;
     background:rgba(13,19,34,.78); border:2px solid rgba(255,255,255,.2); -webkit-tap-highlight-color:transparent }
@@ -1516,7 +1521,13 @@
       <div id="charworld-room" style="position:relative;width:100%;aspect-ratio:1/1;overflow:hidden;background:#0e0f14 center/100% 100% no-repeat;image-rendering:auto;touch-action:none">
         <div id="mw-furn" style="position:absolute;inset:0;pointer-events:none"></div>
         <!-- 칩 버튼(꾸미기/이동/말풍선) 폐기 → 캐릭터 탭 = 링 커맨드 메뉴(mwCharMenu, 성검전설식). 대표 결정 7-23 -->
-        <div id="charworld-avatar" onclick="window.mwCharMenu&&window.mwCharMenu()" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;image-rendering:auto;cursor:pointer"></div>
+        <!-- 방 안 채팅 (초대 모드). ★조이스틱 예외 목록에 넣어야 눌린다 — 방 전체가 조이스틱이라
+       touchstart 에서 preventDefault 가 걸리면 합성 click 이 취소된다. -->
+  <div id="mw-roomchat" style="display:none;position:absolute;left:8px;right:8px;bottom:8px;z-index:70;gap:6px">
+    <input id="mw-roomchat-input" maxlength="40" placeholder="같이 있는 사람에게 한마디…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:9px 11px;font-size:13px;outline:none;font-family:inherit;min-width:0">
+    <button class="mw-btn mw-btn-sm" onclick="window.mwRoomSay&&window.mwRoomSay()">보내기</button>
+  </div>
+  <div id="charworld-avatar" onclick="window.mwCharMenu&&window.mwCharMenu()" style="position:absolute;left:120px;top:150px;width:52px;height:88px;transition:left .15s linear, top .15s linear, translate .09s ease, scale .12s cubic-bezier(.34,1.56,.64,1);z-index:1;image-rendering:auto;cursor:pointer"></div>
         <!-- ★머리 위 UI(칭호·말풍선·닉네임) 전용 겹 — **캐릭터 밖**이다 (대표 8-18).
              캐릭터는 가구와 앞뒤를 다투느라 z-index 를 들고 있고, z-index 를 가진 요소는
              쌓임 맥락(stacking context)을 만든다. 그 안에 말풍선을 두면 z 를 아무리 크게 줘도
@@ -3167,6 +3178,11 @@ window.mwItemDef = function (id) {
       || null;
 };
 window._myRoom = null;   // { f:[{id,x,y}] } — users/{uid}.room
+// ★초대받아 들어간 방 (null = 내 방). 필드는 하나뿐이고, **어느 방 데이터를 그리느냐**만 바뀐다.
+//   가구·충돌맵·좌표계가 전부 같아서 조이스틱과 충돌 판정을 그대로 쓴다(대표 8-20).
+window._mwVisit = null;  // { uid, nick, room }
+window._mwRoomShown = function () { return window._mwVisit ? window._mwVisit.room : window._myRoom; };
+window._mwIsVisiting = function () { return !!window._mwVisit; };
 // 바닥 접지 그림자. 이게 없으면 오브젝트가 방에 놓인 게 아니라 스티커처럼 붙어 보인다.
 // ★폭은 가구의 실제 바닥 접지폭(def.sbw)에 맞춘다 — def.w*0.8 고정이면 침대·책장(바닥이 스프라이트
 //   폭 전체)에 좁은 그림자가 중앙에만 몰려 어색하다(대표 지적 7-23). 실측값은 slice로 측정해 sbw에 박음.
@@ -3394,6 +3410,7 @@ window.mwRenderFurn = function () {
   // 헬스장 = 바닥 합판(히든 오브젝트). 필드를 떠나면 _plateState 가 초기화된다.
   if (window._curField === 'gym') { el.innerHTML = window.mwPlateHtml(window._plateState || 'closed'); return; }
   if (window._curField !== 'home') { el.innerHTML = ''; return; }
+  if (window._mwIsVisiting()) { el.innerHTML = window.mwFurnHtml(window._mwVisit.room); return; }
   const box = (window._seasonState && window._seasonState.box) || [];
   el.innerHTML = window.mwFurnHtml(window._myRoom) + window.mwBoxHtml(box, true);
 };
@@ -3401,6 +3418,7 @@ window.mwRenderFurn = function () {
 window._reditDraft = null; window._reditSel = -1;
 window.mwRoomEdit = function () {
   if (!window.currentUser) { showToast('로그인이 필요해요'); return; }
+  if (window._mwIsVisiting()) { showToast('남의 방은 꾸밀 수 없어요'); return; }
   // ★카탈로그에서 사라진 옛 아이템은 편집기로 들일 때 걷어낸다.
   // mwFurnHtml은 정의 없는 id를 렌더에서 건너뛰지만 배열에는 그대로 남는다. 그래서
   // 카탈로그를 갈아치우면 "방은 비었는데 15개 상한에 걸려 더 못 놓는" 상태가 된다
@@ -3973,7 +3991,8 @@ window.charSetField = function (key) {
   const bar = document.getElementById('mw-field-bar');
   if (bar) bar.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b.dataset.f === key); });
   window.dodgeFieldBtn && window.dodgeFieldBtn(key);   // 헬스장에서만 게임 시작 버튼
-  window.mwRoomInviteBtn && window.mwRoomInviteBtn(key); // 내 방에서만 친구 초대 버튼
+  window.mwRoomInviteBtn && window.mwRoomInviteBtn(key); // 내 방=친구 초대 / 남의 방=나가기
+  window.mwRoomFieldSync && window.mwRoomFieldSync(key);  // 홈 필드에 있는 동안만 실시간
 };
 window._charTileGeom = function () {
   const room = document.getElementById('charworld-room');
@@ -4037,9 +4056,10 @@ window.mwBoxSpot = function (blocked, uid) {
   return best.sp;
 };
 window._mwComputeBlocked = function () {
-  const set = window._mwBlocksOf(window._myRoom);
+  const set = window._mwBlocksOf(window._mwRoomShown());   // 남의 방이면 그 방 가구로 막는다
   window._mwBlockedFurn = new Set(set);                    // 가구만 — 상자가 제 자리를 스스로 막지 않도록
-  const box = (window._seasonState && window._seasonState.box) || [];
+  // 히든 상자는 **내 방에만** 있다. 남의 방에서 내 상자가 뜨면 안 된다.
+  const box = window._mwIsVisiting() ? [] : ((window._seasonState && window._seasonState.box) || []);
   window._mwBoxAt = box.length
     ? window.mwBoxSpot(window._mwBlockedFurn, (window.currentUser || {}).uid) : null;
   if (window._mwBoxAt) window.mwBoxFootprint(window._mwBoxAt.x, window._mwBoxAt.y).forEach(t => set.add(t));
@@ -4341,7 +4361,7 @@ window.charMove = function (dx, dy) {
     //   안 넣으면 눌러도 아무 일이 안 일어난다. 방 전체가 조이스틱이라 touchstart 에서
     //   preventDefault 가 걸리면 합성 click 이 취소되기 때문이다(상자가 무반응이던 그 원인).
     //   ★방 안에 **탭으로 반응해야 하는 것**을 새로 얹을 때마다 여기에 추가할 것.
-    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu')) return;
+    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu, .mw-rc, #mw-roomchat')) return;
       const t = e.touches ? e.touches[0] : e; act = true; jx = t.clientX; jy = t.clientY;
       place(jx, jy); joy.classList.add('show'); hil(null);
       const c = document.getElementById('mw-movecoach'); if (c) { c.remove(); try{localStorage.setItem('mw_movecoach','1');}catch(err){} }
@@ -10640,8 +10660,8 @@ onAuthStateChanged(auth, async (user) => {
       setTimeout(function () { window.openSquadDetail(window._sqInviteSid); }, 900);
     }
     // 방 초대 링크(?room=)도 같은 규칙이다
-    if (window._mwRoomInvite && !user.isAnonymous && window.mwVisitRoom) {
-      setTimeout(function () { window.mwVisitRoom(window._mwRoomInvite); }, 900);
+    if (window._mwRoomInvite && !user.isAnonymous && window.mwRoomEnterField) {
+      setTimeout(function () { window.mwRoomEnterField(window._mwRoomInvite); }, 900);
     }
     // ★★한 번 게스트로 들어온 적이 있으면 그 임시 계정이 폰에 남는다. 그래서 다음에 링크를 눌러도
     //   **묻지도 않고 임시 계정으로** 들어가 버렸다(대표 8-11). 이미 계정이 있는 사람에게는
@@ -10651,7 +10671,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     if (window._mwRoomInvite && user.isAnonymous && window.mwRoomEnterChoice) {
       // 방금 게스트로 고른 경우엔 묻지 않고 바로 방으로 보낸다
-      if (window._guestJustStarted) setTimeout(function () { window.mwVisitRoom && window.mwVisitRoom(window._mwRoomInvite); }, 800);
+      if (window._guestJustStarted) setTimeout(function () { window.mwRoomEnterField && window.mwRoomEnterField(window._mwRoomInvite); }, 800);
       else setTimeout(function () { window.mwRoomEnterChoice(window._mwRoomInvite, true); }, 800);
     }
     window._guestJustStarted = false;
@@ -10741,10 +10761,10 @@ window._notifGoPost = function (postId) {
 if (window._mwRoomInvite) {
   setTimeout(function () {
     if (!window._mwRoomInvite || window._mwRoomChosen) return;
-    if (document.getElementById('mw-room-enter') || document.getElementById('mw-wpanel')) return;
+    if (document.getElementById('mw-room-enter') || window._mwIsVisiting()) return;
     try { if (typeof dismissLanding === 'function') dismissLanding(); } catch (e) {}
     const u = auth.currentUser;
-    if (u && !u.isAnonymous) { window.mwVisitRoom && window.mwVisitRoom(window._mwRoomInvite); }
+    if (u && !u.isAnonymous) { window.mwRoomEnterField && window.mwRoomEnterField(window._mwRoomInvite); }
     else if (window.mwRoomEnterChoice) { window.mwRoomEnterChoice(window._mwRoomInvite, !!u); }
   }, 2200);
 }
@@ -16804,15 +16824,26 @@ window._mwRoomLink = function (uid) { return 'https://murpy.app/?room=' + encode
 window.mwRoomInviteBtn = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('mw-invite-chip');
-  // 임시 계정은 초대할 방이 없다(그 계정을 버리면 방도 같이 사라진다)
-  if (key !== 'home' || (window._notMember && window._notMember())) { if (b) b.remove(); return; }
-  if (b) return;
-  b = document.createElement('button');
-  b.id = 'mw-invite-chip'; b.className = 'mw-fieldchip'; b.style.top = '95px';
-  b.textContent = '친구 초대';
-  b.onclick = function (e) { e.stopPropagation(); window.mwRoomInviteShare(); };
-  room.appendChild(b);
+  if (key !== 'home') { if (b) b.remove(); return; }
+  const leaving = window._mwIsVisiting && window._mwIsVisiting();
+  if (!b) {
+    b = document.createElement('button');
+    b.id = 'mw-invite-chip'; b.className = 'mw-fieldchip';
+    b.style.top = '95px';
+    room.appendChild(b);
+  }
+  // ★회원 여부로 칩을 **만들지 말지** 정하면 안 된다. 첫 렌더 때는 currentUser 가 아직
+  //   안 들어와 있어서 칩이 영영 안 생겼다(대표 8-20: "초대 버튼 어디 감"). 만들어 두고
+  //   누를 때 판정한다.
+  if (leaving) {
+    b.textContent = '나가기';
+    b.onclick = function (e) { e.stopPropagation(); window.mwRoomLeaveField(); };
+  } else {
+    b.textContent = '친구 초대';
+    b.onclick = function (e) { e.stopPropagation(); window.mwRoomInviteShare(); };
+  }
 };
+
 
 // 초대 카드 그림 — 카톡 썸네일용. 덤벨 피하기 기록 카드와 **같은 방식**이다.
 window._mwRoomCardImg = function (nick, cb) {
@@ -16931,14 +16962,14 @@ window.mwRoomEnterAsGuest = async function (ownerUid) {
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
   window._mwRoomChosen = true;
   window._guestJustStarted = true;
-  if (auth.currentUser) { window.mwVisitRoom && window.mwVisitRoom(ownerUid); return; }
+  if (auth.currentUser) { window.mwRoomEnterField && window.mwRoomEnterField(ownerUid); return; }
   try { await signInAnonymously(auth); }        // onAuthStateChanged 가 이어받아 방으로 보낸다
   catch (e) { console.error('익명 로그인 실패', e); showToast('바로 입장하지 못했어요 · 로그인하고 들어와주세요'); }
 };
 window.mwRoomEnterKeepGuest = function (ownerUid) {
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
   window._mwRoomChosen = true; window._guestJustStarted = true;
-  window.mwVisitRoom && window.mwVisitRoom(ownerUid);
+  window.mwRoomEnterField && window.mwRoomEnterField(ownerUid);
 };
 window.mwRoomEnterAsMember = function () {
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
@@ -16956,221 +16987,218 @@ window.mwRoomEnterSwitchAccount = async function () {
 };
 // ===== 머피룸 초대 끝 =====
 
-// ===== 머피룸 실시간 (같이 있기) =====
+// ===== 머피룸 실시간 — **필드 모드** =====
 // 설계 = docs/superpowers/specs/2026-08-20-murpy-room-together-design.md
-// ★스쿼드 워킹룸(squadRooms/{sid}/players)과 **같은 구조**다. presence + onDisconnect +
-//   쓰로틀 전송 + CSS 보간. 캐릭터 DOM 도 같은 문법(.sq-char/.sq-nick)을 쓴다 —
-//   새 문법을 만들면 이 화면만 혼자 논다.
-window.MW_ROOM_CAP = 4;          // 주인 포함 정원 (대표 8-20)
-window._mwRl = { owner: null, unsub: null, chars: {}, pos: null, cap: false };
-
-// 바닥 안쪽으로만. 벽(위 3타일)과 가장자리를 피한다.
-window._mwRoomClamp = function (x, y) {
-  return { x: Math.max(9, Math.min(91, x)), y: Math.max(27, Math.min(93, y)) };
-};
-// 오래된 유령을 버린다. onDisconnect 가 놓친 경우(탭 강제종료 등)가 있다.
+// ★구경 패널이 아니라 진짜 필드(#charworld-room)에서 논다 (대표 8-20).
+//   조이스틱·충돌맵(_mwBlocksOf)·타일 좌표가 전부 거기 이미 있다. 여기서 하는 일은
+//   **누가 어디 서 있는지 주고받는 것**뿐이다.
+window.MW_ROOM_CAP = 4;            // 주인 포함 정원
+window.MW_ROOM_MSG_MS = 6000;      // 말풍선이 떠 있는 시간
+window.mwRoomCountdownMs = 3200;
+window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
 window._mwRoomAlive = function (v) { return v && (Date.now() - (v.t || 0) < 90000); };
 
-window.mwRoomLiveJoin = function (ownerUid) {
+// ---- 초대로 들어가기 / 나오기 ----
+window.mwRoomEnterField = async function (uid) {
+  if (!uid) return;
+  const me = auth.currentUser;
+  if (!me) { window.memberGate && window.memberGate('초대받은 방에 들어가려면 로그인이 필요해요'); return; }
+  if (uid === me.uid) { window._mwVisit = null; }
+  else {
+    let d = {};
+    // ★서버에서 강제로 읽는다 — 캐시본을 쓰면 그 사람이 방을 다시 꾸며도 옛 배치가 나온다
+    //   (mwVisitRoom 이 같은 이유로 이미 그렇게 한다).
+    try { const q = await getDocFromServer(doc(db, 'users', uid)); d = q.exists() ? q.data() : {}; }
+    catch (e) { try { const q2 = await getDoc(doc(db, 'users', uid)); d = q2.exists() ? q2.data() : {}; } catch (e2) {} }
+    window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null };
+  }
+  const el = document.getElementById('mw-room-enter'); if (el) el.remove();
+  goPage('mw');
+  window.charSetField && window.charSetField('home');
+};
+window.mwRoomLeaveField = function () {
+  if (!window._mwVisit) return;
+  window._mwVisit = null;
+  window.charSetField && window.charSetField('home');     // 내 방으로 복귀
+};
+
+// ---- presence ----
+window._mwRlJoin = function (ownerUid) {
   if (!window._rt || !ownerUid) return;
+  if (window._mwRl.owner === ownerUid) return;             // 이미 붙어 있다
+  window._mwRlLeave();
   const R = window._rt, u = auth.currentUser;
-  window.mwRoomLiveLeave();                       // 방을 갈아탈 때 앞 방을 확실히 정리한다
   window._mwRl.owner = ownerUid;
   const base = 'roomLive/' + ownerUid + '/players';
 
-  // 구독은 언제나 건다. ★쓰기(내 위치)만 조건부다 —
-  //   스쿼드에서 구독까지 막았다가 '빈 필드'만 보이는 사고가 있었다(8-14).
-  const unsub = R.onValue(R.ref(R.db, base), function (snap) {
-    const all = snap.val() || {};
-    window._mwRl.last = all;
-    window._mwRoomRender(all);
-  }, function (e) { console.warn('roomLive players', e); });
-  window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
-
-  if (!u) return;                                  // 비로그인은 보기만
-
-  // ★폰마다 시계가 다르다. 3·2·1 을 **같이** 세려면 공통 시계가 있어야 한다 —
-  //   스쿼드 범프가 쓰는 그 값을 그대로 쓴다.
-  // ★한 번만 건다. 방에 들어갈 때마다 걸면 리스너가 쌓인다(해제할 자리도 없다).
-  //   값은 _mwRl 이 아니라 바깥에 둔다 — 방을 나갈 때 _mwRl 이 통째로 갈리기 때문이다.
+  // ★한 번만 건다. 방마다 걸면 리스너가 쌓이고 해제할 자리도 없다.
   if (!window._mwSrvOffOn) {
     window._mwSrvOffOn = 1;
     try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._mwSrvOff = sn.val() || 0; }); } catch (e) {}
   }
+  const unsub = R.onValue(R.ref(R.db, base), function (snap) {
+    window._mwRl.last = snap.val() || {};
+    window._mwRlRender(window._mwRl.last);
+  }, function (e) { console.warn('roomLive', e); });
+  window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
+  if (!u) return;
+
   const meRef = R.ref(R.db, base + '/' + u.uid);
   try { R.onDisconnect(meRef).remove(); } catch (e) {}
-  // 첫 자리 — 주인은 저장된 자리, 손님은 문 쪽에서 조금씩 흩어져 선다
-  const seed = (u.uid === ownerUid) ? { x: 50, y: 62 } : { x: 30 + (Date.now() % 40), y: 86 };
-  window._mwRl.pos = window._mwRoomClamp(seed.x, seed.y);
-  window._mwRl.pos.dir = 'down';
-
-  const send = function () {
-    if (window._mwRl.cap) return;                  // 정원이 찼으면 안 들어간다
-    const p = window._mwRl.pos || { x: 50, y: 80, dir: 'down' };
-    try {
-      R.set(meRef, {
-        x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, dir: p.dir || 'down',
-        nick: window._mwMyNick || '머피',
-        guest: !!(u.isAnonymous),
-        title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
-        character: window.getMyCharacter ? window.getMyCharacter() : null,
-        // ★채팅은 **presence 에 얹어 보낸다.** 따로 노드를 파면 구독도 정리도 하나 더 생기는데,
-        //   방 안 한마디는 기록이 필요 없다(스쿼드 필드톡과 같은 성격). 나가면 같이 사라진다.
-        msg: window._mwRl.msg || null,
-        // 촬영 신호. 값은 **찍을 시각(서버 시계)** 이다 — 받는 쪽이 자기 시계로 환산해 같이 센다.
-        shot: window._mwRl.shot || null,
-        t: Date.now(),
-      });
-    } catch (e) { console.warn('roomLive send', e); }
-  };
-  window._mwRl.send = send;
-
-  // ★정원 판정은 **들어가기 전에** 한 번만 읽어서 한다. 계속 감시하면 남이 잠깐
-  //   깜빡일 때 나를 튕겨낸다.
+  window._mwRl.ref = meRef;
+  // 정원은 **들어가기 전에 한 번만** 본다. 계속 감시하면 남이 잠깐 깜빡일 때 나를 튕겨낸다.
   R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
     const live = Object.keys(all).filter(function (k) { return k !== u.uid && window._mwRoomAlive(all[k]); });
-    if (live.length >= window.MW_ROOM_CAP) {
-      window._mwRl.cap = true;
-      window._mwRoomNotice(String(window.MW_ROOM_CAP) + '명이 이미 놀고 있어요 · 구경만 할 수 있어요');
-    } else { send(); }
+    window._mwRl.cap = live.length >= window.MW_ROOM_CAP;
+    if (window._mwRl.cap) showToast(window.MW_ROOM_CAP + '명이 이미 놀고 있어요 · 구경만 할 수 있어요');
+    else window._mwRlSend();
   }, { onlyOnce: true });
-
-  // ★#mw-wpanel 은 여러 화면이 돌려 쓴다(꾸미기·이동·캐릭터 정보). 닫기 버튼만 고쳐 놓으면
-  //   그중 하나가 패널을 갈아치울 때 RTDB 에 내가 남는다. 무대가 사라졌으면 스스로 나간다.
-  clearInterval(window._mwRl.watch);
-  window._mwRl.watch = setInterval(function () {
-    if (!document.getElementById('mw-vroom-stage')) { window.mwRoomLiveLeave(); return; }
-    // ★남이 조용하면 갱신이 안 와서 말풍선이 안 걷힌다. 들고 있는 마지막 스냅샷으로 다시 그린다.
-    if (window._mwRl.last) window._mwRoomRender(window._mwRl.last);
-  }, 2000);
-
-  // 방 안 이동 — 화면을 누르면 그 자리로 걸어간다(스쿼드 탭투워크와 같은 조작)
-  const stage = document.getElementById('mw-vroom-stage');
-  if (stage && !stage._rlBound) {
-    stage._rlBound = 1;
-    stage.addEventListener('click', function (e) {
-      if (!auth.currentUser || window._mwRl.cap) return;
-      if (e.target.closest('#mw-vroom-owner, .sq-char, .mw-sbox, .mw-plate')) return;   // 누를 게 따로 있는 것들
-      const r = stage.getBoundingClientRect();
-      const q = window._mwRoomClamp((e.clientX - r.left) / r.width * 100, (e.clientY - r.top) / r.height * 100);
-      const cur = window._mwRl.pos || q;
-      const dx = q.x - cur.x, dy = q.y - cur.y;
-      q.dir = Math.abs(dx) * 0.9 > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-      window._mwRl.pos = q;
-      window._mwRl.send && window._mwRl.send();
-    });
-  }
 };
-
-window.MW_ROOM_MSG_MS = 6000;      // 말풍선이 떠 있는 시간
-window.mwRoomSay = function () {
-  const inp = document.getElementById('mw-rm-chat-input'); if (!inp) return;
-  const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
-  if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
-  inp.value = '';
-  window._mwRl.msg = { text: t, t: Date.now() };
-  window._mwRl.send && window._mwRl.send();
-  // 시간이 지나면 스스로 걷힌다. 안 지우면 다음 위치 전송에 옛 말이 다시 따라붙는다.
-  clearTimeout(window._mwRl.msgT);
-  window._mwRl.msgT = setTimeout(function () {
-    window._mwRl.msg = null;
-    window._mwRl.send && window._mwRl.send();
-  }, window.MW_ROOM_MSG_MS);
-};
-
-window.mwRoomLiveLeave = function () {
-  clearInterval(window._mwRl.watch);
-  const R = window._rt, u = auth.currentUser, o = window._mwRl.owner;
-  if (R && u && o) { try { R.remove(R.ref(R.db, 'roomLive/' + o + '/players/' + u.uid)); } catch (e) {} }
+window._mwRlLeave = function () {
+  const R = window._rt;
+  if (R && window._mwRl.ref) { try { R.remove(window._mwRl.ref); } catch (e) {} }
   window._mwRl.unsub && window._mwRl.unsub();
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, chars: {}, pos: null, cap: false, watch: 0 };
+  window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
+  const bar = document.getElementById('mw-roomchat'); if (bar) bar.style.display = 'none';
+  const sc = document.getElementById('mw-shot-chip'); if (sc) sc.remove();
 };
-
-// 방 안 한 줄 안내 (정원참 · 주인 부재). ★새 토스트를 만들지 않고 방 안 칩 자리를 쓴다.
-window._mwRoomNotice = function (txt) {
-  const hint = document.getElementById('mw-rm-hint');
-  if (hint) { hint.textContent = txt; hint.style.display = ''; return; }
-  showToast && showToast(txt);
+window._mwRlSend = function () {
+  const R = window._rt, u = auth.currentUser;
+  if (!R || !u || !window._mwRl.ref || window._mwRl.cap) return;
+  const p = window._charPos || { tc: 7, tr: 8, face: 'down' };
+  try {
+    R.set(window._mwRl.ref, {
+      tc: p.tc, tr: p.tr, face: p.face || 'down',
+      nick: window._mwMyNick || '머피',
+      guest: !!u.isAnonymous,
+      title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+      character: window.getMyCharacter ? window.getMyCharacter() : null,
+      msg: window._mwRl.msg || null,
+      shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
+      t: Date.now(),
+    });
+  } catch (e) { console.warn('roomLive send', e); }
 };
+// ★이동 훅. _charApplyPos 는 위치·모습이 바뀔 때마다 불리므로 여기 하나만 잡으면
+//   조이스틱이든 무엇이든 전부 덮인다(원본은 안 고친다).
+window._mwRlTick = function () {
+  if (!window._mwRl.ref) return;
+  const n = Date.now();
+  if (n - (window._mwRl.lastSend || 0) > 200) { window._mwRl.lastSend = n; window._mwRlSend(); }
+  clearTimeout(window._mwRl.sendT);
+  window._mwRl.sendT = setTimeout(function () { window._mwRl.lastSend = Date.now(); window._mwRlSend(); }, 260);
+};
+(function () {
+  const orig = window._charApplyPos;
+  if (typeof orig !== 'function' || orig._rlWrapped) return;
+  const wrapped = function () { const r = orig.apply(this, arguments); window._mwRlTick && window._mwRlTick(); return r; };
+  wrapped._rlWrapped = 1;
+  window._charApplyPos = wrapped;
+})();
 
-window._mwRoomRender = function (all) {
-  const stage = document.getElementById('mw-vroom-stage'); if (!stage) return;
-  const owner = window._mwRl.owner;
-  const N = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.grid) || 16;
-  const hpx = Math.round((stage.clientWidth || 300) * 3.3 / N);
-  const chars = window._mwRl.chars;
-  const seen = {};
+// ---- 남들 그리기 (필드 좌표계 그대로) ----
+window._mwRlRender = function (all) {
+  const room = document.getElementById('charworld-room');
+  if (!room || window._curField !== 'home') return;
+  const me = (auth.currentUser || {}).uid;
+  const g = window._charTileGeom ? window._charTileGeom() : { N: 16, t: (room.clientWidth || 320) / 16 };
+  const t = g.t, DH = Math.round(t * 3.3);
+  const chars = window._mwRl.chars, seen = {};
   Object.keys(all).forEach(function (uid) {
     const v = all[uid];
-    if (!window._mwRoomAlive(v)) return;
+    if (uid === me || !window._mwRoomAlive(v)) return;
     seen[uid] = 1;
     let c = chars[uid];
     if (!c || !c.el.isConnected) {
       const el = document.createElement('div');
-      el.className = 'sq-char'; el.dataset.uid = uid;
-      el.innerHTML = '<div class="mw-rl-bub" style="display:none;max-width:120px;text-align:center;line-height:1.45;'
-        + 'background:#fff;color:#10131c;border:2px solid #05070c;padding:2px 6px;font-size:9.5px;font-weight:600;margin-bottom:3px"></div>'
-        + '<div class="sq-body"></div><span class="mw-cfd-nick"></span>';
-      stage.appendChild(el);
-      c = chars[uid] = { el: el, cfg: '~', dir: null, nick: null };
+      // ★.mw-rc = 조이스틱 예외. 남의 캐릭터를 누르면 걷는 게 아니라 링 메뉴가 떠야 한다.
+      el.className = 'mw-rc'; el.dataset.uid = uid;
+      el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
+        + 'transition:left .18s linear, top .18s linear';
+      el.innerHTML = '<div class="mw-rc-bub" style="display:none"></div><div class="mw-rc-body"></div>'
+        + '<span class="mw-cfd-nick"></span>';
+      room.appendChild(el);
+      c = chars[uid] = { el: el, cfg: '~', face: null, nick: null };
     }
     const cj = JSON.stringify(v.character || null);
-    if (c.cfg !== cj || c.dir !== v.dir) {
-      c.cfg = cj; c.dir = v.dir;
-      const face = v.dir === 'down' ? undefined : v.dir;
-      c.el.querySelector('.sq-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, hpx, face) : '';
+    if (c.cfg !== cj || c.face !== v.face || c.h !== DH) {
+      c.cfg = cj; c.face = v.face; c.h = DH;
+      const face = v.face === 'down' ? undefined : v.face;
+      c.el.querySelector('.mw-rc-body').innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, DH, face) : '';
     }
-    // 남의 데이터라 textContent 로만 넣는다(주입 방지)
     const nk = String(v.nick || '머피') + (v.guest ? ' (손님)' : '');
-    if (c.nick !== nk) { c.nick = nk; c.el.querySelector('.mw-cfd-nick').textContent = nk; }
-    // 말풍선 — 남의 글이라 textContent 로만 넣는다(주입 방지)
-    const bub = c.el.querySelector('.mw-rl-bub');
+    if (c.nick !== nk) {
+      c.nick = nk;
+      c.el.querySelector('.mw-cfd-nick').textContent = nk;      // 남의 글 = textContent 로만
+      c.el.onclick = function (e) {
+        e.stopPropagation();
+        window.mwOtherMenu && window.mwOtherMenu(uid, String(v.nick || '머피'), e);
+      };
+    }
+    const bub = c.el.querySelector('.mw-rc-bub');
     const fresh = v.msg && v.msg.text && (Date.now() - (v.msg.t || 0) < window.MW_ROOM_MSG_MS);
     if (bub) {
       if (fresh) { bub.textContent = String(v.msg.text).slice(0, 40); bub.style.display = ''; }
       else bub.style.display = 'none';
     }
-    c.el.style.left = v.x + '%'; c.el.style.top = v.y + '%';
-    // ★z 는 **방과 같은 척도**여야 한다. 가구는 10+타일행*10(최대 170), 정적 방주인은
-    //   10+tr*10+5 인데, 여기만 10+y(퍼센트, 최대 110)로 넣어놨었다 → 캐릭터가 앞에
-    //   서 있어도 큰 가구 뒤로 들어갔다. 퍼센트를 타일행으로 환산해서 맞춘다.
-    c.el.style.zIndex = 10 + Math.round(v.y / 100 * 16) * 10 + 5;
+    // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
+    const w = Math.round(DH * 141 / 224);
+    c.el.style.width = w + 'px';
+    c.el.style.left = ((v.tc + 0.5) * t - w / 2) + 'px';
+    c.el.style.top = ((v.tr + 1) * t - DH) + 'px';
+    c.el.style.zIndex = 10 + v.tr * 10 + 5;
   });
-  // 같이 있는 사람이 있을 때만 채팅줄을 보여준다
-  // ★촬영 신호 — 누가 눌렀든 **방에 있는 전원**이 같은 시각에 센다.
-  //   같은 신호로 두 번 세지 않게 마지막으로 처리한 시각을 들고 있는다.
+  Object.keys(chars).forEach(function (uid) {
+    if (seen[uid]) return;
+    chars[uid].el.remove(); delete chars[uid];
+  });
+  // 채팅 바 · 같이 찍기 — 같이 있는 사람이 있을 때만
+  const together = !!Object.keys(seen).length && !!auth.currentUser && !window._mwRl.cap;
+  const bar = document.getElementById('mw-roomchat');
+  if (bar) bar.style.display = together ? 'flex' : 'none';
+  let shotBtn = document.getElementById('mw-shot-chip');
+  if (together && !shotBtn) {
+    shotBtn = document.createElement('button');
+    shotBtn.id = 'mw-shot-chip'; shotBtn.className = 'mw-fieldchip';
+    shotBtn.style.top = '138px'; shotBtn.textContent = '같이 찍기';
+    shotBtn.onclick = function (e) { e.stopPropagation(); window.mwRoomShot(); };
+    room.appendChild(shotBtn);
+  } else if (!together && shotBtn) { shotBtn.remove(); }
+
+  // 촬영 신호 — 누가 눌렀든 방에 있는 전원이 같은 시각에 센다
   let shotAt = 0;
-  Object.keys(all).forEach(function (k) {
-    const v = all[k];
-    if (v && v.shot && v.shot.at > shotAt) shotAt = v.shot.at;
-  });
+  Object.keys(all).forEach(function (k) { const v = all[k]; if (v && v.shot && v.shot.at > shotAt) shotAt = v.shot.at; });
   const nowSrv = Date.now() + (window._mwSrvOff || 0);
   if (shotAt && shotAt !== window._mwRl.lastShot && shotAt > nowSrv - 1000) {
     window._mwRl.lastShot = shotAt;
     window._mwRoomCountdown(shotAt);
   }
+};
 
-  const together = Object.keys(seen).length > 1 && !!auth.currentUser;
-  const chatRow = document.getElementById('mw-rm-chat');
-  if (chatRow) chatRow.style.display = together ? 'flex' : 'none';
-  const shotRow = document.getElementById('mw-rm-shot');
-  if (shotRow) shotRow.style.display = together ? '' : 'none';
-  // 나간 사람 치우기
-  Object.keys(chars).forEach(function (uid) {
-    if (seen[uid]) return;
-    chars[uid].el.remove(); delete chars[uid];
-  });
-  // ★주인이 실제로 들어와 있으면 저장된 자리에 박아둔 정적 캐릭터를 감춘다 — 안 그러면 둘로 보인다.
-  const stat = document.getElementById('mw-vroom-owner');
-  if (stat) stat.style.display = seen[owner] ? 'none' : '';
-  // 주인이 없으면 알려준다(들어오는 것 자체는 막지 않는다 — 대표 8-20: 언제든 입장)
-  if (!seen[owner] && auth.currentUser && auth.currentUser.uid !== owner) {
-    window._mwRoomNotice('주인이 자리를 비웠어요');
-  }
+// ---- 필드가 바뀔 때 붙였다 뗀다 ----
+window.mwRoomFieldSync = function (key) {
+  if (key !== 'home') { window._mwRlLeave(); return; }
+  const u = auth.currentUser; if (!u) return;
+  // ★주인은 **자기 홈 필드에 서 있는 동안** presence 를 낸다. 그래야 손님이 보는
+  //   '주인이 자리를 비웠어요'가 정확해진다(예전엔 주인이 자기 방 패널을 열어야만 잡혔다).
+  window._mwRlJoin(window._mwVisit ? window._mwVisit.uid : u.uid);
+  setTimeout(function () { window._mwRlSend(); }, 300);
+};
+
+// ---- 방 안 한마디 ----
+window.mwRoomSay = function () {
+  const inp = document.getElementById('mw-roomchat-input'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
+  if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
+  inp.value = ''; inp.blur();
+  window._mwRl.msg = { text: t, t: Date.now() };
+  window._mwRlSend();
+  clearTimeout(window._mwRl.msgT);
+  window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, window.MW_ROOM_MSG_MS);
 };
 // ===== 머피룸 실시간 끝 =====
 
@@ -17311,7 +17339,7 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
   x.fillStyle = '#f4f1ea'; x.fillRect(PX, PY, PW, PH);  // 살짝 따뜻한 흰색 = 인화지
   x.restore();
 
-  window._mwDrawRoom(x, SX, SY, S, window._mwRoomData, list).then(function () {
+  window._mwDrawRoom(x, SX, SY, S, window._mwRoomShown(), list).then(function () {
     window._mwDrawSeal(x, SX + S - 150, SY + S - 110, ownerNick, list.length);
     // 캡션 — 인화지 아래 여백
     x.textAlign = 'center'; x.fillStyle = '#20242e';
@@ -17343,7 +17371,7 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
 // 3·2·1 그리고 플래시. ★혼자 캡처한 게 아니라 **다 같이 겪은 사건**이어야 한다(대표 8-20).
 window.mwRoomCountdownMs = 3200;
 window._mwRoomCountdown = function (atSrv) {
-  const stage = document.getElementById('mw-vroom-stage'); if (!stage) return;
+  const stage = document.getElementById('charworld-room'); if (!stage) return;
   let ov = document.getElementById('mw-rm-cd'); if (ov) ov.remove();
   ov = document.createElement('div'); ov.id = 'mw-rm-cd';
   ov.style.cssText = 'position:absolute;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;'
@@ -17380,13 +17408,19 @@ window._mwRoomCapture = function () {
   uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
   const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
+    // presence 는 타일 좌표다 → 카드가 쓰는 퍼센트로 환산한다(_charApplyPos 와 같은 식)
     return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest,
-             x: all[k].x, y: all[k].y };
+             x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
-  const host = document.getElementById('mw-rm-share'); if (!host) return;
-  host.style.display = '';
-  host.innerHTML = '<div style="font-size:12px;color:#8a93a8;text-align:center;padding:10px 0">사진 만드는 중…</div>';
+  // ★필드엔 붙일 자리가 없다 → 시트로 띄운다. 초대 시트와 같은 문법이다.
+  let host = document.getElementById('mw-room-shot');
+  if (host) host.remove();
+  host = document.createElement('div'); host.id = 'mw-room-shot';
+  host.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.88);display:flex;'
+    + 'align-items:center;justify-content:center;padding:22px';
+  host.innerHTML = '<div style="color:#8a93a8;font-size:13px">사진 만드는 중…</div>';
+  document.body.appendChild(host);
   window._mwRoomShotImg(list, ownerNick, function (data) {
     window._mwStampData = data;
     window._mwShareMeta = {
@@ -17396,11 +17430,14 @@ window._mwRoomCapture = function () {
       link: window._mwRoomLink(owner),
     };
     const B = window._MW_BRAND || {};
-    host.innerHTML = '<div class="mw-polaroid" style="margin-bottom:10px"><img src="' + data + '" style="width:100%;display:block"></div>'
+    host.innerHTML = '<div style="width:100%;max-width:340px">'
+      + '<div class="mw-polaroid" style="margin-bottom:10px"><img src="' + data + '" style="width:100%;display:block"></div>'
       + '<div class="mw-share">'
       + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
       + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
       + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
+      + '</div>'
+      + '<button onclick="var e=document.getElementById(&quot;mw-room-shot&quot;);if(e)e.remove()" style="width:100%;background:none;border:none;color:rgba(255,255,255,.4);font-size:12.5px;padding:14px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
       + '</div>';
     window._mwKakaoPrep && window._mwKakaoPrep();
   });
@@ -20834,7 +20871,9 @@ window._mwQueueRoomPos = function () {
 window._mwSaveRoomPos = async function () {
   clearTimeout(window._mwRoomPosT);
   const user = auth.currentUser || window.currentUser;
-  if (!user || !window._charPos || window._curField !== 'home') return;
+  // ★남의 방에서 서 있던 자리는 내 방 좌표가 아니다. 저장하면 내 방에 돌아왔을 때
+  //   엉뚱한 데(심지어 가구 속)에 서 있게 된다.
+  if (!user || !window._charPos || window._curField !== 'home' || window._mwIsVisiting()) return;
   const p = { tc: window._charPos.tc, tr: window._charPos.tr, face: window._charPos.face || 'down' };
   const last = window._mwRoomPosLast;
   if (last && last.tc === p.tc && last.tr === p.tr && last.face === p.face) return;
@@ -21024,7 +21063,6 @@ window.mwVisitRoom = async function (uid) {
   }
   // ★실시간으로 같이 있기 (1단계 b). 정적인 방 위에 **얹는다** —
   //   방을 새로 만들지 않으므로 가구·방명록·TODAY 는 그대로 돌아간다.
-  window._mwRoomData = p.room || null;      // 같이 찍기 카드가 이 배치를 그린다(읽기만)
   // ★여기는 **구경**이다 (대표 8-20). 실시간·이동·채팅은 붙이지 않는다 —
   //   이 패널엔 조이스틱도 충돌맵도 없어서 캐릭터가 가구를 뚫고 떠다녔다.
   //   같이 노는 것은 초대권으로 들어가는 **필드 모드**에서 한다.
@@ -21248,9 +21286,6 @@ window._mwSqInvSend = async function (uid, nick, sid, title) {
 };
 
 window._mwRoomClose = function () {
-  // ★방을 나가면 RTDB 에서도 빠져야 한다. 이 함수는 닫기 버튼 말고도 여러 곳이 부른다
-  //   (링 메뉴 '채팅하기', 매칭 성사) — 그래서 정리는 **여기 한 곳**에 둔다.
-  window.mwRoomLiveLeave && window.mwRoomLiveLeave();
   const w = document.getElementById('mw-wpanel'); if (w) w.remove();
 };
 // ★방 패널은 z-index 880, 프로필·채팅 패널은 100 이다. sendLike 가 매칭 성사 시 프로필을 여는데
