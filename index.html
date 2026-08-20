@@ -522,6 +522,8 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-sbtn:active { transform:translateY(4px); box-shadow:inset -3px -3px 0 rgba(0,0,0,.34), inset 3px 3px 0 rgba(255,255,255,.07); }
   .mw-sbtn svg { display:block; width:27px; height:27px; }
   .mw-sbtn.sv { color:#4A86FF; }   /* 저장: 파란 라벨(아이콘도 파랑) */
+  /* 링크: 셋 중 하나만 파라면 그 버튼이 혼자 논다(대표 8-21). 인스타·카톡과 같은 라벨색. */
+  .mw-sbtn.lk { color:#dfe5f0; }
   /* 카톡: 이미지 업로드(=연결) 중엔 흐림 대신 회전 스피너를 버튼 위에 올린다(대표 지적 7-27:
      흐렸다 밝아지는 게 '비활성→활성'처럼 보임). 완료되면 .prep 제거로 스피너 사라짐. */
   .mw-sbtn .mw-sbtn-spin { display:none; position:absolute; inset:0; align-items:center; justify-content:center; background:#1b2233; pointer-events:none; }
@@ -17481,7 +17483,7 @@ window.mwRoomInviteShare = function () {
     + '<div class="mw-share">'
     + '<button class="mw-sbtn" onclick="window._mwInviteThen(window.mwRoomInviteIG)" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
     + '<button class="mw-sbtn mw-kk" onclick="window._mwInviteThen(window.mwShareKakao,this)" aria-label="카카오톡으로 초대">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
-    + '<button class="mw-sbtn sv" onclick="window.mwRoomShareLink()" aria-label="링크 공유">' + (B.ln || '') + '<span>링크</span></button>'
+    + '<button class="mw-sbtn lk" onclick="window.mwRoomShareLink()" aria-label="링크 공유">' + (B.ln || '') + '<span>링크</span></button>'
     + '</div>'
     + '<button onclick="var e=document.getElementById(&quot;mw-room-invite&quot;);if(e)e.remove()" style="background:none;border:none;color:rgba(255,255,255,.35);font-size:12px;padding:15px 0 0;cursor:pointer;font-family:inherit">닫기</button>'
     + '</div>';
@@ -18190,6 +18192,8 @@ window._mwShotPrefetch = function () {
     window._mwLoadImg('char/fields/field_room.png?v=1');
     window._mwLoadImg('char/ui/ui_logo.png?v=1');
     window._mwLoadImg('char/ui/polaroid_frame.png?v=1');
+    window._mwLoadImg('char/fx/aurring_blue_back.png?v=1');
+    window._mwLoadImg('char/fx/aurring_blue_front.png?v=1');
     const rd = window._mwRoomShown ? window._mwRoomShown() : null;
     const zs = (window._mwFurnZ && rd) ? window._mwFurnZ((rd && rd.f) || []) : [];
     zs.forEach(function (q) { if (q && q.def) window._mwLoadImg(q.def.src); });
@@ -18295,6 +18299,38 @@ window._mwPaintBubble = function (x, cx, headY, h, text, minY) {
   lines.forEach(function (l, i) { x.fillText(l, cx, by + padY + lh * i + lh / 2); });
   x.restore();
 };
+// 발밑 아우라 고리. ★CSS(.mw-aur-b/.mw-aur-f)의 식을 **그대로** 옮긴다 —
+//   폭 = 캐릭터폭 x 1.03, 뒷겹 비율 140:75(바닥선 위로 30% 올림), 앞겹 140:45(바닥선에 절반 걸침).
+// ★★그림은 **6프레임 스프라이트 시트**다(840x75 / 840x45). CSS 가 background-size:600%
+//   + steps(6) 으로 돌린다. 통째로 늘려 그리면 고리가 아니라 **세로줄 여섯 개**가 된다
+//   (내가 실제로 그렇게 뽑았다). 사진은 정지컷이니 **첫 프레임 한 칸만** 잘라 쓴다.
+window.MW_AUR_FRAMES = 6;
+window._mwPaintAur = function (x, im, cx, footY, cw, front) {
+  if (!im || !im.naturalWidth) return;
+  const fw = im.naturalWidth / window.MW_AUR_FRAMES, fh = im.naturalHeight;
+  const w = cw * 1.03, h = w * fh / fw;
+  const top = front ? (footY - h * 0.5) : (footY - h * 1.30);
+  x.save(); x.imageSmoothingEnabled = false;
+  x.drawImage(im, 0, 0, fw, fh, cx - w / 2, top, w, h);
+  x.restore();
+};
+// 발밑 이름표. 앱의 .cw-nick 과 같은 문법(검은 반투명 바탕 + 흰 글씨)이다.
+// ★말풍선과 같은 이유로 **앱보다 크게** 그린다 — 1080폭 카드가 폰에서 줄면 안 읽힌다.
+// ★아우라를 켜면 고리 앞겹만큼 내려 붙인다(_MW_AUR_FRONT_H 와 같은 식). 안 그러면 고리를 덮는다.
+window._mwPaintNick = function (x, cx, footY, h, nick, cw, aura) {
+  const t = String(nick || '').slice(0, 10); if (!t) return;
+  x.save();
+  const fs = Math.max(12, Math.round(h * 0.155));
+  x.font = fs + "px 'Galmuri11',sans-serif";
+  const padX = Math.round(fs * 0.55), padY = Math.round(fs * 0.28);
+  const w = Math.round(x.measureText(t).width) + padX * 2, bh = fs + padY * 2;
+  const drop = aura ? Math.round(cw * 1.03 * 45 / 140 * 0.5) + Math.round(fs * 0.22) : Math.round(fs * 0.12);
+  const by = Math.round(footY + drop);
+  x.fillStyle = 'rgba(5,7,12,.78)'; x.fillRect(Math.round(cx - w / 2), by, w, bh);
+  x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(t, cx, by + bh / 2 + 1);
+  x.restore();
+};
 window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
   const F = 768;                              // 방 좌표계 (mwFurnHtml 의 /7.68 과 같은 값)
   const zs = (window._mwFurnZ && roomData) ? window._mwFurnZ((roomData && roomData.f) || []) : [];
@@ -18304,8 +18340,10 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
     window._mwLoadImg('char/fields/field_room.png?v=1'),
     Promise.all(items.map(function (q) { return window._mwLoadImg(q.def.src); })),
     Promise.all(ppl.map(function (pl) { return window._mwLoadCharSheets(pl.character); })),
+    window._mwLoadImg('char/fx/aurring_blue_back.png?v=1'),
+    window._mwLoadImg('char/fx/aurring_blue_front.png?v=1'),
   ]).then(function (r) {
-    const bg = r[0], furn = r[1], sheets = r[2];
+    const bg = r[0], furn = r[1], sheets = r[2], aurB = r[3], aurF = r[4];
     x.save();
     x.beginPath(); x.rect(ox, oy, S, S); x.clip();      // 방 밖으로 삐져나가지 않게
     x.imageSmoothingEnabled = false;
@@ -18332,11 +18370,24 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
     ppl.forEach(function (pl, i) {
       const y = (pl.y == null) ? 80 : pl.y;
       const px0 = ox + ((pl.x == null ? 50 : pl.x) / 100) * S, py0 = oy + y / 100 * S;
-      paint.push({ z: 10 + Math.round(y / 100 * 16) * 10 + 5, fn: function () {
+      const zc = 10 + Math.round(y / 100 * 16) * 10;
+      // 캐릭터 폭 — 몸통마다 다르다(헬토리 150, 히든 133~142). 141 로 못 박으면 고리가 어긋난다.
+      const bd = (window._CHAR_BODIES || {})[((pl.character || {}).body) || 'human'] || { cw: 141, ch: 224 };
+      const cwp = hpx * bd.cw / bd.ch;
+      if (pl.aura) paint.push({ z: zc + 4, fn: function () {          // 뒷겹 = 캐릭터 뒤
+        window._mwPaintAur(x, aurB, px0, py0, cwp, false);
+      } });
+      paint.push({ z: zc + 5, fn: function () {
         window._mwPaintChar(x, sheets[i], px0, py0, hpx);
       } });
-      // 말풍선은 캐릭터 바로 앞에. 앱과 같은 층이라 앞줄 가구에는 가려진다.
-      if (pl.say) paint.push({ z: 10 + Math.round(y / 100 * 16) * 10 + 6, fn: function () {
+      if (pl.aura) paint.push({ z: zc + 6, fn: function () {          // 앞겹 = 발 앞
+        window._mwPaintAur(x, aurF, px0, py0, cwp, true);
+      } });
+      paint.push({ z: zc + 7, fn: function () {                        // 발밑 이름표
+        window._mwPaintNick(x, px0, py0, hpx, pl.nick, cwp, pl.aura);
+      } });
+      // 말풍선은 맨 앞. 앱과 같은 층이라 앞줄 가구에는 똑같이 가려진다.
+      if (pl.say) paint.push({ z: zc + 8, fn: function () {
         window._mwPaintBubble(x, px0, py0 - hpx, hpx, pl.say, oy + Math.round(hpx * 0.08));
       } });
     });
@@ -18516,7 +18567,10 @@ window._mwRoomCapture = function () {
     const _m = all[k].msg;
     const _say = (_m && _m.text && (all[k].pin || (Date.now() - (_m.t || 0) < window.MW_SHOT_MSG_MS)))
                ? String(_m.text).slice(0, 40) : '';
-    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest, say: _say,
+    // 아우라(헬창의 기운)도 싣는다. 판정은 화면과 **같은 함수**로 한다 —
+    //   남의 값이 그대로 파일명에 들어가는 자리라 화이트리스트를 반드시 거쳐야 한다.
+    const _aur = window._mwAurOf ? window._mwAurOf(k, all[k].aura) : '';
+    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest, say: _say, aura: _aur,
              x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
@@ -22897,8 +22951,12 @@ window._MW_BRAND = {
     + '<rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="url(#mwIg)"/>'
     + '<circle cx="12" cy="12" r="4.6" fill="none" stroke="#fff" stroke-width="2.1"/><circle cx="17.4" cy="6.6" r="1.4" fill="#fff"/></svg>',
   kk: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="#FEE500"/>'
+    // ★말풍선을 1.14배로 키우고 TALK 는 줄인다 — 글자가 갈색 밖으로 튀어나왔다(대표 8-21).
+    //   경로를 다시 그리지 않고 **가운데를 축으로 확대**한다. 노란 사각(2.5~21.5) 안에 그대로 들어온다.
+    + '<g transform="translate(12 11.6) scale(1.14) translate(-12 -11.6)">'
     + '<path fill="#3C1E1E" d="M12 5.6c-3.7 0-6.7 2.35-6.7 5.25 0 1.87 1.25 3.5 3.15 4.42-.14.5-.5 1.83-.57 2.11-.09.35.13.35.27.26.11-.07 1.75-1.19 2.46-1.67.44.06.9.1 1.39.1 3.7 0 6.7-2.35 6.7-5.22S15.7 5.6 12 5.6z"/>'
-    + '<text x="12" y="12.05" text-anchor="middle" font-family="Galmuri11,sans-serif" font-weight="700" font-size="4" fill="#FEE500">TALK</text></svg>',
+    + '</g>'
+    + '<text x="12" y="12.1" text-anchor="middle" font-family="Galmuri11,sans-serif" font-weight="700" font-size="3.5" fill="#FEE500">TALK</text></svg>',
   // 링크 공유 — 앱에 있는 그 사슬 아이콘(스쿼드 초대)을 **래스터라이즈해서** 픽셀로 옮겼다.
   // ★손으로 격자를 찍어봤더니 '2' 자나 대각 점선처럼 나왔다(대표 8-20 반려). 짐작하지 말고
   //   실제 모양(45도로 누운 캡슐 외곽선 + 가운데를 끊어 갈고리 둘로 만든 것)을 그려서 24 격자로
@@ -22906,7 +22964,7 @@ window._MW_BRAND = {
   // ★viewBox 에 여백을 준다. 인스타·카톡 아이콘은 24 칸 중 19(79%)만 채우는데
   //   이 그림은 가장자리까지 꽉 차 있어서 혼자 26% 커 보였다(대표 8-20).
   //   그림을 다시 그리지 않고 보는 창을 넓혀 같은 비율(79%)로 맞춘다.
-  ln: '<svg viewBox="-3.2 -3.2 30.4 30.4" shape-rendering="crispEdges" aria-hidden="true"><g fill="#4A86FF"><rect x="16" y="0" width="4" height="1"/><rect x="14" y="1" width="8" height="1"/><rect x="13" y="2" width="10" height="1"/><rect x="12" y="3" width="4" height="1"/><rect x="20" y="3" width="3" height="1"/><rect x="11" y="4" width="4" height="1"/><rect x="21" y="4" width="3" height="1"/><rect x="10" y="5" width="4" height="1"/><rect x="21" y="5" width="3" height="1"/><rect x="9" y="6" width="4" height="1"/><rect x="21" y="6" width="3" height="1"/><rect x="9" y="7" width="3" height="1"/><rect x="21" y="7" width="3" height="1"/><rect x="8" y="8" width="3" height="1"/><rect x="12" y="8" width="2" height="1"/><rect x="20" y="8" width="3" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="8" y="9" width="3" height="1"/><rect x="12" y="9" width="3" height="1"/><rect x="19" y="9" width="4" height="1"/><rect x="5" y="10" width="2" height="1"/><rect x="8" y="10" width="3" height="1"/><rect x="12" y="10" width="3" height="1"/><rect x="18" y="10" width="4" height="1"/><rect x="4" y="11" width="3" height="1"/><rect x="8" y="11" width="3" height="1"/><rect x="13" y="11" width="3" height="1"/><rect x="17" y="11" width="4" height="1"/><rect x="3" y="12" width="4" height="1"/><rect x="8" y="12" width="4" height="1"/><rect x="13" y="12" width="3" height="1"/><rect x="17" y="12" width="3" height="1"/><rect x="2" y="13" width="4" height="1"/><rect x="9" y="13" width="7" height="1"/><rect x="17" y="13" width="2" height="1"/><rect x="1" y="14" width="4" height="1"/><rect x="10" y="14" width="2" height="1"/><rect x="13" y="14" width="3" height="1"/><rect x="17" y="14" width="1" height="1"/><rect x="1" y="15" width="3" height="1"/><rect x="12" y="15" width="4" height="1"/><rect x="0" y="16" width="3" height="1"/><rect x="11" y="16" width="4" height="1"/><rect x="0" y="17" width="3" height="1"/><rect x="10" y="17" width="5" height="1"/><rect x="0" y="18" width="3" height="1"/><rect x="9" y="18" width="5" height="1"/><rect x="0" y="19" width="3" height="1"/><rect x="8" y="19" width="5" height="1"/><rect x="1" y="20" width="4" height="1"/><rect x="7" y="20" width="5" height="1"/><rect x="1" y="21" width="10" height="1"/><rect x="2" y="22" width="8" height="1"/><rect x="4" y="23" width="4" height="1"/></g></svg>',
+  ln: '<svg viewBox="-3.2 -3.2 30.4 30.4" shape-rendering="crispEdges" aria-hidden="true"><g fill="#dfe5f0"><rect x="16" y="0" width="4" height="1"/><rect x="14" y="1" width="8" height="1"/><rect x="13" y="2" width="10" height="1"/><rect x="12" y="3" width="4" height="1"/><rect x="20" y="3" width="3" height="1"/><rect x="11" y="4" width="4" height="1"/><rect x="21" y="4" width="3" height="1"/><rect x="10" y="5" width="4" height="1"/><rect x="21" y="5" width="3" height="1"/><rect x="9" y="6" width="4" height="1"/><rect x="21" y="6" width="3" height="1"/><rect x="9" y="7" width="3" height="1"/><rect x="21" y="7" width="3" height="1"/><rect x="8" y="8" width="3" height="1"/><rect x="12" y="8" width="2" height="1"/><rect x="20" y="8" width="3" height="1"/><rect x="6" y="9" width="1" height="1"/><rect x="8" y="9" width="3" height="1"/><rect x="12" y="9" width="3" height="1"/><rect x="19" y="9" width="4" height="1"/><rect x="5" y="10" width="2" height="1"/><rect x="8" y="10" width="3" height="1"/><rect x="12" y="10" width="3" height="1"/><rect x="18" y="10" width="4" height="1"/><rect x="4" y="11" width="3" height="1"/><rect x="8" y="11" width="3" height="1"/><rect x="13" y="11" width="3" height="1"/><rect x="17" y="11" width="4" height="1"/><rect x="3" y="12" width="4" height="1"/><rect x="8" y="12" width="4" height="1"/><rect x="13" y="12" width="3" height="1"/><rect x="17" y="12" width="3" height="1"/><rect x="2" y="13" width="4" height="1"/><rect x="9" y="13" width="7" height="1"/><rect x="17" y="13" width="2" height="1"/><rect x="1" y="14" width="4" height="1"/><rect x="10" y="14" width="2" height="1"/><rect x="13" y="14" width="3" height="1"/><rect x="17" y="14" width="1" height="1"/><rect x="1" y="15" width="3" height="1"/><rect x="12" y="15" width="4" height="1"/><rect x="0" y="16" width="3" height="1"/><rect x="11" y="16" width="4" height="1"/><rect x="0" y="17" width="3" height="1"/><rect x="10" y="17" width="5" height="1"/><rect x="0" y="18" width="3" height="1"/><rect x="9" y="18" width="5" height="1"/><rect x="0" y="19" width="3" height="1"/><rect x="8" y="19" width="5" height="1"/><rect x="1" y="20" width="4" height="1"/><rect x="7" y="20" width="5" height="1"/><rect x="1" y="21" width="10" height="1"/><rect x="2" y="22" width="8" height="1"/><rect x="4" y="23" width="4" height="1"/></g></svg>',
   sv: '<svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><path fill="#4A86FF" d="M7 2h2v5h3l-4 4-4-4h3zM3 12h10v2H3z"/></svg>',
 };
 window.mwShowStampResult = function () {
