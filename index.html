@@ -18254,6 +18254,39 @@ window._mwPaintShadow = function (x, it, def, F, S, ox, oy) {
   x.restore();
 };
 
+// 말풍선 한 개. ★앱의 .mw-rc-bub 을 **비율 그대로** 옮긴다 —
+//   캐릭터 키(h) 기준으로 글씨 0.128 · 최대폭 1.616 · 테두리 0.027 · 머리 위 여백 0.040.
+//   숫자를 새로 정하면 사진과 화면의 말풍선이 갈라진다.
+window._mwPaintBubble = function (x, cx, headY, h, text, minY) {
+  const t = String(text || ''); if (!t) return;
+  x.save();                      // ★font·textAlign 을 되돌린다 — 뒤에 그리는 캡션이 물려받으면 어긋난다
+  const fs = Math.max(11, Math.round(h * 0.128));
+  const maxW = h * 1.616, padX = h * 0.081, padY = h * 0.034, bw = Math.max(2, Math.round(h * 0.027));
+  x.font = fs + "px 'Galmuri11',sans-serif";
+  // 한글은 띄어쓰기가 없을 수 있다 → 글자 단위로 접는다
+  const lines = []; let cur = '';
+  for (let i = 0; i < t.length; i++) {
+    const n = cur + t[i];
+    if (x.measureText(n).width > maxW && cur) { lines.push(cur); cur = t[i]; } else cur = n;
+  }
+  if (cur) lines.push(cur);
+  const lh = Math.round(fs * 1.45);
+  let w = 0; lines.forEach(function (l) { w = Math.max(w, x.measureText(l).width); });
+  const bwid = Math.round(w + padX * 2), bhei = Math.round(lines.length * lh + padY * 2);
+  const tail = Math.round(h * 0.054);
+  const bx = Math.round(cx - bwid / 2);
+  // ★위쪽 줄에 선 사람은 말풍선이 사진 밖으로 나간다(구멍 밖은 안 그려진다).
+  //   잘려서 안 보이느니 머리 쪽으로 조금 내려붙는 게 낫다 — 사진은 읽혀야 한다.
+  const by = Math.max((minY == null ? -1e9 : minY), Math.round(headY - h * 0.040 - tail - bhei));
+  x.fillStyle = '#05070c'; x.fillRect(bx - bw, by - bw, bwid + bw * 2, bhei + bw * 2);   // 테두리
+  x.fillStyle = '#fff';    x.fillRect(bx, by, bwid, bhei);
+  x.beginPath();                                            // 꼬리
+  x.moveTo(cx - tail, by + bhei); x.lineTo(cx + tail, by + bhei); x.lineTo(cx, by + bhei + tail);
+  x.closePath(); x.fillStyle = '#05070c'; x.fill();
+  x.fillStyle = '#10131c'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  lines.forEach(function (l, i) { x.fillText(l, cx, by + padY + lh * i + lh / 2); });
+  x.restore();
+};
 window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
   const F = 768;                              // 방 좌표계 (mwFurnHtml 의 /7.68 과 같은 값)
   const zs = (window._mwFurnZ && roomData) ? window._mwFurnZ((roomData && roomData.f) || []) : [];
@@ -18290,8 +18323,13 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
     const hpx = Math.round(S * 3.3 / 16);              // 방 화면과 같은 크기 비율
     ppl.forEach(function (pl, i) {
       const y = (pl.y == null) ? 80 : pl.y;
+      const px0 = ox + ((pl.x == null ? 50 : pl.x) / 100) * S, py0 = oy + y / 100 * S;
       paint.push({ z: 10 + Math.round(y / 100 * 16) * 10 + 5, fn: function () {
-        window._mwPaintChar(x, sheets[i], ox + ((pl.x == null ? 50 : pl.x) / 100) * S, oy + y / 100 * S, hpx);
+        window._mwPaintChar(x, sheets[i], px0, py0, hpx);
+      } });
+      // 말풍선은 캐릭터 바로 앞에. 앱과 같은 층이라 앞줄 가구에는 가려진다.
+      if (pl.say) paint.push({ z: 10 + Math.round(y / 100 * 16) * 10 + 6, fn: function () {
+        window._mwPaintBubble(x, px0, py0 - hpx, hpx, pl.say, oy + Math.round(hpx * 0.08));
       } });
     });
     paint.sort(function (a, b) { return a.z - b.z; });  // ★안정 정렬(ES2019+) — 같은 z 는 넣은 순서 유지
@@ -18465,7 +18503,12 @@ window._mwRoomCapture = function () {
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
   const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
     // presence 는 타일 좌표다 → 카드가 쓰는 퍼센트로 환산한다(_charApplyPos 와 같은 식)
-    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest,
+    // ★말풍선도 같이 담는다. 판정은 **화면에 떠 있는 규칙과 똑같이** 한다 —
+    //   사진에만 있고 화면엔 없는 말이 생기면 그게 더 이상하다.
+    const _m = all[k].msg;
+    const _say = (_m && _m.text && (all[k].pin || (Date.now() - (_m.t || 0) < window.MW_ROOM_MSG_MS)))
+               ? String(_m.text).slice(0, 40) : '';
+    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest, say: _say,
              x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
@@ -18551,6 +18594,21 @@ window._mwShotArm = function (atSrv) {
   window._mwRl.lastShot = atSrv;
   window._mwShotUntil = Date.now() + window.mwRoomCountdownMs + window.MW_DEV_MS + window.MW_SHOT_COOL_MS;
   window._mwShotBtnSync();
+  // ★★찍는 동안 내 말풍선을 **붙잡는다** (대표 8-20: "찍었을 때 채팅도 같이 찍혀야
+  //   찍는 맛이 있다"). 말풍선은 6초면 걷히는데 카운트다운만 3.2초다 — 한마디 치고
+  //   버튼을 누르면 플래시 전에 사라져서 사진에 안 남는다.
+  //   각자 자기 것만 붙잡으므로 방에 있는 전원의 말이 그대로 남는다.
+  const _m = window._mwRl.msg;
+  if (_m && _m.text) {
+    _m.t = Date.now();
+    clearTimeout(window._mwRl.msgT); clearTimeout(window._mwRl.msgClr);
+    const _hold = window.mwRoomCountdownMs + 2200;
+    window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); }, _hold + 80);
+    if (!window._mwBubblePin) {
+      window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, _hold);
+    }
+    window._mwRlSend();
+  }
   window._mwRoomCountdown(atSrv);
 };
 window.mwRoomShot = function () {
