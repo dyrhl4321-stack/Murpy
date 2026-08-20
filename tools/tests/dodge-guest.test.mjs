@@ -165,3 +165,13 @@ assert.strictEqual(w.dodgeParseLink('?n=feed_like&p=abc').on, false, '알림 링
 const parse = grab(/window\.dodgeParseLink = function[\s\S]*?\n\};/, 'dodgeParseLink');
 assert(!/get\('n'\)/.test(parse), "dodgeParseLink 가 알림용 n 을 읽는다 → 알림함이 열린다");
 console.log('  + URL 파라미터 충돌 방어 OK');
+
+// 18) ★옛 링크 구제 — 이미 카톡에 퍼진 링크에는 n=<닉> 이 남아 있다.
+//     알림 라우터가 game= 이 있으면 손을 떼야 그 링크들도 게임으로 간다.
+const router = grab(/\(function \(\) \{\s*\n\s*let q; try \{ q = new URLSearchParams\(location\.search\); \} catch \(e\) \{ return; \}[\s\S]*?const t = q\.get\('n'\); if \(!t\) return;/, '알림 라우터');
+assert(/if \(q\.get\('game'\)\) return;/.test(router),
+  '알림 라우터가 게임 링크에서 손을 떼지 않는다 → 옛 링크가 알림함을 연다');
+// 순서도 중요하다 — n 을 읽기 **전에** 빠져야 한다
+assert(router.indexOf("q.get('game')") < router.indexOf("q.get('n')"),
+  '게임 방어선이 n 을 읽은 뒤에 있다');
+console.log('  + 옛 링크 구제(알림 라우터 방어) OK');
