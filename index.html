@@ -17121,7 +17121,10 @@ window._mwRoomRender = function (all) {
       else bub.style.display = 'none';
     }
     c.el.style.left = v.x + '%'; c.el.style.top = v.y + '%';
-    c.el.style.zIndex = 10 + Math.round(v.y);
+    // ★z 는 **방과 같은 척도**여야 한다. 가구는 10+타일행*10(최대 170), 정적 방주인은
+    //   10+tr*10+5 인데, 여기만 10+y(퍼센트, 최대 110)로 넣어놨었다 → 캐릭터가 앞에
+    //   서 있어도 큰 가구 뒤로 들어갔다. 퍼센트를 타일행으로 환산해서 맞춘다.
+    c.el.style.zIndex = 10 + Math.round(v.y / 100 * 16) * 10 + 5;
   });
   // 같이 있는 사람이 있을 때만 채팅줄을 보여준다
   const together = Object.keys(seen).length > 1 && !!auth.currentUser;
@@ -17152,26 +17155,117 @@ window._mwRoomRender = function (all) {
 // 캐릭터 한 명을 canvas 에 그린다.
 // ★시트는 3열x4행이고 1행(0)이 정면이다. 칸 크기는 **그림에서 재서** 쓴다 —
 //   141x224 로 못 박으면 나중에 2배 시트가 들어왔을 때 조용히 어긋난다.
-window._mwDrawChar = function (x, cfg, cx, footY, h) {
+window._mwLoadImg = function (src) {
+  return new Promise(function (res) {
+    const im = new Image();
+    im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+    im.src = src;
+  });
+};
+// 캐릭터 한 명의 레이어 그림들을 **미리 받아둔다**. 그려 넣는 건 아래 _mwPaintChar 가 한다 —
+// ★canvas 는 그린 순서가 곧 z 라, 가구와 사람을 z 로 섞어 한 번에 칠해야 한다.
+//   그러려면 칠하는 순간은 동기여야 하고, 로딩은 그 전에 끝나 있어야 한다.
+window._mwLoadCharSheets = function (cfg) {
   const safe = window._charSafe ? window._charSafe(cfg) : cfg;
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(safe) : null;
-  if (!sheets) return Promise.resolve();
-  const order = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];   // 이 순서가 곧 z 순서다
-  const urls = order.filter(function (k) { return sheets[k]; }).map(function (k) { return sheets[k]; });
-  return Promise.all(urls.map(function (u) {
-    return new Promise(function (res) {
-      const im = new Image();
-      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
-      im.src = u;
+  if (!sheets) return Promise.resolve([]);
+  const order = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];   // 이 순서가 곧 레이어 z
+  return Promise.all(order.filter(function (k) { return sheets[k]; })
+    .map(function (k) { return window._mwLoadImg(sheets[k]); }));
+};
+// ★시트는 3열x4행이고 1행(0)이 정면이다. 칸 크기는 **그림에서 재서** 쓴다 —
+//   141x224 로 못 박으면 나중에 2배 시트가 들어왔을 때 조용히 어긋난다.
+window._mwPaintChar = function (x, imgs, cx, footY, h) {
+  x.imageSmoothingEnabled = false;                 // 픽셀은 뭉개지 않는다
+  (imgs || []).forEach(function (im) {
+    if (!im || !im.naturalWidth) return;
+    const cw = im.naturalWidth / 3, ch = im.naturalHeight / 4;
+    const w = h * cw / ch;
+    x.drawImage(im, 0, 0, cw, ch, cx - w / 2, footY - h, w, h);
+  });
+};
+
+// 방을 canvas 에 그린다 — 가구 + **접지 그림자** + 사람, 전부 z 순으로.
+// ★그림자는 앱이 실제로 그리는 것을 **그대로** 옮긴다(_mwShadowHtml 과 같은 계산):
+//   바닥폭 = (sbw || w*0.82) * 1.04, 높이 = 바닥폭 * 0.19(shThin 이면 0.11, 6~26 사이),
+//   상단이 밑변에 0.72 만큼 걸침, 알파 0.40, 정지점 48%/78%.
+//   canvas 의 radial-gradient 는 원이라 **세로로 눌러서** 타원을 만든다.
+//   ※대표 8-20: "접지 그림자 생략은 절대 안 된다 — 그게 퀄리티의 요소다"
+window._mwPaintShadow = function (x, it, def, F, S, ox, oy) {
+  if (def.flat || def.wall || def.noShadow) return;
+  const bw = (def.sbw || def.w * 0.82) * 1.04;
+  const a = def.shAlpha || 0.40;
+  const sh = Math.max(6, Math.min(26, bw * (def.shThin ? 0.11 : 0.19)));
+  const sx = it.x + (def.w - bw) / 2;
+  const sy = it.y + def.h - sh * 0.72;
+  // ── 여기부터가 CSS 를 **그대로** 옮긴 부분이다. 조금이라도 다르면 안 된다(대표 8-20).
+  //   CSS: 크기 bw x sh 인 상자에 radial-gradient(ellipse at center, ...) 를 깐다.
+  //   ★함정: `ellipse at center` 의 기본 크기는 farthest-corner 다. 반지름이 상자의
+  //     절반이 아니라 **절반 x √2**(모서리에 닿는 크기)다. 절반으로 잡으면 그림자가
+  //     더 작고 진해진다 — 방과 사진이 달라진다.
+  //   ★상자가 그라디언트를 잘라낸다(div 밖은 안 그려진다) → clip 으로 같은 일을 한다.
+  //   세로로 눌러(scale) 놓고 보면 상자는 **정사각형**이 되고, farthest-corner 는
+  //   그 정사각형의 반대각선 = 변/2 * √2 다. 그래서 로컬 좌표에선 원 하나로 끝난다.
+  // ★방 원점(ox,oy)을 더해야 한다. 안 더하면 사진이 아니라 카드 좌상단에 그림자가 찍힌다.
+  const X0 = ox + sx / F * S, Y0 = oy + sy / F * S, BW = bw / F * S, SH = sh / F * S;
+  if (BW <= 0 || SH <= 0) return;
+  x.save();
+  x.beginPath(); x.rect(X0, Y0, BW, SH); x.clip();
+  x.translate(X0 + BW / 2, Y0 + SH / 2);
+  x.scale(1, SH / BW);                        // 눌러 놓으면 상자는 한 변 BW 인 정사각형
+  const g = x.createRadialGradient(0, 0, 0, 0, 0, BW / 2 * Math.SQRT2);
+  g.addColorStop(0, 'rgba(0,0,0,' + a + ')');
+  g.addColorStop(0.48, 'rgba(0,0,0,' + a + ')');
+  g.addColorStop(0.78, 'rgba(0,0,0,' + (a * 0.35).toFixed(2) + ')');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g;
+  x.fillRect(-BW / 2, -BW / 2, BW, BW);       // 정사각형 = 원래 상자 전체
+  x.restore();
+};
+
+window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
+  const F = 768;                              // 방 좌표계 (mwFurnHtml 의 /7.68 과 같은 값)
+  const zs = (window._mwFurnZ && roomData) ? window._mwFurnZ((roomData && roomData.f) || []) : [];
+  const items = zs.filter(function (q) { return q && q.def; });
+  const ppl = people || [];
+  return Promise.all([
+    window._mwLoadImg('char/fields/field_room.png?v=1'),
+    Promise.all(items.map(function (q) { return window._mwLoadImg(q.def.src); })),
+    Promise.all(ppl.map(function (pl) { return window._mwLoadCharSheets(pl.character); })),
+  ]).then(function (r) {
+    const bg = r[0], furn = r[1], sheets = r[2];
+    x.save();
+    x.beginPath(); x.rect(ox, oy, S, S); x.clip();      // 방 밖으로 삐져나가지 않게
+    x.imageSmoothingEnabled = false;
+    if (bg) x.drawImage(bg, ox, oy, S, S);
+    else { x.fillStyle = '#2b2438'; x.fillRect(ox, oy, S, S); }
+
+    // ★★DOM 은 z-index 로 알아서 겹치지만 **canvas 는 그린 순서가 곧 z** 다.
+    //   그래서 그림자(z-1)·가구(z)·사람(z)을 한 목록에 넣고 z 로 정렬해 칠한다.
+    //   순서대로 그냥 칠하면 뒤에 선 사람이 앞 가구를 덮는다(대표 8-20 우려가 여기였다).
+    const paint = [];
+    items.forEach(function (q, i) {
+      paint.push({ z: q.z - 1, fn: function () { window._mwPaintShadow(x, q.it, q.def, F, S, ox, oy); } });
+      const im = furn[i];
+      if (im && im.naturalWidth) {
+        paint.push({ z: q.z, fn: function () {
+          const w = q.def.w / F * S;
+          const h = im.naturalHeight * (w / im.naturalWidth);
+          x.imageSmoothingEnabled = false;
+          x.drawImage(im, ox + q.it.x / F * S, oy + q.it.y / F * S, w, h);
+        } });
+      }
     });
-  })).then(function (imgs) {
-    x.imageSmoothingEnabled = false;                 // 픽셀은 뭉개지 않는다
-    imgs.forEach(function (im) {
-      if (!im || !im.naturalWidth) return;
-      const cw = im.naturalWidth / 3, ch = im.naturalHeight / 4;
-      const w = h * cw / ch;
-      x.drawImage(im, 0, 0, cw, ch, cx - w / 2, footY - h, w, h);
+    const hpx = Math.round(S * 3.3 / 16);              // 방 화면과 같은 크기 비율
+    ppl.forEach(function (pl, i) {
+      const y = (pl.y == null) ? 80 : pl.y;
+      paint.push({ z: 10 + Math.round(y / 100 * 16) * 10 + 5, fn: function () {
+        window._mwPaintChar(x, sheets[i], ox + ((pl.x == null ? 50 : pl.x) / 100) * S, oy + y / 100 * S, hpx);
+      } });
     });
+    paint.sort(function (a, b) { return a.z - b.z; });  // ★안정 정렬(ES2019+) — 같은 z 는 넣은 순서 유지
+    paint.forEach(function (e) { e.fn(); });
+    x.restore();
   });
 };
 
@@ -17179,60 +17273,43 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
   const W = 1080, H = 1350;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
-  const load = function (src) {
-    return new Promise(function (res) {
-      const im = new Image();
-      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
-      im.src = src;
-    });
-  };
-  Promise.all([load('char/fields/field_room.png?v=1'), load('char/ui/ui_logo.png?v=1')]).then(function (r) {
-    const bg = r[0], logo = r[1];
-    x.fillStyle = '#0e1320'; x.fillRect(0, 0, W, H);
-    if (bg) {
-      const k = Math.max(W / bg.width, H / bg.height);
-      x.imageSmoothingEnabled = false;
-      x.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
+  // ★폴라로이드. 방은 정사각인데 카드는 4:5 라 그냥 넣으면 위아래가 남는다.
+  //   흰 테두리 안에 정사각 사진을 넣고 아래 여백에 캡션을 두면 비율이 자연스럽게 풀리고,
+  //   동시에 '화면 캡처'가 아니라 '사진'이 된다(.mw-polaroid 와 같은 문법).
+  const PX = 60, PY = 66, PW = 960, PH = 1112;         // 흰 틀
+  const S = 900, SX = PX + 30, SY = PY + 30;           // 사진(정사각)
+  x.fillStyle = '#05070c'; x.fillRect(0, 0, W, H);
+  x.save();
+  x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 26; x.shadowOffsetY = 10;
+  x.fillStyle = '#f4f1ea'; x.fillRect(PX, PY, PW, PH);  // 살짝 따뜻한 흰색 = 인화지
+  x.restore();
+
+  window._mwDrawRoom(x, SX, SY, S, window._mwRoomData, list).then(function () {
+    window._mwDrawSeal(x, SX + S - 150, SY + S - 110, ownerNick, list.length);
+    // 캡션 — 인화지 아래 여백
+    x.textAlign = 'center'; x.fillStyle = '#20242e';
+    x.font = "40px 'Galmuri14','Galmuri11',sans-serif";
+    x.fillText(ownerNick + '님의 머피룸', W / 2, SY + S + 74);
+    const names = list.map(function (pl) { return String(pl.nick || '머피').slice(0, 8); }).join('  ·  ');
+    x.fillStyle = '#6b7280'; x.font = "28px 'Galmuri11',sans-serif";
+    x.fillText(names.slice(0, 46), W / 2, SY + S + 124);
+    // 인화지 밖 — 어디로 가면 되는지
+    return Promise.all([new Promise(function (res) {
+      const im = new Image(); im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = 'char/ui/ui_logo.png?v=1';
+    })]);
+  }).then(function (r) {
+    const logo = r[0];
+    x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.85)';
+    x.font = "34px 'Galmuri11',sans-serif";
+    x.fillText('같이 놀러 오세요 · murpy.app', W / 2, H - 58);
+    if (logo) {
+      const lh = 42, lw = logo.width * lh / logo.height;
+      x.textAlign = 'left'; x.font = "28px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.8)';
+      x.fillText('from', 46, PY - 20);
+      x.drawImage(logo, 122, PY - 20 - lh + 9, lw, lh);
     }
-    // 위아래만 눌러 글자를 읽히게 한다. 가운데(캐릭터가 설 자리)는 안 건드린다.
-    const g = x.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, 'rgba(5,7,12,.62)'); g.addColorStop(.3, 'rgba(5,7,12,.2)');
-    g.addColorStop(.66, 'rgba(5,7,12,.25)'); g.addColorStop(1, 'rgba(5,7,12,.93)');
-    x.fillStyle = g; x.fillRect(0, 0, W, H);
-
-    x.textAlign = 'center';
-    x.font = "46px 'Galmuri11',sans-serif"; x.fillStyle = '#fff';
-    x.fillText(ownerNick + '님의 머피룸', W / 2, 150);
-
-    // ★사람 수에 따라 칸을 나눈다. 고정 간격으로 두면 2명일 때 양쪽이 텅 빈다.
-    const n = Math.max(1, list.length);
-    const footY = H - 330;
-    const slot = W / n;
-    const h = Math.min(430, Math.max(240, (slot - 40) * 224 / 141));
-    Promise.all(list.map(function (pl, i) {
-      return window._mwDrawChar(x, pl.character, slot * (i + 0.5), footY, h);
-    })).then(function () {
-      // 이름은 캐릭터를 다 그린 **뒤에** 얹는다 — 안 그러면 뒤에 그려진 캐릭터에 덮인다
-      x.textAlign = 'center';
-      x.font = "34px 'Galmuri11',sans-serif";
-      list.forEach(function (pl, i) {
-        x.fillStyle = pl.guest ? 'rgba(255,255,255,.62)' : '#fff';
-        x.fillText(String(pl.nick || '머피').slice(0, 10), slot * (i + 0.5), footY + 52);
-      });
-      const d = new Date();
-      x.fillStyle = 'rgba(255,255,255,.6)'; x.font = "32px 'Galmuri11',sans-serif";
-      x.fillText(d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate(), W / 2, H - 168);
-      x.fillStyle = 'rgba(255,255,255,.85)'; x.font = "36px 'Galmuri11',sans-serif";
-      x.fillText('같이 놀러 오세요 · murpy.app', W / 2, H - 96);
-      if (logo) {
-        const lh = 46, lw = logo.width * lh / logo.height;
-        x.textAlign = 'left';
-        x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
-        x.fillText('from', 46, 76);
-        x.drawImage(logo, 130, 76 - lh + 10, lw, lh);
-      }
-      cb(cv.toDataURL('image/jpeg', 0.9));
-    });
+    cb(cv.toDataURL('image/jpeg', 0.92));
   });
 };
 
@@ -17244,7 +17321,8 @@ window.mwRoomShot = function () {
   uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
   const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
-    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest };
+    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest,
+             x: all[k].x, y: all[k].y };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
   const host = document.getElementById('mw-rm-share'); if (!host) return;
@@ -20885,6 +20963,7 @@ window.mwVisitRoom = async function (uid) {
   }
   // ★실시간으로 같이 있기 (1단계 b). 정적인 방 위에 **얹는다** —
   //   방을 새로 만들지 않으므로 가구·방명록·TODAY 는 그대로 돌아간다.
+  window._mwRoomData = p.room || null;      // 같이 찍기 카드가 이 배치를 그린다(읽기만)
   window.mwRoomLiveJoin && window.mwRoomLiveJoin(uid);
   // TODAY 카운트 — ★**1인 1일 1회**. 예전엔 방을 열 때마다 increment 해서, 같은 사람이
   //   새로고침만 해도 숫자가 올랐다(대표 지적 2026-08-04). 방문 표식 문서를 만들 때만 센다.
