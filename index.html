@@ -2162,6 +2162,9 @@
       <!-- ★최고점은 '다시 하고 싶게' 만드는 유일한 숫자다. 11.5px/투명도 .4 로는
            그림 위에서 아예 안 읽혔다(대표 8-20). 크게·굵게·그림자로 띄운다. -->
       <div id="dodge-best" style="font-size:16px;font-weight:800;color:#fff;min-height:20px;text-shadow:0 2px 6px rgba(0,0,0,.85)"></div>
+      <!-- 링크로 들어온 사람에게만 보인다. 내용은 _dodgeLinkBoot 가 textContent 로 채운다.
+           ★골드(#F5C24B)는 별점·코인 자리라 안 쓴다 — 흰 글자에 그림자로 띄운다. -->
+      <div id="dodge-challenge" style="display:none;font-size:13.5px;font-weight:800;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85)"></div>
       <button class="dodge-cta" onclick="window.dodgeHowto()" style="width:100%;max-width:280px;padding:17px;font-size:17px">눌러서 시작</button>
       <!-- ★지난 기록을 다시 공유할 수 있어야 한다 (대표 8-20: "예전 신기록 있으면 사람들에게
            공유해서 바이럴"). 한 판 끝나고 그 순간에만 공유되면 기회가 한 번뿐이다. -->
@@ -12321,6 +12324,11 @@ window.dodgeClose = function () {
   cancelAnimationFrame(window._dodgeRaf); window._dodgeRaf = 0;
   const el = document.getElementById('dodge-screen'); if (el) el.style.display = 'none';
   window._dodgeS = null;
+  // 링크로 들어와 온보딩을 미뤄뒀으면 이제 보여준다 — 게임 → 나가기 → 소개 순서
+  if (window._dodgeObPending) {
+    window._dodgeObPending = false;
+    setTimeout(function () { window.showSplashOnboarding && window.showSplashOnboarding(); }, 300);
+  }
 };
 // 조작 — **손가락 추종**(대표 8-19 확정). 화면 아무 데나 눌러 좌우로 움직이면
 // 캐릭터가 그 x 를 따라온다. 탭투워크(스쿼드식)는 도착 시간 때문에 피하기가 성립하지 않고,
@@ -12761,6 +12769,47 @@ window.dodgeShareRec = function (i) {
   const lv = window.DODGE_LV[r.lv] || window.DODGE_LV.mid;
   window._dodgeShowShare(r.s || 0, r.t || 0, lv.name, 'dodge-rec-share');
 };
+// ---- 링크로 들어오면 바로 게임 (미가입자 바이럴) ----
+// 스펙: docs/superpowers/specs/2026-08-20-dodge-guest-viral-design.md
+// ★**인증을 기다리지 않는다.** 계정이 필요 없으므로 onAuthStateChanged 와 무관하게 즉시 연다.
+//   비로그인 if/else 사슬(_mwRoomInvite → _sqInviteSid → 온보딩)은 **한 글자도 안 건드린다** —
+//   그 사슬의 첫 가지가 방 초대이고, 다른 창이 거기서 작업 중이다.
+window._dodgeFromLink = false;
+window._dodgeChallenge = null;
+window._dodgeLinkBoot = function () {
+  const p = window.dodgeParseLink(location.search);
+  if (!p.on) return;
+  window._dodgeFromLink = true;
+  window._dodgeChallenge = { nick: p.nick, score: p.score };
+  // 주소를 지운다 — 새로고침할 때마다 게임이 다시 튀면 안 된다
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  // ★온보딩(#splash-ob, z 30000)이 게임(z 2300)을 통째로 덮는다. 사슬을 고치는 대신
+  //   함수를 감싸 **게임이 떠 있는 동안에는 미뤄 둔다.** 게임을 닫을 때 그때 부른다.
+  //   순서가 오히려 낫다 — 재미를 먼저 보여주고 소개한다.
+  //   ★감싸기가 통하는 이유: showSplashOnboarding 은 모듈이 아닌 스크립트 블록의 최상위
+  //     function 선언이라 **전역**이다. window 로 바꿔치기하면 모듈 블록의 맨이름 호출도
+  //     바뀐 함수를 집는다. (주석에 여는 스크립트 태그를 쓰면 syntax-check 가 유령 블록으로 읽는다)
+  if (typeof window.showSplashOnboarding === 'function' && !window._dodgeObWrapped) {
+    window._dodgeObWrapped = true;
+    const orig = window.showSplashOnboarding;
+    window.showSplashOnboarding = function () {
+      const g = document.getElementById('dodge-screen');
+      if (g && g.style.display !== 'none') { window._dodgeObPending = true; return; }
+      return orig.apply(this, arguments);
+    };
+  }
+  if (typeof dismissLanding === 'function') { try { dismissLanding(); } catch (e) {} }
+  window.dodgeOpen && window.dodgeOpen();
+  // 도전장 한 줄. ★textContent 로만 넣는다 — URL 은 남이 고칠 수 있는 값이다.
+  const el = document.getElementById('dodge-challenge');
+  if (el && p.score > 0) {
+    el.textContent = (p.nick ? p.nick + '님의 ' : '') + p.score + '점에 도전!';
+    el.style.display = '';
+  }
+};
+// 로드가 끝난 뒤에 돈다 — showSplashOnboarding·dodgeOpen 이 다 정의된 다음이어야 한다.
+if (document.readyState === 'complete') setTimeout(window._dodgeLinkBoot, 0);
+else window.addEventListener('load', function () { setTimeout(window._dodgeLinkBoot, 0); });
 // ===== 덤벨 피하기 끝 =====
 // ===== 닉네임 중복 검사 =====
 // 지금까지 검사가 아예 없었다(온보딩은 maxlength=10 과 '2자 이상'만 봤다) — 같은 닉을

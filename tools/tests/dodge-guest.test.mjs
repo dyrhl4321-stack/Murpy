@@ -133,3 +133,19 @@ const ig = grab(/window\.dodgeShareIG = function[\s\S]*?\n\};/, 'dodgeShareIG');
 assert(/clipboard/.test(ig), '클립보드 복사가 없다');
 assert(/mwShareSheet\(\)/.test(ig), '공유시트를 안 연다');
 console.log('  + 공유 링크·인스타 복사 OK');
+
+// 14) ★비로그인 if/else 사슬을 건드리지 않았는가 (다른 창 구역)
+const chain = grab(/if \(window\._mwRoomInvite && window\.mwRoomEnterChoice\)[\s\S]*?showSplashOnboarding\(\), 1700\);/, '비로그인 사슬');
+assert(!/game/.test(chain), '게임 링크 처리가 비로그인 사슬에 들어갔다 → 다른 창과 충돌한다');
+
+// 15) 온보딩은 사슬을 고치지 말고 **감싸서** 미룬다 (온보딩 z 30000 > 게임 z 2300)
+assert(/window\.showSplashOnboarding = function/.test(src),
+  'showSplashOnboarding 을 감싸지 않는다 → 온보딩이 게임을 덮는다');
+
+// 16) 도전장 표시는 textContent 로만 (URL 은 남이 고칠 수 있다)
+const boot = grab(/window\._dodgeLinkBoot = function[\s\S]*?\n\};/, '_dodgeLinkBoot');
+assert(!/innerHTML/.test(boot), '도전장을 innerHTML 로 넣는다 → 주입이 된다');
+assert(/textContent/.test(boot), '도전장을 textContent 로 안 넣는다');
+// 주소를 지워야 새로고침 때 또 안 튄다
+assert(/replaceState/.test(boot), '주소를 안 지운다 → 새로고침마다 게임이 다시 뜬다');
+console.log('  + 링크 부팅·온보딩 미루기 OK');
