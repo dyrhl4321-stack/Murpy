@@ -17124,8 +17124,11 @@ window._mwRoomRender = function (all) {
     c.el.style.zIndex = 10 + Math.round(v.y);
   });
   // 같이 있는 사람이 있을 때만 채팅줄을 보여준다
+  const together = Object.keys(seen).length > 1 && !!auth.currentUser;
   const chatRow = document.getElementById('mw-rm-chat');
-  if (chatRow) chatRow.style.display = (Object.keys(seen).length > 1 && auth.currentUser) ? 'flex' : 'none';
+  if (chatRow) chatRow.style.display = together ? 'flex' : 'none';
+  const shotRow = document.getElementById('mw-rm-shot');
+  if (shotRow) shotRow.style.display = together ? '' : 'none';
   // 나간 사람 치우기
   Object.keys(chars).forEach(function (uid) {
     if (seen[uid]) return;
@@ -17140,6 +17143,133 @@ window._mwRoomRender = function (all) {
   }
 };
 // ===== 머피룸 실시간 끝 =====
+
+// ===== 같이 찍기 (단체 스탬프) =====
+// 설계 2단계. ★공유는 새로 만들지 않는다 — 머피캠·덤벨 피하기가 쓰는 그 버튼과
+//   그 카톡 경로(_mwStampData -> _mwKakaoPrep -> mwShareKakao)를 그대로 탄다.
+//   여기서 새로 만드는 건 **카드 그림 한 장**뿐이다.
+
+// 캐릭터 한 명을 canvas 에 그린다.
+// ★시트는 3열x4행이고 1행(0)이 정면이다. 칸 크기는 **그림에서 재서** 쓴다 —
+//   141x224 로 못 박으면 나중에 2배 시트가 들어왔을 때 조용히 어긋난다.
+window._mwDrawChar = function (x, cfg, cx, footY, h) {
+  const safe = window._charSafe ? window._charSafe(cfg) : cfg;
+  const sheets = window._charEquippedSheets ? window._charEquippedSheets(safe) : null;
+  if (!sheets) return Promise.resolve();
+  const order = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];   // 이 순서가 곧 z 순서다
+  const urls = order.filter(function (k) { return sheets[k]; }).map(function (k) { return sheets[k]; });
+  return Promise.all(urls.map(function (u) {
+    return new Promise(function (res) {
+      const im = new Image();
+      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = u;
+    });
+  })).then(function (imgs) {
+    x.imageSmoothingEnabled = false;                 // 픽셀은 뭉개지 않는다
+    imgs.forEach(function (im) {
+      if (!im || !im.naturalWidth) return;
+      const cw = im.naturalWidth / 3, ch = im.naturalHeight / 4;
+      const w = h * cw / ch;
+      x.drawImage(im, 0, 0, cw, ch, cx - w / 2, footY - h, w, h);
+    });
+  });
+};
+
+window._mwRoomShotImg = function (list, ownerNick, cb) {
+  const W = 1080, H = 1350;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const load = function (src) {
+    return new Promise(function (res) {
+      const im = new Image();
+      im.onload = function () { res(im); }; im.onerror = function () { res(null); };
+      im.src = src;
+    });
+  };
+  Promise.all([load('char/fields/field_room.png?v=1'), load('char/ui/ui_logo.png?v=1')]).then(function (r) {
+    const bg = r[0], logo = r[1];
+    x.fillStyle = '#0e1320'; x.fillRect(0, 0, W, H);
+    if (bg) {
+      const k = Math.max(W / bg.width, H / bg.height);
+      x.imageSmoothingEnabled = false;
+      x.drawImage(bg, (W - bg.width * k) / 2, (H - bg.height * k) / 2, bg.width * k, bg.height * k);
+    }
+    // 위아래만 눌러 글자를 읽히게 한다. 가운데(캐릭터가 설 자리)는 안 건드린다.
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(5,7,12,.62)'); g.addColorStop(.3, 'rgba(5,7,12,.2)');
+    g.addColorStop(.66, 'rgba(5,7,12,.25)'); g.addColorStop(1, 'rgba(5,7,12,.93)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+
+    x.textAlign = 'center';
+    x.font = "46px 'Galmuri11',sans-serif"; x.fillStyle = '#fff';
+    x.fillText(ownerNick + '님의 머피룸', W / 2, 150);
+
+    // ★사람 수에 따라 칸을 나눈다. 고정 간격으로 두면 2명일 때 양쪽이 텅 빈다.
+    const n = Math.max(1, list.length);
+    const footY = H - 330;
+    const slot = W / n;
+    const h = Math.min(430, Math.max(240, (slot - 40) * 224 / 141));
+    Promise.all(list.map(function (pl, i) {
+      return window._mwDrawChar(x, pl.character, slot * (i + 0.5), footY, h);
+    })).then(function () {
+      // 이름은 캐릭터를 다 그린 **뒤에** 얹는다 — 안 그러면 뒤에 그려진 캐릭터에 덮인다
+      x.textAlign = 'center';
+      x.font = "34px 'Galmuri11',sans-serif";
+      list.forEach(function (pl, i) {
+        x.fillStyle = pl.guest ? 'rgba(255,255,255,.62)' : '#fff';
+        x.fillText(String(pl.nick || '머피').slice(0, 10), slot * (i + 0.5), footY + 52);
+      });
+      const d = new Date();
+      x.fillStyle = 'rgba(255,255,255,.6)'; x.font = "32px 'Galmuri11',sans-serif";
+      x.fillText(d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate(), W / 2, H - 168);
+      x.fillStyle = 'rgba(255,255,255,.85)'; x.font = "36px 'Galmuri11',sans-serif";
+      x.fillText('같이 놀러 오세요 · murpy.app', W / 2, H - 96);
+      if (logo) {
+        const lh = 46, lw = logo.width * lh / logo.height;
+        x.textAlign = 'left';
+        x.font = "30px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.85)';
+        x.fillText('from', 46, 76);
+        x.drawImage(logo, 130, 76 - lh + 10, lw, lh);
+      }
+      cb(cv.toDataURL('image/jpeg', 0.9));
+    });
+  });
+};
+
+window.mwRoomShot = function () {
+  const all = window._mwRl.last || {};
+  const owner = window._mwRl.owner;
+  // 지금 방에 있는 사람만. 주인을 맨 앞에 세운다(주인의 방이다).
+  const uids = Object.keys(all).filter(function (k) { return window._mwRoomAlive(all[k]); });
+  uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
+  if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
+  const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
+    return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest };
+  });
+  const ownerNick = (all[owner] && all[owner].nick) || '머피';
+  const host = document.getElementById('mw-rm-share'); if (!host) return;
+  host.style.display = '';
+  host.innerHTML = '<div style="font-size:12px;color:#8a93a8;text-align:center;padding:10px 0">사진 만드는 중…</div>';
+  window._mwRoomShotImg(list, ownerNick, function (data) {
+    window._mwStampData = data;
+    window._mwShareMeta = {
+      title: ownerNick + '님의 머피룸에서 한 컷',
+      desc: '가입 없이 바로 들어와서 같이 놀아요',
+      btn: '방에 들어가기',
+      link: window._mwRoomLink(owner),
+    };
+    const B = window._MW_BRAND || {};
+    host.innerHTML = '<div class="mw-polaroid" style="margin-bottom:10px"><img src="' + data + '" style="width:100%;display:block"></div>'
+      + '<div class="mw-share">'
+      + '<button class="mw-sbtn" onclick="window.mwShareSheet()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+      + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+      + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
+      + '</div>';
+    window._mwKakaoPrep && window._mwKakaoPrep();
+  });
+};
+// ===== 같이 찍기 끝 =====
+
 
 
 // ★성공하면 true. 실패하면 false 를 돌려줘 **부르는 쪽이 평소 화면으로 떨어뜨리게** 한다.
@@ -20700,6 +20830,12 @@ window.mwVisitRoom = async function (uid) {
            한 바퀴 돌아가는 셈이라 대상과 버튼이 어긋난다(캐릭터 좋아요는 정보 창 안에 있다). -->
       <!-- 방 안 채팅. ★따로 채팅방을 만들지 않는다 — 말풍선이 캐릭터 머리 위에 뜨고 사라진다.
            같이 있는 사람이 없으면 숨는다(혼자 있는 방에 입력창이 떠 있으면 뭐 하라는 건지 모른다). -->
+      <!-- 같이 찍기 (2단계). ★초대의 결과물이 다시 초대장이 되는 자리다 —
+           같이 찍은 카드가 카톡으로 나가고, 그걸 본 사람이 또 들어온다. -->
+      <div id="mw-rm-shot" style="display:none;margin:2px 0 10px">
+        <button class="mw-btn mw-btn-gold" style="width:100%;padding:12px;font-size:14px" onclick="window.mwRoomShot()">같이 찍기</button>
+      </div>
+      <div id="mw-rm-share" style="display:none;margin:0 0 12px"></div>
       <div id="mw-rm-chat" style="display:none;gap:7px;margin:2px 0 10px">
         <input id="mw-rm-chat-input" maxlength="40" placeholder="같이 있는 사람에게 한마디…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:10px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
         <button class="mw-btn mw-btn-sm" onclick="window.mwRoomSay()">보내기</button>
