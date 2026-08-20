@@ -638,16 +638,18 @@
     font-size:12px; color:#4a4336; text-align:center; line-height:1.5 }
   @media (prefers-reduced-motion:reduce){ #mw-pola .pola-card{ animation:none } }
   /* ===== 초대 전용 화면 ===== */
+  /* ★조각조각 숨기지 말고 **덩어리째** 숨긴다. mw-worldbar 에 로고와 '머피 +' 가 같이 살고,
+     지도·체크인·카메라는 mw-wb-tabs 다. 하나씩 지우면 꼭 하나가 남는다(대표 8-20). */
   body.mw-party .header,
   body.mw-party .bottom-nav,
-  body.mw-party #mw-logowrap,
-  body.mw-party #mw-coin-amt,
-  body.mw-party #mw-map-live,
+  body.mw-party .mw-worldbar,
+  body.mw-party .mw-wb-tabs:not(#mw-party-tabs),
   body.mw-party #mw-field-bar,
   body.mw-party #charworld-hub-tabs,
   body.mw-party #charworld-hub-panel { display:none !important }
-  /* 남의 방에서는 **내 말풍선**도 안 뜬다 — 내 방에 걸어둔 한마디가 남의 방에 따라오면 이상하다 */
-  body.mw-party #charworld-headui .cw-bubble { display:none !important }
+  /* 지도·체크인·카메라가 있던 자리에 **방에서 할 것**을 넣는다 */
+  #mw-party-tabs { display:none }
+  body.mw-party #mw-party-tabs { display:flex }
   #mw-party-bar { display:none; position:fixed; left:0; right:0; top:0; z-index:120; height:52px;
     align-items:center; gap:9px; padding:0 12px; background:#0b0e16; border-bottom:1px solid rgba(255,255,255,.08) }
   body.mw-party #mw-party-bar { display:flex }
@@ -655,18 +657,20 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
   #mw-party-bar button { background:rgba(255,255,255,.08); border:none; color:#cfd6e6; border-radius:10px;
     padding:9px 12px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0 }
+  /* ★머피월드 안이니 **픽셀 문법**이다 (대표 8-20). 말풍선 편집창과 같은 규칙 —
+     바탕 #0e1320, 테두리 3px #05070c, 버튼은 .mw-btn, 글씨는 Galmuri.
+     둥근 회색 입력창은 일반 탭 문법이라 여기 오면 혼자 논다. */
   #mw-party-chat { display:none; position:fixed; left:0; right:0; bottom:0; z-index:120;
-    flex-direction:column; background:#0b0e16; border-top:1px solid rgba(255,255,255,.08) }
+    flex-direction:column; background:#0b0e16; border-top:3px solid #05070c }
   body.mw-party #mw-party-chat { display:flex }
-  #mw-party-log { height:132px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:7px; padding:10px 13px }
-  #mw-party-log .pl { font-size:12.5px; line-height:1.5; color:#cfd6e6 }
-  #mw-party-log .pl b { color:#7aa8ff; font-weight:800; margin-right:5px }
-  #mw-party-log .pl.sys { color:rgba(255,255,255,.38); font-size:11.5px }
-  #mw-party-row { display:flex; gap:8px; padding:0 13px 13px }
-  #mw-party-row input { flex:1; min-width:0; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1);
-    color:#fff; border-radius:11px; padding:12px 13px; font-size:16px; outline:none; font-family:inherit }
-  #mw-party-row button { background:var(--accent); color:#fff; border:none; border-radius:11px; padding:0 16px;
-    font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit; flex-shrink:0 }
+  #mw-party-log { height:148px; overflow-y:auto; display:flex; flex-direction:column-reverse; gap:8px; padding:11px 13px }
+  #mw-party-log .pl { font-family:'Galmuri11',sans-serif; font-size:11.5px; line-height:1.6; color:#cfd6e6 }
+  #mw-party-log .pl b { color:#7aa8ff; margin-right:6px }
+  #mw-party-log .pl-empty { font-family:'Galmuri11',sans-serif; font-size:11px; color:#4a5266; text-align:center; padding:14px 0 }
+  #mw-party-row { display:flex; gap:7px; padding:0 13px 13px }
+  #mw-party-row input { flex:1; min-width:0; background:#0e1320; border:3px solid #05070c; color:#fff;
+    padding:11px 12px; font-size:16px; outline:none; font-family:'Galmuri11',sans-serif }
+  #mw-party-row input::placeholder { color:#4a5266 }
   /* 방을 위아래 줄 사이에 앉힌다 */
   body.mw-party #page-char { padding-top:52px; padding-bottom:190px }
   /* ===== 월드바 — 다크 모던(자체 CSS) + 제미나이 소스는 로고·아이콘·코인만 ===== */
@@ -4200,9 +4204,12 @@ window._charApplyPos = function () {
   }
   const bl = (ui || host).querySelector('.cw-bubble');
   if (bl) {
-    // ★남의 방에서는 내 말풍선을 안 띄운다 (대표 8-20) — 내 방에 걸어둔 한마디가
-    //   남의 방까지 따라다니면 이상하다. 방 안 대화는 아래 대화창이 맡는다.
-    const msg = (window._curField === 'home' && !window._mwIsVisiting()) ? (window._myRoomMsg || '') : '';
+    // ★방에서 친 한마디는 **내 캐릭터 머리 위**에 뜬다 (대표 8-20). 남들이 보는 것과 같은 모양이다.
+    //   내 방에 걸어둔 말풍선(roomMsg)은 남의 방까지 따라다니면 안 되므로 방문 중엔 안 쓴다.
+    const _live = (window._mwRl && window._mwRl.msg) || null;
+    const _fresh = _live && (Date.now() - (_live.t || 0) < (window.MW_ROOM_MSG_MS || 6000));
+    const msg = _fresh ? _live.text
+              : ((window._curField === 'home' && !window._mwIsVisiting()) ? (window._myRoomMsg || '') : '');
     bl.textContent = msg;
     bl.style.display = msg ? '' : 'none';
     bl.style.bottom = (tl && tl.style.display !== 'none') ? 'calc(100% + 17px)' : 'calc(100% + 3px)';
@@ -6465,14 +6472,18 @@ window.mwPortal = function () {
 <div id="mw-party-bar">
   <span class="pt-name" id="mw-party-name">머피룸</span>
   <button onclick="window.mwRoomInviteShare&&window.mwRoomInviteShare()">초대</button>
-  <button onclick="window.mwRoomShot&&window.mwRoomShot()">같이 찍기</button>
   <button onclick="window.mwRoomLeaveField&&window.mwRoomLeaveField()">나가기</button>
+</div>
+<!-- 지도·체크인·카메라가 있던 자리. 방에서는 방에서 할 것만 있어야 한다(대표 8-20). -->
+<div class="mw-wb-tabs" id="mw-party-tabs">
+  <button class="mw-wb-tabbtn" onclick="window.mwRoomShot&&window.mwRoomShot()">같이 찍기</button>
+  <button class="mw-wb-tabbtn" onclick="showToast('곧 열려요')" style="opacity:.45">같이 낙서</button>
 </div>
 <div id="mw-party-chat">
   <div id="mw-party-log"></div>
   <div id="mw-party-row">
     <input id="mw-party-input" maxlength="40" placeholder="한마디 남기기…" onkeydown="if(event.key==='Enter')window.mwRoomSay()">
-    <button onmousedown="event.preventDefault()" onclick="window.mwRoomSay&&window.mwRoomSay()">보내기</button>
+    <button class="mw-btn mw-btn-sm" onmousedown="event.preventDefault()" onclick="window.mwRoomSay&&window.mwRoomSay()">보내기</button>
   </div>
 </div>
 <div class="bottom-nav">
@@ -17371,7 +17382,8 @@ window.mwRoomEnterChoice = async function (ownerUid, asGuest) {
     + '<div style="padding:24px 20px 22px;text-align:center">'
     + '<div style="font-size:11px;color:#7aa8ff;font-weight:800;margin-bottom:6px">머피룸 초대</div>'
     + '<div style="font-size:17px;font-weight:800;margin-bottom:5px">' + esc(nick) + '님의 방</div>'
-    + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">눌러서 놀러 가세요</div>'
+    + '<div style="font-size:12px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:18px">'
+    +   '가입 없이 바로 들어가서 같이 놀 수 있어요<br>캐릭터로 돌아다니고 한마디씩 남겨보세요</div>'
     + '<button onclick="window.mwRoomEnter' + (asGuest ? 'KeepGuest' : 'AsGuest') + '(&quot;' + ownerUid + '&quot;)"'
     + ' style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:9px">'
     + (asGuest ? '임시계정으로 입장' : '가입 없이 바로 입장') + '</button>'
@@ -17643,7 +17655,7 @@ window._mwRlRender = function (all) {
     window._mwRl.logDirty = 0;
     const le = document.getElementById('mw-party-log');
     if (le) {
-      le.innerHTML = '';
+      le.innerHTML = log.length ? '' : '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
       log.forEach(function (m) {
         const d = document.createElement('div'); d.className = 'pl';
         const b2 = document.createElement('b'); b2.textContent = m.nick;
@@ -17681,6 +17693,10 @@ window.mwRoomSay = function () {
   inp.value = ''; inp.blur();
   window._mwRl.msg = { text: t, t: Date.now() };
   window._mwRlSend();
+  window._charApplyPos && window._charApplyPos();          // 내 머리 위에 바로 띄운다
+  clearTimeout(window._mwRl.msgClr);
+  window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); },
+                                   (window.MW_ROOM_MSG_MS || 6000) + 80);   // 시간 지나면 걷는다
   clearTimeout(window._mwRl.msgT);
   window._mwRl.msgT = setTimeout(function () { window._mwRl.msg = null; window._mwRlSend(); }, window.MW_ROOM_MSG_MS);
 };
