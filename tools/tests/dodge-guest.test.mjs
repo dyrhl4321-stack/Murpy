@@ -175,3 +175,16 @@ assert(/if \(q\.get\('game'\)\) return;/.test(router),
 assert(router.indexOf("q.get('game')") < router.indexOf("q.get('n')"),
   '게임 방어선이 n 을 읽은 뒤에 있다');
 console.log('  + 옛 링크 구제(알림 라우터 방어) OK');
+
+// 19) ★게임 화면이 카톡 인앱브라우저에서 아래가 비면 안 된다 (대표 8-20)
+//     inset:0 만 쓰면 주소창이 접힐 때 실제 높이가 커져 틈이 생기고 뒤 홈탭이 비친다.
+const screenTag = grab(/<div id="dodge-screen"[^>]*>/, '#dodge-screen');
+assert(/height:100dvh/.test(screenTag), '게임 화면에 100dvh 가 없다 → 카톡에서 아래가 빈다');
+assert(/overscroll-behavior:contain/.test(screenTag), 'overscroll-behavior:contain 이 없다');
+
+// 20) 게임이 떠 있는 동안 뒤 페이지 스크롤을 잠가야 한다
+const open = grab(/window\.dodgeOpen = function[\s\S]*?\n\};/, 'dodgeOpen');
+assert(/documentElement\.style\.overflow = 'hidden'/.test(open), 'dodgeOpen 이 스크롤을 안 잠근다');
+const close = grab(/window\.dodgeClose = function[\s\S]*?\n\};/, 'dodgeClose');
+assert(/documentElement\.style\.overflow = ''/.test(close), 'dodgeClose 가 스크롤 잠금을 안 푼다');
+console.log('  + 카톡 인앱 화면 높이·스크롤 잠금 OK');
