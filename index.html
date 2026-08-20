@@ -11989,8 +11989,14 @@ window.dodgeNickSave = function () {
   const v = String(el.value || '').trim().slice(0, 12);
   if (v.length < 2) { showToast('두 글자 이상으로 적어주세요'); return; }
   try { localStorage.setItem(window.DODGE_NICK_KEY, v); } catch (e) {}
+  // ★이름이 정해졌으니 이제 공유 버튼(인스타·카톡·저장)을 연다.
+  //   카드 그림과 도전장 링크를 **새 이름으로 다시 만든다** — 안 그러면 방금 정한 이름이
+  //   카드에 안 박힌다(카드는 이름이 없던 시점에 이미 그려져 있다).
+  if (window._dodgeShowShare) {
+    window._dodgeShowShare(window._dodgeLastScore || 0, window._dodgeLastSec || 0,
+                           window._dodgeLastLv || '', 'dodge-share');
+  }
   window._dodgeRefreshKeep && window._dodgeRefreshKeep();
-  showToast(v + ' 님으로 저장했어요');
 };
 
 // ---- 계정이 없는 동안의 점수 보관 ----
@@ -12621,6 +12627,10 @@ window._dodgeEnd = function (s) {
        + (isBest && score > 0 ? '<br><span style="color:#3dde7c;font-weight:700">최고 기록!</span>'
                               : '<br><span style="color:rgba(255,255,255,.4)">내 최고 ' + (window._dodgeBest || 0) + '점</span>');
   const o = document.getElementById('dodge-over'); if (o) o.style.display = 'flex';
+  // ★방금 판을 남겨둔다 — 이름을 나중에 정하면 그때 카드·도전장을 **이 값으로 다시** 만든다.
+  window._dodgeLastScore = score;
+  window._dodgeLastSec = Math.floor(s.t / 1000);
+  window._dodgeLastLv = lv.name;
   window._dodgeShowShare && window._dodgeShowShare(score, Math.floor(s.t / 1000), lv.name);
   window.dodgeSave && window.dodgeSave(score, Math.floor(s.t / 1000), s.lv);
 };
@@ -12725,7 +12735,12 @@ window._dodgeShowShare = function (score, sec, lvName, hostId) {
       + '<button id="dodge-kkbtn" class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
       + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
       + '</div>';
-    host.style.display = '';
+    // ★이름이 없으면 공유 버튼을 **아직 안 보여준다** (대표 8-20).
+    //   이름 없이 공유하면 카드에도 도전장에도 이름이 안 박혀서 고리가 끊긴다.
+    //   순서를 화면으로 강제한다: 이름 정하기 → 공유하기 → 그때 인스타·카톡·저장이 나온다.
+    //   '내 기록' 목록에서 부른 경우(dodge-rec-share)는 이미 지난 기록이라 그대로 보여준다.
+    const _gate = (hostId !== 'dodge-rec-share') && !(window.dodgeNickGet && window.dodgeNickGet());
+    host.style.display = _gate ? 'none' : '';
     window._mwKakaoPrep && window._mwKakaoPrep();   // 카톡용 공개 URL 미리 올려 둔다
     // 기록 안내 + 임시계정이면 하루 한 번 가입 권유(제한은 guestNudge 가 알아서 지킨다)
     if (hostId !== 'dodge-rec-share') {          // '내 기록' 목록에서 부른 경우엔 안 띄운다
@@ -12834,18 +12849,16 @@ window._dodgeRefreshKeep = function () {
       // ★이름부터. **계정을 안 만든다** — 공유 카드·도전장에 이름을 박으려는 것뿐이다.
       //   ★문구는 이 화면 것으로 쓴다. 스쿼드 시트의 '실명·참석 확인' 을 가져오지 말 것
       //     (대표 8-20: "UI만 비슷하게 하랬지 멘트까지 똑같이 하지 마라").
-      host.innerHTML = '<div style="font-size:12.5px;color:#fff;font-weight:800;margin-bottom:8px">뭐라고 부를까요?</div>'
-        + '<input id="dodge-nick-in" maxlength="12" placeholder="이름" autocomplete="off" '
+      host.innerHTML = '<div style="font-size:13px;color:#fff;font-weight:800;margin-bottom:9px">닉네임을 설정하고 공유해보세요</div>'
+        + '<input id="dodge-nick-in" maxlength="12" placeholder="닉네임" autocomplete="off" '
         + 'style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);'
         + 'border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px;color:#fff;'
         + 'font-size:14px;text-align:center;outline:none;font-family:inherit;margin-bottom:8px">'
-        + '<button onclick="window.dodgeNickSave()" style="' + btn + ';background:var(--accent);color:#fff">이 이름으로</button>'
-        + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:7px;line-height:1.6">'
-        + '자랑할 때 이 이름으로 올라가요 · 가입은 안 해도 돼요</div>';
+        + '<button onclick="window.dodgeNickSave()" style="' + btn + ';background:var(--accent);color:#fff">공유하기</button>';
       return;
     }
     host.innerHTML = '<button onclick="window.dodgeSaveRecord()" style="' + btn
-      + ';background:var(--accent);color:#fff">기록 남기고 랭킹 오르기</button>'
+      + ';background:var(--accent);color:#fff">기록 남기고 내 랭킹 확인하기</button>'
       + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:7px;line-height:1.6">'
       + '가입하면 이 점수가 그대로 남아요</div>';
     return;

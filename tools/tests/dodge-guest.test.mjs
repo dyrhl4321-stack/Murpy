@@ -237,5 +237,28 @@ const keep = grab(/window\._dodgeRefreshKeep = function[\s\S]*?\n\};/, '_dodgeRe
 //   적어두면 그것까지 잡혀서 테스트가 헛돈다.
 const keepCode = keep.split('\n').filter(l => !l.trim().startsWith('//')).join(' ');
 assert(!/실명|참석/.test(keepCode), '게임 화면에 스쿼드 문구(실명·참석)가 들어갔다');
-assert(/뭐라고 부를까요/.test(keep), '이름 묻는 칸이 없다');
 console.log('  + 계정 없는 이름·공유 반영 OK');
+
+// 26) ★이름을 정해야 공유 버튼이 열린다 (대표 8-20)
+//     이름 없이 공유하면 카드에도 도전장에도 이름이 안 박혀 고리가 끊긴다.
+//     순서를 화면으로 강제한다: 닉네임 → 공유하기 → 그때 인스타·카톡·저장이 나온다.
+const show3 = grab(/window\._dodgeShowShare = function[\s\S]*?\n\};/, '_dodgeShowShare');
+assert(/_gate = \(hostId !== 'dodge-rec-share'\) && !\(window\.dodgeNickGet/.test(show3),
+  '이름이 없어도 공유 버튼이 바로 뜬다');
+assert(/host\.style\.display = _gate \? 'none' : ''/.test(show3), '공유 버튼을 가리지 않는다');
+
+// 27) 이름을 저장하면 **그 이름으로 카드를 다시 만들고** 공유 버튼을 연다
+const save2 = grab(/window\.dodgeNickSave = function[\s\S]*?\n\};/, 'dodgeNickSave');
+assert(/_dodgeShowShare\(/.test(save2),
+  '이름을 정한 뒤 카드를 다시 안 만든다 → 방금 정한 이름이 카드에 안 박힌다');
+// ★다시 만들 때 쓰는 값이 **실제로 저장돼 있어야** 한다. 한 번 없는 변수를 불렀다가
+//   점수가 0 으로 다시 그려질 뻔했다.
+assert(/window\._dodgeLastScore = score;/.test(src), '방금 판의 점수를 안 남겨둔다');
+assert(/window\._dodgeLastSec = Math\.floor/.test(src), '방금 판의 시간을 안 남겨둔다');
+assert(/window\._dodgeLastLv = lv\.name;/.test(src), '방금 판의 난이도를 안 남겨둔다');
+
+// 28) 문구 (대표 8-20 지정)
+assert(/닉네임을 설정하고 공유해보세요/.test(keep), '이름 칸 머리글이 지정 문구가 아니다');
+assert(/>공유하기</.test(keep), "이름 저장 버튼이 '공유하기' 가 아니다");
+assert(/기록 남기고 내 랭킹 확인하기/.test(keep), '가입 버튼 문구가 지정 문구가 아니다');
+console.log('  + 이름 먼저·공유 열림 OK');
