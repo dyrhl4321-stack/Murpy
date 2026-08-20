@@ -801,6 +801,36 @@ window._SW_V = '636';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-rc-bub { width:max-content; max-width:100%; text-align:center; line-height:1.45; background:#fff; color:#10131c;
     border:2px solid #05070c; padding:2px 6px; font-size:9.5px; font-weight:600; margin-bottom:3px;
     font-family:'Galmuri11',sans-serif; }
+  /* ===== 같이 낙서 (3단계) + 벽에 걸리는 액자 =====
+     ★AI 에셋이 한 장도 안 든다. 32x32 도트를 정수배 NEAREST 로 키우면 우리 픽셀 규칙 그대로다.
+       판·팔레트·액자 전부 CSS 다 — 그래서 색을 늘려도 에셋 작업이 안 생긴다. */
+  #mw-jam { position:fixed; inset:0; height:100dvh; z-index:890; background:#05070c;
+    max-width:390px; margin:0 auto; display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }
+  #mw-jam .jam-wrap { position:relative; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1;
+    background:#f4f1ea; border:3px solid #05070c; box-shadow:0 0 0 3px #2b3350; touch-action:none }
+  #mw-jam canvas { display:block; width:100%; height:100%; image-rendering:pixelated }
+  /* 눈금 — 32칸이라 안 그리면 어디를 찍는지 감이 안 온다. 그림 자체는 안 건드린다(덮개). */
+  #mw-jam .jam-grid { position:absolute; inset:0; pointer-events:none; opacity:.13;
+    background-image:repeating-linear-gradient(to right,#05070c 0 1px,transparent 1px calc(100%/32)),
+                     repeating-linear-gradient(to bottom,#05070c 0 1px,transparent 1px calc(100%/32)) }
+  #mw-jam .jam-pal { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; padding:14px 16px 0 }
+  #mw-jam .jam-sw { aspect-ratio:1; border:3px solid #05070c; cursor:pointer; padding:0;
+    box-shadow:inset -2px -2px 0 rgba(0,0,0,.28), inset 2px 2px 0 rgba(255,255,255,.24) }
+  #mw-jam .jam-sw.on { box-shadow:0 0 0 3px #3D7EFF, inset -2px -2px 0 rgba(0,0,0,.28) }
+  /* 지우개 = 색이 아니라 '없음'이다. 색칩처럼 보이면 흰색과 헷갈린다(흰색도 팔레트에 있다). */
+  #mw-jam .jam-sw.era { background:#1b2233; color:#cfd6e6; font-size:9px; display:flex;
+    align-items:center; justify-content:center; font-family:'Galmuri11',sans-serif }
+  #mw-jam .jam-foot { padding:14px 16px; padding-bottom:max(14px, env(safe-area-inset-bottom));
+    display:flex; gap:8px }
+  #mw-jam .jam-hint { font-size:10.5px; color:#4a5266; text-align:center; padding:9px 16px 0; line-height:1.6 }
+  /* 벽에 걸린 액자. 방 배경 위·가구 아래(z 20)에 앉는다 — 가구로 가릴 수 있어야 자연스럽다. */
+  .mw-artframe { position:absolute; z-index:20; cursor:pointer; padding:7.5%;
+    background:#8B5E3C; border:3px solid #05070c; box-shadow:0 3px 0 rgba(0,0,0,.45);
+    -webkit-tap-highlight-color:transparent }
+  .mw-artframe img { display:block; width:100%; height:100%; image-rendering:pixelated; background:#f4f1ea }
+  .mw-artframe:active { transform:translateY(2px) }
+  #mw-artbig { position:fixed; inset:0; z-index:40030; display:flex; align-items:center;
+    justify-content:center; padding:26px; background:rgba(0,0,0,.86) }
   .mw-fieldchip { position:absolute; right:9px; top:9px; z-index:200; display:flex; align-items:center; gap:6px;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#cfd6e6; cursor:pointer; padding:8px 11px;
     background:rgba(13,19,34,.78); border:2px solid rgba(255,255,255,.2); -webkit-tap-highlight-color:transparent }
@@ -18060,6 +18090,26 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
   });
 };
 
+// ★방문 도장. c252e5f 에서 **부르기만 하고 만들지를 않았다** — 그래서 그날 이후로
+//   같이 찍기가 **한 번도 성공한 적이 없다.** 첫 .then 안에서 TypeError 가 나면 체인이 거부되고
+//   cb 가 영영 안 불려서 '사진 인화 중' 띄만 계속 띄 있었다(대표 8-20: "인화가 안 된다").
+//   모양은 앱의 .mw-inkstamp 와 같은 문법이다 — 붉은 이중 고리, -12도, 알파 .92.
+window._mwDrawSeal = function (x, cx, cy, ownerNick, n) {
+  const R = 78, C = '#E4472E';
+  x.save();
+  x.translate(cx, cy); x.rotate(-12 * Math.PI / 180); x.globalAlpha = 0.92;
+  x.strokeStyle = C; x.fillStyle = C; x.lineWidth = 7;
+  x.beginPath(); x.arc(0, 0, R, 0, Math.PI * 2); x.stroke();
+  x.lineWidth = 3.5;
+  x.beginPath(); x.arc(0, 0, R - 12, 0, Math.PI * 2); x.stroke();
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = "24px 'Galmuri11',sans-serif";  x.fillText('같이', 0, -30);
+  x.font = "38px 'Galmuri14','Galmuri11',sans-serif"; x.fillText(String(n) + '명', 0, 2);
+  const d = new Date();
+  x.font = "22px 'Galmuri11',sans-serif";  x.fillText((d.getMonth() + 1) + '.' + d.getDate(), 0, 36);
+  x.restore();
+  x.textBaseline = 'alphabetic';   // 아래 캐션이 이 값을 물려받으면 글자가 뜨다
+};
 window._mwRoomShotImg = function (list, ownerNick, cb) {
   const W = 1080, H = 1350;
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -18101,6 +18151,11 @@ window._mwRoomShotImg = function (list, ownerNick, cb) {
       x.drawImage(logo, 122, PY - 20 - lh + 9, lw, lh);
     }
     cb(cv.toDataURL('image/jpeg', 0.92));
+  }).catch(function (e) {
+    // ★한 줄만 터져도 사진이 영영 안 나오던 자리다(_mwDrawSeal 이 없어서 그랬다).
+    //   조용히 매달려 있지 말고 **반드시 끝낸다** — 부르는 쪽이 띄를 걷고 사람에게 말한다.
+    console.error('[room] 인화 실패', e);
+    cb(null);
   });
 };
 
@@ -18138,6 +18193,8 @@ window._mwRoomFlash = function (stage) {
 };
 // 찍는 순간의 방을 그대로 담는다. ★신호를 보낸 사람만이 아니라 **각자 자기 화면에서** 만든다 —
 //   그래야 넷이 다 카드를 갖고 각자 공유할 수 있다(고리가 4배가 된다).
+// 인화 텀 — 일부러 두는 기다림이다(대표 8-20). 이 숫자만 만지면 길이가 바뀜다.
+window.MW_DEV_MS = 10000;
 window._mwRoomCapture = function () {
   const all = window._mwRl.last || {};
   const owner = window._mwRl.owner;
@@ -18153,17 +18210,35 @@ window._mwRoomCapture = function () {
   // ★가리지 않는다. 얇은 띠만 띄우고 방으로 돌려보낸다 — 그동안 계속 논다.
   const strip = document.getElementById('mw-dev-strip');
   if (strip) strip.classList.add('on');
+  // ★인화는 **일부러 기다리게 한다** (대표 8-20). 카운트다운 동안 그림을 미리 받아두므로
+  //   실제 생성은 1초도 안 걸린다 — 찰칵 하자마자 카드가 튀어나오면 '인화'가 아니라 결과창이다.
+  //   필름이 나오는 맛이 있어야 폴라로이드가 선물로 읽힌다. 길이는 MW_DEV_MS 한 줄로 만진다.
+  const _t0 = Date.now();
+  // ★만드는 것 자체가 멈춰도 띄는 반드시 걷힌다. '인화 중'이 화면에 박제되는 것보다
+  //   실패했다고 말해주는 편이 낫다(대표 8-20: "주구장창 띄 있고 인화가 안 된다").
+  clearTimeout(window._mwDevT);
+  window._mwDevT = setTimeout(function () {
+    if (strip && strip.classList.contains('on')) {
+      strip.classList.remove('on');
+      showToast('사진을 만들지 못했어요 · 다시 찍어주세요');
+    }
+  }, window.MW_DEV_MS + 15000);
   window._mwRoomShotImg(list, ownerNick, function (data) {
-    if (strip) strip.classList.remove('on');
-    window._mwStampData = data;
-    window._mwShareMeta = {
-      title: ownerNick + '님의 머피룸에서 한 컷',
-      desc: '가입 없이 바로 들어와서 같이 놀아요',
-      btn: '방에 들어가기',
-      link: window._mwRoomLink(owner),
-    };
-    window._mwPolaShow(data, list.map(function (pl) { return pl.nick; }));
-    window._mwKakaoPrep && window._mwKakaoPrep();
+    const _wait = data ? Math.max(0, window.MW_DEV_MS - (Date.now() - _t0)) : 0;
+    setTimeout(function () {
+      clearTimeout(window._mwDevT);
+      if (strip) strip.classList.remove('on');
+      if (!data) { showToast('사진을 만들지 못했어요 · 다시 찍어주세요'); return; }
+      window._mwStampData = data;
+      window._mwShareMeta = {
+        title: ownerNick + '님의 머피룸에서 한 컷',
+        desc: '가입 없이 바로 들어와서 같이 놀아요',
+        btn: '방에 들어가기',
+        link: window._mwRoomLink(owner),
+      };
+      window._mwPolaShow(data, list.map(function (pl) { return pl.nick; }));
+      window._mwKakaoPrep && window._mwKakaoPrep();
+    }, _wait);
   });
 };
 // 인화된 사진이 툭 떨어진다. ★이건 '결과 보고'가 아니라 **깜짝 선물**이다 —
