@@ -11960,6 +11960,28 @@ window.dodgeMakeLink = function (nick, score) {
   if (nick) u += '&nick=' + encodeURIComponent(String(nick).slice(0, 12));
   return u;
 };
+// ---- 계정이 없는 동안의 **이름** ----
+// ★계정을 안 만들고 이름만 받는다 (대표 8-20 확정).
+//   닉네임을 **먼저** 받으면 링크 누른 사람이 아직 아무 이유가 없는 상태에서 입력창을 만난다 —
+//   바이럴에서 가장 비싼 이탈 지점이다. 그렇다고 이름이 없으면 공유 카드·도전장에 이름이
+//   안 박혀서 고리가 약하다("320점에 도전" vs "패수현님의 320점에 도전").
+//   → **한 판 끝난 뒤에, 계정 없이, 이름만** 받는다. 가입은 랭킹으로 따로 유도한다.
+window.DODGE_NICK_KEY = 'murpy_dodge_nick';
+// 지금 쓸 수 있는 이름. 정식 계정 닉네임이 있으면 그게 우선이다.
+window.dodgeNickGet = function () {
+  if (window._mwMyNick) return window._mwMyNick;
+  try { return String(localStorage.getItem(window.DODGE_NICK_KEY) || '').slice(0, 12); }
+  catch (e) { return ''; }
+};
+window.dodgeNickSave = function () {
+  const el = document.getElementById('dodge-nick-in'); if (!el) return;
+  const v = String(el.value || '').trim().slice(0, 12);
+  if (v.length < 2) { showToast('두 글자 이상으로 적어주세요'); return; }
+  try { localStorage.setItem(window.DODGE_NICK_KEY, v); } catch (e) {}
+  window._dodgeRefreshKeep && window._dodgeRefreshKeep();
+  showToast(v + ' 님으로 저장했어요');
+};
+
 // ---- 계정이 없는 동안의 점수 보관 ----
 // ★Firestore 의 users/{uid}.games.dodge 와 **같은 모양**으로 들고 있는다.
 //   모양이 다르면 계정이 생겼을 때 변환하다 어긋난다.
@@ -12634,7 +12656,9 @@ window._dodgeCardImg = function (score, sec, lvName, cb) {
     x.fillStyle = g; x.fillRect(0, 0, W, H);
 
     x.textAlign = 'center';
-    const nick = window._mwMyNick || (window.currentUser && window.currentUser.nickname) || '';
+    // 계정이 없으면 게임에서 받아둔 이름을 쓴다(없으면 빈 값 — 카드에 이름 줄이 안 그려진다)
+    const nick = (window.dodgeNickGet && window.dodgeNickGet())
+      || window._mwMyNick || (window.currentUser && window.currentUser.nickname) || '';
     let y = H - 500;
     if (nick) {
       x.font = "42px 'Galmuri11',sans-serif"; x.fillStyle = 'rgba(255,255,255,.72)';
@@ -12682,7 +12706,7 @@ window._dodgeShowShare = function (score, sec, lvName, hostId) {
       btn: '나도 해보기',
       // ★이게 없으면 mwShareKakao 가 기본값(홈)으로 떨어진다 — 받은 사람이 게임에 못 닿는다.
       //   머피월드 → 헬스장 필드까지 찾아가야 해서 사실상 아무도 안 온다(대표 8-20).
-      link: window.dodgeMakeLink(window._mwMyNick || '', score),
+      link: window.dodgeMakeLink(window.dodgeNickGet ? window.dodgeNickGet() : '', score),
     };
     host.innerHTML = '<div class="mw-share-lbl" style="text-align:center;margin:6px 3px 9px">내 기록 자랑하기</div>'
       + '<div class="mw-share">'
@@ -12793,8 +12817,22 @@ window._dodgeRefreshKeep = function () {
   const btn = 'width:100%;border:none;border-radius:12px;padding:13px;font-size:13.5px;'
     + 'font-weight:800;cursor:pointer;font-family:inherit';
   if (!u || u.isAnonymous) {
-    // 계정이 없거나 임시계정 — 둘 다 **정식 가입**으로 보낸다(대표 8-20).
     host.style.display = '';
+    const nick = window.dodgeNickGet();
+    if (!nick) {
+      // ★이름부터. **계정을 안 만든다** — 공유 카드·도전장에 이름을 박으려는 것뿐이다.
+      //   ★문구는 이 화면 것으로 쓴다. 스쿼드 시트의 '실명·참석 확인' 을 가져오지 말 것
+      //     (대표 8-20: "UI만 비슷하게 하랬지 멘트까지 똑같이 하지 마라").
+      host.innerHTML = '<div style="font-size:12.5px;color:#fff;font-weight:800;margin-bottom:8px">뭐라고 부를까요?</div>'
+        + '<input id="dodge-nick-in" maxlength="12" placeholder="이름" autocomplete="off" '
+        + 'style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);'
+        + 'border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px;color:#fff;'
+        + 'font-size:14px;text-align:center;outline:none;font-family:inherit;margin-bottom:8px">'
+        + '<button onclick="window.dodgeNickSave()" style="' + btn + ';background:var(--accent);color:#fff">이 이름으로</button>'
+        + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:7px;line-height:1.6">'
+        + '자랑할 때 이 이름으로 올라가요 · 가입은 안 해도 돼요</div>';
+      return;
+    }
     host.innerHTML = '<button onclick="window.dodgeSaveRecord()" style="' + btn
       + ';background:var(--accent);color:#fff">기록 남기고 랭킹 오르기</button>'
       + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:7px;line-height:1.6">'
@@ -12810,7 +12848,7 @@ window._dodgeRefreshKeep = function () {
 // ★네이티브(앱스토어)로 가도 이 버튼은 남는다 — instagram-stories:// 로 스토리를 바로 열 수는
 //   있지만 링크 자동 첨부는 메타 승인 파트너만 된다고 알려져 있다.
 window.dodgeShareIG = function (score) {
-  const url = window.dodgeMakeLink(window._mwMyNick || '', score || 0);
+  const url = window.dodgeMakeLink(window.dodgeNickGet ? window.dodgeNickGet() : '', score || 0);
   const go = function () {
     showToast('링크도 복사했어요 · 스토리에 붙여넣으세요');
     window.mwShareSheet && window.mwShareSheet();
