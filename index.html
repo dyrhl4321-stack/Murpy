@@ -4070,6 +4070,9 @@ window._charWalkable = function (tc, tr) {
   if (tr < 0 || tc < 0 || tr >= f.map.length || tc >= f.map[0].length) return false;
   if (f.map[tr][tc] === '#') return false;
   if (window._curField === 'home' && window._mwBlocked.has(tr * 16 + tc)) return false;   // 가구 발자국
+  // ★같이 있는 사람도 막는다 (대표 8-20). 가구는 막는데 사람은 통과하면 겹쳐 서서
+  //   누가 누군지 안 보인다. 내 칸은 여기 없다(_mwRlRender 가 나를 뺀다).
+  if (window._curField === 'home' && window._mwRlTiles && window._mwRlTiles.has(tr * 16 + tc)) return false;
   return true;
 };
 // 갇힘 해소: 가구에 깔린 칸(자기 위에 가구 배치 등)에 있으면 가장 가까운 빈 칸으로 밀어낸다.
@@ -17065,6 +17068,7 @@ window._mwRlLeave = function () {
   window._mwRl = { owner: null, unsub: null, chars: {}, cap: false, msg: null, shot: null, last: null };
   const bar = document.getElementById('mw-roomchat'); if (bar) bar.style.display = 'none';
   const sc = document.getElementById('mw-shot-chip'); if (sc) sc.remove();
+  window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
 };
 window._mwRlSend = function () {
   const R = window._rt, u = auth.currentUser;
@@ -17108,10 +17112,12 @@ window._mwRlRender = function (all) {
   const g = window._charTileGeom ? window._charTileGeom() : { N: 16, t: (room.clientWidth || 320) / 16 };
   const t = g.t, DH = Math.round(t * 3.3);
   const chars = window._mwRl.chars, seen = {};
+  const tiles = new Set();                    // 남들이 선 칸 → 걸어 들어가지 못하게
   Object.keys(all).forEach(function (uid) {
     const v = all[uid];
     if (uid === me || !window._mwRoomAlive(v)) return;
     seen[uid] = 1;
+    tiles.add(v.tr * 16 + v.tc);
     let c = chars[uid];
     if (!c || !c.el.isConnected) {
       const el = document.createElement('div');
@@ -17156,6 +17162,11 @@ window._mwRlRender = function (all) {
     if (seen[uid]) return;
     chars[uid].el.remove(); delete chars[uid];
   });
+  window._mwRlTiles = tiles;
+  // ★남이 내 자리로 먼저 들어와 겹쳤으면 밀려난다. 안 그러면 둘이 한 칸에 포개진 채
+  //   서로 상대 칸이라 못 움직이는 상태가 된다(기존 _mwUnstick 이 빈 칸을 찾아준다).
+  const mp = window._charPos;
+  if (mp && tiles.has(mp.tr * 16 + mp.tc) && window._mwUnstick) window._mwUnstick();
   // 채팅 바 · 같이 찍기 — 같이 있는 사람이 있을 때만
   const together = !!Object.keys(seen).length && !!auth.currentUser && !window._mwRl.cap;
   const bar = document.getElementById('mw-roomchat');
