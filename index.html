@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '642';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '643';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '642';
+window._SW_V = '643';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -17620,7 +17620,7 @@ window._mwRoomCardImg = function (nick, cb) {
   x.restore();
   // 내 저장 좌표에 내 캐릭터를 세운다(방을 열지 않아도 카드가 만들어져야 한다)
   const rp = window._myRoomPos || { tc: 7, tr: 8, face: 'down' };
-  const me = [{ nick: nick, character: window.getMyCharacter ? window.getMyCharacter() : null,
+  const me = [{ nick: nick, character: window.getMyCharacter ? window.getMyCharacter() : null, face: rp.face || 'down',
                 x: (rp.tc + 0.5) / 16 * 100, y: (Math.max(3, rp.tr) + 1) / 16 * 100 }];
   window._mwDrawRoom(x, SX, SY, S, window._myRoom, me).then(function () {
     x.textAlign = 'center';
@@ -17815,7 +17815,7 @@ window.MW_ROOM_MSG_MS = 15000;
 window.MW_SHOT_MSG_MS = 90000;
 window.mwRoomCountdownMs = 3200;
 window.MW_ROOM_MOVE_MS = 160;       // 가벼운 위치 패킷 주기. 체감 지연과 쓰기량의 균형점
-window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
+window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: null, msg: null, shot: null, last: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
 
 // RTDB는 한 사람의 한 칸 이동도 players 전체 스냅샷으로 알려준다. 여러 명이 움직일 때마다
 // 곧바로 전원을 다시 그리지 않고, 화면 한 프레임에 한 번만 최신 상태를 그린다.
@@ -18038,12 +18038,17 @@ window._mwRlJoin = function (ownerUid) {
   });
   window._mwRl.unsubK = function () { try { unsubK(); } catch (e) {} };
   // 정원은 **들어가기 전에 한 번만** 본다. 계속 감시하면 남이 잠깐 깜빡일 때 나를 튕겨낸다.
+  // ★필드에 남겨 둔 오프라인 캐릭터는 정원을 차지하지 않는다. 예전에는 12시간 보존 노드까지
+  //   _mwRoomAlive 로 세서, 실제로는 빈자리가 있어도 어떤 날은 촬영 가능·어떤 날은 구경 전용이 됐다.
+  //   입장·촬영 권한은 지금 접속 중인 사람(_mwRoomOnline)만 기준으로 한 번 확정한다.
+  window._mwRl.cap = null;
   R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
-    const live = Object.keys(all).filter(function (k) { return k !== u.uid && window._mwRoomAlive(all[k]); });
-    window._mwRl.cap = live.length >= window.MW_ROOM_CAP;
+    const online = Object.keys(all).filter(function (k) { return k !== u.uid && window._mwRoomOnline(all[k]); });
+    window._mwRl.cap = online.length >= window.MW_ROOM_CAP;
     if (window._mwRl.cap) showToast(window.MW_ROOM_CAP + '명이 이미 놀고 있어요 · 구경만 할 수 있어요');
     else window._mwRlSend();
+    window._mwShotBtnSync && window._mwShotBtnSync();
   }, { onlyOnce: true });
 };
 window._mwRlLeave = function () {
@@ -18060,14 +18065,14 @@ window._mwRlLeave = function () {
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
+  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: null, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
 };
 window._mwRlSend = function (mode) {
   const R = window._rt, u = auth.currentUser;
-  if (!R || !u || !window._mwRl.ref || window._mwRl.cap) return;
+  if (!R || !u || !window._mwRl.ref || window._mwRl.cap !== false) return;
   const p = window._charPos || { tc: 7, tr: 8, face: 'down' };
   const meta = {
     nick: window._mwMyNick || '머피',
@@ -18537,13 +18542,15 @@ window._mwLoadCharSheets = function (cfg) {
 };
 // ★시트는 3열x4행이고 1행(0)이 정면이다. 칸 크기는 **그림에서 재서** 쓴다 —
 //   141x224 로 못 박으면 나중에 2배 시트가 들어왔을 때 조용히 어긋난다.
-window._mwPaintChar = function (x, imgs, cx, footY, h) {
+window._mwPaintChar = function (x, imgs, cx, footY, h, face) {
   x.imageSmoothingEnabled = false;                 // 픽셀은 뭉개지 않는다
+  // 앱 필드와 같은 4방향 행을 쓴다: 아래0 / 위1 / 왼쪽2 / 오른쪽3.
+  const row = face === 'up' ? 1 : (face === 'left' ? 2 : (face === 'right' ? 3 : 0));
   (imgs || []).forEach(function (im) {
     if (!im || !im.naturalWidth) return;
     const cw = im.naturalWidth / 3, ch = im.naturalHeight / 4;
     const w = h * cw / ch;
-    x.drawImage(im, 0, 0, cw, ch, cx - w / 2, footY - h, w, h);
+    x.drawImage(im, 0, row * ch, cw, ch, cx - w / 2, footY - h, w, h);
   });
 };
 
@@ -18699,7 +18706,7 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
         window._mwPaintAur(x, aurB, px0, py0, cwp, false);
       } });
       paint.push({ z: zc + 5, fn: function () {
-        window._mwPaintChar(x, sheets[i], px0, py0, hpx);
+        window._mwPaintChar(x, sheets[i], px0, py0, hpx, pl.face);
       } });
       if (pl.aura) paint.push({ z: zc + 6, fn: function () {          // 앞겹 = 발 앞
         window._mwPaintAur(x, aurF, px0, py0, cwp, true);
@@ -18878,7 +18885,9 @@ window.MW_DEV_MS = 10000;
 window._mwRoomCapture = function () {
   const all = window._mwRl.last || {};
   const owner = window._mwRl.owner;
-  const uids = Object.keys(all).filter(function (k) { return window._mwRoomAlive(all[k]); });
+  // 같이 찍기는 필드에 보존된 잠수 캐릭터가 아니라, 촬영 순간 실제 접속 중인 사람만 담는다.
+  // 정원 판정과 같은 기준이어야 촬영을 누른 본인이 사진에서 밀려나는 일이 없다.
+  const uids = Object.keys(all).filter(function (k) { return window._mwRoomOnline(all[k]); });
   uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
   const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
@@ -18892,7 +18901,7 @@ window._mwRoomCapture = function () {
     //   남의 값이 그대로 파일명에 들어가는 자리라 화이트리스트를 반드시 거쳐야 한다.
     const _aur = window._mwAurOf ? window._mwAurOf(k, all[k].aura) : '';
     return { nick: all[k].nick, character: all[k].character, guest: !!all[k].guest, say: _say, aura: _aur,
-             x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
+             face: all[k].face || 'down', x: (all[k].tc + 0.5) / 16 * 100, y: (all[k].tr + 1) / 16 * 100 };
   });
   const ownerNick = (all[owner] && all[owner].nick) || '머피';
   // ★가리지 않는다. 얇은 띠만 띄우고 방으로 돌려보낸다 — 그동안 계속 논다.
@@ -18984,6 +18993,7 @@ window._mwShotArm = function (atSrv) {
 };
 window.mwRoomShot = function () {
   if (!auth.currentUser) { window.memberGate && window.memberGate('같이 찍으려면 로그인이 필요해요'); return; }
+  if (window._mwRl.cap === null) { showToast('입장 확인 중이에요 · 잠시만요'); return; }
   if (window._mwRl.cap) { showToast('구경 중에는 못 찍어요'); return; }
   const left = window._mwShotUntil - Date.now();
   if (left > 0) { showToast('필름이 나오는 중이에요 · ' + Math.ceil(left / 1000) + '초 뒤에 다시'); return; }
