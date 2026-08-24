@@ -85,6 +85,7 @@ FLOOR_BAND = 0.94        # 발 중심 계산용 바닥 밴드(아래에서 6%)
 PAD = 2                  # 셀 여백
 # 테두리 색 — 앉은 공룡 실루엣 한 겹의 실측 최빈색(63%가 이 계열 남색)
 OUTLINE = np.array([11, 34, 52], np.uint8)
+ALPHA_T = 96             # 알파 이진화 문턱. 128 이면 원본 테두리가 깎인다
 
 
 def key_frames(path, thr):
@@ -139,6 +140,27 @@ def foot_center(im):
     return (xs[0] + xs[-1] + 1) / 2.0
 
 
+def head_center(im):
+    """머리 한가운데의 x.
+
+    ★가로 정렬을 이걸로 바꿔 봤다가 되돌렸다(8-24). 발 중심일 때 머리 흔들림이 5px 였는데
+      머리 중심으로 맞추니 8px 로 더 나빠졌다 — 셀 높이가 프레임마다 달라 머리 밴드가
+      다른 자리를 재기 때문이다. 남겨 두는 건 다음에 또 시도하지 않기 위해서다.
+
+    ★발 중심으로 맞추면 컷마다 머리가 좌우로 흔들린다(실측 5px). 걷는 그림은 다리가 움직이니
+      발 위치가 컷마다 다른 게 당연한데, 그걸 기준으로 삼으면 그 흔들림이 몸통·머리로 옮겨간다.
+      걷기는 **머리가 제자리에 있고 다리가 움직여야** 맞다.
+    """
+    a = np.asarray(im.convert('RGBA'))[..., 3] > 100
+    rows = np.where(a.any(1))[0]
+    y0, y1 = rows[0], rows[-1]
+    band = a[y0:y0 + int((y1 - y0) * HEAD_TOP) + 1]
+    xs = np.where(band.any(0))[0]
+    if not len(xs):
+        return im.width / 2.0
+    return (xs[0] + xs[-1] + 1) / 2.0
+
+
 def scale_to(im, factor):
     """프리멀티플라이드 LANCZOS 축소 (검은 테두리 방지)."""
     return resize_to(im, max(1, int(round(im.width * factor))),
@@ -155,11 +177,28 @@ def resize_to(im, w, h):
     return Image.fromarray(np.concatenate([rgb, sm[..., 3:4]], -1).astype(np.uint8))
 
 
+MERGE_D = 30             # 이 거리 안의 색은 같은 색으로 본다
+
+
 def ref_palette():
-    """앉은 공룡(앱에 이미 있는 것)의 팔레트. 걷기를 여기에 스냅해 색을 통일한다."""
+    """앉은 공룡의 팔레트 — **비슷한 색을 합쳐서** 돌려준다.
+
+    ★원본 22색을 그대로 쓰면 걸을 때 화면이 필름처럼 떨린다(대표 지적).
+      걷기 3컷은 각각 따로 생성된 그림이라 음영이 미세하게 다른데, 22색이 너무 촘촘해서
+      그 미세한 차이가 컷마다 **다른 색으로 갈린다**(실측: 겹치는 자리의 53~64%가 컷마다 바뀜).
+      실제로 22색 중 (144,218,169)·(144,219,170)·(145,219,170)·(149,222,171) 처럼
+      눈으로 구분이 안 되는 것이 여럿이다. 합치면 그 차이가 같은 색으로 내려앉는다.
+    """
     a = np.asarray(Image.open(SITTING).convert('RGBA'))
-    pal = np.unique(a[..., :3][a[..., 3] >= 128].reshape(-1, 3), axis=0)
-    return pal.astype(np.int16)
+    px = a[..., :3][a[..., 3] >= 128].reshape(-1, 3)
+    cols, cnt = np.unique(px, axis=0, return_counts=True)
+    order = np.argsort(-cnt)                       # 많이 쓰인 색이 대표가 된다
+    keep = []
+    for i in order:
+        c = cols[i].astype(np.int32)
+        if all(((c - k) ** 2).sum() > MERGE_D * MERGE_D for k in keep):
+            keep.append(c)
+    return np.array(keep, np.int16)
 
 
 def pixelate(im, cell, pal, outline=OUTLINE):
@@ -171,7 +210,6 @@ def pixelate(im, cell, pal, outline=OUTLINE):
     aw = max(1, int(round(im.width / cell)))
     ah = max(1, int(round(im.height / cell)))
     small = np.asarray(resize_to(im, aw, ah)).astype(np.int32)
-    solid = small[..., 3] >= 128
 
     # 각 픽셀을 가장 가까운 기준색으로. 프레임마다 팔레트를 새로 뽑으면 색이 깜빡인다.
     # ★int32 로 올려서 뺀다 — int16 이면 차이의 제곱(최대 65025)이 넘쳐 음수가 되고
@@ -179,16 +217,42 @@ def pixelate(im, cell, pal, outline=OUTLINE):
     d = ((small[..., None, :3] - pal[None, None, :, :].astype(np.int32)) ** 2).sum(-1)
     rgb = pal[d.argmin(-1)].astype(np.uint8)
 
-    # ★테두리 복원 (주석 9번). 실루엣을 한 칸 넓히고 그 새 겹을 테두리 색으로 칠한다.
-    #   축소 과정에서 원본의 검은 테두리가 투명과 섞여 알파 128 밑으로 떨어져 통째로 깎였다.
-    #   안쪽을 깎으면 몸이 작아지므로 **바깥으로** 넓힌다 — 잃은 선이 원래 자리로 돌아온다.
-    grown = ndimage.binary_dilation(solid, np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], bool))
-    ring = grown & ~solid
-    rgb[ring] = outline
-    alpha = np.where(grown, 255, 0).astype(np.uint8)
+    # ★테두리는 **덧그리지 않는다**. 예전엔 실루엣을 한 칸 넓혀 테두리 색으로 칠했는데,
+    #   원본 테두리가 살아남은 자리에는 두 겹이 되어 걸을 때만 선이 확 두꺼워졌다(대표 지적).
+    #   대신 알파 문턱을 낮춰 **원본의 검은 테두리가 그대로 살아남게** 한다. 축소 과정에서
+    #   테두리가 투명과 섞여 알파가 떨어지는데, 128 로 자르면 그 겹이 통째로 깎였다.
+    alpha = np.where(small[..., 3] >= ALPHA_T, 255, 0).astype(np.uint8)
 
     out = Image.fromarray(np.dstack([rgb, alpha]))
     return out.resize((aw * cell, ah * cell), Image.NEAREST)
+
+
+def temporal_mode(frames):
+    """한 방향 3컷의 색을 **다수결로 모은다**.
+
+    ★걷는데 머리 색이 컷마다 38~49% 바뀌고 있었다(실측). 다리는 실제로 움직이니 바뀌는 게
+      맞지만 머리는 바뀔 이유가 없다 — AI 가 컷마다 얼굴을 조금씩 다르게 그린 것이다.
+      그대로 두면 옛날 필름처럼 점이 섞여 보인다(대표 지적 8-24).
+    세 컷 모두 불투명한 자리에서 **둘 이상이 같은 색이면 그 색으로 통일**한다.
+    셋 다 다르면 원래 색을 둔다(진짜로 움직이는 부분이다).
+    이 저장소가 이미 쓰던 규칙과 같은 방향이다 — animate_dino.py 는 아예 얼굴을 리샘플하지 않는다.
+    """
+    if len(frames) < 3:
+        return frames
+    h = min(f.height for f in frames)
+    w = min(f.width for f in frames)
+    arr = [np.asarray(f.convert('RGBA'))[:h, :w].copy() for f in frames]
+    solid = np.ones((h, w), bool)
+    for a in arr:
+        solid &= a[..., 3] >= 128
+    same01 = (arr[0][..., :3] == arr[1][..., :3]).all(-1)
+    same12 = (arr[1][..., :3] == arr[2][..., :3]).all(-1)
+    same02 = (arr[0][..., :3] == arr[2][..., :3]).all(-1)
+    for i, pair in enumerate([(same12, 1), (same02, 0), (same01, 0)]):
+        agree, src = pair
+        m = solid & agree                       # 나머지 둘이 합의한 자리
+        arr[i][..., :3][m] = arr[src][..., :3][m]
+    return [Image.fromarray(a) for a in arr]
 
 
 def idle_frames():
@@ -213,9 +277,15 @@ def build(side_mode, pixel=2):
         if len(frames) != 3:
             raise SystemExit('%s 프레임이 %d개입니다(3개여야 함). 워터마크가 섞였는지 확인하세요.'
                              % (key, len(frames)))
-        scaled = [scale_to(f, ref_head / head_width(f)) for f in frames]
-        hs = sorted(f.height for f in scaled)
-        print('  %-5s 머리 정규화 후 높이 %s (중앙값 %d)' % (key, [f.height for f in scaled], hs[1]))
+        # ★배율은 **방향마다 하나**다. 프레임마다 따로 계산하면 배율이 미세하게 달라(0.0970 vs
+        #   0.0963) 축소할 때 픽셀 격자가 프레임마다 다른 자리에 떨어진다. 그러면 몸 안쪽 무늬가
+        #   컷마다 기어다녀서 **옛날 필름처럼 점이 섞여 보인다**(대표 지적 8-24).
+        #   프레임 간 색 변화 실측: 프레임별 배율 38~50% -> 방향별 한 배율 로 내려간다.
+        hw = sorted(head_width(f) for f in frames)[len(frames) // 2]      # 머리 폭 중앙값
+        fac = ref_head / hw
+        scaled = [scale_to(f, fac) for f in frames]
+        print('  %-5s 배율 %.4f (머리폭 중앙값 %d) -> 높이 %s'
+              % (key, fac, hw, [f.height for f in scaled]))
         norm[key] = scaled
 
     # 2) 측면 보정 (주석 4번)
@@ -235,7 +305,7 @@ def build(side_mode, pixel=2):
         pal = ref_palette()
         print('팔레트 %d색을 앉은 공룡에서 가져와 걷기에 강제한다 (아트픽셀 %d)' % (len(pal), pixel))
         for k in norm:
-            norm[k] = [pixelate(f, pixel, pal) for f in norm[k]]
+            norm[k] = temporal_mode([pixelate(f, pixel, pal) for f in norm[k]])
 
     # 3) 행 구성 — 앞·좌·뒤·우. 좌향은 측면을 좌우반전(대표 지시)
     rows = [
