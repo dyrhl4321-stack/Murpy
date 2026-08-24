@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '668';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '669';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3815,12 +3815,18 @@ window._mwPetSpots = function (want) {
     if (!ok) continue;
     // 올라간 자리 = 스프라이트 위쪽(상판). 바닥에 놓인 밥그릇은 밑변 그대로.
     var y = (want === 'perch') ? (it.y + def.h * 0.30) : (it.y + def.h - 1);
-    out.push({
-      idx: i,
-      tc: Math.max(0, Math.min(15, Math.floor((it.x + def.w / 2) / 48))),
-      tr: Math.max(0, Math.min(15, Math.floor(y / 48))),
-      up: want === 'perch'
-    });
+    var tc = Math.max(0, Math.min(15, Math.floor((it.x + def.w / 2) / 48)));
+    var tr = Math.max(0, Math.min(15, Math.floor(y / 48)));
+    // ★밥그릇은 그릇 칸이 아니라 **바로 윗칸**에 서서 아래를 보고 먹는다.
+    //   그릇 칸에 서면 펫 몸이 그릇을 덮어 허공에서 먹는 것처럼 보인다(대표 지적 8-24).
+    //   먹는 그림은 4방향 다 있으므로(앞·좌·뒤·우) 얼굴이 보이는 '앞'으로 고정한다.
+    if (want === 'bowl') {
+      var up1 = tr - 1;
+      if (up1 >= 0 && window._charWalkable && window._charWalkable(tc, up1)) tr = up1;
+      out.push({ idx: i, tc: tc, tr: tr, up: false, dir: 0 });
+      continue;
+    }
+    out.push({ idx: i, tc: tc, tr: tr, up: want === 'perch' });
   }
   return out;
 };
@@ -3842,7 +3848,11 @@ window._mwPetGoto = function (spot, thenAnim) {
   var p = window._mwPet, el = document.getElementById('mw-pet');
   if (!p || !el || !spot) return false;
   var dc = spot.tc - p.tc, dr = spot.tr - p.tr;
-  if (!dc && !dr) { p.up = !!spot.up; window._mwPetApply(); window._mwPetPlay(thenAnim, null); return true; }
+  if (!dc && !dr) {
+    p.up = !!spot.up; window._mwPetApply();
+    window._mwPetPlay(thenAnim, (spot.dir != null) ? spot.dir : null);
+    return true;
+  }
   // ★멀면 그 방향으로 **한 칸만** 간다. 직행하면 중간 칸을 안 봐서 가구를 뚫는다.
   //   마지막 한 칸일 때만 목적지(가구 위)로 올라선다.
   // ★막히면 **돌아간다.** 예전엔 두 방향만 보고 막히면 그대로 멈춰서, 위로 올라가려는데
@@ -3874,9 +3884,10 @@ window._mwPetGoto = function (spot, thenAnim) {
   window._mwPetPlay('walk', dir);
   window._mwPetApply();
   clearTimeout(p._t);
+  var _endDir = (spot && spot.dir != null) ? spot.dir : null;
   p._t = setTimeout(function () {
     p.moving = false;
-    window._mwPetPlay(thenAnim, null);
+    window._mwPetPlay(thenAnim, _endDir);
   }, ms);
   return true;
 };
