@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """아기 공룡 펫 시트를 만든다 — 둥가둥가(대기) + 4방향 걷기.
 
-    python char/build_dino_walk.py                 # 기본(측면 키 맞춤)
+    python char/build_dino_walk.py                 # 기본(측면 절충 = 대표 확정)
     python char/build_dino_walk.py --side-mode head
     python char/build_dino_walk.py --variants      # 미리보기용 3종 동시 출력
 
@@ -31,9 +31,9 @@
 4. **측면만 몸이 5~9% 길다.** 머리 폭을 맞추면 정면·뒷면은 높이 104(기존 앉은 공룡과 일치)
    인데 측면은 110~113 이 된다. 꼬리가 처져서가 아니다 — 바닥에 닿은 건 두 발이 맞고
    (실측: x 27~50%, 65~91%) 몸 자체가 길게 그려졌다. 그래서 측면에만 보정 배율을 건다.
-     --side-mode height : 정면과 키를 맞춘다(기본). 머리가 8% 작아지지만 5px 라 안 보인다
+     --side-mode mid    : 절충 — **대표 확정(8-24)**. 키·머리 오차를 반씩 나눈다
+     --side-mode height : 정면과 키를 맞춘다. 머리가 8% 작아진다
      --side-mode head   : 머리를 맞춘다. 대신 옆을 보면 몸이 9px 커진다
-     --side-mode mid    : 절충
 
 5. **가로 정렬은 bbox 중심이 아니라 발 중심**이다. 측면은 꼬리가 한쪽으로 뻗어서 bbox 중심을
    쓰면 몸이 타일 밖으로 밀린다. 앱이 캐릭터를 '발끝을 타일 바닥 중앙에' 놓는 것과 같은 규칙.
@@ -83,6 +83,8 @@ HEAD_TOP = 0.42          # 머리 판정 = 콘텐츠 상단 이 비율
 MIN_PART = 0.10          # 최대 덩어리의 이 비율 미만은 버린다(워터마크 제거)
 FLOOR_BAND = 0.94        # 발 중심 계산용 바닥 밴드(아래에서 6%)
 PAD = 2                  # 셀 여백
+# 테두리 색 — 앉은 공룡 실루엣 한 겹의 실측 최빈색(63%가 이 계열 남색)
+OUTLINE = np.array([11, 34, 52], np.uint8)
 
 
 def key_frames(path, thr):
@@ -160,8 +162,8 @@ def ref_palette():
     return pal.astype(np.int16)
 
 
-def pixelate(im, cell, pal):
-    """저퀄 픽셀화 — extract_season_item.py --pixel 과 같은 처리 + 팔레트 고정.
+def pixelate(im, cell, pal, outline=OUTLINE):
+    """저퀄 픽셀화 — extract_season_item.py --pixel 과 같은 처리 + 팔레트 고정 + 테두리 복원.
 
     아트격자로 줄였다가 NEAREST 로 되키운다(1아트픽셀 = cell 유닛).
     알파는 이진화하고(픽셀아트엔 반투명 가장자리가 없다), 색은 기준 팔레트로 스냅한다.
@@ -169,13 +171,23 @@ def pixelate(im, cell, pal):
     aw = max(1, int(round(im.width / cell)))
     ah = max(1, int(round(im.height / cell)))
     small = np.asarray(resize_to(im, aw, ah)).astype(np.int32)
-    alpha = np.where(small[..., 3] >= 128, 255, 0).astype(np.uint8)
+    solid = small[..., 3] >= 128
+
     # 각 픽셀을 가장 가까운 기준색으로. 프레임마다 팔레트를 새로 뽑으면 색이 깜빡인다.
     # ★int32 로 올려서 뺀다 — int16 이면 차이의 제곱(최대 65025)이 넘쳐 음수가 되고
     #   argmin 이 엉뚱한 색을 고른다(배가 까매지고 테두리가 밝아졌다).
     d = ((small[..., None, :3] - pal[None, None, :, :].astype(np.int32)) ** 2).sum(-1)
-    snapped = pal[d.argmin(-1)].astype(np.uint8)
-    out = Image.fromarray(np.dstack([snapped, alpha]))
+    rgb = pal[d.argmin(-1)].astype(np.uint8)
+
+    # ★테두리 복원 (주석 9번). 실루엣을 한 칸 넓히고 그 새 겹을 테두리 색으로 칠한다.
+    #   축소 과정에서 원본의 검은 테두리가 투명과 섞여 알파 128 밑으로 떨어져 통째로 깎였다.
+    #   안쪽을 깎으면 몸이 작아지므로 **바깥으로** 넓힌다 — 잃은 선이 원래 자리로 돌아온다.
+    grown = ndimage.binary_dilation(solid, np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], bool))
+    ring = grown & ~solid
+    rgb[ring] = outline
+    alpha = np.where(grown, 255, 0).astype(np.uint8)
+
+    out = Image.fromarray(np.dstack([rgb, alpha]))
     return out.resize((aw * cell, ah * cell), Image.NEAREST)
 
 
@@ -258,8 +270,8 @@ def build(side_mode, pixel=2):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--side-mode', default='height', choices=['height', 'mid', 'head'],
-                    help='측면 보정 방식 (기본 height = 정면과 키 맞춤)')
+    ap.add_argument('--side-mode', default='mid', choices=['height', 'mid', 'head'],
+                    help='측면 보정 방식 (대표 확정: mid = 절충)')
     ap.add_argument('--pixel', type=int, default=2,
                     help='아트픽셀 크기(기존 공룡과 같은 저퀄 픽셀화). 0=끔')
     ap.add_argument('--variants', action='store_true', help='미리보기용 3종을 함께 출력')
