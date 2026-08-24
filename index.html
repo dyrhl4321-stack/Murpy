@@ -11189,7 +11189,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '652';
+window._SW_V = '653';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -18284,12 +18284,31 @@ window.mwRoomCall = async function (btn, uid, nick) {
   btn.classList.add('done'); btn.textContent = '부르는 중';
   try {
     const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
-    await setDoc(doc(db, 'notifications', 'ri_' + uid + '_' + me.uid + '_' + mwTodayKey()), {
+    const ref = doc(db, 'notifications', 'ri_' + uid + '_' + me.uid + '_' + mwTodayKey());
+    // ★★이미 있으면 **푸시가 안 간다.** 서버는 문서가 새로 생길 때만 쏘는데(onDocumentCreated),
+    //   setDoc 은 덮어쓰기라 두 번째부터는 조용하다. 그걸 '불렀어요'로 말하면 거짓말이 된다
+    //   (대표 8-24: "초대가 푸시로 안 간 듯"). 같은 id 는 노크 수락도 쓴다 — 오늘 노크를
+    //   받아준 사람을 다시 부르면 이 경우가 된다.
+    const prev = await getDoc(ref).catch(function () { return null; });
+    if (prev && prev.exists()) {
+      btn.textContent = '이미 불렀어요';
+      showToast((nick || '머피') + '님은 오늘 이미 불렀어요 · 알림은 하루 한 번만 가요');
+      return;
+    }
+    await setDoc(ref, {
       toUid: uid, fromUid: me.uid, fromNickname: myNick, type: 'room_invite',
       read: false, createdAt: serverTimestamp()
     });
     btn.textContent = '불렀어요';
-    showToast((nick || '머피') + '님을 불렀어요');
+    // ★알림을 안 켜둔 사람에겐 **폰이 안 울린다**(서버가 fcmTokens 없으면 그냥 끝낸다).
+    //   앱 알림함에는 남으니, 어느 쪽인지 지금 말해줘야 "왜 안 갔지"를 안 헤맨다.
+    let canPush = true;
+    try {
+      const u = await getDoc(doc(db, 'users', uid));
+      canPush = !!(((u.data() || {}).fcmTokens) || []).length;
+    } catch (e) {}
+    showToast(canPush ? ((nick || '머피') + '님을 불렀어요')
+                      : ((nick || '머피') + '님을 불렀어요 · 알림을 안 켜둬서 앱에서만 보여요'));
     if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
   } catch (e) {
     btn.classList.remove('done'); btn.textContent = '부르기';
