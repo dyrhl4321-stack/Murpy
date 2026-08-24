@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '640';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '641';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10678,7 +10678,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '640';
+window._SW_V = '641';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -11040,6 +11040,12 @@ onAuthStateChanged(auth, async (user) => {
     window.currentUser = user;
     closeModal('login-method-modal');
     updateUI(user);
+    // 방 초대 링크에서 정식 계정으로 돌아온 경우, 내 프로필을 확인하는 동안
+    // 방 주인 정보와 입장 가능 여부를 같이 준비한다. 예전에는 이 네트워크 작업을
+    // 전부 차례로 기다린 뒤 0.9초까지 더 쉬어서 인스타 인앱브라우저에서 특히 느렸다.
+    const _roomMemberInvite = (window._mwRoomInvite && !user.isAnonymous)
+      ? window._mwRoomInvite : '';
+    if (_roomMemberInvite && window._mwRoomPrime) window._mwRoomPrime(_roomMemberInvite);
     await checkAndSetNickname(user);
     if (window.ensureCreditsInit) window.ensureCreditsInit(user.uid);
     // 누구에게 신청했고 누구와 매칭됐는지 — 피드 버튼이 이걸 보고 글자를 정한다
@@ -11061,9 +11067,11 @@ onAuthStateChanged(auth, async (user) => {
     if (window._sqInviteSid && !user.isAnonymous && window.openSquadDetail) {
       setTimeout(function () { window.openSquadDetail(window._sqInviteSid); }, 900);
     }
-    // 방 초대 링크(?room=)도 같은 규칙이다
-    if (window._mwRoomInvite && !user.isAnonymous && window.mwRoomEnterField) {
-      setTimeout(function () { window.mwRoomEnterField(window._mwRoomInvite); }, 900);
+    // 방 초대는 위에서 미리 시작한 조회를 이어받아 바로 연다. 새 계정 온보딩 확인은
+    // 그대로 먼저 끝내므로 화면 순서가 뒤집히지 않고, 기존 회원만 빨라진다.
+    if (_roomMemberInvite && window.mwRoomEnterField) {
+      window._mwRoomChosen = true;
+      window.mwRoomEnterField(_roomMemberInvite);
     }
     // ★★한 번 게스트로 들어온 적이 있으면 그 임시 계정이 폰에 남는다. 그래서 다음에 링크를 눌러도
     //   **묻지도 않고 임시 계정으로** 들어가 버렸다(대표 8-11). 이미 계정이 있는 사람에게는
@@ -11094,9 +11102,14 @@ onAuthStateChanged(auth, async (user) => {
     //   가입 없이 바로 / 이미 머피 회원이면 로그인 — 둘 다 열어둔다. 예전엔 무조건 익명이라
     //   **이미 계정이 있는 사람이 자기 기록과 끊긴 새 임시 계정으로 들어갔다.**
     //   ★앱은 위에서 이미 평소대로 띄워놨고 시트만 얹는다 — 이게 실패해도 흰 화면이 안 된다.
-    if (window._mwRoomInvite && window.mwRoomEnterChoice) {
+    if (window._mwRoomInvite && window.mwRoomEnterChoice && !window._mwRoomSkipEnterSheet) {
       setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
       setTimeout(() => window.mwRoomEnterChoice(window._mwRoomInvite), 520);
+    } else if (window._mwRoomSkipEnterSheet) {
+      // 임시 계정에서 '내 계정으로'를 고른 직후의 로그아웃이다.
+      // 선택 시트를 다시 얹지 말고 이미 띄운 로그인 화면을 그대로 둔다.
+      window._mwRoomSkipEnterSheet = false;
+      setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
     } else if (window._sqInviteSid && window.sqEnterChoice && !window._sqSkipEnterSheet) {
       setTimeout(() => { if (typeof dismissLanding === 'function') dismissLanding(); }, 400);
       setTimeout(() => window.sqEnterChoice(window._sqInviteSid), 520);
@@ -17691,6 +17704,8 @@ window.mwRoomEnterChoice = async function (ownerUid, asGuest) {
   if (!ownerUid) return;
   let p = null;
   try { const d = await getDoc(doc(db, 'users', ownerUid)); if (d.exists()) p = d.data(); } catch (e) {}
+  // 최신 방 조회가 실패한 오프라인 상황에 대비해 방금 본 초대장 데이터를 폴백으로 남긴다.
+  if (p) window._mwRoomProfileCache = { uid: ownerUid, data: p, at: Date.now() };
   const esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
   const nick = (p && p.nickname) || '머피';
   let el = document.getElementById('mw-room-enter'); if (el) el.remove();
@@ -17735,8 +17750,23 @@ window.mwRoomEnterSwitchAccount = async function () {
   window._mwRoomChosen = true;
   if (!confirm('임시 계정으로 쌓인 기록은 사라져요.\n내 머피 계정으로 들어갈까요?')) return;
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
-  try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
-  if (window.requireLogin) requireLogin('로그인하면 초대받은 방으로 바로 들어가요');
+  // 로그아웃 콜백이 초대 선택지를 다시 띄우지 않게 한 뒤, 다음 화면부터 먼저 보여준다.
+  window._mwRoomSkipEnterSheet = true;
+  if (window.requireLogin) requireLogin('내 머피 계정으로 전환하고 있어요…');
+  const guard = document.getElementById('login-guard-modal');
+  const loginBtns = guard ? guard.querySelectorAll('.modal-sheet > button') : [];
+  Array.prototype.slice.call(loginBtns, 0, 2).forEach(function (b) {
+    b.disabled = true; b.style.opacity = '.45'; b.style.pointerEvents = 'none';
+  });
+  let ok = true;
+  try { await signOut(auth); } catch (e) { ok = false; console.warn('signOut', e); }
+  Array.prototype.slice.call(loginBtns, 0, 2).forEach(function (b) {
+    b.disabled = !ok; b.style.opacity = ok ? '' : '.45'; b.style.pointerEvents = ok ? '' : 'none';
+  });
+  const text = document.getElementById('login-guard-text');
+  if (text) text.textContent = ok
+    ? '로그인하면 초대받은 방으로 바로 들어가요'
+    : '계정을 전환하지 못했어요 · 잠시 뒤 다시 시도해주세요';
 };
 // ===== 머피룸 초대 끝 =====
 
@@ -17763,6 +17793,45 @@ window._mwRoomAlive = function (v) { return !!v && (Date.now() - (v.t || 0) < wi
 // 지금 실제로 붙어 있는가(잠수 아닌가). 화면에 그릴지 말지가 아니라 **누구를 강퇴할지**의 기준이다.
 window._mwRoomOnline = function (v) { return !!v && !v.off && (Date.now() - (v.t || 0) < 70000); };
 
+// 초대 링크 진입에 필요한 두 조회(방 주인 문서·강퇴 여부)를 한꺼번에 시작한다.
+// onAuthStateChanged가 내 프로필을 읽는 동안 호출해 두면 로그인 완료 뒤 추가 대기가 거의 없다.
+window._mwRoomPrime = function (uid) {
+  const me = auth.currentUser;
+  if (!uid || !me) return Promise.resolve({ profile: {}, kicked: false });
+  const key = uid + '|' + me.uid;
+  if (window._mwRoomPrep && window._mwRoomPrep.key === key) return window._mwRoomPrep.promise;
+  const cached = window._mwRoomProfileCache;
+  const profileP = (async function () {
+    try {
+      // 방 배치는 항상 서버 최신본 우선. 이 요청 자체를 로그인 처리와 동시에 미리 시작한다.
+      const q = await getDocFromServer(doc(db, 'users', uid));
+      return q.exists() ? q.data() : {};
+    } catch (e) {
+      // 오프라인일 때만 방금 본 초대장 또는 Firestore 캐시로 떨어진다.
+      if (cached && cached.uid === uid && Date.now() - cached.at < 30000) return cached.data || {};
+      try { const q2 = await getDoc(doc(db, 'users', uid)); return q2.exists() ? q2.data() : {}; }
+      catch (e2) { return {}; }
+    }
+  })();
+  const kickP = (uid === me.uid) ? Promise.resolve(false) : (async function () {
+    try {
+      const R = window._rt;
+      if (!R) return false;
+      return await new Promise(function (res) {
+        R.onValue(R.ref(R.db, 'roomLive/' + uid + '/kick/' + me.uid),
+          function (sn) { res(!!sn.val()); }, { onlyOnce: true });
+      });
+    } catch (e) { return false; }
+  })();
+  const promise = Promise.all([profileP, kickP]).then(function (v) {
+    const result = { profile: v[0] || {}, kicked: !!v[1] };
+    window._mwRoomProfileCache = { uid: uid, data: result.profile, at: Date.now() };
+    return result;
+  });
+  window._mwRoomPrep = { key: key, promise: promise };
+  return promise;
+};
+
 // ---- 초대로 들어가기 / 나오기 ----
 window.mwRoomEnterField = async function (uid) {
   if (!uid) return;
@@ -17770,22 +17839,12 @@ window.mwRoomEnterField = async function (uid) {
   if (!me) { window.memberGate && window.memberGate('초대받은 방에 들어가려면 로그인이 필요해요'); return; }
   if (uid === me.uid) { window._mwVisit = null; }
   else {
-    let d = {};
-    // ★서버에서 강제로 읽는다 — 캐시본을 쓰면 그 사람이 방을 다시 꾸며도 옛 배치가 나온다
-    //   (mwVisitRoom 이 같은 이유로 이미 그렇게 한다).
-    try { const q = await getDocFromServer(doc(db, 'users', uid)); d = q.exists() ? q.data() : {}; }
-    catch (e) { try { const q2 = await getDoc(doc(db, 'users', uid)); d = q2.exists() ? q2.data() : {}; } catch (e2) {} }
+    // 방 주인 정보와 강퇴 여부는 순차 조회하지 않고 _mwRoomPrime에서 동시에 준비한다.
+    const ready = await window._mwRoomPrime(uid);
+    const d = ready.profile || {};
     // ★쫓겨난 방에는 다시 못 들어간다. 안 막으면 들어가자마자 강퇴 감시가 또 튕겨내
     //   무한 왕복이 된다(대표 8-20 강퇴 요구의 뒷면이다).
-    try {
-      const R = window._rt;
-      if (R) {
-        const k = await new Promise(function (res) {
-          R.onValue(R.ref(R.db, 'roomLive/' + uid + '/kick/' + me.uid), function (sn) { res(sn.val()); }, { onlyOnce: true });
-        });
-        if (k) { showToast('이 방에는 들어갈 수 없어요'); window._mwRoomForget(); return; }
-      }
-    } catch (e) {}
+    if (ready.kicked) { showToast('이 방에는 들어갈 수 없어요'); window._mwRoomForget(); return; }
     window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null };
     window._mwRoomRemember(uid);      // 앱을 껐다 켜도 이 방으로 돌아온다
   }
