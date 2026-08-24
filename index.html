@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '646';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '647';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '646';
+window._SW_V = '647';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -24974,9 +24974,10 @@ window.SQUAD_ADS = [
   // ★sid = 이 카드가 가리키는 **진짜 벙 문서 id**. 주면 눌렀을 때 그 벙으로 바로 들어간다.
   //   예전엔 홍보 카드가 '스쿼드 만들기'로 떨어져서, 누리쌤 벙을 보고 누른 사람이
   //   엉뚱하게 자기 벙을 만드는 화면을 봤다(대표 8-11: "다 연동되어야 한다").
+  // 지난 카드는 노출하지 않고 관리자 화면의 재사용 템플릿으로만 남긴다.
   { img: 'char/promo/ad_yoga.jpg?v=2', tag: '8/22 토', title: '누리쌤 요가 스쿼드',
     sub: '처음이어도 괜찮아요 · 매트는 준비돼 있어요', cta: '보러가기',
-    sid: 'fDezyUdJoUkBCMepB0qi' },
+    sid: 'fDezyUdJoUkBCMepB0qi', preset: true, on: false, endAt: new Date('2026-08-22T23:59:59').getTime() },
   { img: 'char/promo/ad_dance.jpg?v=2', tag: '근방단', title: '댄스 스쿼드, 이번에도 열립니다',
     sub: '해본 적 없어도 됩니다 · 근방단 정기 모임', cta: '보러가기',
     href: 'https://www.instagram.com/gbd_project' },
@@ -25252,6 +25253,9 @@ window.bnRenderList = async function () {
   try {
     const qs = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc')));
     const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    (window.SQUAD_ADS || []).forEach(function (b, i) {
+      if (b.preset) rows.push({ id: 'preset_' + i, _preset: true, ...b });
+    });
     window._bnRows = rows;
     if (!rows.length) { list.innerHTML = '<div style="color:#4a5266;font-size:12px">아직 없어요</div>'; return; }
     list.innerHTML = rows.map(function (b) {
@@ -25259,11 +25263,11 @@ window.bnRenderList = async function () {
         + '<img src="' + b.img + '" style="width:88px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0">'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (b.title || '') + '</div>'
-        +   '<div style="font-size:10.5px;color:#4a5266">' + (b.on === false ? '꺼짐' : '켜짐') + ' · ' + (window._bnDateValue(b.startAt) || '바로') + ' ~ ' + (window._bnDateValue(b.endAt) || '계속') + '</div>'
+        +   '<div style="font-size:10.5px;color:#4a5266">' + (b._preset ? '재사용 템플릿' : (b.on === false ? '꺼짐' : '켜짐')) + ' · ' + (window._bnDateValue(b.startAt) || '바로') + ' ~ ' + (window._bnDateValue(b.endAt) || '계속') + '</div>'
         + '</div>'
         + '<button onclick="window.bnEdit(\'' + b.id + '\')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">수정</button>'
-        + '<button onclick="window.bnToggle(\'' + b.id + '\',' + (b.on === false) + ')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">' + (b.on === false ? '켜기' : '끄기') + '</button>'
-        + '<button onclick="window.bnDelete(\'' + b.id + '\')" style="background:none;border:none;color:#FF4D67;font-size:11px;cursor:pointer;font-family:inherit">삭제</button>'
+        + (b._preset ? '' : '<button onclick="window.bnToggle(\'' + b.id + '\',' + (b.on === false) + ')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">' + (b.on === false ? '켜기' : '끄기') + '</button>')
+        + (b._preset ? '' : '<button onclick="window.bnDelete(\'' + b.id + '\')" style="background:none;border:none;color:#FF4D67;font-size:11px;cursor:pointer;font-family:inherit">삭제</button>')
         + '</div>';
     }).join('');
   } catch (e) { list.innerHTML = '<div style="color:#FF4D67;font-size:12px">불러오지 못했어요 — 보안규칙에 banners 가 있는지 확인하세요</div>'; }
@@ -25311,7 +25315,7 @@ window.bnSave = async function () {
       href: (document.getElementById('bn-href').value || '').trim(),
       startAt: startAt, endAt: endAt, updatedAt: serverTimestamp()
     };
-    if (editing) await updateDoc(doc(db, 'banners', editing.id), data);
+    if (editing && !editing._preset) await updateDoc(doc(db, 'banners', editing.id), data);
     else await addDoc(collection(db, 'banners'), Object.assign(data, { on: true, order: Date.now(), createdAt: serverTimestamp() }));
     showToast(editing ? '카드를 수정했어요' : '카드를 올렸어요');
     window.bnCancelEdit();
@@ -25427,7 +25431,11 @@ window.renderSquadHero = async function () {
       return true;
     });
   } catch (e) { /* 규칙이 아직 없으면 조용히 건너뛴다 */ }
-  admin.concat(window.SQUAD_ADS || []).forEach(function (a) {
+  admin.concat(window.SQUAD_ADS || []).filter(function (a) {
+    if (!a || a.on === false || !a.img) return false;
+    const now = Date.now(), from = window._bnTime(a.startAt), until = window._bnTime(a.endAt);
+    return !(from && from > now) && !(until && until < now);
+  }).forEach(function (a) {
     slides.push({
       // 히어로 칩은 골드로 통일(대표 확정). 목록 카드의 골드는 여전히 '돈' 자리다 —
       // 위 칸은 홍보, 아래 칸은 정보라 맥락이 달라서 섞이지 않는다.
