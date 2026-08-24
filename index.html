@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '666';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '667';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4095,6 +4095,8 @@ window.MW_DINO = { cw: 114, ch: 108, cols: 8, rows: 5, sbw: 68,
                    src: 'char/rooms/s2608_dino_pet.png?v=6' };
 window.MW_DINO_ID = 's2608_dino';
 window._mwDinos = [];
+// 돌아다니는 공룡의 **가구 index**. 이 자리는 충돌맵에서 뺀다(_mwBlocksOf).
+window._mwDinoRoam = new Set();
 
 // 한 마리 그리기(위치·그림). 펫과 같은 규칙 — transform 만 쓰고 left/top 은 안 쓴다.
 window._mwDinoApply = function (d) {
@@ -4134,6 +4136,7 @@ window._mwDinoSync = function (editing) {
   var clear = function () {
     window._mwDinos.forEach(function (d) { if (d.el) d.el.remove(); });
     window._mwDinos = [];
+    window._mwDinoRoam = new Set();
   };
   // 꾸미기 중이거나 집이 아니면 손대지 않는다 — 드래그는 원본 <img> 그대로여야 한다
   if (!room || !furn || editing || window._curField !== 'home') { clear(); return; }
@@ -4165,6 +4168,7 @@ window._mwDinoSync = function (editing) {
     el.className = 'mw-dino';
     el.innerHTML = '<i class="mw-pet-sh"></i><i class="mw-pet-spr"></i>';
     room.appendChild(el);
+      window._mwDinoRoam.add(p.idx);
     var d = {
       el: el, idx: p.idx, row: 0, moving: false,
       tc: Math.max(0, Math.min(15, Math.floor((p.it.x + def.w / 2) / 48))),
@@ -4173,6 +4177,10 @@ window._mwDinoSync = function (editing) {
     window._mwDinos.push(d);
     window._mwDinoApply(d);
   });
+  // ★공룡 자리를 뺀 뒤 충돌맵을 **다시** 계산한다. _mwComputeBlocked 는 이 함수보다
+  //   먼저 돌아서, 여기서 안 부르면 그 프레임 동안 옛 자리가 계속 막힌다.
+  window._mwComputeBlocked && window._mwComputeBlocked();
+  window._mwUnstick && window._mwUnstick();
   window._mwWorldStart();
 };
 
@@ -5253,9 +5261,13 @@ window._mwBlocked = new Set();
 window._mwBlocksOf = function (room) {
   const set = new Set();
   const f = (room && room.f) || [];
-  const arr = f.map(it => ({ it, def: window.mwDefFor(it) })).filter(o => o.def);
-  arr.forEach(({ it, def }) => {
+  const arr = f.map((it, i) => ({ it, def: window.mwDefFor(it), i })).filter(o => o.def);
+  arr.forEach(({ it, def, i }) => {
     if (def.flat || def.wall || def.noBlock) return;         // 러그·벽걸이·명시적 통과
+    // ★돌아다니는 공룡은 **놓였던 자리를 막지 않는다.** 그림은 걸어갔는데 가구 데이터는
+    //   그대로라, 안 빼면 아무것도 없는 빈자리에서 캐릭터가 막힌다(대표 8-24가 찾은 버그).
+    //   지금 서 있는 칸도 안 막는다 — 공룡이 문 앞에 서면 지나갈 수가 없어진다.
+    if (window._mwDinoRoam && window._mwDinoRoam.has(i)) return;
     // 상판 위에 얹힌 소품은 공중이라 바닥을 안 막는다.
     // ★바닥에 놓인 소품(화분 등)까지 '얹힌 것'으로 봐서 통과시키던 버그 → _mwRestsOn 으로 통일
     if (def.prop && arr.some(o => window._mwRestsOn(it, def, o.it, o.def))) return;
