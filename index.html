@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '664';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '665';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3898,9 +3898,16 @@ window.mwPetMenu = function () {
   var room = document.getElementById('charworld-room');
   var host = document.getElementById('mw-pet');
   if (!room || !host || !window._mwPet) return;
-  if (window._mwIsVisiting && window._mwIsVisiting()) return;   // 남의 펫은 구경만
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    // 남의 펫은 구경만 — 누구네 아이인지만 알려 준다(대표 확정: 손님은 밥 못 줌)
+    var v = window._mwVisit || {}, vd = window._mwPetDef((v.pet || {}).id) || {};
+    var vn = ((v.pet || {}).name) || (window.mwItemDef((v.pet || {}).id) || {}).name || '펫';
+    showToast((v.nick || '머피') + ' 님의 ' + vn);
+    return;
+  }
 
-  var mode = (window._myPet && window._myPet.mode) || 'free';
+  var _pd = window._mwPetData ? window._mwPetData() : window._myPet;
+  var mode = (_pd && _pd.mode) || 'free';
   var cur = window.MW_PET_MODES.filter(function (m) { return m.k === mode; })[0]
             || window.MW_PET_MODES[0];
   var cx = host.offsetLeft + host.offsetWidth / 2;
@@ -4005,7 +4012,8 @@ window._mwPetBowlFill = function () {
   var furn = document.getElementById('mw-furn'); if (!furn) return;
   var data = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
   var list = (data && data.f) || [], i;
-  var fed = (window._myPet && window._myPet.fedAt) || 0;
+  var _pd = window._mwPetData ? window._mwPetData() : window._myPet;
+  var fed = (_pd && _pd.fedAt) || 0;
   var on = fed && (Date.now() - fed < 6 * 3600 * 1000);      // 6시간 지나면 다시 빈 그릇
   for (i = 0; i < list.length; i++) {
     var def = window.mwDefFor ? window.mwDefFor(list[i]) : null;
@@ -4312,7 +4320,8 @@ window._mwPetAct = function (now) {
   var p = window._mwPet; if (!p) return 'rest';
   var def = window._mwPetDef(p.id); if (!def) return 'rest';
   var day = window._mwPetDayKey(now);
-  var uid = (window.currentUser && window.currentUser.uid) || 'guest';
+  // ★방 주인 uid 여야 한다. 내 uid 를 쓰면 손님이 주인과 **다른 걸 본다**.
+  var uid = window._mwPetOwner ? window._mwPetOwner() : 'guest';
   if (!p._plan || p._planDay !== day) {
     p._plan = window._mwPetPlan(def.kind, uid + '|' + p.id + '|' + day);
     p._planDay = day;
@@ -4345,12 +4354,30 @@ window._mwPetDef = function (id) { return (window.PET_META.pets || {})[id] || nu
 
 // 지금 방에 나와 있어야 할 펫. ?pet=cat_milky 는 **연결 전 확인용**이다(구매·보관함은 다음 단계).
 window._mwPetWanted = function () {
+  // 남의 방이면 **그 방 주인의 펫**이다. 손님도 나와 똑같은 모습을 본다(대표 확정).
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    var v = window._mwVisit && window._mwVisit.pet;
+    return (v && v.id && window._mwPetDef(v.id)) ? v.id : null;
+  }
   try {
     var q = new URLSearchParams(location.search).get('pet');
     if (q && window._mwPetDef(q)) return q;
   } catch (e) {}
   var p = window._myPet;
   return (p && p.id && window._mwPetDef(p.id)) ? p.id : null;
+};
+
+// 지금 보고 있는 방의 펫 데이터(내 것이거나 방 주인 것)
+window._mwPetData = function () {
+  return (window._mwIsVisiting && window._mwIsVisiting())
+    ? ((window._mwVisit && window._mwVisit.pet) || null) : window._myPet;
+};
+// 일과표 씨앗에 쓸 uid — **방 주인** 것이어야 손님이 나와 같은 걸 본다.
+window._mwPetOwner = function () {
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    return (window._mwVisit && window._mwVisit.uid) || 'guest';
+  }
+  return (window.currentUser && window.currentUser.uid) || 'guest';
 };
 
 window._mwPetEl = function () {
@@ -4518,8 +4545,7 @@ window._mwPetStep = function () {
 
 // 방을 그릴 때마다 불린다. 필드가 바뀌거나 남의 방이면 통째로 걷어낸다.
 window._mwPetSync = function () {
-  var id = (window._curField === 'home' && !(window._mwIsVisiting && window._mwIsVisiting()))
-    ? window._mwPetWanted() : null;
+  var id = (window._curField === 'home') ? window._mwPetWanted() : null;
   if (!id) {
     var old = document.getElementById('mw-pet'); if (old) old.remove();
     window._mwPet = null;
@@ -19348,7 +19374,9 @@ window.mwRoomEnterField = async function (uid) {
     // ★쫓겨난 방에는 다시 못 들어간다. 안 막으면 들어가자마자 강퇴 감시가 또 튕겨내
     //   무한 왕복이 된다(대표 8-20 강퇴 요구의 뒷면이다).
     if (ready.kicked) { showToast('이 방에는 들어갈 수 없어요'); window._mwRoomForget(); return; }
-    window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null };
+    // 펫도 같이 들고 온다 — 손님에게도 **나와 똑같은 모습**이 보여야 한다(대표 확정).
+    window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null,
+                        pet: (d.pet && d.pet.id) ? d.pet : null };
     window._mwRoomRemember(uid);      // 앱을 껐다 켜도 이 방으로 돌아온다
   }
   const el = document.getElementById('mw-room-enter'); if (el) el.remove();
