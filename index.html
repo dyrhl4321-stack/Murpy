@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '647';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '648';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '647';
+window._SW_V = '648';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -17962,6 +17962,7 @@ window.mwRoomLeaveField = function () {
       } else { window._mwRlSend(); }
       window._mwRoomForget();
     }, 4000);
+    window._mwKbEnd(true);          // ★잠금이 남으면 앱 전체가 굳는다(body position:fixed)
     document.body.classList.remove('mw-party');
     window._charApplyPos && window._charApplyPos();
     showToast('방을 닫았어요');
@@ -18061,6 +18062,7 @@ window._mwRlLeave = function () {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
   window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: null, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
+  window._mwKbEnd(true);            // ★위와 같다 — 나가면서 잠금을 반드시 푼다
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
@@ -18268,6 +18270,7 @@ window._mwRlRender = function (all) {
   //   "있었는데 지금 아무도 없다" = 방이 닫힌 것이다.
   if (ow) window._mwRl.seenOwner = 1;
   if (document.body.classList.contains('mw-party') !== party) {
+    if (!party) window._mwKbEnd(true);
     document.body.classList.toggle('mw-party', party);
     // 위아래 줄이 생기면 무대 크기가 바뀐다 → 타일 계산을 다시 시킨다(안 하면 캐릭터가 어긋난다)
     setTimeout(function () { window._charApplyPos && window._charApplyPos(); }, 60);
@@ -18362,47 +18365,71 @@ window.mwRoomFieldSync = function (key) {
 //
 // ★계산하지 않고 **잰다**(스쿼드에서 배운 것). 아이폰·안드로이드·카톡 인앱브라우저가
 //   키보드 높이를 저마다 다르게 알려주므로 visualViewport 의 **실제 아랫변**만 쓴다.
-//   vv 를 못 믿는 환경(값이 안 바뀌는 웹뷰)에서는 **아무 것도 안 한다** — 원래 동작 그대로다.
-//   (8-14에 뷰포트 식을 건드렸다가 대표 폰이 오히려 가려진 사고가 있었다. 두 번은 안 낸다)
+//   vv 가 없는 웹뷰에서는 레이아웃이 같이 줄어드는 쪽이라 **바닥(0)이 곧 키보드 위**다.
+//   (8-14에 뷰포트 식을 건드렸다가 대표 폰이 오히려 가려진 사고가 있었다. 식은 그대로 두고
+//    덧붙이기만 한다 — 재는 식은 손대지 않았다)
 window.MW_KB_GAP = 10;             // 입력줄과 키보드 사이 여유
+// ★★8-21 재작업. 붙박이로 띄우는 것만으로는 **못 막는다**(대표: "아직도 스크롤 밀림").
+//   빠져 있던 건 **스크롤 잠금**이었다. 입력칸이 키보드에 가리면 브라우저는 그걸 보이려고
+//   페이지를 통째로 밀어 올린다 — 우리가 뒤늦게 입력줄을 붙박이로 만들어도, 그 스크롤은
+//   **이미 일어난 뒤**다. 그래서 방이 위로 밀려 사라졌다.
+//   → 포커스가 들어오는 **그 순간에 먼저 문서를 잠근다.** 스크롤할 곳이 없으면 못 민다.
+//     잠금은 앱에 이미 있는 lockBodyScroll(iOS 안전 · 중첩 가드 포함)을 그대로 쓴다.
 window._mwKbFit = function () {
   const row = document.getElementById('mw-party-row');
+  if (!row || !window._mwKbOn) return;
   const vv = window.visualViewport;
-  if (!row || !vv || !window._mwKbOn) return;
-  const ih = window.innerHeight || vv.height;
-  const gap = Math.round(ih - ((vv.offsetTop || 0) + vv.height));   // 키보드가 먹은 높이
-  if (gap < 80) {                                   // 키보드가 안 올라왔다(또는 내려갔다)
-    document.body.classList.remove('mw-kb'); row.style.bottom = '';
-    const le0 = document.getElementById('mw-party-log');
-    if (le0) le0.style.paddingBottom = '';
-    return;
-  }
-  document.body.classList.add('mw-kb');
-  row.style.bottom = (gap + window.MW_KB_GAP) + 'px';
+  const ih = window.innerHeight || (vv && vv.height) || 0;
+  // 키보드가 먹은 높이. 안드로이드처럼 레이아웃이 같이 줄어드는 환경에선 0 이 나오는데,
+  // 그 경우엔 이미 화면이 줄어든 것이라 바닥(0)이 곧 키보드 위다.
+  const gap = vv ? Math.round(ih - ((vv.offsetTop || 0) + vv.height)) : 0;
+  const up = gap >= 80;
+  row.style.bottom = (Math.max(0, gap) + (up ? window.MW_KB_GAP : 0)) + 'px';
   // ★대화 상자는 키보드 뒤까지 뻗어 있다. 그냥 두면 **가장 최근 말이 키보드에 가린다**
   //   (목록이 column-reverse 라 최신 글이 상자 맨 아래에 있다).
   //   상자를 줄이지 말고 **아래 여백을 키보드+입력줄만큼** 줘서 글을 위로 밀어 올린다.
   const le = document.getElementById('mw-party-log');
-  if (le) le.style.paddingBottom = (gap + window.MW_KB_GAP + row.offsetHeight + 12) + 'px';
+  if (le) le.style.paddingBottom = (Math.max(0, gap) + window.MW_KB_GAP + row.offsetHeight + 12) + 'px';
 };
 window._mwKbStart = function () {
-  if (!window.visualViewport) return;      // 못 믿는 환경 = 손대지 않는다
+  if (window._mwKbOn) return;
   window._mwKbOn = 1;
-  const vv = window.visualViewport;
-  vv.addEventListener('resize', window._mwKbFit);
-  vv.addEventListener('scroll', window._mwKbFit);
-  // 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 기기마다 애니메이션이 달라 여러 번 잰다.
-  [0, 90, 200, 340, 520, 800].forEach(function (t) { setTimeout(window._mwKbFit, t); });
-};
-window._mwKbEnd = function () {
-  const vv = window.visualViewport;
-  if (vv) { vv.removeEventListener('resize', window._mwKbFit); vv.removeEventListener('scroll', window._mwKbFit); }
-  window._mwKbOn = 0;
-  document.body.classList.remove('mw-kb');
+  // ★★순서가 전부다. **잠그는 게 먼저**다 — 붙박이로 만들기 전에 브라우저가 밀어버린다.
+  //   ★내가 잠근 것만 내가 푼다. 패널이 이미 잠가 뒀는데 blur 에서 풀어버리면
+  //     뒤에 열려 있던 화면이 통째로 스크롤돼 내려간다(스쿼드 것과 같은 규칙).
+  window._mwKbOwnedLock = !_bodyLocked;
+  if (window._mwKbOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
+  document.body.classList.add('mw-kb');
   const row = document.getElementById('mw-party-row');
-  if (row) row.style.bottom = '';   // ★인라인 cssText 가 없는 요소라 '' 로 지워도 안전하다
-  const le = document.getElementById('mw-party-log');
-  if (le) le.style.paddingBottom = '';
+  if (row) row.style.bottom = '0px';       // 키보드가 아직 없다 → 일단 바닥. 곧 위로 올라간다
+  const vv = window.visualViewport;
+  if (vv) {
+    vv.addEventListener('resize', window._mwKbFit);
+    vv.addEventListener('scroll', window._mwKbFit);
+  }
+  // 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 기기마다 애니메이션이 달라 여러 번 잰다.
+  [0, 60, 140, 240, 360, 520, 800].forEach(function (t) { setTimeout(window._mwKbFit, t); });
+};
+// immediate=true 면 곧바로 끝낸다(방을 닫을 때). blur 로 들어올 땐 **조금 기다린다** —
+// 말하기·고정 버튼을 누르면 blur 가 났다가 포커스가 곧 되돌아오는데, 그 사이에 풀면
+// unlockBodyScroll 의 scrollTo 가 화면을 한 번 튕긴다(= 대표가 본 '들썩임'과 같은 원인).
+window._mwKbEnd = function (immediate) {
+  const finish = function () {
+    if (!window._mwKbOn) return;
+    const ae = document.activeElement;
+    if (!immediate && ae && ae.id === 'mw-party-input') return;   // 다시 치고 있다
+    window._mwKbOn = 0;
+    const vv = window.visualViewport;
+    if (vv) { vv.removeEventListener('resize', window._mwKbFit); vv.removeEventListener('scroll', window._mwKbFit); }
+    document.body.classList.remove('mw-kb');
+    const row = document.getElementById('mw-party-row');
+    if (row) row.style.bottom = '';   // ★인라인 cssText 가 없는 요소라 '' 로 지워도 안전하다
+    const le = document.getElementById('mw-party-log');
+    if (le) le.style.paddingBottom = '';
+    if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
+    window._mwKbOwnedLock = false;
+  };
+  if (immediate) finish(); else setTimeout(finish, 100);
 };
 window._mwBubblePin = false;
 window.mwRoomQuickBar = function () {
@@ -27589,6 +27616,11 @@ window._sqNoticeEdit = function () {
   window._sqKbCompact(false);          // 접혀 있던 것도 펴서 폼이 확실히 보이게
   const t = document.getElementById('sq-notice-in');
   if (t) {
+    // ★채팅 입력에만 달려 있던 키보드 실드를 공지에도 단다 — 증상·원인이 같다.
+    //   iOS 의 하단 안전영역·소수점 높이 때문에 #sq-detail 아래로 뒤의 스쿼드 홈이 몇 px 비친다.
+    //   focus 를 우리가 직접 주므로 리스너를 **먼저** 걸어둔다.
+    t.addEventListener('focus', window._sqQuickKbStart);
+    t.addEventListener('blur', function () { window._sqQuickKbEnd(false); });
     t.focus();
     // 키보드가 올라온 뒤 폼이 가려지면 **패널을 밀지 말고 스크롤로** 보이게 한다
     [180, 420, 700].forEach(function (ms) {
@@ -27601,6 +27633,7 @@ window._sqNoticeEdit = function () {
 // 편집 폼을 닫을 때 반드시 함께 부른다 — 안 부르면 채팅 입력 시 키보드 대응이 계속 죽어 있다
 window._sqNoticeEditEnd = function () {
   window._sqNoticeEditing = false;
+  window._sqQuickKbEnd(true);          // 폼이 사라지면 실드도 같이 걷는다
 };
 window._sqNoticeSave = async function (clear) {
   const sid = window._sqChatSid; if (!sid) return;
@@ -27872,7 +27905,8 @@ window._sqQuickKbEnd = function (immediate) {
   const finish = function () {
     if (!window._sqQuickKbOn) return;
     // blur 직후 다른 입력으로 포커스가 돌아온 경우엔 실드를 섣불리 없애지 않는다.
-    if (!immediate && document.activeElement && document.activeElement.id === 'sq-quick-input') return;
+    const _ae = document.activeElement;
+    if (!immediate && _ae && (_ae.id === 'sq-quick-input' || _ae.id === 'sq-notice-in')) return;
     window._sqQuickKbOn = false;
     document.body.classList.remove('sq-quick-kb');
     if (window._sqQuickOwnedLock) {
@@ -29275,7 +29309,3 @@ window.bumpDogam = async function () {
 </script>
 </body>
 </html>
-
-
-
-
