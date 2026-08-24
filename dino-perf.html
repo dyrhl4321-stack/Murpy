@@ -37,13 +37,18 @@
   #stage img,#stage .mv{position:absolute;left:0;top:0;image-rendering:pixelated;
          will-change:transform}
   /* 스프라이트 재생 — --fw(프레임 한 칸 폭)는 JS 가 기기 축척에 맞춰 넣는다.
-     ★to 를 -8칸으로 두고 steps(8)(기본 jump-end)을 쓰면 실제로 보이는 건 0~7칸이다.
-       to 를 -7칸으로 잡으면 프레임이 0.875칸씩 밀려 여러 마리처럼 보인다(예전에 데인 곳). */
-  #stage .mv{background-repeat:no-repeat;background-position:0 0;
-             animation:dinoIdle .96s steps(8) infinite}
+     ★to 를 -N칸으로 두고 steps(N)(기본 jump-end)을 쓰면 실제로 보이는 건 0~N-1칸이다.
+       to 를 -(N-1)칸으로 잡으면 프레임이 밀려 한 마리가 여러 마리처럼 보인다(예전에 데인 곳).
+     행(방향)은 background-position-y 라 x 만 애니메이션하면 그대로 유지된다. */
+  #stage .mv{background-repeat:no-repeat;animation:dinoIdle .96s steps(8) infinite}
+  #stage .mv.walking{animation:dinoWalk .5s steps(3) infinite}
   @keyframes dinoIdle{
     from{background-position-x:0}
     to{background-position-x:calc(var(--fw) * -8)}
+  }
+  @keyframes dinoWalk{
+    from{background-position-x:0}
+    to{background-position-x:calc(var(--fw) * -3)}
   }
 
   /* 눈으로 보는 끊김 감지기 — 숫자보다 이게 먼저 느껴진다 */
@@ -100,7 +105,7 @@
     <div id="stage"></div>
     <div id="canary"><i></i></div>
     <p class="note">아래 파란 막대가 <b>매끄럽게 흐르면 정상</b>, 툭툭 끊기면 그게 렉입니다.
-       움직이는 공룡은 걷기 그림이 아직 없어서 앉은 채로 미끄러집니다 — 부하는 걷기와 같습니다.</p>
+       움직이는 공룡은 <b>가는 쪽으로 몸을 돌려 걷고</b>, 도착하면 지금 앱과 같은 둥가둥가로 돌아갑니다.</p>
   </div>
 
   <div class="card">
@@ -123,8 +128,10 @@
 // 재는 것 = rAF 프레임 간격. 메인 스레드가 밀리거나 합성이 무거우면 여기서 바로 드러난다.
 // ★이 페이지는 index.html 과 무관한 독립 도구다. 앱 코드를 한 줄도 안 건드린다.
 var SRC_APNG  = 'char/rooms/s2608_dino.png?v=8';
-var SRC_SHEET = 'char/rooms/s2608_dino_idle_sheet.png?v=1';
-var CELL_W = 94, CELL_H = 105, FRAMES = 8;   // 시트 실측 (char/build_dino_sheet.py 출력)
+// 펫 시트 = char/build_dino_walk.py 산출물. 행 0 대기(8프레임) / 1 앞 / 2 좌 / 3 뒤 / 4 우(각 3프레임)
+var SRC_SHEET = 'char/rooms/s2608_dino_pet_height.png?v=1';
+var CELL_W = 114, CELL_H = 107, COLS = 8, ROWS = 5;
+var ROW_FRONT = 1, ROW_LEFT = 2, ROW_BACK = 3, ROW_RIGHT = 4;
 var ROOM = 768;                              // 앱 방 좌표계
 
 var stage = document.getElementById('stage');
@@ -173,8 +180,9 @@ function build() {
     d.className = 'mv';
     d.style.width = w + 'px'; d.style.height = h + 'px';
     d.style.backgroundImage = 'url(' + SRC_SHEET + ')';
-    d.style.backgroundSize = (w * FRAMES) + 'px ' + h + 'px';
-    d.style.setProperty('--fw', w + 'px');               // 키프레임이 이 값으로 8칸을 넘긴다
+    d.style.backgroundSize = (w * COLS) + 'px ' + (h * ROWS) + 'px';
+    d.style.backgroundPositionY = '0px';                 // 행 0 = 대기(둥가둥가)
+    d.style.setProperty('--fw', w + 'px');               // 키프레임이 이 값으로 칸을 넘긴다
     d.style.animationDelay = (-i * 0.13) + 's';          // 시차 — 전부가 같은 프레임에 안 돌게
     d.style.transition = 'transform .7s ease-in-out';
     var px = Math.round((p.x + 76) * sc), py = Math.round((p.y + 44) * sc);
@@ -195,9 +203,25 @@ function startMoving() {
   moveTimer = setInterval(function () {
     var m = state.movers[turn % state.movers.length]; turn++;
     var maxX = stage.clientWidth - m.w, maxY = stage.clientHeight - m.h;
-    m.x = Math.max(0, Math.min(maxX, m.x + (Math.random() * 2 - 1) * m.w * 1.6));
-    m.y = Math.max(0, Math.min(maxY, m.y + (Math.random() * 2 - 1) * m.h * 1.2));
+    var nx = Math.max(0, Math.min(maxX, m.x + (Math.random() * 2 - 1) * m.w * 1.6));
+    var ny = Math.max(0, Math.min(maxY, m.y + (Math.random() * 2 - 1) * m.h * 1.2));
+    var dx = nx - m.x, dy = ny - m.y;
+    m.x = nx; m.y = ny;
+
+    // 가는 쪽으로 몸을 돌린다. 가로/세로 중 더 많이 가는 축이 이긴다.
+    var row = (Math.abs(dx) >= Math.abs(dy))
+      ? (dx >= 0 ? ROW_RIGHT : ROW_LEFT)
+      : (dy >= 0 ? ROW_FRONT : ROW_BACK);
+    m.el.style.backgroundPositionY = (-row * m.h) + 'px';
+    m.el.classList.add('walking');
     m.el.style.transform = 'translate3d(' + Math.round(m.x) + 'px,' + Math.round(m.y) + 'px,0)';
+
+    // 도착하면 대기(둥가둥가)로 돌아간다. 실제 구현도 도착 순간에만 JS 가 깨어난다.
+    if (m.t) clearTimeout(m.t);
+    m.t = setTimeout(function () {
+      m.el.classList.remove('walking');
+      m.el.style.backgroundPositionY = '0px';
+    }, 700);
   }, step);
 }
 function stopMoving() { if (moveTimer) { clearInterval(moveTimer); moveTimer = null; } }
