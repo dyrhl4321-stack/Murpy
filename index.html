@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '644';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '645';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '644';
+window._SW_V = '645';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -11965,7 +11965,7 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //     소셜만으로 벌리면 운동을 안 하고도 꾸밀 수 있게 돼서 머피월드가 운동 앱이 아니게 된다.
 //
 //   | 경로              | 머피 | 한도        | 월 기대 |
-//   | 하루 첫 운동 인증 |  +1  | 하루 1회    |   30   |
+//   | 하루 첫 운동 인증 |  +5  | 하루 1회    |  150   |
 //   | 센터 체크인(GPS)  |  +2  | 하루 1회    |   30   |  ← 실제로 가야 하니 인증보다 무겁다
 //   | 스트릭 7일 달성   |  +5  | 7일마다     |   20   |
 //   | 남의 방 구경      |  +1  | 하루 2회    |   20   |  ← ★내가 '가면' 받는다(아래 참고)
@@ -15023,7 +15023,7 @@ window.ensureCreditsInit = async (uid) => {
   } catch (e) {}
 };
 
-// 하루 첫 운동 인증 시 +CREDIT_DAILY (이미 오늘 받았으면 무시)
+// 하루 첫 운동 인증 시 +CREDIT_DAILY (이미 오늘 받았으면 0)
 window.grantDailyCreditOnVerify = async (uid) => {
   if (!uid) return false;
   const today = _creditToday();
@@ -15044,8 +15044,8 @@ window.grantDailyCreditOnVerify = async (uid) => {
     if (bonus && window.showToast) showToast(newStreak + '일 연속! 보너스 +' + bonus + '머피');
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.renderStreakUI) window.renderStreakUI();
-    return true;
-  } catch (e) { return false; }
+    return gain;
+  } catch (e) { return 0; }
 };
 
 // ===== 생일 (유저 피드백 #15) =====
@@ -19512,9 +19512,9 @@ window.submitFeedPost = async function() {
     const _gift = window.grantBetaGift ? await window.grantBetaGift() : false;
     if (_gift) {
       // 선물 축하가 이미 떴다 — 일일 적립 축하까지 겹쳐 띄우면 연출이 뭉갠다
-      if (_earned) setTimeout(() => showToast('오늘 운동 인증 +1 머피'), 2800);
+      if (_earned) setTimeout(() => showToast('오늘 운동 인증 +' + _earned + ' 머피'), 2800);
     } else if (_earned) {
-      window.celebrateMurpy(window.getCredits ? window.getCredits() : undefined);
+      window.celebrateMurpy(window.getCredits ? window.getCredits() : undefined, { amount: _earned });
       if (!localStorage.getItem('murpy_credit_intro')) {
         localStorage.setItem('murpy_credit_intro', '1');
         setTimeout(window.murpyFirstGuide, 2700); // 축하(2.4s) 닫힌 뒤 자연스럽게 이어짐
@@ -20322,6 +20322,33 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:11px;color:#444">${time}</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#4ADE80;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'room_knock') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.55:1}">
+          <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(245,194,75,0.62);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M3 1h9v14H3z"/><path fill="#141414" d="M5 3h5v10H5z"/><path fill="#F5C24B" d="M8 7h2v2H8zM1 5h1v2H1zM0 7h2v2H0zM1 9h1v2H1z"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 내 방에 노크했어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${n.read
+            ? '<span style="flex-shrink:0;color:#8a93a8;font-size:10.5px">초대 완료</span>'
+            : `<button style="flex-shrink:0;background:#141a28;border:2px solid #05070c;box-shadow:0 0 0 1px rgba(245,194,75,.55);color:#F5C24B;padding:8px 10px;font-family:'Galmuri11',sans-serif;font-size:10.5px;cursor:pointer" onclick="this.disabled=true;window.mwAcceptKnock('${safeFromUid}','${safeNickJs}','${safeId}')">방으로 초대</button>`}
+        </div>`;
+      }
+      if (n.type === 'room_invite') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.55:1}" onclick="window.mwAcceptRoomInvite('${safeFromUid}','${safeId}')">
+          <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(245,194,75,0.62);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="2"><path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 문을 열어줬어요</div>
+            <div style="font-size:11px;color:#F5C24B;margin-bottom:2px">눌러서 바로 입장하기</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;background:#F5C24B;flex-shrink:0"></div>' : ''}
         </div>`;
       }
       if (n.type === 'poke') {
@@ -22600,7 +22627,11 @@ window.mwVisitRoom = async function (uid) {
            방명록 옆에 뜬금없는 '채팅하기'가 생긴다. 대신 눌러도 된다는 걸 알려준다. -->
       <!-- 방 좋아요는 **방을 보고 있는 여기서** 누른다. 캐릭터 정보 창까지 들어가서 누르면
            한 바퀴 돌아가는 셈이라 대상과 버튼이 어긋난다(캐릭터 좋아요는 정보 창 안에 있다). -->
-      <div id="mw-rm-like" style="display:flex;justify-content:center;margin:2px 0 15px"></div>
+      <!-- 정적 방 구경의 두 행동. 같은 픽셀 버튼 문법을 쓰되 노크만 골드로 구분한다. -->
+      <div id="mw-rm-actions" style="display:flex;justify-content:center;align-items:center;gap:9px;margin:2px 0 15px">
+        <div id="mw-rm-like" style="display:flex;justify-content:center"></div>
+        <div id="mw-rm-knock" style="display:flex;justify-content:center"></div>
+      </div>
       <div style="font-size:12px;color:#8a93a8;margin:0 2px 8px">방명록</div>
       <div style="display:flex;gap:7px;margin-bottom:10px">
         <input id="mw-gb-input" maxlength="80" placeholder="한마디 남기기…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0">
@@ -22687,6 +22718,7 @@ window.mwVisitRoom = async function (uid) {
   if (firstToday && window.mwEarnSocial) window.mwEarnSocial('visit', nick + '님 방 구경');
   window.mwGbLoad(uid);
   window.mwLikeBtn('mw-rm-like', uid, 'room', '이 방 좋아요');
+  window.mwKnockBtn('mw-rm-knock', uid, nick);
 };
 
 // ===== 좋아요 (캐릭터 / 방) =====
@@ -22706,11 +22738,17 @@ window.mwLikeToggle = async function (uid, kind) {
       const b = await tx.get(byRef);
       const st = await tx.get(statRef);
       const cur = Math.max(0, (st.exists() && st.data().count) || 0);
-      const on = !b.exists();
+      // 좋아요 표식은 이제 지우지 않고 active 만 끈다. rewarded=true 는 영구 지급 원장이라
+      // 취소 후 다시 눌러도 보상은 되살아나지 않는다. 옛 문서는 active 없음=켜짐,
+      // rewarded 없음=이미 지급된 것으로 간주해 기존 이용자에게 재지급하지 않는다.
+      const bd = b.exists() ? (b.data() || {}) : null;
+      const wasOn = !!b.exists() && bd.active !== false;
+      const on = !wasOn;
       const next = on ? cur + 1 : Math.max(0, cur - 1);
-      if (on) { tx.set(byRef, { at: serverTimestamp() }); tx.set(statRef, { count: next }, { merge: true }); }
-      else { tx.delete(byRef); tx.set(statRef, { count: next }, { merge: true }); }
-      return { on: on, count: next };
+      const reward = on && !b.exists();
+      tx.set(byRef, { active: on, rewarded: true, at: serverTimestamp() }, { merge: true });
+      tx.set(statRef, { count: next }, { merge: true });
+      return { on: on, count: next, reward: reward };
     });
   } catch (e) { showToast('잠시 후 다시 시도해주세요'); return null; }
 };
@@ -22722,7 +22760,10 @@ window.mwLikeState = async function (uid, kind) {
     count = Math.max(0, (s.exists() && s.data().count) || 0);
   } catch (e) {}
   if (me && me.uid !== uid) {
-    try { on = (await getDoc(doc(db, 'users', uid, 'likestat', kind, 'by', me.uid))).exists(); } catch (e) {}
+    try {
+      const b = await getDoc(doc(db, 'users', uid, 'likestat', kind, 'by', me.uid));
+      on = b.exists() && (b.data() || {}).active !== false;
+    } catch (e) {}
   }
   return { count, on };
 };
@@ -22753,10 +22794,78 @@ window._mwLikeTap = async function (elId, uid, kind, label) {
     // ★적립은 **그 사람의 그 항목에 대해 한 번뿐**이다(대표 8-11).
     //   껐다 다시 켜도, 다음 날 다시 와도 안 준다. 숫자(좋아요 수)는 그대로 오르내린다 —
     //   보상만 1회고 인기 카운트는 인스타처럼 계속 누적된다.
-    if (window.mwEarnSocial) {
-      window.mwEarnSocial('like', (kind === 'room' ? '방' : '캐릭터') + ' 좋아요', 'like_' + uid + '_' + kind);
+    if (r.reward && window.mwEarnSocial) {
+      await window.mwEarnSocial('like', (kind === 'room' ? '방' : '캐릭터') + ' 좋아요', 'like_' + uid + '_' + kind);
     }
   }
+};
+
+// ===== 방 노크 =====
+// 정적 방을 본 사람이 하루 한 번 노크하면 방 주인에게 알림이 간다.
+// 주인은 알림에서 바로 자기 방으로 초대하고, 상대는 받은 초대를 눌러 즉시 입장한다.
+// 연결 여부나 머피 차감은 아직 걸지 않는다 — 첫 접점을 만드는 기능 자체를 먼저 살린다.
+window._mwKnockId = function (ownerUid, fromUid) {
+  return 'rk_' + String(ownerUid || '').replace(/[^a-zA-Z0-9_-]/g, '') + '_'
+    + String(fromUid || '').replace(/[^a-zA-Z0-9_-]/g, '') + '_' + mwTodayKey();
+};
+window.mwKnockBtn = async function (elId, uid, nick, sent) {
+  const el = document.getElementById(elId); if (!el) return;
+  const me = window.currentUser;
+  const mine = me && me.uid === uid;
+  if (sent == null && me && !mine) {
+    try { sent = (await getDoc(doc(db, 'notifications', window._mwKnockId(uid, me.uid)))).exists(); }
+    catch (e) { sent = false; }
+  }
+  const c = sent ? '#8a93a8' : '#F5C24B';
+  const disabled = mine || sent;
+  const safeNick = String(nick || '머피').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  el.innerHTML = '<button ' + (disabled ? 'disabled' : 'onclick="window.mwRoomKnock(\'' + uid + '\',\'' + safeNick + '\')"')
+    + ' style="display:inline-flex;align-items:center;gap:6px;background:#141a28;border:3px solid #05070c;'
+    + 'box-shadow:0 0 0 2px ' + (sent ? '#2b3350' : 'rgba(245,194,75,.62)') + ';color:' + c + ';'
+    + "font-family:'Galmuri11',sans-serif;font-size:11.5px;padding:8px 12px;" + (disabled ? 'opacity:.62' : 'cursor:pointer') + '">'
+    + '<svg width="13" height="13" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">'
+    + '<path fill="' + c + '" d="M3 1h9v14H3z"/><path fill="#141a28" d="M5 3h5v10H5z"/>'
+    + '<path fill="' + c + '" d="M8 7h2v2H8zM1 5h1v2H1zM0 7h2v2H0zM1 9h1v2H1z"/></svg>'
+    + (sent ? '노크했어요' : '노크하기') + '</button>';
+};
+window.mwRoomKnock = async function (uid, nick) {
+  const me = window.currentUser;
+  if (window._notMember && window._notMember()) { requireLogin('노크하려면 계정이 필요해요'); return; }
+  if (!me || me.uid === uid) return;
+  const id = window._mwKnockId(uid, me.uid);
+  try {
+    const prev = await getDoc(doc(db, 'notifications', id));
+    if (prev.exists()) { showToast('오늘은 이미 노크했어요'); window.mwKnockBtn('mw-rm-knock', uid, nick, true); return; }
+    const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
+    await setDoc(doc(db, 'notifications', id), {
+      toUid: uid, fromUid: me.uid, fromNickname: myNick, type: 'room_knock',
+      read: false, createdAt: serverTimestamp()
+    });
+    window.mwKnockBtn('mw-rm-knock', uid, nick, true);
+    showToast(nick + '님 방에 노크했어요');
+    if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
+  } catch (e) { showToast('노크하지 못했어요 · 잠시 뒤에 다시'); }
+};
+window.mwAcceptKnock = async function (fromUid, fromNick, notifId) {
+  const me = window.currentUser; if (!me || !fromUid) return;
+  try {
+    const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
+    const day = mwTodayKey();
+    await setDoc(doc(db, 'notifications', 'ri_' + fromUid + '_' + me.uid + '_' + day), {
+      toUid: fromUid, fromUid: me.uid, fromNickname: myNick, type: 'room_invite',
+      read: false, createdAt: serverTimestamp()
+    });
+    if (notifId) await updateDoc(doc(db, 'notifications', notifId), { read: true });
+    showToast(fromNick + '님을 내 방으로 초대했어요');
+    window.loadNotificationsFirestore && window.loadNotificationsFirestore();
+  } catch (e) { showToast('초대하지 못했어요 · 잠시 뒤에 다시'); }
+};
+window.mwAcceptRoomInvite = async function (ownerUid, notifId) {
+  if (!ownerUid) return;
+  if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch (e) {} }
+  closePanel('notif-panel');
+  window._mwRoomInvite = ownerUid;
+  window.mwRoomEnterField && window.mwRoomEnterField(ownerUid);
 };
 
 // ===== 링 메뉴 > 캐릭터 정보 (메이플식 장비창) =====

@@ -73,6 +73,14 @@ function compose(n) {
       return { title: "👋 콕!",
                body: `${who}님이 나를 콕 찔렀어요` };
 
+    case "room_knock":
+      return { title: "🚪 똑똑, 노크가 왔어요",
+               body: `${who}님이 내 머피룸 앞에 와 있어요` };
+
+    case "room_invite":
+      return { title: "🔑 문이 열렸어요",
+               body: `${who}님이 머피룸으로 초대했어요. 지금 들어가볼까요?` };
+
     // ── 스쿼드 ──────────────────────────────────────────────
     case "squad_invite":
       return { title: "⚡ 같이 하실래요?",
