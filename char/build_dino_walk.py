@@ -40,6 +40,17 @@
 
 6. 축소는 **프리멀티플라이드 LANCZOS**. 그냥 줄이면 투명 픽셀 밑 RGB 가 섞여 테두리에
    검은 띠가 생긴다(extract_season_item.py 와 같은 이유).
+
+7. ★**기존 공룡은 일부러 저퀄 픽셀화를 거친 물건이다**(대표 지적). 그냥 매끈하게 줄이면
+   같은 캐릭터인데 결이 달라서 앉은 것과 걷는 것이 딴 그림처럼 보인다. 그래서
+   `extract_season_item.py --pixel 2` 와 **똑같은 처리**를 태운다:
+   아트격자(1아트픽셀=2유닛)로 줄였다가 NEAREST 로 되키우고 알파를 이진화한다.
+   실측: 앉은 공룡 = 고유색 22개, 알파 0/255 뿐, 색마다 픽셀 수가 4의 배수(=2x2 격자).
+
+8. ★팔레트는 **새로 뽑지 않고 앉은 공룡 것을 그대로 쓴다.** 프레임마다 quantize 하면
+   팔레트가 조금씩 달라져 걸을 때 색이 깜빡인다. 게다가 원본 시트끼리도 밝기가 다르다
+   (실측 평균밝기: 정면 157 / 뒷면 148 / 측면 143). 같은 팔레트로 스냅하면
+   "앉았다 걸으면 어두워진다"가 원천적으로 사라진다.
 """
 from __future__ import annotations
 
@@ -128,8 +139,11 @@ def foot_center(im):
 
 def scale_to(im, factor):
     """프리멀티플라이드 LANCZOS 축소 (검은 테두리 방지)."""
-    w = max(1, int(round(im.width * factor)))
-    h = max(1, int(round(im.height * factor)))
+    return resize_to(im, max(1, int(round(im.width * factor))),
+                     max(1, int(round(im.height * factor))))
+
+
+def resize_to(im, w, h):
     a = np.asarray(im.convert('RGBA')).astype(np.float32)
     al = a[..., 3:4] / 255.0
     pm = np.concatenate([a[..., :3] * al, a[..., 3:4]], -1).astype(np.uint8)
@@ -137,6 +151,32 @@ def scale_to(im, factor):
     al2 = np.clip(sm[..., 3:4] / 255.0, 1e-4, 1.0)
     rgb = np.clip(sm[..., :3] / al2, 0, 255)
     return Image.fromarray(np.concatenate([rgb, sm[..., 3:4]], -1).astype(np.uint8))
+
+
+def ref_palette():
+    """앉은 공룡(앱에 이미 있는 것)의 팔레트. 걷기를 여기에 스냅해 색을 통일한다."""
+    a = np.asarray(Image.open(SITTING).convert('RGBA'))
+    pal = np.unique(a[..., :3][a[..., 3] >= 128].reshape(-1, 3), axis=0)
+    return pal.astype(np.int16)
+
+
+def pixelate(im, cell, pal):
+    """저퀄 픽셀화 — extract_season_item.py --pixel 과 같은 처리 + 팔레트 고정.
+
+    아트격자로 줄였다가 NEAREST 로 되키운다(1아트픽셀 = cell 유닛).
+    알파는 이진화하고(픽셀아트엔 반투명 가장자리가 없다), 색은 기준 팔레트로 스냅한다.
+    """
+    aw = max(1, int(round(im.width / cell)))
+    ah = max(1, int(round(im.height / cell)))
+    small = np.asarray(resize_to(im, aw, ah)).astype(np.int32)
+    alpha = np.where(small[..., 3] >= 128, 255, 0).astype(np.uint8)
+    # 각 픽셀을 가장 가까운 기준색으로. 프레임마다 팔레트를 새로 뽑으면 색이 깜빡인다.
+    # ★int32 로 올려서 뺀다 — int16 이면 차이의 제곱(최대 65025)이 넘쳐 음수가 되고
+    #   argmin 이 엉뚱한 색을 고른다(배가 까매지고 테두리가 밝아졌다).
+    d = ((small[..., None, :3] - pal[None, None, :, :].astype(np.int32)) ** 2).sum(-1)
+    snapped = pal[d.argmin(-1)].astype(np.uint8)
+    out = Image.fromarray(np.dstack([snapped, alpha]))
+    return out.resize((aw * cell, ah * cell), Image.NEAREST)
 
 
 def idle_frames():
@@ -150,7 +190,7 @@ def idle_frames():
     return out
 
 
-def build(side_mode):
+def build(side_mode, pixel=2):
     ref_head = head_width(Image.open(SITTING))          # 기준 머리 폭 = 앱에 이미 있는 공룡
     print('기준(앉은 공룡) 머리 폭 %dpx' % ref_head)
 
@@ -176,6 +216,14 @@ def build(side_mode):
           % (side_mode, fix, ref_h, side_h))
     if abs(fix - 1.0) > 1e-6:
         norm['side'] = [scale_to(f, fix) for f in norm['side']]
+
+    # 2.5) 저퀄 픽셀화 + 팔레트 고정 (주석 7·8번)
+    # 대기(둥가둥가)는 이미 이 처리를 거친 물건이라 손대지 않는다.
+    if pixel:
+        pal = ref_palette()
+        print('팔레트 %d색을 앉은 공룡에서 가져와 걷기에 강제한다 (아트픽셀 %d)' % (len(pal), pixel))
+        for k in norm:
+            norm[k] = [pixelate(f, pixel, pal) for f in norm[k]]
 
     # 3) 행 구성 — 앞·좌·뒤·우. 좌향은 측면을 좌우반전(대표 지시)
     rows = [
@@ -212,12 +260,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--side-mode', default='height', choices=['height', 'mid', 'head'],
                     help='측면 보정 방식 (기본 height = 정면과 키 맞춤)')
+    ap.add_argument('--pixel', type=int, default=2,
+                    help='아트픽셀 크기(기존 공룡과 같은 저퀄 픽셀화). 0=끔')
     ap.add_argument('--variants', action='store_true', help='미리보기용 3종을 함께 출력')
     a = ap.parse_args()
 
     modes = ['height', 'mid', 'head'] if a.variants else [a.side_mode]
     for m in modes:
-        sheet, cw, ch, cols, names, counts = build(m)
+        sheet, cw, ch, cols, names, counts = build(m, a.pixel)
         suffix = '' if (m == a.side_mode and not a.variants) else '_' + m
         if a.variants:
             suffix = '_' + m
