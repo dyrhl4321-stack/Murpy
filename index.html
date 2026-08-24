@@ -11971,7 +11971,8 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //   | 남의 방 구경      |  +1  | 하루 2회    |   20   |  ← ★내가 '가면' 받는다(아래 참고)
 //   | 좋아요 누르기     |  +1  | 하루 2회    |   20   |  ← ★내가 '누르면' 받는다
 //   | 스쿼드 벙 완료    | +10  | 회당(호스트)|   20   |
-//   | 스쿼드 출석       |  +2  | 회당        |    8   |
+//   | 일반 스쿼드 출석  |  +2  | 회당        |    8   |
+//   | 범프 스쿼드 출석  |  +5  | 회당        |   별도  |  ← 범프를 현장 기본 동선으로 만들기 위한 차등
 //   | 새 센터 도감 등록 |  +3  | 센터당 1회  |    9   |
 //   | 시즌 오브젝트     | +10  | 획득 시     |   10   |
 //   | 범프(첫/새 만남)  |+10/+3| 하루 3명    |   18   |  ← 같은 사람 반복은 제외
@@ -12042,7 +12043,8 @@ const BETA_GRANT_KEY = 'betaGrant300';
 // ★숫자만 여기서 바꾸면 된다. 홀수로 둔 것은 범프 보상과 같은 결(홀수 법칙).
 const CREDIT_BIRTHDAY = 55;
 const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKE = 1,
-      CREDIT_SQUAD_HOST = 10, CREDIT_SQUAD_ATTEND = 2, CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
+      CREDIT_SQUAD_HOST = 10, CREDIT_SQUAD_ATTEND = 2, CREDIT_SQUAD_BUMP_ATTEND = 5,
+      CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
 // 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기·껐다켜기)을 막는 상한
 const CAP_VISIT_DAY = 2, CAP_LIKE_DAY = 2;
 // ★범프 보상 — 아는 사람끼리 계속 부딪혀 파밍하는 걸 막는 게 핵심이다(대표 지적 2026-08-05).
@@ -28700,9 +28702,11 @@ async function bpSucceed(other, dt) {
   try { if (bpDbg && !bpDbg._saved) { bpDbg._saved = 1; bpDbg.dt = dt; bpDbgSave('ok'); } } catch (e) {}
   const bk = await bpSaveBumper(other, place);
   const _att = bpAttendCredit; bpAttendCredit = 0;
-  const earned = (await bpEarn(bk.stacked, bk.first)) + _att;
+  const _bump = await bpEarn(bk.stacked, bk.first);
+  const earned = _att + _bump;
   bpOverlay('done', { other, dt, place, late: res === 'late', already: res === 'already',
-                      stacked: bk.stacked, first: bk.first, earned: earned, attend: !!_att });
+                      stacked: bk.stacked, first: bk.first, earned: earned,
+                      attend: !!_att, attendEarned: _att, bumpEarned: _bump });
   window._guestGotRecord = true;   // 연출을 닫는 순간 게스트에게 계정을 권한다(bumpClose)
   if (window._rt && bpSid) {
     // 위와 같은 이유 — 필드에 노드가 있을 때만 쏜다(없으면 찌꺼기가 생긴다).
@@ -28731,7 +28735,33 @@ async function bpAttend(sid, otherUid) {
     const mSnap = await getDoc(mRef);
     if (!mSnap.exists()) return 'not-member';
     const mData = mSnap.data();
-    if (mData.checkedIn) return 'already';
+    // ★이미 운영진이 수동 출석을 찍어둔 사람도 범프를 실제로 체험하면 범프 출석 보상은 받는다.
+    //   일반 출석(+2)과 범프 행동(+5)은 서로 다른 보상이다. 다만 같은 스쿼드·같은 날에는 1회만 준다.
+    const _bd = new Date();
+    const _bday = _bd.getFullYear() + '-' + String(_bd.getMonth() + 1).padStart(2, '0') + '-' + String(_bd.getDate()).padStart(2, '0');
+    const bumpAttendRewardKey = sid + '_' + _bday;
+    const grantBumpAttendReward = async function () {
+      const meRef = doc(db, 'users', user.uid);
+      const got = await runTransaction(db, async function (tx) {
+        const freshMember = await tx.get(mRef);
+        const freshMe = await tx.get(meRef);
+        if (!freshMember.exists() || !freshMe.exists()) return 0;
+        if (freshMember.data().bumpAttendRewardKey === bumpAttendRewardKey) return 0;
+        tx.update(mRef, { bumpAttendRewardKey: bumpAttendRewardKey, lastBumpAt: serverTimestamp() });
+        tx.update(meRef, { credits: increment(CREDIT_SQUAD_BUMP_ATTEND) });
+        return CREDIT_SQUAD_BUMP_ATTEND;
+      });
+      if (!got) return 0;
+      window._creditState.credits += got;
+      if (window.renderCreditUI) window.renderCreditUI();
+      if (window.mwUpdateCoin) window.mwUpdateCoin();
+      bpAttendCredit = got;
+      return got;
+    };
+    if (mData.checkedIn) {
+      await grantBumpAttendReward();
+      return 'already';
+    }
     // ★승인 대기(invited)는 출석시키지 않는다 (대표 8-14 확정).
     //   한 번 열어봤다가 되돌렸다 — **승인제는 근방단이 아닌 사람을 애초에 막으려고 만든 문**이다.
     //   범프가 강한 증거라는 것과, 그 사람이 이 모임에 들어와도 되는 사람이냐는 별개 문제다.
@@ -28767,7 +28797,7 @@ async function bpAttend(sid, otherUid) {
     });
     // 출석 적립 — 여기서는 **조용히** 준다(reason 없음). 곧바로 범프 완료 화면이 뜨는데
     // 그 위에 코인 연출을 겹치면 상대·시각차를 가린다. 대신 완료 화면의 합계에 얹는다.
-    if (window.earnCredit) { await window.earnCredit(CREDIT_SQUAD_ATTEND, ''); bpAttendCredit = CREDIT_SQUAD_ATTEND; }
+    await grantBumpAttendReward();
     if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
     window._sqStampPop && window._sqStampPop(user.uid);
     window.sqChatSys && window.sqChatSys(sid, (window._mwMyNick || '머피') + '님 출석 ✓' + (late ? ' (지각)' : ''));
@@ -28873,7 +28903,7 @@ window.bumpPreview = function (mode, role, data) {
   if (mode === 'done') {
     bpOverlay('done', Object.assign({
       other: { nick: '패수현' }, dt: 7, place: '', late: false, already: false,
-      stacked: true, first: false, earned: 2, attend: true
+      stacked: true, first: false, earned: 8, attend: true, attendEarned: 5, bumpEarned: 3
     }, data || {}));
   } else if (mode === 'scene') {
     // 접촉 연출(경계 열림 → 캐릭터가 걸어가 실루엣 → 손바닥 → 섬광 → 교환)을 그대로 재생한다.
@@ -28961,12 +28991,24 @@ function bpOverlay(mode, data) {
     // ★적립을 별도 토스트로 띄우지 않고 **여기 안에** 넣는다. 범프는 이미 제 축하 화면을 갖고 있어서
     //   그 위에 코인 연출을 또 덮으면 정작 상대·시각차라는 핵심을 가린다.
     //   대신 왜 받았는지가 한 줄로 남는다 — 토스트가 스쳐 지나가던 문제(대표 지적)는 해결된다.
-    const coin = window.murpyTokenSVG ? window.murpyTokenSVG(15) : '';
+    const coin = window.murpyTokenSVG ? window.murpyTokenSVG(34) : '';
+    const rewardLines = [];
+    if (data.attendEarned) rewardLines.push(`<span>범프 출석 <b>+${data.attendEarned}</b></span>`);
+    if (data.bumpEarned) rewardLines.push(`<span>${data.first ? '첫 범프' : '새 만남'} <b>+${data.bumpEarned}</b></span>`);
     const earnHtml = data.earned
-      ? `<div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;background:none;
-           border:1px solid rgba(245,194,75,.35);border-radius:10px;padding:7px 13px">${coin}
-           <span style="font-size:12.5px;color:#F5C24B;font-weight:800">
-           ${data.attend ? '출석' + (data.stacked ? ' · ' : '') : ''}${data.stacked ? (data.first ? '첫 범프' : '새 만남') : ''} +${data.earned} 머피</span></div>`
+      ? `<div class="bp-reward-pop" style="display:flex;flex-direction:column;align-items:center;margin:2px 0 18px;
+           border:1px solid rgba(245,194,75,.42);border-radius:16px;padding:13px 20px 12px;
+           background:linear-gradient(180deg,rgba(245,194,75,.12),rgba(245,194,75,.035));
+           box-shadow:0 0 28px rgba(245,194,75,.10)">
+           <div style="display:flex;align-items:center;gap:10px">${coin}
+             <span style="font-family:'Galmuri14',sans-serif;font-size:25px;color:#F5C24B;line-height:1">+${data.earned}</span>
+             <span style="font-size:13px;color:#F5C24B;font-weight:900">머피</span>
+           </div>
+           <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:9px;
+             font-size:11.5px;color:#cfd6e6;font-weight:700">
+             ${rewardLines.join('<i style="width:1px;height:10px;background:rgba(255,255,255,.18)"></i>')}
+           </div>
+         </div>`
       : (data.stacked ? '' : `<div style="font-size:11.5px;color:#4a5266;margin-bottom:16px">
            이 스쿼드에서 이미 만난 사이예요 · 기록은 그대로예요</div>`);
     el.innerHTML = `
@@ -28987,6 +29029,14 @@ function bpOverlay(mode, data) {
         <button onclick="window.bumpClose()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;
           padding:14px 30px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer">확인</button>
       </div>`;
+    const rewardPop = el.querySelector('.bp-reward-pop');
+    if (rewardPop && rewardPop.animate && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      rewardPop.animate([
+        { opacity: 0, transform: 'translateY(12px) scale(.86)' },
+        { opacity: 1, transform: 'translateY(-3px) scale(1.045)', offset: .62 },
+        { opacity: 1, transform: 'translateY(0) scale(1)' }
+      ], { duration: 520, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'both' });
+    }
   }
 }
 function bpMsg(html) { const m = document.getElementById('bp-msg'); if (m) m.innerHTML = html; }
