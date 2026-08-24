@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '661';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '662';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3918,6 +3918,34 @@ window.mwPetMenu = function () {
   if (navigator.vibrate) navigator.vibrate(8);
 };
 
+// 꾸미기 카탈로그의 펫 버튼 상태를 **그 자리에서** 고친다.
+//
+// ★mwRoomEdit() 를 다시 부르면 안 된다 — _reditDraft 가 저장된 방으로 되돌아가서
+//   배치 중이던 가구가 날아간다(전에 데인 곳). 목록 갱신은 버튼 표시만 직접 고친다.
+// 여러 마리를 연달아 사도 산 즉시 밝아지고, 나와 있는 아이에만 표시가 붙는다.
+window._mwPetCatSync = function () {
+  var btns = document.querySelectorAll('.mw-redit-cat button');
+  var cur = (window._myPet && window._myPet.id) || '';
+  Array.prototype.forEach.call(btns, function (b) {
+    var m = (b.getAttribute('onclick') || '').match(/_reditAdd\('([^']+)'\)/);
+    if (!m) return;
+    var id = m[1], def = window.mwItemDef && window.mwItemDef(id);
+    if (!def || !def.pet) return;
+    if (window.mwFurnOwned && window.mwFurnOwned(id)) b.style.opacity = '';   // 산 것은 밝게
+    b.style.borderColor = (id === cur) ? '#3D7EFF' : '';
+    var tag = b.querySelector('b.pet-now');
+    if (id === cur) {
+      if (!tag) {
+        tag = document.createElement('b');
+        tag.className = 'pet-now';
+        tag.style.cssText = 'color:#3D7EFF;font-size:10px;font-weight:700';
+        tag.textContent = '나와 있음';
+        b.appendChild(tag);
+      }
+    } else if (tag) { tag.remove(); }
+  });
+};
+
 // 들여보내기 — 링 메뉴에서만 부른다. 카탈로그를 다시 눌러서 사라지면 안 된다(대표 지적).
 window.mwPetPutAway = function () {
   var name = (window.mwItemDef(window._myPet && window._myPet.id) || {}).name || '펫';
@@ -3926,6 +3954,7 @@ window.mwPetPutAway = function () {
   if (window._mwSavePet) window._mwSavePet(null);
   window.mwRenderFurn && window.mwRenderFurn();
   window._mwPetSync && window._mwPetSync();
+  window._mwPetCatSync && window._mwPetCatSync();
   showToast("'" + name + "' 은(는) 쉬러 갔어요");
 };
 
@@ -4023,6 +4052,13 @@ window.mwPetTake = async function (id) {
   //   카탈로그의 '나와 있음' 표시는 편집기를 닫았다 열면 갱신된다.
   window.mwRenderFurn && window.mwRenderFurn();
   window._mwPetSync && window._mwPetSync();
+  window._mwPetCatSync && window._mwPetCatSync();
+  // ★꾸미기 중에는 방이 **다른 요소**(#mw-redit-room)로 그려진다. 펫은 실제 방
+  //   (#charworld-room)에 붙으므로 꾸미기를 닫기 전에는 보일 수가 없다.
+  //   말없이 두면 "샀는데 안 보인다"가 된다(대표 지적 8-24).
+  if (document.getElementById('mw-redit-room')) {
+    showToast("'" + def.name + "' 이(가) 방에 나왔어요 · 꾸미기를 닫으면 보여요");
+  }
 };
 
 // ===== 공룡 어슬렁 =====
@@ -4475,6 +4511,10 @@ window._mwPetSync = function () {
     window._mwPet = { id: id, tc: (st.tc | 0) + 2, tr: (st.tr | 0) + 1,
                       dir: 0, anim: 'stand', moving: false };
   }
+  // ★방을 못 재는 동안에는 만들지 않는다. 꾸미기가 열려 있으면 방이 가려져 clientWidth 가 0 인데,
+  //   그때 만들면 크기 0 짜리로 굳어 꾸미기를 닫아도 안 보인다.
+  var _room = document.getElementById('charworld-room');
+  if (!_room || !_room.clientWidth) return;
   window._mwPetEl();
   window._mwPetApply();
   window._mwPetUnstick();
