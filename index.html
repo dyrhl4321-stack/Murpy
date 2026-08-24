@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '658';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '659';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3851,6 +3851,115 @@ window._mwPetGoto = function (spot, thenAnim) {
   return true;
 };
 
+// ===== 펫 링 메뉴 =====
+// 캐릭터 링 메뉴(mwCharMenu)와 **같은 물건**을 재사용한다.
+// ★단, 문구는 새로 쓴다. 예전에 스쿼드 게스트 시트를 게임에 통째로 재사용했다가
+//   "실명으로 적어주세요"가 뜬 적이 있다.
+// ★아이콘은 기존 것을 빌려 썼다 — 밥 주기 전용 아이콘이 없다.
+//   머피 아이콘은 손으로 SVG 를 그리지 않고 나노바나나 누끼로 만드는 규칙이라 대표 작업이 필요하다.
+window.MW_PET_MODES = [
+  { k: 'free', t: '자유', d: '알아서 지내요' },
+  { k: 'follow', t: '따라와', d: '내 뒤를 따라와요' },
+  { k: 'stay', t: '여기 있어', d: '그 자리에 있어요' }
+];
+
+window.mwPetMenu = function () {
+  var old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
+  var room = document.getElementById('charworld-room');
+  var host = document.getElementById('mw-pet');
+  if (!room || !host || !window._mwPet) return;
+  if (window._mwIsVisiting && window._mwIsVisiting()) return;   // 남의 펫은 구경만
+
+  var mode = (window._myPet && window._myPet.mode) || 'free';
+  var cur = window.MW_PET_MODES.filter(function (m) { return m.k === mode; })[0]
+            || window.MW_PET_MODES[0];
+  var cx = host.offsetLeft + host.offsetWidth / 2;
+  var cy = host.offsetTop + host.offsetHeight * 0.55;
+  // transform 으로 옮기므로 offsetLeft 는 0 이다 — 실제 화면 위치를 따로 읽는다
+  var rb = room.getBoundingClientRect(), hb = host.getBoundingClientRect();
+  cx = hb.left - rb.left + hb.width / 2;
+  cy = hb.top - rb.top + hb.height * 0.55;
+  var R = 64;
+  var acts = [
+    { k: 'move', t: cur.t, dx: 0, dy: -R - 12, fn: 'window.mwPetMode()' },
+    { k: 'edit', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed()' },
+    { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat()' },
+    { k: 'kick', t: '들여보내기', dx: 0, dy: R + 20, fn: 'window.mwPetTake(window._myPet.id)' }
+  ];
+  var W = room.clientWidth || 320, H = room.clientHeight || 320;
+  var el = document.createElement('div');
+  el.id = 'mw-charmenu';
+  el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+  el.innerHTML = acts.map(function (a, i) {
+    var x = Math.max(36, Math.min(W - 36, cx + a.dx));
+    var y = Math.max(30, Math.min(H - 30, cy + a.dy));
+    return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
+      + (i * 30) + 'ms" onclick="document.getElementById(\'mw-charmenu\').remove();' + a.fn + '">'
+      + (window._RING_ICONS[a.k] || '') + '<span>' + a.t + '</span></button>';
+  }).join('');
+  el.addEventListener('pointerdown', function (e) {
+    if (e.target === el) { el.remove(); if (e.cancelable) e.preventDefault(); }
+  });
+  room.appendChild(el);
+  if (navigator.vibrate) navigator.vibrate(8);
+};
+
+// 행동 설정 — 자유 -> 따라와 -> 여기 있어 순환
+window.mwPetMode = function () {
+  if (!window._myPet) return;
+  var list = window.MW_PET_MODES;
+  var i = 0, k;
+  for (k = 0; k < list.length; k++) if (list[k].k === (window._myPet.mode || 'free')) i = k;
+  var next = list[(i + 1) % list.length];
+  window._myPet.mode = next.k;
+  if (window._mwSavePet) window._mwSavePet(window._myPet);
+  showToast(next.t + ' · ' + next.d);
+  if (window._mwPet) { window._mwPet.moving = false; window._mwPetStep(); }
+};
+
+// 밥 주기 — 방에 밥그릇이 있어야 한다. 그릇 그림을 '찬 것'으로 갈고 펫을 부른다.
+window.mwPetFeed = function () {
+  if (!window._mwPet || !window._myPet) return;
+  var bowl = window._mwPetNearest('bowl');
+  if (!bowl) { showToast('밥그릇이 있어야 밥을 줄 수 있어요 · 꾸미기에서 놓아 주세요'); return; }
+  window._myPet.fedAt = Date.now();
+  if (window._mwSavePet) window._mwSavePet(window._myPet);
+  window._mwPetBowlFill();
+  window._mwPet.moving = false;
+  window._mwPetGoto(bowl, 'eat');
+  showToast('밥을 줬어요');
+};
+
+// 그릇 그림 갈아 끼우기. 빈 것과 찬 것을 **같은 상자**로 잘라 놨으므로 자리가 안 튄다.
+window._mwPetBowlFill = function () {
+  var furn = document.getElementById('mw-furn'); if (!furn) return;
+  var data = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
+  var list = (data && data.f) || [], i;
+  var fed = (window._myPet && window._myPet.fedAt) || 0;
+  var on = fed && (Date.now() - fed < 6 * 3600 * 1000);      // 6시간 지나면 다시 빈 그릇
+  for (i = 0; i < list.length; i++) {
+    var def = window.mwDefFor ? window.mwDefFor(list[i]) : null;
+    if (!def || !def.petBowl || !def.full) continue;
+    var im = furn.querySelector('[data-idx="' + i + '"]');
+    if (im) im.src = on ? def.full : def.src;
+  }
+};
+
+// 쓰다듬기 — 자고 있었으면 잠깐 깬다.
+window.mwPetPat = function () {
+  var p = window._mwPet; if (!p || !window._myPet) return;
+  window._myPet.patAt = Date.now();
+  if (window._mwSavePet) window._mwSavePet(window._myPet);
+  var def = window._mwPetDef(p.id) || {};
+  var was = p.anim;
+  window._mwPetPlay(def.kind === 'cat' ? 'act1' : 'act2', null);
+  showToast(was === 'sleep' ? '깼어요' : '좋아해요');
+  clearTimeout(p._poke);
+  p._poke = setTimeout(function () {
+    window._mwPetPlay(was === 'sleep' ? 'sleep' : 'stand', null);
+  }, 1800);
+};
+
 // ===== 펫 데리고 나오기 =====
 // 구매·소유 판정은 가구와 **같은 물건**을 쓴다(mwFurnOwned / spendCredit / _mwGrantRoomItem).
 // 펫만 따로 상점을 만들면 가격 검사 빠뜨리기 같은 사고가 그쪽에서 또 난다.
@@ -4167,7 +4276,7 @@ window._mwPetEl = function () {
   var room = document.getElementById('charworld-room'); if (!room) return null;
   el = document.createElement('div');
   el.id = 'mw-pet';
-  el.onclick = function () { window.mwPetPoke && window.mwPetPoke(); };
+  el.onclick = function () { window.mwPetMenu && window.mwPetMenu(); };
   el.innerHTML = '<i class="mw-pet-sh"></i><i class="mw-pet-spr"></i>';
   room.appendChild(el);
   return el;
@@ -4240,6 +4349,30 @@ window._mwPetPick = function () {
 window._mwPetStep = function () {
   var p = window._mwPet, el = document.getElementById('mw-pet');
   if (!p || !el || p.moving) return;
+  var mode = (window._myPet && window._myPet.mode) || 'free';
+  if (mode === 'stay') {                       // 여기 있어 — 그 자리에 앉아 있는다
+    if (p.anim !== 'sit') window._mwPetPlay('sit', null);
+    return;
+  }
+  if (mode === 'follow') {
+    // ★고양이는 불러도 잘 안 온다(설계서). 세 번에 한 번은 못 들은 척한다.
+    var def = window._mwPetDef(p.id) || {};
+    if (def.kind === 'cat' && Math.random() < 0.33) {
+      if (p.anim !== 'sit') window._mwPetPlay('sit', null);
+      return;
+    }
+    var me = window._charPos;
+    if (me) {
+      var want = { tc: me.tc + (p.tc > me.tc ? 1 : -1), tr: me.tr };
+      if (!window._charWalkable(want.tc, want.tr)) want = { tc: me.tc, tr: me.tr + 1 };
+      if (Math.abs(want.tc - p.tc) + Math.abs(want.tr - p.tr) > 1) {
+        p.up = false; window._mwPetGoto(want, 'stand'); return;
+      }
+    }
+    if (p.anim !== 'stand') window._mwPetPlay('stand', null);
+    return;
+  }
+
   var act = window._mwPetAct();
 
   if (act === 'sleep') {
@@ -4329,15 +4462,6 @@ window._mwPetUnstick = function () {
   }
 };
 
-// 눌렀을 때 — 링 메뉴는 다음 단계다. 지금은 반응만 준다.
-// 고양이는 그루밍(act1), 강아지는 장난치기(act2).
-window.mwPetPoke = function () {
-  var p = window._mwPet; if (!p) return;
-  var def = window._mwPetDef(p.id); if (!def) return;
-  window._mwPetPlay(def.kind === 'cat' ? 'act1' : 'act2', null);
-  clearTimeout(p._poke);
-  p._poke = setTimeout(function () { window._mwPetPlay('stand', null); }, 1400);
-};
 
 // 앱이 안 보이면 완전히 멈춘다(설계서 성능 규칙 5번).
 document.addEventListener('visibilitychange', function () {
@@ -4357,6 +4481,7 @@ window.mwRenderFurn = function () {
   const box = (window._seasonState && window._seasonState.box) || [];
   el.innerHTML = window.mwFurnHtml(window._myRoom) + window.mwBoxHtml(box, true);
   window._mwDinoSync && window._mwDinoSync(false);
+  window._mwPetBowlFill && window._mwPetBowlFill();
 };
 // ---- 방 꾸미기 편집기: 카탈로그에서 추가 → 드래그 배치 → 저장(users/{uid}.room) ----
 window._reditDraft = null; window._reditSel = -1;
