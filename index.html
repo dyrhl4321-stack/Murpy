@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '641';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '642';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -2870,10 +2870,13 @@ window._charEnsureDefaults = function (cfg) {
   const bodyKey = cfg.body || 'human';
   const b = window._CHAR_BODIES[bodyKey] || window._CHAR_BODIES.human;
   if (!b.wearable) return false;   // 헬토리·히든은 통짜 캐릭터라 헤어·옷 개념이 없다
+  // null/없는 id는 예전처럼 깨진 저장본으로 보고 복구한다. 단 'none'은 사용자가 직접 고른 민머리다.
+  const intentionalBald = cfg.hair === 'none';
   let changed = false;
-  if (cfg.hair && window._HAIR_ID_MIGRATE[cfg.hair]) { cfg.hair = window._HAIR_ID_MIGRATE[cfg.hair]; changed = true; }
+  if (!intentionalBald && cfg.hair && window._HAIR_ID_MIGRATE[cfg.hair]) { cfg.hair = window._HAIR_ID_MIGRATE[cfg.hair]; changed = true; }
   // 카탈로그에 없거나 다른 몸통 전용이면 벗긴다 (렌더는 어차피 무시하므로 데이터도 맞춘다)
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
+    if (slot === 'hair' && intentionalBald) return;
     const id = cfg[slot]; if (!id) return;
     const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
     if (!it || (it.body && it.body !== bodyKey)) { cfg[slot] = null; changed = true; }
@@ -2882,7 +2885,8 @@ window._charEnsureDefaults = function (cfg) {
     if (cfg[slot] || !id) return;
     if ((window.CHAR_ITEMS || []).some(function (x) { return x.id === id && x.slot === slot; })) { cfg[slot] = id; changed = true; }
   };
-  fill('hair', b.defaultHair); fill('top', b.defaultTop); fill('bottom', b.defaultBottom);
+  if (!intentionalBald) fill('hair', b.defaultHair);
+  fill('top', b.defaultTop); fill('bottom', b.defaultBottom);
   return changed;
 };
 // 아이템의 body = 그 몸통 전용(실루엣이 달라 다른 몸엔 안 맞는다). 없으면 공용.
@@ -3778,7 +3782,7 @@ window.mwBuyRoomSlot = async function () {
     if (!ok) return;
   }
   if (!(await window.spendCredit(uid, COST_SLOT_EXT))) {
-    showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return;
+    showToast(window.creditSpendFailMessage()); return;
   }
   if (window._mwGrantRoomSlot) await window._mwGrantRoomSlot();
   showToast('가구를 ' + window.mwRoomCap() + '개까지 놓을 수 있어요!');
@@ -3817,7 +3821,7 @@ window._reditAdd = async function (id) {
       if (!ok) return;
     }
     if (!(await window.spendCredit(uid, def.price))) {
-      showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return;
+      showToast(window.creditSpendFailMessage()); return;
     }
     // ★이 함수는 모듈 밖 스크립트라 updateDoc/arrayUnion 을 직접 못 쓴다 → 브릿지로 저장
     if (window._mwGrantRoomItem) await window._mwGrantRoomItem(id);
@@ -4616,9 +4620,10 @@ window.renderCharSpace = function () {
     const _bd = window._CHAR_BODIES[d.body] || {};
     [['hair', _bd.defaultHair], ['top', _bd.defaultTop], ['bottom', _bd.defaultBottom]].forEach(function (p) {
       const slot = p[0], def = p[1];
-      const ok = d[slot] && (window.CHAR_ITEMS || []).some(function (x) {
+      const intentionalBald = slot === 'hair' && d.hair === 'none';
+      const ok = intentionalBald || (d[slot] && (window.CHAR_ITEMS || []).some(function (x) {
         return x.id === d[slot] && (!x.body || x.body === d.body);
-      });
+      }));
       if (ok) return;
       d[slot] = (def && (window.CHAR_ITEMS || []).some(function (x) { return x.id === def; })) ? def : null;
     });
@@ -4721,7 +4726,8 @@ window.charSlot = function (slot, btn) {
     //   눌러도 아무 일이 없었다(대표 8-19). 히든 캐릭터는 아예 아우라만 켤 수 있어 더 그렇다.
     //   둘 다 꺼져 있을 때만 '안 씀'이 착용중이다.
     const auraOn = (slot === 'acc') && !!((window._seasonState || {}).auraOn);
-    const off = isMask ? !window._charDraft.mask : (!window._charDraft[slot] && !auraOn);
+    const intentionalBald = slot === 'hair' && window._charDraft.hair === 'none';
+    const off = isMask ? !window._charDraft.mask : (intentionalBald || (!window._charDraft[slot] && !auraOn));
     const onclick = isMask ? 'window.charClearMask()' : "window.charClearSlot('" + slot + "')";
     grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
@@ -4729,7 +4735,8 @@ window.charSlot = function (slot, btn) {
 window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window._charAutoSave(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
 window.charClearSlot = function (slot) {
   if (!window._charDraft) return;
-  window._charDraft[slot] = null;
+  // null은 깨진 옛 저장본과 구분할 수 없다. 헤어만 명시적인 'none'으로 저장해 민머리를 유지한다.
+  window._charDraft[slot] = slot === 'hair' ? 'none' : null;
   // ★악세사리는 **둘 다** 벗는다 — 스프라이트 악세사리 + 캐릭터 이펙트(아우라).
   //   하나만 벗기면 '안 씀'을 눌렀는데 아우라가 남아 있어 버튼이 안 먹은 것처럼 보인다
   //   (대표 8-19: "두개다 쓰면 안씀버튼은 다 벗겨야하는데 하나만 벗기는듯").
@@ -4915,7 +4922,7 @@ window.charTryOnBuy = async function () {
     if (!ok) return;
   }
   const paid = window.spendCredit ? await window.spendCredit(uid, item.price) : true;
-  if (!paid) { window.showToast && showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+  if (!paid) { window.showToast && showToast(window.creditSpendFailMessage()); return; }
   window._charState.wardrobe = [...owned, id];
   if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
   window.showToast && showToast("'" + item.name + "' 획득!");
@@ -6622,8 +6629,10 @@ window.mwPortal = function () {
   </button>
   <button class="nav-btn" onclick="goPage('char')">
     <div class="nav-icon-wrap" id="nav-char">
-      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="10.5" r="3"/><path d="M6.4 18.5a6 6 0 0 1 11.2 0"/>
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2.2a9.8 9.8 0 1 0 0 19.6 9.8 9.8 0 0 0 0-19.6Zm0 2.2a7.6 7.6 0 1 0 0 15.2 7.6 7.6 0 0 0 0-15.2Z"/>
+        <circle cx="12" cy="10.1" r="2.7"/>
+        <path d="M7.2 18.6c.7-3.2 2.5-5 4.8-5s4.1 1.8 4.8 5h-2.3c-.5-1.9-1.4-2.8-2.5-2.8s-2 .9-2.5 2.8H7.2Z"/>
       </svg>
     </div>
     <span class="nav-label" id="navl-char">머피월드</span>
@@ -10678,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '641';
+window._SW_V = '642';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -15183,17 +15192,43 @@ window.openStreakInfo = function () {
 
 window.getCredits = () => window._creditState.credits;
 
-// 소모: beta는 항상 통과(무제한), enforced는 잔액 차감/부족 시 false
+// 소모: beta는 항상 통과(무제한), enforced는 서버의 최신 잔액을 트랜잭션으로 확인해 차감한다.
 window.creditsEnforcedFor = (uid) => window.CREDITS_MODE === 'enforced'; // 김현수 등 테스트 계정도 첫 고객처럼 베타(무제한) 경험
+window._creditSpendFail = '';
+window.creditSpendFailMessage = function () {
+  return window._creditSpendFail === 'unavailable'
+    ? '머피 사용에 실패했어요 · 연결 확인 후 다시 시도해주세요'
+    : '머피가 부족해요 · 오늘 운동 인증하면 바로 써요';
+};
 window.spendCredit = async (uid, cost) => {
   if (!window.creditsEnforcedFor(uid)) return true;
-  if (!uid || window._creditState.credits < cost) return false;
+  window._creditSpendFail = '';
+  const amount = Number(cost);
+  if (!uid || !Number.isFinite(amount) || amount < 0) { window._creditSpendFail = 'unavailable'; return false; }
+  if (amount === 0) return true;
   try {
-    await updateDoc(doc(db, 'users', uid), { credits: increment(-cost) });
-    window._creditState.credits -= cost;
+    // 로컬 잔액이 아직 0이어도 서버에 실제 잔액이 있으면 정상 결제된다.
+    // 동시에 두 번 눌러도 같은 문서를 읽고 차감하므로 음수 잔액이나 이중 사용이 생기지 않는다.
+    const result = await runTransaction(db, async tx => {
+      const ref = doc(db, 'users', uid);
+      const snap = await tx.get(ref);
+      const balance = snap.exists() && typeof snap.data().credits === 'number' ? snap.data().credits : 0;
+      if (balance < amount) return { ok: false, balance: balance };
+      const next = balance - amount;
+      tx.update(ref, { credits: next });
+      return { ok: true, balance: next };
+    });
+    window._creditState.credits = result.balance;
+    window._creditState.ready = true;
     if (window.renderCreditUI) window.renderCreditUI();
-    return true;
-  } catch (e) { return false; }
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    if (!result.ok) window._creditSpendFail = 'insufficient';
+    return result.ok;
+  } catch (e) {
+    window._creditSpendFail = 'unavailable';
+    console.error('credit spend', e);
+    return false;
+  }
 };
 
 // ★상대가 나에게 먼저 보낸 신청을 '수락'한다 (대표 지시 2026-08-07).
@@ -15741,7 +15776,7 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
     if (!(await window.murpyConfirm({ title: '같이 운동해요 보내기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>를 사용해요', cost: true, confirmText: '보내기' }))) return;
   }
   // free = 수락(상대가 이미 보냈다). 비용은 먼저 신청한 쪽이 냈으므로 받는 쪽은 안 낸다.
-  if (!free && !(await window.spendCredit(me, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+  if (!free && !(await window.spendCredit(me, COST_MATCH))) { showToast(window.creditSpendFailMessage()); return; }
   try {
     await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() });
     const rev = await getDoc(doc(db, 'likes', toUid + '_' + me));
@@ -15889,7 +15924,7 @@ window.matchBuyMore = async function () {
     });
     if (!ok) return;
     if (!(await window.spendCredit(me, COST_MATCH_MORE))) {
-      showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return;
+      showToast(window.creditSpendFailMessage()); return;
     }
   }
   const at = (window._matchList || []).length;
@@ -17553,6 +17588,8 @@ window.mwRoomInviteBtn = function (key) {
   let b = document.getElementById('mw-invite-chip');
   if (key !== 'home') { if (b) b.remove(); return; }
   const leaving = window._mwIsVisiting && window._mwIsVisiting();
+  // 손님 화면의 퇴장은 상단 머피룸 바 한 곳에만 둔다. 필드 안 칩은 중복이라 제거한다.
+  if (leaving) { if (b) b.remove(); return; }
   if (!b) {
     b = document.createElement('button');
     b.id = 'mw-invite-chip'; b.className = 'mw-fieldchip';
@@ -17562,13 +17599,8 @@ window.mwRoomInviteBtn = function (key) {
   // ★회원 여부로 칩을 **만들지 말지** 정하면 안 된다. 첫 렌더 때는 currentUser 가 아직
   //   안 들어와 있어서 칩이 영영 안 생겼다(대표 8-20: "초대 버튼 어디 감"). 만들어 두고
   //   누를 때 판정한다.
-  if (leaving) {
-    b.textContent = '나가기';
-    b.onclick = function (e) { e.stopPropagation(); window.mwRoomLeaveField(); };
-  } else {
-    b.textContent = '친구 초대';
-    b.onclick = function (e) { e.stopPropagation(); window._mwRoomShut = 0; window.mwRoomInviteShare(); };
-  }
+  b.textContent = '친구 초대';
+  b.onclick = function (e) { e.stopPropagation(); window._mwRoomShut = 0; window.mwRoomInviteShare(); };
 };
 
 
@@ -17782,7 +17814,36 @@ window.MW_ROOM_MSG_MS = 15000;
 //   찍히는 게 타이밍 싸움이 되면 안 된다(대표 8-20: "타이밍 문제는 아니라고").
 window.MW_SHOT_MSG_MS = 90000;
 window.mwRoomCountdownMs = 3200;
-window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, beatT: 0 };
+window.MW_ROOM_MOVE_MS = 160;       // 가벼운 위치 패킷 주기. 체감 지연과 쓰기량의 균형점
+window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
+
+// RTDB는 한 사람의 한 칸 이동도 players 전체 스냅샷으로 알려준다. 여러 명이 움직일 때마다
+// 곧바로 전원을 다시 그리지 않고, 화면 한 프레임에 한 번만 최신 상태를 그린다.
+// heartbeat의 t/off만 바뀐 경우는 화면이 같으므로 렌더 자체를 생략한다.
+window._mwRlVisualDigest = function (all) {
+  return JSON.stringify(Object.keys(all || {}).sort().map(function (uid) {
+    const v = all[uid] || {};
+    return [uid, v.tc, v.tr, v.face || '', v.nick || '', !!v.guest, v.title || '', v.aura || '',
+      v.character || null, v.msg ? [v.msg.text || '', v.msg.t || 0] : null, !!v.pin,
+      v.end || 0, (v.shot && v.shot.at) || 0];
+  }));
+};
+window._mwRlQueueRender = function (all) {
+  window._mwRl.last = all || {};
+  const digest = window._mwRlVisualDigest(window._mwRl.last);
+  if (window._mwRl.digest === digest) return;
+  window._mwRl.digest = digest;
+  if (window._mwRl.renderJob) return;
+  const run = function () {
+    window._mwRl.renderJob = 0; window._mwRl.renderKind = '';
+    window._mwRlRender(window._mwRl.last || {});
+  };
+  if (typeof requestAnimationFrame === 'function') {
+    window._mwRl.renderKind = 'raf'; window._mwRl.renderJob = requestAnimationFrame(run);
+  } else {
+    window._mwRl.renderKind = 'timer'; window._mwRl.renderJob = setTimeout(run, 16);
+  }
+};
 // ★★한번 들어온 사람은 **나가기를 누르기 전까지 필드에 남는다** (대표 8-20).
 //   예전엔 90초 동안 위치 전송이 없으면 지웠다 — 가만히 서 있기만 해도 남 화면에서 증발했다.
 //   메이플처럼 캐릭터가 계속 그 자리에 있어야 "사람이 사는 방"으로 읽히고, 처음 들어온
@@ -17953,8 +18014,7 @@ window._mwRlJoin = function (ownerUid) {
     try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._mwSrvOff = sn.val() || 0; }); } catch (e) {}
   }
   const unsub = R.onValue(R.ref(R.db, base), function (snap) {
-    window._mwRl.last = snap.val() || {};
-    window._mwRlRender(window._mwRl.last);
+    window._mwRlQueueRender(snap.val() || {});
   }, function (e) { console.warn('roomLive', e); });
   window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
   if (!u) return;
@@ -17989,36 +18049,49 @@ window._mwRlJoin = function (ownerUid) {
 window._mwRlLeave = function () {
   const R = window._rt;
   clearInterval(window._mwRl.beatT);
+  clearTimeout(window._mwRl.sendT);
+  if (window._mwRl.renderJob) {
+    if (window._mwRl.renderKind === 'raf' && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(window._mwRl.renderJob);
+    else clearTimeout(window._mwRl.renderJob);
+  }
   if (R && window._mwRl.ref) { try { R.remove(window._mwRl.ref); } catch (e) {} }
   window._mwRl.unsub && window._mwRl.unsub();
   window._mwRl.unsubK && window._mwRl.unsubK();
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null, beatT: 0 };
+  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: false, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
 };
-window._mwRlSend = function () {
+window._mwRlSend = function (mode) {
   const R = window._rt, u = auth.currentUser;
   if (!R || !u || !window._mwRl.ref || window._mwRl.cap) return;
   const p = window._charPos || { tc: 7, tr: 8, face: 'down' };
+  const meta = {
+    nick: window._mwMyNick || '머피',
+    guest: !!u.isAnonymous,
+    title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+    aura: ((window._seasonState || {}).auraOn) || '',
+    character: window.getMyCharacter ? window.getMyCharacter() : null,
+    msg: window._mwRl.msg || null,
+    pin: !!window._mwBubblePin,
+    end: window._mwRl.end || null,
+    shot: window._mwRl.shot || null
+  };
+  const metaKey = JSON.stringify(meta);
+  const light = (mode === 'move' || mode === 'beat') && window._mwRl.metaKey === metaKey;
   try {
-    R.set(window._mwRl.ref, {
-      tc: p.tc, tr: p.tr, face: p.face || 'down',
-      nick: window._mwMyNick || '머피',
-      guest: !!u.isAnonymous,
-      title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
-      aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
-      character: window.getMyCharacter ? window.getMyCharacter() : null,
-      msg: window._mwRl.msg || null,
-      pin: !!window._mwBubblePin,       // 고정이면 남의 화면에서도 안 걷힌다
-      end: window._mwRl.end || null,    // 주인이 방을 닫았다는 표시(자리 비움과 구분)
-      shot: window._mwRl.shot || null,        // 촬영 신호 = 찍을 시각(서버 시계)
-      off: null,                              // 돌아왔다 — onDisconnect 가 켜둔 표시를 끈다
-      t: Date.now(),
-    });
+    if (light) {
+      // 이동은 좌표만, 심장박동은 시각만 갱신한다. 캐릭터 PNG 설정 전체를 매번 보내지 않는다.
+      const patch = mode === 'move' ? { tc: p.tc, tr: p.tr, face: p.face || 'down', off: null, t: Date.now() }
+                                    : { off: null, t: Date.now() };
+      R.update(window._mwRl.ref, patch);
+    } else {
+      R.set(window._mwRl.ref, Object.assign({ tc: p.tc, tr: p.tr, face: p.face || 'down' }, meta, { off: null, t: Date.now() }));
+      window._mwRl.metaKey = metaKey;
+    }
     // 진짜 노드가 생긴 지금에야 '끊김 표시'를 예약한다.
     if (!window._mwRl.od) { window._mwRl.od = 1; R.onDisconnect(window._mwRl.ref).update({ off: 1 }); }
   } catch (e) { console.warn('roomLive send', e); }
@@ -18028,17 +18101,17 @@ window._mwRlSend = function () {
 window._mwRlBeat = function () {
   clearInterval(window._mwRl.beatT);
   window._mwRl.beatT = setInterval(function () {
-    if (window._mwRl.ref) window._mwRlSend(); else clearInterval(window._mwRl.beatT);
+    if (window._mwRl.ref) window._mwRlSend('beat'); else clearInterval(window._mwRl.beatT);
   }, 25000);
 };
 // ★이동 훅. _charApplyPos 는 위치·모습이 바뀔 때마다 불리므로 여기 하나만 잡으면
 //   조이스틱이든 무엇이든 전부 덮인다(원본은 안 고친다).
 window._mwRlTick = function () {
   if (!window._mwRl.ref) return;
-  const n = Date.now();
-  if (n - (window._mwRl.lastSend || 0) > 200) { window._mwRl.lastSend = n; window._mwRlSend(); }
+  const n = Date.now(), wait = window.MW_ROOM_MOVE_MS || 160;
+  if (n - (window._mwRl.lastSend || 0) > wait) { window._mwRl.lastSend = n; window._mwRlSend('move'); }
   clearTimeout(window._mwRl.sendT);
-  window._mwRl.sendT = setTimeout(function () { window._mwRl.lastSend = Date.now(); window._mwRlSend(); }, 260);
+  window._mwRl.sendT = setTimeout(function () { window._mwRl.lastSend = Date.now(); window._mwRlSend('move'); }, wait + 30);
 };
 (function () {
   const orig = window._charApplyPos;
@@ -18070,8 +18143,8 @@ window._mwRlRender = function (all) {
       // ★전환 시간은 **고정하지 않는다.** 위치는 200ms 넘는 간격으로 오는데 0.18초짜리
       //   전환을 걸면 '휙 갔다가 멈춰서 기다린다'가 반복돼 뚝뚝 끊겨 보인다(대표 8-20).
       //   실제로 온 간격만큼 걸어가게 하면 이어진다 — 스쿼드가 _sqPlace 에서 쓰는 방식이다.
-      el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;'
-        + 'transition:left .2s linear, top .2s linear';
+      el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;will-change:transform;'
+        + 'transition:transform .2s linear';
       // ★칭호·이름표는 **내 캐릭터와 같은 클래스**(.cw-title/.cw-nick)를 쓴다.
       //   따로 만들면 아우라 켰을 때 이름표를 내리는 규칙 같은 게 한쪽에만 먹어서
       //   내 화면과 남의 화면에서 위치가 갈라진다(대표 8-20 — 스쿼드에서 겪은 그 현상).
@@ -18121,40 +18194,42 @@ window._mwRlRender = function (all) {
     }
     // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
     const w = Math.round(DH * 141 / 224);
-    c.el.style.width = w + 'px';
-    c.el.style.height = DH + 'px';        // ★높이를 안 주면 내용물 따라 늘어나 발이 어긋난다
-    // 이번 갱신까지 걸린 시간만큼 걸어가게 한다(너무 짧거나 길면 잘라낸다)
-    const now = Date.now();
-    const gap = c.lastT ? Math.max(120, Math.min(460, now - c.lastT)) : 200;
-    c.lastT = now;
-    const nx = ((v.tc + 0.5) * t - w / 2), ny = ((v.tr + 1) * t - DH);
-    // ★멀리 튀었으면(오래 끊겼다 들어온 경우) 걸어가는 대신 그 자리에 놓는다.
-    //   안 그러면 방을 가로질러 미끄러진다.
-    const far = Math.abs(nx - (c.x == null ? nx : c.x)) > t * 4 || Math.abs(ny - (c.y == null ? ny : c.y)) > t * 4;
-    c.el.style.transitionDuration = far ? '0s' : (gap / 1000).toFixed(2) + 's';
-    // 자리가 바뀌었으면 걷는 중. 멈추면 잠시 뒤 선다.
-    if (nx !== c.px || ny !== c.py) {
-      c.px = nx; c.py = ny;
-      c.el.classList.add('walking');
-      clearTimeout(c.stopT);
-      c.stopT = setTimeout(function () { c.el.classList.remove('walking'); }, gap + 140);
+    if (c.boxW !== w || c.boxH !== DH) {
+      c.boxW = w; c.boxH = DH;
+      c.el.style.width = w + 'px';
+      c.el.style.height = DH + 'px';      // ★높이를 안 주면 내용물 따라 늘어나 발이 어긋난다
     }
-    c.x = nx; c.y = ny;
-    c.el.style.left = nx + 'px';
-    c.el.style.top = ny + 'px';
-    // ★★앞뒤(z)는 **도착한 뒤에** 바꾼다 (대표 8-20: "상대방 캐릭터가 원래 부딪혀야 할
-    //   충돌맵보다 조금 더 밑에서 숨는다"). 충돌맵도, 그려지는 자리도 이제 양쪽이 같다.
-    //   남은 건 **시간차**였다 — 위치는 걸어가는 애니메이션(0.2~0.46초)으로 천천히 움직이는데
-    //   z 만 즉시 윗줄 값으로 바뀐다. 그 사이 캐릭터는 아직 가구선 아래에 서 있는 그림인데
-    //   깊이는 이미 가구 뒤라, **부딪혀야 할 선보다 한참 밑에서 가구에 파묻힌 채로 걸어간다.**
-    //   내 캐릭터는 전환이 사실상 없어서 나만 멀쩡했다 → '상대방 캐릭터만' 그래 보인 것이다.
-    //   ※멀리 튄 경우(far)는 전환이 0초라 바로 적용한다.
-    const nz = 10 + v.tr * 10 + 5;
-    if (c.z == null || far) {
-      clearTimeout(c.zT); c.z = nz; c.el.style.zIndex = nz;
-    } else if (nz !== c.z) {
-      clearTimeout(c.zT);
-      c.zT = setTimeout(function () { c.z = nz; c.el.style.zIndex = nz; }, gap);
+    // 한 사람의 이동 때문에 스냅샷 전체가 와도, 제자리인 다른 사람의 transition은 다시 건드리지 않는다.
+    // 여러 명이 모였을 때 딜레이가 누적되던 핵심 지점이다.
+    const posKey = v.tc + '|' + v.tr + '|' + t + '|' + DH;
+    if (c.posKey !== posKey) {
+      c.posKey = posKey;
+      // 이번 **이 사람의** 이동까지 걸린 시간만큼 걸어가게 한다(남의 갱신은 간격에 넣지 않는다)
+      const now = Date.now();
+      const gap = c.lastT ? Math.max(120, Math.min(460, now - c.lastT)) : 200;
+      c.lastT = now;
+      const nx = ((v.tc + 0.5) * t - w / 2), ny = ((v.tr + 1) * t - DH);
+      // ★멀리 튀었거나 처음 나타났으면 걸어오는 대신 그 자리에 바로 놓는다.
+      const first = c.x == null || c.y == null;
+      const far = first || Math.abs(nx - c.x) > t * 4 || Math.abs(ny - c.y) > t * 4;
+      c.el.style.transitionDuration = far ? '0s' : (gap / 1000).toFixed(2) + 's';
+      if (!first && (nx !== c.px || ny !== c.py)) {
+        c.el.classList.add('walking');
+        clearTimeout(c.stopT);
+        c.stopT = setTimeout(function () { c.el.classList.remove('walking'); }, gap + 140);
+      }
+      c.px = nx; c.py = ny; c.x = nx; c.y = ny;
+      // transform은 left/top보다 레이아웃 재계산을 덜 일으켜 여러 캐릭터가 움직일 때 훨씬 가볍다.
+      c.el.style.transform = 'translate3d(' + nx + 'px,' + ny + 'px,0)';
+      // ★★앞뒤(z)는 **도착한 뒤에** 바꾼다 (대표 8-20: "상대방 캐릭터가 원래 부딪혀야 할
+      //   충돌맵보다 조금 더 밑에서 숨는다"). 이동하지 않은 사람은 z 예약도 다시 만들지 않는다.
+      const nz = 10 + v.tr * 10 + 5;
+      if (c.z == null || far) {
+        clearTimeout(c.zT); c.z = nz; c.el.style.zIndex = nz;
+      } else if (nz !== c.z) {
+        clearTimeout(c.zT);
+        c.zT = setTimeout(function () { c.z = nz; c.el.style.zIndex = nz; }, gap);
+      }
     }
   });
   Object.keys(chars).forEach(function (uid) {
@@ -19805,7 +19880,7 @@ window.postBambooFirestore = async (text, title) => {
     }
     if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
   }
-  if (!(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return false; }
+  if (!(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast(window.creditSpendFailMessage()); return false; }
   try {
     let nickname = '익명';
     let userPhoto = '';
@@ -20037,7 +20112,7 @@ window.sendBambooRequest = async (postId, authorUid) => {
     if (!postSnap.exists()) return;
     // '저에요' = 연결 시도라 대숲 글(1)보다 무겁고 매칭(5)보다는 가볍게 3머피
     if (!(await window.murpyConfirm({ title: "'저에요' 보내기", desc: '<b style="color:#F5C24B">' + COST_BAMBOO_REQ + '머피</b>가 들어요', cost: true, confirmText: '보내기' }))) return;
-    if (!(await window.spendCredit(user.uid, COST_BAMBOO_REQ))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+    if (!(await window.spendCredit(user.uid, COST_BAMBOO_REQ))) { showToast(window.creditSpendFailMessage()); return; }
     const postText = (postSnap.data().text || '').substring(0, 30);
     await updateDoc(postRef, { requesters: arrayUnion(user.uid) });
     let nickname = '익명';
@@ -20584,7 +20659,7 @@ window._sendBambooMatchRequest = async () => {
   if (btn && btn.disabled) return;
   // 매칭 요청 = 1머피 (상대 수락 시 상대도 1머피)
   if (!(await window.murpyConfirm({ title: '매칭 신청하기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>가 들어요 · 상대가 수락하면 서로 공개돼요', cost: true, confirmText: '신청' }))) return;
-  if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+  if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast(window.creditSpendFailMessage()); return; }
   try {
     await updateDoc(doc(db, 'chats', chatId), { matchRequestedBy: user.uid });
   } catch(e) {}
@@ -20613,7 +20688,7 @@ window._acceptBambooMatch = async (chatId, requesterUid, notifId) => {
   } catch(e) {}
   // 수락 = 1머피 (요청자도 보낼 때 1머피 씀)
   if (!(await window.murpyConfirm({ title: '매칭 수락하기', desc: '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>가 들어요 · 서로 프로필이 공개돼요', cost: true, confirmText: '수락' }))) return;
-  if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast('머피가 부족해요 · 오늘 운동 인증하면 바로 써요'); return; }
+  if (!(await window.spendCredit(user.uid, COST_MATCH))) { showToast(window.creditSpendFailMessage()); return; }
   // 채팅방을 일반 채팅으로 전환
   try { await updateDoc(doc(db, 'chats', chatId), { bambooChat: false, matchedAt: serverTimestamp() }); } catch(e) {}
   // 내 실제 정보 가져오기
