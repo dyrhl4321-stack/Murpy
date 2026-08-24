@@ -104,6 +104,24 @@ def key_frames(path, thr):
 
     arr = np.asarray(im).copy()
     arr[..., 3] = np.where(bg, 0, 255)
+
+    # ★초록 번짐 제거(despill). 남기는 픽셀 중 **투명과 맞닿은 한 겹**은 배경 초록이 섞여 있다.
+    #   그대로 두면 테두리에 초록 물이 든 채 팔레트로 스냅돼 색이 튄다 = "테두리가 이상하고
+    #   전체적으로 퀄리티가 떨어진다"(대표 지적 8-24, 측면에서 특히 심했다).
+    #   측면 시트는 배경 초록기가 123 이고 몸이 최대 60 이라 간격이 좁아 번짐이 더 넓게 남는다.
+    #   char/nukki.py 와 같은 방식 — 가장자리에서 G 를 max(R,B) 근처로 눌러 초록기를 없앤다.
+    solid_mask = ~bg          # ★keep 이라는 이름을 쓰지 말 것 — 아래에서 프레임 목록 이름이다
+    edge = np.zeros_like(bg)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dy or dx:
+                edge |= solid_mask & np.roll(np.roll(bg, dy, 0), dx, 1)
+    cap = np.maximum(arr[..., 0].astype(np.int16), arr[..., 2].astype(np.int16)) + 12
+    hit = edge & (arr[..., 1].astype(np.int16) > cap)
+    g2 = arr[..., 1].astype(np.int16)
+    g2[hit] = cap[hit]
+    arr[..., 1] = np.clip(g2, 0, 255).astype(np.uint8)
+
     keyed = Image.fromarray(arr)
 
     out = []
