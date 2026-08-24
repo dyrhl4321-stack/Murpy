@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '670';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '671';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -615,8 +615,8 @@ window._SW_V = '670';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      두 칸 뜨는데, 상자 전체가 클릭을 먹으면 그 빈 자리를 눌러도 펫이 잡힌다
      (대표 지적: "잘 때 위쪽 공간이 꽉 먹혀 있다"). 몸만한 판(.mw-pet-hit)만 잡는다. */
   #mw-pet { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; }
-  #mw-pet .mw-pet-hit { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
-    pointer-events:auto; cursor:pointer; z-index:2 }
+  #mw-pet .mw-pet-hit, .mw-dino .mw-pet-hit { position:absolute; left:50%; bottom:0;
+    transform:translateX(-50%); pointer-events:auto; cursor:pointer; z-index:2 }
   .mw-dino { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; }
   #mw-pet .mw-pet-spr, .mw-dino .mw-pet-spr { position:absolute; inset:0; image-rendering:pixelated;
     background-repeat:no-repeat; background-position:0 0; }
@@ -4178,6 +4178,9 @@ window._mwDinoApply = function (d) {
   }
   var sh = el.querySelector('.mw-pet-sh');
   if (sh) { sh.style.width = (M.sbw / M.cw * 108).toFixed(0) + '%'; sh.style.height = '9%'; }
+  // 잡히는 판 = 몸이 있는 아래쪽만. 셀 전체를 잡으면 머리 위 빈 공간까지 먹는다(펫과 같은 이유).
+  var hit = el.querySelector('.mw-pet-hit');
+  if (hit) { hit.style.width = (M.sbw / M.cw * 120).toFixed(0) + '%'; hit.style.height = '78%'; }
   window._mwDinoPlay(d, d.row == null ? 0 : d.row);
 };
 
@@ -4229,7 +4232,11 @@ window._mwDinoSync = function (editing) {
 
     var el = document.createElement('div');
     el.className = 'mw-dino';
-    el.innerHTML = '<i class="mw-pet-sh"></i><i class="mw-pet-spr"></i>';
+    el.innerHTML = '<i class="mw-pet-sh"></i><i class="mw-pet-spr"></i><i class="mw-pet-hit"></i>';
+    (function (fi) {
+      var hit = el.querySelector('.mw-pet-hit');
+      if (hit) hit.onclick = function () { window.mwDinoMenu && window.mwDinoMenu(fi); };
+    })(p.idx);
     room.appendChild(el);
       window._mwDinoRoam.add(p.idx);
     var d = {
@@ -4273,6 +4280,74 @@ window._mwDinoStep = function () {
   window._mwDinoApply(d);
   clearTimeout(d._t);
   d._t = setTimeout(function () { d.moving = false; window._mwDinoPlay(d, 0); }, ms);
+};
+
+// ===== 공룡 링 메뉴 =====
+// 공룡은 펫이 아니다 — 밥·따라오기가 없다. 여기서 할 수 있는 건 **움직임을 끄는 것**과
+// 쓰다듬기뿐이다. 꾸미기까지 안 들어가도 방에서 바로 끌 수 있어야 한다(대표 8-24).
+window.mwDinoMenu = function (idx) {
+  var room = document.getElementById('charworld-room');
+  if (!room) return;
+  var d = null, i;
+  for (i = 0; i < window._mwDinos.length; i++) if (window._mwDinos[i].idx === idx) d = window._mwDinos[i];
+  if (!d || !d.el) return;
+  var old = document.getElementById('mw-charmenu'); if (old) old.remove();
+  if (window._mwIsVisiting && window._mwIsVisiting()) {   // 남의 방 공룡은 구경만
+    showToast('남의 방 공룡이에요');
+    return;
+  }
+  var rb = room.getBoundingClientRect(), hb = d.el.getBoundingClientRect();
+  var cx = hb.left - rb.left + hb.width / 2;
+  var cy = hb.top - rb.top + hb.height * 0.55;
+  var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 64;
+  var acts = [
+    { k: 'poke', t: '쓰다듬기', dx: -R - 6, dy: 4, fn: 'window.mwDinoPat(' + idx + ')' },
+    { k: 'kick', t: '멈추기', dx: R + 6, dy: 4, fn: 'window.mwDinoStop(' + idx + ')' }
+  ];
+  var el = document.createElement('div');
+  el.id = 'mw-charmenu';
+  el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+  el.innerHTML = acts.map(function (a, k) {
+    var x = Math.max(36, Math.min(W - 36, cx + a.dx));
+    var y = Math.max(30, Math.min(H - 30, cy + a.dy));
+    return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
+      + (k * 30) + 'ms" onclick="document.getElementById(\'mw-charmenu\').remove();' + a.fn + '">'
+      + (window._RING_ICONS[a.k] || '') + '<span>' + a.t + '</span></button>';
+  }).join('');
+  el.addEventListener('pointerdown', function (e) {
+    if (e.target === el) { el.remove(); if (e.cancelable) e.preventDefault(); }
+  });
+  room.appendChild(el);
+  if (navigator.vibrate) navigator.vibrate(8);
+};
+
+// 쓰다듬기 — 그 자리에서 둥가둥가로 돌아가며 반응만 준다.
+window.mwDinoPat = function (idx) {
+  var d = null, i;
+  for (i = 0; i < window._mwDinos.length; i++) if (window._mwDinos[i].idx === idx) d = window._mwDinos[i];
+  if (!d) return;
+  clearTimeout(d._t);
+  d.moving = false;
+  window._mwDinoPlay(d, 0);
+  showToast('좋아해요');
+};
+
+// 이 공룡만 멈춘다.
+// ★아무도 안 골랐을 때는 '앞에서부터 8마리'가 움직이는 규칙이라, 하나만 끄려면
+//   **지금 움직이는 나머지를 전부 명시적으로 켜 둬야** 한다. 안 그러면 여전히 자동 선택에 걸린다.
+window.mwDinoStop = function (idx) {
+  var room = window._myRoom;
+  if (!room || !Array.isArray(room.f)) return;
+  var i;
+  for (i = 0; i < window._mwDinos.length; i++) {
+    var fi = window._mwDinos[i].idx;
+    if (!room.f[fi]) continue;
+    if (fi === idx) delete room.f[fi].mv;
+    else room.f[fi].mv = 1;
+  }
+  window._charPersistRoom && window._charPersistRoom(room);
+  window.mwRenderFurn && window.mwRenderFurn();
+  showToast('이 공룡은 이제 가만히 있어요 · 꾸미기에서 다시 켤 수 있어요');
 };
 
 // ===== 방 전체 드라이버 =====
