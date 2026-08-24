@@ -227,6 +227,50 @@ def pixelate(im, cell, pal, outline=OUTLINE):
     return out.resize((aw * cell, ah * cell), Image.NEAREST)
 
 
+LOCK_TOP = 0.52          # 콘텐츠 상단 이 비율까지가 '얼굴' — 컷마다 새로 그리지 않는다
+
+
+def lock_head(frames):
+    """한 방향의 모든 컷에 **첫 컷의 얼굴을 그대로 붙인다**.
+
+    ★걷는데 얼굴이 컷마다 38~49% 바뀌고 있었다(실측). 다리는 움직이니 바뀌는 게 맞지만
+      얼굴은 바뀔 이유가 없다 — AI 가 컷마다 조금씩 다르게 그린 것이고, 그게 재생하면
+      옛날 필름처럼 점이 섞여 보인다(대표 지적 8-24).
+    이 저장소가 이미 쓰는 규칙과 같다 — animate_dino.py 는 아예 "얼굴은 절대 리샘플하지 않고
+    정수픽셀 이동만 한다"고 못박아 뒀다(눈 크기가 프레임마다 달라졌던 사고 때문).
+
+    붙이는 자리는 **그 컷 자신의 얼굴 위치**다(가로 중심 + 위끝). 얼굴이 살짝 오르내리는
+    것은 걷는 느낌이라 살리고, 그림이 바뀌는 것만 없앤다.
+    """
+    if len(frames) < 2:
+        return frames
+
+    def head_box(im):
+        a = np.asarray(im.convert('RGBA'))[..., 3] > 100
+        rows = np.where(a.any(1))[0]
+        y0, y1 = rows[0], rows[-1]
+        hy = y0 + int((y1 - y0) * LOCK_TOP)
+        xs = np.where(a[y0:hy + 1].any(0))[0]
+        return int(xs[0]), int(y0), int(xs[-1]) + 1, int(hy) + 1
+
+    b0 = head_box(frames[0])
+    head = frames[0].crop(b0)
+    out = [frames[0]]
+    for f in frames[1:]:
+        b = head_box(f)
+        cx = (b[0] + b[2]) / 2.0
+        x = int(round(cx - head.width / 2.0))
+        y = b[1]
+        g = f.copy()
+        # 원래 얼굴을 지우고(그 자리 알파를 비우고) 첫 컷 얼굴을 올린다.
+        # 지우지 않으면 두 얼굴의 테두리가 겹쳐 선이 두 겹이 된다.
+        blank = Image.new('RGBA', (b[2] - b[0], b[3] - b[1]), (0, 0, 0, 0))
+        g.paste(blank, (b[0], b[1]))
+        g.alpha_composite(head, (max(0, x), max(0, y)))
+        out.append(g)
+    return out
+
+
 def temporal_mode(frames):
     """한 방향 3컷의 색을 **다수결로 모은다**.
 
@@ -305,7 +349,10 @@ def build(side_mode, pixel=2):
         pal = ref_palette()
         print('팔레트 %d색을 앉은 공룡에서 가져와 걷기에 강제한다 (아트픽셀 %d)' % (len(pal), pixel))
         for k in norm:
-            norm[k] = temporal_mode([pixelate(f, pixel, pal) for f in norm[k]])
+            # 얼굴 고정 -> 저퀄 픽셀화 -> 남은 잔떨림 다수결. 순서를 바꾸지 말 것 —
+            # 얼굴은 원해상도에서 붙여야 이음매에 계단이 안 생긴다.
+            locked = lock_head(norm[k])
+            norm[k] = temporal_mode([pixelate(f, pixel, pal) for f in locked])
 
     # 3) 행 구성 — 앞·좌·뒤·우. 좌향은 측면을 좌우반전(대표 지시)
     rows = [
