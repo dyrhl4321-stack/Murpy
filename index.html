@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '645';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '646';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '645';
+window._SW_V = '646';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -13335,16 +13335,9 @@ window.nickTaken = async function (nick, myUid) {
 // ===== 명예의 전당 (랭킹) — 순수 계산부 =====
 // ★Firestore 를 모른다. 넘겨받은 배열만 본다 — 그래야 node 로 검증할 수 있다.
 //   설계: docs/superpowers/specs/2026-08-19-hall-of-fame-ranking-design.md
-// 대표 본인 계정 2개는 모든 랭킹·인기에서 뺀다. 운영자가 1등이면 유저에겐 벽이다.
+// 관리자 패수현 계정은 모든 랭킹·인기에서 뺀다. 운영자가 1등이면 유저에겐 벽이다.
 // ★홈 '지금 인기'(loadHomeTrending)도 이 상수를 쓴다. 두 벌이 되면 한쪽만 고치는 사고가 난다.
-// ██████ 출시 전 반드시 되돌릴 것 (대표 8-19 확인: "어플 출시할 때 뺄 거임") ██████
-//   한마디 기능을 테스트하려면 대표 본인이 1~3위에 올라야 해서 **패수현을 제외 목록에서 뺐다.**
-//   지금은 김현수만 빠진다. 그래서 **패수현이 명예의 전당과 홈 '지금 인기'(캐릭터·룸·열정러)에
-//   전부 노출된 상태**다. 운영자가 1등이면 유저에겐 벽이다 — 출시 전에 원래대로 돌린다.
-//   되돌리는 법 = 아래 두 줄을 맞바꾼다(주석 해제 / 그 아래 줄 삭제):
-//     window.HOF_EXCLUDE_UID = ['3ojRNNyRutYE4IDQn2GrJDcXz0Q2', 'h0I8ms36owTByTACh6gSw3sgCrf1'];
-// ████████████████████████████████████████████████████████████████████████████
-window.HOF_EXCLUDE_UID = ['h0I8ms36owTByTACh6gSw3sgCrf1'];   // ★임시: 김현수만 (패수현=테스트용 해제)
+window.HOF_EXCLUDE_UID = ['3ojRNNyRutYE4IDQn2GrJDcXz0Q2'];   // 관리자 패수현 제외 · 김현수는 일반 사용자처럼 집계
 // ★mwSeasonKey() 를 **인자 없이** 부르면 관리자 시즌 실험실 오버라이드를 탄다.
 //   랭킹이 그걸 타면 대표가 시즌을 실험하는 동안 전 유저의 기준 달이 같이 바뀐다.
 window.HOF_MONTH = function () { return window.mwSeasonKey(new Date()); };
@@ -25143,6 +25136,28 @@ window.sqOpenClass = async function (clsId) {
 //   올릴 때 여기서 잘라준다 — 어디를 살릴지(왼/가운데/오른쪽)만 고르면 된다.
 window._bnFile = null;
 window._bnBlob = null;
+window._bnEditId = null;
+window._bnRows = [];
+
+window._bnTime = function (v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (v.toMillis) return v.toMillis();
+  if (v.seconds) return v.seconds * 1000;
+  const n = new Date(v).getTime();
+  return Number.isFinite(n) ? n : 0;
+};
+window._bnDateValue = function (v) {
+  const n = window._bnTime(v); if (!n) return '';
+  const d = new Date(n), p = x => String(x).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+};
+window._bnDateMs = function (id, end) {
+  const el = document.getElementById(id); if (!el || !el.value) return null;
+  const d = new Date(el.value + 'T00:00:00');
+  if (end) d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
 
 // 사진 → 카드 규격(1080x415). cx = 가로 크롭 중심(0 왼쪽 / .5 가운데 / 1 오른쪽)
 // ★왼쪽 55% 에 제목·부제가 얹힌다. 그쪽이 밝으면 글씨가 안 읽혀서 그때만 어둡게 깐다.
@@ -25202,6 +25217,7 @@ window.showBannerAdmin = async function () {
       <b style="color:#8a93a8">제목을 비워두면 사진만</b> 나와요 — 글씨까지 넣어 디자인한 이미지는 제목 없이 올리세요.
     </div>
     <div class="mw-panel" style="padding:14px;margin-bottom:18px">
+      <div id="bn-form-title" style="font-size:13px;font-weight:800;margin-bottom:10px">새 광고 카드</div>
       <input type="file" id="bn-file" accept="image/*" style="width:100%;font-size:12px;color:#8a93a8;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="font-size:11.5px;color:#8a93a8;flex-shrink:0">살릴 부분</span>
@@ -25213,7 +25229,16 @@ window.showBannerAdmin = async function () {
       <input id="bn-sub" maxlength="34" placeholder="한 줄 설명" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
       <input id="bn-cta" maxlength="8" placeholder="버튼 글씨 (기본: 보러가기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:7px;font-family:inherit">
       <input id="bn-href" placeholder="누르면 갈 주소 (비우면 스쿼드 만들기)" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:10px;color:#fff;font-size:13px;margin-bottom:12px;font-family:inherit">
+      <div style="display:flex;gap:7px;margin-bottom:12px">
+        <label style="flex:1;font-size:10.5px;color:#8a93a8">노출 시작일
+          <input id="bn-start" type="date" style="display:block;width:100%;box-sizing:border-box;margin-top:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:9px;color:#fff;font-size:12px;font-family:inherit;color-scheme:dark">
+        </label>
+        <label style="flex:1;font-size:10.5px;color:#8a93a8">노출 종료일
+          <input id="bn-end" type="date" style="display:block;width:100%;box-sizing:border-box;margin-top:5px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:9px;color:#fff;font-size:12px;font-family:inherit;color-scheme:dark">
+        </label>
+      </div>
       <button id="bn-save" onclick="window.bnSave()" class="mw-btn mw-btn-gold" style="width:100%">카드 올리기</button>
+      <button id="bn-cancel" onclick="window.bnCancelEdit()" class="mw-btn mw-btn-ghost" style="display:none;width:100%;margin-top:7px">수정 취소</button>
     </div>
     <div style="font-size:12px;color:#8a93a8;margin-bottom:9px">올린 카드</div>
     <div id="bn-list" style="display:flex;flex-direction:column;gap:9px"><div style="color:#4a5266;font-size:12px">불러오는 중…</div></div>`;
@@ -25227,45 +25252,73 @@ window.bnRenderList = async function () {
   try {
     const qs = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc')));
     const rows = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    window._bnRows = rows;
     if (!rows.length) { list.innerHTML = '<div style="color:#4a5266;font-size:12px">아직 없어요</div>'; return; }
     list.innerHTML = rows.map(function (b) {
       return '<div class="mw-panel" style="padding:10px;display:flex;gap:10px;align-items:center">'
         + '<img src="' + b.img + '" style="width:88px;height:34px;object-fit:cover;border-radius:6px;flex-shrink:0">'
         + '<div style="flex:1;min-width:0">'
         +   '<div style="font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (b.title || '') + '</div>'
-        +   '<div style="font-size:10.5px;color:#4a5266">순서 ' + (b.order != null ? b.order : '-') + ' · ' + (b.on === false ? '꺼짐' : '켜짐') + '</div>'
+        +   '<div style="font-size:10.5px;color:#4a5266">' + (b.on === false ? '꺼짐' : '켜짐') + ' · ' + (window._bnDateValue(b.startAt) || '바로') + ' ~ ' + (window._bnDateValue(b.endAt) || '계속') + '</div>'
         + '</div>'
+        + '<button onclick="window.bnEdit(\'' + b.id + '\')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">수정</button>'
         + '<button onclick="window.bnToggle(\'' + b.id + '\',' + (b.on === false) + ')" style="background:rgba(255,255,255,.08);border:none;color:#cfd6e6;border-radius:8px;padding:7px 10px;font-size:11px;cursor:pointer;font-family:inherit">' + (b.on === false ? '켜기' : '끄기') + '</button>'
         + '<button onclick="window.bnDelete(\'' + b.id + '\')" style="background:none;border:none;color:#FF4D67;font-size:11px;cursor:pointer;font-family:inherit">삭제</button>'
         + '</div>';
     }).join('');
   } catch (e) { list.innerHTML = '<div style="color:#FF4D67;font-size:12px">불러오지 못했어요 — 보안규칙에 banners 가 있는지 확인하세요</div>'; }
 };
+window.bnEdit = function (id) {
+  const b = (window._bnRows || []).find(x => x.id === id); if (!b) return;
+  window._bnEditId = id; window._bnFile = null; window._bnBlob = null;
+  const vals = { 'bn-tag': b.tag || '', 'bn-title': b.title || '', 'bn-sub': b.sub || '', 'bn-cta': b.cta || '', 'bn-href': b.href || '', 'bn-start': window._bnDateValue(b.startAt), 'bn-end': window._bnDateValue(b.endAt) };
+  Object.keys(vals).forEach(k => { const e = document.getElementById(k); if (e) e.value = vals[k]; });
+  const p = document.getElementById('bn-prev'); if (p) { p.src = b.img || ''; p.style.display = b.img ? 'block' : 'none'; }
+  const t = document.getElementById('bn-form-title'); if (t) t.textContent = '광고 카드 수정';
+  const s = document.getElementById('bn-save'); if (s) s.textContent = '수정 저장';
+  const c = document.getElementById('bn-cancel'); if (c) c.style.display = 'block';
+  const root = document.getElementById('bn-admin'); if (root) root.scrollTo({ top: 0, behavior: 'smooth' });
+};
+window.bnCancelEdit = function () {
+  window._bnEditId = null; window._bnFile = null; window._bnBlob = null;
+  ['bn-tag','bn-title','bn-sub','bn-cta','bn-href','bn-start','bn-end'].forEach(function (id) { const e = document.getElementById(id); if (e) e.value = ''; });
+  const f = document.getElementById('bn-file'); if (f) f.value = '';
+  const p = document.getElementById('bn-prev'); if (p) p.style.display = 'none';
+  const t = document.getElementById('bn-form-title'); if (t) t.textContent = '새 광고 카드';
+  const s = document.getElementById('bn-save'); if (s) s.textContent = '카드 올리기';
+  const c = document.getElementById('bn-cancel'); if (c) c.style.display = 'none';
+};
 window.bnSave = async function () {
-  if (!window._bnBlob) { showToast('사진을 먼저 고르세요'); return; }
+  const editing = (window._bnRows || []).find(x => x.id === window._bnEditId);
+  if (!window._bnBlob && !editing) { showToast('사진을 먼저 고르세요'); return; }
   const title = (document.getElementById('bn-title').value || '').trim();
   if (!title) { showToast('제목을 입력해주세요'); return; }
-  const btn = document.getElementById('bn-save'); btn.disabled = true; btn.textContent = '올리는 중…';
+  const startAt = window._bnDateMs('bn-start', false), endAt = window._bnDateMs('bn-end', true);
+  if (startAt && endAt && startAt > endAt) { showToast('종료일이 시작일보다 빨라요'); return; }
+  const btn = document.getElementById('bn-save'); btn.disabled = true; btn.textContent = editing ? '저장 중…' : '올리는 중…';
   try {
-    const f = new File([window._bnBlob], 'ad.jpg', { type: 'image/jpeg' });
-    const url = await window.uploadImgbb(f);
-    if (!url) throw new Error('upload');
-    await addDoc(collection(db, 'banners'), {
+    let url = editing ? editing.img : '';
+    if (window._bnBlob) {
+      const f = new File([window._bnBlob], 'ad.jpg', { type: 'image/jpeg' });
+      url = await window.uploadImgbb(f);
+      if (!url) throw new Error('upload');
+    }
+    const data = {
       img: url, title: title,
       tag: (document.getElementById('bn-tag').value || '근방단').trim(),
       sub: (document.getElementById('bn-sub').value || '').trim(),
       cta: (document.getElementById('bn-cta').value || '보러가기').trim(),
       href: (document.getElementById('bn-href').value || '').trim(),
-      on: true, order: Date.now(), createdAt: serverTimestamp()
-    });
-    showToast('카드를 올렸어요');
-    window._bnFile = null; window._bnBlob = null;
-    const p = document.getElementById('bn-prev'); if (p) p.style.display = 'none';
-    ['bn-tag','bn-title','bn-sub','bn-cta','bn-href'].forEach(function (id) { const e = document.getElementById(id); if (e) e.value = ''; });
+      startAt: startAt, endAt: endAt, updatedAt: serverTimestamp()
+    };
+    if (editing) await updateDoc(doc(db, 'banners', editing.id), data);
+    else await addDoc(collection(db, 'banners'), Object.assign(data, { on: true, order: Date.now(), createdAt: serverTimestamp() }));
+    showToast(editing ? '카드를 수정했어요' : '카드를 올렸어요');
+    window.bnCancelEdit();
     window.bnRenderList();
     window.renderSquadHero && window.renderSquadHero();
-  } catch (e) { console.error(e); showToast('올리지 못했어요 — 다시 시도해주세요'); }
-  btn.disabled = false; btn.textContent = '카드 올리기';
+  } catch (e) { console.error(e); showToast(editing ? '수정하지 못했어요 — 다시 시도해주세요' : '올리지 못했어요 — 다시 시도해주세요'); }
+  btn.disabled = false; btn.textContent = window._bnEditId ? '수정 저장' : '카드 올리기';
 };
 window.bnToggle = async function (id, on) {
   try { await updateDoc(doc(db, 'banners', id), { on: !!on }); window.bnRenderList(); window.renderSquadHero && window.renderSquadHero(); } catch (e) { showToast('바꾸지 못했어요'); }
@@ -25362,7 +25415,17 @@ window.renderSquadHero = async function () {
   let admin = [];
   try {
     const bs = await getDocs(query(collection(db, 'banners'), orderBy('order', 'asc'), limit(10)));
-    admin = bs.docs.map(d => d.data()).filter(b => b.on !== false && b.img);
+    const now = Date.now();
+    admin = bs.docs.map(d => d.data()).filter(function (b) {
+      if (b.on === false || !b.img) return false;
+      const from = window._bnTime(b.startAt), until = window._bnTime(b.endAt);
+      if ((from && from > now) || (until && until < now)) return false;
+      // 날짜 기능 추가 전 등록된 누리쌤 요가 카드는 이미 지난 일정이라 우선 숨긴다.
+      // 관리자 화면에서 새 날짜를 저장하면 다시 정상 노출된다.
+      const text = String(b.title || '') + ' ' + String(b.sub || '') + ' ' + String(b.tag || '');
+      if (!from && !until && text.indexOf('누리') >= 0 && text.indexOf('요가') >= 0) return false;
+      return true;
+    });
   } catch (e) { /* 규칙이 아직 없으면 조용히 건너뛴다 */ }
   admin.concat(window.SQUAD_ADS || []).forEach(function (a) {
     slides.push({
