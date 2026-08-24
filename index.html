@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '660';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '661';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -8719,6 +8719,7 @@ window._matchGo = function (delta) {
     if (window.requireLogin) requireLogin('매칭은 계정을 만들어야 볼 수 있어요');
     return;
   }
+  // ※좋아요는 handleLike 에서 덱을 줄인다. 여기(단순 넘기기)는 목록을 안 건드린다.
   window._matchDir = delta;                      // 건너뛰기가 이 방향을 따른다(피드백 #8)
   if (window._matchAnim) return;                 // 연타로 두 장 넘어가는 것 방지
   const list = window._matchList; if (!list || !list.length) return;
@@ -8837,12 +8838,43 @@ window._matchSwipeInit = function () {
   card.addEventListener('click', (e) => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); } }, true);
 };
 
-function _matchAdvance(exitTransform) {
+// 좋아요를 보낸 사람을 **오늘 덱에서 뺀다.**
+//
+// ★"한 명 넘겼는데 5명씩 넘어간다"의 정체(대표 8-24, 김현수 계정).
+//   하루 덱은 localStorage 에 그날 하루 고정으로 저장되는데, 좋아요를 보내도 그 사람이
+//   덱에 그대로 남아 있었다. 화면은 이미 좋아요한 사람을 건너뛰므로(renderMatch 의 while 문),
+//   연속으로 좋아요한 만큼 한꺼번에 건너뛰어 보였다.
+//   관리자는 _matchUnlimited 라 하루 덱 자체가 없어서 안 드러났다 — 계정 종류가 아니라
+//   **좋아요를 얼마나 보냈느냐**가 갈랐다.
+//
+// 여기서 빼면 건너뛸 일이 아예 없어진다. renderMatch 의 건너뛰기는 안전망으로 남겨 둔다.
+// ★빈 자리를 남은 후보로 채우지 않는다 — 그 사람은 이미 봤고 하루 치를 한 장 쓴 것이 맞다.
+//   채워 주면 좋아요를 보낼수록 오늘 볼 사람이 늘어나 '머피로 더 보기'와 어긋난다.
+window._matchDropLiked = function (uid) {
+  const list = window._matchList; if (!list || !uid) return false;
+  let i = -1;
+  for (let k = 0; k < list.length; k++) if (list[k] && list[k].uid === uid) { i = k; break; }
+  if (i < 0) return false;
+  list.splice(i, 1);
+  // 앞쪽에서 빠졌으면 지금 보고 있는 자리도 한 칸 당겨진다
+  if (i < (window._matchIdx || 0)) window._matchIdx = Math.max(0, (window._matchIdx || 0) - 1);
+  // 새로고침해도 유지되게 저장된 덱도 같이 줄인다
+  try {
+    const key = window._matchDeckKey;
+    if (key) localStorage.setItem(key, JSON.stringify(list.map(c => c.uid)));
+  } catch (e) {}
+  window.matchMoreLeft && window.matchMoreLeft();   // 남은 인원 표시 갱신
+  return true;
+};
+
+// noStep = 목록에서 한 명이 빠져서 **다음 사람이 이미 이 자리에 와 있는** 경우.
+// 그때도 인덱스를 올리면 한 명을 건너뛴다.
+function _matchAdvance(exitTransform, noStep) {
   window._matchDir = 1;                          // 좋아요·패스는 앞으로 간다(건너뛰기 방향)
   const card = document.getElementById('match-card');
   if (card) { card.style.transition = 'transform .28s ease, opacity .28s ease'; card.style.transform = exitTransform; card.style.opacity = '0'; }
   setTimeout(() => {
-    window._matchIdx = (window._matchIdx || 0) + 1;
+    if (!noStep) window._matchIdx = (window._matchIdx || 0) + 1;
     if (card) { card.style.transition = 'none'; card.style.transform = 'none'; card.style.opacity = '0'; }
     renderMatch();
     requestAnimationFrame(() => { if (card) { card.style.transition = ''; card.style.opacity = '1'; } });
@@ -8864,7 +8896,9 @@ function handleLike() {
   if (window.sendLike) window.sendLike(p.uid, p.nickname || '익명', p.photoURL || '');
   // 관리자·테스트 계정은 반복 실험을 위해 카드를 넘기지 않고 그대로 유지
   if (window.isMatchTester && window.isMatchTester()) return;
-  _matchAdvance('scale(0.96)');
+  // 좋아요한 사람은 오늘 덱에서 뺀다. 빠진 만큼 다음 사람이 당겨 오므로 인덱스는 안 올린다.
+  const _dropped = window._matchDropLiked && window._matchDropLiked(p.uid);
+  _matchAdvance('scale(0.96)', _dropped);
 }
 
 function handlePass() {
