@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '643';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '644';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10687,7 +10687,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '643';
+window._SW_V = '644';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -12059,7 +12059,7 @@ window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
-window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg }); return true; } catch (e) { console.error('char save', e); return false; } };
+window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
@@ -22744,6 +22744,8 @@ window.mwLikeBtn = async function (elId, uid, kind, label, st) {
 window._mwLikeTap = async function (elId, uid, kind, label) {
   const r = await window.mwLikeToggle(uid, kind);
   if (!r) return;
+  // 홈 인기 카드가 쓰는 5분 캐시도 방금 확정된 숫자로 즉시 맞춘다.
+  if (window._homeLikeCache) window._homeLikeCache.set(uid + '|' + kind, { count: r.count, at: Date.now() });
   // 방금 계산한 숫자로 바로 다시 그린다(서버 재조회 없음 → 숫자가 즉시 바뀐다)
   await window.mwLikeBtn(elId, uid, kind, label, { on: r.on, count: r.count });
   if (r.on) {
@@ -23638,16 +23640,21 @@ window.loadHomeTrending = async () => {
     const PURPLE = '#A78BFA';
     const icoStar = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
     if (usersSnap && window.mwMiniCharHtml) {
-      const _meU = window.currentUser && window.currentUser.uid;
-      // ★"인기"를 실제 인기로 계산한다. 예전엔 wardrobe.length(아이템 많이 가진 사람) /
-      //   room.f.length(가구 많이 놓은 사람)로 줄을 세웠다 — 그건 "많이 가진 사람"이지
-      //   인기가 아니고, 돈 쓴 사람이 1등이라 공정성 하드룰에도 걸린다.
-      //   점수 = 좋아요×3 + 오늘 방문×1 + 보유수×0.2(동점 깨기용)
-      // ★후보를 먼저 좁힌 뒤에만 좋아요를 읽는다 — 전원 읽으면 홈 로딩이 사용자 수만큼 느려진다.
-      const CAND = 8;
+      // ★누적 좋아요 1등을 그대로 고정하면 한 사람이 영구 노출된다. 인기의 의미는 유지하되
+      //   상위권 안에서는 날짜별로 순환시켜 여러 코디가 발견되게 한다.
+      // ★좋아요 조회 전 후보를 8명만 자르면 실제 인기 후보가 탈락할 수 있어 20명으로 넓힌다.
+      //   홈이 다시 그려져도 같은 문서를 반복해서 읽지 않도록 5분 메모리 캐시를 둔다.
+      const CAND = 20, CHAR_ROTATE_POOL = 5, LIKE_CACHE_MS = 5 * 60 * 1000;
+      window._homeLikeCache = window._homeLikeCache || new Map();
       const likeCnt = async (uid, kind) => {
-        try { const s = await getDoc(doc(db, 'users', uid, 'likestat', kind)); return Math.max(0, (s.exists() && s.data().count) || 0); }
-        catch (e) { return 0; }
+        const key = uid + '|' + kind, hit = window._homeLikeCache.get(key);
+        if (hit && Date.now() - hit.at < LIKE_CACHE_MS) return hit.count;
+        try {
+          const s = await getDoc(doc(db, 'users', uid, 'likestat', kind));
+          const count = Math.max(0, (s.exists() && s.data().count) || 0);
+          window._homeLikeCache.set(key, { count: count, at: Date.now() });
+          return count;
+        } catch (e) { return hit ? hit.count : 0; }
       };
       const visitCnt = async (uid) => {
         try { const s = await getDoc(doc(db, 'users', uid, 'roomstat', mwTodayKey())); return Math.max(0, (s.exists() && s.data().count) || 0); }
@@ -23669,22 +23676,39 @@ window.loadHomeTrending = async () => {
         return DRESS_SLOTS.filter(k => c[k] && c[k] !== d[k]).length;
       };
       const all = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
-        .filter(u => u.uid !== _meU && u.nickname
-                  && !u.deleted && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0);
+        .filter(u => u.nickname && !u.deleted && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0);
 
-      // 점수 = 좋아요×3 + 갖춰 입은 칸×1.0 + 보유 수×0.2
-      //   보유 수를 남긴 건 대표 판단 — "많이 가진 것도 신경 쓴 것"이다. 다만 **가산점**이다.
-      //   후보를 좁힐 때도 같은 잣대를 쓴다(예전엔 보유 수로만 좁혀서, 점수식을 고쳐도
-      //   보유 부자가 아니면 애초에 후보에 못 들었다).
-      const cScore = (u, like) => (like || 0) * 3 + dressedN(u.character) * 1.0
-                                + ((u.wardrobe || []).length) * 0.2;
+      // 점수 = 좋아요(제곱근)×3 + 갖춰 입은 칸×1.2 + 최근 14일 꾸미기 보너스(최대 2)
+      //   누적 좋아요는 신뢰하되 제곱근으로 완화한다. 오래된 1등이 영원히 독점하지 않으면서
+      //   실제 반응 0인 캐릭터보다 좋아요 받은 코디가 상위 풀에 들게 하는 균형이다.
+      const charAt = (u) => {
+        const v = u && u.characterUpdatedAt;
+        return v && typeof v.toMillis === 'function' ? v.toMillis() : Number(v || 0);
+      };
+      const freshBonus = (u) => {
+        const at = charAt(u), span = 14 * 86400000;
+        if (!at) return 0;
+        const age = Math.max(0, Date.now() - at);
+        return age < span ? 2 * (1 - age / span) : 0;
+      };
+      const cScore = (u, like) => Math.sqrt(Math.max(0, like || 0)) * 3
+                                + dressedN(u.character) * 1.2 + freshBonus(u);
       const dressed = await Promise.all(
         all.filter(u => u.character && dressedN(u.character) > 0)
            .sort((a, b) => cScore(b, 0) - cScore(a, 0))
            .slice(0, CAND)
            .map(async u => ({ u, like: await likeCnt(u.uid, 'char') })));
-      dressed.sort((a, b) => cScore(b.u, b.like) - cScore(a.u, a.like));
-      dressed.slice(0, 1).forEach(({ u, like }) => {
+      dressed.sort((a, b) => cScore(b.u, b.like) - cScore(a.u, a.like)
+        || String(a.u.uid).localeCompare(String(b.u.uid)));
+
+      // 상위 5명 안에서 하루 한 명을 공통 선택한다. 무작위 새로고침이 아니라 날짜 기반이라
+      // 모든 사용자에게 같은 캐릭터가 보이고, 같은 날 화면을 다시 열어도 카드가 흔들리지 않는다.
+      const charPool = dressed.slice(0, CHAR_ROTATE_POOL);
+      const dayKey = window.mwTodayKey ? window.mwTodayKey() : new Date().toISOString().slice(0, 10);
+      let dayHash = 0;
+      for (let i = 0; i < dayKey.length; i++) dayHash = ((dayHash * 31) + dayKey.charCodeAt(i)) >>> 0;
+      const featuredChar = charPool.length ? charPool[dayHash % charPool.length] : null;
+      (featuredChar ? [featuredChar] : []).forEach(({ u, like }) => {
         let charHtml = '';
         try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
         if (!charHtml) return;
