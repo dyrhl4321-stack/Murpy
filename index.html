@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '637';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '638';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10673,7 +10673,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '637';
+window._SW_V = '638';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -10727,7 +10727,7 @@ if ('serviceWorker' in navigator) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const firebaseConfig = {
@@ -10772,7 +10772,7 @@ window._SQUAD_RT_OFF = true;
 window._rtProbeAt = Date.now();
 try {
   const rtdb = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
-  window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove };
+  window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove, get: rtGet };
   rtOnValue(rtRef(rtdb, '.info/connected'), s => {
     const wasOff = window._SQUAD_RT_OFF;
     window._SQUAD_RT_OFF = !s.val();
@@ -27092,7 +27092,12 @@ window._sqTalkOpen = function () {
     return;
   }
   const isHost = !!(me && me === s.hostUid);
-  const canEdit = !!(isHost || (typeof isAdmin === 'function' && isAdmin()));
+  const mem = window._sqMembers || {};
+  // 공지는 현장 운영 정보라 운영진도 고칠 수 있다. 단, 지난 대화를 전부 지우는
+  // '정리'는 기록 삭제이므로 스쿼드장·관리자에게만 남긴다.
+  const canEditNotice = !!(isHost || (me && mem[me] && mem[me].staff)
+    || (typeof isAdmin === 'function' && isAdmin()));
+  const canClearTalk = !!(isHost || (typeof isAdmin === 'function' && isAdmin()));
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   let el = document.getElementById('sq-talk'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-talk';
@@ -27108,9 +27113,9 @@ window._sqTalkOpen = function () {
         <div style="font-size:14.5px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">스쿼드 톡</div>
         <div style="font-size:10.5px;color:rgba(255,255,255,.35);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title || '')}</div>
       </div>
-      ${canEdit ? '<button onclick="window.sqTalkClear()" style="flex-shrink:0;background:rgba(255,255,255,.07);border:none;color:rgba(255,255,255,.6);font-size:11.5px;font-weight:700;border-radius:9px;padding:7px 11px;cursor:pointer;font-family:inherit">정리</button>' : ''}
+      ${canClearTalk ? '<button onclick="window.sqTalkClear()" style="flex-shrink:0;background:rgba(255,255,255,.07);border:none;color:rgba(255,255,255,.6);font-size:11.5px;font-weight:700;border-radius:9px;padding:7px 11px;cursor:pointer;font-family:inherit">정리</button>' : ''}
     </div>
-    <div id="sq-notice-box" style="flex-shrink:0">${window._sqNoticeHtml(notice, canEdit)}</div>
+    <div id="sq-notice-box" style="flex-shrink:0">${window._sqNoticeHtml(notice, canEditNotice)}</div>
     <!-- ★부위 보드 (대표 8-14) — 공지 바로 아래. 참석자가 자기 부위를 **여기서 바로** 누른다.
          근방단은 벙마다 가슴/등/어깨/하체/자유를 손으로 적어 단톡방에 올렸는데,
          그걸 앱이 모아 주고 '명단 보기'에서 그 형식 그대로 복사할 수 있다. -->
@@ -27204,6 +27209,11 @@ window._sqNoticeHtml = function (notice, canEdit) {
 window._sqNoticeEdit = function () {
   const box = document.getElementById('sq-notice-box'); if (!box) return;
   const s = window._sqDoc || {};
+  const me = (auth.currentUser || {}).uid;
+  const mem = window._sqMembers || {};
+  const canEdit = !!(me && (me === s.hostUid || (mem[me] && mem[me].staff)
+    || (typeof isAdmin === 'function' && isAdmin())));
+  if (!canEdit) { showToast('스쿼드장과 운영진만 공지를 고칠 수 있어요'); return; }
   const cur = String(s.notice || '').replace(/</g,'&lt;');
   box.innerHTML = `
     <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
@@ -27236,6 +27246,16 @@ window._sqNoticeEditEnd = function () {
 };
 window._sqNoticeSave = async function (clear) {
   const sid = window._sqChatSid; if (!sid) return;
+  const s = window._sqDoc || {};
+  const me = (auth.currentUser || {}).uid;
+  const mem = window._sqMembers || {};
+  const canEdit = !!(me && (me === s.hostUid || (mem[me] && mem[me].staff)
+    || (typeof isAdmin === 'function' && isAdmin())));
+  if (!canEdit) {
+    window._sqNoticeEditEnd();
+    showToast('스쿼드장과 운영진만 공지를 고칠 수 있어요');
+    return;
+  }
   const t = document.getElementById('sq-notice-in');
   const v = clear ? '' : ((t && t.value) || '').trim();
   window._sqNoticeEditEnd();       // 저장하든 실패하든 편집 모드는 여기서 끝난다
@@ -27243,8 +27263,6 @@ window._sqNoticeSave = async function (clear) {
     await updateDoc(doc(db, 'squads', sid), { notice: v });
     if (window._sqDoc) window._sqDoc.notice = v;
     const box = document.getElementById('sq-notice-box');
-    const s = window._sqDoc || {}; const me = (auth.currentUser || {}).uid;
-    const canEdit = !!(me && (me === s.hostUid || (typeof isAdmin === 'function' && isAdmin())));
     if (box) box.innerHTML = window._sqNoticeHtml(v, canEdit);
     window._sqTalkEntry();
     showToast(v ? '공지를 올렸어요' : '공지를 내렸어요');
@@ -27519,12 +27537,8 @@ window._sqRoomInit = function (s) {
     const r = stage.getBoundingClientRect();
     window._sqWalkTo((ev.clientX - r.left) / r.width * 100, (ev.clientY - r.top) / r.height * 100);
   };
-  if (joined && me) {   // 입장 연출: 하단 화면 밖에서 걸어 들어옴
-    const sx = 34 + Math.random() * 32, sy = 70 + Math.random() * 16;
-    window._sqMyPos = { x: sx, y: 108, dir: 'up' };
-    const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle, (window._seasonState || {}).auraOn || '');
-    if (c) { window._sqPlace(c, sx, 108, 0); requestAnimationFrame(() => requestAnimationFrame(() => window._sqWalkTo(sx, sy))); }
-  }
+  // 내 캐릭터의 입장 연출/마지막 위치 복원은 RTDB 값을 읽은 뒤 _sqRtJoin 이 한다.
+  // 여기서 먼저 기본 위치를 쓰면, 사용자가 직접 옮겨 둔 위치와 방향이 방을 열 때마다 덮인다.
   window._sqRtJoin && window._sqRtJoin(s.id, s);
   // 구독보다 스테이지가 늦게 준비된 경우를 대비해 마지막 스냅샷으로 한 번 더 그린다
   if (window._sqRtLast) window._sqRenderRemotes(s.id, window._sqRtLast, me);
@@ -27624,6 +27638,7 @@ window._sqRtJoin = function (sid, sArg) {
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       character: window.getMyCharacter ? window.getMyCharacter() : null,
+      poseV: 2,                                          // v2부터 첫 입장 완료 후 정면을 본다
       off: null,                                         // 돌아왔다 — onDisconnect 표시를 끈다
       t: Date.now() });
       // 진짜 노드가 생긴 지금에야 '끊김 표시'를 예약한다. 찌꺼기가 안 생긴다.
@@ -27631,7 +27646,42 @@ window._sqRtJoin = function (sid, sArg) {
     } catch(e) {}
   };
   window._sqRtSend = send;
-  send();
+  // 먼저 저장된 위치를 읽는다. 있으면 사용자가 마지막으로 놓고 간 모습 그대로 복원하고,
+  // 처음 온 캐릭터만 아래에서 걸어 들어온 뒤 정면(dir:'down')으로 돌아선다.
+  // 예전 입장 로직이 자동으로 남긴 `up` 자세는 poseV가 없으므로 한 번만 정면으로 보정한다.
+  R.get(meRef).then(function (snap) {
+    if (!isMember() || !window._sqDoc || window._sqDoc.id !== sid) return;
+    const old = snap && snap.val ? snap.val() : null;
+    const hasSaved = !!(old && old.t && Number.isFinite(+old.x) && Number.isFinite(+old.y));
+    if (hasSaved) {
+      const oldDir = (!old.poseV && old.dir === 'up') ? 'down' : (old.dir || 'down');
+      window._sqMyPos = { x: +old.x, y: +old.y, dir: oldDir, moving: false };
+      const c = window._sqCharEl(u.uid, window._mwMyNick || old.nick || '머피', window.getMyCharacter ? window.getMyCharacter() : old.character, oldDir, window._myTitle || old.title, (window._seasonState || {}).auraOn || old.aura || '');
+      if (c) window._sqPlace(c, +old.x, +old.y, 0);
+      send();
+      return;
+    }
+    const sx = 34 + Math.random() * 32, sy = 70 + Math.random() * 16;
+    window._sqMyPos = { x: sx, y: sy, dir: 'up', moving: true };
+    const c = window._sqCharEl(u.uid, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle, (window._seasonState || {}).auraOn || '');
+    if (c) {
+      window._sqPlace(c, sx, 108, 0);
+      requestAnimationFrame(() => requestAnimationFrame(() => { c.el.classList.add('walking'); window._sqPlace(c, sx, sy, 0.9); }));
+    }
+    send();
+    setTimeout(function () {
+      const p = window._sqMyPos; if (!p || !window._sqDoc || window._sqDoc.id !== sid) return;
+      p.dir = 'down'; p.moving = false;
+      const mine = window._sqCharEl(u.uid, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'down', window._myTitle, (window._seasonState || {}).auraOn || '');
+      if (mine) mine.el.classList.remove('walking');
+      send();
+    }, 950);
+  }).catch(function (e) {
+    console.warn('rt my position', e);
+    if (!isMember() || !window._sqDoc || window._sqDoc.id !== sid) return;
+    if (!window._sqMyPos) window._sqMyPos = { x: 50, y: 78, dir: 'down', moving: false };
+    send();
+  });
   // 이동 콜백 → 쓰로틀 전송(이동 중 ~4회/초 + 멈춘 뒤 확정 1회)
   let last = 0;
   window._sqOnMove = () => {
@@ -27673,16 +27723,22 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     //   `{off:1}`(연결 끊김 표시) 이나 `{stamp:...}`(출석 도장 방송)만 든 노드가 생겼다.
     //   그걸 사람으로 읽으면 닉네임·캐릭터가 없어서 **기본 '머피'가 기본 자리(50,78)에** 선다.
     //   진짜 전송은 언제나 t 를 함께 쓴다 → t 가 없으면 거른다.
-    //   나가기를 안 누르고 영영 안 돌아온 노드도 여기서 청소한다(머피룸과 같은 12시간).
-    if (!p.t || now - p.t > (window.MW_ROOM_TTL_MS || 43200000)) return;
+    //   스쿼드 필드는 한 번 입장한 정상 캐릭터를 계속 남기는 공간이다. 머피룸의 12시간
+    //   접속 TTL을 여기에 적용하면 하루 뒤 전원이 사라져 빈 스쿼드처럼 보인다.
+    if (!p.t) return;
     const first = !seen[uid];
-    const c = window._sqCharEl(uid, p.nick, p.character, p.dir || 'down', p.title, p.aura);
+    // poseV가 없는 옛 노드의 `up`은 이전 자동 입장 연출이 남긴 뒷모습이다.
+    // 새 버전에서 사용자가 직접 위를 보게 한 상태(poseV:2)는 그대로 보존한다.
+    const dir = (!p.poseV && p.dir === 'up') ? 'down' : (p.dir || 'down');
+    const c = window._sqCharEl(uid, p.nick, p.character, dir, p.title, p.aura);
     if (!c) return;
     const x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
-    if (first) {   // 처음 보이는 멤버: 하단에서 걸어 들어오는 것처럼
+    if (first && !p.off) {   // 지금 들어오는 멤버만 하단 입장 연출; 남아 있던 캐릭터는 제자리에
       window._sqPlace(c, x, 108, 0);
       requestAnimationFrame(() => requestAnimationFrame(() => { c.el.classList.add('walking'); window._sqPlace(c, x, y, 0.9); }));
       setTimeout(() => c.el.classList.remove('walking'), 950);
+    } else if (first) {
+      window._sqPlace(c, x, y, 0);
     } else if (c.lx !== x || c.ly !== y) {
       c.el.classList.add('walking');
       window._sqPlace(c, x, y, 0.32);   // 스냅샷 간 보간 = CSS transition
