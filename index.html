@@ -11057,7 +11057,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '651';
+window._SW_V = '652';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -19121,6 +19121,7 @@ window.mwRoomFieldSync = function (key) {
 //   (8-14에 뷰포트 식을 건드렸다가 대표 폰이 오히려 가려진 사고가 있었다. 식은 그대로 두고
 //    덧붙이기만 한다 — 재는 식은 손대지 않았다)
 window.MW_KB_GAP = 10;             // 입력줄과 키보드 사이 여유
+window.MW_KB_GUESS = 0;            // 마지막으로 실측한 키보드 높이(포커스 순간에 바로 쓴다)
 // ★★8-21 재작업. 붙박이로 띄우는 것만으로는 **못 막는다**(대표: "아직도 스크롤 밀림").
 //   빠져 있던 건 **스크롤 잠금**이었다. 입력칸이 키보드에 가리면 브라우저는 그걸 보이려고
 //   페이지를 통째로 밀어 올린다 — 우리가 뒤늦게 입력줄을 붙박이로 만들어도, 그 스크롤은
@@ -19136,12 +19137,25 @@ window._mwKbFit = function () {
   // 그 경우엔 이미 화면이 줄어든 것이라 바닥(0)이 곧 키보드 위다.
   const gap = vv ? Math.round(ih - ((vv.offsetTop || 0) + vv.height)) : 0;
   const up = gap >= 80;
-  row.style.bottom = (Math.max(0, gap) + (up ? window.MW_KB_GAP : 0)) + 'px';
+  // 안드로이드는 키보드가 뜨면 **레이아웃 자체가 줄어든다** → gap 은 0 이고 바닥(0)이 곧 키보드 위다.
+  const shrank = !!window._mwKbIh0 && ih < window._mwKbIh0 - 80;
+  let bt = Math.max(0, gap) + (up ? window.MW_KB_GAP : 0);
+  // ★키보드가 아직 올라오는 중(gap 0)일 때 **다시 바닥으로 내리면 안 된다** — 그 찰나에
+  //   아이폰이 '가렸다'고 판정하고 화면을 밀어버린다. 올라올 자리를 지키고 있는다.
+  if (!up && !shrank) bt = Math.max(bt, window.MW_KB_GUESS || Math.round(ih * 0.38));
+  row.style.bottom = bt + 'px';
+  // ★실측 보정 — 스쿼드에서 8-14에 대표 폰으로 검증된 그 방법(_sqKbFix)과 같다.
+  //   계산을 믿지 않고 **입력줄이 실제로 어디에 그려졌는지**를 재서 모자란 만큼 더 올린다.
+  //   이미 안 가려져 있으면 잰 값이 0 이라 아무 것도 안 한다(아이폰에서 안전한 이유).
+  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : ih;
+  const over = Math.ceil(row.getBoundingClientRect().bottom - visBottom + 6);
+  if (over > 0 && over < ih) { bt += over; row.style.bottom = bt + 'px'; }
+  if (bt > 40) window.MW_KB_GUESS = bt;      // 다음 포커스 때 곧바로 이 자리에서 시작한다
   // ★대화 상자는 키보드 뒤까지 뻗어 있다. 그냥 두면 **가장 최근 말이 키보드에 가린다**
   //   (목록이 column-reverse 라 최신 글이 상자 맨 아래에 있다).
   //   상자를 줄이지 말고 **아래 여백을 키보드+입력줄만큼** 줘서 글을 위로 밀어 올린다.
   const le = document.getElementById('mw-party-log');
-  if (le) le.style.paddingBottom = (Math.max(0, gap) + window.MW_KB_GAP + row.offsetHeight + 12) + 'px';
+  if (le) le.style.paddingBottom = (bt + row.offsetHeight + 12) + 'px';
 };
 window._mwKbStart = function () {
   if (window._mwKbOn) return;
@@ -19153,7 +19167,14 @@ window._mwKbStart = function () {
   if (window._mwKbOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
   document.body.classList.add('mw-kb');
   const row = document.getElementById('mw-party-row');
-  if (row) row.style.bottom = '0px';       // 키보드가 아직 없다 → 일단 바닥. 곧 위로 올라간다
+  // ★★바닥(0)에 두면 안 된다 (대표 8-24: "상대방 방에서 아직도 방이 슬라이드해서 올라간다").
+  //   문서를 잠가도 아이폰은 **포커스된 칸이 키보드에 가리면 화면 자체를 밀어 올린다.**
+  //   잠금이 막는 건 문서 스크롤이지 그 밀기가 아니다. 그래서 밀 이유를 안 만들어야 한다 —
+  //   포커스가 들어오는 그 순간에 **키보드가 설 자리 위로 미리** 올려둔다.
+  //   높이는 지난번에 실측해둔 값을 쓰고, 처음이면 화면의 38%로 어림잡는다(곧 실측이 덮는다).
+  const ih0 = window.innerHeight || 700;
+  window._mwKbIh0 = ih0;             // 안드로이드에서 레이아웃이 줄었는지 판정할 기준
+  if (row) row.style.bottom = (window.MW_KB_GUESS || Math.round(ih0 * 0.38)) + 'px';
   const vv = window.visualViewport;
   if (vv) {
     vv.addEventListener('resize', window._mwKbFit);
