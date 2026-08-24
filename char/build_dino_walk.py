@@ -351,7 +351,10 @@ def build(side_mode, pixel=2):
         for k in norm:
             # 얼굴 고정 -> 저퀄 픽셀화 -> 남은 잔떨림 다수결. 순서를 바꾸지 말 것 —
             # 얼굴은 원해상도에서 붙여야 이음매에 계단이 안 생긴다.
-            locked = lock_head(norm[k])
+            # ★측면(좌·우)에는 얼굴 고정을 안 건다. 옆모습은 컷마다 목 각도가 달라서
+            #   첫 컷 얼굴을 붙이면 목에 베이지색 가로선이 생겨 **목이 잘린 것처럼 보인다**
+            #   (대표 지적 8-24). 정면·뒷면은 목이 정면이라 이음매가 안 보인다.
+            locked = lock_head(norm[k]) if k != 'side' else norm[k]
             norm[k] = temporal_mode([pixelate(f, pixel, pal) for f in locked])
 
     # 3) 행 구성 — 앞·좌·뒤·우. 좌향은 측면을 좌우반전(대표 지시)
