@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '657';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '658';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3360,6 +3360,18 @@ window.ROOM_ITEMS = [
   //   flat/wall 만 적어두면 그림자·통행·벽클램프 판정이 기존 경로에서 그대로 돈다.
   { id:'art_rug', cat:'wall', name:'같이 낙서 카펫', w:288, h:288, flat:true, art:'rug', hidden:true, price:0 },
   { id:'art_frame', cat:'wall', name:'같이 낙서 액자', w:96, h:96, wall:true, art:'frame', hidden:true, price:0 },
+  // ===== 펫 (고양이·강아지) =====
+  // ★가구가 아니다. pet:true 면 _reditAdd 가 배치 대신 '데리고 나오기'로 간다.
+  //   카탈로그·가격·구매 흐름은 가구 것을 그대로 쓴다 — 새 화면을 만들지 않는다.
+  // ★방에 나와 있는 건 언제나 한 마리다(대표 확정). 산 펫은 전부 남아 있고 눌러서 바꾼다.
+  // src 는 시트가 아니라 카탈로그용 그림이다(char/build_pet_sheets.py 가 뽑는다).
+  //   시트를 그대로 넣으면 30행이 통째로 보인다.
+  { id:'cat_black', cat:'pet', name:'까만 고양이', src:'char/pets/cat_black_face.png?v=1', pet:true, w:64, h:64, thumbH:42, price:30 },
+  { id:'cat_milky', cat:'pet', name:'하얀 고양이', src:'char/pets/cat_milky_face.png?v=1', pet:true, w:64, h:64, thumbH:42, price:30 },
+  { id:'cat_fat', cat:'pet', name:'뚱냥이', src:'char/pets/cat_fat_face.png?v=1', pet:true, w:64, h:64, thumbH:44, price:30 },
+  { id:'dog_brown', cat:'pet', name:'갈색 강아지', src:'char/pets/dog_brown_face.png?v=1', pet:true, w:64, h:64, thumbH:42, price:30 },
+  { id:'dog_white', cat:'pet', name:'하얀 강아지', src:'char/pets/dog_white_face.png?v=1', pet:true, w:64, h:64, thumbH:42, price:30 },
+  { id:'dog_small', cat:'pet', name:'작은 강아지', src:'char/pets/dog_small_face.png?v=1', pet:true, w:64, h:64, thumbH:36, price:30 },
   // ===== 펫 용품 (Top-Down-Pet-Pack) =====
   // char/build_pet_sheets.py 가 잘라내고 **w/h/sbw 를 실측해 출력한 값 그대로** 옮긴 것이다.
   // 값을 손으로 고치지 말 것 — 그림자 폭(sbw)과 배치 좌표가 전부 이 숫자를 기준으로 계산된다.
@@ -3837,6 +3849,42 @@ window._mwPetGoto = function (spot, thenAnim) {
     window._mwPetPlay(thenAnim, null);
   }, ms);
   return true;
+};
+
+// ===== 펫 데리고 나오기 =====
+// 구매·소유 판정은 가구와 **같은 물건**을 쓴다(mwFurnOwned / spendCredit / _mwGrantRoomItem).
+// 펫만 따로 상점을 만들면 가격 검사 빠뜨리기 같은 사고가 그쪽에서 또 난다.
+window.mwPetTake = async function (id) {
+  const def = window.mwItemDef(id); if (!def || !def.pet) return;
+  const uid = window.currentUser && window.currentUser.uid;
+  if (!uid) { requireLogin('로그인이 필요해요'); return; }
+
+  if (!window.mwFurnOwned(id)) {
+    if (window.creditsEnforcedFor && window.creditsEnforcedFor(uid)) {
+      const ok = await window.murpyConfirm({
+        title: "'" + def.name + "' 데려오기",
+        desc: '<b style="color:#F5C24B">' + def.price + '머피</b>로 내 방에 데려와요',
+        cost: true, confirmText: '데려오기'
+      });
+      if (!ok) return;
+    }
+    if (!(await window.spendCredit(uid, def.price))) {
+      showToast(window.creditSpendFailMessage()); return;
+    }
+    if (window._mwGrantRoomItem) await window._mwGrantRoomItem(id);
+    showToast("'" + def.name + "' 을(를) 데려왔어요!");
+  }
+
+  // 이미 나와 있는 아이를 다시 누르면 들여보낸다(방에 나와 있는 건 늘 한 마리다)
+  const cur = window._myPet && window._myPet.id;
+  const next = (cur === id) ? null
+    : { id: id, name: (window._myPet && window._myPet.id === id && window._myPet.name) || '',
+        mode: 'free', fedAt: 0, patAt: 0 };
+  window._myPet = next;
+  window._mwPet = null;                       // 다음 렌더에서 새로 만든다
+  if (window._mwSavePet) window._mwSavePet(next);
+  window.mwRenderFurn && window.mwRenderFurn();
+  if (!next) showToast("'" + def.name + "' 은(는) 쉬러 갔어요");
 };
 
 // ===== 공룡 어슬렁 =====
@@ -4365,7 +4413,10 @@ window.mwRoomEdit = function () {
           //   카탈로그는 배경 없이 물건만 크게 보여주므로 다른 팩이라는 게 제일 잘 드러나는 자리다.
           //   작게 그리면 픽셀 알갱이 차이가 눈에 덜 걸린다. 방에 놓았을 때 크기는 그대로다.
           const th = r.thumbH ? ` style=\"height:${r.thumbH}px\"` : '';
-          return `<button onclick="window._reditAdd('${r.id}')"${has ? '' : ' style="opacity:.72"'}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${tag}</button>`;
+          // 펫은 지금 나와 있는 아이를 테두리로 표시한다(틴트 색면 금지 — 테두리와 글자색으로만)
+          const outNow = r.pet && window._myPet && window._myPet.id === r.id;
+          const petTag = outNow ? '<b style="color:#3D7EFF">나와 있음</b>' : '';
+          return `<button onclick="window._reditAdd('${r.id}')"${outNow ? ' style="border-color:#3D7EFF"' : (has ? '' : ' style="opacity:.72"')}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${petTag || tag}</button>`;
         };
         const seen = {};
         let out = '';
@@ -4513,6 +4564,8 @@ window.mwFurnOwned = function (id) {
 };
 window._reditAdd = async function (id) {
   const def = window.mwItemDef(id); if (!def) return;
+  // ★펫은 가구가 아니다 — 좌표에 놓는 게 아니라 데리고 나온다. 가구 상한도 안 먹는다.
+  if (def.pet) { await window.mwPetTake(id); return; }
   const f = window._reditDraft.f;
   const cap = window.mwRoomCap();
   if (f.length >= cap) {
@@ -12799,6 +12852,16 @@ window._mwGrantRoomSlot = async () => {
   } catch (e) { console.error('roomSlotExt', e); return false; }
 };
 // 방 오브젝트 획득 저장 — 꾸미기 편집기(_reditAdd)는 모듈 밖이라 여기로 부른다
+// 펫 저장 — users/{uid}.pet. 꾸미기 편집기는 모듈 밖이라 updateDoc 을 직접 못 쓴다.
+// ★null 을 넣으면 '들여보냄'이다. deleteField 를 쓰면 옛 값이 남은 기기에서 되살아나므로
+//   빈 값으로 덮어쓴다.
+window._mwSavePet = async (pet) => {
+  const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
+  try {
+    await updateDoc(doc(db, 'users', uid), { pet: pet || null });
+    return true;
+  } catch (e) { return false; }
+};
 window._mwGrantRoomItem = async (id) => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
   try {
@@ -15690,6 +15753,8 @@ window.ensureCreditsInit = async (uid) => {
       }
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    // 방에 나와 있는 펫. 없으면 null 이고, 그러면 방에 아무것도 안 그린다.
+    window._myPet = (d.pet && d.pet.id) ? d.pet : null;
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
     window._myRoomPos = (d.roomPos && typeof d.roomPos.tc === 'number') ? d.roomPos : null;
     window._roomSlotExt = d.roomSlotExt | 0;   // 산 슬롯 확장권 수
