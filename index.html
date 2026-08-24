@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '665';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '666';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4139,9 +4139,15 @@ window._mwDinoSync = function (editing) {
   if (!room || !furn || editing || window._curField !== 'home') { clear(); return; }
   var data = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
   var list = (data && data.f) || [];
-  var picks = [];
-  for (var i = 0; i < list.length && picks.length < window.MW_DINO_MAX; i++) {
-    if (list[i] && list[i].id === window.MW_DINO_ID) picks.push({ idx: i, it: list[i] });
+  // ★대표가 고른 공룡(it.mv)만 움직인다. 아무도 안 골랐으면 예전처럼 앞에서부터 8마리 —
+  //   기존에 방을 꾸며 둔 사람의 화면이 갑자기 멈추지 않게.
+  var picks = [], i;
+  var chosen = false;
+  for (i = 0; i < list.length; i++) if (list[i] && list[i].id === window.MW_DINO_ID && list[i].mv) chosen = true;
+  for (i = 0; i < list.length && picks.length < window.MW_DINO_MAX; i++) {
+    if (!list[i] || list[i].id !== window.MW_DINO_ID) continue;
+    if (chosen && !list[i].mv) continue;
+    picks.push({ idx: i, it: list[i] });
   }
   clear();
   if (!picks.length) return;
@@ -4640,6 +4646,7 @@ window.mwRoomEdit = function () {
           <button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window._reditClear()">전부 비우기</button>
           <!-- 4방향이 있는 가구를 고르면 나타난다. 없는 가구는 아예 안 보인다 -->
           <button id="mw-redit-rot" class="mw-btn mw-btn-sm" style="display:none" onclick="window._reditRotate()">돌리기</button>
+          <button id="mw-redit-mv" class="mw-btn mw-btn-sm" style="display:none" onclick="window._reditMove()">움직이기</button>
           <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
         </span>
       </div>
@@ -4741,6 +4748,15 @@ window._reditPaint = function () {
     //   지금 상태에서 **누르면 무엇이 되는지**를 글자로 보여준다(펴져 있으면 '접기').
     if (base && base.flip && base.flip.length) rot.textContent = base.flip[(sel.d | 0) % base.flip.length];
     else rot.textContent = '돌리기';
+  }
+  // 움직이기 버튼 — 공룡을 고른 경우에만. 어느 공룡이 돌아다닐지 대표가 직접 고른다.
+  // ★상한이 8마리라 고를 수 있어야 한다(대표 8-24). 안 고르면 앞에서부터 8마리가 움직인다.
+  const mv = document.getElementById('mw-redit-mv');
+  if (mv) {
+    const sel2 = window._reditSel >= 0 && window._reditDraft ? window._reditDraft.f[window._reditSel] : null;
+    const isDino = sel2 && sel2.id === window.MW_DINO_ID;
+    mv.style.display = isDino ? '' : 'none';
+    if (isDino) mv.textContent = sel2.mv ? '움직임 끄기' : '움직이기';
   }
   // 몇 개 놓았는지 항상 보여준다 — 상한에 걸렸을 때 이유를 알 수 없던 게 문제였다
   const hint = document.getElementById('mw-redit-hint');
@@ -4866,6 +4882,29 @@ window._reditRemove = function () {
 // ★방향마다 폭·높이가 달라서 그냥 돌리면 (a) 겹치거나 (b) 방 밖으로 나간다.
 //   그래서 **바닥 중심을 유지**하며 돌리고, 겹치면 되돌린다.
 //   바닥 중심을 기준으로 잡는 이유: 가구는 밑변이 바닥에 닿아 있어 그게 실제 '놓인 자리'다.
+// 공룡 하나를 '움직이는 아이'로 지정/해제한다.
+// ★상한이 8마리다(대표 확정). 10마리 넘게 놓은 사람은 **어느 8마리가 움직일지** 고를 수
+//   있어야 한다 — 앞에서부터 자동으로 고르면 원하는 아이가 안 움직인다.
+// 아무도 안 고르면 예전처럼 앞에서부터 8마리가 움직인다(기존 방이 안 바뀌게).
+window._reditMove = function () {
+  const i = window._reditSel;
+  if (i < 0 || !window._reditDraft) return;
+  const f = window._reditDraft.f, it = f[i];
+  if (!it || it.id !== window.MW_DINO_ID) return;
+  if (it.mv) {
+    delete it.mv;
+  } else {
+    const on = f.filter(function (x) { return x && x.id === window.MW_DINO_ID && x.mv; }).length;
+    if (on >= window.MW_DINO_MAX) {
+      showToast('움직이는 공룡은 ' + window.MW_DINO_MAX + '마리까지예요');
+      return;
+    }
+    it.mv = 1;
+    showToast('이 공룡이 돌아다녀요 (' + (on + 1) + '/' + window.MW_DINO_MAX + ')');
+  }
+  window._reditPaint && window._reditPaint();
+};
+
 window._reditRotate = function () {
   const i = window._reditSel;
   if (i < 0 || !window._reditDraft) return;
