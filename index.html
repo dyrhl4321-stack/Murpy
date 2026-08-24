@@ -772,6 +772,16 @@ window._SW_V = '655';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ★키보드가 올라오면 **화면은 그대로 두고 입력줄만** 키보드 바로 위로 올린다 (대표 8-20:
      "화면 위로 밀려서 개불편하다 · 화면 고정으로 가야 한다").
      bottom 값은 JS 가 visualViewport 로 실측해 넣는다 — 폰마다 키보드 높이가 다르다. */
+  /* ★★★세 번 고치고도 안 됐던 이유 — 상자가 다르다 (대표 8-24: "스쿼드는 안 그런데").
+     스쿼드 상세(#sq-detail)는 `position:fixed;inset:0;overflow-y:auto` 라 **그 자체가 화면**이고,
+     키보드가 뜨면 _sqVVFit 이 그 상자를 보이는 영역에 맞춘다 — 밀 페이지가 아예 없다.
+     방(#page-char)은 문서에 그냥 흐르는 페이지다. 그래서 아이폰이 문서를 통째로 밀어 올렸고,
+     문서를 잠그든 입력줄을 올리든 소용이 없었다(잠금·미리올리기·실측보정 전부 실패).
+     → 타이핑하는 동안만 방도 **스쿼드와 같은 상자**가 된다. top/height 는 JS 가 실측해 넣는다.
+     ★min-height:100dvh 를 반드시 눌러야 한다 — 안 그러면 상자가 화면보다 길어져 그대로 넘친다. */
+  body.mw-kb #page-char { position:fixed; left:0; right:0; z-index:60;
+    max-width:390px; margin:0 auto; min-height:0 !important;
+    overflow-y:auto; overscroll-behavior:contain }
   body.mw-kb #mw-party-row { position:fixed; left:0; right:0; z-index:70;
     max-width:390px; margin:0 auto; padding:8px 13px;
     background:#0b0e16; border-top:3px solid #05070c }
@@ -11397,7 +11407,7 @@ document.getElementById('create-crew-panel').querySelector('.back-btn').addEvent
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
 // ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '654';
+window._SW_V = '655';
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -19520,6 +19530,13 @@ window._mwKbFit = function () {
   // ★실측 보정 — 스쿼드에서 8-14에 대표 폰으로 검증된 그 방법(_sqKbFix)과 같다.
   //   계산을 믿지 않고 **입력줄이 실제로 어디에 그려졌는지**를 재서 모자란 만큼 더 올린다.
   //   이미 안 가려져 있으면 잰 값이 0 이라 아무 것도 안 한다(아이폰에서 안전한 이유).
+  // ★방을 **보이는 영역에 맞춘다** — 스쿼드의 _sqVVFit 과 같은 식이다. 이게 본체고,
+  //   아래 입력줄 위치는 그 안에서의 마무리다.
+  const pc = document.getElementById('page-char');
+  if (pc) {
+    pc.style.top = (vv ? (vv.offsetTop || 0) : 0) + 'px';
+    pc.style.height = (vv ? vv.height : ih) + 'px';
+  }
   const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : ih;
   const over = Math.ceil(row.getBoundingClientRect().bottom - visBottom + 6);
   if (over > 0 && over < ih) { bt += over; row.style.bottom = bt + 'px'; }
@@ -19570,6 +19587,9 @@ window._mwKbEnd = function (immediate) {
     document.body.classList.remove('mw-kb');
     const row = document.getElementById('mw-party-row');
     if (row) row.style.bottom = '';   // ★인라인 cssText 가 없는 요소라 '' 로 지워도 안전하다
+    // #page-char 의 인라인은 padding 뿐이라 top/height 만 지우는 건 안전하다(cssText 를 안 건드린다)
+    const pc = document.getElementById('page-char');
+    if (pc) { pc.style.top = ''; pc.style.height = ''; }
     const le = document.getElementById('mw-party-log');
     if (le) le.style.paddingBottom = '';
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
