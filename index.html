@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '669';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '670';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3817,13 +3817,28 @@ window._mwPetSpots = function (want) {
     var y = (want === 'perch') ? (it.y + def.h * 0.30) : (it.y + def.h - 1);
     var tc = Math.max(0, Math.min(15, Math.floor((it.x + def.w / 2) / 48)));
     var tr = Math.max(0, Math.min(15, Math.floor(y / 48)));
-    // ★밥그릇은 그릇 칸이 아니라 **바로 윗칸**에 서서 아래를 보고 먹는다.
-    //   그릇 칸에 서면 펫 몸이 그릇을 덮어 허공에서 먹는 것처럼 보인다(대표 지적 8-24).
-    //   먹는 그림은 4방향 다 있으므로(앞·좌·뒤·우) 얼굴이 보이는 '앞'으로 고정한다.
+    // ★밥그릇은 **사방 어느 칸에서든** 먹는다(대표 8-24). 그릇 칸에 올라서면 펫 몸
+    //   (3타일 높이)이 그릇을 덮어 허공에서 먹는 것처럼 보인다 — 옆에 서야 그릇이 보인다.
+    //   네 칸을 다 후보로 넣어 두면 _mwPetNearest 가 알아서 **가까운 쪽**을 고른다.
+    //   dir 은 그릇을 바라보는 쪽 (0앞=아래를 봄 · 1좌 · 2뒤=위를 봄 · 3우).
+    //   먹는 그림은 4방향 다 있다(고양이 4·4·2·4컷). 뒷모습만 2컷인 건 원본이 그렇다.
     if (want === 'bowl') {
-      var up1 = tr - 1;
-      if (up1 >= 0 && window._charWalkable && window._charWalkable(tc, up1)) tr = up1;
-      out.push({ idx: i, tc: tc, tr: tr, up: false, dir: 0 });
+      var sides = [
+        { dc: 0, dr: -1, dir: 0 },    // 그릇 위 -> 아래를 본다
+        { dc: -1, dr: 0, dir: 3 },    // 그릇 왼쪽 -> 오른쪽을 본다
+        { dc: 1, dr: 0, dir: 1 },     // 그릇 오른쪽 -> 왼쪽을 본다
+        { dc: 0, dr: 1, dir: 2 }      // 그릇 아래 -> 위를 본다(뒷모습이라 마지막)
+      ];
+      var any = false, k;
+      for (k = 0; k < sides.length; k++) {
+        var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
+        if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
+        if (window._charWalkable && !window._charWalkable(stc, str_)) continue;
+        out.push({ idx: i, tc: stc, tr: str_, up: false, dir: sides[k].dir });
+        any = true;
+      }
+      // 사방이 다 막혔으면 그릇 칸에서라도 먹는다(구석에 낀 그릇)
+      if (!any) out.push({ idx: i, tc: tc, tr: tr, up: false, dir: 0 });
       continue;
     }
     out.push({ idx: i, tc: tc, tr: tr, up: want === 'perch' });
