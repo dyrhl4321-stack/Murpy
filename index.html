@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '677';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '678';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -12090,6 +12090,9 @@ window.mwUploadImage = async function (blob, kind) {
     let blob = null;
     try { blob = body && body.get ? body.get('image') : null; } catch (e) { blob = null; }
     if (!blob) return orig(input, init);          // 모양이 다르면 원래대로 보낸다
+    // ★Storage 가 실패하면 **원래 imgBB 로 그대로 넘긴다**(2026-08-25).
+    //   버킷이 아직 없거나 권한이 막히면 여기서 죽는데, 그러면 사진 업로드가 통째로 멈춘다.
+    //   두 경로를 다 살려 두면 어느 한쪽이 죽어도 서비스는 굴러간다.
     return window.mwUploadImage(blob, 'feed').then(function (url2) {
       // imgBB 와 **같은 모양**으로 돌려준다. 호출부는 j.success / j.data.url 을 본다.
       return new Response(JSON.stringify({
@@ -12097,10 +12100,9 @@ window.mwUploadImage = async function (blob, kind) {
         data: { url: url2, display_url: url2, image: { url: url2 } }
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }).catch(function (e) {
-      const msg = (e && e.message) || '업로드 실패';
-      console.error('[storage upload]', e);
-      return new Response(JSON.stringify({ success: false, error: { message: msg } }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } });
+      console.warn('[storage upload] 실패 → imgBB 로 되돌립니다', e);
+      window._mwStorageFail = (e && (e.code || e.message)) || 'unknown';
+      return orig(input, init);                  // 원래 요청을 그대로 다시 보낸다
     });
   };
 })();
