@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '706';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '708';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -784,7 +784,26 @@ window._SW_V = '706';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      문서를 잠그든 입력줄을 올리든 소용이 없었다(잠금·미리올리기·실측보정 전부 실패).
      → 타이핑하는 동안만 방도 **스쿼드와 같은 상자**가 된다. top/height 는 JS 가 실측해 넣는다.
      ★min-height:100dvh 를 반드시 눌러야 한다 — 안 그러면 상자가 화면보다 길어져 그대로 넘친다. */
-  body.mw-kb #page-char { position:fixed; left:0; right:0; z-index:60;
+  /* ★★8-25 — top/height 를 **CSS 로 못 박는다.** JS 는 여기를 손대지 않는다.
+     예전엔 _mwKbFit 이 visualViewport 를 볼 때마다 top/height 를 다시 앉혔는데,
+     그 함수는 vv 의 resize **와 scroll** 에 물려 있다. 모바일 브라우저는 스크롤할 때마다
+     주소창이 접히고 펴지면서 scroll 이벤트를 쏘고 offsetTop/height 가 바뀐다
+     -> 그때마다 방이 통째로 다시 앉는다 = "고정 하나도 안 됨"(대표 8-25).
+     고정한다는 건 **아무 것도 안 움직인다**는 뜻이다. 화면에 붙박아 두면 그만이다.
+     키보드가 가리는 아랫부분은 어차피 칠 때는 안 본다 — 스쿼드가 공지·부위 보드를 접는 것과 같다. */
+  /* ★★★진짜 원인 (대표 8-25, 네 번 고치고도 안 됐던 것).
+     `.page` 에 **transform 이 걸려 있다**(131줄 translateY, 그리고 .active 의 pageIn 이
+     `forwards` 라 끝나도 translateY(0) 이 남는다 — `none` 이 아니다).
+     CSS 에서 transform 이 걸린 요소는 그 안의 `position:fixed` 자식의 **기준이 화면이 아니라
+     그 요소**가 된다. 그래서 #mw-party-row 는 화면 바닥이 아니라 **방 페이지 바닥**에
+     붙어 있었다. 페이지는 길고 스크롤되니 입력줄이 따라 움직였다 —
+     "고정 하나도 안 되고 필드에 박스 뚫고 들어오고 위아래 난리"의 정체다.
+     뷰포트 계산도, 키보드 높이도 처음부터 문제가 아니었다.
+     ※같은 함정이 7966줄에 이미 적혀 있다("최상위 — .page transform 영향 안 받게").
+     -> 칠 때만 transform 을 없앤다. animation 도 같이 꺼야 forwards 가 되살리지 못한다.
+        opacity 는 애니메이션이 올려주던 값이라 **직접 1 로 박아야** 화면이 안 사라진다. */
+  body.mw-kb #page-char { transform:none !important; animation:none !important; opacity:1 !important; }
+  body.mw-kb #page-char { position:fixed; left:0; right:0; top:0; height:100%; z-index:60;
     max-width:390px; margin:0 auto; min-height:0 !important;
     overflow-y:auto; overscroll-behavior:contain }
   body.mw-kb #mw-party-row { position:fixed; left:0; right:0; z-index:70;
@@ -20688,13 +20707,10 @@ window._mwKbFit = function () {
   if (!row || !window._mwKbOn) return;
   const vv = window.visualViewport;
   const ih = window.innerHeight || (vv && vv.height) || 0;
-  // ★방을 **보이는 영역에 맞춘다** — 스쿼드 #sq-detail 과 같은 상자로 만드는 부분.
-  //   이게 있어야 아이폰이 문서를 통째로 밀어 올리지 못한다(8-24에 이걸로 해결됐다).
-  const pc = document.getElementById('page-char');
-  if (pc) {
-    pc.style.top = (vv ? (vv.offsetTop || 0) : 0) + 'px';
-    pc.style.height = (vv ? vv.height : ih) + 'px';
-  }
+  // ★방 위치는 **여기서 손대지 않는다.** CSS(body.mw-kb #page-char)가 화면에 못 박아 뒀다.
+  //   이 함수는 vv 의 scroll 에도 물려 있어서, 여기서 top/height 를 앉히면 주소창이
+  //   접힐 때마다 방이 다시 앉는다 = 고정이 풀린다(대표 8-25). 여기서 하는 일은
+  //   **입력줄을 키보드 위로 올리는 것 하나뿐**이다.
   // ★★8-25 재작업 — **찍지 말고 잰다.**
   //   예전엔 키보드 높이를 화면의 38%로 찍어 포커스 순간 입력줄을 그 자리로 띄웠다.
   //   그래서 (1) 키보드가 뜨기도 전에 입력줄이 방 한가운데로 튀어 올라가 필드를 덮었고
@@ -20764,7 +20780,7 @@ window._mwKbEnd = function (immediate) {
     //   안 풀면 다음에 열 때 이미 올라간 상태에서 또 재서 입력줄이 화면 밖으로 올라간다.
     if (row) { row.style.bottom = ''; row.style.transform = ''; }
     window._mwKbLift = 0;
-    // #page-char 의 인라인은 padding 뿐이라 top/height 만 지우는 건 안전하다(cssText 를 안 건드린다)
+    // ★예전에 JS 가 앉혀 둔 값이 남아 있을 수 있어 한 번은 지운다(cssText 를 안 건드리므로 안전).
     const pc = document.getElementById('page-char');
     if (pc) { pc.style.top = ''; pc.style.height = ''; }
     const le = document.getElementById('mw-party-log');
@@ -20809,7 +20825,7 @@ window.mwRoomQuickBar = function () {
     + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">말하기</button>";
   host.appendChild(bar);
-  window._sqNoJump && window._sqNoJump(document.getElementById('mw-party-input'));
+  window._sqNoJump && window._sqNoJump(document.getElementById('mw-party-input'), 'page-char');
 };
 // 고정 = 내 말풍선이 안 사라진다. 스쿼드의 sqBubblePinToggle 과 같은 뜻이다.
 window.mwBubblePinToggle = function () {
@@ -30311,11 +30327,13 @@ window._sqQuickKbEnd = function (immediate) {
 //   원인은 브라우저의 기본 동작이다 — 입력칸에 포커스가 가면 **그 칸을 보이게 하려고 스크롤**한다.
 //   이미 보이는 자리에 있어도 한 번 튄다. 그래서 **포커스 직후 스크롤 위치를 원래대로 되돌린다.**
 //   한 프레임에 끝나지 않고(키보드 애니메이션 동안 여러 번 조정된다) 잠깐 붙잡고 있어야 한다.
-window._sqNoJump = function (input) {
+window._sqNoJump = function (input, hostId) {
   if (!input || input._noJump) return;
   input._noJump = true;
   input.addEventListener('focus', function () {
-    const sc = document.getElementById('sq-detail'); if (!sc) return;
+    // ★머피룸에서는 붙잡을 상자가 #sq-detail 이 아니다. 인자를 안 받던 탓에 방에서는
+    //   이 실드가 **아무 일도 안 하고 있었다**(대표 8-25: 방에서만 계속 밀린다).
+    const sc = document.getElementById(hostId || 'sq-detail'); if (!sc) return;
     const keep = sc.scrollTop;
     let n = 0;
     const hold = function () {
