@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '709';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '710';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -13043,13 +13043,22 @@ window.deleteMyAccount = async function () {
 
 // 로그아웃 이벤트 연결
 document.addEventListener('murpy-logout', async () => {
+  // ★★로그아웃하면 **다시 연다** (대표 8-25: "로그인했을 때 캐시를 계속 물고 있잖아
+  //   로그아웃해도"). 예전엔 currentUser 만 지웠는데, 머피월드가 들고 있는 것은 그게 다가
+  //   아니다 — 내 방(_myRoom)·펫(_myPets)·캐릭터(_charDraft)·닉네임·지갑·옷장·방 소지품이
+  //   전부 메모리에 남아 있었다. 그래서 로그아웃해도 **내 방이 그대로 보였다.**
+  //   스무 개 넘는 전역을 하나씩 지우는 건 하나만 빠뜨려도 같은 버그가 난다.
+  //   회원 탈퇴가 이미 location.replace('/') 로 끝내고 있다 — 같은 방식으로 통일한다.
+  //   ★나가기 전에 방에서 먼저 빠진다. 안 그러면 남의 화면에 유령으로 서 있는다.
+  try { window._mwRlLeave && window._mwRlLeave(); } catch (e) {}
   userPhotoCache.clear();
   window.currentUser = null;
   window._setHeaderAvatar('');   // 사진 지우고 대체 아이콘을 되살린다
-  await signOut(auth);
+  try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
+  try { if (typeof closePanel === 'function') closePanel('mypage-panel'); } catch (e) {}
   showToast('로그아웃됐어요');
-  if (typeof closePanel === 'function') closePanel('mypage-panel');
-  if (typeof goPage === 'function') goPage('home');
+  // ★쿼리를 붙여 **캐시가 아니라 서버**에서 다시 받게 한다(홈 주소 그대로면 옛 화면이 나온다).
+  location.replace('/?out=' + Date.now());
 });
 
 // ===== 피드 무한스크롤 =====
