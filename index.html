@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '732';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '734';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -625,8 +625,8 @@ window._SW_V = '732';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-pet .mw-pet-spr, .mw-dino .mw-pet-spr { position:absolute; inset:0; image-rendering:pixelated;
     background-repeat:no-repeat; background-position:0 0; }
   /* 개집 안에서는 몸집을 입구에 맞춰 줄인다. */
-  .mw-pet.in-house .mw-pet-spr { transform:scale(.72); transform-origin:50% 100%; }
-  .mw-pet.in-house .mw-pet-hit { transform:translateX(-50%) scale(.74); transform-origin:50% 100%; }
+  .mw-pet.in-house .mw-pet-spr { transform:scale(.82); transform-origin:50% 100%; }
+  .mw-pet.in-house .mw-pet-hit { transform:translateX(-50%) scale(.84); transform-origin:50% 100%; }
   .mw-pet.in-house .mw-pet-sh { opacity:.18; }
   /* 접지 그림자 = 캐릭터(.cw-shadow)와 같은 평평한 타원. 폭은 실측 접지폭에서 온다. */
   .mw-pet .mw-pet-sh, .mw-dino .mw-pet-sh { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
@@ -3580,9 +3580,11 @@ window.ROOM_ITEMS = [
   { id:'pet_tower_purple', cat:'petitem', name:'캣타워(보라)', src:'char/rooms/pet_tower_purple.png?v=2', w:150, h:177, sbw:144, blockBand:0.35, petPerch:'cat', thumbH:44, price:25 },
   { id:'pet_tower_green', cat:'petitem', name:'캣타워(초록)', src:'char/rooms/pet_tower_green.png?v=2', w:150, h:177, sbw:144, blockBand:0.35, petPerch:'cat', thumbH:44, price:25 },
   // 개집 — 강아지가 들어가 자는 자리.
-  { id:'pet_house_blue', cat:'petitem', name:'개집(파랑)', src:'char/rooms/pet_house_blue.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
-  { id:'pet_house_red', cat:'petitem', name:'개집(빨강)', src:'char/rooms/pet_house_red.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
-  { id:'pet_house_green', cat:'petitem', name:'개집(초록)', src:'char/rooms/pet_house_green.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 }
+  // ★8-26 크기 66x78 -> 86x102 (대표: "강아지 집 너무 작아졌대 좀만 더 키워줘").
+  //   sbw(바닥 접지폭)도 같이 키운다 — 안 그러면 그림자만 작아 떠 보인다.
+  { id:'pet_house_blue', cat:'petitem', name:'개집(파랑)', src:'char/rooms/pet_house_blue.png?v=2', w:86, h:102, sbw:74, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
+  { id:'pet_house_red', cat:'petitem', name:'개집(빨강)', src:'char/rooms/pet_house_red.png?v=2', w:86, h:102, sbw:74, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
+  { id:'pet_house_green', cat:'petitem', name:'개집(초록)', src:'char/rooms/pet_house_green.png?v=2', w:86, h:102, sbw:74, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 }
 ];
 // ===== 카탈로그 분류 (대표 8-18: "에셋들 많아져서 각 종류별로 다시 묶어줘") =====
 // ★ROOM_ITEMS 의 **배열 순서는 안 바꾼다**. 줄마다 왜 넣었는지·무엇에 데었는지가
@@ -4339,7 +4341,7 @@ window._mwPetRow = function (anim, dir) {
 window._mwPetPosition = function (p) {
   if (!p || !p.el) return;
   var t = window._charTileGeom().t;
-  var W = p.el.clientWidth || Math.round(t * window.PET_META.cell * window.PET_SCALE / 48);
+  var W = window._mwPetCellPx();     // ★위와 같은 이유 — clientWidth 를 믿지 않는다
   var nx = ((p.posDx || 0) + (p.anim === 'eat' ? (p.eatDx || 0) : 0)) * t;
   var ny = ((p.posDy || 0) + (p.anim === 'eat' ? (p.eatDy || 0) : 0)) * t;
   p.el.style.transform = 'translate3d(' + Math.round((p.tc + 0.5) * t - W / 2 + nx) + 'px,'
@@ -4355,7 +4357,13 @@ window._mwPetPlay = function (p, anim, dir) {
   p.anim = anim;
   window._mwPetPosition(p);
   var spr = p.el.querySelector('.mw-pet-spr'); if (!spr) return;
-  var W = p.el.clientWidth || 1;
+  // ★★★목·다리가 갈라지던 것 (대표 8-26: "강아지 가끔 목이랑 다리랑 분리되는 버그").
+  //   세로 위치는 clientWidth 로, 배경 크기는 _mwPetApply 의 W 로 정하고 있었다. **두 값이
+  //   다르면 행이 어긋나서 머리는 A행, 다리는 B행**이 나온다.
+  //   특히 방금 만든 펫은 아직 레이아웃 전이라 clientWidth 가 0 → `|| 1` 로 떨어져
+  //   행 간격이 1px 이 돼 버렸다. 그래서 '가끔'이었다.
+  //   -> 두 곳이 **같은 식**으로 W 를 구한다. 화면에 붙기 전에도 값이 맞는다.
+  var W = window._mwPetCellPx();
   spr.style.backgroundPositionY = (-row * W) + 'px';
   spr.style.setProperty('--fn', n);
   var per = (anim === 'walk') ? 0.13 : 0.24;
@@ -4364,11 +4372,15 @@ window._mwPetPlay = function (p, anim, dir) {
 };
 
 // 위치를 화면에 반영. left/top 이 아니라 transform 이다 — 레이아웃 재계산을 안 만든다.
+// 펫 한 칸의 화면 크기. **위치 계산과 배경 크기가 반드시 같은 값을 써야 한다**(위 주석 참고).
+window._mwPetCellPx = function () {
+  var t = (window._charTileGeom && window._charTileGeom().t) || 0;
+  return Math.round(t * window.PET_META.cell * window.PET_SCALE / 48) || 1;
+};
 window._mwPetApply = function (p) {
   if (!p || !p.el) return;
   var def = window._mwPetDef(p.id); if (!def) return;
-  var t = window._charTileGeom().t;
-  var W = Math.round(t * window.PET_META.cell * window.PET_SCALE / 48);
+  var W = window._mwPetCellPx();
   p.el.style.width = W + 'px'; p.el.style.height = W + 'px';
   window._mwPetPosition(p);
   // 올라가 있으면 그 가구보다 위. 안 그러면 침대 위에서 자는 고양이가 뒤에 파묻힌다.
@@ -5192,7 +5204,10 @@ window._mwDinoPlay = function (d, row) {
   var el = d.el; if (!el) return;
   d.row = row;
   var spr = el.querySelector('.mw-pet-spr'); if (!spr) return;
-  var H = el.clientHeight || 1, n = row === 0 ? 8 : 3;
+  // ★펫과 같은 함정 — clientHeight 는 레이아웃 전에 0 이다. 배경 크기와 같은 식으로 구한다.
+  var _t = (window._charTileGeom && window._charTileGeom().t) || 0;
+  var H = Math.round(_t * (window.MW_DINO || {}).ch / 48) || (el.clientHeight || 1);
+  var n = row === 0 ? 8 : 3;
   spr.style.backgroundPositionY = (-row * H) + 'px';
   spr.style.setProperty('--fn', n);
   spr.style.animation = 'mwPetPlay ' + (row === 0 ? '0.96' : '0.50') + 's steps(' + n + ') infinite';
@@ -5575,6 +5590,17 @@ window.mwRoomEdit = function () {
             `<button onclick="window._reditAdd('${r.id}')"><span class="thumb"><img src="${r.src}"${r.thumbH ? ` style="height:${r.thumbH}px"` : ''} draggable="false"></span><span>${r.name}</span></button>`).join('')}
           </div>`;
       })()}
+      ${(() => {
+        // ★★같이 그린 그림은 **꾸미기 안**에 있어야 한다 (대표 8-26: "내 방 좌측 상단에
+        //   그림 2 아직 떠 있음 · 꾸미기 탭 안으로 넣으라고 했는데").
+        //   필드 위에 칩으로 띄우면 방을 가리고, 놓는 물건인데 놓는 자리(꾸미기)에 없었다.
+        const arts = (window._myArt || []).filter(a => a && a.px);
+        if (!arts.length) return '';
+        return `<div class="mw-redit-cathead" style="color:#7aa8ff">같이 그린 것들<span>${arts.length}</span></div>
+          <div class="mw-redit-cat">${arts.map(a =>
+            `<button onclick="window._reditAddArt('${a.id}')"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${String((a.by || []).join('·')).slice(0, 10) || '그림'}</span></button>`).join('')}
+          </div>`;
+      })()}
       <!-- ★캐릭터 이펙트(아우라)는 여기(방 꾸미기)가 아니라 **꾸미기 > 악세사리** 에 있다
            (대표 8-19). 방에 놓는 물건이 아니라 캐릭터에 켜는 것이다. charSlot('acc') 참고. -->
       <!-- ★저장 버튼은 **스크롤해도 하단에 붙어 있다**(대표 8-17: "있는 줄 모르고 빠져나간다").
@@ -5703,6 +5729,30 @@ window.mwFurnOwned = function (id) {
   if (!def.price) return true;                       // 무료 기본형
   const inv = (window._seasonState && window._seasonState.inv) || [];
   return inv.includes(id);
+};
+// 같이 그린 그림을 방에 놓는다. 카펫으로 깔지 액자로 걸지 **먼저 묻는다**
+// (대표 8-25: "어디에 깔 건지는 이야기해줘야지 · 마음대로 깔아버리면 어떡함").
+window._reditAddArt = async function (artId) {
+  const a = (window._myArt || []).filter(function (q) { return q && q.id === artId; })[0];
+  if (!a) return;
+  const f = window._reditDraft && window._reditDraft.f; if (!f) return;
+  const cap = window.mwRoomCap();
+  if (f.length >= cap) { showToast('가구는 ' + cap + '개까지예요'); return; }
+  const kind = await window.murpyConfirm({
+    title: '어떻게 놓을까요?',
+    desc: '<b>액자</b>로 벽에 걸거나 <b>카펫</b>으로 바닥에 깔 수 있어요<br>놓은 뒤 끌어서 자리를 옮기세요',
+    confirmText: '액자로 걸기', cancelText: '카펫으로 깔기'
+  });
+  // murpyConfirm 은 true/false 를 준다. 취소(false)를 '카펫'으로 쓴다 — 새 화면을 안 만든다.
+  const id = kind ? 'art_frame' : 'art_rug';
+  const def = window.mwItemDef(id); if (!def) return;
+  window._reditDraft.art = window._reditDraft.art || {};
+  window._reditDraft.art[artId] = { px: a.px, by: a.by || [], at: a.at || Date.now() };
+  f.push({ id: id, a: artId,
+           x: Math.round((768 - def.w) / 2), y: kind ? 56 : 336 });
+  window._reditSel = f.length - 1;
+  window._reditPaint && window._reditPaint();
+  showToast(kind ? '벽에 걸었어요 · 끌어서 옮겨요' : '바닥에 깔았어요 · 끌어서 옮겨요');
 };
 window._reditAdd = async function (id) {
   const def = window.mwItemDef(id); if (!def) return;
@@ -20597,6 +20647,14 @@ window.mwArtGallery = function () {
 // ---- 방 안 '그림' 칩 ----
 // ★필드에 얹는 것은 조이스틱 예외 목록에 **반드시** 넣어야 한다(.mw-fieldchip 은 이미 들어 있다).
 window.mwArtChip = function (key) {
+  // ★★필드 칩은 **더 이상 만들지 않는다** (대표 8-26).
+  //   같이 그린 그림은 ①꾸미기의 '같이 그린 것들' ②공용룸의 '오늘의 추억' 두 곳에서 본다.
+  //   필드 위에 칩을 띄우면 방을 가리고, 놓는 물건인데 놓는 자리에 없는 꼴이 된다.
+  //   ※함수는 남긴다 — 부르는 곳이 여러 군데라 지우면 그쪽이 다 깨진다. 있던 칩만 걷는다.
+  const old = document.getElementById('mw-art-chip'); if (old) old.remove();
+  return;
+};
+window._mwArtChipLegacy = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('mw-art-chip');
   const n = (window.mwArtList() || []).length;
@@ -22368,6 +22426,44 @@ window._mwPaintNick = function (x, cx, footY, h, nick, cw, aura) {
   x.fillText(t, cx, by + bh / 2 + 1);
   x.restore();
 };
+// 가구 한 칸의 그림 파일. ★같이 그린 그림(액자·카펫)은 **src 가 없다** —
+//   화면에서는 mwFurnHtml 이 mwArtImg 로 캔버스에 구워 쓴다(dataURL).
+//   사진 쪽은 그걸 안 하고 def.src(undefined)를 읽어서 **그림만 빠져 있었다**
+//   (대표 8-26: "머피룸 사진 찍으면 펫, 그림들 안 나옴").
+// 지금 화면에 떠 있는 펫/공룡을 사진용 좌표로 뽑는다.
+// ★**보고 있는 방일 때만** 담는다. 초대 카드처럼 남의 방을 그릴 때 내 펫이 끼면 안 된다.
+window._mwShotLive = function (roomData) {
+  const shown = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
+  return !!roomData && roomData === shown;
+};
+window._mwShotPets = function (roomData) {
+  if (!window._mwShotLive(roomData)) return [];
+  return (window._mwPets || []).filter(function (p) { return p && p.id; }).map(function (p) {
+    const def = window._mwPetDef ? window._mwPetDef(p.id) : null;
+    return {
+      src: 'char/pets/' + p.id + '.png',
+      row: window._mwPetRow ? window._mwPetRow(p.anim || 'stand', p.dir || 0) : 0,
+      tc: p.tc, tr: p.tr,
+      // 화면과 같은 z 규칙(_mwPetApply): 올라가 있으면 그 가구보다 위
+      z: p.perchZ || (10 + p.tr * 10 + (p.up ? 9 : 4)),
+      def: def
+    };
+  });
+};
+window._mwShotDinos = function (roomData) {
+  if (!window._mwShotLive(roomData)) return [];
+  return (window._mwDinos || []).filter(function (d) { return d && d.el; }).map(function (d) {
+    return { row: d.row == null ? 0 : d.row, tc: d.tc, tr: d.tr, z: 10 + d.tr * 10 + 3 };
+  });
+};
+window._mwDrawSrc = function (q, roomData) {
+  const def = q.def, it = q.it;
+  if (def && def.art && it && it.a) {
+    const a = ((roomData && roomData.art) || {})[it.a];
+    if (a && a.px && window.mwArtImg) return window.mwArtImg(a.px, def.art, it.a);
+  }
+  return def && def.src;
+};
 window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
   const F = 768;                              // 방 좌표계 (mwFurnHtml 의 /7.68 과 같은 값)
   const zs = (window._mwFurnZ && roomData) ? window._mwFurnZ((roomData && roomData.f) || []) : [];
@@ -22375,12 +22471,22 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
   const ppl = people || [];
   return Promise.all([
     window._mwLoadImg('char/fields/field_room.png?v=1'),
-    Promise.all(items.map(function (q) { return window._mwLoadImg(q.def.src); })),
+    Promise.all(items.map(function (q) { return window._mwLoadImg(window._mwDrawSrc(q, roomData)); })),
     Promise.all(ppl.map(function (pl) { return window._mwLoadCharSheets(pl.character); })),
     window._mwLoadImg('char/fx/aurring_blue_back.png?v=1'),
     window._mwLoadImg('char/fx/aurring_blue_front.png?v=1'),
+    // ★지금 방에 나와 있는 **펫**과 **공룡**도 같이 찍는다(대표 8-26).
+    //   화면에 떠 있는 것만 찍는다 — 남의 방 미리보기 카드에는 내 펫이 끼면 안 되므로,
+    //   지금 보고 있는 방(_mwRoomShown)일 때만 담는다.
+    Promise.all((window._mwShotPets ? window._mwShotPets(roomData) : [])
+      .map(function (q) { return window._mwLoadImg(q.src); })),
+    Promise.all((window._mwShotDinos ? window._mwShotDinos(roomData) : [])
+      .map(function () { return window._mwLoadImg((window.MW_DINO || {}).src); })),
   ]).then(function (r) {
     const bg = r[0], furn = r[1], sheets = r[2], aurB = r[3], aurF = r[4];
+    const petIm = r[5] || [], dinoIm = r[6] || [];
+    const petQ = window._mwShotPets ? window._mwShotPets(roomData) : [];
+    const dinoQ = window._mwShotDinos ? window._mwShotDinos(roomData) : [];
     x.save();
     x.beginPath(); x.rect(ox, oy, S, S); x.clip();      // 방 밖으로 삐져나가지 않게
     x.imageSmoothingEnabled = false;
@@ -22402,6 +22508,31 @@ window._mwDrawRoom = function (x, ox, oy, S, roomData, people) {
           x.drawImage(im, ox + q.it.x / F * S, oy + q.it.y / F * S, w, h);
         } });
       }
+    });
+    // ★캔버스는 **그린 순서가 곧 z** 다. 가구·사람과 같은 목록에 z 를 달아 넣는다 —
+    //   따로 그리면 침대 위에서 자는 고양이가 침대 뒤로 파묻힌다(화면과 규칙을 맞춘다).
+    const tile = S / 16;
+    petQ.forEach(function (q, i) {
+      const im = petIm[i]; if (!im || !im.naturalWidth) return;
+      const cell = (window.PET_META || {}).cell || 32;
+      const W = Math.round(tile * cell * (window.PET_SCALE || 3) / 48);
+      const dx = Math.round(ox + (q.tc + 0.5) * tile - W / 2);
+      const dy = Math.round(oy + (q.tr + 1) * tile - W);
+      paint.push({ z: q.z, fn: function () {
+        x.imageSmoothingEnabled = false;
+        // 열은 0(첫 컷)만 쓴다 — 애니메이션 중 어느 컷인지는 CSS 가 쥐고 있어 읽을 수 없다.
+        x.drawImage(im, 0, q.row * cell, cell, cell, dx, dy, W, W);
+      } });
+    });
+    dinoQ.forEach(function (q, i) {
+      const im = dinoIm[i], M = window.MW_DINO || {}; if (!im || !im.naturalWidth || !M.cw) return;
+      const W = Math.round(tile * M.cw / 48), H = Math.round(tile * M.ch / 48);
+      const dx = Math.round(ox + (q.tc + 0.5) * tile - W / 2);
+      const dy = Math.round(oy + (q.tr + 1) * tile - H);
+      paint.push({ z: q.z, fn: function () {
+        x.imageSmoothingEnabled = false;
+        x.drawImage(im, 0, q.row * M.ch, M.cw, M.ch, dx, dy, W, H);
+      } });
     });
     const hpx = Math.round(S * 3.3 / 16);              // 방 화면과 같은 크기 비율
     ppl.forEach(function (pl, i) {
