@@ -8,10 +8,18 @@ const html = readFileSync(join(root, 'index.html'), 'utf8');
 const sw = readFileSync(join(root, 'sw.js'), 'utf8');
 const version = readFileSync(join(root, 'version.txt'), 'utf8').trim();
 
-assert.equal(version, '731', 'version.txt가 v731이 아니다');
-assert(/window\._SW_V = '731'/.test(html), 'index 버전이 v731이 아니다');
-assert(/murpy-v731/.test(sw) && /murpy-static-v731/.test(sw) && /murpy-cdn-v731/.test(sw),
-  '서비스워커 캐시 버전이 v731로 함께 올라가지 않았다');
+// ★버전 숫자를 **박아두지 않는다** (2026-08-26). 배포할 때마다 이 테스트가 깨져서,
+//   진짜 회귀인지 버전만 올라간 건지 구분이 안 됐다.
+//   지켜야 할 진짜 규칙은 "네 곳이 서로 같다" 이다.
+const idx = (html.match(/window\._SW_V = '(\d+)'/) || [])[1];
+assert(idx, 'index.html 에서 _SW_V 를 못 찾았다');
+assert.equal(version, idx, `version.txt(${version}) 가 index _SW_V(${idx}) 와 다르다`);
+for (const name of ['murpy-v', 'murpy-static-v', 'murpy-cdn-v']) {
+  const at = sw.indexOf(name);
+  const got = at < 0 ? undefined
+    : (sw.slice(at + name.length).match(/^[0-9]+/) || [])[0];
+  assert.equal(got, idx, `sw.js 의 ${name} 가 v${idx} 가 아니다 (v${got})`);
+}
 assert(/Cache-Control" content="no-cache, no-store, must-revalidate/.test(html),
   '모바일 HTML 캐시 금지 메타가 없다');
 assert(/version\.txt\?force=' \+ Date\.now\(\)/.test(html),

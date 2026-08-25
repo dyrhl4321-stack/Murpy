@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '731';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '732';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -919,6 +919,11 @@ window._SW_V = '731';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-artbig .ab-btns button[disabled] { color:#4a5266; cursor:default }
   /* 공동룸 상단의 오늘의 추억: 사진과 그림을 한곳에 모은다. */
   body.mw-party #mw-art-chip { display:none !important }
+  /* ★공용룸에서는 필드 안 '친구 초대' 칩도 숨긴다 (대표 8-26: "상단에 부르기가 있는데
+     우측 상단에 친구 초대가 또 뜬다 · 부르기로 통일한 거 아니었나").
+     코덱스가 그림 칩(#mw-art-chip)은 숨겼는데 초대 칩은 안 숨겨서 둘이 같이 떴다.
+     부르는 자리는 상단 바(#mw-party-invite) 하나로 통일한다. */
+  body.mw-party #mw-invite-chip { display:none !important }
   #mw-memory { position:fixed; inset:0; z-index:40035; display:flex; align-items:flex-end;
     justify-content:center; background:rgba(5,7,12,.9); font-family:'Galmuri11',sans-serif }
   #mw-memory .mm-box { width:100%; max-width:390px; height:min(78vh,680px); display:flex;
@@ -21314,8 +21319,18 @@ window._mwRlJoin = function (ownerUid) {
         window._mwRoomApprovedEnter && window._mwRoomApprovedEnter(ownerUid);
         showToast('방주가 승인했어요 · 공용 머피룸으로 들어왔어요');
         window._mwRlSend();
-      } else if (!mine && Date.now() - (window._mwRl.waitStarted || 0) > 500) {
-        window._mwRl.waitNodeWritten = false;
+      } else if (mine && mine.wait) {
+        // 내 요청이 서버에 **실제로 올라온 것**을 본 뒤부터만 '사라짐 = 거절'로 볼 수 있다
+        window._mwRl.waitSeen = true;
+      } else if (!mine && window._mwRl.waitSeen
+                 && Date.now() - (window._mwRl.waitStarted || 0) > 3000) {
+        // ★★8-26 — 예전엔 노드가 없으면 곧바로 거절로 봤다(유예 500ms). 그런데 대기 노드에는
+        //   onDisconnect().remove() 가 걸려 있어서, **연결이 잠깐만 끊겨도 서버가 지운다.**
+        //   그걸 거절로 읽고 방을 나가 버렸다 — 대표 8-26: "마조리카 방 들어가려니
+        //   입장 대기가 취소됐어요라고 떠버리고 염철범 초대는 또 됨".
+        //   -> ①요청이 올라온 걸 **한 번은 본 뒤**여야 하고 ②3초는 기다린다.
+        //      그 사이에 재연결되면 위 감시자가 요청을 되살린다.
+        window._mwRl.waitNodeWritten = false; window._mwRl.waitSeen = false;
         showToast('방주가 입장 요청을 거절했어요');
         setTimeout(function () { window.mwRoomLeaveField && window.mwRoomLeaveField(); }, 250);
       }
@@ -21350,27 +21365,27 @@ window._mwRlJoin = function (ownerUid) {
   });
   window._mwRl.unsubK = function () { try { unsubK(); } catch (e) {} };
   if (!pendingOnly) window._mwRl.cap = null;
-  R.onValue(R.ref(R.db, base), function (snap) {
+  window._mwRl.waitNodeWritten = false; window._mwRl.waitSeen = false;
+  const unsubCap = R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
     const mine = all[u.uid];
     if (ownerUid === u.uid || (mine && !mine.wait && window._mwRoomAlive(mine))) {
       window._mwRl.cap = false; window._mwRl.waiting = false;
       window._mwRlSend();
     } else {
-      const pos = window._charPos || { tc:7, tr:8, face:'down' };
+      // ★★★8-26 — 여기서 **매번 쓰면 안 된다.** 이 감시자는 onlyOnce 가 아니라 계속 돈다.
+      //   요청을 쓰면 → 데이터가 바뀌고 → 스냅샷이 오고 → 여기가 또 써서 **무한 쓰기 루프**가 된다.
+      //   waitStarted 도 매번 지금으로 밀려서, 아래 '거절 판정'의 유예(500ms)가 영원히 안 지난다.
+      //   대표 8-26: "어쩔 때는 되고 어쩔 때는 안 된다".
+      //   -> 한 번만 쓴다. 이미 썼으면 대기 화면만 유지한다.
       window._mwRl.cap = true; window._mwRl.waiting = true;
-      window._mwRl.waitStarted = Date.now(); window._mwRl.waitNodeWritten = true;
-      const request = {
-        wait:1, requestedAt:Date.now(), t:Date.now(), off:null,
-        tc:pos.tc, tr:pos.tr, face:pos.face || 'down',
-        nick:window._mwMyNick || '머피', guest:!!u.isAnonymous,
-        character:window.getMyCharacter ? window.getMyCharacter() : null
-      };
-      try {
-        R.set(meRef, request);
-        R.onDisconnect(meRef).remove();
-        showToast('방주에게 입장 승인을 요청했어요');
-      } catch (e) { console.warn('room wait', e); }
+      if (window._mwRl.waitNodeWritten) {
+        // 이미 요청을 넣어 뒀다. 노드가 **사라졌다면** 연결이 끊겼던 것이므로 다시 넣는다
+        // (거절이면 아래 첫 감시자가 처리한다 — 여기서 판단하지 않는다).
+        if (!mine) window._mwRlWaitWrite && window._mwRlWaitWrite(R, meRef, u, true);
+      } else {
+        window._mwRlWaitWrite && window._mwRlWaitWrite(R, meRef, u, false);
+      }
     }
     window._mwShotBtnSync && window._mwShotBtnSync();
   }, { onlyOnce: true });
@@ -21393,6 +21408,7 @@ window._mwChatWatch = function (ownerUid) {
       window._mwRl.chatRows = rows.map(function (m) {
         return { nick: String(m.nick || '머피'), text: String(m.text).slice(0, 40), t: m.t || 0 };
       });
+  window._mwRl.unsubCap = function () { try { unsubCap(); } catch (e) {} };
       window._mwChatPaint();
     }, function (e) { console.warn('chat watch', e); });
     window._mwChatUn = function () { try { un(); } catch (e) {} };
@@ -21642,7 +21658,27 @@ window._mwJamKbEnd = function (immediate) {
   };
   if (immediate) finish(); else setTimeout(finish, 100);
 };
+// 대기 요청을 서버에 남긴다. **한 번만** 부른다(재연결 복구는 again=true).
+// ★onDisconnect().remove() 를 그대로 둔다 — 대기만 하다 앱을 닫은 사람이 명단에 남으면 안 된다.
+//   대신 끊겼다 붙으면 여기로 다시 들어와 요청을 되살린다(거절과 헷갈리지 않게).
+window._mwRlWaitWrite = function (R, meRef, u, again) {
+  const pos = window._charPos || { tc: 7, tr: 8, face: 'down' };
+  window._mwRl.waitStarted = Date.now();
+  window._mwRl.waitNodeWritten = true;
+  const request = {
+    wait: 1, requestedAt: Date.now(), t: Date.now(), off: null,
+    tc: pos.tc, tr: pos.tr, face: pos.face || 'down',
+    nick: window._mwMyNick || '머피', guest: !!u.isAnonymous,
+    character: window.getMyCharacter ? window.getMyCharacter() : null
+  };
+  try {
+    R.set(meRef, request);
+    R.onDisconnect(meRef).remove();
+    if (!again) showToast('방주에게 입장 승인을 요청했어요');
+  } catch (e) { console.warn('room wait', e); }
+};
 window._mwRlLeave = function () {
+  window._mwRl.unsubCap && window._mwRl.unsubCap();
   window.mwRTalkClose && window.mwRTalkClose();   // ★패널이 남으면 방을 나가도 화면을 덮는다
   window._mwChatUnwatch && window._mwChatUnwatch();
   window._mwPetLiveUnwatch && window._mwPetLiveUnwatch();

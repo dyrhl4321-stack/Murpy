@@ -31,10 +31,21 @@ if len(hits) != 1:
 
 idx = hits[0] if len(hits) == 1 else None
 
-m = re.search(r"murpy-v(\d+)", read('sw.js'))
-sw = m.group(1) if m else None
-if not sw:
-    bad.append('sw.js 에서 murpy-vNNN 을 못 찾았다')
+# ★sw.js 에는 버전이 **세 자리**다 (2026-08-26에 데임).
+#   CACHE_NAME 만 올리고 STATIC_CACHE/CDN_CACHE 를 두면 옛 캐시가 안 지워진다.
+_swtxt = read('sw.js')
+_names = ['murpy-v', 'murpy-static-v', 'murpy-cdn-v']
+_vals = {}
+for _n in _names:
+    _m = re.search(re.escape(_n) + r'(\d+)', _swtxt)
+    if not _m:
+        bad.append('sw.js 에서 %sNNN 을 못 찾았다' % _n)
+    else:
+        _vals[_n] = _m.group(1)
+sw = _vals.get('murpy-v')
+if len(set(_vals.values())) > 1:
+    bad.append('sw.js 안에서 버전이 서로 다르다 — ' +
+               ', '.join('%s%s' % (k, v) for k, v in _vals.items()))
 
 ver = read('version.txt').strip()
 
@@ -48,4 +59,4 @@ if bad:
         print('  x ' + b)
     sys.exit(1)
 
-print('버전 OK — index.html / sw.js / version.txt 모두 v%s, 대입 1곳' % idx)
+print('버전 OK — index.html / sw.js(3곳) / version.txt 모두 v%s, 대입 1곳' % idx)

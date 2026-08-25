@@ -15,7 +15,7 @@ has(/id="mw-party-members"[\s\S]*id="mw-party-waiters"[\s\S]*id="mw-party-bar2"/
   '공동룸 순서가 현재 멤버 → 승인 대기 → 룸톡이 아니다');
 has(/window\._mwRoomParticipant = function \(v\) \{ return window\._mwRoomAlive\(v\) && !v\.wait; \};/,
   '승인 대기자를 실제 참가자와 분리하지 않았다');
-has(/wait:1, requestedAt:Date\.now\(\)/,
+has(/wait:\s*1,\s*requestedAt:\s*Date\.now\(\)/,
   '손님 최초 진입이 승인 요청으로 생성되지 않는다');
 has(/mine && !mine\.wait && mine\.approvedAt/,
   '승인 뒤 손님을 공동룸으로 전환하는 조건이 없다');
