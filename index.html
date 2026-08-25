@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '703';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '704';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -12295,8 +12295,13 @@ initCreateCrew();
 document.getElementById('create-crew-panel').querySelector('.back-btn').addEventListener('click', () => { newCrewWorkout=[]; newCrewFee=0; });
 
 // ===== 서비스 워커 등록 (PWA 홈화면 설치) =====
-// ★배포할 때 sw.js 의 murpy-vNNN 과 **같은 숫자로** 올릴 것. 이게 CDN 캐시를 깬다.
-window._SW_V = '655';
+// ★★여기서 _SW_V 를 **다시 대입하지 말 것** (대표 8-25에 이걸로 48개 빌드를 날렸다).
+//   버전은 파일 맨 위(<head> 첫 script)에서 딱 한 번만 정한다. 여기에 옛 값이 하나 더
+//   남아 있어서 13c1faf(v655) 이후로 **줄곧 655 로 덮어써지고 있었다.**
+//   그 결과 폰이 서비스워커를 늘 `sw.js?v=655` 라는 **같은 주소**로 등록했고,
+//   CDN 은 안 바뀐 주소라 옛 파일을 계속 줬다 — "예전 버전에서 업데이트가 1도 안 됨"의 정체다.
+//   ?diag=1 의 `★어긋남` 이 내내 이걸 가리키고 있었는데 못 알아봤다.
+//   tools/check_version.py 가 이제 배포 전에 이 중복을 막는다.
 // 마이페이지 → 베타 피드백 페이지(murpy.app/survey). 앱 버전을 같이 넘겨야
 // "몇 버전에서 난 버그냐"를 제보자에게 안 묻고도 알 수 있다.
 // ★함수 선언으로 두지 말고 window 에 바로 붙인다 — onclick 은 모듈 스코프를 못 본다(브릿지 패턴).
@@ -12332,15 +12337,17 @@ if ('serviceWorker' in navigator) {
     // ★주소에 시각을 붙여 받는다 — 옛 워커의 '정적 파일 캐시 우선' 규칙을 피하려면
     //   매번 다른 주소여야 한다. no-store 만으로는 워커를 못 피한다.
     // ★sessionStorage 로 한 번만 돈다. 안 걸면 무한 새로고침이 된다.
-    (function () {
-      try {
-        if (sessionStorage.getItem('mw_healed')) return;
-      } catch (e) { return; }
+    window._mwSelfHeal = function () {
+      // ★한 번만 돌던 것을 **앱을 다시 열 때마다** 돌게 바꿨다(대표 8-25: "캐시 그냥 무시하고
+      //   내 폰에 뜨게 해달라"). 세션 중에 새 배포가 나가도 곧바로 따라온다.
+      //   ★무한 새로고침 방지는 '이미 이 버전으로 고쳐봤다'를 **버전째** 기억해서 한다.
+      //     예전처럼 '한 번이라도 고쳤으면 끝'으로 두면 그 뒤 배포를 영영 못 받는다.
       fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
         .then(function (r) { return r.ok ? r.text() : ''; })
         .then(function (v) {
           v = String(v || '').trim();
           if (!v || v === String(window._SW_V || '')) return;
+          try { if (sessionStorage.getItem('mw_healed') === v) return; } catch (e) { return; }
           console.warn('[selfheal] 화면 v' + window._SW_V + ' / 서버 v' + v + ' → 캐시를 비웁니다');
           try { sessionStorage.setItem('mw_healed', v); } catch (e) {}
           var done = function () { location.replace('./?fresh=' + Date.now()); };
@@ -12357,7 +12364,11 @@ if ('serviceWorker' in navigator) {
           }
           Promise.all(jobs).then(done, done);
         }).catch(function () {});
-    })();
+    };
+    window._mwSelfHeal();
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') window._mwSelfHeal();
+    });
     navigator.serviceWorker.register('./sw.js?v=' + (window._SW_V || '1'), { updateViaCache: 'none' })
       .then(reg => {
         // 새 버전(새 sw.js) 감지 시 자동 새로고침 — 최초 설치는 제외(기존 controller 있을 때만)
