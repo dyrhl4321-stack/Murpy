@@ -1,5 +1,5 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v705';
+const CACHE_NAME = 'murpy-v706';
 const STATIC_CACHE = 'murpy-static-v647';
 const CDN_CACHE = 'murpy-cdn-v647';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
@@ -57,8 +57,12 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // 프로필/피드 이미지 (weserv 리사이즈, imgBB) → 캐시 우선 (URL이 곧 버전)
-  if (url.hostname.includes('images.weserv.nl') || url.hostname.includes('ibb.co')) {
+  // 프로필/피드 이미지 → 캐시 우선 (URL이 곧 버전)
+  // ★파이어베이스 스토리지도 여기 넣는다 (2026-08-25). 다운로드 주소에 **토큰**이 붙어 있어서
+  //   파일이 바뀌면 주소도 바뀐다 → 캐시 우선이 안전하고, 두 번째부터는 네트워크를 안 탄다.
+  if (url.hostname.includes('images.weserv.nl') || url.hostname.includes('ibb.co')
+      || url.hostname.includes('firebasestorage.googleapis.com')
+      || url.hostname.includes('storage.googleapis.com')) {
     e.respondWith(
       caches.open(IMG_CACHE).then(async cache => {
         const cached = await cache.match(e.request);
