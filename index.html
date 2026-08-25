@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '738';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '740';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -1084,8 +1084,13 @@ window._SW_V = '738';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ===== 같이 낙서 (3단계) + 벽에 걸리는 액자 =====
      ★AI 에셋이 한 장도 안 든다. 32x32 도트를 정수배 NEAREST 로 키우면 우리 픽셀 규칙 그대로다.
        판·팔레트·액자 전부 CSS 다 — 그래서 색을 늘려도 에셋 작업이 안 생긴다. */
+  /* ★내용이 화면보다 길면 **판이 스크롤된다.** 예전엔 overflow 가 없어서 넘친 만큼이
+     그냥 잘려 나갔다(입력줄·버튼줄이 화면 밖으로). */
   #mw-jam { position:fixed; inset:0; height:100dvh; z-index:890; background:#05070c;
-    max-width:390px; margin:0 auto; display:flex; flex-direction:column; font-family:'Galmuri11',sans-serif }
+    max-width:390px; margin:0 auto; display:flex; flex-direction:column;
+    overflow-y:auto; overscroll-behavior:contain; font-family:'Galmuri11',sans-serif }
+  #mw-jam .jam-wrap, #mw-jam .jam-pal, #mw-jam .jam-row,
+  #mw-jam .jam-hint, #mw-jam .jam-foot { flex-shrink:0 }
   #mw-jam .jam-wrap { position:relative; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1;
     background:#f4f1ea; border:3px solid #05070c; box-shadow:0 0 0 3px #2b3350; touch-action:none }
   #mw-jam canvas { display:block; width:100%; height:100%; image-rendering:pixelated }
@@ -1106,7 +1111,9 @@ window._SW_V = '738';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ★그리면서 이야기한다 (대표 8-25). **머피룸 대화와 같은 데이터**를 쓴다 —
      roomLive/{주인}/chat 하나가 유일한 출처라, 방에서 한 말이 여기 그대로 보이고 반대도 같다.
      새 채팅을 만들지 않는다. */
-  #mw-jam .jam-chat { flex:1; min-height:64px; overflow-y:auto; display:flex; flex-direction:column-reverse;
+  /* ★목록은 **줄어들 수 있어야** 한다(min-height:0). flex 기본값(auto)이면 내용만큼 버텨서
+     아래 있는 것들을 화면 밖으로 밀어낸다 — 그게 입력줄이 사라진 원인이었다. */
+  #mw-jam .jam-chat { flex:1 1 0; min-height:0; overflow-y:auto; display:flex; flex-direction:column-reverse;
     gap:7px; margin:12px 16px 0; padding:9px 11px; background:#0b0e16;
     border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350 }
   #mw-jam .jam-chat .pl { font-size:11.5px; line-height:1.6; color:#cfd6e6 }
@@ -4449,10 +4456,19 @@ window._mwPetSpots = function (p, want) {
     // 캣타워 PNG에는 실제 발판이 세 곳 있다. 예전엔 중앙 타일 한 곳만 목적지여서 한 마리만
     // 쓸 수 있었고, 높이 미세좌표도 버려져 고양이가 타워 바닥에 붙어 보였다.
     if ((want === 'tower' || want === 'perch') && kind === 'cat' && isTower) {
+      // ★★8-26 실측 (대표: "고양이가 캣타워 평평한 면이 아니라 가장 상단부 선 위에 올라온
+      //   느낌 · 원근감 살려 달라").
+      //   fy 는 발이 닿는 높이인데 예전 값(0.02/0.40/0.71)은 **발판 윗면이 시작되는 선**이었다.
+      //   거기에 발을 놓으면 상판 뒤쪽 모서리에 서서 허공에 뜬 것처럼 보인다.
+      //   pet_tower_*.png(150x177) 를 재보니 발판 슬래브가 y 0~32 / 69~101 / 126~143 이다.
+      //   -> 슬래브 **안쪽 80% 지점**에 세운다. 상판 면 위에 제대로 올라선 그림이 된다.
+      //   fx 도 어긋나 있었다 — 실측 중앙은 0.737 / 0.397 / 0.597 인데 0.73/0.25/0.73 이었다.
+      //   (중단은 왼쪽으로, 하단은 오른쪽으로 치우쳐 발판 밖에 서 있었다)
+      //   ※세 색(cream/purple/green) 모두 같은 도안이라 값이 하나로 통한다.
       var levels = [
-        { k:'top', fx:0.73, fy:0.02 },
-        { k:'mid', fx:0.25, fy:0.40 },
-        { k:'low', fx:0.73, fy:0.71 }
+        { k:'top', fx:0.737, fy:0.147 },
+        { k:'mid', fx:0.397, fy:0.537 },
+        { k:'low', fx:0.597, fy:0.790 }
       ];
       for (var li = 0; li < levels.length; li++) {
         var lv = levels[li], gx = (it.x + def.w * lv.fx) / 48, gy = (it.y + def.h * lv.fy) / 48;
@@ -20346,14 +20362,20 @@ window.mwJamShow = async function (asHost) {
     + '<div class="jam-wrap"><canvas width="32" height="32"></canvas><div class="jam-grid"></div></div>'
     + '<div class="jam-pal">' + pal + '</div>'
     // ★색 밑에 대화. 그리면서 이야기할 수 있게 (대표 8-25).
-    + '<div class="jam-chat" id="mw-jam-log"><div class="pl-empty">그리면서 이야기해요</div></div>'
+    // ★★8-26 — 입력줄을 **목록보다 위**로 올린다 (대표: "그림 그리면서 채팅이 안 쳐진다").
+    //   #mw-jam 은 세로 flex 인데 스크롤이 없다. 그 안에 판(320) + 팔레트 + 목록(flex:1) +
+    //   입력줄 + 안내 + 버튼줄이 다 들어가서, 화면 짧은 폰에서는 **입력줄이 아래로 밀려
+    //   화면 밖으로 잘렸다.** 눌릴 수가 없으니 "안 쳐진다"가 된다.
+    //   (스쿼드·머피룸도 입력줄이 목록보다 위다 — 순서를 같게 맞춘다)
     + '<div class="jam-row">'
     +   '<input id="mw-jam-input" maxlength="40" placeholder="한마디" autocomplete="off"'
+    +   ' inputmode="text" enterkeyhint="send"'
     +   ' onfocus="window._mwJamKbStart&&window._mwJamKbStart()"'
     +   ' onblur="window._mwJamKbEnd&&window._mwJamKbEnd()"'
     +   ' onkeydown="if(event.key===\'Enter\')window.mwJamSay()">'
     +   '<button onmousedown="event.preventDefault()" onclick="window.mwJamSay()">보내기</button>'
     + '</div>'
+    + '<div class="jam-chat" id="mw-jam-log"><div class="pl-empty">그리면서 이야기해요</div></div>'
     + '<div class="jam-hint">' + (host
         ? '다 그리면 방에 깔거나 걸 수 있어요<br>방에 있는 사람 모두 같이 그릴 수 있어요'
         : '방 주인이 방에 남겨요<br>같이 그려보세요') + '</div>'
@@ -21718,20 +21740,35 @@ window.mwJamSay = function () {
   const inp = document.getElementById('mw-jam-input'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
   if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
+  // ★★★8-26 — 보내기가 **조용히 실패하고 있었다** (대표: "그림 그리면서 보내기 버튼 왜
+  //   안 보내지는 거임").
+  //   보내기 전에 `window._mwRl.msg = ...` 를 먼저 했는데, _mwRl 이 없거나(방에 안 붙은 상태)
+  //   그 앞줄에서 예외가 나면 **아래 push 까지 통째로 안 돈다.** 게다가 실패해도 아무 표시가
+  //   없어서 "눌러도 아무 일 없음"으로만 보였다.
+  //   -> ①먼저 보낸다 ②말풍선은 그 다음(실패해도 대화는 남는다) ③안 되면 **말해 준다**.
+  const R = window._rt, ow = (window._mwJam && window._mwJam.owner)
+                          || (window._mwRl && window._mwRl.owner);
+  if (!R || !ow) { showToast('방에 연결되면 보낼 수 있어요'); return; }
+  try {
+    R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
+      nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: Date.now()
+    });
+  } catch (e) {
+    console.warn('jam chat push', e);
+    showToast('보내지 못했어요 · 잠시 뒤에 다시');
+    return;
+  }
   inp.value = '';
   inp.blur();                       // 키보드를 내려야 바로 그릴 수 있다
-  const R = window._rt, ow = (window._mwJam && window._mwJam.owner) || window._mwRl.owner;
-  // 머리 위 말풍선도 같이 띄운다 — 방에 있는 사람에게는 그림판 밖에서도 보여야 한다
-  window._mwRl.msg = { text: t, t: Date.now() };
-  window._mwRlSend && window._mwRlSend();
-  window._charApplyPos && window._charApplyPos();
+  // 머리 위 말풍선도 같이 띄운다 — 방에서 구경하는 사람에게도 보여야 한다.
+  // ★여기서 나는 예외가 위 전송을 막지 못하게 **뒤로** 뺐다.
   try {
-    if (R && ow) {
-      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
-        nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: Date.now()
-      });
+    if (window._mwRl) {
+      window._mwRl.msg = { text: t, t: Date.now() };
+      window._mwRlSend && window._mwRlSend();
+      window._charApplyPos && window._charApplyPos();
     }
-  } catch (e) { console.warn('jam chat push', e); }
+  } catch (e) { console.warn('jam bubble', e); }
 };
 // 낙서판 키보드 — 머피룸과 **같은 방식**이다. 잠그고, 높이만 잠깐 줄인다.
 //   #mw-jam 은 이미 position:fixed 라 '상자로 바꾸는' 전환이 없다(그게 방에서 겪은 흔들림이었다).
