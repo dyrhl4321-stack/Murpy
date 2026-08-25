@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '704';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '705';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -28537,7 +28537,19 @@ window._sqVVFit = function () {
   //   **대표 아이폰이 오히려 가려졌다.** 아이폰에서 검증된 건 아래 innerHeight 기준 한 줄뿐이다.
   //   안드로이드 쪽은 이 식을 고쳐서 해결하지 않는다 — 아래 _sqKbFix(실측 보정)가 따로 맡는다.
   const kbUp = vv.height < ((window.innerHeight || vv.height) - 80);
+  // ★★8-25 — **톡 방은 타이핑하는 동안 이 함수가 손대지 않는다** (대표: "스쿼드 채팅창
+  //   왔다갔다 난리").
+  //   두 개가 같은 요소를 두고 싸우고 있었다. 여기서는 top/height 를 앉히고, _sqKbFix 는
+  //   transform 으로 올린다. 그런데 둘 다 visualViewport 의 resize **와 scroll** 에 물려 있고,
+  //   주소창이 접혔다 펴질 때마다 kbUp(80px 문턱)이 깜빡인다 →
+  //   앉혔다(입력칸 보임 → lift 0) 되돌렸다(입력칸 가림 → lift 큼) 를 반복 = 왔다갔다.
+  //   → 칠 때는 _sqKbFix 하나만 맡는다. 그게 8-14에 대표 폰에서 검증된 **재는** 방식이고,
+  //     안 가려져 있으면 0 이라 아무 것도 안 한다.
+  //   ★_sqVVFit 의 kbUp 식은 손대지 않았다(8-14에 두 번 사고난 자리다). 이 함수가 **어떤
+  //     요소를 만지는지**만 바꿨다. #sq-detail 동작은 그대로다.
+  const typing = !!(document.activeElement && document.activeElement.id === 'sq-chat-input');
   ['sq-detail', 'sq-talk'].forEach(function (id) {
+    if (id === 'sq-talk' && typing) return;
     const el = document.getElementById(id); if (!el) return;
     if (kbUp) {
       // 톡 방도 같이 맞춘다 — 안 그러면 키보드가 올라왔을 때 입력칸이 키보드 아래로 숨는다
@@ -28609,7 +28621,12 @@ window._sqKbWatch = function () {
 window._sqKbReset = function () {
   const el = document.getElementById('sq-talk');
   window._sqKbLift = 0;
-  if (el) el.style.transform = '';
+  if (el) {
+    el.style.transform = '';
+    // ★타이핑하는 동안 _sqVVFit 이 톡 방을 건너뛰므로, 그 전에 앉혀둔 값이 남아 있을 수 있다.
+    //   빈 값으로 '지우지' 말고 **원래 값(inset:0)으로 되돌린다** — v548 에서 낸 그 버그다.
+    el.style.top = '0px'; el.style.bottom = '0px'; el.style.height = '';
+  }
 };
 window._sqVVOn = function () {
   const vv = window.visualViewport; if (!vv || window._sqVVBound) return;
