@@ -59,7 +59,7 @@ import os
 import sys
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from scipy import ndimage
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -227,6 +227,12 @@ def pixelate(im, cell, pal, outline=OUTLINE):
     """
     aw = max(1, int(round(im.width / cell)))
     ah = max(1, int(round(im.height / cell)))
+    # ★줄이기 전에 선을 세운다(언샤프). 750px 를 50px 급으로 줄이면 **얇은 선이 평균에 먹힌다** —
+    #   측면 공룡의 앞코·이마 라인이 특히 그랬다(대표 8-25: "앞코 쪽 이마 쪽 라인이 뭉개진다").
+    #   정면·뒷면은 얼굴 고정으로 첫 컷을 그대로 붙여서 덜 드러났고, 측면만 이 처리를 안 거쳤다
+    #   (옆모습은 목 이음매 때문에 얼굴 고정을 껐다).
+    #   ※과하게 주면 테두리에 흰 띠가 생긴다. 반경 2 / 양 90 이 실측상 선만 살리는 선이다.
+    im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=2))
     small = np.asarray(resize_to(im, aw, ah)).astype(np.int32)
 
     # 각 픽셀을 가장 가까운 기준색으로. 프레임마다 팔레트를 새로 뽑으면 색이 깜빡인다.
