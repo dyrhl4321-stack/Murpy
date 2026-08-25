@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '683';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '684';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4033,7 +4033,10 @@ window._mwPetSpots = function (p, want) {
       if (!any) out.push({ tc: tc, tr: tr, up: false, dir: 0 });
       continue;
     }
-    out.push({ tc: tc, tr: tr, up: want === 'perch' });
+    // ★캣타워는 따로 표시한다 — 고양이는 높은 데를 좋아하니 침대보다 **먼저** 고른다.
+    //   그래야 대표가 사 준 캣타워가 실제로 쓰이는 게 눈에 보인다(대표 8-25).
+    out.push({ tc: tc, tr: tr, up: want === 'perch',
+               tower: !!(it.id && String(it.id).indexOf('pet_tower') === 0) });
   }
   return out;
 };
@@ -4041,8 +4044,12 @@ window._mwPetSpots = function (p, want) {
 window._mwPetNearest = function (p, want) {
   if (!p) return null;
   var arr = window._mwPetSpots(p, want), best = null, i;
+  var isCat = (window._mwPetDef(p.id) || {}).kind === 'cat';
   for (i = 0; i < arr.length; i++) {
     var d = Math.abs(arr[i].tc - p.tc) + Math.abs(arr[i].tr - p.tr);
+    // ★고양이는 캣타워를 먼저 고른다. 거리를 6칸만큼 깎아 준다 —
+    //   방 반대편에 있어도 침대보다 타워로 간다.
+    if (isCat && arr[i].tower) d -= 6;
     if (!best || d < best.d) best = { s: arr[i], d: d };
   }
   return best ? best.s : null;
@@ -4151,7 +4158,8 @@ window._mwPetStep = function (p) {
     }
     return;
   }
-  if (p.up) { p.up = false; window._mwPetApply(p); }   // 깼으면 내려온다
+  // 깼으면 내려온다. 단 **쉬는 중이면 그대로 둔다** — 올라가자마자 내려오면 헛걸음이 된다.
+  if (p.up && act !== 'rest') { p.up = false; window._mwPetApply(p); }
   if (act === 'eat') {
     if (p.anim !== 'eat') {
       var bowl = window._mwPetNearest(p, 'bowl');
@@ -4160,6 +4168,13 @@ window._mwPetStep = function (p) {
     return;
   }
   if (act === 'rest') {
+    // ★쉬는 시간에도 **고양이는 높은 데로 올라간다**(대표 8-25: "캣타워 위로 알아서 올라가게").
+    //   예전엔 자는 시간에만 올라가서 좀처럼 안 보였다. 캣타워를 사 놓고도 안 쓰이면 헛것이다.
+    var kind = (window._mwPetDef(p.id) || {}).kind;
+    if (kind === 'cat' && !p.up && p.anim !== 'sit' && p.anim !== 'lay') {
+      var high = window._mwPetNearest(p, 'perch');
+      if (high && window._mwPetGoto(p, high, 'sit')) return;
+    }
     if (p.anim !== 'sit' && p.anim !== 'lay') {
       window._mwPetPlay(p, Math.random() < 0.5 ? 'sit' : 'lay', null);
     }
