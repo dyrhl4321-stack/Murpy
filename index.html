@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '728';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -614,7 +614,8 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ★상자는 안 잡는다. 펫 상자는 96유닛(2타일) 정사각이라 자는 고양이 위로 빈 공간이
      두 칸 뜨는데, 상자 전체가 클릭을 먹으면 그 빈 자리를 눌러도 펫이 잡힌다
      (대표 지적: "잘 때 위쪽 공간이 꽉 먹혀 있다"). 몸만한 판(.mw-pet-hit)만 잡는다. */
-  .mw-pet { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; }
+  .mw-pet { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; opacity:0 }
+  .mw-pet.ready { opacity:1 }
   .mw-pet .mw-pet-hit, .mw-dino .mw-pet-hit { position:absolute; left:50%; bottom:0;
     transform:translateX(-50%); pointer-events:auto; cursor:pointer; z-index:2 }
   .mw-dino { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; }
@@ -699,7 +700,7 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      매칭·홈 아이콘을 통째로 덮었다(대표 8-20). 탭바가 없는 초대 모드에서만 바닥에 붙는다. */
   #mw-dev-strip { display:none; position:fixed; left:50%; transform:translateX(-50%);
     bottom:calc(86px + env(safe-area-inset-bottom, 0px));
-    z-index:45; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
+    z-index:40020; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; padding:7px 13px; white-space:nowrap;
     box-shadow:0 4px 0 rgba(0,0,0,.4) }
   body.mw-party #mw-dev-strip { bottom:calc(20px + env(safe-area-inset-bottom, 0px)) }
@@ -777,14 +778,14 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     position:fixed; left:0; right:0; top:0; bottom:0; z-index:60;
     max-width:390px; margin:0 auto;
     transform:none !important; animation:none !important; opacity:1 !important;
-    overflow-y:auto; overscroll-behavior:contain;
+    overflow:hidden; overscroll-behavior:none;
     display:flex; flex-direction:column }
   /* 하단탭은 지금처럼 방 위에 떠 있게 둔다(방을 나갈 길을 막지 않는다) */
   body.mw-party .bottom-nav { z-index:70 }
   /* 초대 모드에선 내 캐릭터·꾸미기·퀘스트 탭을 감춘다. 안에 것만 감추면 **래퍼의 padding 10px**
      가 대화 상자 밑에 띠처럼 남는다. 덩어리째 감춘다(대표 8-20에 정한 규칙과 같다). */
   body.mw-party #mw-hub-wrap { display:none }
-  body.mw-party #mw-party-chat { flex:1; min-height:0;
+  body.mw-party #mw-party-chat { flex:1; min-height:0; overflow:hidden;
     padding-bottom:max(12px, env(safe-area-inset-bottom)) }
   /* ★★★★★★★★★★★8-25 — **구조를 스쿼드와 같게 바꾼다** (대표: "차라리 스쿼드 톡처럼
      기능 만들던가. 머피룸도 스쿼드 참가자처럼 명단 뜨고, 공용 톡은 따로 빼두고").
@@ -809,6 +810,21 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350; color:#cfd6e6; padding:0 12px;
     font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; border-radius:0 }
   #mw-party-talkbtn b { color:#F5C24B; font-weight:400; margin-left:5px }
+  #mw-party-members { display:none; flex:1; min-height:54px; overflow-y:auto; margin:8px 13px 0;
+    border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; background:#0e1320;
+    overscroll-behavior:contain; -webkit-overflow-scrolling:touch }
+  #mw-party-waiters { display:none; flex-shrink:0; max-height:184px; overflow-y:auto; margin:8px 13px 0;
+    border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; background:#0e1320; padding:8px;
+    overscroll-behavior:contain }
+  body.mw-party #mw-party-members { display:block }
+  body.mw-party #mw-party-waiters.on { display:block }
+  .mw-party-member { min-height:50px; display:grid; grid-template-columns:42px minmax(0,1fr) auto;
+    align-items:center; gap:8px; padding:5px 8px; border-bottom:2px solid #05070c }
+  .mw-party-member:last-child { border-bottom:0 }
+  .mw-party-member .pm-char { width:38px; height:38px; display:flex; align-items:flex-end; justify-content:center; overflow:hidden }
+  .mw-party-member .pm-name { min-width:0; color:#e8ddc8; font:11px/1.35 'Galmuri11',sans-serif; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .mw-party-kick { border:2px solid #05070c; background:#2a1620; color:#e8838a; height:27px; padding:0 8px; font:9.5px 'Galmuri11',sans-serif; cursor:pointer }
+  body.mw-party #mw-party-bar2 { flex-shrink:0; padding-top:8px }
 
   /* ===== 머피룸 톡 — 스쿼드 톡(#sq-talk)과 **같은 상자**다 =====
      position:fixed; inset:0 로 그 자체가 화면이고, 세로 flex 안에서 목록(flex:1)만 줄어든다.
@@ -1592,25 +1608,19 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   </div>
 
   <!-- 크롭 모달 -->
-  <!-- ★height:100dvh 대신 inset:0 — 모바일에서 dvh 가 주소창 포함 높이로 잡혀 하단이 화면
-       밖으로 잘리고 "아래로 스크롤이 안 된다"는 버그가 났다(대표 리포트 2026-08-03). -->
   <!-- ★유저 피드백 #3 — 작은 화면에서 크롭 화면 버튼에 손이 안 닿았다.
-       inset:0 + flex 만 있고 스크롤이 없어서, 내용이 화면보다 커지면 넘친 부분이 그냥 잘렸다
-       (기기·브라우저 UI 높이에 따라 4:5 크롭 영역이 남는 높이를 넘긴다).
-       → ①모달 자체에 세로 스크롤 ②헤더(취소·다음)를 sticky 로 붙여 스크롤해도 항상 닿게.
-       height:100dvh — 모바일에서 주소창이 접혔다 펴질 때 실제 보이는 높이를 따라간다. -->
-  <div id="crop-modal" style="display:none;position:fixed;inset:0;height:100dvh;background:#000;z-index:9999;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">
-    <div style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;position:sticky;top:0;background:#000;z-index:3">
+       헤더는 고정 flex 행, 1단계 크롭은 남은 화면보다 작게 계산하고 2단계만 자체 스크롤한다.
+       그래서 주소창·키보드 높이가 변해도 취소/다음은 사라지지 않고 본문만 움직인다. -->
+  <div id="crop-modal" style="display:none;position:fixed;inset:0;width:100%;height:100dvh;max-height:100%;background:#000;z-index:9999;flex-direction:column;overflow:hidden;overscroll-behavior:none">
+    <div style="padding:calc(8px + env(safe-area-inset-top)) 20px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;background:#000;z-index:3">
       <button id="crop-left-btn" onclick="closeCropModal()" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:14px;cursor:pointer;font-family:inherit;padding:8px">취소</button>
       <span id="crop-title" style="font-size:14px;font-weight:700;letter-spacing:-0.2px">사진 조정</span>
       <button id="crop-right-btn" onclick="confirmCrop()" style="background:none;border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px">다음</button>
     </div>
     <!-- 크롭 영역 -->
-    <div id="crop-step-1" style="touch-action:none;flex-shrink:0">
-      <!-- 세로형 4:5 크롭 영역 (dvh 기반으로 4:5 유지하며 화면에 맞춤).
-           ★빼는 값을 150 → 190 으로 키웠다. 헤더(약 49) + 안내칩 줄(약 54) + 하단 안전영역까지
-             빼야 실제로 한 화면에 들어온다. 150은 모자라서 작은 기기에서 넘쳤다(#3). -->
-      <div id="crop-area" style="position:relative;width:100%;aspect-ratio:4/5;max-width:calc((100dvh - 190px) * 4 / 5);max-height:calc(100dvh - 190px);margin:0 auto;background:#111;overflow:hidden">
+    <div id="crop-step-1" style="touch-action:none;flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+      <!-- 세로형 4:5를 고정하고 헤더·안내칩·안전영역 150px를 먼저 뺀다. flex로 늘리면 4:5가 깨진다. -->
+      <div id="crop-area" style="position:relative;width:min(100%,calc((100dvh - 150px) * 4 / 5));flex:none;aspect-ratio:4/5;margin:0 auto;background:#111;overflow:hidden">
         <div id="crop-container" style="position:absolute;inset:0;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;touch-action:none">
           <img id="crop-image" style="position:absolute;transform-origin:center;cursor:move;max-width:none;max-height:none" draggable="false">
         </div>
@@ -1626,7 +1636,7 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
       </div>
     </div>
     <!-- 게시물 작성 (2단계): 사진+캡션 메인 / 태그 서브 (공유는 헤더). 단일 스크롤러 -->
-    <div id="crop-step-2" style="display:none;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:14px 20px calc(18px + env(safe-area-inset-bottom))">
+    <div id="crop-step-2" style="display:none;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:14px 20px calc(28px + env(safe-area-inset-bottom))">
       <!-- 사진(메인) + 머피캠 필터 토글. ★토글은 사진 위 오버레이 칩 한 줄 —
            별도 카드로 아래에 쌓으면 세로가 길어져 "우다다 난잡"해진다(대표 리포트). -->
       <div style="position:relative;width:100%;max-width:min(74vw,268px);aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
@@ -1928,6 +1938,8 @@ window._SW_V = '727';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
          자리도 같다 — 방 바로 밑. 필드 안에 넣으면 입력줄이 깔린 자리로 캐릭터가
          못 걸어간다(스쿼드에서 이미 겪고 밖으로 뺐다). -->
     <div id="mw-party-row"></div>
+    <div id="mw-party-members"></div>
+    <div id="mw-party-waiters"></div>
     <!-- ★명단 + 톡 버튼. 톡 목록은 여기 두지 않는다 — 입력줄 밑에 뭔가 있으면
          키보드가 뜰 때 그게 줄었다 늘었다 한다(스쿼드 필드에 없는 것이 우리에게만 있었다). -->
     <div id="mw-party-bar2">
@@ -3515,9 +3527,9 @@ window.ROOM_ITEMS = [
   { id:'pet_tower_purple', cat:'petitem', name:'캣타워(보라)', src:'char/rooms/pet_tower_purple.png?v=2', w:150, h:177, sbw:144, blockBand:0.35, petPerch:'cat', thumbH:44, price:25 },
   { id:'pet_tower_green', cat:'petitem', name:'캣타워(초록)', src:'char/rooms/pet_tower_green.png?v=2', w:150, h:177, sbw:144, blockBand:0.35, petPerch:'cat', thumbH:44, price:25 },
   // 개집 — 강아지가 들어가 자는 자리.
-  { id:'pet_house_blue', cat:'petitem', name:'개집(파랑)', src:'char/rooms/pet_house_blue.png?v=2', w:132, h:156, sbw:114, blockBand:0.5, petHouse:'dog', thumbH:44, price:25 },
-  { id:'pet_house_red', cat:'petitem', name:'개집(빨강)', src:'char/rooms/pet_house_red.png?v=2', w:132, h:156, sbw:114, blockBand:0.5, petHouse:'dog', thumbH:44, price:25 },
-  { id:'pet_house_green', cat:'petitem', name:'개집(초록)', src:'char/rooms/pet_house_green.png?v=2', w:132, h:156, sbw:114, blockBand:0.5, petHouse:'dog', thumbH:44, price:25 }
+  { id:'pet_house_blue', cat:'petitem', name:'개집(파랑)', src:'char/rooms/pet_house_blue.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
+  { id:'pet_house_red', cat:'petitem', name:'개집(빨강)', src:'char/rooms/pet_house_red.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 },
+  { id:'pet_house_green', cat:'petitem', name:'개집(초록)', src:'char/rooms/pet_house_green.png?v=2', w:66, h:78, sbw:57, blockBand:0.5, petHouse:'dog', thumbH:39, price:25 }
 ];
 // ===== 카탈로그 분류 (대표 8-18: "에셋들 많아져서 각 종류별로 다시 묶어줘") =====
 // ★ROOM_ITEMS 의 **배열 순서는 안 바꾼다**. 줄마다 왜 넣었는지·무엇에 데었는지가
@@ -3633,6 +3645,21 @@ window.mwItemDef = function (id) {
       || null;
 };
 window._myRoom = null;   // { f:[{id,x,y}] } — users/{uid}.room
+window.MW_ROOM_SAVE_MAX = 5;
+window._mwRoomSlots = [null, null, null, null, null];
+window._mwRoomActive = 0;
+window._mwRoomClone = function (room) {
+  return room && Array.isArray(room.f) ? JSON.parse(JSON.stringify(room)) : { f: [] };
+};
+window._mwRoomSlotHtml = function () {
+  return '<div style="max-width:320px;margin:0 auto 11px"><div style="font:10.5px Galmuri11,sans-serif;color:#8a93a8;margin-bottom:7px">저장할 방 · 최대 5개</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px">'
+    + [0,1,2,3,4].map(function (i) {
+      var on = i === (window._mwRoomActive | 0), has = !!(window._mwRoomSlots[i] && window._mwRoomSlots[i].f);
+      return '<button onclick="window._reditSwitchRoom(' + i + ')" style="height:38px;border:2px solid #05070c;border-radius:8px;background:'
+        + (on ? '#3D7EFF' : '#141a28') + ';color:' + (on ? '#fff' : '#8a93a8') + ';font:10px Galmuri11,sans-serif;cursor:pointer">방 ' + (i + 1) + (has ? '' : '<br><small>비움</small>') + '</button>';
+    }).join('') + '</div></div>';
+};
 // ★초대받아 들어간 방 (null = 내 방). 필드는 하나뿐이고, **어느 방 데이터를 그리느냐**만 바뀐다.
 //   가구·충돌맵·좌표계가 전부 같아서 조이스틱과 충돌 판정을 그대로 쓴다(대표 8-20).
 window._mwVisit = null;  // { uid, nick, room }
@@ -3983,6 +4010,7 @@ window._mwPetPublish = function () {
   //   ★꾸미기 중이면 **저장 전 초안**(_reditDraft)을 보낸다. 그래야 끌고 있는 게 그대로 보인다.
   var _rd = window._reditDraft && window._reditDraft.f ? window._reditDraft
           : (window._myRoom || null);
+  var liveArt = (_rd && _rd.art) || {};
   var fl = ((_rd && _rd.f) || []).map(function (it) {
     var o = { id: it.id, x: it.x, y: it.y };
     if (it.a) o.a = it.a;
@@ -3991,7 +4019,7 @@ window._mwPetPublish = function () {
     if (it.fl) o.fl = 1;
     return o;
   });
-  var key = JSON.stringify(list) + '|' + JSON.stringify(dl) + '|' + JSON.stringify(fl);
+  var key = JSON.stringify(list) + '|' + JSON.stringify(dl) + '|' + JSON.stringify(fl) + '|' + JSON.stringify(liveArt);
   // ★바뀐 게 없어도 **가끔은 올려야 한다.** 펫이 자고 있으면 몇 시간이고 상태가 안 바뀌는데,
   //   그동안 데이터가 오래돼서(TTL 25초) 손님이 각자 계산으로 되돌아간다
   //   — 그래서 주인 화면과 손님 화면이 갈렸다(대표 8-25).
@@ -4009,7 +4037,7 @@ window._mwPetPublish = function () {
       return;
     }
     var pr = R.set(R.ref(R.db, 'roomLive/' + uid + '/pets'),
-                   { t: Date.now(), list: list, dinos: dl, furn: fl });
+                   { t: Date.now(), list: list, dinos: dl, furn: fl, art: liveArt });
     window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
     // ★RTDB 쓰기는 **약속(Promise)으로 실패한다.** try/catch 만으로는 권한 오류를 못 잡는다 —
     //   규칙에 막히면 여기서만 드러난다.
@@ -4064,11 +4092,12 @@ window._mwPetLiveApply = function () {
   // ★가구 — 바뀐 게 있을 때만 다시 그린다. 매번 그리면 _mwDinoSync 가 공룡을 지웠다
   //   다시 만들어서 자리가 초기화된다(그리고 무거워진다).
   if (window._mwVisit && window._mwPetLive.furn) {
-    var fkey = JSON.stringify(window._mwPetLive.furn);
+    var fkey = JSON.stringify(window._mwPetLive.furn) + '|' + JSON.stringify(window._mwPetLive.art || {});
     if (fkey !== window._mwFurnKey) {
       window._mwFurnKey = fkey;
       window._mwVisit.room = window._mwVisit.room || {};
       window._mwVisit.room.f = window._mwPetLive.furn;
+      window._mwVisit.room.art = window._mwPetLive.art || {};
       window.mwRenderFurn && window.mwRenderFurn();
     }
   }
@@ -4242,6 +4271,16 @@ window._mwPetRow = function (anim, dir) {
   return base + Math.max(0, Math.min(3, dir | 0));
 };
 
+window._mwPetPosition = function (p) {
+  if (!p || !p.el) return;
+  var t = window._charTileGeom().t;
+  var W = p.el.clientWidth || Math.round(t * window.PET_META.cell * window.PET_SCALE / 48);
+  var nx = (p.anim === 'eat' ? (p.eatDx || 0) : 0) * t;
+  var ny = (p.anim === 'eat' ? (p.eatDy || 0) : 0) * t;
+  p.el.style.transform = 'translate3d(' + Math.round((p.tc + 0.5) * t - W / 2 + nx) + 'px,'
+    + Math.round((p.tr + 1) * t - W + ny) + 'px,0)';
+};
+
 window._mwPetPlay = function (p, anim, dir) {
   if (!p || !p.el) return;
   var def = window._mwPetDef(p.id); if (!def) return;
@@ -4249,6 +4288,7 @@ window._mwPetPlay = function (p, anim, dir) {
   var row = window._mwPetRow(anim, p.dir), n = def.f[row] || 0;
   if (!n) { anim = 'stand'; row = window._mwPetRow('stand', p.dir); n = def.f[row] || 1; }
   p.anim = anim;
+  window._mwPetPosition(p);
   var spr = p.el.querySelector('.mw-pet-spr'); if (!spr) return;
   var W = p.el.clientWidth || 1;
   spr.style.backgroundPositionY = (-row * W) + 'px';
@@ -4265,8 +4305,7 @@ window._mwPetApply = function (p) {
   var t = window._charTileGeom().t;
   var W = Math.round(t * window.PET_META.cell * window.PET_SCALE / 48);
   p.el.style.width = W + 'px'; p.el.style.height = W + 'px';
-  p.el.style.transform = 'translate3d(' + Math.round((p.tc + 0.5) * t - W / 2) + 'px,'
-    + Math.round((p.tr + 1) * t - W) + 'px,0)';
+  window._mwPetPosition(p);
   // 올라가 있으면 그 가구보다 위. 안 그러면 침대 위에서 자는 고양이가 뒤에 파묻힌다.
   p.el.style.zIndex = 10 + p.tr * 10 + (p.up ? 9 : 4);
   var spr = p.el.querySelector('.mw-pet-spr');
@@ -4279,11 +4318,16 @@ window._mwPetApply = function (p) {
   // 접지 그림자 — 실측 접지폭(sbw/32)에서 살짝 퍼뜨린다. drop-shadow 필터는 이동 시
   // 모바일에서 잔상을 남겨 금지다(.cw-shadow 와 같은 이유).
   var sh = p.el.querySelector('.mw-pet-sh');
-  if (sh) { sh.style.width = (def.sbw / 32 * 110).toFixed(0) + '%'; sh.style.height = '13%'; }
+  if (sh) {
+    var vertical = p.dir === 0 || p.dir === 2;
+    sh.style.width = vertical ? '20%' : (def.sbw / 32 * 110).toFixed(0) + '%';
+    sh.style.height = vertical ? (def.sbw / 32 * 62).toFixed(0) + '%' : '13%';
+  }
   // 잡히는 판 = 몸이 있는 아래쪽만. 셀 전체를 잡으면 머리 위 빈 공간까지 먹는다.
   var hit = p.el.querySelector('.mw-pet-hit');
   if (hit) { hit.style.width = (def.sbw / 32 * 130).toFixed(0) + '%'; hit.style.height = '46%'; }
   window._mwPetPlay(p, p.anim || 'stand', null);
+  p.el.classList.add('ready');
   // 주인이면 바뀐 자리를 방에 알린다(바뀌었을 때만 실제로 쓴다)
   if (window._mwPetPublish) window._mwPetPublish();
 };
@@ -4319,7 +4363,8 @@ window._mwPetSpots = function (p, want) {
         var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
         if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
-        out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir });
+        out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir,
+          eatDx: -sides[k].dc * 0.58, eatDy: -sides[k].dr * 0.58 });
         any = true;
       }
       if (!any) out.push({ tc: tc, tr: tr, up: false, dir: 0 });
@@ -4355,7 +4400,7 @@ window._mwPetNearest = function (p, want) {
     var d = Math.abs(arr[i].tc - p.tc) + Math.abs(arr[i].tr - p.tr);
     // ★고양이는 캣타워를 먼저 고른다. 거리를 6칸만큼 깎아 준다 —
     //   방 반대편에 있어도 침대보다 타워로 간다.
-    if (isCat && arr[i].tower) d -= 6;
+    if (isCat && arr[i].tower) d -= 100;
     if (!best || d < best.d) best = { s: arr[i], d: d };
   }
   return best ? best.s : null;
@@ -4403,6 +4448,8 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   if (!p || !p.el || !spot) return false;
   var dc = spot.tc - p.tc, dr = spot.tr - p.tr;
   if (!dc && !dr) {
+    p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
+    p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
     p.up = !!spot.up; window._mwPetApply(p);
     window._mwPetPlay(p, thenAnim, (spot.dir != null) ? spot.dir : null);
     return true;
@@ -4434,6 +4481,8 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   var runNow = !!(p.run && (window._mwPetDef(p.id) || {}).f[window._mwPetRow('run', dir)]);
   var ms = runNow ? 140 : (p.rush ? 200 : 300);
   p.tc = spot.tc; p.tr = spot.tr; p.moving = true; p.up = !!spot.up;
+  p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
+  p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
   p.el.style.transition = 'transform ' + ms + 'ms linear';
   window._mwPetPlay(p, runNow ? 'run' : 'walk', dir);
   window._mwPetApply(p);
@@ -4489,7 +4538,7 @@ window._mwPetStep = function (p) {
 
   if (act === 'sleep') {
     // 고양이는 높은 데를 좋아한다 — 자는 시간이면 가까운 자리로 올라가서 잔다.
-    if (p.anim !== 'sleep') {
+    if (!p.up) {
       var bed = window._mwPetNearest(p, 'perch');
       if (bed && !window._mwPetGoto(p, bed, 'sleep')) bed = null;
       if (!bed) { p.up = false; window._mwPetPlay(p, 'sleep', p.dir === 3 ? 3 : 1); }
@@ -4509,7 +4558,7 @@ window._mwPetStep = function (p) {
     // ★쉬는 시간에도 **고양이는 높은 데로 올라간다**(대표 8-25: "캣타워 위로 알아서 올라가게").
     //   예전엔 자는 시간에만 올라가서 좀처럼 안 보였다. 캣타워를 사 놓고도 안 쓰이면 헛것이다.
     var kind = (window._mwPetDef(p.id) || {}).kind;
-    if (kind === 'cat' && !p.up && p.anim !== 'sit' && p.anim !== 'lay') {
+    if (kind === 'cat' && !p.up) {
       var high = window._mwPetNearest(p, 'perch');
       if (high && window._mwPetGoto(p, high, 'sit')) return;
     }
@@ -5280,6 +5329,22 @@ window.mwRenderFurn = function () {
 };
 // ---- 방 꾸미기 편집기: 카탈로그에서 추가 → 드래그 배치 → 저장(users/{uid}.room) ----
 window._reditDraft = null; window._reditSel = -1;
+window._reditSwitchRoom = async function (idx) {
+  idx = Math.max(0, Math.min(4, idx | 0));
+  if (idx === (window._mwRoomActive | 0)) return;
+  var now = window._reditDraft || { f: [] };
+  var saved = window._myRoom || { f: [] };
+  if (JSON.stringify(now) !== JSON.stringify(saved)
+      && !confirm('아직 저장하지 않은 배치가 있어요. 다른 방으로 이동할까요?')) return;
+  window._mwRoomActive = idx;
+  window._myRoom = window._mwRoomClone(window._mwRoomSlots[idx]);
+  window._reditDraft = window._mwRoomClone(window._myRoom);
+  window._reditSel = -1;
+  window.mwRenderFurn && window.mwRenderFurn();
+  await (window._charPersistRoom && window._charPersistRoom(window._myRoom));
+  var panel = document.getElementById('mw-wpanel'); if (panel) panel.remove();
+  window.mwRoomEdit();
+};
 window.mwRoomEdit = function () {
   if (!window.currentUser) { showToast('로그인이 필요해요'); return; }
   if (window._mwIsVisiting()) { showToast('남의 방은 꾸밀 수 없어요'); return; }
@@ -5306,6 +5371,7 @@ window.mwRoomEdit = function () {
   el.innerHTML = `
     <div class="mw-wpanel-head"><b>방 꾸미기</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
+      ${window._mwRoomSlotHtml()}
       <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;max-width:320px;margin-left:auto;margin-right:auto">
         <span id="mw-redit-hint" style="font-size:11px;color:#8a93a8;font-family:'Galmuri11',sans-serif">가구를 끌어서 배치해요</span>
@@ -5394,7 +5460,7 @@ window.mwRoomEdit = function () {
                  transition:transform .05s, box-shadow .05s"
           onpointerdown="this.style.transform='translateY(5px)';this.style.boxShadow='0 0 0 2px #2b3350, inset 0 2px 0 rgba(255,255,255,.28), inset 0 -3px 0 rgba(0,0,0,.28)'"
           onpointerup="this.style.transform='';this.style.boxShadow='0 0 0 2px #2b3350, inset 0 2px 0 rgba(255,255,255,.28), inset 0 -3px 0 rgba(0,0,0,.28), 0 5px 0 #1c3f8f'"
-          onpointerleave="this.style.transform='';this.style.boxShadow='0 0 0 2px #2b3350, inset 0 2px 0 rgba(255,255,255,.28), inset 0 -3px 0 rgba(0,0,0,.28), 0 5px 0 #1c3f8f'">저장하기</button>
+          onpointerleave="this.style.transform='';this.style.boxShadow='0 0 0 2px #2b3350, inset 0 2px 0 rgba(255,255,255,.28), inset 0 -3px 0 rgba(0,0,0,.28), 0 5px 0 #1c3f8f'">방 ${(window._mwRoomActive|0)+1} 저장하기</button>
       </div>
     </div>`;
   window._reditPaint();
@@ -5751,6 +5817,7 @@ window._reditSave = async function () {
   data.f.forEach(function (it) { if (it && it.a && _src[it.a]) _used[it.a] = _src[it.a]; });
   if (Object.keys(_used).length) data.art = _used;
   window._myRoom = data;
+  window._mwRoomSlots[window._mwRoomActive | 0] = window._mwRoomClone(data);
   window.mwRenderFurn();                          // 충돌 오버레이도 여기서 갱신됨
   if (window._mwUnstick) window._mwUnstick();     // 새로 놓은 가구에 캐릭터가 깔렸으면 밀어냄
   const p = document.getElementById('mw-wpanel'); if (p) p.remove();
@@ -11212,11 +11279,12 @@ function _setCropStep(step) {
   if (step === 2) {
     document.getElementById('crop-step-1').style.display = 'none';
     document.getElementById('crop-step-2').style.display = 'block';
+    document.getElementById('crop-step-2').scrollTop = 0;
     title.textContent = '새 게시물';
     left.textContent = '뒤로'; left.onclick = backToCrop;
     right.style.display = ''; right.textContent = '공유'; right.style.color = '#3D7EFF'; right.onclick = () => window.submitFeedPost && window.submitFeedPost();
   } else {
-    document.getElementById('crop-step-1').style.display = 'block';
+    document.getElementById('crop-step-1').style.display = 'flex';
     document.getElementById('crop-step-2').style.display = 'none';
     title.textContent = '사진 조정';
     left.textContent = '취소'; left.onclick = closeCropModal;
@@ -11301,7 +11369,6 @@ function confirmCrop() {
     if (_tg && _tg.checked && _ci && _cr) {
       _ci.style.display = ''; _cr.style.display = 'none';
       if (window._mcamFitCaption) window._mcamFitCaption();
-      _ci.focus();
     }
   } catch (e) {}
   const img = document.getElementById('crop-image');
@@ -11422,8 +11489,6 @@ window.toggleMurpyCam = async function (keepFocus) {
         requestAnimationFrame(window._mcamFitCaption);
         setTimeout(window._mcamFitCaption, 120);
       }
-      // 크기·위치를 잡은 뒤 바로 커서를 띄운다 — '다음'을 누르면 곧장 쓸 수 있게
-      setTimeout(function () { try { capIn.focus({ preventScroll: true }); } catch (e) { try { capIn.focus(); } catch (e2) {} } }, 160);
     } else {
       if (body && capIn.value) body.value = capIn.value;
       capIn.style.display = 'none'; capRow.style.display = '';
@@ -11480,14 +11545,16 @@ function initCropDrag() {
   }
 
   container.addEventListener('touchstart', e => {
+    e.preventDefault();
     if (e.touches.length === 1) {
       drag.active = true;
       drag.startX = e.touches[0].clientX - drag.imgX;
       drag.startY = e.touches[0].clientY - drag.imgY;
     }
-  }, { passive: true });
+  }, { passive: false });
 
   container.addEventListener('touchmove', e => {
+    e.preventDefault();
     if (e.touches.length === 1 && drag.active) {
       drag.imgX = e.touches[0].clientX - drag.startX;
       drag.imgY = e.touches[0].clientY - drag.startY;
@@ -11499,7 +11566,7 @@ function initCropDrag() {
       drag.lastDist = dist;
       setTransform();
     }
-  }, { passive: true });
+  }, { passive: false });
 
   container.addEventListener('touchend', () => { drag.active = false; drag.lastDist = 0; });
   container.addEventListener('mousedown', e => { drag.active = true; drag.startX = e.clientX - drag.imgX; drag.startY = e.clientY - drag.imgY; });
@@ -14069,13 +14136,23 @@ window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
-window._charPersistHidden = async (map) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); } catch (e) { console.error('hidden save', e); } };
+window._charPersistHidden = async (map) => { if (!window.currentUser) return;
+  if (!window._mwDocReady()) {
+    window._mwQueueWrite('hidden', function () { window._charPersistHidden(map); });
+    return;
+  }
+  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); }
+  catch (e) { console.error('hidden save', e); } };
 window._charPersistRoom = async (room) => { if (!window.currentUser) return;
   if (!window._mwDocReady()) {
     window._mwQueueWrite('room', function () { window._charPersistRoom(room); });
     return;
   }
-  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
+  const idx = Math.max(0, Math.min(4, window._mwRoomActive | 0));
+  window._mwRoomSlots = Array.isArray(window._mwRoomSlots) ? window._mwRoomSlots.slice(0, 5) : [];
+  while (window._mwRoomSlots.length < 5) window._mwRoomSlots.push(null);
+  window._mwRoomSlots[idx] = window._mwRoomClone(room);
+  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room, roomSaves: window._mwRoomSlots, roomActive: idx }); } catch (e) { console.error('room save', e); } };
 // 슬롯 확장권 사용 저장 (모듈 밖 편집기에서 부른다)
 window._mwGrantRoomSlot = async () => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
@@ -17057,7 +17134,16 @@ window.ensureCreditsInit = async (uid) => {
         try { await setDoc(ref, { character: window._charState.character }, { merge: true }); } catch (e) {}
       }
     }
-    window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    const _legacyRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
+    const _slots = Array.isArray(d.roomSaves) ? d.roomSaves.slice(0, 5) : [];
+    while (_slots.length < 5) _slots.push(null);
+    if (!_slots[0] && _legacyRoom) _slots[0] = _legacyRoom;
+    window._mwRoomSlots = _slots.map(function (r) { return r && Array.isArray(r.f) ? r : null; });
+    window._mwRoomActive = Math.max(0, Math.min(4, d.roomActive | 0));
+    window._myRoom = window._mwRoomClone(window._mwRoomSlots[window._mwRoomActive]);
+    if (!window._mwRoomSlots[window._mwRoomActive] && _legacyRoom) {
+      window._mwRoomActive = 0; window._myRoom = window._mwRoomClone(_legacyRoom);
+    }
     // 방에 나와 있는 펫들(배열). ★옛 단수 필드(d.pet)를 쓰던 계정도 그대로 이어지게 태운다.
     window._myArt = Array.isArray(d.artworks) ? d.artworks.filter(function (x) { return x && x.px; }) : [];
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
@@ -20176,7 +20262,7 @@ window.mwJamPlace = async function (kind) {
   if (!by.length) by = [window._mwMyNick || '머피'];
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const def = window.mwItemDef(kind === 'rug' ? 'art_rug' : 'art_frame'); if (!def) return;
-  const room = window._myRoom || { f: [] };
+  const room = window._mwRoomClone ? window._mwRoomClone(window._myRoom) : JSON.parse(JSON.stringify(window._myRoom || { f: [] }));
   room.f = room.f || []; room.art = room.art || {};
   room.art[id] = { px: px, by: by.slice(0, 4), at: Date.now() };
   // ★어디에 놓을지 **먼저 묻는다**(대표 8-25: "어디에 깔 건지는 이야기해줘야지 · 마음대로
@@ -20196,6 +20282,7 @@ window.mwJamPlace = async function (kind) {
   catch (e) { showToast('저장하지 못했어요 · 잠시 뒤에 다시'); return; }
   await window.mwJamEnd();             // ★먼저 판을 접는다. 안 접으면 꾸미기 위로 다시 뜬다
   window.mwRenderFurn && window.mwRenderFurn();
+  window._mwPetPublish && window._mwPetPublish();
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
   showToast(kind === 'rug' ? '깔았어요 · 자리를 옮겨 보세요' : '걸었어요 · 자리를 옮겨 보세요');
   // 꾸미기를 열고 방금 놓은 것을 골라 둔다 — 바로 끌 수 있게.
@@ -20558,7 +20645,7 @@ window._mwRlVisualDigest = function (all) {
     const v = all[uid] || {};
     return [uid, v.tc, v.tr, v.face || '', v.nick || '', !!v.guest, v.title || '', v.aura || '',
       v.character || null, v.msg ? [v.msg.text || '', v.msg.t || 0] : null, !!v.pin,
-      v.end || 0, (v.shot && v.shot.at) || 0];
+      v.end || 0, (v.shot && v.shot.at) || 0, !!v.wait, v.approvedAt || 0];
   }));
 };
 // 화면이 준비된 순간 **마지막으로 받아둔 상태를 다시 그린다.** 새 스냅샷을 기다리지 않는다 —
@@ -20593,6 +20680,7 @@ window.MW_ROOM_TTL_MS = 12 * 3600 * 1000;
 window._mwRoomAlive = function (v) { return !!v && (Date.now() - (v.t || 0) < window.MW_ROOM_TTL_MS); };
 // 지금 실제로 붙어 있는가(잠수 아닌가). 화면에 그릴지 말지가 아니라 **누구를 강퇴할지**의 기준이다.
 window._mwRoomOnline = function (v) { return !!v && !v.off && (Date.now() - (v.t || 0) < 70000); };
+window._mwRoomParticipant = function (v) { return window._mwRoomAlive(v) && !v.wait; };
 
 // 초대 링크 진입에 필요한 두 조회(방 주인 문서·강퇴 여부)를 한꺼번에 시작한다.
 // onAuthStateChanged가 내 프로필을 읽는 동안 호출해 두면 로그인 완료 뒤 추가 대기가 거의 없다.
@@ -20600,7 +20688,7 @@ window._mwRoomPrime = function (uid) {
   const me = auth.currentUser;
   if (!uid || !me) return Promise.resolve({ profile: {}, kicked: false });
   const key = uid + '|' + me.uid;
-  if (window._mwRoomPrep && window._mwRoomPrep.key === key) return window._mwRoomPrep.promise;
+  if (window._mwRoomPrep && window._mwRoomPrep.key === key && Date.now() - (window._mwRoomPrep.at || 0) < 3000) return window._mwRoomPrep.promise;
   const cached = window._mwRoomProfileCache;
   const profileP = (async function () {
     try {
@@ -20636,7 +20724,7 @@ window._mwRoomPrime = function (uid) {
     window._mwRoomProfileCache = { uid: uid, data: result.profile, at: Date.now() };
     return result;
   });
-  window._mwRoomPrep = { key: key, promise: promise };
+  window._mwRoomPrep = { key: key, promise: promise, at: Date.now() };
   return promise;
 };
 
@@ -20683,6 +20771,9 @@ window.mwRoomKick = async function (uid, nick) {
   try {
     await R.set(R.ref(R.db, 'roomLive/' + u.uid + '/kick/' + uid), Date.now());
     await R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/players/' + uid));
+    setTimeout(function () {
+      try { R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/kick/' + uid)); } catch (e) {}
+    }, 6500);
     showToast(String(nick || '머피') + '님을 내보냈어요');
   } catch (e) {
     console.warn('kick', e);
@@ -20694,6 +20785,65 @@ window.mwRoomUnkick = async function (uid) {
   const R = window._rt, u = auth.currentUser;
   if (!R || !u || !uid || uid === u.uid) return;
   try { await R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/kick/' + uid)); } catch (e) {}
+};
+window._mwRoomWaitPaint = function (all) {
+  all = all || {};
+  const me = (auth.currentUser || {}).uid;
+  const owner = window._mwRl && window._mwRl.owner;
+  const waits = Object.keys(all).filter(function (k) {
+    return all[k] && all[k].wait && window._mwRoomOnline(all[k]);
+  }).sort(function (a, b) { return (all[a].requestedAt || 0) - (all[b].requestedAt || 0); });
+  let el;
+  if (me === owner) {
+    const floating = document.getElementById('mw-room-wait-card'); if (floating) floating.remove();
+    el = document.getElementById('mw-party-waiters');
+    if (!el) return;
+    if (!waits.length) { el.classList.remove('on'); el.innerHTML = ''; return; }
+    el.classList.add('on');
+  } else {
+    const hostBox = document.getElementById('mw-party-waiters');
+    if (hostBox) { hostBox.classList.remove('on'); hostBox.innerHTML = ''; }
+    el = document.getElementById('mw-room-wait-card');
+    if (!window._mwRl.waiting) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'mw-room-wait-card'; document.body.appendChild(el); }
+    el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:40015;width:calc(100% - 24px);max-width:366px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 8px 22px rgba(0,0,0,.45);padding:12px;font-family:Galmuri11,sans-serif';
+    el.innerHTML = '<div style="color:#F5C24B;font-size:12px;margin-bottom:6px">방주 승인 대기 중</div>'
+      + '<div style="color:#8a93a8;font-size:10.5px;line-height:1.6">방주가 밀어서 승인하면 둘 다 공용 머피룸으로 바로 전환돼요.</div>'
+      + '<button onclick="window.mwRoomLeaveField()" style="margin-top:10px;width:100%;height:32px;background:#141a28;border:2px solid #05070c;color:#8a93a8;font:10px Galmuri11,sans-serif">대기 취소</button>';
+    return;
+  }
+  const esc = function (v) { return String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
+  el.innerHTML = '<div style="display:flex;align-items:center;margin-bottom:8px"><b style="flex:1;color:#fff;font-size:12px">방 입장 요청 <span style="color:#7aa8ff">' + waits.length + '</span></b><span style="color:#4a5266;font-size:9px">밀어서 승인</span></div>'
+    + waits.map(function (uid) {
+      const v = all[uid], nk = esc(v.nick || '머피');
+      return '<div style="display:grid;grid-template-columns:38px minmax(0,1fr) 132px 22px;align-items:center;gap:6px;padding:6px 0;border-top:2px solid #05070c">'
+        + '<div style="width:36px;height:36px;overflow:hidden">' + (window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character,36,'down') : '') + '</div>'
+        + '<div style="min-width:0;color:#e8ddc8;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nk + '</div>'
+        + '<div class="sq-slide" data-room-owner="' + esc(owner) + '" data-uid="' + esc(uid) + '" style="position:relative;height:38px;border:2px solid #26304a;overflow:hidden;touch-action:pan-y;user-select:none">'
+        + '<div class="sq-slide-fill" style="position:absolute;inset:0 auto 0 0;width:38px;background:rgba(61,126,255,.18);transition:width .18s ease"></div>'
+        + '<div class="sq-slide-lbl" style="position:absolute;left:40px;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;color:#cfd6e6;font-size:9px;pointer-events:none">밀어서 승인</div>'
+        + '<div class="sq-slide-knob" style="position:absolute;left:2px;top:2px;width:34px;height:34px;background:#3D7EFF;display:flex;align-items:center;justify-content:center;transition:transform .18s ease"><span style="color:#fff;font-size:16px">›</span></div></div>'
+        + '<button onclick="window.mwRoomRejectWait(&quot;' + esc(uid) + '&quot;)" aria-label="거절" style="border:0;background:none;color:#e8838a;font-size:17px;cursor:pointer">×</button></div>';
+    }).join('');
+  window._sqBindSwipe && window._sqBindSwipe();
+};
+window.mwRoomApproveWait = async function (owner, uid) {
+  const R = window._rt, me = (auth.currentUser || {}).uid;
+  if (!R || !me || me !== owner || window._mwRl.owner !== owner) return;
+  const all = (window._mwRl && window._mwRl.last) || {};
+  const active = Object.keys(all).filter(function (k) { return window._mwRoomOnline(all[k]) && !all[k].wait; });
+  if (active.length >= window.MW_ROOM_CAP) { showToast('4명이 모두 들어와 있어요'); window._mwRoomWaitPaint(all); return; }
+  if (!all[uid] || !all[uid].wait) { showToast('대기 요청이 끝났어요'); return; }
+  try {
+    await R.update(R.ref(R.db, 'roomLive/' + owner + '/players/' + uid), { wait: null, approvedAt: Date.now(), off: null, t: Date.now() });
+    showToast((all[uid].nick || '머피') + '님을 승인했어요');
+  } catch (e) { showToast('승인하지 못했어요'); }
+};
+window.mwRoomRejectWait = async function (uid) {
+  const R = window._rt, me = (auth.currentUser || {}).uid;
+  if (!R || !me || window._mwRl.owner !== me || !uid) return;
+  try { await R.remove(R.ref(R.db, 'roomLive/' + me + '/players/' + uid)); showToast('입장 요청을 거절했어요'); }
+  catch (e) { showToast('요청을 처리하지 못했어요'); }
 };
 window.mwRoomLeaveField = function () {
   // 주인이면 = 방을 닫는다. 손님들에게 알리고 초대 모드를 끈다.
@@ -20784,7 +20934,21 @@ window._mwRlJoin = function (ownerUid) {
     try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._mwSrvOff = sn.val() || 0; }); } catch (e) {}
   }
   const unsub = R.onValue(R.ref(R.db, base), function (snap) {
-    window._mwRlQueueRender(snap.val() || {});
+    const all = snap.val() || {};
+    const mine = u && all[u.uid];
+    if (u && ownerUid !== u.uid && window._mwRl.waiting && window._mwRl.waitNodeWritten) {
+      if (mine && !mine.wait && mine.approvedAt) {
+        window._mwRl.waiting = false; window._mwRl.cap = false;
+        try { R.onDisconnect(window._mwRl.ref).update({ off: 1 }); } catch (e) {}
+        showToast('방주가 승인했어요 · 공용 머피룸으로 들어갑니다');
+        window._mwRlSend();
+      } else if (!mine && Date.now() - (window._mwRl.waitStarted || 0) > 500) {
+        window._mwRl.waitNodeWritten = false;
+        showToast('방주가 입장 요청을 거절했어요');
+        setTimeout(function () { window.mwRoomLeaveField && window.mwRoomLeaveField(); }, 250);
+      }
+    }
+    window._mwRlQueueRender(all);
   }, function (e) { console.warn('roomLive', e); });
   window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
   window.mwJamWatch(ownerUid);                  // 낙서판이 열렸는지도 같이 지켜본다
@@ -20807,20 +20971,33 @@ window._mwRlJoin = function (ownerUid) {
     if (!sn.val() || window._mwRl.owner !== ownerUid) return;
     if (u.uid === ownerUid) return;                    // 주인은 자기 방에서 안 쫓겨난다
     showToast('방에서 나가게 됐어요');
+    window._mwRoomPrep = null;
     window.mwRoomLeaveField && window.mwRoomLeaveField();
   });
   window._mwRl.unsubK = function () { try { unsubK(); } catch (e) {} };
-  // 정원은 **들어가기 전에 한 번만** 본다. 계속 감시하면 남이 잠깐 깜빡일 때 나를 튕겨낸다.
-  // ★필드에 남겨 둔 오프라인 캐릭터는 정원을 차지하지 않는다. 예전에는 12시간 보존 노드까지
-  //   _mwRoomAlive 로 세서, 실제로는 빈자리가 있어도 어떤 날은 촬영 가능·어떤 날은 구경 전용이 됐다.
-  //   입장·촬영 권한은 지금 접속 중인 사람(_mwRoomOnline)만 기준으로 한 번 확정한다.
   window._mwRl.cap = null;
   R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
-    const online = Object.keys(all).filter(function (k) { return k !== u.uid && window._mwRoomOnline(all[k]); });
-    window._mwRl.cap = online.length >= window.MW_ROOM_CAP;
-    if (window._mwRl.cap) showToast(window.MW_ROOM_CAP + '명이 이미 놀고 있어요 · 구경만 할 수 있어요');
-    else window._mwRlSend();
+    const mine = all[u.uid];
+    if (ownerUid === u.uid || (mine && !mine.wait && window._mwRoomAlive(mine))) {
+      window._mwRl.cap = false; window._mwRl.waiting = false;
+      window._mwRlSend();
+    } else {
+      const pos = window._charPos || { tc:7, tr:8, face:'down' };
+      window._mwRl.cap = true; window._mwRl.waiting = true;
+      window._mwRl.waitStarted = Date.now(); window._mwRl.waitNodeWritten = true;
+      const request = {
+        wait:1, requestedAt:Date.now(), t:Date.now(), off:null,
+        tc:pos.tc, tr:pos.tr, face:pos.face || 'down',
+        nick:window._mwMyNick || '머피', guest:!!u.isAnonymous,
+        character:window.getMyCharacter ? window.getMyCharacter() : null
+      };
+      try {
+        R.set(meRef, request);
+        R.onDisconnect(meRef).remove();
+        showToast('방주에게 입장 승인을 요청했어요');
+      } catch (e) { console.warn('room wait', e); }
+    }
     window._mwShotBtnSync && window._mwShotBtnSync();
   }, { onlyOnce: true });
 };
@@ -20939,7 +21116,7 @@ window._mwRTalkWho = function () {
   const all = (window._mwRl && window._mwRl.last) || {};
   const me = (auth.currentUser || {}).uid;
   const names = Object.keys(all).filter(function (k) {
-    return all[k] && all[k].nick && window._mwRoomAlive(all[k]);
+    return all[k] && all[k].nick && window._mwRoomParticipant(all[k]);
   }).map(function (k) { return String(all[k].nick) + (k === me ? '(나)' : ''); });
   const txt = names.length ? names.join(' · ') : '아직 아무도 없어요';
   const esc = function (v) { return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
@@ -20950,8 +21127,24 @@ window._mwRTalkWho = function () {
   // ★명단에서 **X 로 내보낸다** (대표 8-25). 내보내기는 이미 있다(mwRoomKick) — 부를 자리만 없었다.
   //   주인에게만, 자기 자신 말고. 새 화면을 만들지 않고 명단 줄에 X 를 붙인다.
   const isHost = !!(me && window._mwRl && window._mwRl.owner === me);
+  const roster = document.getElementById('mw-party-members');
+  if (roster) {
+    const memberRows = Object.keys(all).filter(function (k) {
+      return all[k] && all[k].nick && window._mwRoomParticipant(all[k]);
+    }).map(function (k) {
+      const v = all[k], mine = k === me;
+      const nk = String(v.nick || '머피');
+      const char = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, 38, 'down') : '';
+      const kick = isHost && !mine
+        ? '<button class="mw-party-kick" onclick="window.mwRoomKick(&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;)">강퇴</button>' : '';
+      return '<div class="mw-party-member"><div class="pm-char">' + char + '</div>'
+        + '<div><div class="pm-name">' + esc(nk) + (mine ? ' (나)' : '') + (k === window._mwRl.owner ? ' · 방장' : '') + '</div>'
+        + kick + '</div></div>';
+    }).join('');
+    roster.innerHTML = memberRows || '<div style="padding:18px;text-align:center;color:#4a5266;font:10px Galmuri11,sans-serif">아직 아무도 없어요</div>';
+  }
   const rows = Object.keys(all).filter(function (k) {
-    return all[k] && all[k].nick && window._mwRoomAlive(all[k]);
+    return all[k] && all[k].nick && window._mwRoomParticipant(all[k]);
   }).map(function (k) {
     const nk = String(all[k].nick);
     const mine = (k === me);
@@ -21091,8 +21284,10 @@ window._mwRlLeave = function () {
   Object.keys(window._mwRl.chars).forEach(function (k) {
     const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
   });
-  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: null, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
+  window._mwRl = { owner: null, unsub: null, unsubK: null, chars: {}, cap: null, waiting:false, waitNodeWritten:false, msg: null, shot: null, last: null, end: null, beatT: 0, renderJob: 0, renderKind: '', digest: null, metaKey: null };
   window._mwKbEnd(true);            // ★위와 같다 — 나가면서 잠금을 반드시 푼다
+  const waitCard = document.getElementById('mw-room-wait-card'); if (waitCard) waitCard.remove();
+  const waitBox = document.getElementById('mw-party-waiters'); if (waitBox) { waitBox.classList.remove('on'); waitBox.innerHTML = ''; }
   document.body.classList.remove('mw-party');
   const le = document.getElementById('mw-party-log'); if (le) le.innerHTML = '';
   window._mwRlTiles = null;                   // 안 비우면 방을 나온 뒤에도 유령이 길을 막는다
@@ -21133,7 +21328,10 @@ window._mwRlSend = function (mode) {
 window._mwRlBeat = function () {
   clearInterval(window._mwRl.beatT);
   window._mwRl.beatT = setInterval(function () {
-    if (window._mwRl.ref) window._mwRlSend('beat'); else clearInterval(window._mwRl.beatT);
+    if (!window._mwRl.ref) { clearInterval(window._mwRl.beatT); return; }
+    if (window._mwRl.waiting) {
+      try { window._rt.update(window._mwRl.ref, { t:Date.now(), off:null }); } catch (e) {}
+    } else window._mwRlSend('beat');
   }, 25000);
 };
 // ★이동 훅. _charApplyPos 는 위치·모습이 바뀔 때마다 불리므로 여기 하나만 잡으면
@@ -21168,13 +21366,14 @@ window._mwRlRender = function (all) {
     return;
   }
   const me = (auth.currentUser || {}).uid;
+  window._mwRoomWaitPaint && window._mwRoomWaitPaint(all);
   const g = window._charTileGeom ? window._charTileGeom() : { N: 16, t: (room.clientWidth || 320) / 16 };
   const t = g.t, DH = Math.round(t * 3.3);
   const chars = window._mwRl.chars, seen = {};
   const tiles = new Set();                    // 남들이 선 칸 → 걸어 들어가지 못하게
   Object.keys(all).forEach(function (uid) {
     const v = all[uid];
-    if (uid === me || !window._mwRoomAlive(v)) return;
+    if (uid === me || !window._mwRoomParticipant(v)) return;
     seen[uid] = 1;
     tiles.add(v.tr * 16 + v.tc);
     let c = chars[uid];
@@ -21301,7 +21500,9 @@ window._mwRlRender = function (all) {
     return ((all[k] && all[k].t) || 0) > _shutAt;
   });
   if (!visiting && _newcomer) window._mwPartyOn = true;
-  const party = (window._curField === 'home') && (visiting || !!window._mwPartyOn);
+  const hasWaiting = Object.keys(all).some(function (k) { return all[k] && all[k].wait && window._mwRoomOnline(all[k]); });
+  const party = (window._curField === 'home')
+    && ((visiting && !window._mwRl.waiting) || !!window._mwPartyOn || (!visiting && hasWaiting));
 
   // ★주인이 방을 닫으면 손님도 같이 나온다. '잠깐 끊긴 것'과 구분해야 하므로
   //   주인이 **명시적으로 남긴 end 표시**를 본다(그냥 사라진 건 자리 비움일 뿐이다).
@@ -21426,24 +21627,25 @@ window._mwKbLift = 0;              // 지금 입력줄을 올려둔 픽셀(누�
 //   → 포커스가 들어오는 **그 순간에 먼저 문서를 잠근다.** 스크롤할 곳이 없으면 못 민다.
 //     잠금은 앱에 이미 있는 lockBodyScroll(iOS 안전 · 중첩 가드 포함)을 그대로 쓴다.
 window._mwKbFit = function () {
-  // ★★스쿼드 **필드**(_sqVVFit)가 하는 것과 똑같이 — 키보드가 떴을 때 상자 **높이**만 줄인다.
-  //   이제 입력줄 밑에 아무것도 없다(톡 목록을 #mw-rtalk 로 뺐다). 그래서 높이를 줄여도
-  //   잘리는 건 아래쪽 빈 공간뿐이고, 방도 입력줄도 그대로 있는다 — 스쿼드 필드와 같은 조건이다.
-  //   ★스크롤을 굴리지 않는다. 굴리면 방이 위로 올라간다(대표 8-25).
-  //   ★top 도 안 만진다. 고무줄 스크롤로 offsetTop 이 흔들리면 그게 그대로 화면 떨림이 된다.
-  const pc = document.getElementById('page-char');
-  if (!pc || !window._mwKbOn) return;
+  const row = document.getElementById('mw-party-row');
+  if (!row || !window._mwKbOn) return;
   const vv = window.visualViewport;
-  const ih = window.innerHeight || (vv && vv.height) || 0;
-  if (!(vv && vv.height < ih - 80)) { window._mwKbH = 0; pc.style.height = ''; return; }
-  const h = Math.round(vv.height);
-  if (window._mwKbH && Math.abs(window._mwKbH - h) < 40) return;   // 잔떨림 무시
-  window._mwKbH = h;
-  pc.style.height = h + 'px';
+  const ih = window._mwKbBaseH || window.innerHeight || (vv && vv.height) || 0;
+  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : ih;
+  const keyboard = Math.max(0, Math.round(ih - visBottom));
+  if (keyboard < 80) return;
+  row.style.position = 'fixed';
+  row.style.left = '50%'; row.style.right = 'auto';
+  row.style.width = '100%'; row.style.maxWidth = '390px';
+  row.style.bottom = (keyboard + window.MW_KB_GAP) + 'px';
+  row.style.transform = 'translateX(-50%)';
+  row.style.zIndex = '40010'; row.style.background = '#0b0e16';
+  row.style.padding = '8px 13px'; row.style.boxSizing = 'border-box';
 };
 window._mwKbStart = function () {
   if (window._mwKbOn) return;
   window._mwKbOn = 1;
+  window._mwKbBaseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
   // ★★순서가 전부다. **잠그는 게 먼저**다 — 붙박이로 만들기 전에 브라우저가 밀어버린다.
   //   ★내가 잠근 것만 내가 푼다. 패널이 이미 잠가 뒀는데 blur 에서 풀어버리면
   //     뒤에 열려 있던 화면이 통째로 스크롤돼 내려간다(스쿼드 것과 같은 규칙).
@@ -21460,11 +21662,10 @@ window._mwKbStart = function () {
   window._mwKbH = 0;
   const vv = window.visualViewport;
   if (vv) vv.addEventListener('resize', window._mwKbFit);
+  if (vv) vv.addEventListener('scroll', window._mwKbFit);
   // ★대화 로그 높이를 **지금 값으로 얼려 둔다.** 로그는 flex:1 이라 상자가 키보드에 맞춰
   //   줄면 같이 줄어든다. 스쿼드 필드에는 입력줄 밑에 로그가 없어 없던 현상이라 우리만 막는다.
   //   넘치는 만큼은 상자가 알아서 스크롤한다.
-  const le = document.getElementById('mw-party-log');
-  if (le) { le.style.flex = '0 0 auto'; le.style.height = le.offsetHeight + 'px'; }
   // 스쿼드 필드와 같은 간격으로 다시 잰다 — 키보드 애니메이션 길이가 기기마다 다르다.
   [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwKbFit, t); });
 };
@@ -21479,17 +21680,16 @@ window._mwKbEnd = function (immediate) {
     window._mwKbOn = 0;
     const vv = window.visualViewport;
     if (vv) vv.removeEventListener('resize', window._mwKbFit);
+    if (vv) vv.removeEventListener('scroll', window._mwKbFit);
     window._mwKbH = 0;
+    window._mwKbBaseH = 0;
     document.body.classList.remove('mw-kb');
     const row = document.getElementById('mw-party-row');
-    if (row) row.style.transform = '';   // 옛 버전이 남겨둔 값이 있으면 지운다
+    if (row) {
+      ['position','left','right','width','maxWidth','bottom','transform','zIndex','background','padding','boxSizing']
+        .forEach(function (k) { row.style[k] = ''; });
+    }
     window._mwKbLift = 0;
-    // ★#page-char 의 인라인은 padding 뿐이라 top/height 만 지우는 건 안전하다(cssText 를 안 건드린다)
-    const pc = document.getElementById('page-char');
-    // ★scrollTop 은 건드리지 않는다 — 굴린 적이 없으니 되돌릴 것도 없고, 0 으로 밀면 화면이 튄다.
-    if (pc) { pc.style.top = ''; pc.style.height = ''; }
-    const le = document.getElementById('mw-party-log');
-    if (le) { le.style.paddingBottom = ''; le.style.flex = ''; le.style.height = ''; }
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
     window._mwKbOwnedLock = false;
   };
@@ -21628,7 +21828,7 @@ window._mwShotPrefetch = function () {
     zs.forEach(function (q) { if (q && q.def) window._mwLoadImg(q.def.src); });
     const all = (window._mwRl && window._mwRl.last) || {};
     Object.keys(all).forEach(function (k) {
-      if (window._mwRoomAlive && window._mwRoomAlive(all[k])) window._mwLoadCharSheets(all[k].character);
+      if (window._mwRoomParticipant && window._mwRoomParticipant(all[k])) window._mwLoadCharSheets(all[k].character);
     });
   } catch (e) {}
 };
@@ -21995,7 +22195,7 @@ window._mwRoomCapture = function () {
   //   off 가 서 있거나 심장박동이 한 번 늦으면 **눈에는 보이는데 사진에서만 사라졌다.**
   //   _mwRoomOnline 은 원래 주석대로 '누구를 강퇴할지·정원이 찼는지'의 기준으로만 쓴다.
   //   이 함수가 하는 말 그대로 — 찍는 순간의 방을 **보이는 그대로** 담는다.
-  const uids = Object.keys(all).filter(function (k) { return window._mwRoomAlive(all[k]); });
+  const uids = Object.keys(all).filter(function (k) { return window._mwRoomParticipant(all[k]); });
   uids.sort(function (a, b) { return (a === owner ? -1 : 0) - (b === owner ? -1 : 0); });
   if (!uids.length) { showToast('같이 있는 사람이 없어요'); return; }
   const list = uids.slice(0, window.MW_ROOM_CAP).map(function (k) {
@@ -24610,13 +24810,20 @@ window._HIDDEN_META = {
     quip: '또 돌아왔네. 근성인가 저주인가.' }),
 };
 window._hiddenQueue = [];
+window._hiddenPending = {};
 window.mwHiddenReveal = function (r) {
+  if (!r || (!r.force && (window.mwHasHidden(r.id) || window._hiddenPending[r.id]))) return;
+  window._hiddenPending[r.id] = true;
   window._hiddenQueue.push(r);
   if (!document.getElementById('mw-hidden')) window.mwHiddenNext();
 };
 window.mwHiddenNext = async function () {
   const old = document.getElementById('mw-hidden'); if (old) old.remove();
   const r = window._hiddenQueue.shift(); if (!r) return;
+  if (!r.force && window.mwHasHidden(r.id)) {
+    delete window._hiddenPending[r.id];
+    window.mwHiddenNext(); return;
+  }
   const body = window._CHAR_BODIES[r.id]; if (!body) { window.mwHiddenNext(); return; }
   const meta = window._HIDDEN_META[r.id](r);
   const el = document.createElement('div'); el.id = 'mw-hidden';
@@ -24660,6 +24867,7 @@ window.mwHiddenNext = async function () {
   if (!window._charState.hidden[r.id]) {
     window._charState.hidden[r.id] = (r.id === 'cult') ? { weekday: r.weekday } : true;
     window._charPersistHidden && window._charPersistHidden(window._charState.hidden);
+    delete window._hiddenPending[r.id];
   }
 };
 window.mwHiddenShare = function () {
@@ -24674,11 +24882,17 @@ window.mwAdminTestHidden = function (id) {
 };
 // 체크인 후·머피월드 진입 시 호출. 최신 체크인 판정 → 아직 미보유분만 연출 큐잉.
 window.mwCheckHidden = async function () {
-  if (!window.currentUser) return;
-  let ck = [];
-  try { ck = await mwLoadCheckins(true); } catch (e) { return; }
-  const res = window.mwEvalHidden(ck, new Date());
-  res.forEach(r => { if (!window.mwHasHidden(r.id)) window.mwHiddenReveal(r); });
+  if (!window.currentUser || !window._mwDocReady() || window._hiddenCheckBusy) return;
+  window._hiddenCheckBusy = true;
+  try {
+    const ck = await mwLoadCheckins(true);
+    const res = window.mwEvalHidden(ck, new Date());
+    res.forEach(function (r) {
+      if (!window.mwHasHidden(r.id) && !window._hiddenPending[r.id]) window.mwHiddenReveal(r);
+    });
+  } catch (e) {
+    console.warn('hidden check', e);
+  } finally { window._hiddenCheckBusy = false; }
 };
 // ---------- 도감 렌더 ----------
 window.mwRenderDogam = async function () {
@@ -29969,7 +30183,11 @@ window._sqBindSwipe = function () {
         // 다 밀면 게이지가 파랑으로 꽉 차므로 글자는 흰색이어야 읽힌다
         if (lbl) { lbl.textContent = '승인됨'; lbl.style.opacity = '1'; lbl.style.color = '#fff'; }
         const sid = el.getAttribute('data-sid'), uid = el.getAttribute('data-uid');
-        setTimeout(function () { window.approveSquadMember && window.approveSquadMember(sid, uid); }, 160);
+        const roomOwner = el.getAttribute('data-room-owner');
+        setTimeout(function () {
+          if (roomOwner) window.mwRoomApproveWait && window.mwRoomApproveWait(roomOwner, uid);
+          else window.approveSquadMember && window.approveSquadMember(sid, uid);
+        }, 160);
       } else {
         paint(0);
         el.classList.remove('dragging');   // 손잡이 힌트 애니메이션을 되살린다
