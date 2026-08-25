@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '693';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '694';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3843,8 +3843,14 @@ window._mwPetPublish = function () {
              anim: p.anim || 'stand', up: p.up ? 1 : 0 };
   });
   var key = JSON.stringify(list);
-  if (key === window._mwPetLiveKey) return;      // 보이는 게 그대로면 안 쓴다
+  // ★바뀐 게 없어도 **가끔은 올려야 한다.** 펫이 자고 있으면 몇 시간이고 상태가 안 바뀌는데,
+  //   그동안 데이터가 오래돼서(TTL 25초) 손님이 각자 계산으로 되돌아간다
+  //   — 그래서 주인 화면과 손님 화면이 갈렸다(대표 8-25).
+  //   심장박동처럼 12초마다 시각만 갱신해 '주인이 여기 있다'를 유지한다.
+  var beat = (Date.now() - (window._mwPetBeatT || 0)) > 12000;
+  if (key === window._mwPetLiveKey && !beat) return;
   window._mwPetLiveKey = key;
+  window._mwPetBeatT = Date.now();
   try {
     if (!list.length) { R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/pets')); return; }
     R.set(R.ref(R.db, 'roomLive/' + u.uid + '/pets'), { t: Date.now(), list: list });
@@ -4407,6 +4413,10 @@ window._mwPetSync = function () {
     });
   }
   window._mwPets.forEach(function (p) { window._mwPetApply(p); window._mwPetUnstick(p); });
+  // 손님이면 받은 위치를 곧바로 얹는다. 주인이면 지금 상태를 곧바로 한 번 알린다 —
+  // 손님이 다음 변화까지 기다리지 않아도 되게.
+  if (!window._mwPetIsOwner()) window._mwPetLiveApply && window._mwPetLiveApply();
+  else { window._mwPetLiveKey = ''; window._mwPetPublish && window._mwPetPublish(); }
   window._mwWorldStart && window._mwWorldStart();
 };
 
@@ -5012,6 +5022,9 @@ window.mwDinoStop = function (idx) {
 window._mwWorldTick = function () {
   window._mwPetStepAll && window._mwPetStepAll();
   window._mwDinoStep && window._mwDinoStep();
+  // ★펫이 가만히 있어도 주인은 '여기 있다'를 알린다. 안 그러면 자는 동안 소식이 끊겨
+  //   손님이 각자 계산으로 돌아가고, 두 화면이 갈린다.
+  window._mwPetPublish && window._mwPetPublish();
 };
 window._mwWorldStart = function () {
   if (window._mwPetTimer) return;
