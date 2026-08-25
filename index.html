@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '734';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '735';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -912,6 +912,14 @@ window._SW_V = '734';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-artgal .ag-tag { font-size:9.5px; color:#8a93a8 }
   #mw-artgal .ag-empty { grid-column:1/-1; text-align:center; font-size:11px; color:#4a5266;
     line-height:1.8; padding:34px 0 }
+  #mw-artshare { position:fixed; inset:0; z-index:40040; background:rgba(5,7,12,.9);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+    font-family:'Galmuri11',sans-serif }
+  #mw-artshare .as-box { width:100%; max-width:330px; background:#0e1320;
+    border:3px solid #05070c; box-shadow:0 0 0 3px #2b3350; padding:16px }
+  #mw-artshare .as-img { width:100%; display:block; image-rendering:pixelated }
+  #mw-artshare .as-x { width:100%; margin-top:12px; background:none; border:none;
+    color:#4a5266; font-size:11px; cursor:pointer; font-family:inherit; padding:8px 0 2px }
   #mw-artbig .ab-btns { display:flex; gap:6px; margin-top:18px; justify-content:center; flex-wrap:wrap }
   #mw-artbig .ab-btns button { background:#141a28; border:3px solid #05070c; color:#cfd6e6;
     padding:10px 13px; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; border-radius:0 }
@@ -5598,7 +5606,7 @@ window.mwRoomEdit = function () {
         if (!arts.length) return '';
         return `<div class="mw-redit-cathead" style="color:#7aa8ff">같이 그린 것들<span>${arts.length}</span></div>
           <div class="mw-redit-cat">${arts.map(a =>
-            `<button onclick="window._reditAddArt('${a.id}')"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${String((a.by || []).join('·')).slice(0, 10) || '그림'}</span></button>`).join('')}
+            `<button onclick="window.mwArtBig('${a.id}')"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${String((a.by || []).join('·')).slice(0, 10) || '그림'}</span></button>`).join('')}
           </div>`;
       })()}
       <!-- ★캐릭터 이펙트(아우라)는 여기(방 꾸미기)가 아니라 **꾸미기 > 악세사리** 에 있다
@@ -5751,6 +5759,7 @@ window._reditAddArt = async function (artId) {
   f.push({ id: id, a: artId,
            x: Math.round((768 - def.w) / 2), y: kind ? 56 : 336 });
   window._reditSel = f.length - 1;
+  const big = document.getElementById('mw-artbig'); if (big) big.remove();
   window._reditPaint && window._reditPaint();
   showToast(kind ? '벽에 걸었어요 · 끌어서 옮겨요' : '바닥에 깔았어요 · 끌어서 옮겨요');
 };
@@ -20728,18 +20737,45 @@ window.mwArtPrice = async function (id) {
 
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
 window.mwArtShare = function (id) {
-  const a = window.mwArtFind(id); if (!a) return;
-  const nick = (a.by || []).join('·') || '머피';
-  window._mwStampData = window.mwArtImg(a.px, 'frame', a.id);
+  const art = window.mwArtFind(id); if (!art) return;
+  const nick = (art.by || []).join('·') || '머피';
+  const B = window._MW_BRAND || {};
+  // ★★새 문법을 만들지 않는다 — 덤벨 피하기·머피룸 초대가 쓰는 **.mw-share/.mw-sbtn 그대로**다
+  //   (대표 8-26: "머피룸 초대랑 덤벨 피하기처럼 인스타·카톡·저장하기 뜨게 해야 함").
+  //   예전엔 mwShareKakao 를 바로 불러서 카톡 말고는 길이 없었다.
+  window._mwStampData = window.mwArtImg(art.px, 'frame', art.id);
   window._mwShareMeta = {
     title: nick + '님이 같이 그린 그림',
     desc: '머피월드에서 같이 그렸어요',
     btn: '보러 가기',
     link: 'https://murpy.app/?room=' + encodeURIComponent(window.mwArtOwner())
   };
-  window.mwShareKakao && window.mwShareKakao();
+  let el = document.getElementById('mw-artshare'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-artshare';
+  el.innerHTML = '<div class="as-box">'
+    + '<img class="as-img" src="' + window._mwStampData + '" alt="같이 그린 그림">'
+    + '<div class="mw-share-lbl" style="text-align:center;margin:14px 3px 9px">이 그림 자랑하기</div>'
+    + '<div class="mw-share">'
+    +   '<button class="mw-sbtn" onclick="window.mwArtShareIG()" aria-label="인스타그램에 공유">'
+    +     (B.ig || '') + '<span>인스타그램</span></button>'
+    +   '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">'
+    +     (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+    +   '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">'
+    +     (B.sv || '') + '<span>저장</span></button>'
+    + '</div>'
+    + '<button class="as-x" onclick="var e=document.getElementById(&quot;mw-artshare&quot;);if(e)e.remove()">닫기</button>'
+    + '</div>';
+  el.onclick = function (e) { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+  // 카톡은 공개 이미지 URL 이 필요하다 — 시트를 띄우는 즉시 미리 올려 둔다(누른 뒤 올리면
+  // await 때문에 '사용자 제스처'를 잃고 카카오가 스토어로 떨어진다. 덤벨에서 겪은 그것).
+  window._mwKakaoPrep && window._mwKakaoPrep();
 };
-
+// 인스타는 파일 공유만 받는다. 덤벨 피하기(dodgeShareIG)와 같은 길이다.
+window.mwArtShareIG = function () {
+  if (window.mwShareSheet) return window.mwShareSheet();
+  window.mwSaveStamp && window.mwSaveStamp();
+};
 // ---- 크게 보기 ----
 window.mwArtBig = function (id) {
   const room = window._mwRoomShown() || {};
@@ -20754,7 +20790,14 @@ window.mwArtBig = function (id) {
   const mine = window.mwArtIsMine(a), have = window.mwArtHave(id);
   const esc2 = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
   const q = '&quot;' + esc2(id) + '&quot;';
-  let btns = '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
+  // ★★8-26 — 어제 필드 칩을 없애면서 **내 방에서 이 화면으로 갈 길이 막혔다.**
+  //   그래서 값 매기기·공유가 "활성화 안 된" 것처럼 보였다(버튼은 멀쩡했다).
+  //   이제 꾸미기의 '같이 그린 것들' 카드가 여기로 온다 — 놓기도 여기서 한다.
+  let btns = '';
+  if (!visiting && document.getElementById('mw-wpanel')) {
+    btns += '<button class="go" onclick="window._reditAddArt(' + q + ')">방에 놓기</button>';
+  }
+  btns += '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
   if (have) btns += '<button disabled>가지고 있어요</button>';
   else if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
   else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
