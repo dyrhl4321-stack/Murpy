@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '684';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '685';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3805,15 +3805,15 @@ window.mwPlateFlash = function () {
 // ★프레임 수가 행마다 다르다 — 뒷모습은 2컷뿐인 것도 있다. 재생 길이를 행마다 계산한다.
 // ★표시 크기는 소스의 3배(=96유닛). PROP_SCALE(build_pet_sheets.py)과 **항상 같이 움직인다.**
 window.PET_META = {
-  cell:32, cols:6, rows:30,
-  rowMap:{walk:0,stand:4,sit:8,eat:12,act1:16,act2:20,sleep:24,lay:26},
+  cell:32, cols:6, rows:34,
+  rowMap:{walk:0,stand:4,sit:8,eat:12,act1:16,act2:20,sleep:24,lay:26,run:30},
   pets:{
-    cat_black:{kind:'cat',sbw:16,f:[4,4,4,4,6,6,6,6,6,6,5,6,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4]},
-    cat_fat:{kind:'cat',sbw:18,f:[4,4,4,4,4,4,4,4,3,3,3,3,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4]},
-    cat_milky:{kind:'cat',sbw:16,f:[4,4,4,4,6,6,6,6,6,6,5,6,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4]},
-    dog_brown:{kind:'dog',sbw:19,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5]},
-    dog_small:{kind:'dog',sbw:18,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5]},
-    dog_white:{kind:'dog',sbw:19,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5]}
+    cat_black:{kind:'cat',sbw:16,f:[4,4,4,4,6,6,6,6,6,6,5,6,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]},
+    cat_fat:{kind:'cat',sbw:18,f:[4,4,4,4,4,4,4,4,3,3,3,3,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]},
+    cat_milky:{kind:'cat',sbw:16,f:[4,4,4,4,6,6,6,6,6,6,5,6,4,4,2,4,4,4,2,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]},
+    dog_brown:{kind:'dog',sbw:19,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5,4,4,4,4]},
+    dog_small:{kind:'dog',sbw:18,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5,4,4,4,4]},
+    dog_white:{kind:'dog',sbw:19,f:[4,4,4,4,5,5,1,5,5,5,1,5,4,4,2,4,2,2,2,2,4,4,4,4,4,4,5,5,1,5,4,4,4,4]}
   }
 };
 window.PET_SCALE = 3;      // 32px 셀 x3 = 96유닛. 공룡(내용 105유닛)보다 살짝 작다
@@ -3981,7 +3981,7 @@ window._mwPetApply = function (p) {
   p.el.style.zIndex = 10 + p.tr * 10 + (p.up ? 9 : 4);
   var spr = p.el.querySelector('.mw-pet-spr');
   if (spr) {
-    spr.style.backgroundImage = 'url(char/pets/' + p.id + '.png?v=1)';
+    spr.style.backgroundImage = 'url(char/pets/' + p.id + '.png?v=2)';
     spr.style.backgroundSize = (W * window.PET_META.cols) + 'px '
       + (W * window.PET_META.rows) + 'px';
     spr.style.setProperty('--fw', W + 'px');
@@ -4103,10 +4103,13 @@ window._mwPetGoto = function (p, spot, thenAnim) {
     dc = pick.dc; dr = pick.dr;
   }
   var dir = (Math.abs(dc) >= Math.abs(dr)) ? (dc >= 0 ? 3 : 1) : (dr >= 0 ? 0 : 2);
-  var ms = p.rush ? 200 : 300;
+  // ★뛰는 중이면 그림도 뛰는 것으로, 시간도 짧게. 걷는 그림으로 빠르게만 움직이면
+  //   발이 미끄러지는 것처럼 보인다(대표 8-25: "강아지는 존나 빠른 속도로 뛰어와야 해").
+  var runNow = !!(p.run && (window._mwPetDef(p.id) || {}).f[window._mwPetRow('run', dir)]);
+  var ms = runNow ? 140 : (p.rush ? 200 : 300);
   p.tc = spot.tc; p.tr = spot.tr; p.moving = true; p.up = !!spot.up;
   p.el.style.transition = 'transform ' + ms + 'ms linear';
-  window._mwPetPlay(p, 'walk', dir);
+  window._mwPetPlay(p, runNow ? 'run' : 'walk', dir);
   window._mwPetApply(p);
   clearTimeout(p._t);
   var endDir = (spot && spot.dir != null) ? spot.dir : null;
@@ -4132,6 +4135,7 @@ window._mwPetStep = function (p) {
     // ★고양이는 불러도 잘 안 온다(설계서). 세 번에 한 번은 못 들은 척한다.
     var def = window._mwPetDef(p.id) || {};
     if (def.kind === 'cat' && Math.random() < 0.33) {
+      p.run = false;
       if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
       return;
     }
@@ -4139,10 +4143,14 @@ window._mwPetStep = function (p) {
     if (me) {
       var want = { tc: me.tc + (p.tc > me.tc ? 1 : -1), tr: me.tr };
       if (!window._charWalkable(want.tc, want.tr)) want = { tc: me.tc, tr: me.tr + 1 };
-      if (Math.abs(want.tc - p.tc) + Math.abs(want.tr - p.tr) > 1) {
+      var far = Math.abs(want.tc - p.tc) + Math.abs(want.tr - p.tr);
+      if (far > 1) {
+        // ★강아지는 **뛴다**. 고양이는 멀 때만 뛰고 가까우면 걸어온다 — 개와 고양이는 다르다.
+        p.run = (def.kind === 'dog') || far > 4;
         p.up = false; window._mwPetGoto(p, want, 'stand'); return;
       }
     }
+    p.run = false;
     if (p.anim !== 'stand') window._mwPetPlay(p, 'stand', null);
     return;
   }
@@ -4197,6 +4205,18 @@ window._mwPetStepAll = function () {
   var arr = window._mwPets; if (!arr.length) return;
   var p = arr[window._mwPetTurn % arr.length]; window._mwPetTurn++;
   window._mwPetStep(p);
+  // ★따라오는 중인 아이는 **한 틱에 여러 칸** 간다. 드라이버가 1.1초인데 한 칸씩만 가면
+  //   캐릭터가 걸어가는 속도를 절대 못 따라잡는다(대표 8-25: "존나 빠른 속도로").
+  //   뛰는 그림이 140ms 라 한 틱에 최대 6칸까지 이어 붙여도 부드럽다.
+  if (p && p.run) {
+    var n = 0;
+    var chase = function () {
+      if (!p.el || !p.el.isConnected || !p.run || n++ > 5) return;
+      if (!p.moving) window._mwPetStep(p);
+      setTimeout(chase, 150);
+    };
+    setTimeout(chase, 150);
+  }
 };
 
 window._mwPetUnstick = function (p) {
