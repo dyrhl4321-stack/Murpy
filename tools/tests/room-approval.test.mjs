@@ -79,8 +79,18 @@ has(/enterkeyhint="send"[\s\S]*?event\.key===\\'Enter\\'[\s\S]*?event\.preventDe
   '모바일 키보드의 전송 키로 한 번에 말하기가 되지 않는다');
 has(/id="mw-quick-send" onpointerdown="event\.preventDefault\(\)"/,
   '키보드가 열린 채 말하기 버튼을 누르면 먼저 포커스가 풀린다');
-has(/body\.mw-party\.mw-kb #mw-party-row \{ position:absolute;[\s\S]*?bottom:max\(8px, env\(safe-area-inset-bottom, 0px\)\)/,
-  '키보드가 열렸을 때 한마디 입력줄을 키보드 바로 위에 고정하지 않는다');
+// ★★2026-08-26 대표 결정으로 **뒤집혔다.**
+//   예전엔 칠 때 입력줄을 position:absolute 로 상자 맨 아래에 붙였다. 그런데 그 이동 자체가
+//   "입력줄이 아래로 내려가는 동작"으로 보였고(대표: "원래 바로 키보드만 올라왔는데
+//   저렇게 내려가는 과정이 없었다"), 맨 아래라 아이폰 키보드 윗줄 반투명 바에 덮이기까지 했다.
+//   -> 입력줄은 **제자리(필드 바로 밑)** 에 둔다. 상자를 키보드 위 높이로 줄이는 쪽(_mwPartyVVFit)이
+//      가림을 막는다. 그래서 이 테스트는 **옮기지 않는 것**을 지킨다.
+assert(!/body\.mw-party\.mw-kb #mw-party-row \{ position:absolute/.test(src),
+  '칠 때 입력줄을 상자 맨 아래로 옮기고 있다 — 제자리에 둬야 한다(대표 8-26)');
+has(/window\._mwPartyVVFit = function/,
+  '키보드가 뜰 때 공동룸 상자 높이를 맞추는 코드가 없다');
+has(/const kbUp = vv\.height < \(\(window\.innerHeight \|\| vv\.height\) - 80\)/,
+  '키보드가 실제로 떴는지 보는 문턱이 없다 — 없으면 주소창이 접힐 때마다 화면이 다시 앉는다');
 has(/window\._mwKbScrollGuard = function[\s\S]*?window\.scrollTo\(0,0\)[\s\S]*?page\.scrollTop = 0/,
   '키보드 애니메이션 동안 브라우저의 문서 자동 스크롤을 되돌리지 않는다');
 

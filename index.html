@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '744';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '746';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -9296,7 +9296,7 @@ function closePanel(id) {
     let routed = false;
     try {
       const q = new URLSearchParams(location.search);
-      routed = ['sq', 'room', 'n', 'game', 'code', 'from'].some(function (k) { return q.has(k); });
+      routed = ['sq', 'room', 'art', 'n', 'game', 'code', 'from'].some(function (k) { return q.has(k); });
       if (!routed) saved = JSON.parse(localStorage.getItem(KEY) || 'null');
     } catch (e) {}
     if (saved && validPage(saved.page)) {
@@ -13065,8 +13065,27 @@ window._sqInviteSid = (function () {
 })();
 // 머피룸 초대 링크 — https://murpy.app/?room=<주인uid>
 // ★스쿼드(?sq=)와 같은 자리에서 읽는다. 판정하는 곳이 여럿이라 한 번만 읽어 들고 있어야 한다.
+// ★★그림 공유 링크(?art=주인uid_그림id).
+//   **새 화면을 만들지 않는다**(대표 8-26: "웬만하면 추가하지 말고 기존 UI·UX 이용하자").
+//   방 초대(?room=)가 이미 다 갖춰 놓았다 —
+//     비로그인: '가입 없이 바로 입장 / 로그인 / 그냥 둘러볼게요' 시트
+//     로그인:   바로 그 방으로
+//   그래서 ?art= 는 **주인 uid 를 꺼내 ?room= 과 똑같이 흘려보내고**, 방에 들어간 뒤
+//   이미 있는 그림 창(mwArtBig)만 한 번 띄운다. 링크 전용 화면이 필요 없다.
+//   ※보안 규칙도 안 건드린다 — 읽는 것은 users 문서 하나뿐이고 이미 열려 있다.
+window._mwArtOpen = '';
 window._mwRoomInvite = (function () {
-  try { return new URLSearchParams(location.search).get('room') || ''; } catch (e) { return ''; }
+  try {
+    const q = new URLSearchParams(location.search);
+    const room = q.get('room') || '';
+    if (room) return room;
+    const art = q.get('art') || '';
+    if (!art) return '';
+    const cut = art.indexOf('_');
+    if (cut < 1) return '';
+    window._mwArtOpen = art.slice(cut + 1);
+    return art.slice(0, cut);
+  } catch (e) { return ''; }
 })();
 // ---------- Realtime Database (스쿼드 워킹 룸 위치 동기화 전용) ----------
 // 콘솔에서 RTDB를 asia-southeast1 리전으로 생성해야 함. 미생성/미연결이면 _SQUAD_RT_OFF=true → 룸은 정적 배치 폴백.
@@ -17449,6 +17468,7 @@ window.ensureCreditsInit = async (uid) => {
     }
     // 방에 나와 있는 펫들(배열). ★옛 단수 필드(d.pet)를 쓰던 계정도 그대로 이어지게 태운다.
     window._myArt = Array.isArray(d.artworks) ? d.artworks.filter(function (x) { return x && x.px; }) : [];
+    window._mwArtOpenIfLinked && window._mwArtOpenIfLinked();   // 내 그림 링크로 들어온 경우
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
       : ((d.pet && d.pet.id) ? [d.pet] : []);
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
@@ -20631,6 +20651,27 @@ window.mwArtOwner = function () {
 window.mwArtFind = function (id) {
   return (window.mwArtList() || []).filter(function (a) { return a && a.id === id; })[0] || null;
 };
+// ★★필드에 걸린 액자·카펫은 **방 데이터(room.art)에만** 있고 그림 목록(artworks)에는 없다.
+//   '같이 그리기 → 바로 액자로 걸기'로 놓은 옛 그림들이 그렇다(저장 버튼은 나중에 생겼다).
+//   그래서 필드에서 액자를 눌러 공유·값 매기기를 눌러도 mwArtFind 가 null 이라
+//   **아무 일도 안 일어났다**(대표 8-26: "필드에서 보이는 액자는 버튼이 활성화 안 되고
+//   오늘의 추억에서는 된다"). 버튼은 멀쩡했고, 찾을 데이터가 없었던 것이다.
+//   -> 방에 걸려 있는 것은 **목록으로 옮겨 준다.** 옮겨야 팔 수도, 남이 가져갈 수도 있다.
+window.mwArtEnsure = function (id) {
+  const found = window.mwArtFind(id);
+  if (found) return found;
+  const room = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
+  const a = ((room && room.art) || {})[id];
+  if (!a || !a.px) return null;
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    // 남의 방 것은 내 목록에 못 넣는다. 보기·가져가기 판정에 쓸 임시 객체만 준다.
+    return { id: id, px: a.px, by: a.by || [], byUids: a.byUids || [], at: a.at || 0, price: 0 };
+  }
+  const rec = { id: id, px: a.px, by: a.by || [], byUids: a.byUids || [], at: a.at || Date.now(), price: 0 };
+  window._myArt = [rec].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+  window._mwSaveArt && window._mwSaveArt(window._myArt);
+  return rec;
+};
 // 내가 이 그림을 같이 그렸나 — 서명에 내 uid 가 있으면 공짜다.
 window.mwArtIsMine = function (a) {
   const me = (window.currentUser || {}).uid;
@@ -20656,6 +20697,7 @@ window._mwVisitArtWatch = function (ownerUid) {
       ? d.artworks.filter(function (a) { return a && a.px; }) : [];
     if (d.nickname) window._mwVisit.nick = d.nickname;
     window.mwArtChip && window.mwArtChip(window._curField || 'home');
+    window._mwArtOpenIfLinked && window._mwArtOpenIfLinked();   // 링크로 온 그림 띄우기
     if (document.getElementById('mw-artgal')) window.mwArtGallery();
     const mt = document.querySelector('#mw-memory .mm-tabs button.on');
     if (mt && mt.dataset.tab === 'art') window.mwMemoryPaint('art');
@@ -20745,7 +20787,7 @@ window._mwArtChipLegacy = function (key) {
 window.mwArtTake = async function (id) {
   const me = auth.currentUser;
   if (!me) { window.memberGate && window.memberGate('그림을 가지려면 로그인이 필요해요'); return; }
-  const a = window.mwArtFind(id); if (!a) return;
+  const a = window.mwArtEnsure(id); if (!a) return;
   if (window.mwArtHave(id)) { showToast('이미 가지고 있어요'); return; }
   const mine = window.mwArtIsMine(a);
   const price = mine ? 0 : (a.price | 0);
@@ -20788,7 +20830,7 @@ window.mwArtTake = async function (id) {
 // ---- 값 매기기 (주인만) ----
 window.mwArtPrice = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
-  const a = window.mwArtFind(id); if (!a) return;
+  const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
   // ★★prompt() 를 쓰지 않는다 (8-26). 홈 화면에 설치한 앱(standalone)에서는 iOS 가
   //   prompt 를 **그냥 무시한다.** 눌러도 아무 일이 없어 "버튼이 죽었다"로 보였다.
   //   앱 안 모달로 받는다 — 펫 이름 모달과 같은 문법이다.
@@ -20832,7 +20874,7 @@ window.mwArtPriceAsk = function (cur) {
 
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
 window.mwArtShare = function (id) {
-  const art = window.mwArtFind(id); if (!art) return;
+  const art = window.mwArtEnsure(id); if (!art) return;
   const nick = (art.by || []).join('·') || '머피';
   const B = window._MW_BRAND || {};
   // ★★새 문법을 만들지 않는다 — 덤벨 피하기·머피룸 초대가 쓰는 **.mw-share/.mw-sbtn 그대로**다
@@ -20843,7 +20885,9 @@ window.mwArtShare = function (id) {
     title: nick + '님이 같이 그린 그림',
     desc: '머피월드에서 같이 그렸어요',
     btn: '보러 가기',
-    link: 'https://murpy.app/?room=' + encodeURIComponent(window.mwArtOwner())
+    // ★예전엔 ?room= 이라 **받은 사람이 그림 대신 방으로 떨어졌다** — 뭘 보고 눌렀는지가
+    //   사라진다. 이제 그림을 지목한다. 도착하면 방 초대와 같은 시트를 거쳐 그림이 열린다.
+    link: 'https://murpy.app/?art=' + encodeURIComponent(window.mwArtOwner() + '_' + art.id)
   };
   let el = document.getElementById('mw-artshare'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-artshare';
@@ -20875,7 +20919,9 @@ window.mwArtShareIG = function () {
 window.mwArtBig = function (id) {
   const room = window._mwRoomShown() || {};
   // ★방에 걸린 그림(room.art)과 목록의 그림(artworks) **둘 다** 여기로 온다.
-  const a = ((room.art || {})[id]) || window.mwArtFind(id);
+  // ★목록을 먼저 본다. 방에만 있으면 mwArtEnsure 가 목록으로 옮겨 준다 — 그래야
+  //   공유·값 매기기가 같은 데이터를 보고 실제로 동작한다.
+  const a = window.mwArtEnsure(id) || ((room.art || {})[id]);
   if (!a || !a.px) return;
   let el = document.getElementById('mw-artbig'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-artbig';
@@ -21276,6 +21322,14 @@ window.mwRoomEnterField = async function (uid) {
   window._mwRoomRestoring = 0;
 };
 // 방주가 승인한 순간만 상대 방으로 전환한다. 요청 단계에서는 내 방이 그대로 보인다.
+// 링크로 들어온 그림을 한 번만 띄운다. 방 데이터가 붙은 뒤라야 목록에서 찾을 수 있다.
+window._mwArtOpenIfLinked = function () {
+  const id = window._mwArtOpen; if (!id) return;
+  // 아직 그림 목록이 안 붙었으면 다음 기회에 (승인 대기 중일 수도 있다)
+  if (!window.mwArtFind || !window.mwArtFind(id)) return;
+  window._mwArtOpen = '';
+  setTimeout(function () { window.mwArtBig && window.mwArtBig(id); }, 400);
+};
 window._mwRoomApprovedEnter = function (ownerUid) {
   const v = window._mwPendingVisit;
   if (!v || v.uid !== ownerUid) return false;
