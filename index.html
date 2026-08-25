@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '694';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '695';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -8316,6 +8316,25 @@ window._diagPush = async function () {
     L.push('빌드: index _SW_V=' + (window._SW_V || '?') + ' / sw.js=' + real
       + (real !== String(window._SW_V) ? '  ★어깋남' : ''));
   } catch (e) { L.push('sw.js 버전 확인 실패'); }
+  // ★펫 동기화 진단 (2026-08-25). 화면이 서로 다를 때 **추측하지 말고 여기부터 본다.**
+  //   주인/손님 · 실시간 데이터가 오는지 · 몇 초 됐는지 · 몇 마리인지가 한 줄로 나온다.
+  try {
+    var _po = window._mwPetIsOwner ? window._mwPetIsOwner() : '?';
+    var _L = window._mwPetLive;
+    var _age = _L && _L.t ? Math.round((Date.now() - _L.t) / 1000) + '초 전' : '없음';
+    L.push('펫: ' + (_po ? '주인' : '손님') + ' · 화면 ' + ((window._mwPets || []).length) + '마리'
+      + ' · 저장 ' + ((window._mwPetsData ? window._mwPetsData() : []).length) + '마리');
+    L.push('  · 실시간 수신: ' + _age
+      + (window._mwPetLiveFresh && window._mwPetLiveFresh() ? ' (신선)' : ' (끊김/없음)')
+      + ' · 받은 ' + ((_L && _L.list) ? _L.list.length : 0) + '마리');
+    L.push('  · 방: ' + (window._mwIsVisiting && window._mwIsVisiting()
+      ? ('남의 방 ' + ((window._mwVisit || {}).uid || '?').slice(0, 6)) : '내 방')
+      + ' · 필드 ' + (window._curField || '?') + ' · RTDB ' + (window._rt ? '연결' : '없음'));
+    (window._mwPets || []).forEach(function (q) {
+      L.push('  · [' + q.i + '] ' + q.id + ' (' + q.tc + ',' + q.tr + ') ' + q.anim
+        + (q.rush ? ' 달리는중' : '') + (q.up ? ' 올라감' : ''));
+    });
+  } catch (e) { L.push('펫 진단 실패: ' + e.message); }
   L.push('알림 권한: ' + (window.Notification ? Notification.permission : '지원 안 함'));
   L.push('푸시 등록: ' + (window._pushOk ? '성공' : '실패/미실행'));
   if (window._pushErr) L.push('★등록 오류: ' + window._pushErr);
