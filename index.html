@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '688';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '689';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4079,6 +4079,21 @@ window._mwPetNearest = function (p, want) {
 
 // ★반드시 한 칸씩만 고른다. 여러 칸을 건너뛰면 중간 칸을 검사하지 않아 가구를 통과한다.
 window.MW_STEPS = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
+
+// ★어슬렁도 **결정론**이다 (2026-08-25).
+//   예전엔 Math.random() 으로 걸어서, 같은 펫이 폰마다 다른 자리에 있었다
+//   (대표: "펫들이 각 폰마다 다르게 보임"). 일과표는 씨앗이 같아 맞는데 위치가 어긋난 것이다.
+//   위치까지 서버로 맞추면 실시간 동기화가 필요해진다 — 그건 설계 때 안 하기로 한 것이다.
+//   대신 **시각을 씨앗에 넣어** 계산한다. 같은 시각·같은 방이면 어느 폰에서나 같은 답이 나온다.
+//   틱 번호 = floor(지금 / 드라이버 간격) 이라 두 폰이 같은 틱을 본다.
+window._mwPetTickNo = function () {
+  return Math.floor(Date.now() / (window.MW_TICK_MS || 1100));
+};
+// 씨앗 하나로 0~1 값을 만든다(상태를 안 들고 있어 어느 폰에서 불러도 같다)
+window._mwPetRand = function (p, salt) {
+  var key = window._mwPetOwner() + '|' + p.id + '|' + p.i + '|' + window._mwPetTickNo() + '|' + salt;
+  return (window._mwPetSeed(key) % 100000) / 100000;
+};
 window._mwShuffle = function (a) {
   var i, k, t;
   for (i = a.length - 1; i > 0; i--) { k = Math.floor(Math.random() * (i + 1)); t = a[i]; a[i] = a[k]; a[k] = t; }
@@ -4086,7 +4101,10 @@ window._mwShuffle = function (a) {
 };
 window._mwPetPick = function (p) {
   if (!p) return null;
-  var opts = window._mwShuffle(window.MW_STEPS.slice()), i;
+  // ★섞는 순서도 결정론이어야 한다. Math.random 으로 섞으면 폰마다 다른 방향으로 간다.
+  var opts = window.MW_STEPS.slice(), i;
+  var r0 = Math.floor(window._mwPetRand(p, 'dir') * opts.length);
+  opts = opts.slice(r0).concat(opts.slice(0, r0));
   for (i = 0; i < opts.length; i++) {
     var tc = p.tc + opts[i].dc, tr = p.tr + opts[i].dr;
     if (window._charWalkable && !window._charWalkable(tc, tr)) continue;
@@ -4150,7 +4168,11 @@ window._mwPetStep = function (p) {
   if (p._eatUntil && Date.now() < p._eatUntil) return;   // 먹는 중엔 일과표가 안 끼어든다
 
   var saved = window._mwPetSaved(p);
-  var mode = (saved && saved.mode) || 'free';
+  // ★남의 방에서는 행동 설정을 따르지 않는다(대표 8-25: "내가 손님인데 펫들이 나를 다 따라옴").
+  //   '따라와' 는 **주인을 따라오라는 뜻**인데, 손님 화면에서 그대로 돌리면
+  //   주인이 아닌 손님을 따라온다. 손님에게는 늘 '자유' 로 보인다.
+  var guest = !!(window._mwIsVisiting && window._mwIsVisiting());
+  var mode = guest ? 'free' : ((saved && saved.mode) || 'free');
   if (mode === 'stay') {
     if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
     return;
@@ -4158,7 +4180,7 @@ window._mwPetStep = function (p) {
   if (mode === 'follow') {
     // ★고양이는 불러도 잘 안 온다(설계서). 세 번에 한 번은 못 들은 척한다.
     var def = window._mwPetDef(p.id) || {};
-    if (def.kind === 'cat' && Math.random() < 0.33) {
+    if (def.kind === 'cat' && window._mwPetRand(p, 'ignore') < 0.33) {
       p.run = false;
       if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
       return;
@@ -4208,7 +4230,7 @@ window._mwPetStep = function (p) {
       if (high && window._mwPetGoto(p, high, 'sit')) return;
     }
     if (p.anim !== 'sit' && p.anim !== 'lay') {
-      window._mwPetPlay(p, Math.random() < 0.5 ? 'sit' : 'lay', null);
+      window._mwPetPlay(p, window._mwPetRand(p, 'rest') < 0.5 ? 'sit' : 'lay', null);
     }
     return;
   }
@@ -4217,8 +4239,8 @@ window._mwPetStep = function (p) {
     return;
   }
 
-  // roam
-  if (Math.random() < 0.28) { window._mwPetPlay(p, 'stand', null); return; }
+  // roam — 서 있을지 걸을지도 결정론(같은 시각이면 어느 폰에서나 같은 선택)
+  if (window._mwPetRand(p, 'idle') < 0.28) { window._mwPetPlay(p, 'stand', null); return; }
   var to = window._mwPetPick(p); if (!to) return;
   window._mwPetGoto(p, to, 'stand');
 };
