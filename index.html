@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '695';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '696';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3822,7 +3822,10 @@ window.mwPlateFlash = function () {
 // ★매 틱마다 올리지 않는다. 쓰기 횟수가 곧 요금이다 — 보이는 상태가 **실제로 달라졌을 때만** 쓴다.
 window._mwPetLive = null;        // { t, list:[{i,id,tc,tr,dir,anim,up}] }
 window._mwPetLiveKey = '';
-window.MW_PET_LIVE_TTL = 25000;  // 이 시간 넘게 소식이 없으면 주인이 없는 것으로 본다
+// ★심장박동(8초)보다 넉넉하되 너무 길지 않게. 25초로 뒀더니 주인이 옛 버전이라
+//   심장박동을 안 보낼 때 손님 화면이 **25초나 멈춰 있었다**(대표 8-25: "손님 입장에선 계속 멈춰있음").
+//   짧게 잡으면 주인이 잠깐 끊겨도 손님이 곧 자기 계산으로 돌아가 펫이 살아 움직인다.
+window.MW_PET_LIVE_TTL = 20000;
 
 window._mwPetIsOwner = function () {
   return !(window._mwIsVisiting && window._mwIsVisiting());
@@ -3847,7 +3850,7 @@ window._mwPetPublish = function () {
   //   그동안 데이터가 오래돼서(TTL 25초) 손님이 각자 계산으로 되돌아간다
   //   — 그래서 주인 화면과 손님 화면이 갈렸다(대표 8-25).
   //   심장박동처럼 12초마다 시각만 갱신해 '주인이 여기 있다'를 유지한다.
-  var beat = (Date.now() - (window._mwPetBeatT || 0)) > 12000;
+  var beat = (Date.now() - (window._mwPetBeatT || 0)) > 8000;   // TTL(20초)의 절반 이하
   if (key === window._mwPetLiveKey && !beat) return;
   window._mwPetLiveKey = key;
   window._mwPetBeatT = Date.now();
@@ -3890,7 +3893,9 @@ window._mwPetLiveApply = function () {
     p.tc = d.tc; p.tr = d.tr; p.up = !!d.up;
     if (p.el && moved) p.el.style.transition = 'transform 300ms linear';
     window._mwPetApply(p);
-    if (p.anim !== d.anim || p.dir !== d.dir) window._mwPetPlay(p, d.anim, d.dir);
+    // ★조건을 걸지 않는다. _mwPetApply 가 **옛 동작**으로 한 번 그린 뒤라,
+    //   조건에 걸리면 새 동작이 반영되지 않고 그대로 남는다.
+    window._mwPetPlay(p, d.anim, d.dir);
   });
 };
 
