@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '741';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '742';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -890,8 +890,15 @@ window._SW_V = '741';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   body.mw-kb #page-char { z-index:890 }
   /* 키보드가 열린 동안 입력줄은 줄어든 page-char의 맨 아래, 즉 키보드 바로 위에 붙는다.
      필드/명단 flex 계산에 맡기면 짧아진 화면 밖으로 잘려 placeholder와 말하기가 안 보였다. */
+  /* ★★8-26 — 아이폰 키보드 **맨 윗줄의 반투명 바**(이전/다음/완료)가 입력줄을 덮었다
+     (대표: "키보드 윗부분의 투명 바가 '한마디 하면 머리 위에 떠요'를 가림").
+     그 바는 visualViewport.height 에 안 잡히는 경우가 있어서, 상자를 키보드 높이에 맞춰
+     줄여도 그 바 두께만큼은 여전히 겹친다. **잴 수 없는 값이라 띄워서 피한다.**
+     --mw-kbbar 는 _mwKbStart 가 기기를 보고 넣는다(아이폰만, 안드로이드는 0).
+     ※바 두께가 안 맞으면 이 값 하나만 고치면 된다 — 다른 계산은 건드리지 않는다. */
   body.mw-party.mw-kb #mw-party-row { position:absolute; left:0; right:0;
-    bottom:max(8px, env(safe-area-inset-bottom, 0px)); z-index:895; padding:8px 13px;
+    bottom:calc(max(8px, env(safe-area-inset-bottom, 0px)) + var(--mw-kbbar, 0px));
+    z-index:895; padding:8px 13px;
     background:#0b0e16; border-top:2px solid #05070c }
   /* ===== 그림 목록 ===== */
   #mw-artgal { position:fixed; inset:0; z-index:40030; background:rgba(5,7,12,.9);
@@ -22251,6 +22258,13 @@ window._mwKbStart = function () {
   // focus 이벤트보다 pointerdown이 먼저 오므로 그때부터 문서 자동 스크롤을 0에 붙잡는다.
   try { window.scrollTo(0,0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch (e) {}
   document.body.classList.add('mw-kb');
+  // ★아이폰 키보드 위 반투명 바(이전/다음/완료) 두께만큼 입력줄을 띄운다. 위 CSS 주석 참고.
+  //   ※아이패드/맥 터치는 iPhone 문자열이 없어 maxTouchPoints 로 같이 잡는다.
+  try {
+    const _ios = /iP(hone|ad|od)/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    document.documentElement.style.setProperty('--mw-kbbar', _ios ? '46px' : '0px');
+  } catch (e) {}
   window._mwKbOwnedLock = !_bodyLocked;
   if (window._mwKbOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
   const vv = window.visualViewport;
@@ -22288,6 +22302,7 @@ window._mwKbEnd = function (immediate) {
     }
     window.removeEventListener('scroll', window._mwKbScrollGuard);
     document.body.classList.remove('mw-kb');
+    try { document.documentElement.style.setProperty('--mw-kbbar', '0px'); } catch (e) {}
     const el = document.getElementById('page-char');
     if (el) { el.style.top = '0px'; el.style.bottom = '0px'; el.style.height = ''; }
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
