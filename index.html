@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '702';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '703';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -20071,6 +20071,13 @@ window._mwRlVisualDigest = function (all) {
       v.end || 0, (v.shot && v.shot.at) || 0];
   }));
 };
+// 화면이 준비된 순간 **마지막으로 받아둔 상태를 다시 그린다.** 새 스냅샷을 기다리지 않는다 —
+// 손님이 가만히 서 있으면 스냅샷이 안 오고, 심장박동은 30초에 한 번이라 그동안 빈 방으로 보인다.
+window._mwRlReplay = function () {
+  if (!window._mwRl || !window._mwRl.last) return;
+  window._mwRl.digest = null;
+  window._mwRlQueueRender(window._mwRl.last);
+};
 window._mwRlQueueRender = function (all) {
   window._mwRl.last = all || {};
   const digest = window._mwRlVisualDigest(window._mwRl.last);
@@ -20394,7 +20401,17 @@ window._mwRlTick = function () {
 // ---- 남들 그리기 (필드 좌표계 그대로) ----
 window._mwRlRender = function (all) {
   const room = document.getElementById('charworld-room');
-  if (!room || window._curField !== 'home') return;
+  // ★★못 그렸으면 **'그렸다' 표시(digest)를 지운다** (대표 8-25: "내가 한 번이라도 머피월드를
+  //   리로드해야 친구가 들어온 게 뜬다").
+  //   #charworld-room 은 다른 탭에 있어도 **DOM 에는 늘 있다.** 그래서 여기까지는 들어오는데
+  //   clientWidth 가 0 이라 칸 크기가 0 이 되고, 사람이 안 보인다. 그런데 _mwRlQueueRender 는
+  //   부르기 **전에** 다이제스트를 이미 찍어 놨다 → 머피월드를 열어도 "같은 내용"이라 다시
+  //   안 그린다. 손님은 가만히 서 있으니 새 스냅샷도 안 온다 → 리로드 전까지 영영 안 뜬다.
+  //   (_mwPetSync 에 이미 적어둔 '방을 못 재는 동안에는 만들지 않는다'와 같은 함정이다)
+  if (!room || !room.clientWidth || window._curField !== 'home') {
+    window._mwRl.digest = null;     // 다음 기회에 반드시 다시 그린다
+    return;
+  }
   const me = (auth.currentUser || {}).uid;
   const g = window._charTileGeom ? window._charTileGeom() : { N: 16, t: (room.clientWidth || 320) / 16 };
   const t = g.t, DH = Math.round(t * 3.3);
@@ -20615,6 +20632,9 @@ window.mwRoomFieldSync = function (key) {
   //   '주인이 자리를 비웠어요'가 정확해진다(예전엔 주인이 자기 방 패널을 열어야만 잡혔다).
   window._mwRlJoin(window._mwVisit ? window._mwVisit.uid : u.uid);
   setTimeout(function () { window._mwRlSend(); }, 300);
+  // ★이미 붙어 있으면 _mwRlJoin 은 아무 것도 안 한다(같은 방이면 곧바로 return).
+  //   그래서 **여기서 따로** 다시 그려 줘야 한다 — 방을 잴 수 있게 된 지금이 그 순간이다.
+  [0, 120, 400].forEach(function (t) { setTimeout(window._mwRlReplay, t); });
 };
 
 // ---- 방 안 한마디 ----
