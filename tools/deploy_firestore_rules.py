@@ -92,13 +92,18 @@ print('토큰 받음', flush=True)
 HDR = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
 
 
-def call(url, body=None, method='GET'):
+def call(url, body=None, method='GET', soft=False):
+    """soft=True 면 실패해도 죽지 않고 None 을 준다(릴리스가 없을 때 만들어 보려고)."""
     data = json.dumps(body).encode('utf-8') if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers=HDR)
     try:
         return json.loads(urllib.request.urlopen(req).read().decode())
     except urllib.error.HTTPError as e:
-        raise SystemExit('%s %s 실패 %d\n%s' % (method, url, e.code, e.read().decode()[:900]))
+        msg = e.read().decode()[:600].replace(chr(10), ' ')
+        if soft:
+            print('   (%s %d) %s' % (method, e.code, msg[:140]), flush=True)
+            return None
+        raise SystemExit('%s %s 실패 %d' % (method, url, e.code) + chr(10) + msg)
 
 
 # ① ruleset 만들기
@@ -107,10 +112,27 @@ rs = call(API + '/rulesets', {'source': {'files': [
 print('ruleset 생성:', rs['name'], flush=True)
 
 # ② release 를 그 ruleset 으로 옮기기. ★body 를 한 겹 감싼다(UpdateReleaseRequest).
-rel = API + '/releases/' + RELEASE
-out = call(rel, {'release': {'name': rel.replace(
-    'https://firebaserules.googleapis.com/v1/', ''), 'rulesetName': rs['name']}}, 'PATCH')
-print('release 갱신:', out.get('rulesetName'), flush=True)
+# ★Storage 는 **릴리스가 아직 없을 수 있다**(한 번도 안 올린 버킷). 그러면 PATCH 가 404 다 →
+#   POST 로 새로 만든다. 버킷 이름도 프로젝트마다 갈린다(.firebasestorage.app / .appspot.com)
+#   — 둘 다 시도한다. 2026-08-25 에 여기서 404 로 한 번 실패했다.
+cands = [RELEASE]
+if TARGET == 'storage':
+    cands.append('firebase.storage/' + PROJECT + '.appspot.com')
+
+rel = None
+for cand in cands:
+    url = API + '/releases/' + cand
+    short = url.replace('https://firebaserules.googleapis.com/v1/', '')
+    print('시도:', cand, flush=True)
+    out = call(url, {'release': {'name': short, 'rulesetName': rs['name']}}, 'PATCH', soft=True)
+    if out is None:      # 릴리스가 없다 → 새로 만든다
+        out = call(API + '/releases', {'name': short, 'rulesetName': rs['name']}, 'POST', soft=True)
+    if out is not None:
+        rel = url
+        print('release 설정:', out.get('rulesetName'), flush=True)
+        break
+if rel is None:
+    raise SystemExit('릴리스를 만들지도 갱신하지도 못했습니다. 위 응답을 확인할 것.')
 
 # ③ 되읽어 확인 — "만들었다"는 응답만 믿지 않는다
 now = call(rel)
