@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '714';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '715';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -14989,6 +14989,21 @@ window.dodgeSaveRecord = function () {
 // ★**내 리스너를 따로 단다.** 기존 onAuthStateChanged 안에 끼워 넣지 않는다 —
 //   거기는 다른 창이 작업 중인 자리다. Firebase 는 리스너를 여럿 달 수 있다.
 //   dodgeGuestPromote 는 들고 있는 게 없으면 바로 빠지므로 매번 불려도 싸다.
+// ★★로그인이 **늦게 붙는다.** 앱을 켜자마자 머피월드를 열면 그 시점엔 auth.currentUser 가
+//   아직 null 이라, mwRoomFieldSync 가 `if (!u) return;` 으로 그냥 빠져나간다.
+//   그래서 있던 방으로 못 돌아가고 **내 머피월드가 뜨고**, 탭을 나갔다 들어와야(그때는 로그인이
+//   붙어 있다) 비로소 그 방으로 갔다 (대표 8-25: "앱 껐다 켜도 걔 방에 들어가야 하는데
+//   항상 내 머피월드 화면 뜨다가 다시 나갔다 들어와야지만 상대방 방에 가 있다").
+//   -> 로그인이 붙는 순간, 머피월드가 열려 있으면 **한 번 더 부른다.**
+onAuthStateChanged(auth, function (u) {
+  if (!u) return;
+  try {
+    const pc = document.getElementById('page-char');
+    if (pc && pc.classList.contains('active') && window.mwRoomFieldSync) {
+      window.mwRoomFieldSync(window._curField || 'home');
+    }
+  } catch (e) { console.warn('room resync', e); }
+});
 onAuthStateChanged(auth, function (u) {
   if (!u || u.isAnonymous) return;
   window.dodgeGuestPromote().then(function (moved) {
@@ -20274,6 +20289,7 @@ window.mwRoomLeaveField = function () {
     //   방 닫기를 눌러도 "방을 닫았어요"만 뜨고 방에 갇혔다.
     //   플래그 하나로는 못 막는다 — 다시 열기 전까지 유지되는 못이 필요하다.
     window._mwRoomShut = 1;
+    window._mwRoomShutAt = Date.now();   // ★언제 닫았는지 — 그 뒤에 온 손님은 다시 연다
     // ★방을 닫으면 **그 방에서 친 대화도 없앤다** (대표 8-20).
     //   기록은 RTDB 가 아니라 _mwRl.log(클라이언트)에 쌓인다. 주인은 방을 닫아도
     //   자기 홈 필드에 그대로 있어서 _mwRlLeave 를 안 타므로, 여기서 직접 비워야 한다.
@@ -20596,7 +20612,16 @@ window._mwRlRender = function (all) {
   // ★★한 번 켜지면 **유지한다** (대표 8-20). 손님이 잠깐 끊겨도 화면이 오가지 않는다.
   //   끄는 건 주인이 '나가기' 를 누를 때뿐이다.
   //   ★단, 주인이 닫았으면(_mwRoomShut) 다시 켜지 않는다 — 안 그러면 방에 갇힌다.
-  if (!visiting && !window._mwRoomShut && Object.keys(seen).length > 0) window._mwPartyOn = true;
+  // ★★"닫았다"는 못(_mwRoomShut)이 **영구**였다 (대표 8-25: "손님이 바로 들어와도 톡 칠 수
+  //   있는 공용룸으로 안 바뀌고 나갔다 들어와야 한다"). 한 번 방을 닫으면 그 세션 내내
+  //   새 손님이 와도 공용룸이 안 켜졌다 — 초대 공유를 다시 누르기 전까지.
+  //   닫은 이유는 **남아 있던 옛 손님 노드로 다시 열리는 것**을 막으려던 것이니,
+  //   못을 시각으로 바꾼다 — 닫은 뒤에 온 사람이면 다시 연다.
+  var _shutAt = window._mwRoomShut ? (window._mwRoomShutAt || 0) : 0;
+  var _newcomer = Object.keys(seen).some(function (k) {
+    return ((all[k] && all[k].t) || 0) > _shutAt;
+  });
+  if (!visiting && _newcomer) window._mwPartyOn = true;
   const party = (window._curField === 'home') && (visiting || !!window._mwPartyOn);
 
   // ★주인이 방을 닫으면 손님도 같이 나온다. '잠깐 끊긴 것'과 구분해야 하므로
@@ -20759,6 +20784,13 @@ window._mwKbStart = function () {
     vv.addEventListener('resize', window._mwKbFit);
     vv.addEventListener('scroll', window._mwKbFit);
   }
+  // ★대화 로그 높이를 **지금 값으로 얼려 둔다** (대표 8-25: "치려고 하면 밑에 박스
+  //   작아졌다가 다시 나오면 채팅 로그 박스 길어지고 난리").
+  //   로그는 flex:1 이라 상자가 키보드 크기에 맞춰 줄면 같이 줄고, 키보드를 내리면 다시 는다.
+  //   스쿼드 필드에는 입력줄 밑에 로그가 없어서 이 현상이 없었다 — 우리만 있는 것이라
+  //   우리만 막아야 한다. 얼려 두면 넘치는 만큼은 상자가 알아서 스크롤한다.
+  const le = document.getElementById('mw-party-log');
+  if (le) { le.style.flex = '0 0 auto'; le.style.height = le.offsetHeight + 'px'; }
   // 스쿼드 필드와 같은 간격으로 다시 잰다 — 키보드 애니메이션 길이가 기기마다 다르다.
   [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwKbFit, t); });
 };
@@ -20781,7 +20813,7 @@ window._mwKbEnd = function (immediate) {
     const pc = document.getElementById('page-char');
     if (pc) { pc.style.top = ''; pc.style.height = ''; pc.scrollTop = 0; }
     const le = document.getElementById('mw-party-log');
-    if (le) le.style.paddingBottom = '';
+    if (le) { le.style.paddingBottom = ''; le.style.flex = ''; le.style.height = ''; }
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
     window._mwKbOwnedLock = false;
   };
