@@ -20854,18 +20854,28 @@ window.mwArtPrice = async function (id) {
 
 // 값 입력 모달 — 펫 이름 모달과 같은 문법(픽셀 테두리 + Galmuri).
 // 취소면 null 을 준다.
-window.mwArtPriceAsk = function (cur) {
+// ★opt 로 제목·설명·상한·버튼글씨를 갈아끼운다(8-26 경매). 새 모달을 또 만들지 않는다 —
+//   값을 묻는 화면은 이것 하나뿐이어야 문법이 안 갈라진다.
+window.mwArtPriceAsk = function (cur, opt) {
+  opt = opt || {};
+  const _t  = opt.title || '몇 머피에 팔까요?';
+  const _s  = opt.desc  || '0 으로 두면 팔지 않아요';
+  const _ok = opt.ok    || '정하기';
+  // ★상한 999 — 보안 규칙이 **한 번에 1000 초과 증가를 거부**한다(firestore.rules).
+  //   9999 로 두면 1000 넘는 거래는 판 사람이 대금을 **영영 못 받는다**. 값을 여기서 막는다.
+  const _max = opt.max == null ? 999 : (opt.max | 0);
+  const _min = opt.min == null ? 0   : (opt.min | 0);
   return new Promise(function (resolve) {
     let el = document.getElementById('mw-artprice'); if (el) el.remove();
     el = document.createElement('div'); el.id = 'mw-artprice';
     el.innerHTML = '<div class="ap-box">'
-      + '<div class="ap-t">몇 머피에 팔까요?</div>'
-      + '<div class="ap-s">0 으로 두면 팔지 않아요</div>'
-      + '<input id="mw-artprice-in" type="number" inputmode="numeric" min="0" max="9999"'
+      + '<div class="ap-t">' + _t + '</div>'
+      + '<div class="ap-s">' + _s + '</div>'
+      + '<input id="mw-artprice-in" type="number" inputmode="numeric" min="' + _min + '" max="' + _max + '"'
       + ' enterkeyhint="done" value="' + (cur | 0) + '">'
       + '<div class="ap-btns">'
       +   '<button id="mw-artprice-x">취소</button>'
-      +   '<button class="go" id="mw-artprice-ok">정하기</button>'
+      +   '<button class="go" id="mw-artprice-ok">' + _ok + '</button>'
       + '</div></div>';
     document.body.appendChild(el);
     const inp = el.querySelector('#mw-artprice-in');
@@ -20873,13 +20883,227 @@ window.mwArtPriceAsk = function (cur) {
     el.onclick = function (e) { if (e.target === el) done(null); };
     el.querySelector('#mw-artprice-x').onclick = function () { done(null); };
     el.querySelector('#mw-artprice-ok').onclick = function () {
-      done(Math.max(0, Math.min(9999, parseInt(inp.value, 10) || 0)));
+      done(Math.max(_min, Math.min(_max, parseInt(inp.value, 10) || 0)));
     };
     inp.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') el.querySelector('#mw-artprice-ok').click();
     });
     setTimeout(function () { try { inp.focus(); inp.select(); } catch (e) {} }, 30);
   });
+};
+
+// ===== 경매 (입찰 경쟁) — 2026-08-26 =====
+//
+// 결정(대표 8-26): 고정가 즉시구매 위에 **입찰**을 얹는다. **마감 시각은 두지 않는다** —
+//   서버가 없어 마감을 지킬 주체가 없다. 대신 **주인이 망치를 두드린다.**
+//
+// ★★새 컬렉션을 파지 않는다. 입찰은 `notifications` 에 넣는다.
+//   - 규칙이 이미 `create/read: if signedIn()` 이라 **보안 규칙을 안 건드려도 된다**
+//     (= 규칙 배포가 필요 없다. 규칙 파일 커밋 != 배포라 그 사고가 아예 안 생긴다)
+//   - 주인에게 푸시가 공짜로 간다 (functions 의 sendNotifPush)
+//   - 문서 id 를 `ab_{artId}_{uid}` 로 고정 → **한 사람당 한 입찰**이 구조로 강제된다.
+//     덮어쓰기라 스팸 방지 코드를 따로 둘 필요가 없다(room_invite 와 같은 수법).
+//     ※대신 재입찰은 onDocumentCreated 가 안 뛰어 **푸시가 안 간다.** 값 경쟁은 화면에서 본다.
+//
+// 경매 상태는 그림 자체에 둔다 — `artworks[i].auc / .min / .aucAt / .won`.
+//   주인 문서라 주인만 쓰고, 손님은 `_mwVisitArtWatch` 로 **이미 실시간 구독 중**이라
+//   구독을 새로 만들 필요가 없다.
+//
+// ★상한 999 — firestore.rules 가 **1회 1000 초과 증가를 거부**한다.
+//   9999 로 두면 1000 넘는 거래는 판 사람이 대금을 **영영 못 받는다.**
+window.MW_AUC_MAX = 999;
+
+window.mwAucOn = function (a) { return !!(a && a.auc && a.aucAt); };
+
+// 열려 있는 그림 화면을 다시 그린다 (경매 상태가 바뀔 때마다)
+window._mwArtRefresh = function (id) {
+  const big = document.getElementById('mw-artbig');
+  if (big) { big.remove(); if (id) window.mwArtBig(id); }
+  const g = document.getElementById('mw-artgal'); if (g) { g.remove(); window.mwArtGallery(); }
+};
+
+// 이번 회차(aucAt)의 입찰만 높은 순으로. 같은 값이면 먼저 부른 사람이 앞이다.
+window.mwAucBids = async function (id, aucAt) {
+  try {
+    const qs = await getDocs(query(collection(db, 'notifications'), where('artId', '==', id)));
+    const out = [];
+    qs.forEach(function (d) {
+      const n = d.data() || {};
+      if (n.type !== 'art_bid') return;
+      if (aucAt && Number(n.aucAt || 0) !== Number(aucAt)) return;   // 지난 회차 입찰은 버린다
+      out.push({ uid: n.fromUid || '', nick: n.fromNickname || '머피',
+                 amount: n.amount | 0, at: Number(n.at || 0) });
+    });
+    out.sort(function (x, y) { return (y.amount - x.amount) || (x.at - y.at); });
+    return out;
+  } catch (e) { console.warn('auc bids', e); return []; }
+};
+
+// ---- 주인: 경매 올리기 / 내리기 / 낙찰 ----
+window.mwAucOpen = async function (id) {
+  if (window._mwIsVisiting && window._mwIsVisiting()) return;
+  const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
+  const start = await window.mwArtPriceAsk((a.price | 0) || 10, {
+    title: '얼마부터 시작할까요?', desc: '이 값보다 높게만 부를 수 있어요',
+    ok: '경매 열기', min: 1, max: window.MW_AUC_MAX });
+  if (start == null) return;
+  a.auc = 1; a.min = start; a.aucAt = Date.now(); a.price = 0;   // 경매 중엔 고정가를 내린다
+  a.won = null;
+  if (!(await window._mwSaveArt(window._myArt))) { showToast('열지 못했어요 · 잠시 뒤에 다시'); return; }
+  showToast(start + '머피부터 경매를 열었어요');
+  window._mwArtRefresh(id);
+};
+
+window.mwAucClose = async function (id) {
+  const a = window.mwArtFind(id); if (!a) return;
+  const bids = await window.mwAucBids(id, a.aucAt);
+  if (bids.length) {
+    const ok = await window.murpyConfirm({
+      title: '경매를 내릴까요?',
+      desc: bids.length + '명이 값을 불렀어요 · 내리면 그 값들은 없던 일이 돼요',
+      confirmText: '내리기' });
+    if (!ok) return;
+  }
+  a.auc = 0;
+  if (!(await window._mwSaveArt(window._myArt))) { showToast('내리지 못했어요 · 잠시 뒤에 다시'); return; }
+  showToast('경매를 내렸어요');
+  window._mwArtRefresh(id);
+};
+
+window.mwAucHammer = async function (id) {
+  if (window._mwIsVisiting && window._mwIsVisiting()) return;
+  const a = window.mwArtFind(id); if (!a || !window.mwAucOn(a)) return;
+  const bids = await window.mwAucBids(id, a.aucAt);
+  const top = bids[0];
+  if (!top) { showToast('아직 값을 부른 사람이 없어요'); return; }
+  const ok = await window.murpyConfirm({
+    title: top.nick + '님에게 넘길까요?',
+    desc: '<b style="color:#F5C24B">' + top.amount + '머피</b>에 낙찰돼요 · '
+        + '대금은 상대가 받아갈 때 들어와요',
+    confirmText: '낙찰' });
+  if (!ok) return;
+  a.auc = 0;
+  a.won = { uid: top.uid, nick: top.nick, amount: top.amount, at: Date.now() };
+  if (!(await window._mwSaveArt(window._myArt))) { showToast('낙찰하지 못했어요 · 잠시 뒤에 다시'); return; }
+  try {
+    await setDoc(doc(db, 'notifications', 'aw_' + id + '_' + top.uid), {
+      toUid: top.uid, fromUid: (window.currentUser || {}).uid || '',
+      fromNickname: window._mwMyNick || '머피', type: 'art_won',
+      artId: id, amount: top.amount, read: false, createdAt: serverTimestamp() });
+  } catch (e) { console.warn('auc won', e); }
+  showToast(top.nick + '님에게 낙찰됐어요');
+  if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
+  window._mwArtRefresh(id);
+};
+
+// ---- 손님: 값 부르기 ----
+window.mwAucBid = async function (id) {
+  const me = auth.currentUser;
+  if (!me) { window.memberGate && window.memberGate('값을 부르려면 로그인이 필요해요'); return; }
+  if (window._notMember && window._notMember()) {
+    window.memberGate && window.memberGate('임시 계정은 경매에 참여할 수 없어요'); return;
+  }
+  const a = window.mwArtEnsure(id);
+  if (!a || !window.mwAucOn(a)) { showToast('지금은 경매 중이 아니에요'); return; }
+  const owner = window.mwArtOwner();
+  if (!owner || owner === me.uid) { showToast('내 그림에는 못 불러요'); return; }
+  if (window.mwArtIsMine(a)) { showToast('같이 그린 그림이라 그냥 가져갈 수 있어요'); return; }
+  if (window.mwArtHave(id)) { showToast('이미 가지고 있어요'); return; }
+  const bids = await window.mwAucBids(id, a.aucAt);
+  const top = bids[0] || null;
+  const floor = top ? (top.amount + 1) : (a.min | 0);
+  const have = (window._creditState && window._creditState.credits) | 0;
+  // ★가진 것보다 높게는 못 부른다 — 예치(미리 빼두기)를 안 쓰기로 한 대신(대표 8-26),
+  //   낙찰 받아놓고 못 내는 헛값 입찰을 막는 방벽은 이것뿐이다.
+  if (have < floor) { showToast('머피가 모자라요 · ' + floor + '머피부터 부를 수 있어요'); return; }
+  if (floor > window.MW_AUC_MAX) { showToast('더 부를 수 없어요'); return; }
+  const n = await window.mwArtPriceAsk(floor, {
+    title: '얼마를 부를까요?',
+    desc: top ? ('지금 ' + top.amount + '머피 · ' + floor + '머피부터 부를 수 있어요')
+              : ('시작가 ' + (a.min | 0) + '머피'),
+    ok: '부르기', min: floor, max: Math.min(window.MW_AUC_MAX, have) });
+  if (n == null) return;
+  if (n < floor) { showToast(floor + '머피보다 높게 불러야 해요'); return; }
+  if (n > have) { showToast('가진 머피보다 높게는 못 불러요'); return; }
+  try {
+    await setDoc(doc(db, 'notifications', 'ab_' + id + '_' + me.uid), {
+      toUid: owner, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
+      type: 'art_bid', artId: id, amount: n, aucAt: a.aucAt || 0, at: Date.now(),
+      read: false, createdAt: serverTimestamp() });
+  } catch (e) { console.warn('auc bid', e); showToast('부르지 못했어요 · 잠시 뒤에 다시'); return; }
+  showToast(n + '머피를 불렀어요');
+  if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
+  window._mwArtRefresh(id);
+};
+
+// ---- 낙찰자: 대금 내고 가져오기 ----
+// 남의 방에 있지 않아도 동작해야 한다(알림에서 바로 누른다) → 주인 문서를 직접 읽는다.
+window.mwAucClaim = async function (artId, ownerUid, amount, notifId) {
+  const me = auth.currentUser; if (!me || !artId || !ownerUid) return;
+  amount = amount | 0;
+  if (window.mwArtHave(artId)) {
+    showToast('이미 가지고 있어요');
+    if (notifId && window.markFirebaseNotifRead) window.markFirebaseNotifRead(notifId);
+    return;
+  }
+  const have = (window._creditState && window._creditState.credits) | 0;
+  if (have < amount) { showToast('머피가 모자라요 · ' + amount + '머피 필요해요'); return; }
+  let px = null, by = [], byUids = [];
+  try {
+    const sn = await getDoc(doc(db, 'users', ownerUid));
+    const list = (sn.exists() && sn.data().artworks) || [];
+    const src = list.filter(function (x) { return x && x.id === artId; })[0];
+    if (!src || !src.px) { showToast('그림을 찾지 못했어요'); return; }
+    px = src.px; by = src.by || []; byUids = src.byUids || [];
+  } catch (e) { console.warn('auc claim read', e); showToast('가져오지 못했어요 · 잠시 뒤에 다시'); return; }
+  const ok = await window.murpyConfirm({
+    title: amount + '머피 내고 가져오기',
+    desc: '<b>' + (by.join('·') || '머피') + '</b>님이 그린 그림을 내 방으로 가져와요',
+    confirmText: '가져오기' });
+  if (!ok) return;
+  try {
+    await updateDoc(doc(db, 'users', me.uid), { credits: increment(-amount) });
+    window._creditState.credits = Math.max(0, have - amount);
+    window.mwUpdateCoin && window.mwUpdateCoin();
+    window.renderCreditUI && window.renderCreditUI();
+    // ★대금은 판 사람 문서에 직접 못 쓴다(남의 문서). 알림으로 보내고 그쪽 앱이 적립한다.
+    await setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid), {
+      toUid: ownerUid, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
+      type: 'art_sold', amount: amount, artId: artId, paid: false,
+      read: false, createdAt: serverTimestamp() });
+  } catch (e) { console.warn('auc claim pay', e); showToast('가져오지 못했어요 · 잠시 뒤에 다시'); return; }
+  const copy = { id: artId, px: px, by: by, byUids: byUids, at: Date.now(), price: 0, from: ownerUid };
+  window._myArt = [copy].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+  await window._mwSaveArt(window._myArt);
+  if (notifId && window.markFirebaseNotifRead) window.markFirebaseNotifRead(notifId);
+  showToast('가져왔어요 · 꾸미기에서 방에 놓을 수 있어요');
+  if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
+};
+
+// ---- ★★판 사람이 대금을 받는 곳 ----
+// 8-26 이전에는 **이 고리가 통째로 없었다.** 산 사람 지갑에서는 빠지는데 판 사람에게는
+// `art_sold` 알림 문서만 만들어졌고, **그것을 읽는 코드가 어디에도 없었다.**
+// 즉 고정가 판매도 돈이 사라지는 구조였다. 경매를 얹으면서 같이 고친다.
+// 남의 지갑은 못 고치므로 **받는 쪽 앱이 자기 문서에 적립한다.**
+// 중복 적립은 `paid` 플래그로 막는다(문서 id 가 `as_{artId}_{buyerUid}` 라 거래당 하나뿐).
+window._mwArtSettle = async function () {
+  const me = window.currentUser && window.currentUser.uid; if (!me) return;
+  if (!window._creditState || !window._creditState.ready) return;
+  if (window._mwSettling) return; window._mwSettling = true;
+  try {
+    const qs = await getDocs(query(collection(db, 'notifications'),
+                                   where('toUid', '==', me), where('type', '==', 'art_sold')));
+    for (const d of qs.docs) {
+      const n = d.data() || {};
+      if (n.paid === true) continue;
+      const amt = n.amount | 0; if (amt <= 0) continue;
+      // ★먼저 표시하고 적립한다 — 탭이 두 개 열려 있어도 두 번 들어가지 않게.
+      try { await updateDoc(d.ref, { paid: true }); } catch (e) { continue; }
+      const got = await window.earnCredit(amt, '그림이 팔렸어요');
+      if (!got) { try { await updateDoc(d.ref, { paid: false }); } catch (e2) {} }
+    }
+  } catch (e) { console.warn('art settle', e); }
+  finally { window._mwSettling = false; }
 };
 
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
@@ -20944,6 +21168,8 @@ window.mwArtBig = function (id) {
   // ★★8-26 — 어제 필드 칩을 없애면서 **내 방에서 이 화면으로 갈 길이 막혔다.**
   //   그래서 값 매기기·공유가 "활성화 안 된" 것처럼 보였다(버튼은 멀쩡했다).
   //   이제 꾸미기의 '같이 그린 것들' 카드가 여기로 온다 — 놓기도 여기서 한다.
+  // ★경매 중이면 고정가는 잠시 물러난다 — 같은 그림에 두 가지 값이 동시에 보이면 안 된다.
+  const aucOn = window.mwAucOn(a);
   let btns = '';
   if (!visiting && document.getElementById('mw-wpanel')) {
     btns += '<button class="go" onclick="window._reditAddArt(' + q + ')">방에 놓기</button>';
@@ -20951,8 +21177,17 @@ window.mwArtBig = function (id) {
   btns += '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
   if (have) btns += '<button disabled>가지고 있어요</button>';
   else if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
+  else if (aucOn) btns += '<button class="go" onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
   else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
-  if (!visiting) btns += '<button onclick="window.mwArtPrice(' + q + ')">값 매기기</button>';
+  if (!visiting) {
+    if (aucOn) {
+      btns += '<button class="go" onclick="window.mwAucHammer(' + q + ')">낙찰하기</button>';
+      btns += '<button onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
+    } else {
+      btns += '<button onclick="window.mwArtPrice(' + q + ')">값 매기기</button>';
+      btns += '<button onclick="window.mwAucOpen(' + q + ')">경매 올리기</button>';
+    }
+  }
   const d = a.at ? new Date(a.at) : null;
   const when = d ? (d.getMonth() + 1) + '월 ' + d.getDate() + '일' : '';
   el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
