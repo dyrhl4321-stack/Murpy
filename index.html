@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '697';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '698';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -6098,7 +6098,7 @@ window.charMove = function (dx, dy) {
     //   ★2026-08-25 — 펫(#mw-pet)과 공룡(.mw-dino)을 얹고 **여기에 안 넣었다.**
     //     PC 마우스로는 눌렸는데 폰에서만 안 눌렸다(대표가 원인을 짚어 줬다).
     //     touchstart 에서 preventDefault 가 걸리면 합성 click 이 취소되기 때문이다.
-    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu, .mw-rc, .mw-pet, .mw-dino, .mw-dino-still')) return;
+    const onS = (e) => { if (e.target.closest('.mw-fieldchip, .mw-sbox, .mw-plate, #mw-fieldtalk, #charworld-avatar, #mw-charmenu, .mw-rc, .mw-pet, .mw-dino, .mw-dino-still, #mw-jam')) return;
       const t = e.touches ? e.touches[0] : e; act = true; jx = t.clientX; jy = t.clientY;
       place(jx, jy); joy.classList.add('show'); hil(null);
       const c = document.getElementById('mw-movecoach'); if (c) { c.remove(); try{localStorage.setItem('mw_movecoach','1');}catch(err){} }
@@ -19818,9 +19818,17 @@ window.mwJamX = function () {
 window.mwJamEnd = async function () {                 // 모두의 판을 접는다 (주인만)
   const ow = window.mwJamOwner(), R = window._rt;
   const host = window.mwJamIsHost();
+  window._mwJamDismiss = true;      // ★접었으면 감시자가 다시 열지 않는다
   window.mwJamClose();
   if (R && ow && host) {
-    try { await R.remove(R.ref(R.db, 'roomLive/' + ow + '/jam')); } catch (e) {}
+    // ★예전엔 `roomLive/{ow}/jam` 을 통째로 지웠다. 그런데 규칙에 **jam 노드 자체의 쓰기
+    //   권한이 없다** — open 과 px 에만 있다. 그래서 삭제가 조용히 거부됐고, open 이 true 로
+    //   남아 감시자가 판을 계속 다시 띄웠다("접기 눌렀는데 창이 계속 뜬다", 대표 8-25).
+    //   방 닫기가 롤백돼 유령이 남던 것(8-20)과 **같은 종류의 사고**다.
+    //   규칙을 바꾸지 말고 **권한이 있는 두 곳**만 건드린다.
+    try { await R.set(R.ref(R.db, 'roomLive/' + ow + '/jam/open'), false); }
+    catch (e) { console.warn('jam open=false 실패', e); }
+    try { await R.remove(R.ref(R.db, 'roomLive/' + ow + '/jam/px')); } catch (e) {}
   }
 };
 window.mwJamClear = function () {
@@ -19852,16 +19860,36 @@ window.mwJamPlace = async function (kind) {
   const room = window._myRoom || { f: [] };
   room.f = room.f || []; room.art = room.art || {};
   room.art[id] = { px: px, by: by.slice(0, 4), at: Date.now() };
-  // 처음 자리 — 카펫은 방 가운데, 액자는 벽 가운데. 그 뒤엔 꾸미기에서 옮긴다.
+  // ★어디에 놓을지 **먼저 묻는다**(대표 8-25: "어디에 깔 건지는 이야기해줘야지 · 마음대로
+  //   깔아버리면 어떡함"). 예전엔 카펫은 방 가운데, 액자는 벽 가운데에 말없이 박았다.
+  //   자리를 고르는 화면을 새로 만들지 않는다 — **꾸미기를 열어 방금 놓은 것을 잡아 준다.**
+  //   끌어서 옮기는 건 이미 되는 기능이라, 그걸 그대로 쓰는 게 가장 적은 새 코드다.
+  const ok = await window.murpyConfirm({
+    title: kind === 'rug' ? '방에 깔기' : '벽에 걸기',
+    desc: '놓고 나서 <b>꾸미기</b>가 열려요 · 원하는 자리로 끌어다 놓으세요',
+    confirmText: kind === 'rug' ? '깔기' : '걸기'
+  });
+  if (!ok) return;                     // 취소해도 판은 그대로 둔다 — 계속 그릴 수 있게
   room.f.push({ id: def.id, a: id,
                 x: Math.round((768 - def.w) / 2), y: kind === 'rug' ? 336 : 56 });
   window._myRoom = room;
   try { await window._charPersistRoom(room); }
   catch (e) { showToast('저장하지 못했어요 · 잠시 뒤에 다시'); return; }
+  await window.mwJamEnd();             // ★먼저 판을 접는다. 안 접으면 꾸미기 위로 다시 뜬다
   window.mwRenderFurn && window.mwRenderFurn();
-  showToast(kind === 'rug' ? '방에 깔았어요' : '벽에 걸었어요');
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
-  window.mwJamEnd();
+  showToast(kind === 'rug' ? '깔았어요 · 자리를 옮겨 보세요' : '걸었어요 · 자리를 옮겨 보세요');
+  // 꾸미기를 열고 방금 놓은 것을 골라 둔다 — 바로 끌 수 있게.
+  setTimeout(function () {
+    window.mwRoomEdit && window.mwRoomEdit();
+    setTimeout(function () {
+      const f = (window._reditDraft && window._reditDraft.f) || [];
+      for (let i = f.length - 1; i >= 0; i--) {
+        if (f[i] && f[i].a === id) { window._reditSel = i; break; }
+      }
+      window._reditPaint && window._reditPaint();
+    }, 120);
+  }, 260);
 };
 
 // ---- 크게 보기 ----
