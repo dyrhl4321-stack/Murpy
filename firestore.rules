@@ -114,7 +114,12 @@ service cloud.firestore {
     match /bamboo/{postId} {
       allow read: if true;
       allow create: if signedIn();
-      allow update: if signedIn();        // 좋아요/저에요 신청/댓글수
+      // ★2026-08-25 — feed 와 같은 구멍이었다. 로그인만 하면 남의 대숲 글을 통째로 바꿀 수 있었다.
+      //   실제로 남이 쓰는 필드는 좋아요(likes/likedBy)·댓글수·신고 표시뿐이다(코드 확인).
+      //   '저에요' 신청은 이 문서가 아니라 chats 로 간다.
+      allow update: if ownsDoc() || isAdmin()
+        || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likes', 'likedBy', 'commentCount', 'reportedBy']));
       allow delete: if ownsDoc() || isAdmin();
 
       // 익명 댓글
@@ -122,7 +127,10 @@ service cloud.firestore {
         allow read: if true;
         allow create: if signedIn();
         // 신고 표시(reportedBy) — 대숲 글(bamboo)과 같은 수준으로 연다
-        allow update: if signedIn();
+        // 신고 표시만 비작성자에게 연다(글과 같은 규칙)
+        allow update: if ownsDoc() || isAdmin()
+          || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['likes', 'likedBy', 'reportedBy']));
         allow delete: if ownsDoc() || isAdmin();
       }
     }
@@ -139,7 +147,10 @@ service cloud.firestore {
     // ===== 매칭 =====
     match /matches/{matchId} {
       allow read: if signedIn();
-      allow write: if signedIn();
+      // ★2026-08-25 — `write: if signedIn()` 이라 **아무나 남의 매칭을 만들거나 지울 수** 있었다.
+      //   문서는 { users: [a, b] } 이고 id 는 _pairKey(a,b) 다(코드 확인). 당사자만 손댄다.
+      allow create: if signedIn() && request.auth.uid in request.resource.data.users;
+      allow update, delete: if signedIn() && request.auth.uid in resource.data.users;
     }
 
     // ===== 차단 (2026-08-14, 애플 심사 1.2) =====
@@ -190,10 +201,13 @@ service cloud.firestore {
 
     // ===== 크루 및 모든 서브컬렉션 =====
     match /crews/{crewId} {
+      // ★크루는 휴면이다(2026-07-20 스쿼드로 대체). 코드만 남겨 두고 새로 만들지 않는다.
+      //   그런데 `delete: if signedIn()` 이라 **로그인만 하면 아무나 남의 크루를 지울 수** 있었다.
+      //   운영자 검증을 클라이언트가 하고 있었다는 뜻이다(2026-08-25 점검).
       allow read: if true;
       allow create: if signedIn();
-      allow update: if signedIn();        // 가입/멤버 변경/정보 수정
-      allow delete: if signedIn();        // 크루 운영자 클라이언트 검증
+      allow update: if signedIn();        // 가입/멤버 변경 — 휴면이라 더 조이지 않는다
+      allow delete: if isAdmin();
 
       match /schedules/{scheduleId} {
         allow read: if true;
@@ -247,7 +261,16 @@ service cloud.firestore {
       allow read: if true;
       allow create: if signedIn() && request.resource.data.hostUid == request.auth.uid;
       // 참가 트랜잭션(memberUids)·출석코드·상태전이 — P0는 로그인 게이트, P2에서 Functions로 조임
-      allow update: if signedIn();
+      // ★2026-08-25 — `update: if signedIn()` 이라 아무나 남의 스쿼드 제목·장소·시간·회비를
+      //   바꾸거나 스쿼드장을 자기로 바꿔치기할 수 있었다.
+      //   멤버가 정상적으로 건드리는 값들(출석·입금 표시 등)은 그대로 두고,
+      //   **스쿼드의 정체성에 해당하는 필드만** 스쿼드장·관리자로 잠근다.
+      allow update: if signedIn() && (
+          resource.data.hostUid == request.auth.uid || isAdmin()
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+               ['hostUid', 'title', 'location', 'scheduledAt', 'capacity',
+                'feeAmount', 'status', 'notice', 'staff'])
+      );
       allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
 
       // 멤버 문서 = 본인 or 벙주 or **운영진(staff)**  (승인/입금 토글)
