@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '673';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '674';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -25448,6 +25448,20 @@ window.watchHomeSquads = function () {
     }, function (e) { console.warn('home squad watch', e); });
   } catch (e) { console.warn('home squad watch', e); }
 };
+// ★비로그인에게 남의 **실물 사진**을 그대로 보여주지 않는다 (대표 8-25).
+//   홈 '운동 열정러' 카드가 프로필 사진·닉네임·나이를 그대로 띄우고 있었다.
+//   CSS blur 로 덮으면 **원본이 이미 브라우저에 내려온 것**이라 개발자도구로 그냥 꺼낸다.
+//   그래서 리사이저에서 아주 작게 + 흐리게 받아온다 — 원본이 애초에 안 내려온다.
+window._mwBlurPhoto = function (u) {
+  if (!u) return '';
+  return 'https://images.weserv.nl/?url=' + encodeURIComponent(String(u).replace(/^https?:\/\//, ''))
+    + '&w=32&h=32&fit=cover&blur=8&output=jpg';
+};
+// 닉네임도 가린다. 첫 글자만 남긴다 — 완전히 지우면 카드가 비어 보인다.
+window._mwMaskNick = function (n) {
+  n = String(n || '');
+  return n ? n.slice(0, 1) + '○○' : '○○○';
+};
 window.loadHomeTrending = async () => {
   const el = document.getElementById('home-trending-scroll');
   if (!el) return;
@@ -25740,13 +25754,21 @@ window.loadHomeTrending = async () => {
       .filter(u => u.uid !== _me && (u.photoURL || u.firestorePhotoURL) && u.nickname && (u.streak || 0) >= 2
                 && !u.deleted && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0)
       .sort((a, b) => (b.streak || 0) - (a.streak || 0));
+    // ★비로그인이면 사진을 모자이크하고 닉네임·나이를 가린다 (대표 8-25).
+    //   "홈화면에서 사진 실물 뜨잖아 그거 모자이크하라고."
+    //   가입 안 한 사람에게 남의 얼굴·나이를 그대로 보여줄 이유가 없다.
+    //   카드 자체는 남긴다 — 사람이 활동 중이라는 신호는 콜드스타트에 필요하다.
+    const _guest = !window.currentUser;
     runners.slice(0, 2).forEach(u => {   // 카드가 늘어서(스쿼드·캐릭터·센터 추가) 4→2로 줄임
-      const photo = u.photoURL || u.firestorePhotoURL || '';
+      const photoRaw = u.photoURL || u.firestorePhotoURL || '';
+      const photo = _guest ? window._mwBlurPhoto(photoRaw) : photoRaw;
       const nick = (u.nickname || '').replace(/'/g, '');
       cards.push(card({
-        click: `openUserProfile('${u.uid}','${nick}','${photo.replace(/'/g, '')}')`,
+        click: _guest ? "requireLogin('가입하면 누구인지 볼 수 있어요')"
+                      : `openUserProfile('${u.uid}','${nick}','${photoRaw.replace(/'/g, '')}')`,
         color: GOLD, icon: icoFlame, label: '운동 열정러',
-        img: photo, title: (u.nickname || '') + (u.age ? ' · ' + u.age : ''),
+        img: photo,
+        title: _guest ? window._mwMaskNick(u.nickname) : ((u.nickname || '') + (u.age ? ' · ' + u.age : '')),
         meta: `${mFlame}<span>${u.streak || 0}일 연속</span>`
       }));
     });
