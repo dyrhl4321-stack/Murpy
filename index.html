@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '685';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '686';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4041,11 +4041,25 @@ window._mwPetSpots = function (p, want) {
   return out;
 };
 
+// 다른 펫이 서 있거나 **가고 있는** 칸인가.
+// ★가고 있는 칸(target)까지 봐야 한다. 지금 위치만 보면 둘이 같은 자리를 목표로 잡고
+//   나란히 달려가 결국 겹친다(대표 8-25: "한 밥그릇이면 캐릭터가 안 겹치게").
+window._mwPetOccupied = function (tc, tr, self) {
+  return (window._mwPets || []).some(function (q) {
+    if (q === self) return false;
+    if (q.tc === tc && q.tr === tr) return true;
+    return !!(q.target && q.target.tc === tc && q.target.tr === tr);
+  });
+};
+
 window._mwPetNearest = function (p, want) {
   if (!p) return null;
   var arr = window._mwPetSpots(p, want), best = null, i;
   var isCat = (window._mwPetDef(p.id) || {}).kind === 'cat';
   for (i = 0; i < arr.length; i++) {
+    // ★남이 쓰고 있거나 가고 있는 자리는 건너뛴다. 밥그릇은 사방에 자리가 4개라
+    //   여러 마리가 **서로 다른 쪽에 붙어** 같이 먹을 수 있다. 그릇이 여러 개면 알아서 갈린다.
+    if (window._mwPetOccupied(arr[i].tc, arr[i].tr, p)) continue;
     var d = Math.abs(arr[i].tc - p.tc) + Math.abs(arr[i].tr - p.tr);
     // ★고양이는 캣타워를 먼저 고른다. 거리를 6칸만큼 깎아 준다 —
     //   방 반대편에 있어도 침대보다 타워로 간다.
@@ -4067,7 +4081,9 @@ window._mwPetPick = function (p) {
   var opts = window._mwShuffle(window.MW_STEPS.slice()), i;
   for (i = 0; i < opts.length; i++) {
     var tc = p.tc + opts[i].dc, tr = p.tr + opts[i].dr;
-    if (window._charWalkable && window._charWalkable(tc, tr)) return { tc: tc, tr: tr };
+    if (window._charWalkable && !window._charWalkable(tc, tr)) continue;
+    if (window._mwPetOccupied(tc, tr, p)) continue;   // 서로 겹쳐 서지 않는다
+    return { tc: tc, tr: tr };
   }
   return null;
 };
@@ -4391,7 +4407,13 @@ window.mwPetFeed = function (idx) {
   var p = window._mwPetAt(idx), saved = (window._myPets || [])[idx];
   if (!p || !saved) return;
   var bowl = window._mwPetNearest(p, 'bowl');
-  if (!bowl) { showToast('밥그릇이 있어야 밥을 줄 수 있어요 · 꾸미기에서 놓아 주세요'); return; }
+  if (!bowl) {
+    // 그릇이 없는 것과 **자리가 다 찬 것**은 다르다 — 안내가 서로 달라야 한다
+    var any = window._mwPetSpots(p, 'bowl').length;
+    showToast(any ? '밥그릇 자리가 다 찼어요 · 그릇을 하나 더 놓아 보세요'
+                  : '밥그릇이 있어야 밥을 줄 수 있어요 · 꾸미기에서 놓아 주세요');
+    return;
+  }
   saved.fedAt = Date.now();
   if (window._mwSavePets) window._mwSavePets(window._myPets);
   window._mwPetBowlFill();
@@ -4404,8 +4426,11 @@ window._mwPetRushTo = function (p, spot) {
   clearInterval(p._rushT);
   clearTimeout(p._t);
   p.rush = true; p.moving = false; p.up = false;
+  p.target = { tc: spot.tc, tr: spot.tr };     // 자리 예약 — 다른 아이가 같은 데로 안 온다
   var tries = 0;
-  var stop = function () { clearInterval(p._rushT); p._rushT = null; p.rush = false; };
+  var stop = function () {
+    clearInterval(p._rushT); p._rushT = null; p.rush = false; p.target = null;
+  };
   var go = function () {
     if (!p.el || !p.el.isConnected) return stop();
     if (p.tc === spot.tc && p.tr === spot.tr) {          // 도착 — 먹는다
