@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '728';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '729';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -786,7 +786,7 @@ window._SW_V = '728';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      가 대화 상자 밑에 띠처럼 남는다. 덩어리째 감춘다(대표 8-20에 정한 규칙과 같다). */
   body.mw-party #mw-hub-wrap { display:none }
   body.mw-party #mw-party-chat { flex:1; min-height:0; overflow:hidden;
-    padding-bottom:max(12px, env(safe-area-inset-bottom)) }
+    padding-bottom:calc(78px + env(safe-area-inset-bottom, 0px)) }
   /* ★★★★★★★★★★★8-25 — **구조를 스쿼드와 같게 바꾼다** (대표: "차라리 스쿼드 톡처럼
      기능 만들던가. 머피룸도 스쿼드 참가자처럼 명단 뜨고, 공용 톡은 따로 빼두고").
 
@@ -823,6 +823,9 @@ window._SW_V = '728';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-party-member:last-child { border-bottom:0 }
   .mw-party-member .pm-char { width:38px; height:38px; display:flex; align-items:flex-end; justify-content:center; overflow:hidden }
   .mw-party-member .pm-name { min-width:0; color:#e8ddc8; font:11px/1.35 'Galmuri11',sans-serif; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .mw-party-member .pm-actions { display:flex; align-items:center; gap:5px; flex-shrink:0 }
+  .mw-party-profile { border:2px solid #05070c; background:#15213a; color:#8fb4ff; height:27px;
+    padding:0 8px; font:9.5px 'Galmuri11',sans-serif; cursor:pointer }
   .mw-party-kick { border:2px solid #05070c; background:#2a1620; color:#e8838a; height:27px; padding:0 8px; font:9.5px 'Galmuri11',sans-serif; cursor:pointer }
   body.mw-party #mw-party-bar2 { flex-shrink:0; padding-top:8px }
 
@@ -3993,7 +3996,8 @@ window._mwPetPublish = function () {
   if (!R || !uid || window._curField !== 'home') return;
   var list = (window._mwPets || []).map(function (p) {
     return { i: p.i, id: p.id, tc: p.tc, tr: p.tr, dir: p.dir | 0,
-             anim: p.anim || 'stand', up: p.up ? 1 : 0 };
+             anim: p.anim || 'stand', up: p.up ? 1 : 0,
+             eatDx: +(p.eatDx || 0), eatDy: +(p.eatDy || 0) };
   });
   // ★공룡도 **같은 노드**에 실어 보낸다 (대표 8-25: "펫은 실시간 연동되는데 공룡은
   //   가구 상태 그대로 안 움직인다"). 예전엔 손님이 각자 굴려서 폰마다 달랐다 —
@@ -4083,6 +4087,7 @@ window._mwPetLiveApply = function () {
     if (!d || d.id !== p.id) return;
     var moved = (p.tc !== d.tc || p.tr !== d.tr);
     p.tc = d.tc; p.tr = d.tr; p.up = !!d.up;
+    p.eatDx = +(d.eatDx || 0); p.eatDy = +(d.eatDy || 0);
     if (p.el && moved) p.el.style.transition = 'transform 300ms linear';
     window._mwPetApply(p);
     // ★조건을 걸지 않는다. _mwPetApply 가 **옛 동작**으로 한 번 그린 뒤라,
@@ -4353,6 +4358,10 @@ window._mwPetSpots = function (p, want) {
     var y = (want === 'perch') ? Math.min(it.y + def.h - 8, it.y + 28) : (it.y + def.h - 1);
     var tc = Math.max(0, Math.min(15, Math.floor((it.x + def.w / 2) / 48)));
     var tr = Math.max(0, Math.min(15, Math.floor(y / 48)));
+    // 그릇은 타일 중앙에만 놓이지 않는다. 실제 가구 좌표의 중심과 선택된 타일 중심의
+    // 차이를 보존해야, 같은 종류라도 방 안에 둔 위치에 따라 펫 얼굴이 좌우로 밀리지 않는다.
+    var bowlDx = want === 'bowl' ? ((it.x + def.w / 2) / 48 - (tc + 0.5)) : 0;
+    var bowlDy = want === 'bowl' ? ((it.y + def.h / 2) / 48 - (tr + 0.5)) : 0;
     if (want === 'bowl') {
       // ★그릇 **사방 어느 칸에서든** 먹는다. 그릇 칸에 올라서면 펫 몸(3타일)이 그릇을 덮는다.
       //   dir 은 그릇을 바라보는 쪽(0앞=아래 · 1좌 · 2뒤=위 · 3우). 뒷모습은 2컷뿐이라 맨 뒤.
@@ -4364,7 +4373,7 @@ window._mwPetSpots = function (p, want) {
         if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
         out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir,
-          eatDx: -sides[k].dc * 0.58, eatDy: -sides[k].dr * 0.58 });
+          eatDx: -sides[k].dc * 0.58 + bowlDx, eatDy: -sides[k].dr * 0.58 + bowlDy });
         any = true;
       }
       if (!any) out.push({ tc: tc, tr: tr, up: false, dir: 0 });
@@ -20629,7 +20638,7 @@ window.mwRoomEnterSwitchAccount = async function () {
 //   **누가 어디 서 있는지 주고받는 것**뿐이다.
 window.MW_ROOM_CAP = 4;            // 주인 포함 정원
 // 말풍선이 떠 있는 시간. 6초는 너무 짧았다 — 상대가 고개 돌린 사이에 사라졌다(대표 8-20).
-window.MW_ROOM_MSG_MS = 15000;
+window.MW_ROOM_MSG_MS = 9000;       // 스쿼드 필드 말풍선과 같은 9초. 룸톡 기록은 별도 chat 노드에 남는다.
 // ★사진에 찍히는 창은 **훨씬 넓다.** 화면에서 걷힌 뒤에 눌러도 '방금 한 말'은 남는다.
 //   찍히는 게 타이밍 싸움이 되면 안 된다(대표 8-20: "타이밍 문제는 아니라고").
 window.MW_SHOT_MSG_MS = 90000;
@@ -21123,7 +21132,6 @@ window._mwRTalkWho = function () {
   const a = document.getElementById('mw-party-who');
   if (a) a.innerHTML = '<b>' + names.length + '명</b> ' + esc(txt);
   const b = document.getElementById('mw-rtalk-who');
-  if (!b) return;
   // ★명단에서 **X 로 내보낸다** (대표 8-25). 내보내기는 이미 있다(mwRoomKick) — 부를 자리만 없었다.
   //   주인에게만, 자기 자신 말고. 새 화면을 만들지 않고 명단 줄에 X 를 붙인다.
   const isHost = !!(me && window._mwRl && window._mwRl.owner === me);
@@ -21135,14 +21143,17 @@ window._mwRTalkWho = function () {
       const v = all[k], mine = k === me;
       const nk = String(v.nick || '머피');
       const char = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, 38, 'down') : '';
+      const profile = !mine
+        ? '<button class="mw-party-profile" onclick="event.stopPropagation();window.openUserProfile(&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;,&quot;&quot;)">프로필</button>' : '';
       const kick = isHost && !mine
         ? '<button class="mw-party-kick" onclick="window.mwRoomKick(&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;)">강퇴</button>' : '';
       return '<div class="mw-party-member"><div class="pm-char">' + char + '</div>'
-        + '<div><div class="pm-name">' + esc(nk) + (mine ? ' (나)' : '') + (k === window._mwRl.owner ? ' · 방장' : '') + '</div>'
-        + kick + '</div></div>';
+        + '<div class="pm-name">' + esc(nk) + (mine ? ' (나)' : '') + (k === window._mwRl.owner ? ' · 방장' : '') + '</div>'
+        + '<div class="pm-actions">' + profile + kick + '</div></div>';
     }).join('');
     roster.innerHTML = memberRows || '<div style="padding:18px;text-align:center;color:#4a5266;font:10px Galmuri11,sans-serif">아직 아무도 없어요</div>';
   }
+  if (!b) return;
   const rows = Object.keys(all).filter(function (k) {
     return all[k] && all[k].nick && window._mwRoomParticipant(all[k]);
   }).map(function (k) {
@@ -21607,89 +21618,48 @@ window.mwRoomFieldSync = function (key) {
 // ===== 방 입력줄 키보드 대응 =====
 // ★대표 8-20: "한마디 창 누르면 키보드가 열리면서 화면이 위로 밀려서 개불편하다.
 //   창 조금 밑에 여유 두고 키보드가 튀어나오게, 화면 고정으로 가야 한다."
-//
-// 스쿼드(_sqVVFit/_sqKbFix)는 **붙박이 패널**이라 패널째 앉히면 됐다. 방 화면은 다르다 —
-// 페이지가 통째로 스크롤되는 구조라(대표 8-20에 그렇게 정했다) 패널째 옮길 수가 없다.
-// → 여기서는 **입력줄 하나만** 키보드 바로 위에 붙박이로 띄운다. 그러면 브라우저가
-//   입력칸을 보이려고 화면을 밀 이유 자체가 없어져서 방이 제자리에 그대로 있는다.
-//
-// ★계산하지 않고 **잰다**(스쿼드에서 배운 것). 아이폰·안드로이드·카톡 인앱브라우저가
-//   키보드 높이를 저마다 다르게 알려주므로 visualViewport 의 **실제 아랫변**만 쓴다.
-//   vv 가 없는 웹뷰에서는 레이아웃이 같이 줄어드는 쪽이라 **바닥(0)이 곧 키보드 위**다.
-//   (8-14에 뷰포트 식을 건드렸다가 대표 폰이 오히려 가려진 사고가 있었다. 식은 그대로 두고
-//    덧붙이기만 한다 — 재는 식은 손대지 않았다)
-window.MW_KB_GAP = 10;             // 입력줄과 키보드 사이 여유
-window._mwKbLift = 0;              // 지금 입력줄을 올려둔 픽셀(누적 방지용으로 되돌릴 때 쓴다)
-// ★★8-21 재작업. 붙박이로 띄우는 것만으로는 **못 막는다**(대표: "아직도 스크롤 밀림").
-//   빠져 있던 건 **스크롤 잠금**이었다. 입력칸이 키보드에 가리면 브라우저는 그걸 보이려고
-//   페이지를 통째로 밀어 올린다 — 우리가 뒤늦게 입력줄을 붙박이로 만들어도, 그 스크롤은
-//   **이미 일어난 뒤**다. 그래서 방이 위로 밀려 사라졌다.
-//   → 포커스가 들어오는 **그 순간에 먼저 문서를 잠근다.** 스크롤할 곳이 없으면 못 민다.
-//     잠금은 앱에 이미 있는 lockBodyScroll(iOS 안전 · 중첩 가드 포함)을 그대로 쓴다.
-window._mwKbFit = function () {
-  const row = document.getElementById('mw-party-row');
-  if (!row || !window._mwKbOn) return;
+// 스쿼드 필드의 _sqVVFit과 같은 규칙이다. 입력줄을 따로 fixed/transform 하지 않고,
+// 처음부터 fixed인 공동룸 화면 상자만 실제 visualViewport에 맞춘다.
+window._mwPartyVVFit = function () {
   const vv = window.visualViewport;
-  const ih = window._mwKbBaseH || window.innerHeight || (vv && vv.height) || 0;
-  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : ih;
-  const keyboard = Math.max(0, Math.round(ih - visBottom));
-  if (keyboard < 80) return;
-  row.style.position = 'fixed';
-  row.style.left = '50%'; row.style.right = 'auto';
-  row.style.width = '100%'; row.style.maxWidth = '390px';
-  row.style.bottom = (keyboard + window.MW_KB_GAP) + 'px';
-  row.style.transform = 'translateX(-50%)';
-  row.style.zIndex = '40010'; row.style.background = '#0b0e16';
-  row.style.padding = '8px 13px'; row.style.boxSizing = 'border-box';
+  const el = document.getElementById('page-char');
+  if (!vv || !el || !document.body.classList.contains('mw-party')) return;
+  const kbUp = vv.height < ((window.innerHeight || vv.height) - 80);
+  if (kbUp) {
+    el.style.top = (vv.offsetTop || 0) + 'px';
+    el.style.height = vv.height + 'px';
+    el.style.bottom = 'auto';
+  } else {
+    el.style.top = '0px'; el.style.bottom = '0px'; el.style.height = '';
+  }
 };
 window._mwKbStart = function () {
   if (window._mwKbOn) return;
   window._mwKbOn = 1;
-  window._mwKbBaseH = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
-  // ★★순서가 전부다. **잠그는 게 먼저**다 — 붙박이로 만들기 전에 브라우저가 밀어버린다.
-  //   ★내가 잠근 것만 내가 푼다. 패널이 이미 잠가 뒀는데 blur 에서 풀어버리면
-  //     뒤에 열려 있던 화면이 통째로 스크롤돼 내려간다(스쿼드 것과 같은 규칙).
+  document.body.classList.add('mw-kb');
   window._mwKbOwnedLock = !_bodyLocked;
   if (window._mwKbOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
-  document.body.classList.add('mw-kb');
-  // ★★★스쿼드 **필드** 채팅(_sqQuickKbStart)과 같은 것만 한다. 스쿼드 톡이 아니다 —
-  //   8-25 에 내가 톡(#sq-talk)을 보고 옮기다 계속 헛짚었다. 필드 쪽은 훨씬 단순하다.
-  //   하는 일은 셋뿐이다: ①문서 잠금 ②가림막 클래스 ③키보드 애니메이션 동안 크기 맞추기.
-  //   **입력줄은 건드리지 않는다.** 원래 자리(필드 바로 밑)에 그대로 있는다.
-  //   위치를 미리 찍어 올리거나 transform 으로 옮기던 코드는 전부 걷어냈다 — 그게 흔들림이었다.
-  // ★scroll 은 듣지 않는다. offsetTop 을 안 쓰니 들을 이유가 없고, 듣는 순간
-  //   고무줄 스크롤 잔떨림이 그대로 상자로 들어온다 — 그게 '왔다갔다'였다.
-  window._mwKbH = 0;
   const vv = window.visualViewport;
-  if (vv) vv.addEventListener('resize', window._mwKbFit);
-  if (vv) vv.addEventListener('scroll', window._mwKbFit);
-  // ★대화 로그 높이를 **지금 값으로 얼려 둔다.** 로그는 flex:1 이라 상자가 키보드에 맞춰
-  //   줄면 같이 줄어든다. 스쿼드 필드에는 입력줄 밑에 로그가 없어 없던 현상이라 우리만 막는다.
-  //   넘치는 만큼은 상자가 알아서 스크롤한다.
-  // 스쿼드 필드와 같은 간격으로 다시 잰다 — 키보드 애니메이션 길이가 기기마다 다르다.
-  [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwKbFit, t); });
+  if (vv) {
+    vv.addEventListener('resize', window._mwPartyVVFit);
+    vv.addEventListener('scroll', window._mwPartyVVFit);
+  }
+  [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwPartyVVFit, t); });
 };
-// immediate=true 면 곧바로 끝낸다(방을 닫을 때). blur 로 들어올 땐 **조금 기다린다** —
-// 말하기·고정 버튼을 누르면 blur 가 났다가 포커스가 곧 되돌아오는데, 그 사이에 풀면
-// unlockBodyScroll 의 scrollTo 가 화면을 한 번 튕긴다(= 대표가 본 '들썩임'과 같은 원인).
 window._mwKbEnd = function (immediate) {
   const finish = function () {
     if (!window._mwKbOn) return;
     const ae = document.activeElement;
-    if (!immediate && ae && ae.id === 'mw-party-input') return;   // 다시 치고 있다
+    if (!immediate && ae && ae.id === 'mw-party-input') return;
     window._mwKbOn = 0;
     const vv = window.visualViewport;
-    if (vv) vv.removeEventListener('resize', window._mwKbFit);
-    if (vv) vv.removeEventListener('scroll', window._mwKbFit);
-    window._mwKbH = 0;
-    window._mwKbBaseH = 0;
-    document.body.classList.remove('mw-kb');
-    const row = document.getElementById('mw-party-row');
-    if (row) {
-      ['position','left','right','width','maxWidth','bottom','transform','zIndex','background','padding','boxSizing']
-        .forEach(function (k) { row.style[k] = ''; });
+    if (vv) {
+      vv.removeEventListener('resize', window._mwPartyVVFit);
+      vv.removeEventListener('scroll', window._mwPartyVVFit);
     }
-    window._mwKbLift = 0;
+    document.body.classList.remove('mw-kb');
+    const el = document.getElementById('page-char');
+    if (el) { el.style.top = '0px'; el.style.bottom = '0px'; el.style.height = ''; }
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
     window._mwKbOwnedLock = false;
   };
@@ -21750,7 +21720,7 @@ window.mwRoomSay = function () {
   const inp = document.getElementById('mw-party-input'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
   if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
-  inp.value = ''; inp.blur();
+  inp.value = '';                    // 스쿼드 필드처럼 전송 뒤에도 포커스·키보드를 유지한다
   window._mwRl.msg = { text: t, t: Date.now() };
   window._mwRlSend();
   // ★★말을 **방에 남긴다** (대표 8-25: "손님은 톡 목록이 잘 안 뜨고 최신화가 안 되는데
@@ -21772,16 +21742,18 @@ window.mwRoomSay = function () {
   } catch (e) { console.warn('chat push', e); }
   window._charApplyPos && window._charApplyPos();          // 내 머리 위에 바로 띄운다
   clearTimeout(window._mwRl.msgClr);
-  if (!window._mwBubblePin) {
-    window._mwRl.msgClr = setTimeout(function () { window._charApplyPos && window._charApplyPos(); },
-                                     (window.MW_ROOM_MSG_MS || 6000) + 80);   // 시간 지나면 걷는다
-  }
-  // ★★한 말을 **지우지 않는다** (대표 8-20: "폴라로이드에 말풍선이 안 뜬다").
-  //   예전엔 MW_ROOM_MSG_MS 뒤에 `_mwRl.msg = null` 로 통째로 날렸다. 그러면 사진이
-  //   참조할 데이터 자체가 없어져서, 조금만 늦게 찍으면 말풍선이 못 찍혔다.
-  //   **띄울지 말지는 이미 나이(t)로 판정한다**(_charApplyPos·_mwRlRender 둘 다).
-  //   그러니 값은 그대로 두고 화면만 걷으면 된다 — 사진은 더 넓은 창으로 같은 값을 본다.
   clearTimeout(window._mwRl.msgT);
+  if (!window._mwBubblePin) {
+    const sentAt = window._mwRl.msg.t;
+    window._mwRl.msgClr = setTimeout(function () {
+      // 그 사이 새 말을 썼으면 옛 타이머가 새 말풍선을 지우면 안 된다.
+      if (!window._mwRl.msg || window._mwRl.msg.t !== sentAt || window._mwBubblePin) return;
+      window._mwRl.msg = null;       // 필드 말풍선은 완전히 제거
+      window._mwRlSend();            // 다른 참가자 화면에서도 즉시 제거
+      window._charApplyPos && window._charApplyPos();
+    }, window.MW_ROOM_MSG_MS || 9000);
+  }
+  // 룸톡 잔류는 위에서 별도 chat 노드에 이미 저장했다. 필드 presence와 기록을 섞지 않는다.
 };
 // ===== 머피룸 실시간 끝 =====
 
