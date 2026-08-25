@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '722';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '723';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -12505,7 +12505,7 @@ if ('serviceWorker' in navigator) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -12609,7 +12609,9 @@ try {
   const rtdb = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
   window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove, get: rtGet,
     // 같이 낙서는 **바뀐 칸만** 받는다. onValue 로 전체를 받으면 칸 하나 찍을 때마다 최대 10KB 가 오간다.
-    onChildAdded: rtOnChildAdded, onChildChanged: rtOnChildChanged, onChildRemoved: rtOnChildRemoved };
+    onChildAdded: rtOnChildAdded, onChildChanged: rtOnChildChanged, onChildRemoved: rtOnChildRemoved,
+    // 방 대화 — push 로 줄을 쌓고, query+limitToLast 로 **마지막 60줄만** 받는다.
+    push: rtPush, query: rtQuery, limitToLast: rtLimitToLast };
   rtOnValue(rtRef(rtdb, '.info/connected'), s => {
     const wasOff = window._SQUAD_RT_OFF;
     window._SQUAD_RT_OFF = !s.val();
@@ -20383,6 +20385,10 @@ window.mwRoomLeaveField = function () {
     //   자기 홈 필드에 그대로 있어서 _mwRlLeave 를 안 타므로, 여기서 직접 비워야 한다.
     //   안 비우면 다음에 방을 열었을 때 지난 손님과 나눈 말이 그대로 떠 있다.
     window._mwRoomLogClear();
+    try {
+      const _R = window._rt, _u = auth.currentUser;
+      if (_R && _u) _R.remove(_R.ref(_R.db, 'roomLive/' + _u.uid + '/chat'));
+    } catch (e) {}
     window._mwRl.end = Date.now();
     window._mwRlSend();                                   // 손님이 이걸 보고 같이 나온다
     // ★방을 닫으면 **방 전체를 지운다.** 이제 사람이 안 사라지는 구조라, 안 지우면
@@ -20454,6 +20460,7 @@ window._mwRlJoin = function (ownerUid) {
   }, function (e) { console.warn('roomLive', e); });
   window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
   window.mwJamWatch(ownerUid);                  // 낙서판이 열렸는지도 같이 지켜본다
+  window._mwChatWatch && window._mwChatWatch(ownerUid);        // 대화도 같이 본다
   window._mwPetLiveWatch && window._mwPetLiveWatch(ownerUid);   // 펫도 같이 본다
   if (!u) return;
 
@@ -20489,7 +20496,49 @@ window._mwRlJoin = function (ownerUid) {
     window._mwShotBtnSync && window._mwShotBtnSync();
   }, { onlyOnce: true });
 };
+// 방 대화 감시 — **모두가 같은 목록을 본다.** 늦게 들어와도 지난 대화가 보인다.
+// ★마지막 60줄만 받는다(limitToLast). 방이 오래 열려 있어도 처음 그릴 게 안 늘어난다.
+window._mwChatWatch = function (ownerUid) {
+  const R = window._rt;
+  window._mwChatUnwatch();
+  if (!R || !ownerUid) return;
+  try {
+    const q = R.query ? R.query(R.ref(R.db, 'roomLive/' + ownerUid + '/chat'), R.limitToLast(60))
+                      : R.ref(R.db, 'roomLive/' + ownerUid + '/chat');
+    const un = R.onValue(q, function (sn) {
+      const v = sn.val() || {};
+      const rows = Object.keys(v).map(function (k) { return v[k]; })
+        .filter(function (m) { return m && m.text; })
+        .sort(function (a, b) { return (b.t || 0) - (a.t || 0); })   // 최신이 앞(목록이 column-reverse)
+        .slice(0, 60);
+      window._mwRl.log = rows.map(function (m) {
+        return { nick: String(m.nick || '머피'), text: String(m.text).slice(0, 40) };
+      });
+      window._mwRl.logDirty = 1;
+      window._mwChatPaint();
+    }, function (e) { console.warn('chat watch', e); });
+    window._mwChatUn = function () { try { un(); } catch (e) {} };
+  } catch (e) { console.warn('chat watch', e); }
+};
+window._mwChatUnwatch = function () {
+  if (window._mwChatUn) { window._mwChatUn(); window._mwChatUn = null; }
+};
+// 목록 그리기 — _mwRlRender 안에 있던 것을 떼어냈다. 대화가 올 때마다 **바로** 그려야 하는데,
+// 그 안에 있으면 presence 스냅샷이 올 때까지 기다려야 했다.
+window._mwChatPaint = function () {
+  const le = document.getElementById('mw-party-log'); if (!le) return;
+  const log = window._mwRl.log || [];
+  window._mwRl.logDirty = 0;
+  le.innerHTML = log.length ? '' : '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
+  log.forEach(function (m) {
+    const d = document.createElement('div'); d.className = 'pl';
+    const b2 = document.createElement('b'); b2.textContent = m.nick;
+    d.appendChild(b2); d.appendChild(document.createTextNode(m.text));   // 남의 글 = 노드로만
+    le.appendChild(d);
+  });
+};
 window._mwRlLeave = function () {
+  window._mwChatUnwatch && window._mwChatUnwatch();
   window._mwPetLiveUnwatch && window._mwPetLiveUnwatch();
   const R = window._rt;
   clearInterval(window._mwRl.beatT);
@@ -20750,32 +20799,9 @@ window._mwRlRender = function (all) {
   }
 
   // ── 대화 기록 ──
-  // ★말은 presence 에 실려 오고 6초면 걷힌다(기록용 노드가 없다). 그래서 **본 것을 여기서
-  //   쌓아 둔다.** 방에 있는 동안만 남으면 충분하고, RTDB 쓰기가 하나도 안 늘어난다.
-  const log = window._mwRl.log || (window._mwRl.log = []);
-  const seenMsg = window._mwRl.seenMsg || (window._mwRl.seenMsg = {});
-  Object.keys(all).forEach(function (uid) {
-    const v = all[uid]; if (!v || !v.msg || !v.msg.text) return;
-    const key = uid + '_' + v.msg.t;
-    if (seenMsg[key]) return;
-    seenMsg[key] = 1;
-    log.unshift({ nick: String(v.nick || '머피'), text: String(v.msg.text).slice(0, 40) });
-    if (log.length > 60) log.pop();
-    window._mwRl.logDirty = 1;
-  });
-  if (window._mwRl.logDirty) {
-    window._mwRl.logDirty = 0;
-    const le = document.getElementById('mw-party-log');
-    if (le) {
-      le.innerHTML = log.length ? '' : '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
-      log.forEach(function (m) {
-        const d = document.createElement('div'); d.className = 'pl';
-        const b2 = document.createElement('b'); b2.textContent = m.nick;
-        d.appendChild(b2); d.appendChild(document.createTextNode(m.text));   // 남의 글 = 노드로만
-        le.appendChild(d);
-      });
-    }
-  }
+  // ★여기서 쌓지 않는다. 예전엔 presence 에 실려 온 말을 **각자 자기 메모리에** 모았는데,
+  //   그러면 나중에 들어온 사람은 그 전 대화를 영영 못 본다(대표 8-25).
+  //   이제 roomLive/{주인}/chat 이 유일한 출처다 — _mwChatWatch 가 받아 _mwChatPaint 가 그린다.
 
   // 촬영 신호 — 누가 눌렀든 방에 있는 전원이 같은 시각에 센다
   let shotAt = 0;
@@ -20978,6 +21004,23 @@ window.mwRoomSay = function () {
   inp.value = ''; inp.blur();
   window._mwRl.msg = { text: t, t: Date.now() };
   window._mwRlSend();
+  // ★★말을 **방에 남긴다** (대표 8-25: "손님은 톡 목록이 잘 안 뜨고 최신화가 안 되는데
+  //   초대자 입장에선 잘 반영된다").
+  //   원인은 **대화가 어디에도 저장되지 않던 것**이었다. 말풍선은 presence 에 실려 6초면
+  //   걷히고, 목록은 각자 '본 것'을 자기 메모리에 쌓는 방식이었다. 그래서 방을 연 주인은
+  //   전부 갖고 있고, **나중에 들어온 손님은 빈 목록으로 시작**했다 — 들어오기 전 대화는
+  //   존재 자체가 사라진 뒤다.
+  //   ★새 노드를 파지 않는다. roomLive/{주인}/chat 은 **규칙에 이미 쓰기 권한이 있고**
+  //     아무도 안 쓰고 있었다(rules: chat -> auth != null). 규칙 재배포가 필요 없다.
+  try {
+    const R = window._rt, ow = window._mwRl.owner;
+    if (R && ow) {
+      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
+        nick: String(window._mwMyNick || '머피').slice(0, 12),
+        text: t, t: Date.now()
+      });
+    }
+  } catch (e) { console.warn('chat push', e); }
   window._charApplyPos && window._charApplyPos();          // 내 머리 위에 바로 띄운다
   clearTimeout(window._mwRl.msgClr);
   if (!window._mwBubblePin) {
