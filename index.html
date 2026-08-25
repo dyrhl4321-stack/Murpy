@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '682';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '683';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4554,14 +4554,13 @@ window._mwDinoSync = function (editing) {
   if (!room || !furn || editing || window._curField !== 'home') { clear(); return; }
   var data = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
   var list = (data && data.f) || [];
-  // ★대표가 고른 공룡(it.mv)만 움직인다. 아무도 안 골랐으면 예전처럼 앞에서부터 8마리 —
-  //   기존에 방을 꾸며 둔 사람의 화면이 갑자기 멈추지 않게.
+  // ★**기본은 정지**다(대표 8-25: "디폴트가 돌아다니는 게 아니라고").
+  //   예전엔 아무도 안 골랐으면 앞에서부터 8마리가 저절로 움직였는데, 그러면
+  //   '멈추기'를 눌러도 그 자동 선택에 다시 걸려 곧바로 또 걸어다녔다.
+  //   이제 **it.mv 가 켜진 공룡만** 움직인다. 켜는 건 꾸미기의 '움직이기' 버튼이다.
   var picks = [], i;
-  var chosen = false;
-  for (i = 0; i < list.length; i++) if (list[i] && list[i].id === window.MW_DINO_ID && list[i].mv) chosen = true;
   for (i = 0; i < list.length && picks.length < window.MW_DINO_MAX; i++) {
-    if (!list[i] || list[i].id !== window.MW_DINO_ID) continue;
-    if (chosen && !list[i].mv) continue;
+    if (!list[i] || list[i].id !== window.MW_DINO_ID || !list[i].mv) continue;
     picks.push({ idx: i, it: list[i] });
   }
   clear();
@@ -4733,14 +4732,11 @@ window.mwDinoFollow = function (idx) {
 //   **지금 움직이는 나머지를 전부 명시적으로 켜 둬야** 한다. 안 그러면 여전히 자동 선택에 걸린다.
 window.mwDinoStop = function (idx) {
   var room = window._myRoom;
-  if (!room || !Array.isArray(room.f)) return;
-  var i;
-  for (i = 0; i < window._mwDinos.length; i++) {
-    var fi = window._mwDinos[i].idx;
-    if (!room.f[fi]) continue;
-    if (fi === idx) delete room.f[fi].mv;
-    else room.f[fi].mv = 1;
-  }
+  if (!room || !Array.isArray(room.f) || !room.f[idx]) return;
+  // 기본이 정지라 **이 한 마리만 끄면 끝**이다. 예전엔 자동 선택 때문에 나머지를 전부
+  //   명시적으로 켜 둬야 했고, 그래도 곧바로 다시 걸어다녔다(대표 8-25).
+  delete room.f[idx].mv;
+  delete room.f[idx].fl;                 // 따라오기도 같이 끈다 — 멈춘 채로 따라올 수는 없다
   window._charPersistRoom && window._charPersistRoom(room);
   window.mwRenderFurn && window.mwRenderFurn();
   showToast('이 공룡은 이제 가만히 있어요 · 꾸미기에서 다시 켤 수 있어요');
@@ -5052,7 +5048,7 @@ window._reditRemove = function () {
 // 공룡 하나를 '움직이는 아이'로 지정/해제한다.
 // ★상한이 8마리다(대표 확정). 10마리 넘게 놓은 사람은 **어느 8마리가 움직일지** 고를 수
 //   있어야 한다 — 앞에서부터 자동으로 고르면 원하는 아이가 안 움직인다.
-// 아무도 안 고르면 예전처럼 앞에서부터 8마리가 움직인다(기존 방이 안 바뀌게).
+// 아무도 안 고르면 아무도 안 움직인다 — 그게 기본이다.
 window._reditMove = function () {
   const i = window._reditSel;
   if (i < 0 || !window._reditDraft) return;
