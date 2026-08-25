@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '675';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '676';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -12440,7 +12440,11 @@ onAuthStateChanged(auth, async (user) => {
       setTimeout(_fn, 400);
     }
   } else {
-    window.currentUser = null;
+window.currentUser = null;
+    // 로그아웃하면 머피월드를 **즉시** 콜드스타트 화면으로 되돌린다.
+    // 안 하면 내 방이 한 번 더 뜨고, 나갔다 들어와야 신규 시점이 된다(대표 8-25).
+    window._charState.ready = false; window._creditState.ready = false;
+    setTimeout(function () { window._mwRefreshIfOpen && window._mwRefreshIfOpen(); }, 0);
     if (window.stopNotifListener) window.stopNotifListener();
     updateUI(null);
     loadFeed();
@@ -13406,6 +13410,21 @@ window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 // 읽기가 끝나면 _charState.ready 가 켜진다(유저 문서 로드 끝).
 window._mwDocReady = function () {
   return !!(window._charState && window._charState.ready);
+};
+// ★상태가 확정되면 **열려 있는 머피월드를 다시 그린다** (대표 8-25).
+//   증상: 로그인해도 머피월드가 '캐릭터 고르기'(신규 유저 화면)로 뜨고, 머피 갯수도
+//   신규처럼 보이다가, **나갔다 다시 들어와야** 내 방이 떴다. 로그아웃도 반대로 같았다.
+//   원인: 머피월드는 renderCharSpace() 가 그리는데 이건 **페이지를 열 때 한 번만** 불린다.
+//   그 시점엔 유저 문서를 아직 못 읽어서 기본값(캐릭터 없음 = 신규)으로 그려지고,
+//   나중에 문서가 도착해도 **다시 그리는 사람이 없었다.**
+window._mwRefreshIfOpen = function () {
+  try {
+    var el = document.getElementById('page-char');
+    var open = el && el.classList.contains('active');
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    if (open && window.renderCharSpace) window.renderCharSpace();
+  } catch (e) { console.warn('refresh', e); }
 };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
@@ -16377,6 +16396,7 @@ window.ensureCreditsInit = async (uid) => {
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
     window._charState.ready = true;
+    window._mwRefreshIfOpen && window._mwRefreshIfOpen();   // 열려 있으면 지금 다시 그린다
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.renderStreakUI) window.renderStreakUI();
     // 히든 시즌 시작 안내 — 선물 축하(1.4s 뒤 시작, 약 2.4s)가 끝난 뒤에 뜨게 미뤄 둔다.
