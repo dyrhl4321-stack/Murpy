@@ -67,4 +67,27 @@ print('PUT 응답:', urllib.request.urlopen(put).read().decode(), flush=True)
 
 back = json.loads(urllib.request.urlopen(urllib.request.Request(
     DB + '/.settings/rules.json', headers={'Authorization': 'Bearer ' + tok})).read().decode())
-print('되읽음:', json.dumps(back['rules'].get('roomLive', {}), ensure_ascii=False)[:300], flush=True)
+# ★"status:ok" 도, 300자로 잘린 되읽기도 증거가 못 된다. 8-25 에 pets 규칙이 파일에만
+#   있고 서버엔 없어서 주인의 펫 위치 쓰기가 조용히 거부됐고, 손님 화면에서 펫이 멈춰
+#   보였다. **보낸 것과 되읽은 것을 통째로 비교**한다 — 눈으로 훑지 않는다.
+sent = json.loads(RULES)['rules']
+
+
+def flat(o, pre=''):
+    out = {}
+    for k, v in (o or {}).items():
+        if isinstance(v, dict):
+            out.update(flat(v, pre + '/' + k))
+        else:
+            out[pre + '/' + k] = v
+    return out
+
+
+a, b = flat(sent), flat(back.get('rules') or {})
+miss = [k for k in a if b.get(k) != a[k]]
+if miss:
+    print('★서버에 반영 안 된 규칙:', flush=True)
+    for k in miss:
+        print('   ', k, '| 보냄:', a[k], '| 서버:', b.get(k, '(없음)'), flush=True)
+    raise SystemExit('배포 실패 — 위 항목이 서버에 없다')
+print('확인: 규칙 %d개 전부 서버와 일치' % len(a), flush=True)
