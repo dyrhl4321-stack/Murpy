@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '687';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '688';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4340,7 +4340,9 @@ window.mwPetMenu = function (p) {
     { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
     { k: 'edit', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed(' + p.i + ')' },
     { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat(' + p.i + ')' },
-    { k: 'kick', t: '들여보내기', dx: 0, dy: R + 20, fn: 'window.mwPetPutAway(' + p.i + ')' }
+    { k: 'kick', t: '들여보내기', dx: 0, dy: R + 20, fn: 'window.mwPetPutAway(' + p.i + ')' },
+    // 네 방향이 이미 찼다 → 대각선. 공룡 '내보내기'가 쓰던 자리 규칙과 같다.
+    { k: 'bub', t: '이름', dx: -R + 4, dy: R + 4, fn: 'window.mwPetName(' + p.i + ')' }
   ];
   var el = document.createElement('div');
   el.id = 'mw-charmenu';
@@ -4426,7 +4428,7 @@ window.mwPetFeed = function (idx) {
   if (window._mwSavePets) window._mwSavePets(window._myPets);
   window._mwPetBowlFill();
   window._mwPetRushTo(p, bowl);
-  showToast('밥을 줬어요');
+  showToast(window.mwPetCallName(idx) + ' 에게 밥을 줬어요');
 };
 
 window._mwPetRushTo = function (p, spot) {
@@ -4463,17 +4465,63 @@ window.mwPetPat = function (idx) {
   var def = window._mwPetDef(p.id) || {};
   var was = p.anim;
   window._mwPetPlay(p, def.kind === 'cat' ? 'act1' : 'act2', null);
-  showToast(was === 'sleep' ? '깼어요' : '좋아해요');
+  showToast(window.mwPetCallName(idx) + (was === 'sleep' ? ' 이(가) 깼어요' : ' 이(가) 좋아해요'));
   clearTimeout(p._poke);
   p._poke = setTimeout(function () {
     window._mwPetPlay(p, was === 'sleep' ? 'sleep' : 'stand', null);
   }, 1800);
 };
 
+// 이름 짓기. 화면은 말풍선 편집(mwBubbleEdit)과 같은 방식이고 **문구는 새로 썼다** —
+// 예전에 스쿼드 게스트 시트를 게임에 통째로 재사용했다가 "실명으로 적어주세요"가 뜬 적이 있다.
+window.mwPetName = function (idx) {
+  var saved = (window._myPets || [])[idx]; if (!saved) return;
+  var def = window.mwItemDef(saved.id) || {};
+  var old = document.getElementById('mw-petname-modal'); if (old) { old.remove(); return; }
+  var el = document.createElement('div');
+  el.id = 'mw-petname-modal';
+  el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:center;'
+    + 'justify-content:center;padding:20px;background:rgba(5,7,12,.62)';
+  el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">'
+    + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:4px">'
+    + '이 아이의 이름</div>'
+    + '<div style="font-size:11px;color:#8a93a8;margin-bottom:10px">비워 두면 \'' + (def.name || '펫')
+    + '\' 으로 불러요</div>'
+    + '<input id="mw-petname-input" maxlength="8" placeholder="예: 도로" '
+    + 'style="width:100%;box-sizing:border-box;background:#0e1420;border:2px solid #2b3350;'
+    + 'border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;font-family:inherit;'
+    + 'margin-bottom:12px">'
+    + '<div style="display:flex;gap:7px">'
+    + '<button class="mw-btn" style="flex:1" onclick="window.mwPetSetName(' + idx
+    + ',document.getElementById(\'mw-petname-input\').value)">저장</button>'
+    + '<button class="mw-btn" style="background:#1b2233;color:#8a93a8" '
+    + 'onclick="document.getElementById(\'mw-petname-modal\').remove()">취소</button>'
+    + '</div></div>';
+  el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
+  document.body.appendChild(el);
+  var inp = el.querySelector('#mw-petname-input');
+  if (inp) { inp.value = saved.name || ''; inp.focus(); }
+};
+
+window.mwPetSetName = function (idx, v) {
+  var saved = (window._myPets || [])[idx]; if (!saved) return;
+  // ★8자까지. 발밑에 뜨는 게 아니라 알림에만 쓰이지만, 길면 토스트가 두 줄이 된다.
+  saved.name = String(v || '').trim().slice(0, 8);
+  if (window._mwSavePets) window._mwSavePets(window._myPets);
+  var m = document.getElementById('mw-petname-modal'); if (m) m.remove();
+  showToast(saved.name ? ('이제 ' + saved.name + ' 이에요') : '이름을 지웠어요');
+};
+
+// 지금 부르는 이름 — 지어 준 이름이 있으면 그것, 없으면 종 이름
+window.mwPetCallName = function (idx) {
+  var saved = (window._myPets || [])[idx] || {};
+  return saved.name || (window.mwItemDef(saved.id) || {}).name || '펫';
+};
+
 // 들여보내기 — 링 메뉴에서만. 카탈로그를 다시 눌러서 사라지면 안 된다(대표 8-24).
 window.mwPetPutAway = function (idx) {
   var saved = (window._myPets || [])[idx]; if (!saved) return;
-  var name = (window.mwItemDef(saved.id) || {}).name || '펫';
+  var name = window.mwPetCallName(idx);
   window._myPets.splice(idx, 1);
   if (window._mwSavePets) window._mwSavePets(window._myPets);
   window.mwRenderFurn && window.mwRenderFurn();
