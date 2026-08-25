@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '724';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '726';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -808,6 +808,30 @@ window._SW_V = '724';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      그 위로 올려야 방이 안 덮인다. 크기·위치는 위 body.mw-party 규칙이 이미 정해 뒀다 —
      여기서 또 정하면 '평소'와 '칠 때'가 달라지고, 그 차이가 곧 움직임이다. */
   body.mw-kb #page-char { z-index:890 }
+  /* ===== 그림 목록 ===== */
+  #mw-artgal { position:fixed; inset:0; z-index:40030; background:rgba(5,7,12,.9);
+    display:flex; align-items:flex-end; justify-content:center; font-family:'Galmuri11',sans-serif }
+  #mw-artgal .ag-box { width:100%; max-width:390px; max-height:82vh; background:#0e1320;
+    border-top:3px solid #05070c; box-shadow:0 0 0 3px #2b3350; display:flex; flex-direction:column }
+  #mw-artgal .ag-head { display:flex; align-items:center; gap:9px; padding:15px 16px 12px;
+    border-bottom:2px solid #05070c; flex-shrink:0 }
+  #mw-artgal .ag-head b { flex:1; min-width:0; font-size:14px; color:#fff; font-weight:400 }
+  #mw-artgal .ag-x { background:none; border:none; color:#4a5266; font-size:12px; cursor:pointer;
+    font-family:inherit; padding:4px 6px }
+  #mw-artgal .ag-list { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(3,1fr);
+    gap:10px; padding:14px 16px; padding-bottom:max(14px, env(safe-area-inset-bottom)) }
+  #mw-artgal .ag-card { background:#0b0e16; border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
+    padding:6px; cursor:pointer; font-family:inherit; display:flex; flex-direction:column; gap:4px }
+  #mw-artgal .ag-card img { width:100%; display:block; image-rendering:pixelated }
+  #mw-artgal .ag-by { font-size:9.5px; color:#7aa8ff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  #mw-artgal .ag-tag { font-size:9.5px; color:#8a93a8 }
+  #mw-artgal .ag-empty { grid-column:1/-1; text-align:center; font-size:11px; color:#4a5266;
+    line-height:1.8; padding:34px 0 }
+  #mw-artbig .ab-btns { display:flex; gap:6px; margin-top:18px; justify-content:center; flex-wrap:wrap }
+  #mw-artbig .ab-btns button { background:#141a28; border:3px solid #05070c; color:#cfd6e6;
+    padding:10px 13px; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; border-radius:0 }
+  #mw-artbig .ab-btns button.go { color:#7aa8ff }
+  #mw-artbig .ab-btns button[disabled] { color:#4a5266; cursor:default }
   /* ===== 월드바 — 다크 모던(자체 CSS) + 제미나이 소스는 로고·아이콘·코인만 ===== */
   .mw-worldbar { display:flex; align-items:center; gap:10px; padding:14px 16px 11px;
     padding-top:max(14px, env(safe-area-inset-top)); font-family:'Galmuri11',sans-serif;
@@ -8644,6 +8668,7 @@ function goPage(name, navOpts) {
     //   초대칩이 안 생기고 주인 presence 도 안 붙었다(대표 8-20: "초대 버튼 어디 감").
     requestAnimationFrame(function () {
       window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField);
+      window.mwArtChip && window.mwArtChip(window._curField);
       window.mwRoomFieldSync && window.mwRoomFieldSync(window._curField);
     });
   }
@@ -14019,6 +14044,27 @@ window._mwSavePets = async (arr) => {
     return true;
   } catch (e) { return false; }
 };
+// ===== 같이 그린 그림 (2026-08-25) =====
+//
+// ★왜 방 문서가 아니라 **사람 문서**인가 — 예전엔 그림이 `room.art[id]` 안에만 있었다.
+//   그러면 그림이 **방에 종속**돼서, 손님이 자기 방으로 가져갈 방법이 아예 없다.
+//   그림은 물건이지 방의 일부가 아니다. 그래서 users/{uid}.artworks 로 뺀다.
+// ★새 컬렉션을 파지 않는다 — 내 문서 안의 배열이면 **보안 규칙을 안 건드려도 된다**.
+//   32×32 그림 한 장이 1024자라 60장이면 60KB, 문서 한도(1MB) 안에서 여유롭다.
+window.MW_ART_MAX = 60;
+window._myArt = [];
+window._mwSaveArt = async (arr) => {
+  const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
+  if (!window._mwDocReady()) {
+    // ★막기만 하고 버리면 안 된다 — 로드 전 저장을 삼키면 그린 게 그냥 사라진다(8-25 펫에서 데임)
+    window._mwQueueWrite('artworks', function () { window._mwSaveArt(arr); });
+    return false;
+  }
+  try {
+    await updateDoc(doc(db, 'users', uid), { artworks: Array.isArray(arr) ? arr : [] });
+    return true;
+  } catch (e) { console.warn('art save', e); return false; }
+};
 window._mwGrantRoomItem = async (id) => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
   try {
@@ -16953,6 +16999,7 @@ window.ensureCreditsInit = async (uid) => {
     }
     window._myRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
     // 방에 나와 있는 펫들(배열). ★옛 단수 필드(d.pet)를 쓰던 계정도 그대로 이어지게 태운다.
+    window._myArt = Array.isArray(d.artworks) ? d.artworks.filter(function (x) { return x && x.px; }) : [];
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
       : ((d.pet && d.pet.id) ? [d.pet] : []);
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
@@ -19911,8 +19958,11 @@ window.mwJamShow = async function (asHost) {
         : '방 주인이 방에 남겨요<br>같이 그려보세요') + '</div>'
     + '<div class="jam-foot">' + (host
         ? '<button onclick="window.mwJamClear()">판 비우기</button>'
-          + '<button class="go" onclick="window.mwJamPlace(\'rug\')">카펫으로 깔기</button>'
-          + '<button class="go" onclick="window.mwJamPlace(\'frame\')">액자로 걸기</button>'
+          // ★저장이 **먼저**다 (대표 8-25). 방에 얹지 않아도 목록에 남아야, 나중에 고르고
+          //   손님이 가져가고 팔 수도 있다. 깔기/걸기는 그 다음 선택지다.
+          + '<button class="go" onclick="window.mwJamSaveArt()">저장</button>'
+          + '<button class="go" onclick="window.mwJamPlace(\'rug\')">카펫</button>'
+          + '<button class="go" onclick="window.mwJamPlace(\'frame\')">액자</button>'
         : '<button onclick="window.mwJamX()">닫기</button>') + '</div>';
   document.body.appendChild(el);
   window._mwChatPaint && window._mwChatPaint();   // 지금까지 오간 말을 곧바로 채운다
@@ -20101,14 +20151,197 @@ window.mwJamPlace = async function (kind) {
   }, 260);
 };
 
+// ===== 그림 목록 · 가져가기 · 사기 · 공유 =====
+//
+// 결정(대표 8-25):
+//   · **같이 그린 사람은 공짜**로 가져간다. 나중에 온 사람은 산다
+//   · 판매는 **고정가 즉시구매**. 입찰 경쟁은 나중에 붙인다
+//   · 그림도 머피룸처럼 공유한다
+
+// 지금 보고 있는 방의 그림 목록(내 방이면 내 것, 남의 방이면 그 주인 것)
+window.mwArtList = function () {
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    return (window._mwVisit && window._mwVisit.artworks) || [];
+  }
+  return window._myArt || [];
+};
+window.mwArtOwner = function () {
+  if (window._mwIsVisiting && window._mwIsVisiting()) return (window._mwVisit || {}).uid || '';
+  return (window.currentUser && window.currentUser.uid) || '';
+};
+window.mwArtFind = function (id) {
+  return (window.mwArtList() || []).filter(function (a) { return a && a.id === id; })[0] || null;
+};
+// 내가 이 그림을 같이 그렸나 — 서명에 내 uid 가 있으면 공짜다.
+window.mwArtIsMine = function (a) {
+  const me = (window.currentUser || {}).uid;
+  return !!(me && a && Array.isArray(a.byUids) && a.byUids.indexOf(me) >= 0);
+};
+window.mwArtHave = function (id) {
+  return (window._myArt || []).some(function (a) { return a && a.id === id; });
+};
+
+// ---- 저장 ----
+window.mwJamSaveArt = async function () {
+  const J = window._mwJam, R = window._rt, me = auth.currentUser;
+  if (!J || !me) return;
+  if (!window.mwJamIsHost()) { showToast('방 주인만 저장할 수 있어요'); return; }
+  const px = J.px.map(function (v) { return String(v || 0); }).join('');
+  if (!/[1-6]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
+  // 서명 = 저장할 때 방에 있던 사람들. **uid 도 같이** 남긴다 — 나중에 '공짜로 가져가기'
+  // 판정이 uid 로 이뤄지기 때문이다(닉네임은 바뀔 수 있어 기준이 못 된다).
+  let by = [], byUids = [];
+  try {
+    const sn = await R.get(R.ref(R.db, 'roomLive/' + J.owner + '/players'));
+    const all = sn.val() || {};
+    Object.keys(all).forEach(function (k) {
+      if (!all[k] || !all[k].nick) return;
+      by.push(all[k].nick); byUids.push(k);
+    });
+  } catch (e) {}
+  if (!by.length) { by = [window._mwMyNick || '머피']; byUids = [me.uid]; }
+  if (byUids.indexOf(me.uid) < 0) { by.push(window._mwMyNick || '머피'); byUids.push(me.uid); }
+  const art = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                px: px, by: by.slice(0, 6), byUids: byUids.slice(0, 6), at: Date.now(), price: 0 };
+  window._myArt = [art].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+  const ok = await window._mwSaveArt(window._myArt);
+  showToast(ok === false ? '목록에 담았어요 · 곧 저장돼요' : '그림 목록에 저장했어요');
+  if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
+  window.mwArtChip && window.mwArtChip(window._curField);
+};
+
+// ---- 목록 ----
+window.mwArtGallery = function () {
+  const list = window.mwArtList();
+  const visiting = !!(window._mwIsVisiting && window._mwIsVisiting());
+  const nick = visiting ? ((window._mwVisit || {}).nick || '머피') : (window._mwMyNick || '머피');
+  const esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  let el = document.getElementById('mw-artgal'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-artgal';
+  el.innerHTML = '<div class="ag-box">'
+    + '<div class="ag-head"><b>' + esc(nick) + '님의 그림</b>'
+    +   '<button class="ag-x" onclick="var e=document.getElementById(&quot;mw-artgal&quot;);if(e)e.remove()">닫기</button></div>'
+    + '<div class="ag-list">'
+    + (list.length ? list.map(function (a) {
+        const mine = window.mwArtIsMine(a), have = window.mwArtHave(a.id);
+        const tag = have ? '가지고 있어요' : (mine ? '같이 그림 · 공짜' : (a.price > 0 ? (a.price + '머피') : '비매품'));
+        return '<button class="ag-card" onclick="window.mwArtBig(&quot;' + esc(a.id) + '&quot;)">'
+          + '<img src="' + window.mwArtImg(a.px, 'frame', a.id) + '" alt="같이 그린 그림">'
+          + '<span class="ag-by">' + esc((a.by || []).join('·')) + '</span>'
+          + '<span class="ag-tag">' + esc(tag) + '</span></button>';
+      }).join('') : '<div class="ag-empty">아직 그린 그림이 없어요<br>같이 그리기에서 그리고 저장해 보세요</div>')
+    + '</div></div>';
+  el.onclick = function (e) { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+};
+
+// ---- 방 안 '그림' 칩 ----
+// ★필드에 얹는 것은 조이스틱 예외 목록에 **반드시** 넣어야 한다(.mw-fieldchip 은 이미 들어 있다).
+window.mwArtChip = function (key) {
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  let b = document.getElementById('mw-art-chip');
+  const n = (window.mwArtList() || []).length;
+  if (key !== 'home' || !n) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('button');
+    b.id = 'mw-art-chip'; b.className = 'mw-fieldchip';
+    b.style.top = '9px'; b.style.left = '9px'; b.style.right = 'auto';
+    b.onclick = function (e) { e.stopPropagation(); window.mwArtGallery(); };
+    room.appendChild(b);
+  }
+  b.textContent = '그림 ' + n;
+};
+
+// ---- 가져가기 / 사기 ----
+window.mwArtTake = async function (id) {
+  const me = auth.currentUser;
+  if (!me) { window.memberGate && window.memberGate('그림을 가지려면 로그인이 필요해요'); return; }
+  const a = window.mwArtFind(id); if (!a) return;
+  if (window.mwArtHave(id)) { showToast('이미 가지고 있어요'); return; }
+  const mine = window.mwArtIsMine(a);
+  const price = mine ? 0 : (a.price | 0);
+  if (!mine && price <= 0) { showToast('아직 팔지 않는 그림이에요'); return; }
+  if (price > 0) {
+    const have = (window._creditState && window._creditState.credits) || 0;
+    if (have < price) { showToast('머피가 모자라요 · ' + price + '머피 필요해요'); return; }
+    const ok = await window.murpyConfirm({
+      title: price + '머피로 사기',
+      desc: '<b>' + ((a.by || []).join('·')) + '</b>님이 그린 그림을 내 방으로 가져와요',
+      confirmText: '사기'
+    });
+    if (!ok) return;
+    // ★대금은 **판매자 문서에 직접 못 쓴다**(남의 문서는 못 고친다). 알림으로 보낸다 —
+    //   부르기(room_invite)가 이미 쓰는 길이라 규칙을 안 건드려도 된다.
+    //   판매자 앱이 알림을 읽을 때 자기 문서에 적립한다.
+    try {
+      await updateDoc(doc(db, 'users', me.uid),
+                      { credits: Math.max(0, ((window._creditState || {}).credits | 0) - price) });
+      window._creditState.credits = Math.max(0, (window._creditState.credits | 0) - price);
+      window.mwUpdateCoin && window.mwUpdateCoin();
+      await setDoc(doc(db, 'notifications', 'as_' + id + '_' + me.uid), {
+        toUid: window.mwArtOwner(), fromUid: me.uid,
+        fromNickname: window._mwMyNick || '머피', type: 'art_sold',
+        amount: price, artId: id, read: false, createdAt: serverTimestamp()
+      });
+    } catch (e) { console.warn('art buy', e); showToast('사지 못했어요 · 잠시 뒤에 다시'); return; }
+  }
+  // 내 목록에 담는다. **원작자 표시(by)는 그대로 들고 간다** — 누가 그렸는지가 그림의 값이다.
+  const copy = { id: a.id, px: a.px, by: a.by || [], byUids: a.byUids || [], at: a.at || Date.now(),
+                 price: 0, from: window.mwArtOwner() };
+  window._myArt = [copy].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+  await window._mwSaveArt(window._myArt);
+  showToast(price > 0 ? '샀어요 · 꾸미기에서 방에 놓을 수 있어요'
+                      : '가져왔어요 · 꾸미기에서 방에 놓을 수 있어요');
+  if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
+  const g = document.getElementById('mw-artgal'); if (g) { g.remove(); window.mwArtGallery(); }
+};
+
+// ---- 값 매기기 (주인만) ----
+window.mwArtPrice = async function (id) {
+  if (window._mwIsVisiting && window._mwIsVisiting()) return;
+  const a = window.mwArtFind(id); if (!a) return;
+  const v = prompt('몇 머피에 팔까요? (0 = 안 팜)', String(a.price | 0));
+  if (v === null) return;
+  const n = Math.max(0, Math.min(9999, parseInt(v, 10) || 0));
+  a.price = n;
+  await window._mwSaveArt(window._myArt);
+  showToast(n > 0 ? (n + '머피에 내놨어요') : '판매를 내렸어요');
+  const g = document.getElementById('mw-artgal'); if (g) { g.remove(); window.mwArtGallery(); }
+};
+
+// ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
+window.mwArtShare = function (id) {
+  const a = window.mwArtFind(id); if (!a) return;
+  const nick = (a.by || []).join('·') || '머피';
+  window._mwStampData = window.mwArtImg(a.px, 'frame', a.id);
+  window._mwShareMeta = {
+    title: nick + '님이 같이 그린 그림',
+    desc: '머피월드에서 같이 그렸어요',
+    btn: '보러 가기',
+    link: 'https://murpy.app/?room=' + encodeURIComponent(window.mwArtOwner())
+  };
+  window.mwShareKakao && window.mwShareKakao();
+};
+
 // ---- 크게 보기 ----
 window.mwArtBig = function (id) {
   const room = window._mwRoomShown() || {};
-  const a = (room.art || {})[id]; if (!a || !a.px) return;
+  // ★방에 걸린 그림(room.art)과 목록의 그림(artworks) **둘 다** 여기로 온다.
+  const a = ((room.art || {})[id]) || window.mwArtFind(id);
+  if (!a || !a.px) return;
   let el = document.getElementById('mw-artbig'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-artbig';
   el.onclick = function () { el.remove(); };
   const by = (a.by || []).join('·');
+  const visiting = !!(window._mwIsVisiting && window._mwIsVisiting());
+  const mine = window.mwArtIsMine(a), have = window.mwArtHave(id);
+  const esc2 = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  const q = '&quot;' + esc2(id) + '&quot;';
+  let btns = '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
+  if (have) btns += '<button disabled>가지고 있어요</button>';
+  else if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
+  else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
+  if (!visiting) btns += '<button onclick="window.mwArtPrice(' + q + ')">값 매기기</button>';
   const d = a.at ? new Date(a.at) : null;
   const when = d ? (d.getMonth() + 1) + '월 ' + d.getDate() + '일' : '';
   el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
@@ -20116,7 +20349,12 @@ window.mwArtBig = function (id) {
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
     + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by + '님이 같이 그렸어요</div>' : '')
     + (when ? '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + when + '</div>' : '')
+    + '<div class="ab-btns">' + btns + '</div>'
     + '</div>';
+  // ★버튼을 눌러도 배경 클릭(닫기)이 같이 먹지 않게 막는다
+  el.querySelectorAll('.ab-btns button').forEach(function (b) {
+    b.onclick = function (e) { e.stopPropagation(); };
+  });
   document.body.appendChild(el);
 };
 window.mwRoomInviteShare = function () {
@@ -20357,6 +20595,7 @@ window.mwRoomEnterField = async function (uid) {
     if (ready.kicked) { showToast('이 방에는 들어갈 수 없어요'); window._mwRoomForget(); return; }
     // 펫도 같이 들고 온다 — 손님에게도 **나와 똑같은 모습**이 보여야 한다(대표 확정).
     window._mwVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null,
+                        artworks: Array.isArray(d.artworks) ? d.artworks : [],
                         petsOut: Array.isArray(d.petsOut) ? d.petsOut
                           : ((d.pet && d.pet.id) ? [d.pet] : []) };
     window._mwRoomRemember(uid);      // 앱을 껐다 켜도 이 방으로 돌아온다
@@ -20373,6 +20612,7 @@ window.mwRoomEnterField = async function (uid) {
 // 방 대화 기록 비우기 — 화면과 메모리 양쪽. 방을 열 때도 한 번 부른다.
 window._mwRoomLogClear = function () {
   window._mwRl.log = []; window._mwRl.seenMsg = {}; window._mwRl.logDirty = 0;
+  window._mwRl.chatRows = []; window._mwRl.presRows = [];
   const le = document.getElementById('mw-party-log');
   if (le) le.innerHTML = '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
 };
@@ -20438,6 +20678,7 @@ window.mwRoomLeaveField = function () {
     window._mwRoomSess = (window._mwRoomSess || 0) + 1;
     window._charApplyPos && window._charApplyPos();
     window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField || 'home');
+    window.mwArtChip && window.mwArtChip(window._curField || 'home');
     showToast('방을 닫았어요 · 다시 초대할 수 있어요');
     return;
   }
@@ -20538,10 +20779,9 @@ window._mwChatWatch = function (ownerUid) {
         .filter(function (m) { return m && m.text; })
         .sort(function (a, b) { return (b.t || 0) - (a.t || 0); })   // 최신이 앞(목록이 column-reverse)
         .slice(0, 60);
-      window._mwRl.log = rows.map(function (m) {
-        return { nick: String(m.nick || '머피'), text: String(m.text).slice(0, 40) };
+      window._mwRl.chatRows = rows.map(function (m) {
+        return { nick: String(m.nick || '머피'), text: String(m.text).slice(0, 40), t: m.t || 0 };
       });
-      window._mwRl.logDirty = 1;
       window._mwChatPaint();
     }, function (e) { console.warn('chat watch', e); });
     window._mwChatUn = function () { try { un(); } catch (e) {} };
@@ -20552,8 +20792,27 @@ window._mwChatUnwatch = function () {
 };
 // 목록 그리기 — _mwRlRender 안에 있던 것을 떼어냈다. 대화가 올 때마다 **바로** 그려야 하는데,
 // 그 안에 있으면 presence 스냅샷이 올 때까지 기다려야 했다.
+// ★★두 곳에서 온 것을 **합친다** (대표 8-25: "내 채팅뿐 아니라 상대방 채팅도 떠야 하는데
+//   실시간으로 안 보인다").
+//   ① roomLive/{주인}/chat  = v723 부터 쓰는 저장소. 늦게 들어와도 지난 대화가 보인다
+//   ② presence 의 msg      = 머리 위 말풍선. **옛 버전 폰은 ①에 안 쓰고 ②만 보낸다**
+//   상대가 아직 업데이트 안 됐으면 ①에는 아무것도 안 온다 — 그래서 내 말만 보였다.
+//   ②까지 같이 그리면 어느 쪽이든 보인다. 같은 말이 두 번 안 뜨게 (닉+글+시각 2초)로 묶는다.
+window._mwChatMerge = function () {
+  const rows = (window._mwRl.chatRows || []).concat(window._mwRl.presRows || []);
+  rows.sort(function (a, b) { return (b.t || 0) - (a.t || 0); });   // 최신이 앞(목록이 column-reverse)
+  const out = [], seen = {};
+  for (let i = 0; i < rows.length && out.length < 60; i++) {
+    const m = rows[i];
+    const k = m.nick + '|' + m.text + '|' + Math.round((m.t || 0) / 2000);
+    if (seen[k]) continue;
+    seen[k] = 1; out.push(m);
+  }
+  return out;
+};
 window._mwChatPaint = function () {
-  const log = window._mwRl.log || [];
+  const log = window._mwChatMerge();
+  window._mwRl.log = log;          // 폴라로이드 등 다른 곳이 참조한다
   window._mwRl.logDirty = 0;
   // ★방 목록과 낙서판 목록 **둘 다** 칠한다. 같은 데이터를 두 곳이 보고 있다.
   [['mw-party-log', '한마디 남기면 머리 위에 떠요'],
@@ -20885,7 +21144,26 @@ window._mwRlRender = function (all) {
   }
 
   // ── 대화 기록 ──
-  // ★여기서 쌓지 않는다. 예전엔 presence 에 실려 온 말을 **각자 자기 메모리에** 모았는데,
+  // ★★말풍선(presence)으로 온 말도 **같이 쌓는다.** 저장소(chat)만 보면 아직 업데이트 안 한
+  //   폰이 한 말이 영영 안 보인다(대표 8-25: "상대방 채팅이 실시간으로 안 보인다").
+  //   합치는 건 _mwChatMerge 가 한다 — 같은 말이 두 번 뜨지 않게 묶어 준다.
+  {
+    const pres = window._mwRl.presRows || (window._mwRl.presRows = []);
+    const seenMsg = window._mwRl.seenMsg || (window._mwRl.seenMsg = {});
+    let added = 0;
+    Object.keys(all).forEach(function (uid) {
+      const v = all[uid]; if (!v || !v.msg || !v.msg.text) return;
+      const key = uid + '_' + v.msg.t;
+      if (seenMsg[key]) return;
+      seenMsg[key] = 1;
+      pres.unshift({ nick: String(v.nick || '머피'), text: String(v.msg.text).slice(0, 40),
+                     t: v.msg.t || Date.now() });
+      if (pres.length > 60) pres.pop();
+      added++;
+    });
+    if (added) window._mwChatPaint && window._mwChatPaint();
+  }
+  // ★쌓아 두기만 하고 목록의 진실은 저장소(chat)다. 예전엔 presence 에 실려 온 말을 **각자 자기 메모리에** 모았는데,
   //   그러면 나중에 들어온 사람은 그 전 대화를 영영 못 본다(대표 8-25).
   //   이제 roomLive/{주인}/chat 이 유일한 출처다 — _mwChatWatch 가 받아 _mwChatPaint 가 그린다.
 
