@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '671';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '672';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -6233,6 +6233,8 @@ window._mwLockBadge = '<span style="position:absolute;top:5px;right:5px;width:15
 window._mwCoinImg = "<img src='char/coin.png?v=2' alt='머피' style='width:12px;height:12px;image-rendering:pixelated;vertical-align:-1px;margin-right:3px'>";
 window.mwUpdateCoin = function () {
   const el = document.getElementById('mw-coin-amt'); if (!el) return;
+  // 로드 전에는 0 대신 '—'. 잔액을 모르는 것과 0 원인 것은 다르다.
+  if (window.currentUser && !(window._creditState && window._creditState.ready)) { el.textContent = '—'; return; }
   el.textContent = (window.currentUser && window.getCredits) ? window.getCredits() : 0;
 };
 window.charRenderRoster = function () {
@@ -13305,14 +13307,29 @@ const CAP_VISIT_DAY = 2, CAP_LIKE_DAY = 2;
 const CREDIT_BUMP_FIRST = 10, CREDIT_BUMP = 3, CAP_BUMP_DAY = 3;
 window._creditState = { credits: 0, lastEarned: '', ready: false, streak: 0 };
 window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
+// ===== 로드 전 저장 차단 =====
+// ★유저 문서를 아직 못 읽었으면 users/{uid} 에 **아무것도 쓰지 않는다.**
+//   못 읽은 동안 화면은 기본값(CHAR_DEFAULT = 남성 몸통, credits 0)을 그린다.
+//   그 상태에서 저장이 나가면 기본값이 진짜 데이터를 덮어쓴다 —
+//   "캐릭터가 남자가 됐다 / 340머피가 0이 됐다"(대표 제보 8-24)가 영구가 되는 지점이다.
+// 읽기가 끝나면 _charState.ready 가 켜진다(유저 문서 로드 끝).
+window._mwDocReady = function () {
+  return !!(window._charState && window._charState.ready);
+};
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
-window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
-window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
+window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
+  if (!window._mwDocReady()) { console.warn('char save blocked: 문서 로드 전'); return false; }
+  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
+window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
+  if (!window._mwDocReady()) { console.warn('wardrobe save blocked: 문서 로드 전'); return; }
+  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
 window._charPersistHidden = async (map) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); } catch (e) { console.error('hidden save', e); } };
-window._charPersistRoom = async (room) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
+window._charPersistRoom = async (room) => { if (!window.currentUser) return;
+  if (!window._mwDocReady()) { console.warn('room save blocked: 문서 로드 전'); return; }
+  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 // 슬롯 확장권 사용 저장 (모듈 밖 편집기에서 부른다)
 window._mwGrantRoomSlot = async () => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
@@ -13328,6 +13345,7 @@ window._mwGrantRoomSlot = async () => {
 //   빈 값으로 덮어쓴다.
 window._mwSavePet = async (pet) => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
+  if (!window._mwDocReady()) { console.warn('pet save blocked: 문서 로드 전'); return false; }
   try {
     await updateDoc(doc(db, 'users', uid), { pet: pet || null });
     return true;
@@ -16414,7 +16432,9 @@ window.renderCreditUI = function () {
   if (!card) return;
   if (!window.currentUser) { card.style.display = 'none'; return; }
   const amt = document.getElementById('credit-amount');
-  if (amt) amt.textContent = window._creditState.credits;
+  // ★로드 전에는 0 을 쓰지 않는다. _creditState 는 {credits:0} 으로 시작하는데 그걸 그대로
+  //   그려서 "돈이 0원이 됐다"로 보였다(대표 제보 8-24). 아직 모르는 것은 모른다고 표시한다.
+  if (amt) amt.textContent = window._creditState.ready ? window._creditState.credits : '—';
   const betaEl = document.getElementById('credit-beta');
   const unlimited = !(window.creditsEnforcedFor && window.creditsEnforcedFor(window.currentUser.uid));
   if (betaEl) betaEl.style.display = unlimited ? 'inline' : 'none';
