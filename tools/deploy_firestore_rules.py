@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""firestore.rules 배포 — 이 PC 에는 firebase CLI 가 없다. 대표 클릭 1회로 끝난다.
+"""Firestore / Storage 규칙 배포 — 이 PC 에는 firebase CLI 가 없다. 대표 클릭 1회로 끝난다.
 
-    python tools/deploy_firestore_rules.py
+    python tools/deploy_firestore_rules.py            # firestore.rules
+    python tools/deploy_firestore_rules.py storage    # storage.rules (사진 업로드)
 
 찍히는 링크를 브라우저에서 열고 관리자 계정으로 로그인하면 나머지는 자동이다.
 
@@ -26,14 +27,22 @@ PROJECT = 'murpyprototype'
 API = 'https://firebaserules.googleapis.com/v1/projects/' + PROJECT
 REDIRECT = 'http://localhost:9005'
 HERE = os.path.dirname(os.path.abspath(__file__))
-PATH = os.path.join(HERE, '..', 'firestore.rules')
+import sys
+# 대상 = firestore(기본) | storage. Storage 는 릴리스 이름에 **버킷이 들어간다**.
+TARGET = (sys.argv[1] if len(sys.argv) > 1 else 'firestore').lower()
+BUCKET = 'murpyprototype.firebasestorage.app'
+if TARGET == 'storage':
+    RULE_FILE, RELEASE, RULE_NAME = 'storage.rules', 'firebase.storage/' + BUCKET, 'storage.rules'
+else:
+    RULE_FILE, RELEASE, RULE_NAME = 'firestore.rules', 'cloud.firestore', 'firestore.rules'
+PATH = os.path.join(HERE, '..', RULE_FILE)
 RULES = io.open(PATH, encoding='utf-8').read()
 
 # 최소한의 사전 검사 — 괄호가 안 맞으면 서버가 400 을 주기 전에 여기서 잡는다.
 for name, o, c in (('중괄호', '{', '}'), ('괄호', '(', ')'), ('대괄호', '[', ']')):
     if RULES.count(o) != RULES.count(c):
         raise SystemExit('%s 개수가 안 맞습니다 (%d vs %d)' % (name, RULES.count(o), RULES.count(c)))
-print('firestore.rules %d자 · 규칙 %d줄' % (len(RULES), RULES.count('allow ')), flush=True)
+print('%s %d자 · 규칙 %d줄 · 대상 %s' % (RULE_FILE, len(RULES), RULES.count('allow '), RELEASE), flush=True)
 
 STATE = secrets.token_urlsafe(12)
 AUTH_URL = 'https://accounts.google.com/o/oauth2/auth?' + urllib.parse.urlencode({
@@ -94,11 +103,11 @@ def call(url, body=None, method='GET'):
 
 # ① ruleset 만들기
 rs = call(API + '/rulesets', {'source': {'files': [
-    {'name': 'firestore.rules', 'content': RULES}]}}, 'POST')
+    {'name': RULE_NAME, 'content': RULES}]}}, 'POST')
 print('ruleset 생성:', rs['name'], flush=True)
 
 # ② release 를 그 ruleset 으로 옮기기. ★body 를 한 겹 감싼다(UpdateReleaseRequest).
-rel = API + '/releases/cloud.firestore'
+rel = API + '/releases/' + RELEASE
 out = call(rel, {'release': {'name': rel.replace(
     'https://firebaserules.googleapis.com/v1/', ''), 'rulesetName': rs['name']}}, 'PATCH')
 print('release 갱신:', out.get('rulesetName'), flush=True)
