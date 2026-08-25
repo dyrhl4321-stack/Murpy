@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '723';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '724';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -954,6 +954,22 @@ window._SW_V = '723';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-jam .jam-foot { padding:14px 16px; padding-bottom:max(14px, env(safe-area-inset-bottom));
     display:flex; gap:8px }
   #mw-jam .jam-hint { font-size:10.5px; color:#4a5266; text-align:center; padding:9px 16px 0; line-height:1.6 }
+  /* ★그리면서 이야기한다 (대표 8-25). **머피룸 대화와 같은 데이터**를 쓴다 —
+     roomLive/{주인}/chat 하나가 유일한 출처라, 방에서 한 말이 여기 그대로 보이고 반대도 같다.
+     새 채팅을 만들지 않는다. */
+  #mw-jam .jam-chat { flex:1; min-height:64px; overflow-y:auto; display:flex; flex-direction:column-reverse;
+    gap:7px; margin:12px 16px 0; padding:9px 11px; background:#0b0e16;
+    border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350 }
+  #mw-jam .jam-chat .pl { font-size:11.5px; line-height:1.6; color:#cfd6e6 }
+  #mw-jam .jam-chat .pl b { color:#7aa8ff; margin-right:6px; font-weight:400 }
+  #mw-jam .jam-chat .pl-empty { font-size:11px; color:#4a5266; text-align:center; padding:12px 0 }
+  #mw-jam .jam-row { display:flex; gap:4px; padding:8px 16px 0 }
+  #mw-jam .jam-row input { flex:1; min-width:0; box-sizing:border-box; height:34px;
+    background:rgba(255,255,255,.06); border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
+    color:#fff; padding:0 9px; font-size:16px; outline:none; font-family:inherit; border-radius:0 }
+  #mw-jam .jam-row button { flex-shrink:0; box-sizing:border-box; height:34px; background:var(--accent);
+    border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350; color:#fff; padding:0 12px;
+    font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; border-radius:0 }
   #mw-jam .jam-head { display:flex; align-items:center; gap:9px; padding:15px 16px 12px;
     padding-top:max(15px, env(safe-area-inset-top)) }
   #mw-jam .jam-head b { flex:1; min-width:0; font-size:14px; color:#fff; font-weight:400 }
@@ -19881,6 +19897,15 @@ window.mwJamShow = async function (asHost) {
     + '</div>'
     + '<div class="jam-wrap"><canvas width="32" height="32"></canvas><div class="jam-grid"></div></div>'
     + '<div class="jam-pal">' + pal + '</div>'
+    // ★색 밑에 대화. 그리면서 이야기할 수 있게 (대표 8-25).
+    + '<div class="jam-chat" id="mw-jam-log"><div class="pl-empty">그리면서 이야기해요</div></div>'
+    + '<div class="jam-row">'
+    +   '<input id="mw-jam-input" maxlength="40" placeholder="한마디" autocomplete="off"'
+    +   ' onfocus="window._mwJamKbStart&&window._mwJamKbStart()"'
+    +   ' onblur="window._mwJamKbEnd&&window._mwJamKbEnd()"'
+    +   ' onkeydown="if(event.key===\'Enter\')window.mwJamSay()">'
+    +   '<button onmousedown="event.preventDefault()" onclick="window.mwJamSay()">보내기</button>'
+    + '</div>'
     + '<div class="jam-hint">' + (host
         ? '다 그리면 방에 깔거나 걸 수 있어요<br>방에 있는 사람 모두 같이 그릴 수 있어요'
         : '방 주인이 방에 남겨요<br>같이 그려보세요') + '</div>'
@@ -19890,6 +19915,7 @@ window.mwJamShow = async function (asHost) {
           + '<button class="go" onclick="window.mwJamPlace(\'frame\')">액자로 걸기</button>'
         : '<button onclick="window.mwJamX()">닫기</button>') + '</div>';
   document.body.appendChild(el);
+  window._mwChatPaint && window._mwChatPaint();   // 지금까지 오간 말을 곧바로 채운다
 
   const wrap = el.querySelector('.jam-wrap'), cv = wrap.querySelector('canvas');
   const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
@@ -19980,7 +20006,8 @@ window._mwJamSub = async function () {
 };
 
 // ---- 닫기 / 접기 / 비우기 ----
-window.mwJamClose = function () {          // 내 화면에서만 내린다
+window.mwJamClose = function () {
+  window._mwJamKbEnd && window._mwJamKbEnd(true);   // ★잠금이 남으면 앱 전체가 굳는다          // 내 화면에서만 내린다
   const J = window._mwJam;
   if (J) {
     if (J.timer) { clearTimeout(J.timer); window._mwJamFlush(); }
@@ -20526,16 +20553,75 @@ window._mwChatUnwatch = function () {
 // 목록 그리기 — _mwRlRender 안에 있던 것을 떼어냈다. 대화가 올 때마다 **바로** 그려야 하는데,
 // 그 안에 있으면 presence 스냅샷이 올 때까지 기다려야 했다.
 window._mwChatPaint = function () {
-  const le = document.getElementById('mw-party-log'); if (!le) return;
   const log = window._mwRl.log || [];
   window._mwRl.logDirty = 0;
-  le.innerHTML = log.length ? '' : '<div class="pl-empty">한마디 남기면 머리 위에 떠요</div>';
-  log.forEach(function (m) {
-    const d = document.createElement('div'); d.className = 'pl';
-    const b2 = document.createElement('b'); b2.textContent = m.nick;
-    d.appendChild(b2); d.appendChild(document.createTextNode(m.text));   // 남의 글 = 노드로만
-    le.appendChild(d);
+  // ★방 목록과 낙서판 목록 **둘 다** 칠한다. 같은 데이터를 두 곳이 보고 있다.
+  [['mw-party-log', '한마디 남기면 머리 위에 떠요'],
+   ['mw-jam-log', '그리면서 이야기해요']].forEach(function (pair) {
+    const le = document.getElementById(pair[0]); if (!le) return;
+    le.innerHTML = log.length ? '' : '<div class="pl-empty">' + pair[1] + '</div>';
+    log.forEach(function (m) {
+      const d = document.createElement('div'); d.className = 'pl';
+      const b2 = document.createElement('b'); b2.textContent = m.nick;
+      d.appendChild(b2); d.appendChild(document.createTextNode(m.text));   // 남의 글 = 노드로만
+      le.appendChild(d);
+    });
   });
+};
+// 낙서판에서 한마디 — **머피룸과 같은 곳**에 쓴다(mwRoomSay 와 같은 노드).
+window.mwJamSay = function () {
+  const inp = document.getElementById('mw-jam-input'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
+  if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
+  inp.value = '';
+  inp.blur();                       // 키보드를 내려야 바로 그릴 수 있다
+  const R = window._rt, ow = (window._mwJam && window._mwJam.owner) || window._mwRl.owner;
+  // 머리 위 말풍선도 같이 띄운다 — 방에 있는 사람에게는 그림판 밖에서도 보여야 한다
+  window._mwRl.msg = { text: t, t: Date.now() };
+  window._mwRlSend && window._mwRlSend();
+  window._charApplyPos && window._charApplyPos();
+  try {
+    if (R && ow) {
+      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
+        nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: Date.now()
+      });
+    }
+  } catch (e) { console.warn('jam chat push', e); }
+};
+// 낙서판 키보드 — 머피룸과 **같은 방식**이다. 잠그고, 높이만 잠깐 줄인다.
+//   #mw-jam 은 이미 position:fixed 라 '상자로 바꾸는' 전환이 없다(그게 방에서 겪은 흔들림이었다).
+window._mwJamKbFit = function () {
+  const el = document.getElementById('mw-jam'); if (!el || !window._mwJamKbOn) return;
+  const vv = window.visualViewport;
+  const ih = window.innerHeight || (vv && vv.height) || 0;
+  if (!(vv && vv.height < ih - 80)) { window._mwJamKbH = 0; el.style.height = ''; return; }
+  const h = Math.round(vv.height);
+  if (window._mwJamKbH && Math.abs(window._mwJamKbH - h) < 40) return;   // 고무줄 잔떨림 무시
+  window._mwJamKbH = h;
+  el.style.height = h + 'px';
+};
+window._mwJamKbStart = function () {
+  if (window._mwJamKbOn) return;
+  window._mwJamKbOn = 1; window._mwJamKbH = 0;
+  window._mwJamOwnedLock = !_bodyLocked;
+  if (window._mwJamOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
+  const vv = window.visualViewport;
+  if (vv) vv.addEventListener('resize', window._mwJamKbFit);
+  [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwJamKbFit, t); });
+};
+window._mwJamKbEnd = function (immediate) {
+  const finish = function () {
+    if (!window._mwJamKbOn) return;
+    const ae = document.activeElement;
+    if (!immediate && ae && ae.id === 'mw-jam-input') return;   // 다시 치고 있다
+    window._mwJamKbOn = 0; window._mwJamKbH = 0;
+    const vv = window.visualViewport;
+    if (vv) vv.removeEventListener('resize', window._mwJamKbFit);
+    const el = document.getElementById('mw-jam'); if (el) el.style.height = '';
+    if (window._mwJamOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
+    window._mwJamOwnedLock = false;
+  };
+  if (immediate) finish(); else setTimeout(finish, 100);
 };
 window._mwRlLeave = function () {
   window._mwChatUnwatch && window._mwChatUnwatch();
