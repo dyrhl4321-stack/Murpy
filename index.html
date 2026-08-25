@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '719';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '720';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4482,6 +4482,9 @@ window._mwPetSync = function () {
     && window._mwPets.every(function (p, i) { return list[i] && p.id === list[i].id; });
   if (!same) {
     clear();
+    // ★방에 들어올 때마다 다른 자리에서 시작한다(대표: "나갔다 들어오면 정해진 곳에서 시작").
+    //   날짜만 씨앗에 넣으면 하루 종일 같은 자리라, 들어온 횟수를 같이 섞는다.
+    window._mwPetSpawnN = (window._mwPetSpawnN || 0) + 1;
     var st = (window._FIELDS && window._FIELDS.home && window._FIELDS.home.start) || { tc: 8, tr: 8 };
     list.forEach(function (d, i) {
       if (!d || !window._mwPetDef(d.id)) return;
@@ -4489,11 +4492,28 @@ window._mwPetSync = function () {
       el.className = 'mw-pet';
       el.innerHTML = '<i class="mw-pet-sh"></i><i class="mw-pet-spr"></i><i class="mw-pet-hit"></i>';
       room.appendChild(el);
+      // ★★방에 들어올 때마다 **흩어져서** 시작한다 (대표 8-25: "정해진 곳에서 모여서
+      //   시작하는 게 아니라 각 펫마다 좌표를 분산해 달라").
+      //   예전엔 입구 옆 3×2 칸에 줄 세워 놨더니 여섯 마리가 한 덩어리로 뭉쳐 보였다.
+      //   ★무작위지만 **씨앗을 쓴다** — 방 주인·펫·자리·날짜로 정해지므로 손님 화면과
+      //     내 화면이 (아직 실시간 신호가 오기 전에도) 같은 자리에서 시작한다.
+      //   ★걸을 수 있는 칸만 고르고, 이미 선 펫과 겹치지 않게 한다. 40번 안에 못 찾으면
+      //     예전 방식으로 떨어진다(가구가 방을 꽉 채운 경우).
+      var _seed = window._mwPetSeed(window._mwPetOwner() + '|' + d.id + '|' + i + '|'
+        + (window.mwTodayKey ? window.mwTodayKey() : '') + '|' + (window._mwPetSpawnN || 0));
+      var _rng = window._mwPetRng(_seed);
+      var _tc = null, _tr = null, _try;
+      for (_try = 0; _try < 40; _try++) {
+        var _c = Math.floor(_rng() * 16), _r = Math.floor(_rng() * 16);
+        if (window._mwCritterWalkable && !window._mwCritterWalkable(_c, _r)) continue;
+        var _taken = window._mwPets.some(function (q) { return q.tc === _c && q.tr === _r; });
+        if (_taken) continue;
+        _tc = _c; _tr = _r; break;
+      }
       var p = {
         id: d.id, el: el, i: i, dir: 0, anim: 'stand', moving: false, up: false,
-        // 자리마다 다른 칸에서 시작한다 — 안 그러면 전부 겹쳐서 한 마리처럼 보인다
-        tc: Math.max(0, Math.min(15, (st.tc | 0) + 2 - (i % 3))),
-        tr: Math.max(0, Math.min(15, (st.tr | 0) + 1 + Math.floor(i / 3)))
+        tc: _tc != null ? _tc : Math.max(0, Math.min(15, (st.tc | 0) + 2 - (i % 3))),
+        tr: _tr != null ? _tr : Math.max(0, Math.min(15, (st.tr | 0) + 1 + Math.floor(i / 3)))
       };
       (function (pp) {
         var hit = el.querySelector('.mw-pet-hit');
