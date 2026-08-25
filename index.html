@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '674';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '675';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -11959,6 +11959,42 @@ if ('serviceWorker' in navigator) {
     // ★등록 URL에 버전을 붙인다. updateViaCache:'none' 은 브라우저 캐시만 우회하고
     //   **GitHub Pages CDN 캐시는 못 우회한다** — 같은 URL이면 CDN이 옛 sw.js 를 그대로 준다.
     //   쿼리를 바꾸면 CDN 입장에서 다른 리소스라 무조건 새로 받는다. (scope 는 그대로)
+    // ===== 옛 화면 자가복구 (2026-08-25) =====
+    // ★자기 잠금 고리가 있다. 옛 서비스워커가 **캐시에 있는 옛 index.html** 을 주면,
+    //   그 옛 화면은 `sw.js?v=<옛 버전>` 으로 등록을 건다. 브라우저 입장에선 등록 주소가
+    //   그대로라 "바뀐 게 없다"고 보고 **영원히 안 바뀐다.**
+    //   대표 폰이 이 상태였다("예전 버전에서 업데이트가 1도 안 됨").
+    // → 서버의 version.txt 를 캐시를 우회해 읽고, 화면 버전과 다르면 **스스로 비우고 한 번만**
+    //   다시 들어간다. reset.html 을 손으로 열 필요가 없어진다.
+    // ★주소에 시각을 붙여 받는다 — 옛 워커의 '정적 파일 캐시 우선' 규칙을 피하려면
+    //   매번 다른 주소여야 한다. no-store 만으로는 워커를 못 피한다.
+    // ★sessionStorage 로 한 번만 돈다. 안 걸면 무한 새로고침이 된다.
+    (function () {
+      try {
+        if (sessionStorage.getItem('mw_healed')) return;
+      } catch (e) { return; }
+      fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (v) {
+          v = String(v || '').trim();
+          if (!v || v === String(window._SW_V || '')) return;
+          console.warn('[selfheal] 화면 v' + window._SW_V + ' / 서버 v' + v + ' → 캐시를 비웁니다');
+          try { sessionStorage.setItem('mw_healed', v); } catch (e) {}
+          var done = function () { location.replace('./?fresh=' + Date.now()); };
+          var jobs = [];
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+              return Promise.all(rs.map(function (r2) { return r2.unregister(); }));
+            }).catch(function () {}));
+          }
+          if (window.caches) {
+            jobs.push(caches.keys().then(function (ks) {
+              return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+            }).catch(function () {}));
+          }
+          Promise.all(jobs).then(done, done);
+        }).catch(function () {});
+    })();
     navigator.serviceWorker.register('./sw.js?v=' + (window._SW_V || '1'), { updateViaCache: 'none' })
       .then(reg => {
         // 새 버전(새 sw.js) 감지 시 자동 새로고침 — 최초 설치는 제외(기존 controller 있을 때만)
