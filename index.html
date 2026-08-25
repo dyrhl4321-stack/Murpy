@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '686';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '687';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3452,7 +3452,11 @@ window.SEASON_ITEMS = [
   // w/h 94x105 = APNG 캔버스. 얼굴은 리지드로 두고 배만 눌러 둥가둥가(7-24: 눈 흔들림·뿔 잘림
   // 수정). 가로 스케일을 없애 원폭(94) 유지, 위 1px만 여백. 캔버스 크기는 진폭 따라 바뀜.
   // 정적 원본은 s2608_dino_still.png, 재생성은 char/animate_dino.py.
-  { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105,
+  // ★공룡은 캐릭터를 막지 않는다 (noBlock, 대표 8-25).
+  //   돌아다니는 공룡은 이미 안 막고 있었는데(_mwDinoRoam), **멈추는 순간** 가구
+  //   발자국이 되살아나 길을 막았다. 멈춘 공룡이 문 앞에 있으면 지나갈 수가 없다 —
+  //   '귀엽다'가 '짜증난다'로 바뀌는 지점이다. 그림자·배치는 그대로고 통행만 연다.
+  { id:'s2608_dino', name:'아기 공룡', src:'char/rooms/s2608_dino.png?v=8', w:94, h:105, noBlock:true,
     hd:'char/rooms/hd/s2608_dino.webp?v=1', hdMax:200, still:'char/rooms/s2608_dino_still.png?v=1',
     // ★★공룡은 **이 하나만 예외**다. 조건표를 비워(cond:{}) 자동 지급을 끊고,
     //   매칭 소진 화면에서 10번 두드릴 때 matchDinoTap 이 roomInv 에 **직접** 넣는다.
@@ -3652,7 +3656,11 @@ window.mwFurnHtml = function (roomData, edit) {
       // ★낙서는 **꾸미기가 아닐 때도 눌린다** — 눌러서 크게 본다. 나머지 가구는 하던 대로 통과.
       if (!edit) extra = ` onclick="window.mwArtBig('${it.a}')"`;
     }
-    const pe = (def.art && !edit) ? 'pointer-events:auto;cursor:pointer;'
+    // ★가만히 있는 공룡도 눌려야 한다. 멈추기를 누르면 장식으로 돌아가는데,
+    //   장식은 pointer-events 가 막혀 있어 **다시 켤 방법이 꾸미기밖에 없었다**(대표 8-25).
+    const _dinoStill = (!edit && def.id === window.MW_DINO_ID);
+    if (_dinoStill) extra = ` onclick="window.mwDinoMenu(${idx})"`;
+    const pe = ((def.art || _dinoStill) && !edit) ? 'pointer-events:auto;cursor:pointer;'
              : (edit ? 'pointer-events:auto;cursor:grab;touch-action:none;' : 'pointer-events:none;');
     return window._mwShadowHtml(it.x, it.y, def, z, idx)
       + `<img src="${src}" data-idx="${idx}" draggable="false"${extra} style="position:absolute;left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${pe}">`;
@@ -4721,23 +4729,31 @@ window.mwDinoMenu = function (idx) {
   if (!room) return;
   var d = null, i;
   for (i = 0; i < window._mwDinos.length; i++) if (window._mwDinos[i].idx === idx) d = window._mwDinos[i];
-  if (!d || !d.el) return;
+  // ★멈춘 공룡은 _mwDinos 에 없다 — 그때는 가구 <img> 를 기준점으로 삼는다.
+  //   안 그러면 멈추는 순간 영영 못 누른다.
+  var anchor = (d && d.el) || document.querySelector('#mw-furn [data-idx="' + idx + '"]');
+  if (!anchor) return;
   var old = document.getElementById('mw-charmenu'); if (old) old.remove();
   if (window._mwIsVisiting && window._mwIsVisiting()) {   // 남의 방 공룡은 구경만
     showToast('남의 방 공룡이에요');
     return;
   }
-  var rb = room.getBoundingClientRect(), hb = d.el.getBoundingClientRect();
+  var rb = room.getBoundingClientRect(), hb = anchor.getBoundingClientRect();
   var cx = hb.left - rb.left + hb.width / 2;
   var cy = hb.top - rb.top + hb.height * 0.55;
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 64;
   var room0 = window._myRoom, it0 = (room0 && room0.f) ? room0.f[idx] : null;
   var following = !!(it0 && it0.fl);
-  var acts = [
+  var moving = !!(it0 && it0.mv);
+  // 멈춘 공룡에겐 '움직이기'가, 움직이는 공룡에겐 '멈추기'가 뜬다.
+  var acts = moving ? [
     { k: 'move', t: following ? '따라오기 끄기' : '따라와', dx: 0, dy: -R - 12,
       fn: 'window.mwDinoFollow(' + idx + ')' },
     { k: 'poke', t: '쓰다듬기', dx: -R - 6, dy: 4, fn: 'window.mwDinoPat(' + idx + ')' },
     { k: 'kick', t: '멈추기', dx: R + 6, dy: 4, fn: 'window.mwDinoStop(' + idx + ')' }
+  ] : [
+    { k: 'move', t: '움직이기', dx: 0, dy: -R - 12, fn: 'window.mwDinoGo(' + idx + ')' },
+    { k: 'poke', t: '쓰다듬기', dx: 0, dy: R + 20, fn: 'window.mwDinoPat(' + idx + ')' }
   ];
   var el = document.createElement('div');
   el.id = 'mw-charmenu';
@@ -4760,11 +4776,26 @@ window.mwDinoMenu = function (idx) {
 window.mwDinoPat = function (idx) {
   var d = null, i;
   for (i = 0; i < window._mwDinos.length; i++) if (window._mwDinos[i].idx === idx) d = window._mwDinos[i];
-  if (!d) return;
+  if (!d) { showToast('좋아해요'); return; }   // 멈춘 공룡은 반응만 (그림은 이미 둥가둥가다)
   clearTimeout(d._t);
   d.moving = false;
   window._mwDinoPlay(d, 0);
   showToast('좋아해요');
+};
+
+// 멈춰 있던 공룡을 다시 움직이게 한다. 상한(8마리)을 넘기면 막는다.
+window.mwDinoGo = function (idx) {
+  var room = window._myRoom;
+  if (!room || !Array.isArray(room.f) || !room.f[idx]) return;
+  var on = room.f.filter(function (x) { return x && x.id === window.MW_DINO_ID && x.mv; }).length;
+  if (on >= window.MW_DINO_MAX) {
+    showToast('움직이는 공룡은 ' + window.MW_DINO_MAX + '마리까지예요');
+    return;
+  }
+  room.f[idx].mv = 1;
+  window._charPersistRoom && window._charPersistRoom(room);
+  window.mwRenderFurn && window.mwRenderFurn();
+  showToast('이 공룡이 돌아다녀요 (' + (on + 1) + '/' + window.MW_DINO_MAX + ')');
 };
 
 // 이 공룡이 나를 따라오게 한다 / 그만두게 한다.
