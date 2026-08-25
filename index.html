@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '718';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '719';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3850,7 +3850,8 @@ window._mwPetIsOwner = function () {
 };
 window._mwPetLiveFresh = function () {
   var L = window._mwPetLive;
-  var has = !!(L && ((L.list && L.list.length) || (L.dinos && L.dinos.length)));
+  var has = !!(L && ((L.list && L.list.length) || (L.dinos && L.dinos.length)
+                     || (L.furn && L.furn.length)));
   return !!(has && (Date.now() - (L.t || 0)) < window.MW_PET_LIVE_TTL);
 };
 
@@ -3875,7 +3876,22 @@ window._mwPetPublish = function () {
   var dl = (window._mwDinos || []).map(function (d) {
     return { i: d.idx, tc: d.tc, tr: d.tr, row: d.row | 0 };
   });
-  var key = JSON.stringify(list) + '|' + JSON.stringify(dl);
+  // ★가구 배치도 같이 보낸다 (대표 8-25: "같이그리기 오브젝트를 어디 놓는지 손님도
+  //   실시간으로 보여야 한다 · 지금은 초기 위치밖에 안 보임").
+  //   ★자리(x,y)만 보내면 안 된다 — 방금 **새로 놓은** 액자는 손님 쪽 목록에 아예 없어서
+  //     자리를 줘도 그릴 게 없다. 그래서 목록을 통째로 보낸다.
+  //   ★꾸미기 중이면 **저장 전 초안**(_reditDraft)을 보낸다. 그래야 끌고 있는 게 그대로 보인다.
+  var _rd = window._reditDraft && window._reditDraft.f ? window._reditDraft
+          : (window._myRoom || null);
+  var fl = ((_rd && _rd.f) || []).map(function (it) {
+    var o = { id: it.id, x: it.x, y: it.y };
+    if (it.a) o.a = it.a;
+    if (it.d) o.d = it.d | 0;
+    if (it.mv) o.mv = 1;
+    if (it.fl) o.fl = 1;
+    return o;
+  });
+  var key = JSON.stringify(list) + '|' + JSON.stringify(dl) + '|' + JSON.stringify(fl);
   // ★바뀐 게 없어도 **가끔은 올려야 한다.** 펫이 자고 있으면 몇 시간이고 상태가 안 바뀌는데,
   //   그동안 데이터가 오래돼서(TTL 25초) 손님이 각자 계산으로 되돌아간다
   //   — 그래서 주인 화면과 손님 화면이 갈렸다(대표 8-25).
@@ -3887,13 +3903,13 @@ window._mwPetPublish = function () {
   // ★올렸는지·왜 실패했는지를 남긴다. 손님 화면에 안 뜰 때 **주인 쪽에서 확인**할 유일한 단서다
   //   (?diag=1 에 나온다). 조용히 실패하면 원인을 영영 못 찾는다.
   try {
-    if (!list.length && !dl.length) {
+    if (!list.length && !dl.length && !fl.length) {
       R.remove(R.ref(R.db, 'roomLive/' + uid + '/pets'));
       window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
       return;
     }
     var pr = R.set(R.ref(R.db, 'roomLive/' + uid + '/pets'),
-                   { t: Date.now(), list: list, dinos: dl });
+                   { t: Date.now(), list: list, dinos: dl, furn: fl });
     window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
     // ★RTDB 쓰기는 **약속(Promise)으로 실패한다.** try/catch 만으로는 권한 오류를 못 잡는다 —
     //   규칙에 막히면 여기서만 드러난다.
@@ -3925,6 +3941,7 @@ window._mwPetLiveUnwatch = function () {
   if (window._mwPetLiveUn) { window._mwPetLiveUn(); window._mwPetLiveUn = null; }
   window._mwPetLive = null;
   window._mwPetLiveKey = '';
+  window._mwFurnKey = '';
 };
 
 // 받은 상태를 화면에 얹는다. 손님 전용.
@@ -3944,6 +3961,17 @@ window._mwPetLiveApply = function () {
     //   조건에 걸리면 새 동작이 반영되지 않고 그대로 남는다.
     window._mwPetPlay(p, d.anim, d.dir);
   });
+  // ★가구 — 바뀐 게 있을 때만 다시 그린다. 매번 그리면 _mwDinoSync 가 공룡을 지웠다
+  //   다시 만들어서 자리가 초기화된다(그리고 무거워진다).
+  if (window._mwVisit && window._mwPetLive.furn) {
+    var fkey = JSON.stringify(window._mwPetLive.furn);
+    if (fkey !== window._mwFurnKey) {
+      window._mwFurnKey = fkey;
+      window._mwVisit.room = window._mwVisit.room || {};
+      window._mwVisit.room.f = window._mwPetLive.furn;
+      window.mwRenderFurn && window.mwRenderFurn();
+    }
+  }
   // ★공룡 — 자리가 바뀌었으면 _mwDinoMove 로 **걸어가게** 한다. 좌표만 갈아 끼우면 순간이동한다.
   //   방향·걷는 그림은 _mwDinoMove 가 델타에서 알아서 고른다(주인 화면과 같은 길을 쓴다).
   var dd = {};
@@ -5246,6 +5274,8 @@ window.mwRoomEdit = function () {
   window._reditBind();
 };
 window._reditPaint = function () {
+  // 끌고 있는 자리를 손님에게도 그대로 보여준다(_mwPetPublish 가 바뀌었을 때만 실제로 쓴다)
+  if (window._mwPetPublish) window._mwPetPublish();
   const room = document.getElementById('mw-redit-room'); if (!room) return;
   room.innerHTML = window.mwFurnHtml(window._reditDraft, true);
   room.querySelectorAll('img').forEach(function (img) { img.classList.toggle('sel', Number(img.dataset.idx) === window._reditSel); });
