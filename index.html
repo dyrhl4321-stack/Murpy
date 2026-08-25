@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '720';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '721';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -20840,14 +20840,25 @@ window._mwKbFit = function () {
   if (!pc || !window._mwKbOn) return;
   const vv = window.visualViewport;
   const ih = window.innerHeight || (vv && vv.height) || 0;
-  // ★키보드가 **실제로** 올라왔을 때만 높이를 줄인다. 조건 없이 맞추면 주소창이 접혔다
-  //   펴질 때마다 다시 앉아 화면이 흔들린다(스쿼드가 8-14에 배운 것).
   const kbUp = !!vv && vv.height < (ih - 80);
-  if (!kbUp) { pc.style.top = ''; pc.style.height = ''; return; }   // CSS 의 inset:0 로 복귀
-  pc.style.top = (vv.offsetTop || 0) + 'px';
-  pc.style.height = vv.height + 'px';
-  // ★scrollTop 은 만지지 않는다 — _sqNoJump 가 0.6초간 붙잡는 것과 정면으로 싸운다.
-  //   스쿼드 필드(_sqVVFit)도 크기만 맞추고 스크롤은 건드리지 않는다.
+  if (!kbUp) {                       // CSS 의 inset:0 로 복귀
+    window._mwKbH = 0;
+    pc.style.top = ''; pc.style.height = '';
+    return;
+  }
+  // ★★★★★★★8-25, 아홉 번째 — 남아 있던 마지막 움직임.
+  //   키보드가 **올라와 있는 동안에도** visualViewport 의 scroll 이벤트가 계속 온다.
+  //   아이폰은 손가락이 닿기만 해도(고무줄 스크롤) offsetTop/height 가 1~2px 씩 흔들리고,
+  //   그때마다 여기서 상자를 다시 앉혔다 = "채팅창 박스 왔다갔다".
+  //   kbUp 문턱은 **키보드가 떴는지**만 보는 것이라 이 잔떨림을 못 막는다.
+  //   -> ① offsetTop 을 아예 안 쓴다. 문서를 잠가 뒀으니 상자는 늘 화면 맨 위(0)다.
+  //      ② 높이가 **의미 있게** 달라졌을 때만 다시 앉힌다. 40px 미만은 무시한다
+  //         (키보드가 뜨고 지는 건 300px 단위라 절대 안 놓친다).
+  const h = Math.round(vv.height);
+  if (window._mwKbH && Math.abs(window._mwKbH - h) < 40) return;
+  window._mwKbH = h;
+  pc.style.top = '0px';
+  pc.style.height = h + 'px';
 };
 window._mwKbStart = function () {
   if (window._mwKbOn) return;
@@ -20863,11 +20874,11 @@ window._mwKbStart = function () {
   //   하는 일은 셋뿐이다: ①문서 잠금 ②가림막 클래스 ③키보드 애니메이션 동안 크기 맞추기.
   //   **입력줄은 건드리지 않는다.** 원래 자리(필드 바로 밑)에 그대로 있는다.
   //   위치를 미리 찍어 올리거나 transform 으로 옮기던 코드는 전부 걷어냈다 — 그게 흔들림이었다.
+  // ★scroll 은 듣지 않는다. offsetTop 을 안 쓰니 들을 이유가 없고, 듣는 순간
+  //   고무줄 스크롤 잔떨림이 그대로 상자로 들어온다 — 그게 '왔다갔다'였다.
+  window._mwKbH = 0;
   const vv = window.visualViewport;
-  if (vv) {
-    vv.addEventListener('resize', window._mwKbFit);
-    vv.addEventListener('scroll', window._mwKbFit);
-  }
+  if (vv) vv.addEventListener('resize', window._mwKbFit);
   // ★대화 로그 높이를 **지금 값으로 얼려 둔다.** 로그는 flex:1 이라 상자가 키보드에 맞춰
   //   줄면 같이 줄어든다. 스쿼드 필드에는 입력줄 밑에 로그가 없어 없던 현상이라 우리만 막는다.
   //   넘치는 만큼은 상자가 알아서 스크롤한다.
@@ -20886,7 +20897,8 @@ window._mwKbEnd = function (immediate) {
     if (!immediate && ae && ae.id === 'mw-party-input') return;   // 다시 치고 있다
     window._mwKbOn = 0;
     const vv = window.visualViewport;
-    if (vv) { vv.removeEventListener('resize', window._mwKbFit); vv.removeEventListener('scroll', window._mwKbFit); }
+    if (vv) vv.removeEventListener('resize', window._mwKbFit);
+    window._mwKbH = 0;
     document.body.classList.remove('mw-kb');
     const row = document.getElementById('mw-party-row');
     if (row) row.style.transform = '';   // 옛 버전이 남겨둔 값이 있으면 지운다
