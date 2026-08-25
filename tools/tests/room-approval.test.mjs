@@ -27,6 +27,18 @@ has(/data-room-owner=/,
   '공동룸 밀어서 승인 트랙이 없다');
 has(/if \(roomOwner\) window\.mwRoomApproveWait/,
   '스와이프 완료가 공동룸 승인 함수로 연결되지 않았다');
+has(/window\._mwPendingVisit\s*=\s*\{ uid: uid[\s\S]*?window\.charSetField/,
+  '승인 전 상대 방 데이터만 보관하고 내 머피월드에서 기다리지 않는다');
+has(/window\._mwRoomApprovedEnter = function \(ownerUid\)[\s\S]*?_mwVisit = v[\s\S]*?charSetField\('home'\)/,
+  '승인 순간에만 상대 머피월드로 전환하지 않는다');
+has(/mine && !mine\.wait && mine\.approvedAt[\s\S]*?_mwRoomApprovedEnter\(ownerUid\)/,
+  '방주의 승인 스냅샷이 손님의 실제 입장 전환으로 연결되지 않았다');
+has(/if \(window\._mwRl\.waiting && window\._mwPendingVisit\)[\s\S]*?document\.body\.classList\.remove\('mw-party'\)[\s\S]*?return;/,
+  '승인 대기 중 상대 캐릭터/공용룸 UI를 내 방 위에 미리 그린다');
+has(/_mwPendingVisit \? window\._mwPendingVisit\.uid : u\.uid/,
+  '내 방에서 기다리는 동안 승인 대상 방에 요청 presence를 연결하지 않는다');
+has(/if \(window\._mwPendingVisit && !window\._mwVisit\)[\s\S]*?입장 대기를 취소했어요/,
+  '승인 대기 취소를 내 방 닫기로 잘못 처리한다');
 
 // 출석 체크/상태 선택은 스쿼드 전용이다. 공동룸 멤버 CSS/행에는 관련 표식을 두지 않는다.
 const roster = src.match(/window\._mwRTalkWho = function \(\) \{[\s\S]*?\n\};/);
@@ -47,6 +59,12 @@ assert(!/row\.style\.(position|transform|bottom)/.test(quick[0]),
   '키보드가 뜰 때 입력줄 자체를 필드 위로 이동한다');
 assert(/el\.style\.height = vv\.height/.test(quick[0]),
   '스쿼드 필드처럼 고정 화면 상자를 visualViewport에 맞추지 않는다');
+assert(/el\.style\.top = '0px'/.test(quick[0]) && !/el\.style\.top = \(vv\.offsetTop/.test(quick[0]),
+  'visualViewport 팬 값을 공동룸 top에 더해 화면 전체를 위아래로 움직인다');
+has(/onpointerdown="window\._mwKbStart&&window\._mwKbStart\(\)"/,
+  '입력 포커스보다 먼저 문서 스크롤 잠금을 시작하지 않는다');
+has(/window\._mwKbScrollGuard = function[\s\S]*?window\.scrollTo\(0,0\)[\s\S]*?page\.scrollTop = 0/,
+  '키보드 애니메이션 동안 브라우저의 문서 자동 스크롤을 되돌리지 않는다');
 
 const say = src.match(/window\.mwRoomSay = function \(\)[\s\S]*?\n\};/);
 assert(say, '공동룸 한마디 전송 함수를 찾지 못했다');
