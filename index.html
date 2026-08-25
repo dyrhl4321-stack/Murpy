@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '696';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '697';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3854,10 +3854,26 @@ window._mwPetPublish = function () {
   if (key === window._mwPetLiveKey && !beat) return;
   window._mwPetLiveKey = key;
   window._mwPetBeatT = Date.now();
+  // ★올렸는지·왜 실패했는지를 남긴다. 손님 화면에 안 뜰 때 **주인 쪽에서 확인**할 유일한 단서다
+  //   (?diag=1 에 나온다). 조용히 실패하면 원인을 영영 못 찾는다.
   try {
-    if (!list.length) { R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/pets')); return; }
-    R.set(R.ref(R.db, 'roomLive/' + u.uid + '/pets'), { t: Date.now(), list: list });
-  } catch (e) { console.warn('pet publish', e); }
+    if (!list.length) {
+      R.remove(R.ref(R.db, 'roomLive/' + u.uid + '/pets'));
+      window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
+      return;
+    }
+    var pr = R.set(R.ref(R.db, 'roomLive/' + u.uid + '/pets'), { t: Date.now(), list: list });
+    window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
+    // ★RTDB 쓰기는 **약속(Promise)으로 실패한다.** try/catch 만으로는 권한 오류를 못 잡는다 —
+    //   규칙에 막히면 여기서만 드러난다.
+    if (pr && pr.catch) pr.catch(function (e) {
+      window._mwPetPubErr = (e && (e.code || e.message)) || 'unknown';
+      console.warn('pet publish 거부', e);
+    });
+  } catch (e) {
+    window._mwPetPubErr = (e && e.message) || 'throw';
+    console.warn('pet publish', e);
+  }
 };
 
 // 방에 들어갈 때 건다(_mwRlJoin 이 부른다). 나갈 때 _mwRlLeave 가 푼다.
@@ -8332,6 +8348,11 @@ window._diagPush = async function () {
     L.push('  · 실시간 수신: ' + _age
       + (window._mwPetLiveFresh && window._mwPetLiveFresh() ? ' (신선)' : ' (끊김/없음)')
       + ' · 받은 ' + ((_L && _L.list) ? _L.list.length : 0) + '마리');
+    if (_po) {
+      L.push('  · 마지막 올림: ' + (window._mwPetPubT
+        ? Math.round((Date.now() - window._mwPetPubT) / 1000) + '초 전' : '한 번도 없음')
+        + (window._mwPetPubErr ? '  ★거부됨: ' + window._mwPetPubErr : ''));
+    }
     L.push('  · 방: ' + (window._mwIsVisiting && window._mwIsVisiting()
       ? ('남의 방 ' + ((window._mwVisit || {}).uid || '?').slice(0, 6)) : '내 방')
       + ' · 필드 ' + (window._curField || '?') + ' · RTDB ' + (window._rt ? '연결' : '없음'));
