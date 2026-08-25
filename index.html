@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '715';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '716';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -19671,6 +19671,18 @@ window._mwCallRender = async function () {
     if (b) window.mwRoomCall(b, b.dataset.uid, b.dataset.nick);
   };
 };
+// ★★부르기 제한 (대표 8-25: "스팸 방지 그거 제한 없애라 넉넉하게" ·
+//   "방주가 방 한 번 닫으면 초대권은 리셋돼서 다시 부를 수 있어야 한다").
+//   예전엔 **하루 한 번**이라, 방을 닫고 다시 열어도 그날은 같은 사람을 다시 못 불렀다.
+//   알림 문서 id 가 곧 제한이다(서버는 문서가 **새로 생길 때만** 푸시를 쏜다).
+//   -> 칸을 **시간 단위**로 쪼개고, **방을 닫을 때마다** 칸을 새로 판다.
+//      진짜 스팸(연타)만 막고, 방을 다시 여는 정상 사용은 안 막는다.
+window._mwRoomSess = 0;         // 방을 닫을 때마다 +1
+window._mwCallBucket = function () {
+  const d = new Date();
+  return mwTodayKey() + 'h' + String(d.getHours()).padStart(2, '0')
+         + 's' + (window._mwRoomSess || 0);
+};
 window.mwRoomCall = async function (btn, uid, nick) {
   const me = auth.currentUser; if (!me || !uid || !btn) return;
   if (btn.classList.contains('done')) return;
@@ -19678,15 +19690,15 @@ window.mwRoomCall = async function (btn, uid, nick) {
   try {
     const myNick = window._mwMyNick || (window._cachedProfile && window._cachedProfile.nickname) || '머피';
     await window.mwRoomUnkick(uid);        // ★'오늘 이미 불렀어요'로 돌아가기 **전에** 푼다
-    const ref = doc(db, 'notifications', 'ri_' + uid + '_' + me.uid + '_' + mwTodayKey());
+    const ref = doc(db, 'notifications', 'ri_' + uid + '_' + me.uid + '_' + window._mwCallBucket());
     // ★★이미 있으면 **푸시가 안 간다.** 서버는 문서가 새로 생길 때만 쏘는데(onDocumentCreated),
     //   setDoc 은 덮어쓰기라 두 번째부터는 조용하다. 그걸 '불렀어요'로 말하면 거짓말이 된다
     //   (대표 8-24: "초대가 푸시로 안 간 듯"). 같은 id 는 노크 수락도 쓴다 — 오늘 노크를
     //   받아준 사람을 다시 부르면 이 경우가 된다.
     const prev = await getDoc(ref).catch(function () { return null; });
     if (prev && prev.exists()) {
-      btn.textContent = '이미 불렀어요';
-      showToast((nick || '머피') + '님은 오늘 이미 불렀어요 · 알림은 하루 한 번만 가요');
+      btn.textContent = '방금 불렀어요';
+      showToast((nick || '머피') + '님은 방금 불렀어요 · 잠시 뒤에 다시 부를 수 있어요');
       return;
     }
     await setDoc(ref, {
@@ -20311,8 +20323,13 @@ window.mwRoomLeaveField = function () {
     }, 4000);
     window._mwKbEnd(true);          // ★잠금이 남으면 앱 전체가 굳는다(body position:fixed)
     document.body.classList.remove('mw-party');
+    // ★★방을 닫으면 **초대를 처음부터 다시 쓸 수 있어야 한다** (대표 8-25).
+    //   ①부르기 칸을 새로 판다 — 아까 부른 사람도 곧바로 다시 부를 수 있다
+    //   ②초대 칩을 다시 그린다 — 안 그리면 다음 필드 이동 전까지 부를 자리가 없다
+    window._mwRoomSess = (window._mwRoomSess || 0) + 1;
     window._charApplyPos && window._charApplyPos();
-    showToast('방을 닫았어요');
+    window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField || 'home');
+    showToast('방을 닫았어요 · 다시 초대할 수 있어요');
     return;
   }
   // 손님이 나가기 = 그때 비로소 내 노드를 지운다(앱 종료로는 안 지워진다)
