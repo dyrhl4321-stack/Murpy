@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '743';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '744';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4557,6 +4557,12 @@ window._mwPetNearest = function (p, want) {
   if (!p) return null;
   var arr = window._mwPetSpots(p, want), best = null, i;
   var isCat = (window._mwPetDef(p.id) || {}).kind === 'cat';
+  // ★이미 어느 발판에 올라가 있으면 **그 발판을 계속 쓴다** (8-26).
+  //   캣타워 발판이 셋이라, 매번 '가장 가까운 곳'을 다시 고르면 층 사이를 오가며 떨린다.
+  //   자리를 옮길 이유가 없는데 옮기는 것이 곧 버그로 보인다.
+  if (p.up && p.perch && (want === 'tower' || want === 'perch')) {
+    for (i = 0; i < arr.length; i++) if (arr[i] && arr[i].perch === p.perch) return arr[i];
+  }
   // 그릇이 여러 개면 펫 번호로 고정 분산한다. 예전엔 모든 펫이 단순히 가장 가까운 '사방 자리'를
   // 골라 한 그릇에 몰렸다가 이동 중 점유 상태에 따라 갑자기 두 그릇으로 갈라져 보였다.
   if (want === 'bowl' && arr.length) {
@@ -4739,8 +4745,14 @@ window._mwPetStep = function (p) {
     return;
   }
   // 깼으면 내려온다. 단 **쉬는 중이면 그대로 둔다** — 올라가자마자 내려오면 헛걸음이 된다.
+  // ★★★8-26 — 여기서 **매 틱마다 다시 굴리고 있었다** (대표: "캣타워 위에서 핥다가 계속
+  //   바로 윗부분으로 내려간 것처럼 왔다갔다 한다 · 버그 난 느낌").
+  //   _mwPetRand 는 **틱 번호**가 씨앗이라 틱마다 값이 바뀐다. 78% 가 나오면 타워에 있고
+  //   22% 가 나오면 아래 `p.up && !towerActivity` 에 걸려 **내려온다.** 다음 틱엔 또 올라간다.
+  //   확률은 '올라갈지 말지'를 정할 때 한 번만 쓰면 된다.
+  //   -> **이미 올라가 있으면 그대로 둔다.** 안 올라가 있을 때만 굴린다.
   var towerActivity = tower && (act === 'act1' || act === 'act2')
-    && window._mwPetRand(p, 'tower-act') < 0.78;
+    && (p.up ? true : window._mwPetRand(p, 'tower-act') < 0.78);
   if (p.up && act !== 'rest' && !towerActivity) {
     p.up = false; p.posDx = p.posDy = 0; p.perch = ''; p.perchZ = 0; p.house = false;
     window._mwPetApply(p);
