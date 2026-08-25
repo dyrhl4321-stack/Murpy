@@ -3,6 +3,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <!-- ★interactive-widget 은 넣었다가 되돌렸다 (대표 8-14).
      안드로이드 키보드 가림의 근본은 맞지만, **iOS 17.4+ 도 이 값을 지원**한다.
      그래서 resizes-content 를 켜자 iOS 는 레이아웃까지 줄어들고, 거기에 JS 보정(_sqVVFit)이
@@ -72,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '730';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '731';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -621,6 +624,10 @@ window._SW_V = '730';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-dino { position:absolute; left:0; top:0; pointer-events:none; will-change:transform; }
   .mw-pet .mw-pet-spr, .mw-dino .mw-pet-spr { position:absolute; inset:0; image-rendering:pixelated;
     background-repeat:no-repeat; background-position:0 0; }
+  /* 개집 안에서는 몸집을 입구에 맞춰 줄인다. */
+  .mw-pet.in-house .mw-pet-spr { transform:scale(.72); transform-origin:50% 100%; }
+  .mw-pet.in-house .mw-pet-hit { transform:translateX(-50%) scale(.74); transform-origin:50% 100%; }
+  .mw-pet.in-house .mw-pet-sh { opacity:.18; }
   /* 접지 그림자 = 캐릭터(.cw-shadow)와 같은 평평한 타원. 폭은 실측 접지폭에서 온다. */
   .mw-pet .mw-pet-sh, .mw-dino .mw-pet-sh { position:absolute; left:50%; bottom:0; transform:translateX(-50%);
     pointer-events:none; z-index:-1;
@@ -881,6 +888,11 @@ window._SW_V = '730';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      그 위로 올려야 방이 안 덮인다. 크기·위치는 위 body.mw-party 규칙이 이미 정해 뒀다 —
      여기서 또 정하면 '평소'와 '칠 때'가 달라지고, 그 차이가 곧 움직임이다. */
   body.mw-kb #page-char { z-index:890 }
+  /* 키보드가 열린 동안 입력줄은 줄어든 page-char의 맨 아래, 즉 키보드 바로 위에 붙는다.
+     필드/명단 flex 계산에 맡기면 짧아진 화면 밖으로 잘려 placeholder와 말하기가 안 보였다. */
+  body.mw-party.mw-kb #mw-party-row { position:absolute; left:0; right:0;
+    bottom:max(8px, env(safe-area-inset-bottom, 0px)); z-index:895; padding:8px 13px;
+    background:#0b0e16; border-top:2px solid #05070c }
   /* ===== 그림 목록 ===== */
   #mw-artgal { position:fixed; inset:0; z-index:40030; background:rgba(5,7,12,.9);
     display:flex; align-items:flex-end; justify-content:center; font-family:'Galmuri11',sans-serif }
@@ -4036,7 +4048,9 @@ window._mwPetPublish = function () {
   var list = (window._mwPets || []).map(function (p) {
     return { i: p.i, id: p.id, tc: p.tc, tr: p.tr, dir: p.dir | 0,
              anim: p.anim || 'stand', up: p.up ? 1 : 0,
-             eatDx: +(p.eatDx || 0), eatDy: +(p.eatDy || 0) };
+             eatDx: +(p.eatDx || 0), eatDy: +(p.eatDy || 0),
+             posDx: +(p.posDx || 0), posDy: +(p.posDy || 0),
+             perch: p.perch || '', perchZ: +(p.perchZ || 0), house: p.house ? 1 : 0 };
   });
   // ★공룡도 **같은 노드**에 실어 보낸다 (대표 8-25: "펫은 실시간 연동되는데 공룡은
   //   가구 상태 그대로 안 움직인다"). 예전엔 손님이 각자 굴려서 폰마다 달랐다 —
@@ -4127,6 +4141,8 @@ window._mwPetLiveApply = function () {
     var moved = (p.tc !== d.tc || p.tr !== d.tr);
     p.tc = d.tc; p.tr = d.tr; p.up = !!d.up;
     p.eatDx = +(d.eatDx || 0); p.eatDy = +(d.eatDy || 0);
+    p.posDx = +(d.posDx || 0); p.posDy = +(d.posDy || 0);
+    p.perch = d.perch || ''; p.perchZ = +(d.perchZ || 0); p.house = !!d.house;
     if (p.el && moved) p.el.style.transition = 'transform 300ms linear';
     window._mwPetApply(p);
     // ★조건을 걸지 않는다. _mwPetApply 가 **옛 동작**으로 한 번 그린 뒤라,
@@ -4319,8 +4335,8 @@ window._mwPetPosition = function (p) {
   if (!p || !p.el) return;
   var t = window._charTileGeom().t;
   var W = p.el.clientWidth || Math.round(t * window.PET_META.cell * window.PET_SCALE / 48);
-  var nx = (p.anim === 'eat' ? (p.eatDx || 0) : 0) * t;
-  var ny = (p.anim === 'eat' ? (p.eatDy || 0) : 0) * t;
+  var nx = ((p.posDx || 0) + (p.anim === 'eat' ? (p.eatDx || 0) : 0)) * t;
+  var ny = ((p.posDy || 0) + (p.anim === 'eat' ? (p.eatDy || 0) : 0)) * t;
   p.el.style.transform = 'translate3d(' + Math.round((p.tc + 0.5) * t - W / 2 + nx) + 'px,'
     + Math.round((p.tr + 1) * t - W + ny) + 'px,0)';
 };
@@ -4351,7 +4367,8 @@ window._mwPetApply = function (p) {
   p.el.style.width = W + 'px'; p.el.style.height = W + 'px';
   window._mwPetPosition(p);
   // 올라가 있으면 그 가구보다 위. 안 그러면 침대 위에서 자는 고양이가 뒤에 파묻힌다.
-  p.el.style.zIndex = 10 + p.tr * 10 + (p.up ? 9 : 4);
+  p.el.style.zIndex = p.perchZ || (10 + p.tr * 10 + (p.up ? 9 : 4));
+  p.el.classList.toggle('in-house', !!p.house);
   var spr = p.el.querySelector('.mw-pet-spr');
   if (spr) {
     spr.style.backgroundImage = 'url(char/pets/' + p.id + '.png?v=2)';
@@ -4387,13 +4404,36 @@ window._mwPetSpots = function (p, want) {
   for (i = 0; i < list.length; i++) {
     var it = list[i], def = window.mwDefFor ? window.mwDefFor(it) : null;
     if (!it || !def) continue;
+    var isTower = !!(it.id && String(it.id).indexOf('pet_tower') === 0);
     var ok = false;
     if (want === 'bowl') ok = !!def.petBowl;
+    else if (want === 'tower') ok = kind === 'cat' && isTower;
+    else if (want === 'house') ok = kind === 'dog' && def.petHouse === 'dog';
     else if (want === 'perch') {
       ok = def.petPerch === 'all' || (def.petPerch && def.petPerch === kind)
         || (def.petHouse && def.petHouse === kind);
     }
     if (!ok) continue;
+
+    // 캣타워 PNG에는 실제 발판이 세 곳 있다. 예전엔 중앙 타일 한 곳만 목적지여서 한 마리만
+    // 쓸 수 있었고, 높이 미세좌표도 버려져 고양이가 타워 바닥에 붙어 보였다.
+    if ((want === 'tower' || want === 'perch') && kind === 'cat' && isTower) {
+      var levels = [
+        { k:'top', fx:0.73, fy:0.02 },
+        { k:'mid', fx:0.25, fy:0.40 },
+        { k:'low', fx:0.73, fy:0.71 }
+      ];
+      for (var li = 0; li < levels.length; li++) {
+        var lv = levels[li], gx = (it.x + def.w * lv.fx) / 48, gy = (it.y + def.h * lv.fy) / 48;
+        var ltc = Math.max(0, Math.min(15, Math.floor(gx)));
+        var ltr = Math.max(0, Math.min(15, Math.floor(gy)));
+        out.push({ tc:ltc, tr:ltr, up:true, tower:true, perch:lv.k,
+          posDx:gx - (ltc + 0.5), posDy:gy - (ltr + 1),
+          perchZ:12 + Math.floor((it.y + def.h) / 48) * 10 });
+      }
+      continue;
+    }
+
     var y = (want === 'perch') ? Math.min(it.y + def.h - 8, it.y + 28) : (it.y + def.h - 1);
     var tc = Math.max(0, Math.min(15, Math.floor((it.x + def.w / 2) / 48)));
     var tr = Math.max(0, Math.min(15, Math.floor(y / 48)));
@@ -4411,17 +4451,23 @@ window._mwPetSpots = function (p, want) {
         var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
         if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
-        out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir,
+        out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir, bowl:i,
           eatDx: -sides[k].dc * 0.58 + bowlDx, eatDy: -sides[k].dr * 0.58 + bowlDy });
         any = true;
       }
       if (!any) out.push({ tc: tc, tr: tr, up: false, dir: 0 });
       continue;
     }
-    // ★캣타워는 따로 표시한다 — 고양이는 높은 데를 좋아하니 침대보다 **먼저** 고른다.
-    //   그래야 대표가 사 준 캣타워가 실제로 쓰이는 게 눈에 보인다(대표 8-25).
-    out.push({ tc: tc, tr: tr, up: want === 'perch',
-               tower: !!(it.id && String(it.id).indexOf('pet_tower') === 0) });
+    if (want === 'house') {
+      var hx = (it.x + def.w / 2) / 48, hy = (it.y + def.h * 0.91) / 48;
+      tc = Math.max(0, Math.min(15, Math.floor(hx)));
+      tr = Math.max(0, Math.min(15, Math.floor(hy)));
+      out.push({ tc:tc, tr:tr, up:true, house:true, perch:'house',
+        posDx:hx - (tc + 0.5), posDy:hy - (tr + 1),
+        perchZ:12 + Math.floor((it.y + def.h) / 48) * 10 });
+      continue;
+    }
+    out.push({ tc: tc, tr: tr, up: want === 'perch', tower: false, perch: want === 'perch' ? 'furn' : '' });
   }
   return out;
 };
@@ -4441,6 +4487,20 @@ window._mwPetNearest = function (p, want) {
   if (!p) return null;
   var arr = window._mwPetSpots(p, want), best = null, i;
   var isCat = (window._mwPetDef(p.id) || {}).kind === 'cat';
+  // 그릇이 여러 개면 펫 번호로 고정 분산한다. 예전엔 모든 펫이 단순히 가장 가까운 '사방 자리'를
+  // 골라 한 그릇에 몰렸다가 이동 중 점유 상태에 따라 갑자기 두 그릇으로 갈라져 보였다.
+  if (want === 'bowl' && arr.length) {
+    var bowls = [];
+    arr.forEach(function (s) { if (bowls.indexOf(s.bowl) < 0) bowls.push(s.bowl); });
+    bowls.sort(function (a, b) { return a - b; });
+    if (bowls.length > 1) {
+      var preferred = bowls[Math.abs((p.i || 0) % bowls.length)];
+      var assigned = arr.filter(function (s) {
+        return s.bowl === preferred && !window._mwPetOccupied(s.tc, s.tr, p);
+      });
+      if (assigned.length) arr = assigned;
+    }
+  }
   for (i = 0; i < arr.length; i++) {
     // ★남이 쓰고 있거나 가고 있는 자리는 건너뛴다. 밥그릇은 사방에 자리가 4개라
     //   여러 마리가 **서로 다른 쪽에 붙어** 같이 먹을 수 있다. 그릇이 여러 개면 알아서 갈린다.
@@ -4496,8 +4556,11 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   if (!p || !p.el || !spot) return false;
   var dc = spot.tc - p.tc, dr = spot.tr - p.tr;
   if (!dc && !dr) {
+    p.run = false;
     p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
     p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
+    p.posDx = +(spot.posDx || 0); p.posDy = +(spot.posDy || 0);
+    p.perch = spot.perch || ''; p.perchZ = +(spot.perchZ || 0); p.house = !!spot.house;
     p.up = !!spot.up; window._mwPetApply(p);
     window._mwPetPlay(p, thenAnim, (spot.dir != null) ? spot.dir : null);
     return true;
@@ -4531,6 +4594,8 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   p.tc = spot.tc; p.tr = spot.tr; p.moving = true; p.up = !!spot.up;
   p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
   p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
+  p.posDx = +(spot.posDx || 0); p.posDy = +(spot.posDy || 0);
+  p.perch = spot.perch || ''; p.perchZ = +(spot.perchZ || 0); p.house = !!spot.house;
   p.el.style.transition = 'transform ' + ms + 'ms linear';
   window._mwPetPlay(p, runNow ? 'run' : 'walk', dir);
   window._mwPetApply(p);
@@ -4554,13 +4619,22 @@ window._mwPetStep = function (p) {
   //   주인이 아닌 손님을 따라온다. 손님에게는 늘 '자유' 로 보인다.
   var guest = !!(window._mwIsVisiting && window._mwIsVisiting());
   var mode = guest ? 'free' : ((saved && saved.mode) || 'free');
+  var petDef = window._mwPetDef(p.id) || {};
+  if (mode === 'house' && petDef.kind === 'dog') {
+    var dogHouse = window._mwPetNearest(p, 'house');
+    if (dogHouse) {
+      p.run = Math.abs(dogHouse.tc - p.tc) + Math.abs(dogHouse.tr - p.tr) > 1;
+      window._mwPetGoto(p, dogHouse, 'lay');
+    } else if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
+    return;
+  }
   if (mode === 'stay') {
     if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
     return;
   }
   if (mode === 'follow') {
     // ★고양이는 불러도 잘 안 온다(설계서). 세 번에 한 번은 못 들은 척한다.
-    var def = window._mwPetDef(p.id) || {};
+    var def = petDef;
     if (def.kind === 'cat' && window._mwPetRand(p, 'ignore') < 0.33) {
       p.run = false;
       if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
@@ -4583,18 +4657,24 @@ window._mwPetStep = function (p) {
   }
 
   var act = window._mwPetAct(p);
+  var tower = petDef.kind === 'cat' ? window._mwPetNearest(p, 'tower') : null;
 
   if (act === 'sleep') {
-    // 고양이는 높은 데를 좋아한다 — 자는 시간이면 가까운 자리로 올라가서 잔다.
-    if (!p.up) {
-      var bed = window._mwPetNearest(p, 'perch');
-      if (bed && !window._mwPetGoto(p, bed, 'sleep')) bed = null;
-      if (!bed) { p.up = false; window._mwPetPlay(p, 'sleep', p.dir === 3 ? 3 : 1); }
-    }
+    // 캣타워가 있으면 수면 자리는 무조건 타워의 세 발판 중 하나다. 없을 때만 침대/바닥.
+    var bed = tower || window._mwPetNearest(p, 'perch');
+    if (bed) p.run = !!tower && (Math.abs(bed.tc - p.tc) + Math.abs(bed.tr - p.tr) > 1);
+    if (bed && window._mwPetGoto(p, bed, 'sleep')) return;
+    p.up = false; p.posDx = p.posDy = 0; p.perch = ''; p.perchZ = 0; p.house = false;
+    window._mwPetApply(p); window._mwPetPlay(p, 'sleep', p.dir === 3 ? 3 : 1);
     return;
   }
   // 깼으면 내려온다. 단 **쉬는 중이면 그대로 둔다** — 올라가자마자 내려오면 헛걸음이 된다.
-  if (p.up && act !== 'rest') { p.up = false; window._mwPetApply(p); }
+  var towerActivity = tower && (act === 'act1' || act === 'act2')
+    && window._mwPetRand(p, 'tower-act') < 0.78;
+  if (p.up && act !== 'rest' && !towerActivity) {
+    p.up = false; p.posDx = p.posDy = 0; p.perch = ''; p.perchZ = 0; p.house = false;
+    window._mwPetApply(p);
+  }
   if (act === 'eat') {
     if (p.anim !== 'eat') {
       var bowl = window._mwPetNearest(p, 'bowl');
@@ -4603,19 +4683,18 @@ window._mwPetStep = function (p) {
     return;
   }
   if (act === 'rest') {
-    // ★쉬는 시간에도 **고양이는 높은 데로 올라간다**(대표 8-25: "캣타워 위로 알아서 올라가게").
-    //   예전엔 자는 시간에만 올라가서 좀처럼 안 보였다. 캣타워를 사 놓고도 안 쓰이면 헛것이다.
-    var kind = (window._mwPetDef(p.id) || {}).kind;
-    if (kind === 'cat' && !p.up) {
-      var high = window._mwPetNearest(p, 'perch');
-      if (high && window._mwPetGoto(p, high, 'sit')) return;
-    }
+    // 쉬는 시간도 타워 우선. 하루 수면 14~16시간 + 휴식이라 구매한 타워가 대부분의 휴식처가 된다.
+    var high = tower || (petDef.kind === 'cat' ? window._mwPetNearest(p, 'perch') : null);
+    if (high) p.run = !!tower && (Math.abs(high.tc - p.tc) + Math.abs(high.tr - p.tr) > 1);
+    if (high && window._mwPetGoto(p, high, window._mwPetRand(p, 'rest') < 0.5 ? 'sit' : 'lay')) return;
     if (p.anim !== 'sit' && p.anim !== 'lay') {
       window._mwPetPlay(p, window._mwPetRand(p, 'rest') < 0.5 ? 'sit' : 'lay', null);
     }
     return;
   }
   if (act === 'act1' || act === 'act2') {
+    if (towerActivity) p.run = Math.abs(tower.tc - p.tc) + Math.abs(tower.tr - p.tr) > 1;
+    if (towerActivity && window._mwPetGoto(p, tower, act)) return;
     if (p.anim !== act) window._mwPetPlay(p, act, null);
     return;
   }
@@ -4752,7 +4831,8 @@ window._mwPetBowlFill = function () {
 window.MW_PET_MODES = [
   { k: 'free', t: '자유', d: '알아서 지내요' },
   { k: 'follow', t: '따라와', d: '내 뒤를 따라와요' },
-  { k: 'stay', t: '여기 있어', d: '그 자리에 있어요' }
+  { k: 'stay', t: '여기 있어', d: '그 자리에 있어요' },
+  { k: 'house', t: '하우스', d: '개집 안에서 기다려요', kind: 'dog', icon: 'house' }
 ];
 
 window.mwPetMenu = function (p) {
@@ -4771,7 +4851,7 @@ window.mwPetMenu = function (p) {
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 64;
   var acts = [
     { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
-    { k: 'edit', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed(' + p.i + ')' },
+    { k: 'bowl', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed(' + p.i + ')' },
     { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat(' + p.i + ')' },
     { k: 'kick', t: '들여보내기', dx: 0, dy: R + 20, fn: 'window.mwPetPutAway(' + p.i + ')' },
     // 네 방향이 이미 찼다 → 대각선. 공룡 '내보내기'가 쓰던 자리 규칙과 같다.
@@ -4811,11 +4891,14 @@ window.mwPetModePick = function (idx) {
   var cx = hb.left - rb.left + hb.width / 2;
   var cy = hb.top - rb.top + hb.height * 0.55;
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 70;
-  var spots = [{ dx: 0, dy: -R - 12 }, { dx: -R - 4, dy: 10 }, { dx: R + 4, dy: 10 }];
+  var kind = (window._mwPetDef(p.id) || {}).kind;
+  var modes = window.MW_PET_MODES.filter(function (m) { return !m.kind || m.kind === kind; });
+  var spots = [{ dx: 0, dy: -R - 12 }, { dx: -R - 4, dy: 10 },
+               { dx: R + 4, dy: 10 }, { dx: 0, dy: R + 28 }];
   var el = document.createElement('div');
   el.id = 'mw-charmenu';
   el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
-  el.innerHTML = window.MW_PET_MODES.map(function (m, i) {
+  el.innerHTML = modes.map(function (m, i) {
     var sp = spots[i] || spots[0];
     var x = Math.max(40, Math.min(W - 40, cx + sp.dx));
     var y = Math.max(32, Math.min(H - 32, cy + sp.dy));
@@ -4823,7 +4906,8 @@ window.mwPetModePick = function (idx) {
     return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
       + (i * 30) + 'ms' + (on ? ';border-color:#3D7EFF;color:#3D7EFF' : '') + '"'
       + ' onclick="document.getElementById(\'mw-charmenu\').remove();window.mwPetSetMode('
-      + idx + ',\'' + m.k + '\')"><span>' + m.t + '</span></button>';
+      + idx + ',\'' + m.k + '\')">' + (m.icon ? (window._RING_ICONS[m.icon] || '') : '')
+      + '<span>' + m.t + '</span></button>';
   }).join('');
   el.addEventListener('pointerdown', function (e) {
     if (e.target === el) { el.remove(); if (e.cancelable) e.preventDefault(); }
@@ -4836,10 +4920,16 @@ window.mwPetSetMode = function (idx, k) {
   var saved = (window._myPets || [])[idx]; if (!saved) return;
   var m = window.MW_PET_MODES.filter(function (x) { return x.k === k; })[0];
   if (!m) return;
+  var p = window._mwPetAt(idx);
+  var kind = (window._mwPetDef(saved.id) || {}).kind;
+  if (m.kind && m.kind !== kind) return;
+  if (k === 'house' && (!p || !window._mwPetNearest(p, 'house'))) {
+    showToast('방에 개집을 먼저 놓아 주세요');
+    return;
+  }
   saved.mode = k;
   if (window._mwSavePets) window._mwSavePets(window._myPets);
   showToast(m.t + ' · ' + m.d);
-  var p = window._mwPetAt(idx);
   if (p) { p.moving = false; window._mwPetStep(p); }
 };
 
@@ -6330,6 +6420,8 @@ window.charMove = function (dx, dy) {
   window._RING_ICONS = {
     move:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 14h12v-2H2zM4 12V6h2v6zM10 12V6h2v6zM4 6l4-4 4 4z"/></svg>',
     edit:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 13l1-4 8-8 3 3-8 8z"/><path fill="#F5C24B" d="M11 1l3 3-1.5 1.5-3-3z"/></svg>',
+    bowl:  '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M3 6h10v2H3z"/><path fill="#cfd6e6" d="M2 8h12l-2 5H4zM5 13h6v2H5z"/><path fill="#141a28" d="M4 8h8v1H4z"/></svg>',
+    house: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M1 7l7-6 7 6v2L8 4 1 9z"/><path fill="#cfd6e6" d="M3 8l5-4 5 4v7H9v-5H7v5H3z"/></svg>',
     bub:   '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M2 2h12v9H8l-3 3v-3H2z"/></svg>',
     title: '<svg width="15" height="15" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#F5C24B" d="M2 12h12v2H2zM2 5l3 3 3-5 3 5 3-3v6H2z"/></svg>',
     // 방 주인 캐릭터를 눌렀을 때 (mwOtherMenu) — 방 안에서 **못 하던 것만** 둔다.
@@ -12661,47 +12753,89 @@ if ('serviceWorker' in navigator) {
     // ★주소에 시각을 붙여 받는다 — 옛 워커의 '정적 파일 캐시 우선' 규칙을 피하려면
     //   매번 다른 주소여야 한다. no-store 만으로는 워커를 못 피한다.
     // ★sessionStorage 로 한 번만 돈다. 안 걸면 무한 새로고침이 된다.
+    var _mwReloadingForUpdate = false;
+    var _mwCodeCache = function (k) {
+      return /^murpy-(?:v|static-v|cdn-v)/.test(String(k || ''));
+    };
+    var _mwMainWorker = function (r) {
+      var w = r && (r.active || r.waiting || r.installing);
+      return !!(w && /\/sw\.js(?:\?|$)/.test(w.scriptURL || ''));
+    };
+    window._mwForceFresh = function (v) {
+      if (_mwReloadingForUpdate) return;
+      var key = 'mw_heal_attempt_' + v, state = { n: 0, at: 0 }, now = Date.now();
+      try { state = JSON.parse(sessionStorage.getItem(key) || '{}') || state; } catch (e) {}
+      // 네트워크/CDN이 잠깐 옛 파일을 주더라도 15초 뒤 다시 시도한다. 예전처럼 "한 번 시도함"을
+      // 영구 잠금으로 쓰지 않는다. 그 잠금 때문에 폰이 구버전에 그대로 갇혔다.
+      if ((state.n || 0) >= 3 && now - (state.at || 0) < 15000) return;
+      if (now - (state.at || 0) >= 15000) state.n = 0;
+      state.n = (state.n || 0) + 1; state.at = now;
+      try { sessionStorage.setItem(key, JSON.stringify(state)); } catch (e) {}
+      _mwReloadingForUpdate = true;
+      console.warn('[selfheal] 화면 v' + window._SW_V + ' / 서버 v' + v + ' → 코드 캐시 강제 교체');
+      var jobs = [];
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.filter(_mwMainWorker).map(function (r2) { return r2.unregister(); }));
+        }).catch(function () {}));
+      }
+      if (window.caches) {
+        jobs.push(caches.keys().then(function (ks) {
+          // 프로필/피드 이미지 캐시는 보존하고 실행 코드 캐시만 지운다.
+          return Promise.all(ks.filter(_mwCodeCache).map(function (k) { return caches.delete(k); }));
+        }).catch(function () {}));
+      }
+      var done = function () {
+        location.replace('./?fresh=' + encodeURIComponent(v) + '&try=' + state.n + '&t=' + Date.now());
+      };
+      Promise.all(jobs).then(done, done);
+    };
     window._mwSelfHeal = function () {
-      // ★한 번만 돌던 것을 **앱을 다시 열 때마다** 돌게 바꿨다(대표 8-25: "캐시 그냥 무시하고
-      //   내 폰에 뜨게 해달라"). 세션 중에 새 배포가 나가도 곧바로 따라온다.
-      //   ★무한 새로고침 방지는 '이미 이 버전으로 고쳐봤다'를 **버전째** 기억해서 한다.
-      //     예전처럼 '한 번이라도 고쳤으면 끝'으로 두면 그 뒤 배포를 영영 못 받는다.
-      fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
+      fetch('./version.txt?force=' + Date.now(), {
+        cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      })
         .then(function (r) { return r.ok ? r.text() : ''; })
         .then(function (v) {
           v = String(v || '').trim();
-          if (!v || v === String(window._SW_V || '')) return;
-          try { if (sessionStorage.getItem('mw_healed') === v) return; } catch (e) { return; }
-          console.warn('[selfheal] 화면 v' + window._SW_V + ' / 서버 v' + v + ' → 캐시를 비웁니다');
-          try { sessionStorage.setItem('mw_healed', v); } catch (e) {}
-          var done = function () { location.replace('./?fresh=' + Date.now()); };
-          var jobs = [];
-          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-            jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
-              return Promise.all(rs.map(function (r2) { return r2.unregister(); }));
-            }).catch(function () {}));
+          if (!v) return;
+          if (v === String(window._SW_V || '')) {
+            try { sessionStorage.removeItem('mw_heal_attempt_' + v); } catch (e) {}
+            return;
           }
-          if (window.caches) {
-            jobs.push(caches.keys().then(function (ks) {
-              return Promise.all(ks.map(function (k) { return caches.delete(k); }));
-            }).catch(function () {}));
-          }
-          Promise.all(jobs).then(done, done);
+          window._mwForceFresh(v);
         }).catch(function () {});
     };
     window._mwSelfHeal();
+    window.addEventListener('pageshow', window._mwSelfHeal);
+    window.addEventListener('focus', window._mwSelfHeal);
+    window.addEventListener('online', window._mwSelfHeal);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') window._mwSelfHeal();
     });
+    setInterval(window._mwSelfHeal, 60000);
+
+    // skipWaiting 된 새 워커가 실제 제어권을 잡는 순간 딱 한 번 새 HTML로 다시 들어간다.
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (_mwReloadingForUpdate) return;
+      _mwReloadingForUpdate = true;
+      location.replace('./?sw=' + encodeURIComponent(window._SW_V || '') + '&t=' + Date.now());
+    });
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      if (e.data && e.data.type === 'MURPY_SW_ACTIVATED'
+          && String(e.data.version || '') !== String(window._SW_V || '')) {
+        window._mwForceFresh(String(e.data.version));
+      }
+    });
     navigator.serviceWorker.register('./sw.js?v=' + (window._SW_V || '1'), { updateViaCache: 'none' })
       .then(reg => {
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
         // 새 버전(새 sw.js) 감지 시 자동 새로고침 — 최초 설치는 제외(기존 controller 있을 때만)
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing;
           if (!nw) return;
           nw.addEventListener('statechange', () => {
             if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-              window.location.reload();
+              nw.postMessage({ type: 'SKIP_WAITING' });
             }
           });
         });
@@ -20926,6 +21060,7 @@ window.mwRoomEnterField = async function (uid) {
     // 승인 전에는 상대 방을 절대 그리지 않는다. 데이터만 들고 내 방에서 기다렸다가,
     // 승인 스냅샷이 오는 순간 _mwRoomApprovedEnter 가 실제 방문 상태로 바꾼다.
     window._mwVisit = null;
+    window._mwWaitCardHidden = false;
     window._mwPendingVisit = { uid: uid, nick: d.nickname || '머피', room: d.room || null,
                                artworks: Array.isArray(d.artworks) ? d.artworks : [],
                                petsOut: Array.isArray(d.petsOut) ? d.petsOut
@@ -20940,10 +21075,15 @@ window.mwRoomEnterField = async function (uid) {
 window._mwRoomApprovedEnter = function (ownerUid) {
   const v = window._mwPendingVisit;
   if (!v || v.uid !== ownerUid) return false;
+  window._mwWaitCardHidden = false;
   window._mwPendingVisit = null;
   window._mwVisit = v;
   window._mwRoomRemember(ownerUid);
   window._mwVisitArtWatch && window._mwVisitArtWatch(ownerUid);
+  // 대기 중에는 상대 방 실시간 콘텐츠를 붙이지 않는다. 승인된 이 순간부터만 구독한다.
+  window.mwJamWatch && window.mwJamWatch(ownerUid);
+  window._mwChatWatch && window._mwChatWatch(ownerUid);
+  window._mwPetLiveWatch && window._mwPetLiveWatch(ownerUid);
   window.charSetField && window.charSetField('home');
   window._mwRlReplay && window._mwRlReplay();
   const old = document.getElementById('mw-approved-fx'); if (old) old.remove();
@@ -21009,12 +21149,14 @@ window._mwRoomWaitPaint = function (all) {
     const hostBox = document.getElementById('mw-party-waiters');
     if (hostBox) { hostBox.classList.remove('on'); hostBox.innerHTML = ''; }
     el = document.getElementById('mw-room-wait-card');
-    if (!window._mwRl.waiting) { if (el) el.remove(); return; }
+    if (!window._mwRl.waiting || window._mwWaitCardHidden) { if (el) el.remove(); return; }
     if (!el) { el = document.createElement('div'); el.id = 'mw-room-wait-card'; document.body.appendChild(el); }
     el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:40015;width:calc(100% - 24px);max-width:366px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 8px 22px rgba(0,0,0,.45);padding:12px;font-family:Galmuri11,sans-serif';
     el.innerHTML = '<div style="color:#F5C24B;font-size:12px;margin-bottom:6px">방주 승인 대기 중</div>'
       + '<div style="color:#8a93a8;font-size:10.5px;line-height:1.6">방주가 밀어서 승인하면 둘 다 공용 머피룸으로 바로 전환돼요.</div>'
-      + '<button onclick="window.mwRoomLeaveField()" style="margin-top:10px;width:100%;height:32px;background:#141a28;border:2px solid #05070c;color:#8a93a8;font:10px Galmuri11,sans-serif">대기 취소</button>';
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">'
+      + '<button onclick="window.mwRoomWaitCardClose()" style="height:32px;background:#15213a;border:2px solid #05070c;color:#8fb4ff;font:10px Galmuri11,sans-serif">창 닫기</button>'
+      + '<button onclick="window.mwRoomLeaveField()" style="height:32px;background:#141a28;border:2px solid #05070c;color:#8a93a8;font:10px Galmuri11,sans-serif">대기 취소</button></div>';
     return;
   }
   const esc = function (v) { return String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); };
@@ -21031,6 +21173,11 @@ window._mwRoomWaitPaint = function (all) {
         + '<button onclick="window.mwRoomRejectWait(&quot;' + esc(uid) + '&quot;)" aria-label="거절" style="border:0;background:none;color:#e8838a;font-size:17px;cursor:pointer">×</button></div>';
     }).join('');
   window._sqBindSwipe && window._sqBindSwipe();
+};
+window.mwRoomWaitCardClose = function () {
+  window._mwWaitCardHidden = true;
+  const el = document.getElementById('mw-room-wait-card'); if (el) el.remove();
+  showToast('승인 대기는 계속돼요 · 다른 기능을 사용해도 돼요');
 };
 window.mwRoomApproveWait = async function (owner, uid) {
   const R = window._rt, me = (auth.currentUser || {}).uid;
@@ -21053,6 +21200,7 @@ window.mwRoomRejectWait = async function (uid) {
 window.mwRoomLeaveField = function () {
   // 승인 전 취소: 아직 손님 방에 들어간 적이 없으므로 내 방을 닫으면 안 된다.
   if (window._mwPendingVisit && !window._mwVisit) {
+    window._mwWaitCardHidden = false;
     window._mwPendingVisit = null;
     window._mwRoomForget();
     window._mwRlLeave();
@@ -21144,6 +21292,11 @@ window._mwRlJoin = function (ownerUid) {
   window._mwRlLeave();
   const R = window._rt, u = auth.currentUser;
   window._mwRl.owner = ownerUid;
+  const pendingOnly = !!(window._mwPendingVisit && !window._mwVisit
+    && window._mwPendingVisit.uid === ownerUid);
+  // 요청 노드를 쓰기 전 첫 스냅샷이 와도 상대 방을 한 프레임조차 그리지 않는다.
+  window._mwRl.waiting = pendingOnly;
+  window._mwRl.cap = pendingOnly ? true : null;
   const base = 'roomLive/' + ownerUid + '/players';
 
   // ★한 번만 건다. 방마다 걸면 리스너가 쌓이고 해제할 자리도 없다.
@@ -21170,9 +21323,11 @@ window._mwRlJoin = function (ownerUid) {
     window._mwRlQueueRender(all);
   }, function (e) { console.warn('roomLive', e); });
   window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
-  window.mwJamWatch(ownerUid);                  // 낙서판이 열렸는지도 같이 지켜본다
-  window._mwChatWatch && window._mwChatWatch(ownerUid);        // 대화도 같이 본다
-  window._mwPetLiveWatch && window._mwPetLiveWatch(ownerUid);   // 펫도 같이 본다
+  if (!pendingOnly) {
+    window.mwJamWatch(ownerUid);                  // 낙서판이 열렸는지도 같이 지켜본다
+    window._mwChatWatch && window._mwChatWatch(ownerUid);        // 대화도 같이 본다
+    window._mwPetLiveWatch && window._mwPetLiveWatch(ownerUid);   // 펫도 같이 본다
+  }
   if (!u) return;
 
   const meRef = R.ref(R.db, base + '/' + u.uid);
@@ -21194,7 +21349,7 @@ window._mwRlJoin = function (ownerUid) {
     window.mwRoomLeaveField && window.mwRoomLeaveField();
   });
   window._mwRl.unsubK = function () { try { unsubK(); } catch (e) {} };
-  window._mwRl.cap = null;
+  if (!pendingOnly) window._mwRl.cap = null;
   R.onValue(R.ref(R.db, base), function (snap) {
     const all = snap.val() || {};
     const mine = all[u.uid];
@@ -21590,7 +21745,7 @@ window._mwRlRender = function (all) {
   window._mwRoomWaitPaint && window._mwRoomWaitPaint(all);
   // 승인 대기 중에는 상대 방 presence를 내 방 위에 그리지 않는다. 대기 카드만 남기고
   // 내 가구·내 펫·내 캐릭터가 있는 평소 머피월드를 그대로 유지한다.
-  if (window._mwRl.waiting && window._mwPendingVisit) {
+  if (window._mwPendingVisit && !window._mwVisit) {
     Object.keys(window._mwRl.chars || {}).forEach(function (k) {
       const c = window._mwRl.chars[k]; if (c && c.el) c.el.remove();
     });
@@ -21924,21 +22079,21 @@ window.mwRoomQuickBar = function () {
   bar.id = 'mw-quick-bar';
   bar.style.cssText = 'display:flex;gap:4px;width:100%';
   bar.innerHTML =
-    '<input id="mw-party-input" maxlength="40" placeholder="한마디 하면 머리 위에 떠요" autocomplete="off"'
+    '<input id="mw-party-input" maxlength="40" placeholder="한마디 하면 머리 위에 떠요" autocomplete="off" inputmode="text" enterkeyhint="send"'
     + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(255,255,255,.06);'
     + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
     + 'outline:none;font-family:inherit;border-radius:0"'
     + ' onpointerdown="window._mwKbStart&&window._mwKbStart()"'
     + ' onfocus="window._mwKbStart&&window._mwKbStart()" onblur="window._mwKbEnd&&window._mwKbEnd()"'
-    + ' onkeydown="if(event.key===\'Enter\')window.mwRoomSay()">'
-    + '<button id="mw-quick-pin" onmousedown="event.preventDefault()" onclick="window.mwBubblePinToggle()" aria-label="말풍선 고정"'
+    + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.mwRoomSay();}">'
+    + '<button id="mw-quick-pin" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="window.mwBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
     + (on ? 'background:#F5C24B;color:#3a2a00;' : 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);')
     + "border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:0;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">고정</button>"
     // ★onmousedown 을 막아야 한다 — 안 막으면 누르는 순간 입력칸이 포커스를 잃고
     //   키보드가 내려갔다 올라오면서 화면이 들썩인다(스쿼드에서 겪은 그것).
-    + '<button onmousedown="event.preventDefault()" onclick="window.mwRoomSay()"'
+    + '<button id="mw-quick-send" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="window.mwRoomSay()"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;background:var(--accent);border:2px solid #05070c;'
     + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">말하기</button>";

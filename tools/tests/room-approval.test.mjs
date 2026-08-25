@@ -33,12 +33,24 @@ has(/window\._mwRoomApprovedEnter = function \(ownerUid\)[\s\S]*?_mwVisit = v[\s
   '승인 순간에만 상대 머피월드로 전환하지 않는다');
 has(/mine && !mine\.wait && mine\.approvedAt[\s\S]*?_mwRoomApprovedEnter\(ownerUid\)/,
   '방주의 승인 스냅샷이 손님의 실제 입장 전환으로 연결되지 않았다');
-has(/if \(window\._mwRl\.waiting && window\._mwPendingVisit\)[\s\S]*?document\.body\.classList\.remove\('mw-party'\)[\s\S]*?return;/,
+has(/if \(window\._mwPendingVisit && !window\._mwVisit\)[\s\S]*?document\.body\.classList\.remove\('mw-party'\)[\s\S]*?return;/,
   '승인 대기 중 상대 캐릭터/공용룸 UI를 내 방 위에 미리 그린다');
+has(/const pendingOnly = !!\(window\._mwPendingVisit[\s\S]*?window\._mwRl\.waiting = pendingOnly[\s\S]*?const base =/,
+  '첫 실시간 스냅샷보다 먼저 승인 대기 상태를 고정하지 않는다');
+has(/if \(!pendingOnly\) \{[\s\S]*?mwJamWatch\(ownerUid\)[\s\S]*?_mwPetLiveWatch/,
+  '승인 전부터 상대 방 낙서·채팅·펫을 구독해 내 방과 상대 방이 깜빡인다');
+has(/window\._mwRoomApprovedEnter = function[\s\S]*?_mwVisit = v[\s\S]*?mwJamWatch[\s\S]*?_mwPetLiveWatch/,
+  '승인된 순간 상대 방 실시간 구독을 시작하지 않는다');
 has(/_mwPendingVisit \? window\._mwPendingVisit\.uid : u\.uid/,
   '내 방에서 기다리는 동안 승인 대상 방에 요청 presence를 연결하지 않는다');
 has(/if \(window\._mwPendingVisit && !window\._mwVisit\)[\s\S]*?입장 대기를 취소했어요/,
   '승인 대기 취소를 내 방 닫기로 잘못 처리한다');
+has(/window\.mwRoomWaitCardClose = function[\s\S]*?_mwWaitCardHidden = true[\s\S]*?승인 대기는 계속돼요/,
+  '입장 요청은 유지하고 대기 팝업만 닫는 기능이 없다');
+has(/!window\._mwRl\.waiting \|\| window\._mwWaitCardHidden/,
+  '닫은 대기 팝업이 서버 갱신 때마다 다시 열린다');
+has(/>창 닫기<\/button>[\s\S]*?>대기 취소<\/button>/,
+  '대기 팝업에 창 닫기와 요청 취소가 분리돼 있지 않다');
 
 // 출석 체크/상태 선택은 스쿼드 전용이다. 공동룸 멤버 CSS/행에는 관련 표식을 두지 않는다.
 const roster = src.match(/window\._mwRTalkWho = function \(\) \{[\s\S]*?\n\};/);
@@ -63,6 +75,12 @@ assert(/el\.style\.top = '0px'/.test(quick[0]) && !/el\.style\.top = \(vv\.offse
   'visualViewport 팬 값을 공동룸 top에 더해 화면 전체를 위아래로 움직인다');
 has(/onpointerdown="window\._mwKbStart&&window\._mwKbStart\(\)"/,
   '입력 포커스보다 먼저 문서 스크롤 잠금을 시작하지 않는다');
+has(/enterkeyhint="send"[\s\S]*?event\.key===\\'Enter\\'[\s\S]*?event\.preventDefault\(\);window\.mwRoomSay\(\)/,
+  '모바일 키보드의 전송 키로 한 번에 말하기가 되지 않는다');
+has(/id="mw-quick-send" onpointerdown="event\.preventDefault\(\)"/,
+  '키보드가 열린 채 말하기 버튼을 누르면 먼저 포커스가 풀린다');
+has(/body\.mw-party\.mw-kb #mw-party-row \{ position:absolute;[\s\S]*?bottom:max\(8px, env\(safe-area-inset-bottom, 0px\)\)/,
+  '키보드가 열렸을 때 한마디 입력줄을 키보드 바로 위에 고정하지 않는다');
 has(/window\._mwKbScrollGuard = function[\s\S]*?window\.scrollTo\(0,0\)[\s\S]*?page\.scrollTop = 0/,
   '키보드 애니메이션 동안 브라우저의 문서 자동 스크롤을 되돌리지 않는다');
 

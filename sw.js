@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v730';
-const STATIC_CACHE = 'murpy-static-v730';
-const CDN_CACHE = 'murpy-cdn-v730';
+const CACHE_NAME = 'murpy-v731';
+const STATIC_CACHE = 'murpy-static-v731';
+const CDN_CACHE = 'murpy-cdn-v731';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
@@ -39,14 +39,30 @@ self.addEventListener('activate', e => {
           .filter(k => ![CACHE_NAME, STATIC_CACHE, CDN_CACHE, IMG_CACHE].includes(k))
           .map(k => caches.delete(k))
       )
-    ).then(() => clients.claim())
+    ).then(() => clients.claim()).then(() =>
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list =>
+        Promise.all(list.map(client => client.postMessage({ type: 'MURPY_SW_ACTIVATED', version: '731' })))
+      )
+    )
   );
+});
+
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
 
   const url = new URL(e.request.url);
+
+  // 버전 표식과 서비스워커 본체는 어떤 캐시에도 넣지 않는다. 구형 폰이 이 둘을 캐시하면
+  // 새 배포를 알아차릴 단서까지 함께 얼어붙어 영원히 옛 화면에 남는다.
+  if (url.origin === self.location.origin &&
+      (url.pathname.endsWith('/version.txt') || url.pathname.endsWith('/sw.js'))) {
+    e.respondWith(fetch(e.request, { cache: 'no-store' }));
+    return;
+  }
 
   // Firestore / Firebase Auth API → 네트워크만 (실시간 데이터)
   if (url.hostname.includes('firestore.googleapis.com') ||

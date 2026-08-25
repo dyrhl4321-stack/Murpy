@@ -36,5 +36,8 @@ for (const x of [81, 98, 121, 143]) {
 
 assert(/eatDx: \+\(p\.eatDx \|\| 0\)/.test(src), '방주가 먹기 미세좌표를 실시간 전송하지 않는다');
 assert(/p\.eatDx = \+\(d\.eatDx \|\| 0\)/.test(src), '손님 화면에 먹기 미세좌표를 적용하지 않는다');
+assert(/dir: sides\[k\]\.dir, bowl:i/.test(src), '먹는 자리에 어느 밥그릇인지 표식이 없다');
+assert(/want === 'bowl'[\s\S]*?preferred = bowls\[Math\.abs\(\(p\.i \|\| 0\) % bowls\.length\)\]/.test(src),
+  '밥그릇이 여러 개일 때 펫을 그릇별로 고정 분산하지 않는다');
 
 console.log('pet-bowl-align.test.mjs: 그릇 실제 배치 좌표·실시간 먹기 위치 동기화 통과 OK');
