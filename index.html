@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '712';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '714';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -184,9 +184,9 @@ window._SW_V = '712';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 390px; background: rgba(10,10,10,0.9); backdrop-filter: blur(24px); border-top: 1px solid rgba(255,255,255,0.06); padding: 10px 0 24px; display: flex; z-index: 50; }
   /* iOS visualViewport의 하단 안전영역·반올림이나 일부 모바일 키보드 동작 때문에
      상세 아래의 하단 탭이 몇 px 비치는 틈을 막는다. 입력 중에만 z889를 검정으로 덮는다. */
-  body.sq-quick-kb::before { content:''; position:fixed; inset:-120px 0; z-index:889;
+  body.sq-quick-kb::before, body.mw-kb::before { content:''; position:fixed; inset:-120px 0; z-index:889;
     background:#05070c; pointer-events:none; }
-  body.sq-quick-kb .bottom-nav { visibility:hidden; }
+  body.sq-quick-kb .bottom-nav, body.mw-kb .bottom-nav { visibility:hidden; }
   .nav-btn { flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; padding: 4px 0; transition: transform 0.1s ease; }
   .nav-btn:active { transform: scale(0.88); }
   .nav-icon-wrap { display: flex; align-items: center; justify-content: center; width: 36px; height: 28px; color: rgba(255,255,255,0.28); transition: color 0.2s ease, transform 0.2s cubic-bezier(0.34,1.56,0.64,1); }
@@ -791,33 +791,29 @@ window._SW_V = '712';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      -> 그때마다 방이 통째로 다시 앉는다 = "고정 하나도 안 됨"(대표 8-25).
      고정한다는 건 **아무 것도 안 움직인다**는 뜻이다. 화면에 붙박아 두면 그만이다.
      키보드가 가리는 아랫부분은 어차피 칠 때는 안 본다 — 스쿼드가 공지·부위 보드를 접는 것과 같다. */
-  /* ★★★★8-25 최종 — **스쿼드 톡과 같은 구조로 맞춘다** (대표: "스쿼드톡에서 썼던 기능
-     그대로 쓰는 게 그렇게 힘드냐").
+  /* ★★★★★8-25 — 입력줄은 **원래 자리(필드 바로 밑, 흐름 안)** 그대로다.
+     내가 v711 에 화면 바닥에 고정했다가 되돌렸다 — 대표: "원래 저 위치 아니잖아,
+     원래 필드 바로 밑에 있었잖아". 자리를 옮겨서 될 문제가 아니었다.
 
-     그동안 틀렸던 것 두 가지:
+     남은 진짜 문제는 하나다: **키보드가 뜨면 아이폰이 화면을 밀어 올린다.**
+     포커스된 칸이 키보드에 가리면 브라우저가 그걸 보이게 하려고 스스로 민다.
+     막는 방법은 **밀 이유를 없애는 것**뿐이다 — 칠 때 화면을 보이는 영역 크기의
+     붙박이 상자로 만들면 월드바+필드+입력줄이 그 안에 다 들어가서 가릴 일이 없다.
+     (아이폰 기준 대략: 월드바 50 + 필드 340 + 입력줄 40 = 430 < 키보드 위 508)
 
-     ① 입력줄이 **평소엔 흐름 안에 있다가 키보드가 뜰 때만 고정으로 바뀌었다.**
-        그 전환 자체가 움직임이다 — "처음엔 위에 있다가 키보드 나오면 다시 하단부로 간다".
-        스쿼드 톡의 입력줄은 열려 있는 내내 같은 자리다. 바뀌는 게 없으니 움직일 것도 없다.
-        -> 방에 사람이 있는 동안(body.mw-party)에는 **처음부터 끝까지** 바닥에 고정한다.
-
-     ② `.page` 의 transform 이 position:fixed 의 기준을 화면이 아니라 **페이지**로 바꾼다
-        (131줄 translateY + .active 의 pageIn 이 forwards 라 끝나도 translateY(0) 이 남는다).
-        그래서 바닥에 붙였다고 생각한 입력줄이 실은 페이지 바닥에 붙어 스크롤을 따라다녔다.
-        -> 방에 있는 동안 transform 을 없앤다. animation 도 같이 꺼야 forwards 가 되살리지 못하고,
-           opacity 는 그 애니메이션이 올려주던 값이라 직접 1 로 박아야 화면이 안 사라진다.
-        ※같은 함정이 7966줄에 이미 적혀 있었다("최상위 — .page transform 영향 안 받게").
-
-     키보드가 뜨면 하는 일은 **입력줄을 잰 만큼 올리는 것 하나뿐**이다(_mwKbFit).
-     방을 다시 앉히지 않는다 — 그 함수는 visualViewport 의 scroll 에도 물려 있어서,
-     거기서 위치를 만지면 주소창이 접힐 때마다 화면이 다시 앉는다. */
-  body.mw-party #page-char { transform:none !important; animation:none !important; opacity:1 !important; }
-  body.mw-party #mw-party-row { position:fixed; left:0; right:0; bottom:0; z-index:70;
-    max-width:390px; margin:0 auto; padding:8px 13px;
-    padding-bottom:max(8px, env(safe-area-inset-bottom));
-    background:#0b0e16; border-top:3px solid #05070c }
-  /* 입력줄이 흐름에서 빠졌으니 그만큼 자리를 비워 둔다 — 안 그러면 마지막 말이 뒤에 가린다 */
-  body.mw-party #mw-party-chat { padding-bottom:calc(52px + env(safe-area-inset-bottom)) }
+     ★두 가지를 반드시 지킨다.
+      ① `.page` 의 transform 을 끈다. 안 끄면 position:fixed 의 기준이 화면이 아니라
+         페이지가 된다(.active 의 pageIn 이 forwards 라 translateY(0) 이 남는다 — none 이 아니다).
+         animation 도 같이 꺼야 되살아나지 않고, opacity 는 직접 1 로 박아야 화면이 안 사라진다.
+      ② 크기는 **키보드가 실제로 올라왔을 때만** 맞춘다(_mwKbFit 의 kbUp).
+         조건 없이 맞추면 주소창이 접혔다 펴질 때마다 다시 앉아서 화면이 흔들린다
+         — 스쿼드 _sqVVFit 이 8-14에 같은 이유로 kbUp 문턱을 갖게 됐다. */
+  /* ★가림막(body.mw-kb::before)이 z-index 889 라 방을 덮는다 — 방을 그 위로 올린다.
+     스쿼드는 #sq-detail 이 890 이라 이미 위에 있었다. 같은 층으로 맞춘다. */
+  body.mw-kb #page-char { position:fixed; left:0; right:0; top:0; z-index:890;
+    max-width:390px; margin:0 auto; min-height:0 !important;
+    transform:none !important; animation:none !important; opacity:1 !important;
+    overflow-y:auto; overscroll-behavior:contain }
   /* ===== 월드바 — 다크 모던(자체 CSS) + 제미나이 소스는 로고·아이콘·코인만 ===== */
   .mw-worldbar { display:flex; align-items:center; gap:10px; padding:14px 16px 11px;
     padding-top:max(14px, env(safe-area-inset-top)); font-family:'Galmuri11',sans-serif;
@@ -20730,41 +20726,19 @@ window._mwKbLift = 0;              // 지금 입력줄을 올려둔 픽셀(누�
 //     잠금은 앱에 이미 있는 lockBodyScroll(iOS 안전 · 중첩 가드 포함)을 그대로 쓴다.
 window._mwKbFit = function () {
   const row = document.getElementById('mw-party-row');
-  if (!row || !window._mwKbOn) return;
+  const pc = document.getElementById('page-char');
+  if (!row || !pc || !window._mwKbOn) return;
   const vv = window.visualViewport;
   const ih = window.innerHeight || (vv && vv.height) || 0;
-  // ★방 위치는 **여기서 손대지 않는다.** 방은 애초에 움직이지 않는다(body.mw-party 가
-  //   transform 을 없애 입력줄이 화면 바닥에 붙어 있게 해 뒀다).
-  //   이 함수는 vv 의 scroll 에도 물려 있어서, 여기서 top/height 를 앉히면 주소창이
-  //   접힐 때마다 방이 다시 앉는다 = 고정이 풀린다(대표 8-25). 여기서 하는 일은
-  //   **입력줄을 키보드 위로 올리는 것 하나뿐**이다.
-  // ★★8-25 재작업 — **찍지 말고 잰다.**
-  //   예전엔 키보드 높이를 화면의 38%로 찍어 포커스 순간 입력줄을 그 자리로 띄웠다.
-  //   그래서 (1) 키보드가 뜨기도 전에 입력줄이 방 한가운데로 튀어 올라가 필드를 덮었고
-  //   (2) 찍은 값이 실제와 달라 보정될 때마다 위아래로 요동쳤다
-  //   (대표 8-25: "고정 하나도 안 되고 필드에 박스 뚫고 들어오고 위아래 난리").
-  //   → 스쿼드의 _sqKbFix 와 **같은 식**으로 바꾼다. 바닥(0)에 두고, 입력줄이 실제로
-  //     그려진 자리가 보이는 영역 아래로 내려간 만큼만 올린다. 브라우저가 키보드 높이를
-  //     뭐라고 알려주든 상관없다(카톡 인앱브라우저·일부 안드로이드 웹뷰는 거짓말을 한다).
-  //   ★안 가려져 있으면 잰 값이 0 이라 **아무 것도 안 한다** — 이게 아이폰에서 안전한 이유다.
-  // ★bottom 은 CSS 가 정한다(body.mw-party). 여기서 다시 쓰지 않는다 —
-  //   쓰는 순간 '평소'와 '키보드 떴을 때'가 다른 규칙이 되고, 그 차이가 곧 움직임이다.
-  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : ih;
-  const cur = window._mwKbLift || 0;
-  // 지금 올려둔 만큼을 되돌린 '원래' 바닥 — 안 빼면 잴 때마다 누적돼 끝없이 올라간다
-  const rawBottom = row.getBoundingClientRect().bottom + cur;
-  let lift = Math.ceil(rawBottom - visBottom + window.MW_KB_GAP);
-  if (!(lift > 0)) lift = 0;
-  if (lift > ih) lift = 0;                       // 이상값 방어
-  if (lift !== cur) {
-    window._mwKbLift = lift;
-    row.style.transform = lift ? ('translateY(-' + lift + 'px)') : '';
-  }
-  // ★대화 상자는 키보드 뒤까지 뻗어 있다. 그냥 두면 **가장 최근 말이 키보드에 가린다**
-  //   (목록이 column-reverse 라 최신 글이 상자 맨 아래에 있다).
-  //   상자를 줄이지 말고 **아래 여백을 키보드+입력줄만큼** 줘서 글을 위로 밀어 올린다.
-  const le = document.getElementById('mw-party-log');
-  if (le) le.style.paddingBottom = ((window._mwKbLift || 0) + row.offsetHeight + 12) + 'px';
+  // ★키보드가 **실제로** 올라왔을 때만 크기를 맞춘다. 조건 없이 맞추면 주소창이
+  //   접혔다 펴질 때마다 다시 앉아 화면이 흔들린다(스쿼드가 8-14에 배운 것).
+  const kbUp = !!vv && vv.height < (ih - 80);
+  if (!kbUp) { pc.style.top = '0px'; pc.style.height = ''; return; }
+  pc.style.top = (vv.offsetTop || 0) + 'px';
+  pc.style.height = vv.height + 'px';
+  // ★★여기서 **scrollTop 을 만지지 않는다.** _sqNoJump 가 포커스 직후 0.6초간 스크롤을
+  //   원래 자리에 붙잡고 있는데, 여기서 굴리면 둘이 정면으로 싸워 화면이 떤다.
+  //   스쿼드 필드(_sqVVFit)도 크기만 맞추고 스크롤은 건드리지 않는다. 그대로 따른다.
 };
 window._mwKbStart = function () {
   if (window._mwKbOn) return;
@@ -20775,21 +20749,18 @@ window._mwKbStart = function () {
   window._mwKbOwnedLock = !_bodyLocked;
   if (window._mwKbOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
   document.body.classList.add('mw-kb');
-  const row = document.getElementById('mw-party-row');
-  // ★8-24 에는 "바닥에 두면 아이폰이 화면을 밀어 올린다"고 보고 미리 올려뒀는데,
-  //   진짜 원인은 그게 아니라 **방이 밀 수 있는 문서였던 것**이었다. 지금은 타이핑하는 동안
-  //   #page-char 이 position:fixed 상자가 되므로 밀 문서가 없다 — 미리 올릴 이유도 없다.
-  // ★미리 올리지 않는다. 예전엔 여기서 38%를 찍어 띄웠는데, 그게 곧 '위아래 난리'였다.
-  //   바닥에서 시작해 _mwKbFit 이 **잰 만큼만** 올린다.
-  window._mwKbLift = 0;
-  if (row) row.style.transform = '';
+  // ★★★스쿼드 **필드** 채팅(_sqQuickKbStart)과 같은 것만 한다. 스쿼드 톡이 아니다 —
+  //   8-25 에 내가 톡(#sq-talk)을 보고 옮기다 계속 헛짚었다. 필드 쪽은 훨씬 단순하다.
+  //   하는 일은 셋뿐이다: ①문서 잠금 ②가림막 클래스 ③키보드 애니메이션 동안 크기 맞추기.
+  //   **입력줄은 건드리지 않는다.** 원래 자리(필드 바로 밑)에 그대로 있는다.
+  //   위치를 미리 찍어 올리거나 transform 으로 옮기던 코드는 전부 걷어냈다 — 그게 흔들림이었다.
   const vv = window.visualViewport;
   if (vv) {
     vv.addEventListener('resize', window._mwKbFit);
     vv.addEventListener('scroll', window._mwKbFit);
   }
-  // 포커스 직후엔 키보드가 **아직 안 올라와 있다.** 기기마다 애니메이션이 달라 여러 번 잰다.
-  [0, 60, 140, 240, 360, 520, 800].forEach(function (t) { setTimeout(window._mwKbFit, t); });
+  // 스쿼드 필드와 같은 간격으로 다시 잰다 — 키보드 애니메이션 길이가 기기마다 다르다.
+  [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwKbFit, t); });
 };
 // immediate=true 면 곧바로 끝낸다(방을 닫을 때). blur 로 들어올 땐 **조금 기다린다** —
 // 말하기·고정 버튼을 누르면 blur 가 났다가 포커스가 곧 되돌아오는데, 그 사이에 풀면
@@ -20804,13 +20775,11 @@ window._mwKbEnd = function (immediate) {
     if (vv) { vv.removeEventListener('resize', window._mwKbFit); vv.removeEventListener('scroll', window._mwKbFit); }
     document.body.classList.remove('mw-kb');
     const row = document.getElementById('mw-party-row');
-    // ★인라인 cssText 가 없는 요소라 '' 로 지워도 안전하다. transform 도 반드시 같이 푼다 —
-    //   안 풀면 다음에 열 때 이미 올라간 상태에서 또 재서 입력줄이 화면 밖으로 올라간다.
-    if (row) row.style.transform = '';
+    if (row) row.style.transform = '';   // 옛 버전이 남겨둔 값이 있으면 지운다
     window._mwKbLift = 0;
-    // ★예전에 JS 가 앉혀 둔 값이 남아 있을 수 있어 한 번은 지운다(cssText 를 안 건드리므로 안전).
+    // ★#page-char 의 인라인은 padding 뿐이라 top/height 만 지우는 건 안전하다(cssText 를 안 건드린다)
     const pc = document.getElementById('page-char');
-    if (pc) { pc.style.top = ''; pc.style.height = ''; }
+    if (pc) { pc.style.top = ''; pc.style.height = ''; pc.scrollTop = 0; }
     const le = document.getElementById('mw-party-log');
     if (le) le.style.paddingBottom = '';
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
