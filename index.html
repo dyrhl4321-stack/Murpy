@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '746';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '747';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -4099,7 +4099,7 @@ window._mwPetPublish = function () {
   var list = (window._mwPets || []).map(function (p) {
     return { i: p.i, id: p.id, tc: p.tc, tr: p.tr, dir: p.dir | 0,
              anim: p.anim || 'stand', up: p.up ? 1 : 0,
-             eatDx: +(p.eatDx || 0), eatDy: +(p.eatDy || 0),
+             eatDx: +(p.eatDx || 0), eatDy: +(p.eatDy || 0), bowlZ: +(p.bowlZ || 0),
              posDx: +(p.posDx || 0), posDy: +(p.posDy || 0),
              perch: p.perch || '', perchZ: +(p.perchZ || 0), house: p.house ? 1 : 0 };
   });
@@ -4191,7 +4191,7 @@ window._mwPetLiveApply = function () {
     if (!d || d.id !== p.id) return;
     var moved = (p.tc !== d.tc || p.tr !== d.tr);
     p.tc = d.tc; p.tr = d.tr; p.up = !!d.up;
-    p.eatDx = +(d.eatDx || 0); p.eatDy = +(d.eatDy || 0);
+    p.eatDx = +(d.eatDx || 0); p.eatDy = +(d.eatDy || 0); p.bowlZ = +(d.bowlZ || 0);
     p.posDx = +(d.posDx || 0); p.posDy = +(d.posDy || 0);
     p.perch = d.perch || ''; p.perchZ = +(d.perchZ || 0); p.house = !!d.house;
     if (p.el && moved) p.el.style.transition = 'transform 300ms linear';
@@ -4428,7 +4428,9 @@ window._mwPetApply = function (p) {
   p.el.style.width = W + 'px'; p.el.style.height = W + 'px';
   window._mwPetPosition(p);
   // 올라가 있으면 그 가구보다 위. 안 그러면 침대 위에서 자는 고양이가 뒤에 파묻힌다.
-  p.el.style.zIndex = p.perchZ || (10 + p.tr * 10 + (p.up ? 9 : 4));
+  // ★먹는 동안에는 **그릇보다 뒤**로 간다. 안 그러면 몸이 그릇을 덮어 그릇이 사라져 보인다.
+  p.el.style.zIndex = (p.anim === 'eat' && p.bowlZ) ? (p.bowlZ - 1)
+                    : (p.perchZ || (10 + p.tr * 10 + (p.up ? 9 : 4)));
   p.el.classList.toggle('in-house', !!p.house);
   var spr = p.el.querySelector('.mw-pet-spr');
   if (spr) {
@@ -4521,8 +4523,14 @@ window._mwPetSpots = function (p, want) {
         var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
         if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
+        // ★★8-26 — "옆으로 밥 먹을 때 밥그릇이 사라진 것처럼 보임"(대표).
+        //   ①**너무 파고들었다.** 0.58칸이면 몸이 그릇을 통째로 덮는다 -> 0.40 으로 줄여
+        //     머리만 닿게 한다. ②그리고 **앞뒤가 뒤집혀 있었다** — 옆에서 오면 펫과 그릇이
+        //     같은 줄이라 z 가 같은데, 펫이 가구보다 나중에 붙어서 항상 펫이 이겼다.
+        //     그릇 z 를 자리에 실어 보내 **먹는 동안에는 그릇이 위로** 오게 한다.
         out.push({ tc: stc, tr: str_, up: false, dir: sides[k].dir, bowl:i,
-          eatDx: -sides[k].dc * 0.58 + bowlDx, eatDy: -sides[k].dr * 0.58 + bowlDy });
+          bowlZ: 10 + Math.floor((it.y + def.h) / 48) * 10,
+          eatDx: -sides[k].dc * 0.40 + bowlDx, eatDy: -sides[k].dr * 0.40 + bowlDy });
         any = true;
       }
       if (!any) out.push({ tc: tc, tr: tr, up: false, dir: 0 });
@@ -4635,6 +4643,7 @@ window._mwPetGoto = function (p, spot, thenAnim) {
     p.run = false;
     p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
     p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
+    p.bowlZ = thenAnim === 'eat' ? +(spot.bowlZ || 0) : 0;
     p.posDx = +(spot.posDx || 0); p.posDy = +(spot.posDy || 0);
     p.perch = spot.perch || ''; p.perchZ = +(spot.perchZ || 0); p.house = !!spot.house;
     p.up = !!spot.up; window._mwPetApply(p);
@@ -4670,6 +4679,7 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   p.tc = spot.tc; p.tr = spot.tr; p.moving = true; p.up = !!spot.up;
   p.eatDx = thenAnim === 'eat' ? (spot.eatDx || 0) : 0;
   p.eatDy = thenAnim === 'eat' ? (spot.eatDy || 0) : 0;
+  p.bowlZ = thenAnim === 'eat' ? +(spot.bowlZ || 0) : 0;
   p.posDx = +(spot.posDx || 0); p.posDy = +(spot.posDy || 0);
   p.perch = spot.perch || ''; p.perchZ = +(spot.perchZ || 0); p.house = !!spot.house;
   p.el.style.transition = 'transform ' + ms + 'ms linear';
