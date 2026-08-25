@@ -20,10 +20,21 @@ service cloud.firestore {
     // ===== 유저 프로필 (사진/닉네임 공개 읽기 필요) =====
     match /users/{userId} {
       allow read: if true;
-      // ★관리자 쓰기 추가 (2026-08-14) — 대표가 특정 계정에 머피를 넣어줘야 한다
-      //   (베타 보상·이벤트). 지금까지는 본인만 쓸 수 있어 대표도 남의 잔액을 못 올렸다.
+      // ★관리자 쓰기 (2026-08-14) — 대표가 특정 계정에 머피를 넣어줘야 한다(베타 보상·이벤트).
       //   isAdmin() 은 대표 이메일 하나로 고정돼 있다(파일 위쪽 헬퍼).
-      allow write: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+      // ★크레딧 증가폭 제한 (2026-08-25).
+      //   지금까지 본인은 자기 문서의 **아무 필드나** 쓸 수 있었다. 브라우저 콘솔 한 줄이면
+      //   자기 머피를 100만으로 만들 수 있었다는 뜻이다(경제가 클라이언트 신뢰에 100% 의존).
+      //   한 번에 1000 초과 증가를 거부한다. 반복하면 뚫리므로 **근본 해결이 아니다** —
+      //   진짜 해결은 크레딧 지급을 Cloud Functions 로 옮기는 것이다(CLAUDE.md '공개 런칭 전 필수').
+      //   1000 으로 잡은 이유: 도감 보너스처럼 한 번에 여러 건을 몰아 주는 지급이 있어서
+      //   너무 좁게 잡으면 정상 적립이 막힌다. 좁히려면 그 지급들을 먼저 쪼개야 한다.
+      allow update: if isAdmin() || (isOwner(userId) && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits'])
+          || request.resource.data.credits <= resource.data.credits + 1000
+      ));
 
       // 머피월드 방명록 (싸이월드식) — 작성자=본인 서명, 삭제=방주인/작성자
       match /guestbook/{entryId} {
@@ -63,16 +74,24 @@ service cloud.firestore {
     match /feed/{postId} {
       allow read: if true;
       allow create: if signedIn();
-      // 좋아요/댓글수 등은 비작성자도 업데이트 → 로그인만 요구
-      allow update: if signedIn();
+      // ★2026-08-25 — 예전엔 `allow update: if signedIn()` 이었다. 좋아요 카운터 때문에 열어둔
+      //   것인데 **필드 제한이 없어서 아무나 남의 인증글 내용을 통째로 바꿀 수 있었다.**
+      //   작성자·관리자는 전부, 남은 카운터와 신고 표시만 건드린다.
+      //   ※여기 목록에 없는 필드를 앱이 남의 글에 쓰기 시작하면 그 기능이 조용히 막힌다 —
+      //     새 필드를 추가할 때 이 줄을 같이 고칠 것.
+      allow update: if ownsDoc() || isAdmin()
+        || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['likes', 'likedBy', 'commentCount', 'reportedBy']));
       // 삭제는 작성자 본인 또는 관리자만
       allow delete: if ownsDoc() || isAdmin();
 
       match /comments/{commentId} {
         allow read: if true;
         allow create: if signedIn();
-        // 신고 표시(reportedBy)를 남기려면 비작성자도 써야 한다 — 글(feed)과 같은 수준으로 연다
-        allow update: if signedIn();
+        // 신고 표시(reportedBy)는 비작성자도 남겨야 한다. 대신 **그 필드만** 열어 준다.
+        allow update: if ownsDoc() || isAdmin()
+          || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['likes', 'likedBy', 'reportedBy']));
         allow delete: if ownsDoc() || isAdmin();
       }
     }
