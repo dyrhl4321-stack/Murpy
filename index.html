@@ -72,7 +72,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '689';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '690';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -13593,6 +13593,29 @@ window._charState = { character: null, wardrobe: [], hidden: {}, ready: false };
 window._mwDocReady = function () {
   return !!(window._charState && window._charState.ready);
 };
+
+// ★로드 전 쓰기를 **버리지 않고 미뤄 둔다** (2026-08-25).
+//   a67b9e3 에서 "문서 로드 전에는 쓰지 않는다"를 넣었다. 기본값이 진짜 데이터를 덮어쓰는
+//   사고(돈이 0원 / 캐릭터가 남자로)를 막으려던 것인데, **막기만 하고 버렸다.**
+//   그래서 로드가 끝나기 전에 한 배치·설정이 조용히 사라졌다
+//   (대표 8-25: "내 방엔 밥그릇 두 개인데 손님 화면엔 하나").
+//   이제 마지막 것 하나를 들고 있다가 로드가 끝나면 그때 쓴다.
+//   ★마지막 것만 들고 있으면 된다 — 같은 필드를 여러 번 고쳤어도 최종 상태만 저장하면 맞다.
+window._mwPending = {};
+window._mwQueueWrite = function (key, fn) {
+  window._mwPending[key] = fn;
+  console.warn('[save] 문서 로드 전이라 미뤄 둠: ' + key);
+};
+window._mwFlushWrites = function () {
+  var keys = Object.keys(window._mwPending || {});
+  if (!keys.length) return;
+  console.warn('[save] 미뤄 둔 저장 ' + keys.length + '건을 지금 보냅니다: ' + keys.join(', '));
+  keys.forEach(function (k) {
+    var fn = window._mwPending[k];
+    delete window._mwPending[k];
+    try { fn(); } catch (e) { console.error('[save] ' + k, e); }
+  });
+};
 // ★상태가 확정되면 **열려 있는 머피월드를 다시 그린다** (대표 8-25).
 //   증상: 로그인해도 머피월드가 '캐릭터 고르기'(신규 유저 화면)로 뜨고, 머피 갯수도
 //   신규처럼 보이다가, **나갔다 다시 들어와야** 내 방이 떴다. 로그아웃도 반대로 같았다.
@@ -13611,16 +13634,25 @@ window._mwRefreshIfOpen = function () {
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
-  if (!window._mwDocReady()) { console.warn('char save blocked: 문서 로드 전'); return false; }
+  if (!window._mwDocReady()) {
+    window._mwQueueWrite('character', function () { window._charPersistCharacter(cfg); });
+    return false;
+  }
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
-  if (!window._mwDocReady()) { console.warn('wardrobe save blocked: 문서 로드 전'); return; }
+  if (!window._mwDocReady()) {
+    window._mwQueueWrite('wardrobe', function () { window._charPersistWardrobe(arr); });
+    return;
+  }
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
 window._charPersistHidden = async (map) => { if (!window.currentUser) return; try { await updateDoc(doc(db, 'users', window.currentUser.uid), { hiddenChars: map }); } catch (e) { console.error('hidden save', e); } };
 window._charPersistRoom = async (room) => { if (!window.currentUser) return;
-  if (!window._mwDocReady()) { console.warn('room save blocked: 문서 로드 전'); return; }
+  if (!window._mwDocReady()) {
+    window._mwQueueWrite('room', function () { window._charPersistRoom(room); });
+    return;
+  }
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room }); } catch (e) { console.error('room save', e); } };
 // 슬롯 확장권 사용 저장 (모듈 밖 편집기에서 부른다)
 window._mwGrantRoomSlot = async () => {
@@ -13641,7 +13673,10 @@ window._mwGrantRoomSlot = async () => {
 //   쓰기로 해 뒀다. 같은 이름을 다른 뜻으로 쓰면 나중에 반드시 헷갈린다.
 window._mwSavePets = async (arr) => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
-  if (!window._mwDocReady()) { console.warn('pet save blocked: 문서 로드 전'); return false; }
+  if (!window._mwDocReady()) {
+    window._mwQueueWrite('petsOut', function () { window._mwSavePets(arr); });
+    return false;
+  }
   try {
     await updateDoc(doc(db, 'users', uid), { petsOut: Array.isArray(arr) ? arr : [] });
     return true;
@@ -16583,6 +16618,7 @@ window.ensureCreditsInit = async (uid) => {
     if (window.mwRenderFurn) window.mwRenderFurn();
     window._creditState.ready = true;
     window._charState.ready = true;
+    window._mwFlushWrites && window._mwFlushWrites();       // 미뤄 둔 저장을 지금 보낸다
     window._mwRefreshIfOpen && window._mwRefreshIfOpen();   // 열려 있으면 지금 다시 그린다
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.renderStreakUI) window.renderStreakUI();
