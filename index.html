@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '752';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '753';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -21028,13 +21028,17 @@ window.mwArtTake = async function (id) {
                       { credits: Math.max(0, ((window._creditState || {}).credits | 0) - price) });
       window._creditState.credits = Math.max(0, (window._creditState.credits | 0) - price);
       window.mwUpdateCoin && window.mwUpdateCoin();
-      // ★amount = 판 사람 몫(수수료 제외). 경매와 같은 규칙이어야 한다.
-      await setDoc(doc(db, 'notifications', 'as_' + id + '_' + me.uid), {
-        toUid: window.mwArtOwner(), fromUid: me.uid,
-        fromNickname: window._mwMyNick || '머피', type: 'art_sold',
-        amount: window.mwArtNet(price), gross: price, artId: id, paid: false,
-        read: false, createdAt: serverTimestamp()
-      });
+      // ★경매와 같은 규칙 — 같이 그린 사람들에게도 몫을 나눈다.
+      const _own = window.mwArtOwner();
+      const _parts = window.mwArtSplit(window.mwArtNet(price), a.byUids, _own);
+      for (const _pt of _parts) {
+        await setDoc(doc(db, 'notifications', 'as_' + id + '_' + me.uid + '_' + _pt.uid), {
+          toUid: _pt.uid, fromUid: me.uid,
+          fromNickname: window._mwMyNick || '머피', type: 'art_sold',
+          amount: _pt.amount, gross: price, artId: id, seller: _pt.seller ? _own : '',
+          paid: false, read: false, createdAt: serverTimestamp()
+        });
+      }
     } catch (e) { console.warn('art buy', e); showToast('사지 못했어요 · 잠시 뒤에 다시'); return; }
   }
   // 내 목록에 담는다. **원작자 표시(by)는 그대로 들고 간다** — 누가 그렸는지가 그림의 값이다.
@@ -21143,6 +21147,26 @@ window.mwArtNet = function (price) {
   return Math.max(1, Math.round((price | 0) * (1 - window.MW_ART_FEE)));
 };
 
+// ★★같이 그린 그림의 대금 분배 (대표 확정 2026-08-26)
+//   같이 그린 그림은 **참여자가 각자 1장씩** 갖고, **각자 자기 장을 판다**(값도 각자 정한다).
+//   그런데 균등 분배로 두면 **판 사람만 그림을 잃고 남들과 똑같이 받아** 아무도 안 판다.
+//   → **판 사람 70% / 나머지 30%를 다른 참여자가 균등.**
+//   판 사람에게 팔 동기가 생기고, 안 판 사람도 "내가 같이 그린 게 팔렸네"로 몫이 온다.
+//   즉 **같이 그릴수록 팔릴 기회가 늘어난다** — 경매가 같이 그리기를 방해하지 않는다.
+window.MW_ART_SELLER = 0.70;
+window.mwArtSplit = function (net, uids, sellerUid) {
+  const list = (uids && uids.length) ? uids.slice() : [];
+  if (sellerUid && list.indexOf(sellerUid) < 0) list.push(sellerUid);
+  const others = list.filter(function (u) { return u && u !== sellerUid; });
+  // 혼자 그린 그림(1장 한정)은 나눌 사람이 없다 — 전액 판 사람 몫
+  if (!others.length) return [{ uid: sellerUid, amount: net, seller: true }];
+  const cut = Math.max(1, Math.round(net * window.MW_ART_SELLER));
+  const each = Math.floor(Math.max(0, net - cut) / others.length);
+  const out = [{ uid: sellerUid, amount: cut, seller: true }];
+  others.forEach(function (u) { if (each > 0) out.push({ uid: u, amount: each, seller: false }); });
+  return out;
+};
+
 window.mwAucOn = function (a) { return !!(a && a.auc && a.aucAt); };
 
 // 열려 있는 그림 화면을 다시 그린다 (경매 상태가 바뀔 때마다)
@@ -21210,13 +21234,19 @@ window.mwAucHammer = async function (id) {
   const bids = await window.mwAucBids(id, a.aucAt);
   const top = bids[0];
   if (!top) { showToast('아직 값을 부른 사람이 없어요'); return; }
-  // ★수수료를 여기서 밝힌다. 안 밝히면 판 사람이 "왜 180만 들어와?" 가 된다.
+  // ★수수료와 분배를 여기서 밝힌다. 안 밝히면 판 사람이 "왜 180만 들어와?" 가 된다.
   const net = window.mwArtNet(top.amount);
+  const _split = window.mwArtSplit(net, a.byUids, (window.currentUser || {}).uid || '');
+  const _mineCut = (_split[0] || {}).amount || net;
+  const _others = _split.length - 1;
   const ok = await window.murpyConfirm({
     title: top.nick + '님에게 넘길까요?',
     desc: '<b style="color:#F5C24B">' + top.amount + '머피</b>에 낙찰돼요<br>'
-        + '수수료 ' + Math.round(window.MW_ART_FEE * 100) + '%를 빼고 <b style="color:#F5C24B">'
-        + net + '머피</b>가 들어와요<br>'
+        + '수수료 ' + Math.round(window.MW_ART_FEE * 100) + '%를 빼면 ' + net + '머피<br>'
+        + (_others
+            ? ('내 몫 <b style="color:#F5C24B">' + _mineCut + '머피</b> · 같이 그린 '
+               + _others + '명이 나머지를 나눠요<br>')
+            : ('내 몫 <b style="color:#F5C24B">' + _mineCut + '머피</b><br>'))
         + '<b>이 그림은 내 목록과 방에서 빠져요</b> · 대금은 상대가 받아갈 때 들어와요',
     confirmText: '낙찰' });
   if (!ok) return;
@@ -21305,11 +21335,16 @@ window.mwAucClaim = async function (artId, ownerUid, amount, notifId) {
     window.mwUpdateCoin && window.mwUpdateCoin();
     window.renderCreditUI && window.renderCreditUI();
     // ★대금은 판 사람 문서에 직접 못 쓴다(남의 문서). 알림으로 보내고 그쪽 앱이 적립한다.
-    // ★알림의 amount = **판 사람이 실제로 받는 몫**(수수료 제외). _mwArtSettle 이 이 값을 적립한다.
-    await setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid), {
-      toUid: ownerUid, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
-      type: 'art_sold', amount: window.mwArtNet(amount), gross: amount,
-      artId: artId, paid: false, read: false, createdAt: serverTimestamp() });
+    // ★같이 그린 사람들에게도 몫을 보낸다. 문서 id 에 받는 사람을 넣어야 서로 안 덮어쓴다.
+    //   seller = 판 사람 uid (그 사람만 자기 목록에서 그림을 뺀다 — _mwArtSettle 참고).
+    const _parts = window.mwArtSplit(window.mwArtNet(amount), byUids, ownerUid);
+    for (const _pt of _parts) {
+      await setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid + '_' + _pt.uid), {
+        toUid: _pt.uid, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
+        type: 'art_sold', amount: _pt.amount, gross: amount,
+        artId: artId, seller: _pt.seller ? ownerUid : '',
+        paid: false, read: false, createdAt: serverTimestamp() });
+    }
   } catch (e) { console.warn('auc claim pay', e); showToast('가져오지 못했어요 · 잠시 뒤에 다시'); return; }
   const copy = { id: artId, px: px, by: by, byUids: byUids, at: Date.now(), price: 0, from: ownerUid };
   window._myArt = [copy].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
@@ -21338,8 +21373,11 @@ window._mwArtSettle = async function () {
       const amt = n.amount | 0; if (amt <= 0) continue;
       // ★먼저 표시하고 적립한다 — 탭이 두 개 열려 있어도 두 번 들어가지 않게.
       try { await updateDoc(d.ref, { paid: true }); } catch (e) { continue; }
-      const got = await window.earnCredit(amt, '그림이 팔렸어요');
+      const got = await window.earnCredit(amt, n.seller === me ? '그림이 팔렸어요' : '같이 그린 그림이 팔렸어요');
       if (!got) { try { await updateDoc(d.ref, { paid: false }); } catch (e2) {} continue; }
+      // ★★그림을 빼는 것은 **판 사람뿐**이다. 대금 알림은 같이 그린 사람 전원에게 가므로
+      //   이 가드가 없으면 **팔지도 않은 사람의 그림까지 사라진다.**
+      if (n.seller !== me) continue;
       // ★★판 그림은 **내 목록과 방에서 뺀다** (대표 8-26: "낙찰되면 그린 사람 방에서
       //   저 그림이 빠지겠네 당연히?"). 안 빼면 둘 다 갖는 **복제**라 경매의 값이 사라진다.
       //   남의 문서는 못 고치므로 산 사람이 지울 수 없다 — **판 사람 앱이 여기서 정리한다.**
@@ -25126,8 +25164,8 @@ window.loadNotificationsFirestore = async () => {
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
           </div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;line-height:1.6;color:#ddd">그림이 팔렸어요 <b style="color:#F5C24B">+${Number(n.amount||0).toLocaleString()}머피</b></div>
-            <div style="font-size:11.5px;color:#8a93a8;margin-top:2px">${safeNick}님이 가져갔어요</div>
+            <div style="font-size:13px;line-height:1.6;color:#ddd">${n.seller ? '그림이 팔렸어요' : '같이 그린 그림이 팔렸어요'} <b style="color:#F5C24B">+${Number(n.amount||0).toLocaleString()}머피</b></div>
+            <div style="font-size:11.5px;color:#8a93a8;margin-top:2px">${safeNick}님이 가져갔어요${n.seller ? '' : ' · 같이 그린 몫이에요'}</div>
             <div style="font-size:11px;color:#444;margin-top:2px">${time}</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0"></div>' : ''}
