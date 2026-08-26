@@ -193,6 +193,10 @@ diff 추출(trimap 3분류), 선별 4분류 + 픽셀 도구, seal_gaps/extend_he
 - **단일 파일** — 모든 CSS/HTML/JS가 `index.html`
 - **Firebase 모듈 스코프** — onclick에서 쓰려면 `window.xxx` 전역 등록(브릿지 패턴)
 - **작업 후 반드시 git push.** 에셋/JS 바꾸면 `sw.js`의 `murpy-vNNN` 3곳 + `index.html` cache-bust 갱신
+- ★★**index.html 을 고치면 문법 검사를 두 개 다 돌린다** (2026-08-26 사고):
+  `node tools/dogam-syntax-check.mjs` (일반 script) + `node tools/module-syntax-check.mjs` (module).
+  **앞의 것은 module 블록을 안 본다.** 그래서 `else` 고아 하나를 놓쳐 module 이 통째로 죽었고
+  **Firebase 초기화가 안 돼 전 유저 로그인이 막혔다**(v758). 버전은 `python tools/check_version.py` 로 확인.
 - **로컬 미리보기 말고 푸시** — 대표가 배포앱에서 확인하는 게 기본 (내 미리보기는 신뢰 안 함)
 - **`sw.js`를 PowerShell로 편집 금지** (인코딩 깨짐). Write 도구 사용. 한글 md/html도 동일
 - **에셋 하드룰** — `char/walk.png` 재수정 금지 · 정수배 NEAREST만 · 알파 128 이진화 ·
