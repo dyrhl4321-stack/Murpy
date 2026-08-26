@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '748';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '749';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -211,7 +211,12 @@ window._SW_V = '748';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
    10060 이던 시절엔 '10머피로 사기'를 눌러도 구매 확인창이 시착 시트 **뒤에** 깔려서,
    아이비리그컷을 사려다 화면이 멈춘 것처럼 보였다(대표 8-12).
    방 꾸미기 편집기(880)·스쿼드 상세(890)보다 위인 건 그대로 유지된다. */
-#murpy-confirm-modal { z-index: 30200; }
+/* ★30200 → 40060 (2026-08-26). 확인창이 **머피월드 오버레이들보다 뒤에 깔려 있었다** —
+   그림 확대(#mw-artbig 40030)·값 입력(#mw-artprice 40050) 위에서 murpyConfirm 을 띄우면
+   확인창이 그 아래로 들어가 "팝업이 썸네일 하단부에 잡힌다"로 보였다(대표 지적).
+   경매(올리기·낙찰·사기·내리기)가 전부 이 확인창을 쓰므로 안 보이면 통째로 막힌다.
+   확인창은 언제나 맨 위여야 한다 — 여기서 결정을 받아야 다음이 진행된다. */
+#murpy-confirm-modal { z-index: 40060; }
 /* ★로그인/가입 안내창도 **언제나 맨 앞**이어야 한다(대표 8-12).
    200 으로 두니 스쿼드 상세(890)·방 꾸미기 편집기(880)·머피월드 오버레이 뒤에 깔려서,
    "참가 신청"이나 지도의 "머피 시작하기"를 눌러도 창이 안 보이고 아무 반응이 없어 보였다.
@@ -1173,16 +1178,20 @@ window._SW_V = '748';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     -webkit-tap-highlight-color:transparent }
   .mw-artframe img { display:block; width:100%; height:100%; image-rendering:pixelated; background:#f4f1ea }
   .mw-artframe:active { transform:translateY(2px) }
-  /* 도화지 카펫은 정사각 이미지를 그대로 얹지 않는다. 방 바닥과 같은 2:1 아이소메트릭 면으로
-     눕히고, 아래에 한 겹 더 어두운 면을 둬 종이 두께와 접지 그림자를 만든다. */
-  .mw-artrug { position:absolute; aspect-ratio:1/1; cursor:pointer; -webkit-tap-highlight-color:transparent }
-  .mw-artrug::before { content:''; position:absolute; inset:7%; background:#756e61;
-    transform:translateY(11%) scale(.72) scaleY(.52) rotate(45deg);
-    box-shadow:0 10px 14px rgba(0,0,0,.48); pointer-events:none }
+  /* ★★카펫을 45도 돌려 마름모로 눕히지 않는다 (대표 8-26: "입체감 개판, 마름모형임").
+     **우리 방 바닥은 아이소메트릭이 아니다** — char/fields/field_room.png 의 마루 널이
+     완전히 수평인 정면 뷰다. 그런데 카펫만 rotate(45deg)+scaleY 로 다이아몬드를 만들어
+     혼자 어긋나 보였다. 기존 러그(pi_rug 152x84)와 **같은 문법**으로 되돌린다 —
+     회전 없이 가로로 넓은 사각형, 세로는 def 의 w/h 비율이 눌러 준다.
+     ★그림자도 뺀다. flat:true 는 **접지 그림자를 안 그리는 것이 규칙**인데(ROOM_ITEMS 주석)
+     box-shadow 로 아래에 드리우고 있어서 **공중에 뜬 것처럼** 보였다(대표 지적).
+     → [[feedback_murpy_isometric_shadow]] 의 '대칭 마름모 금지'와 같은 함정이다. */
+  .mw-artrug { position:absolute; cursor:pointer; -webkit-tap-highlight-color:transparent }
+  /* ★CSS 는 아무것도 얹지 않는다 — 테두리·바탕·여백을 여기서 또 주면 캔버스가 구운 러그 위에
+     **흰 액자가 한 겹 더** 씌워져 바닥에 깐 러그가 아니라 액자로 읽힌다(8-26 실측).
+     폴라로이드가 두 겹으로 어긋났던 그 함정과 같다. */
   .mw-artrug > img { position:absolute; inset:0; width:100%; height:100%; display:block;
-    box-sizing:border-box; padding:2.3%; background:#e8e2d4; border:5px solid #d1cabd;
-    image-rendering:pixelated; transform:scale(.72) scaleY(.52) rotate(45deg);
-    transform-origin:50% 50%; pointer-events:none }
+    image-rendering:pixelated; pointer-events:none }
   .mw-artrug:active > img { filter:brightness(.9) }
   #mw-artbig { position:fixed; inset:0; z-index:40030; display:flex; align-items:center;
     justify-content:center; padding:26px; background:rgba(0,0,0,.86) }
@@ -1219,6 +1228,9 @@ window._SW_V = '748';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
     cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:5px }
   .mw-redit-chip b { font-weight:400; font-size:9.5px; color:rgba(255,255,255,.28) }
   .mw-redit-chip.on { border-color:#3D7EFF; color:#fff }
+  /* 장터 — 칩 맨 앞 + 골드. 돈이 오가는 곳이라 골드가 맞다(색 규칙: 골드=머피) */
+  .mw-redit-chip.hot { border-color:rgba(245,194,75,.62); color:#F5C24B }
+  .mw-redit-chip.hot.on { border-color:#F5C24B; color:#F5C24B }
   .mw-redit-chip.on b { color:rgba(61,126,255,.8) }
   .mw-redit-chip:active { transform:scale(.96) }
   /* 칩을 쓰면 분류 제목은 필요 없다 — 목록 안에서만 안내문으로 쓴다 */
@@ -3607,7 +3619,8 @@ window.ROOM_ITEMS = [
   // ★hidden = 상점·꾸미기 목록에 안 뜬다. **사서 놓는 물건이 아니라 그려서 생기는 물건**이다.
   //   src 가 없다 — 그림(room.art[a])을 캔버스로 구워 dataURL 로 쓴다(mwArtImg).
   //   flat/wall 만 적어두면 그림자·통행·벽클램프 판정이 기존 경로에서 그대로 돈다.
-  { id:'art_rug', cat:'wall', name:'같이 낙서 카펫', w:288, h:288, flat:true, art:'rug', hidden:true, price:0 },
+  // ★w/h 는 굽는 캔버스 비율(278x280)과 같아야 한다 — 다르면 그림이 눌린다.
+  { id:'art_rug', cat:'wall', name:'같이 낙서 카펫', w:288, h:290, flat:true, art:'rug', hidden:true, price:0 },
   { id:'art_frame', cat:'wall', name:'같이 낙서 액자', w:96, h:96, wall:true, art:'frame', hidden:true, price:0 },
   // ===== 펫 (고양이·강아지) =====
   // ★가구가 아니다. pet:true 면 _reditAdd 가 배치 대신 '데리고 나오기'로 간다.
@@ -3866,27 +3879,44 @@ window.MW_JAM_N = 32;
 window.MW_JAM_PAL = ['', '#14161E', '#F2F5FA', '#E4472E', '#F5C24B', '#4ADE80', '#3D7EFF'];
 window._mwArtCache = {};
 window.mwArtImg = function (px, kind, key) {
-  const ck = kind + '|' + (key || px.length + ':' + px.slice(0, 24));
+  // ★'r2' = 굽는 방식 버전. 카펫을 러그로 다시 구웠으므로(8-26) 올려야 옛 이미지가 안 남는다
+  const ck = 'r2|' + kind + '|' + (key || px.length + ':' + px.slice(0, 24));
   if (window._mwArtCache[ck]) return window._mwArtCache[ck];
   const N = window.MW_JAM_N, PAL = window.MW_JAM_PAL;
   const rug = kind === 'rug';
   const S = rug ? 8 : 6, D = N * S;              // 정수배만 (8배 256 / 6배 192)
-  const FR = rug ? 6 : 0;                        // 카펫 술 길이
+  const FR = rug ? 7 : 0;                        // 카펫 술 길이
   const BD = rug ? 4 : 5;                        // 테두리 두께
   const MAT = rug ? 0 : 8;                       // 액자 안쪽 매트
-  const padX = FR + BD + MAT, padY = BD + MAT;
+  // ★★카펫은 **가로로 넓어야 러그로 읽힌다** (대표 8-26: "바닥에 깐 러그 같은 느낌이 1도 없었다").
+  //   32x32 정사각 그림을 정사각 판에 넣으면 형태부터 '바닥에 놓인 액자'다.
+  //   그림은 그대로 두고 **좌우에 러그 바탕을 붙여** 3:2 로 넓힌다 — 그림이 눌리지 않는다.
+  //   ※예전엔 CSS 로 rotate(45deg) 를 걸어 마름모로 눕혔는데, 우리 방 바닥은 아이소메트릭이
+  //     아니라 **수평 마루**(field_room.png)라 혼자 어긋나 보였다. 회전은 쓰지 않는다.
+  //   ★여백 폭 3안(76/30/0)을 실제 방 바닥 위에 렌더해 비교했다(8-26).
+  //     여백을 넓게 두면 좌우 띠가 **액자 매트**로 읽혀 러그가 아니게 된다.
+  //     0 = 그림이 러그 전체가 되는 것이 가장 러그답다.
+  const RUGPAD = 0;                              // 그림 좌우에 붙는 러그 바탕 폭
+  const padX = FR + BD + MAT + RUGPAD, padY = BD + MAT + (rug ? 8 : 0);
   const cv = document.createElement('canvas');
   cv.width = D + padX * 2; cv.height = D + padY * 2;
   const x = cv.getContext('2d');
   x.imageSmoothingEnabled = false;
   if (rug) {
+    const W = cv.width, H = cv.height;
     // 술 — 좌우 짧게. 테두리가 주인공이 되면 안 된다(8-24에 갈색 나무 띠가 그래서 반려됐다)
-    x.fillStyle = '#39414f';
-    for (let y = 2; y < cv.height - 2; y += 8) {
-      x.fillRect(0, y, FR, 3); x.fillRect(cv.width - FR, y, FR, 3);
-    }
-    x.fillStyle = '#0f1420';
-    x.fillRect(FR, 0, cv.width - FR * 2, cv.height);          // 얇은 어두운 테두리
+    x.fillStyle = '#A69579';
+    for (let y = 3; y < H - 3; y += 8) { x.fillRect(0, y, FR, 3); x.fillRect(W - FR, y, FR, 3); }
+    // ★러그 바탕 — 마루와 같은 계열의 밝은 직물 톤. 어두운 남색으로 했더니 무거워서
+    //   바닥에 깔린 게 아니라 **위에 떠 있는 판**으로 보였다(8-26 렌더 확인).
+    x.fillStyle = '#BFA18F'; x.fillRect(FR, 0, W - FR * 2, H);
+    // 직조 줄무늬 — 짜인 결. 이게 없으면 그냥 색판이라 밋밋하다
+    x.fillStyle = '#AB8274';
+    for (let y = 0; y < H; y += 6) x.fillRect(FR, y, W - FR * 2, 3);
+    // 테두리
+    x.fillStyle = '#8E775A';
+    x.fillRect(FR, 0, W - FR * 2, BD); x.fillRect(FR, H - BD, W - FR * 2, BD);
+    x.fillRect(FR, 0, BD, H); x.fillRect(W - FR - BD, 0, BD, H);
   } else {
     x.fillStyle = '#05070c'; x.fillRect(0, 0, cv.width, cv.height);
     x.fillStyle = '#8B5E3C'; x.fillRect(2, 2, cv.width - 4, cv.height - 4);
@@ -3899,6 +3929,21 @@ window.mwArtImg = function (px, kind, key) {
     if (!c) continue;
     x.fillStyle = c;
     x.fillRect(padX + (i % N) * S, padY + ((i / N) | 0) * S, S, S);
+  }
+  if (rug) {
+    const W = cv.width, H = cv.height;
+    // ★그림 위에도 같은 결을 아주 옅게 덮는다 — 그래야 '깔린 도화지'가 아니라 **짜인 러그**가 된다
+    x.fillStyle = 'rgba(110,80,60,.19)';
+    for (let y = padY; y < padY + D; y += 6) x.fillRect(padX, y, D, 3);
+    // 그림 둘레 한 줄 — 러그 바탕과 그림이 맞닿는 경계를 눌러 준다
+    x.strokeStyle = '#8E775A'; x.lineWidth = 2;
+    x.strokeRect(padX - 1, padY - 1, D + 2, D + 2);
+    // 가장자리 안쪽 그늘 = 바닥에 눌려 가라앉은 느낌. 접지 그림자를 밖에 드리우면
+    // **공중에 뜬 것처럼** 보인다(대표 지적) — flat 은 그림자를 밖에 그리지 않는다.
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(60,45,25,.22)'); g.addColorStop(.18, 'rgba(0,0,0,0)');
+    g.addColorStop(.82, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(60,45,25,.17)');
+    x.fillStyle = g; x.fillRect(FR, 0, W - FR * 2, H);
   }
   const url = cv.toDataURL('image/png');
   window._mwArtCache[ck] = url;
@@ -5713,7 +5758,10 @@ window._reditArtCard = function (a, owner) {
 
 // 칩 목록. 개수가 0인 분류는 아예 안 만든다.
 window._reditCatList = function () {
-  const items = window.ROOM_ITEMS || [], out = [], seen = {};
+  // ★장터를 **맨 앞**에 둔다 (대표 8-26: "칩 UI 가장 끝에 있어서 존나 찾기 어렵다").
+  //   기본 선택은 가구('bed')라 열자마자 장터가 뜨진 않지만, 가로 스크롤 맨 앞이라 항상 보인다.
+  const out = [{ id: '_market', name: '장터', n: null, hot: 1 }];
+  const items = window.ROOM_ITEMS || [], seen = {};
   (window.ROOM_CATS || []).forEach(function (c) {
     const list = items.filter(function (r) { return r.cat === c.id && !r.legacy && !r.hidden; });
     list.forEach(function (r) { seen[r.id] = 1; });
@@ -5727,8 +5775,6 @@ window._reditCatList = function () {
   if (season.length) out.push({ id: '_season', name: '한정', n: season.length });
   const arts = (window._myArt || []).filter(function (a) { return a && a.px; });
   if (arts.length) out.push({ id: '_art', name: '내 그림', n: arts.length });
-  // ★장터 — 남들이 내놓은 그림·경매. 개수는 열어봐야 안다(비동기).
-  out.push({ id: '_market', name: '장터', n: null });
   return out;
 };
 
@@ -5774,7 +5820,8 @@ window._reditCatPaint = function () {
   const ok = cats.some(function (c) { return c.id === window._reditCat; });
   if (!ok) window._reditCat = cats.length ? cats[0].id : 'bed';
   chips.innerHTML = cats.map(function (c) {
-    return '<button class="mw-redit-chip' + (c.id === window._reditCat ? ' on' : '') + '"'
+    return '<button class="mw-redit-chip' + (c.id === window._reditCat ? ' on' : '')
+      + (c.hot ? ' hot' : '') + '"'
       + ' onclick="window._reditCat=\'' + c.id + '\';window._reditCatPaint()">'
       + c.name + (c.n ? '<b>' + c.n + '</b>' : '') + '</button>';
   }).join('');
@@ -21016,6 +21063,8 @@ window.mwAucOn = function (a) { return !!(a && a.auc && a.aucAt); };
 
 // 열려 있는 그림 화면을 다시 그린다 (경매 상태가 바뀔 때마다)
 window._mwArtRefresh = function (id) {
+  // ★장터 캐시를 비운다. 안 비우면 경매를 올려도 장터에 그대로 안 뜬다(대표 8-26).
+  window._mwMarket = null;
   const big = document.getElementById('mw-artbig');
   if (big) { big.remove(); if (id) window.mwArtBig(id); }
   const g = document.getElementById('mw-artgal'); if (g) { g.remove(); window.mwArtGallery(); }
@@ -21386,17 +21435,21 @@ window.mwArtBig = function (id) {
     btns += '<button class="go" onclick="window._reditAddArt(' + q + ')">방에 놓기</button>';
   }
   btns += '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
-  if (have) btns += '<button disabled>가지고 있어요</button>';
-  else if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
-  else if (aucOn) btns += '<button class="go" onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
-  else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
+  // ★'가지고 있어요' 를 버튼으로 두지 않는다 (대표 8-26: "저 나머지 버튼들하고 비교했을 때
+  //   문맥상 안 맞음"). 누를 수 없는 것은 버튼이 아니라 **상태 글**이다 — 아래 상태 줄로 뺐다.
+  if (!have) {
+    if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
+    else if (aucOn) btns += '<button class="go" onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
+    else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
+  }
   if (!visiting) {
     if (aucOn) {
       btns += '<button class="go" onclick="window.mwAucHammer(' + q + ')">낙찰하기</button>';
       btns += '<button onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
     } else {
+      // ★경매 올리기를 강조한다(대표 8-26). 값 매기기는 그 아래 단계다.
+      btns += '<button class="go" onclick="window.mwAucOpen(' + q + ')">경매 올리기</button>';
       btns += '<button onclick="window.mwArtPrice(' + q + ')">값 매기기</button>';
-      btns += '<button onclick="window.mwAucOpen(' + q + ')">경매 올리기</button>';
     }
   }
   const d = a.at ? new Date(a.at) : null;
@@ -21408,6 +21461,7 @@ window.mwArtBig = function (id) {
     + (when ? '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + when + '</div>' : '')
     // ★값을 매겼는지·경매 중인지가 여기서 보여야 한다 (대표 8-26: "저장된 건지 안 된 건지도
     //   모르겠다"). 경매 중이면 현재가를 비동기로 채운다.
+    + (have ? '<div style="font-size:11px;color:rgba(255,255,255,.34);margin-top:10px">이미 가지고 있어요</div>' : '')
     + (aucOn
         ? '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px">불러오는 중…</div>'
         : ((a.price | 0) > 0
