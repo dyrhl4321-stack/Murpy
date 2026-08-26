@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '756';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '757';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -21316,6 +21316,7 @@ window.mwAucBid = async function (id) {
   } catch (e) { console.warn('auc bid', e); showToast('부르지 못했어요 · 잠시 뒤에 다시'); return; }
   showToast(n + '머피를 불렀어요');
   if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
+  window._mwMarketDirty = true;   // 경매장을 열어 뒀다면 닫을 때 다시 읽는다
   window._mwArtRefresh(id);
 };
 
@@ -21488,9 +21489,18 @@ window.mwArtOpenFrom = function (owner, id) {
   const have = window.mwArtHave(id);
   let el = document.getElementById('mw-artbig'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-artbig';
-  el.onclick = function () { el.remove(); };
+  el.onclick = function () {
+    el.remove();
+    // ★입찰하고 나면 경매장의 현재가가 바뀐다. **닫는 순간** 다시 읽는다
+    //   (대표 8-26: "입찰가 부른 다음 한 번 나갔다 들어와야 경매장에 적용됨").
+    //   ※열려 있는 동안 갱신하면 경매장이 **이 화면 위로** 올라와 덮는다(같은 z, DOM 순서).
+    if (window._mwMarketDirty && document.getElementById('mw-artgal') && window.mwMarketOpen) {
+      window._mwMarketDirty = false;
+      window.mwMarketOpen();
+    }
+  };
   let btns = '';
-  if (have) btns += '<button disabled>가지고 있어요</button>';
+  // 누를 수 없는 것은 버튼이 아니라 상태 글이다 — 아래 상태 줄에서 보여준다(mwArtBig 과 같은 규칙)
   else if (auc) btns += '<button class="go" onclick="window.mwAucBidFrom(&quot;' + esc(owner) + '&quot;,&quot;' + esc(id) + '&quot;)">값 부르기</button>';
   else if (price > 0) btns += '<button class="go" onclick="window.mwAucClaim(&quot;' + esc(id) + '&quot;,&quot;' + esc(owner) + '&quot;,' + price + ')">'
     + (window._mwCoinImg || '') + price + '머피로 사기</button>';
@@ -21560,6 +21570,9 @@ window.mwAucBidFrom = async function (owner, id) {
   showToast(n + '머피를 불렀어요');
   if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
   window._mwAucShowNow(id, a.aucAt, a.min | 0);
+  // 목록이 들고 있던 최고가는 이제 옛것이다 — 캐시를 버리고 닫을 때 다시 읽게 표시한다
+  window._mwMarket = null;
+  window._mwMarketDirty = true;
 };
 
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
@@ -25164,8 +25177,9 @@ window.loadNotificationsFirestore = async () => {
         const safeArt = (n.artId || '').replace(/'/g, '');
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.55:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.mwArtBig&&window.mwArtBig('${safeArt}')">
           <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(245,194,75,0.62);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-            <!-- 경매 망치 -->
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4l6 6"/><path d="M17 7l-8 8"/><path d="M9.5 9.5l5 5"/><path d="M6 21h12"/><path d="M8 18l4-4"/></svg>
+            <!-- 경매 망치 — ★그림 화면(IC_GAVEL)과 **같은 도안**이어야 한다.
+                 옛 도안은 획이 많아 작게 그리면 못·깃발처럼 보였다(대표 8-26). -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="11.5" y="2.6" width="9.4" height="5.6" rx="1.4" transform="rotate(45 16.2 5.4)"/><path d="M13.6 8.4L6.5 15.5"/><path d="M3.5 20.5h12"/></svg>
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 <b style="color:#F5C24B">${Number(n.amount||0).toLocaleString()}머피</b>를 불렀어요</div>
