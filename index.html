@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '760';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '761';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -5027,6 +5027,20 @@ window.MW_PET_MODES = [
   { k: 'house', t: '하우스', d: '개집 안에서 기다려요', kind: 'dog', icon: 'house' }
 ];
 
+// ★★링 메뉴 중심 보정 (대표 8-26: "구석탱이에 펫 있을 때 버튼이 겹친다")
+//   예전엔 **버튼 하나하나를 화면 안으로 클램프**했다. 그러면 펫이 구석에 있을 때
+//   위·왼쪽 버튼이 **같은 모서리로 함께 밀려 포개진다.** 클램프가 곧 겹침의 원인이었다.
+//   → 중심을 먼저 당긴다. 중심이 안전하면 네 방향이 전부 화면 안이라 겹칠 일이 없다.
+//   extra = 아래로 가장 많이 뻗는 버튼의 여유(dy 가 R 보다 더 내려가는 만큼).
+window._mwRingCenter = function (cx, cy, W, H, R, extra) {
+  var half = 31;                          // .mw-ringbtn 폭 58 의 절반
+  var padX = R + half + 6;
+  var padY = R + (extra || 0) + 30;       // 버튼 높이의 절반 + 여백
+  cx = (W < padX * 2) ? W / 2 : Math.max(padX, Math.min(W - padX, cx));
+  cy = (H < padY * 2) ? H / 2 : Math.max(padY, Math.min(H - padY, cy));
+  return { x: cx, y: cy };
+};
+
 window.mwPetMenu = function (p) {
   var room = document.getElementById('charworld-room');
   if (!room || !p || !p.el) return;
@@ -5052,9 +5066,9 @@ window.mwPetMenu = function (p) {
   var el = document.createElement('div');
   el.id = 'mw-charmenu';
   el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+  var _c = window._mwRingCenter(cx, cy, W, H, R, 20);
   el.innerHTML = acts.map(function (a, i) {
-    var x = Math.max(36, Math.min(W - 36, cx + a.dx));
-    var y = Math.max(30, Math.min(H - 30, cy + a.dy));
+    var x = _c.x + a.dx, y = _c.y + a.dy;   // 중심이 이미 안전하다 — 개별 클램프 금지(겹침의 원인)
     return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
       + (i * 30) + 'ms" onclick="document.getElementById(\'mw-charmenu\').remove();' + a.fn + '">'
       + (window._RING_ICONS[a.k] || '') + '<span>' + a.t + '</span></button>';
@@ -5090,10 +5104,10 @@ window.mwPetModePick = function (idx) {
   var el = document.createElement('div');
   el.id = 'mw-charmenu';
   el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+  var _c = window._mwRingCenter(cx, cy, W, H, R, 28);
   el.innerHTML = modes.map(function (m, i) {
     var sp = spots[i] || spots[0];
-    var x = Math.max(40, Math.min(W - 40, cx + sp.dx));
-    var y = Math.max(32, Math.min(H - 32, cy + sp.dy));
+    var x = _c.x + sp.dx, y = _c.y + sp.dy;   // 중심이 이미 안전하다 — 개별 클램프 금지
     var on = (m.k === now);   // 지금 상태는 테두리와 글자색으로만(반투명 색면 금지)
     return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
       + (i * 30) + 'ms' + (on ? ';border-color:#3D7EFF;color:#3D7EFF' : '') + '"'
@@ -6881,9 +6895,11 @@ window.charMove = function (dx, dy) {
     const el = document.createElement('div');
     el.id = 'mw-charmenu';
     el.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+    const _c = window._mwRingCenter(cx, cy, W, H, R, 20);
     el.innerHTML = acts.map(function (a, i) {
-      const x = Math.max(36, Math.min(W - 36, cx + a.dx));
-      const y = Math.max(30, Math.min(H - 30, cy + a.dy));
+      // ★개별 클램프 금지 — 구석에서 여러 버튼이 같은 모서리로 밀려 겹친다.
+      //   중심(_c)을 먼저 당겨 뒀으므로 그대로 배치한다(펫 링 메뉴와 같은 규칙).
+      const x = _c.x + a.dx, y = _c.y + a.dy;
       return `<button class="mw-ringbtn" style="left:${x}px;top:${y}px;animation-delay:${i * 30}ms"
         onclick="document.getElementById('mw-charmenu').remove();${a.fn}">${window._RING_ICONS[a.k]}<span>${a.t}</span></button>`;
     }).join('');
