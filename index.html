@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '750';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '751';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -954,11 +954,25 @@ window._SW_V = '750';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-artshare .as-img { width:100%; display:block; image-rendering:pixelated }
   #mw-artshare .as-x { width:100%; margin-top:12px; background:none; border:none;
     color:#4a5266; font-size:11px; cursor:pointer; font-family:inherit; padding:8px 0 2px }
-  #mw-artbig .ab-btns { display:flex; gap:6px; margin-top:18px; justify-content:center; flex-wrap:wrap }
-  #mw-artbig .ab-btns button { background:#141a28; border:3px solid #05070c; color:#cfd6e6;
-    padding:10px 13px; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; border-radius:0 }
-  #mw-artbig .ab-btns button.go { color:#7aa8ff }
-  #mw-artbig .ab-btns button[disabled] { color:#4a5266; cursor:default }
+  /* ★버튼 위계 (대표 8-26: "색도 배치도 뒤죽박죽").
+     1줄 = 방에 놓기 · 공유 (**흰색**, 늘 하는 일)
+     2줄 = 경매 올리기 (**골드 · 크게**, 돈이 걸린 일)
+     골드는 머피(돈)에만 쓴다 — 색 규칙. 방에 놓기만 파랗던 것이 어긋나 보인 이유다. */
+  #mw-artbig .ab-btns { display:flex; gap:7px; margin-top:18px; justify-content:center }
+  #mw-artbig .ab-btns button { flex:1; min-width:0; background:#141a28; border:3px solid #05070c;
+    box-shadow:0 0 0 2px #2b3350; color:#e8edf7; padding:11px 10px; font-size:11px; cursor:pointer;
+    font-family:'Galmuri11',sans-serif; border-radius:0;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px }
+  #mw-artbig .ab-btns button:active { transform:translateY(2px) }
+  #mw-artbig .ab-btns button svg { flex-shrink:0 }
+  #mw-artbig .ab-sell { width:100%; margin-top:9px; background:#141a28; border:3px solid #05070c;
+    box-shadow:0 0 0 2px rgba(245,194,75,.55); color:#F5C24B; padding:15px 12px; font-size:13px;
+    cursor:pointer; font-family:'Galmuri11',sans-serif;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px }
+  #mw-artbig .ab-sell:active { transform:translateY(2px) }
+  #mw-artbig .ab-sell svg { flex-shrink:0 }
+  #mw-artbig .ab-undo { display:block; margin:11px auto 0; background:none; border:none;
+    color:#4a5266; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; padding:4px 8px }
   /* 공동룸 상단의 오늘의 추억: 사진과 그림을 한곳에 모은다. */
   body.mw-party #mw-art-chip { display:none !important }
   /* ★공용룸에서는 필드 안 '친구 초대' 칩도 숨긴다 (대표 8-26: "상단에 부르기가 있는데
@@ -5866,9 +5880,11 @@ window.mwMarketOpen = async function () {
   list.innerHTML = m.map(function (x) {
     const a = x.art, price = a.price | 0;
     const auc = !!(window.mwAucOn && window.mwAucOn(a));
-    const tag = auc
-      ? '<span class="ag-tag" style="color:#F5C24B">경매 중</span>'
-      : '<span class="ag-tag" style="color:#F5C24B">' + (window._mwCoinImg || '') + price + '</span>';
+    const tag = x.mine
+      ? '<span class="ag-tag" style="color:rgba(255,255,255,.4)">내가 올림</span>'
+      : (auc
+        ? '<span class="ag-tag" style="color:#F5C24B">경매 중</span>'
+        : '<span class="ag-tag" style="color:#F5C24B">' + (window._mwCoinImg || '') + price + '</span>');
     return '<button class="ag-card" onclick="window.mwArtOpenFrom(&quot;' + esc(x.owner) + '&quot;,&quot;' + esc(a.id) + '&quot;)">'
       + '<img src="' + window.mwArtImg(a.px, 'frame', a.id) + '" alt="경매 물건">'
       + '<span class="ag-by">' + esc((a.by || []).join('·')) + '</span>'
@@ -21006,6 +21022,10 @@ window.mwArtTake = async function (id) {
 };
 
 // ---- 값 매기기 (주인만) ----
+// ★★2026-08-26 현재 **화면에서 부르는 곳이 없다.** 대표: "사실상 경매 올리기랑 값 매기기랑
+//   똑같잖아" → 입구를 '경매 올리기' 하나로 합쳤다(mwAucOpen 이 시작가를 묻는다).
+//   함수는 남긴다 — 즉시구매(고정가)를 되살릴 때 쓰고, 이미 값이 매겨진 그림은 계속 팔린다.
+//   ※고치기 전에 "유저가 이 화면에 갈 수 있나"를 먼저 확인할 것.
 window.mwArtPrice = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
@@ -21129,7 +21149,9 @@ window.mwAucOpen = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
   const start = await window.mwArtPriceAsk((a.price | 0) || 10, {
-    title: '얼마부터 시작할까요?', desc: '이 값보다 높게만 부를 수 있어요',
+    title: '얼마부터 시작할까요?',
+    desc: '이 값보다 높게만 부를 수 있어요 · 팔리면 수수료 '
+        + Math.round(window.MW_ART_FEE * 100) + '%를 뺀 만큼 들어와요',
     ok: '경매 열기', min: 1, max: window.MW_AUC_MAX });
   if (start == null) return;
   a.auc = 1; a.min = start; a.aucAt = Date.now(); a.price = 0;   // 경매 중엔 고정가를 내린다
@@ -21309,13 +21331,15 @@ window._mwMarketLoad = async function () {
     const me = (window.currentUser || {}).uid || '';
     const out = [];
     qs.forEach(function (d) {
-      if (d.id === me) return;                       // 내 것은 '내 그림' 칩에 있다
+      // ★내 것도 넣는다 (대표 8-26: "경매 올린 게 바로 경매장에 안 뜸").
+      //   빼놓으면 **내가 올리고 내 경매장에서 못 찾는다.** 시장이면 내 물건도 걸려 있어야 한다.
+      //   대신 카드에 '내가 올림'을 표시하고 입찰은 막는다(mwAucBidFrom 이 이미 막는다).
       const u = d.data() || {};
       (u.artworks || []).forEach(function (a) {
         if (!a || !a.px) return;
         const auc = !!(a.auc && a.aucAt);
         if (!auc && !((a.price | 0) > 0)) return;     // 안 내놓은 그림은 안 보인다
-        out.push({ owner: d.id, nick: u.nickname || '머피', art: a, auc: auc });
+        out.push({ owner: d.id, nick: u.nickname || '머피', art: a, auc: auc, mine: d.id === me });
       });
     });
     // 경매 중인 것이 위로, 그다음 최근 순
@@ -21471,26 +21495,40 @@ window.mwArtBig = function (id) {
   //   이제 꾸미기의 '같이 그린 것들' 카드가 여기로 온다 — 놓기도 여기서 한다.
   // ★경매 중이면 고정가는 잠시 물러난다 — 같은 그림에 두 가지 값이 동시에 보이면 안 된다.
   const aucOn = window.mwAucOn(a);
+  // 아이콘 — 이모지 금지. 라인 SVG 로 통일한다.
+  const _ic = function (d, c) {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="' + (c || 'currentColor')
+      + '" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+  };
+  const IC_PUT = _ic('<path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><path d="M4 19h16"/>');
+  const IC_SHARE = _ic('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/>');
+  // ★14px 에서는 획이 많으면 뭉개진다. 망치는 단순화하고, '올리기'는 **가격표**로 뜻을 가른다
+  //   (올리기 = 값을 붙여 내놓는다 / 낙찰 = 망치를 두드린다).
+  const IC_GAVEL = _ic('<path d="M5 20h10"/><path d="M13 5l6 6-3 3-6-6z"/><path d="M10 9l-4 4"/>');
+  const IC_TAG = _ic('<path d="M20 13l-7 7-9-9V4h7z"/><circle cx="8" cy="8" r="1.3"/>');
+  // 1줄 = 늘 하는 일(흰색)
   let btns = '';
   if (!visiting && document.getElementById('mw-wpanel')) {
-    btns += '<button class="go" onclick="window._reditAddArt(' + q + ')">방에 놓기</button>';
+    btns += '<button onclick="window._reditAddArt(' + q + ')">' + IC_PUT + '방에 놓기</button>';
   }
-  btns += '<button onclick="window.mwArtShare(' + q + ')">공유</button>';
-  // ★'가지고 있어요' 를 버튼으로 두지 않는다 (대표 8-26: "저 나머지 버튼들하고 비교했을 때
-  //   문맥상 안 맞음"). 누를 수 없는 것은 버튼이 아니라 **상태 글**이다 — 아래 상태 줄로 뺐다.
+  btns += '<button onclick="window.mwArtShare(' + q + ')">' + IC_SHARE + '공유</button>';
+  // ★'가지고 있어요' 를 버튼으로 두지 않는다 (대표 8-26). 누를 수 없는 것은 상태 글이다.
   if (!have) {
-    if (mine) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">내 방으로 가져오기</button>';
-    else if (aucOn) btns += '<button class="go" onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
-    else if ((a.price | 0) > 0) btns += '<button class="go" onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
+    if (mine) btns += '<button onclick="window.mwArtTake(' + q + ')">가져오기</button>';
+    else if (aucOn) btns += '<button onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
+    else if ((a.price | 0) > 0) btns += '<button onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
   }
+  // 2줄 = 돈이 걸린 일(골드·크게). ★'값 매기기'를 따로 두지 않는다 —
+  //   대표 8-26: "사실상 경매 올리기랑 값 매기기랑 똑같잖아". 경매 올리기를 누르면
+  //   그 안에서 시작가를 정한다(mwAucOpen 이 값 입력 모달을 띄운다). 입구는 하나여야 한다.
+  let sell = '';
   if (!visiting) {
     if (aucOn) {
-      btns += '<button class="go" onclick="window.mwAucHammer(' + q + ')">낙찰하기</button>';
-      btns += '<button onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
+      // 낙찰이 주인공이다. '내리기'는 되돌리는 길이라 **글자 버튼**으로 낮춘다.
+      sell = '<button class="ab-sell" onclick="window.mwAucHammer(' + q + ')">' + IC_GAVEL + '낙찰하기</button>'
+           + '<button class="ab-undo" onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
     } else {
-      // ★경매 올리기를 강조한다(대표 8-26). 값 매기기는 그 아래 단계다.
-      btns += '<button class="go" onclick="window.mwAucOpen(' + q + ')">경매 올리기</button>';
-      btns += '<button onclick="window.mwArtPrice(' + q + ')">값 매기기</button>';
+      sell = '<button class="ab-sell" onclick="window.mwAucOpen(' + q + ')">' + IC_TAG + '경매 올리기</button>';
     }
   }
   const d = a.at ? new Date(a.at) : null;
@@ -21508,10 +21546,10 @@ window.mwArtBig = function (id) {
         : ((a.price | 0) > 0
             ? '<div style="font-size:11px;color:#F5C24B;margin-top:10px">' + (window._mwCoinImg || '') + (a.price | 0) + '에 팔고 있어요</div>'
             : ''))
-    + '<div class="ab-btns">' + btns + '</div>'
+    + '<div class="ab-btns">' + btns + '</div>' + sell
     + '</div>';
   // ★버튼을 눌러도 배경 클릭(닫기)이 같이 먹지 않게 막는다
-  el.querySelectorAll('.ab-btns button').forEach(function (b) {
+  el.querySelectorAll('.ab-btns button, .ab-sell').forEach(function (b) {
     b.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
     b.addEventListener('click', function (e) { e.stopPropagation(); });
   });
