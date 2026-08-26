@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '767';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '768';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3233,8 +3233,12 @@ window._CHAR_BODIES = {
   // ★fixedHair = 머리카락이 몸통 시트에 **구워져 있다**(AI 가 얼굴과 함께 그린다).
   //   헤어·모자를 얹으면 두 겹이 되므로 그 두 슬롯을 잠근다. 옷은 그대로 입는다.
   // 시트는 char/faces/{사람}.png — 우리 규격(423x896, 셀 141x224)으로 정렬해 넣는다.
-  jaejin: { name: '조재진', skinBase: 'face_jaejin', src: "char/faces/jaejin.png?v=1", cw: 141, ch: 224,
-            wearable: true, fixedHair: true, tag: '커마',
+  // ★kin = **옷 계열**. 이 몸통은 목 아래가 human base 와 픽셀 단위로 같은 몸이므로
+  //   human 전용 옷(top/bottom/shoes)을 그대로 입는다. 시트는 tools/face_graft.py 가
+  //   'base 몸통 + AI 머리'로 구워낸다 — AI 몸통을 쓰면 실루엣이 어긋나 옷이 안 맞는다.
+  jaejin: { name: '조재진', skinBase: 'face_jaejin', src: "char/faces/jaejin.png?v=2", cw: 141, ch: 224,
+            wearable: true, fixedHair: true, kin: 'human', tag: '커마',
+            defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
             owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
             desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
   ddungddung: { name: '돼쫀토', src: "char/ddungddung.png?v=2", cw: 145, ch: 224, code: 'DDUNGDDUNG', limited: true, tag: '한정', desc: '개발자가 눈찢어진 토끼상을 좋아해서 만든 캐릭터.' },
@@ -3281,7 +3285,7 @@ window._charEnsureDefaults = function (cfg) {
     if (slot === 'hair' && intentionalBald) return;
     const id = cfg[slot]; if (!id) return;
     const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
-    if (!it || (it.body && it.body !== bodyKey)) { cfg[slot] = null; changed = true; }
+    if (!it || !window._charFits(it.body, bodyKey)) { cfg[slot] = null; changed = true; }
   });
   const fill = function (slot, id) {
     if (cfg[slot] || !id) return;
@@ -3290,6 +3294,15 @@ window._charEnsureDefaults = function (cfg) {
   if (!intentionalBald) fill('hair', b.defaultHair);
   fill('top', b.defaultTop); fill('bottom', b.defaultBottom);
   return changed;
+};
+// 아이템이 이 몸통에 맞는가. ★판정이 6곳에 흩어져 있어 반드시 이 함수로만 물어볼 것 —
+//   한 곳만 고치면 "꾸미기 목록엔 보이는데 입으면 벗겨진다" 같은 화면별 불일치가 난다.
+//   kin 이 있으면 그 계열 옷도 맞는다(얼굴 커마 = 목 아래가 base 와 동일한 몸).
+window._charFits = function (itemBody, bodyKey) {
+  if (!itemBody) return true;                 // body 없음 = 공용
+  if (itemBody === bodyKey) return true;
+  const b = window._CHAR_BODIES[bodyKey];
+  return !!(b && b.kin && itemBody === b.kin);
 };
 // 아이템의 body = 그 몸통 전용(실루엣이 달라 다른 몸엔 안 맞는다). 없으면 공용.
 window.CHAR_ITEMS = [
@@ -3469,7 +3482,7 @@ window._charEquippedSheets = function (cfg) {
     const id = cfg[slot]; if (!id) return;
     const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
     // 다른 몸통 전용 아이템은 무시한다. 성별 백필로 남캐 헤어 id가 여캐에 남아 있어도 안 얹힌다.
-    if (item && item.body && item.body !== bodyKey) return;
+    if (item && !window._charFits(item.body, bodyKey)) return;
     let sheet = item && item.sheet;
     // 모자 착용 시 헤어는 대체 시트로: 비니 안으로 들어가고 뒷머리만 빼꼼(null=완전히 숨김)
     if (slot === 'hair' && item && item.hatVariants && cfg.hat && (cfg.hat in item.hatVariants)) {
@@ -7041,7 +7054,7 @@ window.renderCharSpace = function () {
       const slot = p[0], def = p[1];
       const intentionalBald = slot === 'hair' && d.hair === 'none';
       const ok = intentionalBald || (d[slot] && (window.CHAR_ITEMS || []).some(function (x) {
-        return x.id === d[slot] && (!x.body || x.body === d.body);
+        return x.id === d[slot] && window._charFits(x.body, d.body);
       }));
       if (ok) return;
       d[slot] = (def && (window.CHAR_ITEMS || []).some(function (x) { return x.id === def; })) ? def : null;
@@ -7110,7 +7123,7 @@ window.charSlot = function (slot, btn) {
   if (!window._mwReqReady && window.mwReqRefresh) window.mwReqRefresh(true);
   // 내 몸통 전용 + 공용 아이템만 보여준다 (여캐에 남캐 옷이 뜨면 안 맞는다)
   const myBody = window._charDraft.body || 'human';
-  const items = window.CHAR_ITEMS.filter(i => i.slot === slot && (!i.body || i.body === myBody));
+  const items = window.CHAR_ITEMS.filter(i => i.slot === slot && window._charFits(i.body, myBody));
   grid.innerHTML = items.map(i => {
     // ★require 가 붙은 아이템은 price 0 이어도 보유가 아니다 — 조건을 채워야 열린다
     const has = owned.includes(i.id) || (i.price === 0 && !i.require);
@@ -7305,7 +7318,7 @@ window._charTryList = function (slot) {
   const owned = (window._charState && window._charState.wardrobe) || [];
   const myBody = (window._charDraft && window._charDraft.body) || 'human';
   return (window.CHAR_ITEMS || []).filter(function (i) {
-    if (i.slot !== slot || (i.body && i.body !== myBody)) return false;
+    if (i.slot !== slot || !window._charFits(i.body, myBody)) return false;
     if (i.require) return false;
     return !(owned.includes(i.id) || i.price === 0);
   });
@@ -7452,7 +7465,7 @@ window.charPickBody = function (key) {
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
     const id = window._charDraft[slot]; if (!id) return;
     const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id; });
-    if (it && it.body && it.body !== key) window._charDraft[slot] = null;
+    if (it && !window._charFits(it.body, key)) window._charDraft[slot] = null;
   });
   // ★헤어는 빈 채로 두지 않는다 — 빡빡이 base 가 그대로 보이기 때문이다.
   //   위에서 다른 성별 헤어를 벗겼거나 애초에 없으면 그 몸통의 기본헤어를 씌운다.
@@ -17852,7 +17865,7 @@ window.ensureCreditsInit = async (uid) => {
         ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
           const id = window._charState.character[slot]; if (!id) return;
           const it = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id; });
-          if (it && it.body && it.body !== _want) window._charState.character[slot] = null;
+          if (it && !window._charFits(it.body, _want)) window._charState.character[slot] = null;
         });
         try { await setDoc(ref, { character: window._charState.character }, { merge: true }); } catch (e) {}
       }
