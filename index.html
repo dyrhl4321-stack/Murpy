@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '754';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '755';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -24032,7 +24032,15 @@ window.sqInviteLink = function (sid) {
   //   벙주가 올린 사진은 세로 인물 사진이 많아서 2:1 로 자르면 머리가 날아간다
   //   (누리쌤 요가 사진에서 이미 겪은 문제). 그건 가로만 800 으로 줄이고 비율은 그대로 둔다.
   let size = null;
-  if (img) {
+  // ★★★파이어베이스 스토리지 주소는 **리사이저를 태우지 않는다** (대표 8-26: "카톡 링크로
+  //   공유했는데 썸네일이 안 뜬다"). 스토리지 주소는 경로가 `/o/uploads%2F...` 처럼
+  //   **이미 인코딩돼 있어** weserv 에 넘기며 한 번 더 인코딩되면 그쪽에서 못 찾는다
+  //   (실측 8-26: 원본 200 image/jpeg 27KB / weserv 통과본 **404 application/json**).
+  //   8-25 에 업로드를 imgBB → 스토리지로 옮긴 뒤로 **그 뒤에 만든 벙은 썸네일이 통째로 안 떴다.**
+  //   업로드할 때 _compressImg 가 이미 줄여 두므로(27KB) 원본을 그대로 넘기면 된다.
+  //   ※_cdnImg 에는 8-25 에 같은 예외를 넣어 뒀는데 **여기에만 안 들어가 있었다.**
+  const _storage = /firebasestorage\.googleapis\.com|storage\.googleapis\.com|\.firebasestorage\.app/i.test(img);
+  if (img && !_storage) {
     const _ours = /^https:\/\/murpy\.app\//i.test(img);
     const _base = 'https://images.weserv.nl/?url=' + encodeURIComponent(img.replace(/^https?:\/\//, ''));
     if (_ours) { img = _base + '&w=800&h=400&fit=cover&output=jpg&q=82'; size = { imageWidth: 800, imageHeight: 400 }; }
