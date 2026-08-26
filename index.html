@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '753';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '754';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -5912,7 +5912,10 @@ window.mwMarketOpen = async function () {
       + '<div style="flex:1;min-width:0">'
       +   '<div style="font-size:12.5px;color:#e8edf7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
       +     by + '</div>'
-      +   '<div style="font-size:10px;color:#4a5266;margin-top:3px">' + esc(x.nick) + '님' + (when ? ' · ' + when : '') + '</div>'
+      +   '<div style="font-size:10px;color:#4a5266;margin-top:3px">' + esc(x.nick) + '님 · '
+      +     '<span style="color:' + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
+      +     (window.mwArtEdition(a) === 1 ? '1장 한정' : window.mwArtEdition(a) + '장 한정') + '</span>'
+      +     (when ? ' · ' + when : '') + '</div>'
       +   '<div style="font-size:11.5px;color:#F5C24B;margin-top:4px">' + money
       +     ' <span style="color:#8a93a8;font-size:10px">' + sub + '</span></div>'
       + '</div>' + right + '</div>';
@@ -21153,6 +21156,18 @@ window.mwArtNet = function (price) {
 //   → **판 사람 70% / 나머지 30%를 다른 참여자가 균등.**
 //   판 사람에게 팔 동기가 생기고, 안 판 사람도 "내가 같이 그린 게 팔렸네"로 몫이 온다.
 //   즉 **같이 그릴수록 팔릴 기회가 늘어난다** — 경매가 같이 그리기를 방해하지 않는다.
+// ★몇 장 한정인가 = **같이 그린 사람 수**. 각자 1장씩 갖기 때문이다.
+//   혼자 그린 그림은 1장 한정이라 제일 희귀하다 — 별도 기능 없이 등급이 갈린다.
+window.mwArtEdition = function (a) {
+  if (!a) return 1;
+  const n = (a.byUids && a.byUids.length) || (a.by && a.by.length) || 1;
+  return Math.max(1, n);
+};
+window.mwArtEditionText = function (a) {
+  const n = window.mwArtEdition(a);
+  return n === 1 ? '1장 한정' : (n + '장 한정 · 각자 1장씩');
+};
+
 window.MW_ART_SELLER = 0.70;
 window.mwArtSplit = function (net, uids, sellerUid) {
   const list = (uids && uids.length) ? uids.slice() : [];
@@ -21483,8 +21498,12 @@ window.mwArtOpenFrom = function (owner, id) {
   el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
     + '<img src="' + window.mwArtImg(a.px, 'frame', id) + '" alt="같이 그린 그림"'
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
-    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + esc(by) + '님이 같이 그렸어요</div>' : '')
-    + '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + esc(rec.nick) + '님의 방에 있어요</div>'
+    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + esc(by)
+          + (window.mwArtEdition(a) > 1 ? '님이 같이 그렸어요' : '님이 그렸어요') + '</div>' : '')
+    + '<div style="font-size:10.5px;margin-top:6px;color:'
+      + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
+      + window.mwArtEditionText(a) + '</div>'
+    + '<div style="font-size:10.5px;color:#4a5266;margin-top:5px">' + esc(rec.nick) + '님의 방에 있어요</div>'
     + '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px"></div>'
     + '<div class="ab-btns">' + btns + '</div></div>';
   el.querySelectorAll('.ab-btns button').forEach(function (b) {
@@ -21652,8 +21671,13 @@ window.mwArtBig = function (id) {
   el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
     + '<img src="' + window.mwArtImg(a.px, 'frame', id) + '" alt="같이 낙서"'
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
-    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by + '님이 같이 그렸어요</div>' : '')
-    + (when ? '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + when + '</div>' : '')
+    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by
+          + (window.mwArtEdition(a) > 1 ? '님이 같이 그렸어요' : '님이 그렸어요') + '</div>' : '')
+    // ★한정 수량 — 혼자 그린 1장 한정만 골드로 띄운다(희소한 쪽이 눈에 띄어야 한다)
+    + '<div style="font-size:10.5px;margin-top:6px;color:'
+      + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
+      + window.mwArtEditionText(a) + '</div>'
+    + (when ? '<div style="font-size:10.5px;color:#4a5266;margin-top:5px">' + when + '</div>' : '')
     // ★값을 매겼는지·경매 중인지가 여기서 보여야 한다 (대표 8-26: "저장된 건지 안 된 건지도
     //   모르겠다"). 경매 중이면 현재가를 비동기로 채운다.
     + (have ? '<div style="font-size:11px;color:rgba(255,255,255,.34);margin-top:10px">이미 가지고 있어요</div>' : '')
