@@ -284,9 +284,14 @@ def api_queue() -> dict:
     items = []
     for item_id, (stamp, src) in newest.items():
         prob = _shipped_problem(item_id)
+        # ★base 는 아이템마다 다르다. 여캐 아이템을 남캐 base 로 diff 하면 몸 실루엣이 달라
+        #   옷이 아닌 곳까지 '바뀐 곳'으로 잡힌다. 큐 폴더에 base.png 를 두면 그걸 쓴다.
+        qbase = src.parent / "base.png"
         items.append({
             "itemId": item_id,
             "slot": _slot_of(item_id),
+            "base": (str(qbase.relative_to(ROOT)).replace("\\", "/") if qbase.exists()
+                     else str(DEFAULT_BASE.relative_to(ROOT)).replace("\\", "/")),
             "worn": str(src.relative_to(ROOT)).replace("\\", "/"),
             "stamp": f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]} {stamp[9:11]}:{stamp[11:13]}",
             "shipped": prob is not None,

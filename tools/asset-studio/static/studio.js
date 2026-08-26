@@ -498,7 +498,7 @@ async function doExtract(gotoFrame) {
   $("#extract").disabled = true;
   try {
     const res = await post("/api/extract", {
-      worn: S.sel.worn, slot: $("#slot").value,
+      worn: S.sel.worn, base: S.sel.base, slot: $("#slot").value,
       itemId: S.sel.itemId, threshold: +$("#threshold").value,
     });
     S.id = res.id; S.slot = res.slot; S.itemId = res.itemId;
