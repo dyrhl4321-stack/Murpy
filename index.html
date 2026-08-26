@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '763';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '764';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3222,8 +3222,8 @@ window._CHAR_BODIES = {
   // thumb = 캐릭터 선택 카드에 쓰는 그림. src(빡빡이 base)를 그대로 쓰면 민머리로 보여서
   //         기본헤어를 씌운 미리보기 시트를 따로 만든다 (char/build_body_preview.py).
   // defaultHair/Top/Bottom = 이 몸통을 고르면 자동으로 입히는 기본형.\n  // ★성별이 다른 아이템은 자동으로 벗겨지므로(아래 charPickBody), 몸통마다 짝을 지정해야\n  //   여성 유저가 벌거벗은 채로 시작하지 않는다. 신발은 일부러 없다(맨발 = 첫 구매 유도).
-  human:   { name: '기본 남성', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   defaultHair: 'hair_m_basic', defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
-  human_f: { name: '기본 여성', src: "char/walk_female.png?v=5", thumb: "char/preview_human_f.png?v=1", defaultHair: 'hair_f_basic', defaultTop: 'top_f_basic_tee', defaultBottom: 'bottom_f_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
+  human:   { name: '기본 남성', skinBase: 'walk', src: "char/walk.png?v=22",       thumb: "char/preview_human.png?v=1",   defaultHair: 'hair_m_basic', defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '남성' },
+  human_f: { name: '기본 여성', skinBase: 'walk_female', src: "char/walk_female.png?v=5", thumb: "char/preview_human_f.png?v=1", defaultHair: 'hair_f_basic', defaultTop: 'top_f_basic_tee', defaultBottom: 'bottom_f_basic_shorts', cw: 141, ch: 224, code: null, wearable: true, gender: '여성' },
   heltori: { name: '헬토리', src: "char/heltori.png?v=4", cw: 150, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정', desc: '근방단에게 받은 <b style="color:#F5C24B">코드</b>를 입력하면<br>한정판 캐릭터가 열려요' },
   // 돼쫀토 = 코드 해금 한정판(2026-08-10). 헬토리와 같은 방식.
   // 에셋: 원본 → char/remove_gemini_watermark.py -f → char/nukki.py → char/extract_hidden.py ddungddung
@@ -3233,7 +3233,7 @@ window._CHAR_BODIES = {
   // ★fixedHair = 머리카락이 몸통 시트에 **구워져 있다**(AI 가 얼굴과 함께 그린다).
   //   헤어·모자를 얹으면 두 겹이 되므로 그 두 슬롯을 잠근다. 옷은 그대로 입는다.
   // 시트는 char/faces/{사람}.png — 우리 규격(423x896, 셀 141x224)으로 정렬해 넣는다.
-  jaejin: { name: '조재진', src: "char/faces/jaejin.png?v=1", cw: 141, ch: 224,
+  jaejin: { name: '조재진', skinBase: 'face_jaejin', src: "char/faces/jaejin.png?v=1", cw: 141, ch: 224,
             wearable: true, fixedHair: true, tag: '커마',
             owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
             desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
@@ -3391,6 +3391,22 @@ window.refreshMyCharacter = function () {
 // ===== 머피월드 공간: 캐릭터 표시 + 러프 꾸미기(착용/구매/저장) =====
 window._charDraft = null;
 window._charSlot = 'hair';
+
+// ===== 피부톤 (대표 2026-08-26) =====
+// ★런타임에 색을 바꾸지 않는다. 시트를 **미리 구워** char/skin/ 에 두고 골라 쓴다.
+//   시트에 색이 4만 종(그라디언트)이라 팔레트 치환이 안 되고, 캔버스로 매번 다시 칠하면
+//   캐릭터가 나오는 모든 화면에서 그 비용을 낸다. 구워두면 런타임 비용이 0이다.
+// ★t3 = 원본. 굽지 않았고 b.src 를 그대로 쓴다.
+// ★굽는 규칙: 피부로 판정한 픽셀만 HSL 을 옮긴다(색상 주황 계열 + 채도 0.35 이상).
+//   속옷(채도 낮음)과 머리카락(색상 다름)은 걸러진다 — 실측으로 확인했다.
+window.CHAR_SKINS = ['t1', 't2', 't3', 't4', 't5', 't6', 't7'];
+window.CHAR_SKIN_DEFAULT = 't3';
+window._charSkinSrc = function (bodyKey, skin) {
+  const b = window._CHAR_BODIES[bodyKey] || {};
+  // 옛 데이터는 skin 에 색상값(#F0C9A0)이 들어 있다 — t1~t7 이 아니면 원본을 쓴다
+  if (!b.skinBase || !skin || window.CHAR_SKINS.indexOf(skin) < 0 || skin === 't3') return b.src;
+  return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=1';
+};
 // 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 4행[아래/위/좌/우]). 4방향 각각 그려 미러 없음.
 window._SPR = { w: 52, h: 88, cols: 3, rows: 4 };
 window._charPos = { tc: 7, tr: 10, face: 'down', frame: 0 };
@@ -3444,7 +3460,7 @@ window._charBottomZ = function (cfg) {
 window._charEquippedSheets = function (cfg) {
   cfg = cfg || {};
   const b = window._CHAR_BODIES[cfg.body || 'human'] || window._CHAR_BODIES.human;
-  const out = { body: b.src, bottom: null, shoes: null, top: null, hair: null, acc: null, hat: null };
+  const out = { body: window._charSkinSrc(cfg.body || 'human', cfg.skin), bottom: null, shoes: null, top: null, hair: null, acc: null, hat: null };
   if (!b.wearable) return out;   // 헬토리·히든 등 고정 캐릭터는 통짜 유지(사람용 옷 금지)
   const bodyKey = cfg.body || 'human';
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
@@ -7087,6 +7103,8 @@ window.charSlot = function (slot, btn) {
   if (btn) tabs.forEach(b => b.classList.toggle('active', b === btn));
   const grid = document.getElementById('charworld-items');
   if (!grid || !window._charDraft) return;
+  // ★피부는 CHAR_ITEMS 에 없다(사는 물건이 아니라 고르는 톤이다) — 별도로 그린다
+  if (slot === 'skin') { window._charSkinPaint(grid); return; }
   const owned = (window._charState && window._charState.wardrobe) || [];
   // 증명형 진행률(체크인 수)이 아직 없으면 지금 읽어오고, 오면 다시 그린다
   if (!window._mwReqReady && window.mwReqRefresh) window.mwReqRefresh(true);
@@ -7142,6 +7160,38 @@ window.charSlot = function (slot, btn) {
     const onclick = isMask ? 'window.charClearMask()' : "window.charClearSlot('" + slot + "')";
     grid.insertAdjacentHTML('afterbegin', `<button class="mw-card${off ? ' equipped' : ''}" onclick="${onclick}" style="justify-content:center;min-height:96px"><span class="mw-name">안 씀</span><span class="mw-sub${off ? ' on' : ''}">${off ? '착용중' : '벗기'}</span></button>`);
   }
+};
+window._charSkinPaint = function (grid) {
+  const bodyKey = (window._charDraft || {}).body || 'human';
+  const b = window._CHAR_BODIES[bodyKey] || {};
+  if (!b.skinBase) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:26px 14px;'
+      + 'font-size:12px;color:#4a5266;line-height:1.9">이 캐릭터는 피부톤을 바꿀 수 없어요</div>';
+    return;
+  }
+  const cur = window.CHAR_SKINS.indexOf(window._charDraft.skin) >= 0
+    ? window._charDraft.skin : window.CHAR_SKIN_DEFAULT;
+  const th = 54, tw = Math.round(th * (b.cw || 141) / (b.ch || 224));
+  grid.innerHTML = window.CHAR_SKINS.map(function (k, i) {
+    const src = window._charSkinSrc(bodyKey, k);
+    const on = (k === cur);
+    const prev = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;"
+      + "background-image:url('" + src + "');background-repeat:no-repeat;background-size:"
+      + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0\"></div>";
+    return '<button class="mw-card' + (on ? ' equipped' : '') + '" onclick="window.charPickSkin(\'' + k + '\')">'
+      + '<div style="width:' + th + 'px;height:' + th + 'px;display:flex;align-items:center;justify-content:center">'
+      + prev + '</div><span class="mw-name">' + (i + 1) + '단계</span>'
+      + (on ? '<span class="mw-sub on">사용중</span>' : '<span class="mw-sub">고르기</span>') + '</button>';
+  }).join('');
+};
+window.charPickSkin = function (k) {
+  if (!window._charDraft || window.CHAR_SKINS.indexOf(k) < 0) return;
+  window._charDraft.skin = k;
+  window._charApplySprite(window._charDraft.body || 'human');
+  window._charApplyPos();
+  window._charRenderAvatar();
+  window._charAutoSave();
+  window.charSlot('skin', document.querySelector('#charworld-slot-tabs .tab-btn.active'));
 };
 window.charClearMask = function () { if (!window._charDraft) return; window._charDraft.mask = null; window._charRenderAvatar(); window._charAutoSave(); window.charSlot('mask', document.querySelector('#charworld-slot-tabs .tab-btn.active')); };
 window.charClearSlot = function (slot) {
@@ -7387,7 +7437,8 @@ window._charSyncSlotTabs = function () {
   let movedTo = null;
   bar.querySelectorAll('.tab-btn').forEach(function (t) {
     const slot = t.dataset.slot; if (!slot) return;
-    const hide = !!(b.fixedHair && (slot === 'hair' || slot === 'hat'));
+    const hide = !!(b.fixedHair && (slot === 'hair' || slot === 'hat'))
+      || (slot === 'skin' && !b.skinBase);
     t.style.display = hide ? 'none' : '';
     if (hide && t.classList.contains('active')) movedTo = bar.querySelector('.tab-btn[data-slot="top"]');
   });
@@ -7587,6 +7638,7 @@ window.charHubTab = function (name, btn) {
       + '<button class="tab-btn" data-slot="bottom" onclick="window.charSlot(\'bottom\',this)">하의</button>'
       + '<button class="tab-btn" data-slot="shoes" onclick="window.charSlot(\'shoes\',this)">신발</button>'
       + '<button class="tab-btn" data-slot="hat" onclick="window.charSlot(\'hat\',this)">모자</button>'
+      + '<button class="tab-btn" data-slot="skin" onclick="window.charSlot(\'skin\',this)">피부</button>'
       // ★'색상' 탭 제거 (대표 결정 2026-08-05). 누르면 반응은 하는데 캐릭터는 안 바뀌는
       //   죽은 UI 였다 — 색을 적용하는 코드는 옛 SVG 렌더러(CHAR_SHAPES)에만 있고,
       //   지금 쓰는 스프라이트 렌더러(_mwSpriteLayers)는 PNG 시트를 그대로 겹칠 뿐이라
