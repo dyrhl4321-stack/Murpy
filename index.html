@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '747';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '748';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -1207,6 +1207,23 @@ window._SW_V = '747';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .mw-redit-cathead span { font-size:10px; color:rgba(255,255,255,.3) }
   .mw-redit-cathead:first-child { margin-top:10px }
   .mw-redit-cathead + .mw-redit-cat { margin-top:0 }
+  /* ★분류 칩 (대표 8-26: "펫·펫용품·같이그린것까지 생겨 스크롤을 너무 내려야 한다.
+     캐릭터 꾸미기처럼 칩 두고 옆으로 넘기는 방식으로").
+     예전엔 분류 11개를 **세로로 전부 쌓아** 그렸다. 칩으로 하나만 보여주면 스크롤이 사라진다.
+     ★틴트 색면 금지 — background:none + 테두리 + 글자색으로만 (규칙). */
+  .mw-redit-chips { display:flex; gap:7px; overflow-x:auto; padding:14px 2px 2px; margin:0 -2px;
+    scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch }
+  .mw-redit-chips::-webkit-scrollbar { display:none }
+  .mw-redit-chip { flex-shrink:0; background:none; border:2px solid #2b3350; border-radius:11px;
+    padding:7px 12px; color:#8a93a8; font-family:'Galmuri11',sans-serif; font-size:11px;
+    cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:5px }
+  .mw-redit-chip b { font-weight:400; font-size:9.5px; color:rgba(255,255,255,.28) }
+  .mw-redit-chip.on { border-color:#3D7EFF; color:#fff }
+  .mw-redit-chip.on b { color:rgba(61,126,255,.8) }
+  .mw-redit-chip:active { transform:scale(.96) }
+  /* 칩을 쓰면 분류 제목은 필요 없다 — 목록 안에서만 안내문으로 쓴다 */
+  .mw-redit-empty { font-family:'Galmuri11',sans-serif; font-size:11.5px; color:#4a5266;
+    text-align:center; padding:34px 16px; line-height:1.9 }
   /* ★칸 높이를 고정하고 **세로 가운데** 정렬한다 (대표 8-18: "구매하면 밑에 머피 금액이
      사라지니까, 구매한 오브젝트는 그림이랑 글씨가 중앙 배치될 수 있게").
      안 사면 [그림·이름·가격] 3줄, 사면 [그림·이름] 2줄이라 칸마다 높이가 달라 들쭉날쭉했다. */
@@ -5616,66 +5633,13 @@ window.mwRoomEdit = function () {
           <button id="mw-redit-del" class="mw-btn mw-btn-sm mw-btn-ghost" style="visibility:hidden" onclick="window._reditRemove()">빼기</button>
         </span>
       </div>
-      ${(() => {
-        // ★종류별로 묶어서 보여준다 (대표 8-18). 분류는 window.ROOM_CATS 순서를 따른다.
-        const card = r => {
-          // 안 산 것은 가격을, 산 것/무료는 이름만. 가격이 안 보이면 왜 못 놓는지 알 수가 없다
-          const has = window.mwFurnOwned(r.id);
-          // ★산 것은 빈칸이 아니라 **'구입완료'** 를 넣는다 (대표 8-18: "아님 구입완료 글씨 넣던지").
-          //   가격줄이 사라지면 칸마다 줄 수가 달라져 그림·이름 높이가 들쭉날쭉했다.
-          //   글자를 채우면 줄 수가 같아져 정렬이 맞고, 산 건지 아닌지도 한눈에 읽힌다.
-          //   ★틴트 면 없이 **글자색만** 낮춘다(칩 금지 규칙). 골드는 가격 자리이므로 안 쓴다.
-          const tag = has
-            ? `<span style="font-size:9.5px;color:rgba(255,255,255,.3)">구입완료</span>`
-            : `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">${window._mwCoinImg || ''}${r.price}</span>`;
-          // ★썸네일 높이를 아이템별로 줄일 수 있게 한다 (대표 8-18:
-          //   "덤벨 바벨 썸네일 크기 좀 줄여서 퀄리티 낮은 거 안 티나게 하자").
-          //   카탈로그는 배경 없이 물건만 크게 보여주므로 다른 팩이라는 게 제일 잘 드러나는 자리다.
-          //   작게 그리면 픽셀 알갱이 차이가 눈에 덜 걸린다. 방에 놓았을 때 크기는 그대로다.
-          const th = r.thumbH ? ` style=\"height:${r.thumbH}px\"` : '';
-          // 펫은 지금 나와 있는 아이를 테두리로 표시한다(틴트 색면 금지 — 테두리와 글자색으로만)
-          // 지금 나와 있는 펫들(배열)에 들어 있으면 표시한다
-          const outNow = r.pet && (window._myPets || []).some(function (x) { return x && x.id === r.id; });
-          const petTag = outNow ? '<b style="color:#3D7EFF">나와 있음</b>' : '';
-          return `<button onclick="window._reditAdd('${r.id}')"${outNow ? ' style="border-color:#3D7EFF"' : (has ? '' : ' style="opacity:.72"')}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${petTag || tag}</button>`;
-        };
-        const seen = {};
-        let out = '';
-        (window.ROOM_CATS || []).forEach(c => {
-          const list = window.ROOM_ITEMS.filter(r => r.cat === c.id && !r.legacy && !r.hidden);
-          if (!list.length) return;
-          list.forEach(r => { seen[r.id] = 1; });
-          out += `<div class="mw-redit-cathead">${c.name}<span>${list.length}</span></div>`
-               + `<div class="mw-redit-cat">${list.map(card).join('')}</div>`;
-        });
-        // cat 을 안 적은 새 가구도 절대 사라지지 않게 — 맨 끝에 모아 보여준다
-        const rest = window.ROOM_ITEMS.filter(r => !seen[r.id] && !r.legacy && !r.hidden);
-        if (rest.length) {
-          out += `<div class="mw-redit-cathead">그 외<span>${rest.length}</span></div>`
-               + `<div class="mw-redit-cat">${rest.map(card).join('')}</div>`;
-        }
-        return out;
-      })()}
-      ${(() => {
-        const inv = (window._seasonState && window._seasonState.inv) || [];
-        const owned = window.SEASON_ITEMS.filter(s => inv.includes(s.id));
-        if (!owned.length) return '';
-        return `<div class="mw-redit-cathead" style="color:#F5C24B">한정 오브젝트<span>${owned.length}</span></div>
-          <div class="mw-redit-cat">${owned.map(r =>
-            `<button onclick="window._reditAdd('${r.id}')"><span class="thumb"><img src="${r.src}"${r.thumbH ? ` style="height:${r.thumbH}px"` : ''} draggable="false"></span><span>${r.name}</span></button>`).join('')}
-          </div>`;
-      })()}
-      ${(() => {
-        // ★★같이 그린 그림은 **꾸미기 안**에 있어야 한다 (대표 8-26: "내 방 좌측 상단에
-        //   그림 2 아직 떠 있음 · 꾸미기 탭 안으로 넣으라고 했는데").
-        //   필드 위에 칩으로 띄우면 방을 가리고, 놓는 물건인데 놓는 자리(꾸미기)에 없었다.
-        const arts = (window._myArt || []).filter(a => a && a.px);
-        if (!arts.length) return '';
-        return `<div class="mw-redit-cathead" style="color:#7aa8ff">같이 그린 것들<span>${arts.length}</span></div>
-          <div class="mw-redit-cat">${arts.map(a =>
-            `<button onclick="window.mwArtBig('${a.id}')"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${String((a.by || []).join('·')).slice(0, 10) || '그림'}</span></button>`).join('')}
-          </div>`;
-      })()}
+      <!-- ★분류 칩 + 그 분류만 (대표 8-26: "펫·펫용품·같이그린것까지 생겨 스크롤을
+           너무 내려야 한다. 캐릭터 꾸미기처럼 칩 두고 옆으로 넘기는 방식으로").
+           예전엔 분류 11개를 **세로로 전부** 쌓아 그렸다.
+           칩과 목록은 _reditCatPaint() 가 그린다 — 칩을 눌러도 **목록만** 다시 그린다
+           (패널 전체를 다시 그리면 방 미리보기와 배치 상태가 리셋된다). -->
+      <div class="mw-redit-chips" id="mw-redit-chips"></div>
+      <div id="mw-redit-list"></div>
       <!-- ★캐릭터 이펙트(아우라)는 여기(방 꾸미기)가 아니라 **꾸미기 > 악세사리** 에 있다
            (대표 8-19). 방에 놓는 물건이 아니라 캐릭터에 켜는 것이다. charSlot('acc') 참고. -->
       <!-- ★저장 버튼은 **스크롤해도 하단에 붙어 있다**(대표 8-17: "있는 줄 모르고 빠져나간다").
@@ -5709,7 +5673,142 @@ window.mwRoomEdit = function () {
     </div>`;
   window._reditPaint();
   window._reditBind();
+  window._reditCatPaint();   // ★분류 칩 + 선택된 분류 목록 (패널을 열 때 한 번)
 };
+// ===== 꾸미기 카탈로그 — 분류 칩 (대표 2026-08-26) =====
+// 예전엔 분류 11개(가구 8 + 그 외 + 한정 + 그림)를 **세로로 전부 쌓아** 그렸다.
+// 펫·펫용품·같이그린것까지 생기면서 스크롤이 감당이 안 됐다(대표 지적).
+// → 칩으로 **하나만** 보여준다. 캐릭터 꾸미기의 슬롯 칩과 같은 문법이다.
+window._reditCat = window._reditCat || 'bed';
+
+// 가구 카드 한 칸 — (구) 세로 나열 코드에서 **모양 그대로** 옮겨 왔다. 바꾸지 말 것.
+window._reditCard = function (r) {
+  const has = window.mwFurnOwned(r.id);
+  // 안 산 것은 가격을, 산 것은 '구입완료'. 빈칸으로 두면 칸마다 줄 수가 달라져 정렬이 깨진다.
+  const tag = has
+    ? `<span style="font-size:9.5px;color:rgba(255,255,255,.3)">구입완료</span>`
+    : `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">${window._mwCoinImg || ''}${r.price}</span>`;
+  const th = r.thumbH ? ` style="height:${r.thumbH}px"` : '';
+  const outNow = r.pet && (window._myPets || []).some(function (x) { return x && x.id === r.id; });
+  const petTag = outNow ? '<b style="color:#3D7EFF">나와 있음</b>' : '';
+  return `<button onclick="window._reditAdd('${r.id}')"${outNow ? ' style="border-color:#3D7EFF"' : (has ? '' : ' style="opacity:.72"')}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${petTag || tag}</button>`;
+};
+
+// 그림 카드 한 칸. 값이 매겨졌는지·경매 중인지가 **여기서 보여야 한다**
+// (대표 8-26: "가격 매긴 게 저장된 건지 안 된 건지도 모르겠다").
+window._reditArtCard = function (a, owner) {
+  const price = a.price | 0;
+  const auc = !!(window.mwAucOn && window.mwAucOn(a));
+  const tag = auc
+    ? `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">경매 중</span>`
+    : (price > 0
+        ? `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">${window._mwCoinImg || ''}${price}</span>`
+        : `<span style="font-size:9.5px;color:rgba(255,255,255,.3)">비매품</span>`);
+  const who = String((a.by || []).join('·')).slice(0, 10) || '그림';
+  const go = owner
+    ? `window.mwArtOpenFrom('${owner}','${a.id}')`
+    : `window.mwArtBig('${a.id}')`;
+  return `<button onclick="${go}"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${who}</span>${tag}</button>`;
+};
+
+// 칩 목록. 개수가 0인 분류는 아예 안 만든다.
+window._reditCatList = function () {
+  const items = window.ROOM_ITEMS || [], out = [], seen = {};
+  (window.ROOM_CATS || []).forEach(function (c) {
+    const list = items.filter(function (r) { return r.cat === c.id && !r.legacy && !r.hidden; });
+    list.forEach(function (r) { seen[r.id] = 1; });
+    if (list.length) out.push({ id: c.id, name: c.name, n: list.length });
+  });
+  // cat 을 안 적은 새 가구도 사라지지 않게 — '그 외'로 모은다
+  const rest = items.filter(function (r) { return !seen[r.id] && !r.legacy && !r.hidden; });
+  if (rest.length) out.push({ id: '_etc', name: '그 외', n: rest.length });
+  const inv = (window._seasonState && window._seasonState.inv) || [];
+  const season = (window.SEASON_ITEMS || []).filter(function (s) { return inv.indexOf(s.id) >= 0; });
+  if (season.length) out.push({ id: '_season', name: '한정', n: season.length });
+  const arts = (window._myArt || []).filter(function (a) { return a && a.px; });
+  if (arts.length) out.push({ id: '_art', name: '내 그림', n: arts.length });
+  // ★장터 — 남들이 내놓은 그림·경매. 개수는 열어봐야 안다(비동기).
+  out.push({ id: '_market', name: '장터', n: null });
+  return out;
+};
+
+// 선택된 분류의 목록 HTML. 장터만 비동기라 자리만 잡고 _reditMarketPaint 가 채운다.
+window._reditCatHtml = function (cat) {
+  const wrap = function (inner) { return '<div class="mw-redit-cat">' + inner + '</div>'; };
+  if (cat === '_market') return '<div class="mw-redit-empty">장터를 불러오는 중…</div>';
+  if (cat === '_art') {
+    const arts = (window._myArt || []).filter(function (a) { return a && a.px; });
+    if (!arts.length) return '<div class="mw-redit-empty">아직 그린 그림이 없어요<br>같이 그리기에서 그리고 저장해 보세요</div>';
+    return wrap(arts.map(function (a) { return window._reditArtCard(a); }).join(''));
+  }
+  if (cat === '_season') {
+    const inv = (window._seasonState && window._seasonState.inv) || [];
+    const owned = (window.SEASON_ITEMS || []).filter(function (s) { return inv.indexOf(s.id) >= 0; });
+    if (!owned.length) return '<div class="mw-redit-empty">아직 한정 오브젝트가 없어요</div>';
+    return wrap(owned.map(function (r) {
+      return `<button onclick="window._reditAdd('${r.id}')"><span class="thumb"><img src="${r.src}"${r.thumbH ? ` style="height:${r.thumbH}px"` : ''} draggable="false"></span><span>${r.name}</span></button>`;
+    }).join(''));
+  }
+  const items = window.ROOM_ITEMS || [];
+  let list;
+  if (cat === '_etc') {
+    const seen = {};
+    (window.ROOM_CATS || []).forEach(function (c) {
+      items.forEach(function (r) { if (r.cat === c.id) seen[r.id] = 1; });
+    });
+    list = items.filter(function (r) { return !seen[r.id] && !r.legacy && !r.hidden; });
+  } else {
+    list = items.filter(function (r) { return r.cat === cat && !r.legacy && !r.hidden; });
+  }
+  if (!list.length) return '<div class="mw-redit-empty">여기엔 아직 없어요</div>';
+  return wrap(list.map(window._reditCard).join(''));
+};
+
+// 칩과 목록을 그린다. ★칩을 눌러도 **목록만** 다시 그린다 —
+// 패널 전체를 다시 그리면 방 미리보기와 배치 중이던 상태가 리셋된다.
+window._reditCatPaint = function () {
+  const chips = document.getElementById('mw-redit-chips');
+  const list = document.getElementById('mw-redit-list');
+  if (!chips || !list) return;
+  const cats = window._reditCatList();
+  const ok = cats.some(function (c) { return c.id === window._reditCat; });
+  if (!ok) window._reditCat = cats.length ? cats[0].id : 'bed';
+  chips.innerHTML = cats.map(function (c) {
+    return '<button class="mw-redit-chip' + (c.id === window._reditCat ? ' on' : '') + '"'
+      + ' onclick="window._reditCat=\'' + c.id + '\';window._reditCatPaint()">'
+      + c.name + (c.n ? '<b>' + c.n + '</b>' : '') + '</button>';
+  }).join('');
+  const on = chips.querySelector('.mw-redit-chip.on');
+  if (on && on.scrollIntoView) {
+    try { on.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+  }
+  list.innerHTML = window._reditCatHtml(window._reditCat);
+  if (window._reditCat === '_market') window._reditMarketPaint();
+};
+
+// 장터 목록. 데이터는 모듈 안의 _mwMarketLoad 가 읽는다(편집기는 db 를 못 본다).
+window._reditMarketPaint = async function (force) {
+  const list = document.getElementById('mw-redit-list');
+  if (!list) return;
+  if (!window._mwMarket || force) {
+    list.innerHTML = '<div class="mw-redit-empty">장터를 불러오는 중…</div>';
+    // ★`x.f && x.f()` 로 감싸지 않는다 — 함수 이름이 틀려도 조용히 넘어가 버린다.
+    if (typeof window._mwMarketLoad !== 'function') {
+      list.innerHTML = '<div class="mw-redit-empty">장터를 열 수 없어요 · 잠시 뒤에 다시</div>';
+      return;
+    }
+    try { await window._mwMarketLoad(); } catch (e) { console.warn('market paint', e); }
+  }
+  if (window._reditCat !== '_market') return;   // 그 사이 다른 칩으로 갔으면 그리지 않는다
+  const m = window._mwMarket || [];
+  if (!m.length) {
+    list.innerHTML = '<div class="mw-redit-empty">지금 팔고 있는 그림이 없어요<br>내 그림에 값을 매겨 내놓아 보세요</div>';
+    return;
+  }
+  list.innerHTML = '<div class="mw-redit-cat">'
+    + m.map(function (x) { return window._reditArtCard(x.art, x.owner); }).join('') + '</div>';
+};
+
 window._reditPaint = function () {
   // 끌고 있는 자리를 손님에게도 그대로 보여준다(_mwPetPublish 가 바뀌었을 때만 실제로 쓴다)
   if (window._mwPetPublish) window._mwPetPublish();
@@ -21106,6 +21205,118 @@ window._mwArtSettle = async function () {
   finally { window._mwSettling = false; }
 };
 
+// ===== 장터 — 남들이 내놓은 그림 =====
+// ★대표 8-26: "그래서 그림은 어디 있고 어디서 사는 건데?"
+//   맞는 지적이다. 그림이 각자 방에 흩어져 있어 **그 사람 방에 직접 찾아가야만** 보였다.
+//   발견 경로가 없으니 값을 매겨도 아무도 못 보고, 경매를 열어도 입찰이 0이다.
+//   → 꾸미기(원래 물건 사는 곳) 안에 '장터' 칩을 두고 여기로 모은다. 새 화면을 만들지 않는다.
+//
+// ★이 함수는 **모듈 안**에 있어야 한다 — 꾸미기 편집기는 모듈 밖 스크립트라 db 를 못 본다.
+window._mwMarket = null;
+window._mwMarketLoad = async function () {
+  try {
+    const qs = await getDocs(collection(db, 'users'));
+    const me = (window.currentUser || {}).uid || '';
+    const out = [];
+    qs.forEach(function (d) {
+      if (d.id === me) return;                       // 내 것은 '내 그림' 칩에 있다
+      const u = d.data() || {};
+      (u.artworks || []).forEach(function (a) {
+        if (!a || !a.px) return;
+        const auc = !!(a.auc && a.aucAt);
+        if (!auc && !((a.price | 0) > 0)) return;     // 안 내놓은 그림은 안 보인다
+        out.push({ owner: d.id, nick: u.nickname || '머피', art: a, auc: auc });
+      });
+    });
+    // 경매 중인 것이 위로, 그다음 최근 순
+    out.sort(function (x, y) { return (Number(y.auc) - Number(x.auc)) || ((y.art.at || 0) - (x.art.at || 0)); });
+    window._mwMarket = out.slice(0, 60);
+  } catch (e) { console.warn('market load', e); window._mwMarket = []; }
+  return window._mwMarket;
+};
+
+// 장터에서 그림 한 장을 크게 본다. mwArtBig 은 **내 목록/지금 보는 방**을 기준으로 하므로
+// 남의 그림에는 그대로 못 쓴다. 여기서는 주인 uid 를 들고 다닌다.
+window.mwArtOpenFrom = function (owner, id) {
+  const rec = (window._mwMarket || []).filter(function (x) {
+    return x.owner === owner && x.art && x.art.id === id;
+  })[0];
+  if (!rec) { showToast('그림을 찾지 못했어요'); return; }
+  const a = rec.art, price = a.price | 0, auc = window.mwAucOn(a);
+  const esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  const have = window.mwArtHave(id);
+  let el = document.getElementById('mw-artbig'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-artbig';
+  el.onclick = function () { el.remove(); };
+  let btns = '';
+  if (have) btns += '<button disabled>가지고 있어요</button>';
+  else if (auc) btns += '<button class="go" onclick="window.mwAucBidFrom(&quot;' + esc(owner) + '&quot;,&quot;' + esc(id) + '&quot;)">값 부르기</button>';
+  else if (price > 0) btns += '<button class="go" onclick="window.mwAucClaim(&quot;' + esc(id) + '&quot;,&quot;' + esc(owner) + '&quot;,' + price + ')">'
+    + (window._mwCoinImg || '') + price + '머피로 사기</button>';
+  const by = (a.by || []).join('·');
+  el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
+    + '<img src="' + window.mwArtImg(a.px, 'frame', id) + '" alt="같이 그린 그림"'
+    + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
+    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + esc(by) + '님이 같이 그렸어요</div>' : '')
+    + '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + esc(rec.nick) + '님의 방에 있어요</div>'
+    + '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px"></div>'
+    + '<div class="ab-btns">' + btns + '</div></div>';
+  el.querySelectorAll('.ab-btns button').forEach(function (b) {
+    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    b.addEventListener('click', function (e) { e.stopPropagation(); });
+  });
+  document.body.appendChild(el);
+  if (auc) window._mwAucShowNow(id, a.aucAt, a.min | 0);
+};
+
+// 경매 현황 한 줄을 채운다 (입찰은 비동기라 화면을 먼저 띄우고 나중에 채운다)
+window._mwAucShowNow = async function (id, aucAt, min) {
+  const bids = await window.mwAucBids(id, aucAt);
+  const el = document.getElementById('mw-auc-now'); if (!el) return;
+  const top = bids[0];
+  el.innerHTML = top
+    ? ('지금 ' + (window._mwCoinImg || '') + top.amount + ' · ' + bids.length + '명이 불렀어요')
+    : ('시작가 ' + (window._mwCoinImg || '') + (min | 0));
+};
+
+// 장터에서 값 부르기 — mwAucBid 는 '지금 보고 있는 방'을 주인으로 보므로 여기선 못 쓴다.
+window.mwAucBidFrom = async function (owner, id) {
+  const rec = (window._mwMarket || []).filter(function (x) {
+    return x.owner === owner && x.art && x.art.id === id;
+  })[0];
+  if (!rec) return;
+  const me = auth.currentUser;
+  if (!me) { window.memberGate && window.memberGate('값을 부르려면 로그인이 필요해요'); return; }
+  if (window._notMember && window._notMember()) {
+    window.memberGate && window.memberGate('임시 계정은 경매에 참여할 수 없어요'); return;
+  }
+  if (owner === me.uid) { showToast('내 그림에는 못 불러요'); return; }
+  const a = rec.art;
+  if (!window.mwAucOn(a)) { showToast('지금은 경매 중이 아니에요'); return; }
+  const bids = await window.mwAucBids(id, a.aucAt);
+  const top = bids[0] || null;
+  const floor = top ? (top.amount + 1) : (a.min | 0);
+  const haveC = (window._creditState && window._creditState.credits) | 0;
+  if (haveC < floor) { showToast('머피가 모자라요 · ' + floor + '머피부터 부를 수 있어요'); return; }
+  if (floor > window.MW_AUC_MAX) { showToast('더 부를 수 없어요'); return; }
+  const n = await window.mwArtPriceAsk(floor, {
+    title: '얼마를 부를까요?',
+    desc: top ? ('지금 ' + top.amount + '머피 · ' + floor + '머피부터 부를 수 있어요')
+              : ('시작가 ' + (a.min | 0) + '머피'),
+    ok: '부르기', min: floor, max: Math.min(window.MW_AUC_MAX, haveC) });
+  if (n == null) return;
+  if (n < floor || n > haveC) { showToast('부를 수 없는 값이에요'); return; }
+  try {
+    await setDoc(doc(db, 'notifications', 'ab_' + id + '_' + me.uid), {
+      toUid: owner, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
+      type: 'art_bid', artId: id, amount: n, aucAt: a.aucAt || 0, at: Date.now(),
+      read: false, createdAt: serverTimestamp() });
+  } catch (e) { console.warn('auc bid', e); showToast('부르지 못했어요 · 잠시 뒤에 다시'); return; }
+  showToast(n + '머피를 불렀어요');
+  if (navigator.vibrate) navigator.vibrate([8, 40, 8]);
+  window._mwAucShowNow(id, a.aucAt, a.min | 0);
+};
+
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
 window.mwArtShare = function (id) {
   const art = window.mwArtEnsure(id); if (!art) return;
@@ -21195,6 +21406,13 @@ window.mwArtBig = function (id) {
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
     + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by + '님이 같이 그렸어요</div>' : '')
     + (when ? '<div style="font-size:10.5px;color:#4a5266;margin-top:7px">' + when + '</div>' : '')
+    // ★값을 매겼는지·경매 중인지가 여기서 보여야 한다 (대표 8-26: "저장된 건지 안 된 건지도
+    //   모르겠다"). 경매 중이면 현재가를 비동기로 채운다.
+    + (aucOn
+        ? '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px">불러오는 중…</div>'
+        : ((a.price | 0) > 0
+            ? '<div style="font-size:11px;color:#F5C24B;margin-top:10px">' + (window._mwCoinImg || '') + (a.price | 0) + '에 팔고 있어요</div>'
+            : ''))
     + '<div class="ab-btns">' + btns + '</div>'
     + '</div>';
   // ★버튼을 눌러도 배경 클릭(닫기)이 같이 먹지 않게 막는다
@@ -21203,6 +21421,7 @@ window.mwArtBig = function (id) {
     b.addEventListener('click', function (e) { e.stopPropagation(); });
   });
   document.body.appendChild(el);
+  if (aucOn) window._mwAucShowNow(id, a.aucAt, a.min | 0);
 };
 
 // ===== 오늘의 추억: 공동룸에서 오늘 찍은 사진 + 방주의 그림 목록 =====
@@ -24452,6 +24671,10 @@ window.loadNotificationsFirestore = async () => {
     return;
   }
   el.innerHTML = '<div>' + [1,2].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:18px;width:70%;margin-bottom:8px"></div><div class="skeleton" style="height:14px;width:45%"></div></div>`).join('') + '</div>';
+  // ★그림이 팔린 대금을 여기서 받는다. 남의 지갑은 못 고치므로 **받는 쪽 앱이 스스로 적립**한다.
+  //   8-26 이전엔 이 고리가 통째로 없어서 **판 사람이 돈을 한 푼도 못 받고 있었다.**
+  //   알림을 여는 순간이 가장 자연스러운 정산 시점이다(목록에 '팔렸어요' 카드가 같이 뜬다).
+  if (typeof window._mwArtSettle === 'function') { try { await window._mwArtSettle(); } catch (e) {} }
   try {
     // ★★내 알림만 가져온다(대표 리포트 2026-08-13: 배지엔 4개인데 목록은 비어 있었다).
     //   예전엔 where 없이 `orderBy(createdAt desc) + limit(50)` 이라
@@ -24651,6 +24874,52 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:11px;color:#444">${time}</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;background:#F5C24B;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      // ===== 그림 경매 3종 (2026-08-26) =====
+      // 아이콘은 골드 라인 SVG — 돈이 움직이는 알림이라 코인·망치로 구분한다(이모지 금지).
+      if (n.type === 'art_bid') {
+        const safeArt = (n.artId || '').replace(/'/g, '');
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.55:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.mwArtBig&&window.mwArtBig('${safeArt}')">
+          <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(245,194,75,0.62);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <!-- 경매 망치 -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4l6 6"/><path d="M17 7l-8 8"/><path d="M9.5 9.5l5 5"/><path d="M6 21h12"/><path d="M8 18l4-4"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px"><b>${safeNick}</b>님이 <b style="color:#F5C24B">${Number(n.amount||0).toLocaleString()}머피</b>를 불렀어요</div>
+            <div style="font-size:11.5px;color:#8a93a8;margin-bottom:2px">눌러서 그림을 보고 낙찰할 수 있어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;background:#F5C24B;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'art_won') {
+        const safeArt = (n.artId || '').replace(/'/g, '');
+        const amt = Number(n.amount || 0);
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.55:1}">
+          <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(245,194,75,0.62);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M7 9h10M7 13h6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px">그림이 <b style="color:#F5C24B">${amt.toLocaleString()}머피</b>에 낙찰됐어요</div>
+            <div style="font-size:11.5px;color:#8a93a8;margin-bottom:2px">${safeNick}님의 그림 · 대금을 내고 가져가세요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          <button style="flex-shrink:0;background:#141a28;border:2px solid #05070c;box-shadow:0 0 0 1px rgba(245,194,75,.55);color:#F5C24B;padding:8px 10px;font-family:'Galmuri11',sans-serif;font-size:10.5px;cursor:pointer" onclick="event.stopPropagation();this.disabled=true;window.mwAucClaim('${safeArt}','${safeFromUid}',${amt},'${safeId}')">가져오기</button>
+        </div>`;
+      }
+      if (n.type === 'art_sold') {
+        // ★대금은 _mwArtSettle 이 목록을 열 때 이미 적립했다. 여기는 알리기만 한다.
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd">그림이 팔렸어요 <b style="color:#F5C24B">+${Number(n.amount||0).toLocaleString()}머피</b></div>
+            <div style="font-size:11.5px;color:#8a93a8;margin-top:2px">${safeNick}님이 가져갔어요</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0"></div>' : ''}
         </div>`;
       }
       if (n.type === 'poke') {
@@ -25640,7 +25909,12 @@ window.setCenterCoords = async (centerId, lat, lng) => {   // 콘솔/관리자�
   await updateDoc(doc(db, 'centers', String(centerId)), { lat: Number(lat), lng: Number(lng) });
   await window.loadCentersFirestore(); console.log('✓ 좌표 저장', centerId, lat, lng);
 };
-const MW_CHECKIN_RADIUS = 200;   // m (실내 GPS 오차 감안, 브리프 권장)
+// ★200 → 100 (대표 2026-08-26: "범위가 너무 넓다").
+//   200m 는 헬스장 건너편 카페에서도 찍힌다. 앞으로 이 기록이 **헬스장 송객 청구의 근거**가
+//   되므로(제휴 B2B) 느슨하면 그대로 신뢰를 잃는다.
+//   ※실내 GPS 오차 때문에 200을 뒀던 것인데, 오차는 반경을 늘려 덮을 게 아니라
+//     **accuracy 를 읽어 안내로 푸는 것**이 맞다(아래 실패 화면 참고).
+const MW_CHECKIN_RADIUS = 100;   // m
 // 지도 '내 위치' 버튼이 한 화면에 담아줄 반경(m). 체크인 반경(200m)과 목적이 달라 따로 둔다 —
 // 이건 도장 판정이 아니라 "내 동네에 어떤 센터가 있나"를 보여주는 카메라 이동이다.
 const MW_LOCATE_RADIUS = 3000;
@@ -27513,16 +27787,24 @@ window.mwCheckin = function () {
   if (!navigator.geolocation) { window._mwOverlayClose(); showToast('이 기기는 위치를 지원하지 않아요'); return; }
   navigator.geolocation.getCurrentPosition(pos => {
     const { latitude:lat, longitude:lng } = pos.coords;
+    // ★GPS 오차값. 반경을 100 으로 좁혔으므로 **실패했을 때 왜 실패했는지**를 이걸로 가른다.
+    //   "반경 밖"과 "GPS 가 부정확함"은 유저가 해야 할 행동이 다르다
+    //   (전자는 센터로 가야 하고, 후자는 창가·입구로 나가 다시 눌러야 한다).
+    const acc = Math.round(pos.coords.accuracy || 0);
     let best=null, bestD=1e12;
     centers.forEach(c => { const dd=mwHaversine(lat,lng,c.lat,c.lng); if(dd<bestD){bestD=dd;best=c;} });
     window._mwOverlayClose();
     if (best && bestD <= MW_CHECKIN_RADIUS) window.mwConfirmCheckin(best, Math.round(bestD), lat, lng);
     else {
       const near = best ? `가장 가까운 <b style=\"color:#cfd6e6\">${best.name}</b>까지 <b style=\"color:#F5C24B\">${bestD<1000?Math.round(bestD)+'m':(bestD/1000).toFixed(1)+'km'}</b>` : '좌표 등록된 센터가 없어요';
+      // GPS 오차가 큰데 센터가 그 오차 안에 들어오면, 실제로는 센터 안일 가능성이 크다.
+      const weak = acc > 50 && best && bestD <= (MW_CHECKIN_RADIUS + acc);
       window._mwOverlay(`
         <div style="font-size:34px;margin-bottom:12px">📍</div>
-        <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:9px">센터 반경 밖이에요</div>
-        <div style="font-size:12px;color:#8a93a8;line-height:1.8">${near}<br>센터 ${MW_CHECKIN_RADIUS}m 안에서 다시 눌러주세요</div>
+        <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:9px">${weak ? 'GPS 신호가 약해요' : '센터 반경 밖이에요'}</div>
+        <div style="font-size:12px;color:#8a93a8;line-height:1.8">${weak
+          ? `오차가 <b style="color:#F5C24B">±${acc}m</b> 라 자리를 못 잡았어요<br>창가나 입구 쪽에서 다시 눌러주세요`
+          : `${near}<br>센터 ${MW_CHECKIN_RADIUS}m 안에서 다시 눌러주세요`}</div>
         ${admin?`<button class="mw-btn" style="margin-top:16px" onclick="window.mwAdminPickCenter()">테스트 체크인 — 센터 선택 (관리자)</button>`:''}
         <button onclick="window._mwOverlayClose()" style="display:block;margin:14px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
     }

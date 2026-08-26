@@ -81,6 +81,21 @@ function compose(n) {
       return { title: "🔑 문이 열렸어요",
                body: `${who}님이 머피룸으로 초대했어요. 지금 들어가볼까요?` };
 
+    // ── 그림 경매 (2026-08-26) ──────────────────────────────
+    // ★재입찰은 문서를 덮어쓰므로 onDocumentCreated 가 안 뛴다 = 푸시가 안 간다.
+    //   **한 사람의 첫 입찰에만** 알림이 간다. 값 경쟁은 앱 화면에서 본다.
+    case "art_bid":
+      return { title: "🔨 값을 불렀어요",
+               body: `${who}님이 내 그림에 ${Number(n.amount || 0).toLocaleString()}머피를 불렀어요` };
+
+    case "art_won":
+      return { title: "🖼 그림이 낙찰됐어요",
+               body: `${Number(n.amount || 0).toLocaleString()}머피에 낙찰됐어요. 대금을 내고 가져가세요` };
+
+    case "art_sold":
+      return { title: "🪙 그림이 팔렸어요",
+               body: `${who}님이 그림을 가져갔어요. ${Number(n.amount || 0).toLocaleString()}머피가 들어왔어요` };
+
     // ── 스쿼드 ──────────────────────────────────────────────
     case "squad_invite":
       return { title: "⚡ 같이 하실래요?",
