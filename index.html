@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '773';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '774';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -635,16 +635,23 @@ window._SW_V = '773';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* ★펫 첫 만남 안내 (대표 8-26). 게임 첫 튜토리얼 느낌 — 블루=액션 · 골드=강조.
      상자는 방에서 쓰는 .mw-panel 을 그대로 쓴다(새 창을 발명하지 않는다).
      이모지 대신 번호를 쓰고, 배지는 틴트 색면 없이 테두리+글자색만 쓴다. */
+  /* ★overflow-y:auto 를 주면 가로도 auto 가 된다(한쪽만 visible 이 안 되는 스펙).
+     데모 버튼이 무대 밖으로 조금 나가면 가로 스크롤이 생기고, 그만큼 상자가 밀린다. */
   #mw-petintro { position:fixed; inset:0; z-index:40100; display:flex; align-items:center;
     justify-content:center; padding:20px 16px; background:rgba(5,7,12,.72);
-    overflow-y:auto; overscroll-behavior:contain; animation:mwPiIn .18s ease-out both }
+    overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
+    animation:mwPiIn .18s ease-out both }
+  /* ★flex 자식은 줄어들 수 있어서 width:100% 만으로는 폭이 안 맞고, 그만큼 좌우가
+     비대칭이 된다(실측: 340 이어야 할 폭이 306, 무대가 34px 오른쪽으로 치우쳤다).
+     margin:auto 로 확실히 가운데 두고 flex-shrink 를 끈다. */
   #mw-petintro .mw-pi-box { width:100%; max-width:340px; padding:0; overflow:hidden;
+    flex:0 0 auto; margin:auto;
     animation:mwPiPop .26s cubic-bezier(.2,1.2,.4,1) both }
   @keyframes mwPiIn { from{opacity:0} to{opacity:1} }
   @keyframes mwPiPop { from{opacity:0;transform:translateY(14px) scale(.965)} to{opacity:1;transform:none} }
   @keyframes mwPiUp { from{opacity:0;transform:translateY(9px)} to{opacity:1;transform:none} }
   @keyframes mwPiBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
-  #mw-petintro .mw-pi-head { padding:20px 18px 16px; text-align:center;
+  #mw-petintro .mw-pi-head { padding:14px 18px 16px; text-align:center;
     border-bottom:1px solid rgba(255,255,255,.07) }
   /* ★얼굴 아이콘은 30x48 처럼 아주 작다. 상자를 정사각으로 잡고 늘리면 비율이 깨지고
      비정수배라 뭉개진다(에셋 하드룰). -> 상자는 자리만 잡고 그림은 **정확히 2배**로 키운다. */
@@ -670,8 +677,8 @@ window._SW_V = '773';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-petintro .mw-pi-list::-webkit-scrollbar-track { background:transparent }
   #mw-petintro .mw-pi-card { margin-bottom:13px; animation:mwPiUp .3s ease-out both }
   #mw-petintro .mw-pi-t { display:flex; align-items:center; gap:7px;
-    font-family:'Galmuri11',sans-serif; font-size:11px; line-height:1.4;
-    padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid }
+    font-family:'Galmuri11',sans-serif; font-size:11px; line-height:1.4; color:#3D7EFF;
+    padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid rgba(61,126,255,.33) }
   #mw-petintro .mw-pi-no { flex:0 0 16px; width:16px; height:16px; border:1px solid currentColor;
     border-radius:50%; display:flex; align-items:center; justify-content:center;
     font-size:9px; background:none }
@@ -679,6 +686,63 @@ window._SW_V = '773';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-petintro .mw-pi-b b { color:#fff; font-weight:700 }
   #mw-petintro .mw-pi-foot { padding:12px 16px 16px; border-top:1px solid rgba(255,255,255,.07) }
   #mw-petintro .mw-pi-ok { width:100%; padding:13px; font-size:14px }
+  /* 링 메뉴 펼침 데모. 5.6초 주기로 저절로 반복한다 —
+     탭(0~0.6s) → 펼침(0.6~1.3s) → 유지(~4.6s) → 접힘 → 다시. */
+  #mw-petintro .mw-pi-stage { position:relative; height:172px; margin:0 auto 4px; max-width:280px }
+  #mw-petintro .mw-pi-stage .mw-pi-face { position:absolute; left:50%; top:50%; z-index:1;
+    height:auto; margin:0; transform:translate(-50%,-50%) }
+  /* ★1.4배까지만. 실제 링 메뉴는 펫 **위에** 뜨는데(z-index 901), 데모에서 펫이 크면
+     버튼을 가려서 정작 보여주려던 것이 안 보인다. */
+  #mw-petintro .mw-pi-stage .mw-pi-face img { transform:scale(1.4) }
+  /* 톡 누르는 순간 — 펫에서 링이 퍼진다 */
+  #mw-petintro .mw-pi-tap { position:absolute; left:50%; top:50%; width:30px; height:30px;
+    margin:-15px 0 0 -15px; border:2px solid #3D7EFF; border-radius:50%;
+    animation:mwPiTap 5.6s ease-out infinite; pointer-events:none }
+  @keyframes mwPiTap {
+    0%   { transform:scale(.35); opacity:0 }
+    3%   { opacity:.95 }
+    13%  { transform:scale(2.6); opacity:0 }
+    100% { transform:scale(2.6); opacity:0 }
+  }
+  /* 버튼은 실제 .mw-ringbtn 을 그대로 줄인 모양이다(같은 테두리·같은 픽셀 폰트) */
+  #mw-petintro .mw-pi-db { position:absolute; left:50%; top:50%; width:46px;
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:5px 0 4px; background:rgba(13,19,34,.94);
+    border:2px solid rgba(255,255,255,.28);
+    font-family:'Galmuri11',sans-serif; font-size:8px; font-weight:400; color:#fff; z-index:2;
+    animation:mwPiFan 5.6s cubic-bezier(.34,1.4,.64,1) infinite; pointer-events:none }
+  #mw-petintro .mw-pi-db svg { width:12px; height:12px }
+  @keyframes mwPiFan {
+    0%,10%   { transform:translate(-50%,-50%) scale(.35); opacity:0 }
+    20%      { transform:translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1.1); opacity:1 }
+    26%,80%  { transform:translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1); opacity:1 }
+    90%,100% { transform:translate(-50%,-50%) scale(.35); opacity:0 }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    #mw-petintro .mw-pi-db { animation:none;
+      transform:translate(calc(-50% + var(--x)), calc(-50% + var(--y))); opacity:1 }
+    #mw-petintro .mw-pi-tap, #mw-petintro .mw-pi-face { animation:none }
+  }
+  /* 코치마크 — 방에 나온 그 아이를 실제로 가리킨다 */
+  #mw-petcoach { position:absolute; left:0; top:0; z-index:880; pointer-events:none }
+  #mw-petcoach .mw-pc-ring { position:absolute; left:-25px; top:-25px; width:50px; height:50px;
+    border:2px solid #3D7EFF; border-radius:50%; animation:mwPcRing 1.9s ease-out infinite }
+  #mw-petcoach .mw-pc-ring.d2 { animation-delay:.62s }
+  @keyframes mwPcRing {
+    0%   { transform:scale(.45); opacity:0 }
+    18%  { opacity:.9 }
+    100% { transform:scale(1.75); opacity:0 }
+  }
+  #mw-petcoach .mw-pc-tip { position:absolute; left:50%; bottom:34px; transform:translateX(-50%);
+    white-space:nowrap; font-family:'Galmuri11',sans-serif; font-size:10px; color:#fff;
+    background:#3D7EFF; padding:5px 9px 6px; animation:mwCoachBob 1.6s ease-in-out infinite }
+  #mw-petcoach .mw-pc-tip i { position:absolute; left:50%; bottom:-5px; margin-left:-5px;
+    width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
+    border-top:5px solid #3D7EFF }
+  #mw-petcoach.flip .mw-pc-tip { bottom:auto; top:30px }
+  #mw-petcoach.flip .mw-pc-tip i { bottom:auto; top:-5px;
+    border-top:none; border-bottom:5px solid #3D7EFF }
+
 
   .mw-pet .mw-pet-hit, .mw-dino .mw-pet-hit { position:absolute; left:50%; bottom:0;
     transform:translateX(-50%); pointer-events:auto; cursor:pointer; z-index:2 }
@@ -5170,6 +5234,7 @@ window.mwPetMenu = function (p) {
   var room = document.getElementById('charworld-room');
   if (!room || !p || !p.el) return;
   var old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
+  window.mwPetCoachEnd && window.mwPetCoachEnd();   // 눌러 봤으면 코치마크는 끝이다
   if (window._mwIsVisiting && window._mwIsVisiting()) {
     var v = window._mwVisit || {}, sv = (v.petsOut || [])[p.i] || {};
     var vn = sv.name || (window.mwItemDef(p.id) || {}).name || '펫';
@@ -5501,20 +5566,17 @@ window.MW_PET_INTRO = {
     label: '강아지',
     lead: '부르면 바로 달려오는 아이예요.',
     cards: [
-      { t: '펫을 톡 누르면 메뉴가 열려요', c: 'gold',
-        b: '펫 몸을 누르면 둘레에 <b>동그란 버튼</b>이 펼쳐져요.<br>'
+      { t: '펫을 톡 누르면 메뉴가 열려요',         b: '펫 몸을 누르면 둘레에 <b>동그란 버튼</b>이 펼쳐져요.<br>'
          + '<b>자유</b> · <b>따라와</b> · <b>여기 있어</b> · <b>하우스</b> 로 무엇을 할지 정하고,<br>'
          + '<b>밥</b> · <b>쓰다듬기</b> · <b>이름</b> · <b>들여보내기</b> 도 여기 있어요.' },
-      { t: '채팅으로 불러도 알아들어요', c: 'blue',
-        b: '방 채팅에 <b>"하우스"</b>, <b>"밥 먹자"</b>, <b>"이리와"</b> 처럼 치면 그대로 해요.<br>'
+      { t: '채팅으로 불러도 알아들어요',         b: '<b>"하우스"</b>, <b>"밥 먹자"</b>, <b>"이리와"</b> 처럼 치면 그대로 해요.<br>'
          + '똑같이 안 쳐도 <b>비슷하게만</b> 치면 알아들어요.<br>'
-         + '이름을 지어 주면 <b>"도로야 이리와"</b> 처럼 그 아이만 부를 수 있어요.' },
-      { t: '개집과 밥그릇을 놓아 주세요', c: 'blue',
-        b: '<b>개집</b>을 방에 놓으면 <b>하우스</b> 를 눌렀을 때 달려가서 들어가 쉬어요.<br>'
+         + '이름을 지어 주면 <b>"도로야 이리와"</b> 처럼 그 아이만 부를 수 있어요.<br>'
+         + '<b>채팅줄은 손님이 와 있을 때만 열려요</b> — 혼자일 땐 위 버튼으로 시키세요.' },
+      { t: '개집과 밥그릇을 놓아 주세요',         b: '<b>개집</b>을 방에 놓으면 <b>하우스</b> 를 눌렀을 때 달려가서 들어가 쉬어요.<br>'
          + '<b>밥그릇</b>을 놓으면 배고픈 시간에 알아서 찾아가 먹어요.<br>'
          + '(개집이 없으면 하우스를 눌러도 그 자리에 앉아 있어요)' },
-      { t: '하루 일과가 있어요', c: 'gold',
-        b: '자고, 먹고, 놀고 — <b>시간대마다 다르게</b> 지내요.<br>'
+      { t: '하루 일과가 있어요',         b: '자고, 먹고, 놀고 — <b>시간대마다 다르게</b> 지내요.<br>'
          + '같은 종을 두 마리 데려와도 서로 다르게 살아요.' }
     ]
   },
@@ -5522,19 +5584,16 @@ window.MW_PET_INTRO = {
     label: '고양이',
     lead: '마음이 내킬 때만 오는 아이예요.',
     cards: [
-      { t: '펫을 톡 누르면 메뉴가 열려요', c: 'gold',
-        b: '펫 몸을 누르면 둘레에 <b>동그란 버튼</b>이 펼쳐져요.<br>'
+      { t: '펫을 톡 누르면 메뉴가 열려요',         b: '펫 몸을 누르면 둘레에 <b>동그란 버튼</b>이 펼쳐져요.<br>'
          + '<b>자유</b> · <b>따라와</b> · <b>여기 있어</b> 로 무엇을 할지 정하고,<br>'
          + '<b>밥</b> · <b>쓰다듬기</b> · <b>이름</b> · <b>들여보내기</b> 도 여기 있어요.' },
-      { t: '채팅으로 불러도 알아들어요', c: 'blue',
-        b: '방 채팅에 <b>"밥 먹자"</b>, <b>"이리와"</b> 처럼 치면 그대로 해요.<br>'
+      { t: '채팅으로 불러도 알아들어요',         b: '<b>"밥 먹자"</b>, <b>"이리와"</b> 처럼 치면 그대로 해요.<br>'
          + '똑같이 안 쳐도 <b>비슷하게만</b> 치면 알아들어요.<br>'
-         + '이름을 지어 주면 그 아이만 부를 수 있어요.' },
-      { t: '가끔 못 들은 척해요', c: 'gold',
-        b: '고양이는 불러도 <b>세 번에 한 번쯤</b> 그냥 앉아 있어요. 고장이 아니에요.<br>'
+         + '이름을 지어 주면 그 아이만 부를 수 있어요.<br>'
+         + '<b>채팅줄은 손님이 와 있을 때만 열려요</b> — 혼자일 땐 위 버튼으로 시키세요.' },
+      { t: '가끔 못 들은 척해요',         b: '고양이는 불러도 <b>세 번에 한 번쯤</b> 그냥 앉아 있어요. 고장이 아니에요.<br>'
          + '다시 부르면 그때는 와요. 멀면 뛰어오고 가까우면 걸어와요.' },
-      { t: '캣타워를 놓아 주세요', c: 'blue',
-        b: '<b>캣타워</b>가 있으면 <b>발판 세 곳</b> 위에서 자주 놀고 잠도 거기서 자요.<br>'
+      { t: '캣타워를 놓아 주세요',         b: '<b>캣타워</b>가 있으면 <b>발판 세 곳</b> 위에서 자주 놀고 잠도 거기서 자요.<br>'
          + '<b>밥그릇</b>을 놓으면 배고픈 시간에 알아서 찾아가 먹어요.<br>'
          + '개집은 강아지 것이라 고양이는 쓰지 않아요.' }
     ]
@@ -5557,12 +5616,28 @@ window.mwPetIntroShow = function (id, onOk) {
   if (!t) { onOk && onOk(); return; }
   var old = document.getElementById('mw-petintro'); if (old) old.remove();
 
+  // ★색은 카드마다 바꾸지 않는다 (대표 8-26: "어떤 글자는 파란색이고 어떤 글자는 황금색인데,
+  //   황금색은 강조할 때만 써"). 순서 1~4 는 전부 블루로 통일하고,
+  //   골드는 이 창에서 **'처음 만났어요' 한 곳**에만 쓴다.
   var cards = t.cards.map(function (c, i) {
-    var col = c.c === 'gold' ? '#F5C24B' : '#3D7EFF';
     return '<div class="mw-pi-card" style="animation-delay:' + (180 + i * 90) + 'ms">'
-      + '<div class="mw-pi-t" style="color:' + col + ';border-color:' + col + '55">'
-      + '<span class="mw-pi-no" style="color:' + col + '">' + (i + 1) + '</span>' + c.t + '</div>'
+      + '<div class="mw-pi-t"><span class="mw-pi-no">' + (i + 1) + '</span>' + c.t + '</div>'
       + '<div class="mw-pi-b">' + c.b + '</div></div>';
+  }).join('');
+
+  // ★말로 "누르세요"라고 쓰는 대신 **펼쳐지는 걸 보여준다**
+  //   (대표 8-26: "내가 원한 애니메이션은 클릭하면 그 5방향 버튼 뜨는 그것도 보여주게").
+  //   자리는 실제 링 메뉴(mwPetMenu)와 같은 배치를 그대로 줄인 것이다 — 그래야 학습이 된다.
+  var I = window._RING_ICONS || {};
+  var demo = [
+    { k:'move', t:'행동',      x:0,   y:-56 },
+    { k:'bowl', t:'밥 주기',    x:-52, y:3 },
+    { k:'poke', t:'쓰다듬기',   x:52,  y:3 },
+    { k:'kick', t:'들여보내기', x:0,   y:62 },
+    { k:'bub',  t:'이름',      x:-46, y:50 }
+  ].map(function (d, i) {
+    return '<b class="mw-pi-db" style="--x:' + d.x + 'px;--y:' + d.y + 'px;'
+      + 'animation-delay:' + (i * 70) + 'ms">' + (I[d.k] || '') + '<span>' + d.t + '</span></b>';
   }).join('');
 
   var el = document.createElement('div');
@@ -5570,7 +5645,9 @@ window.mwPetIntroShow = function (id, onOk) {
   el.innerHTML =
     '<div class="mw-panel mw-pi-box">'
     + '<div class="mw-pi-head">'
-    +   '<div class="mw-pi-face"><img src="' + ((def && def.src) || '') + '" alt=""></div>'
+    +   '<div class="mw-pi-stage">' + demo
+    +     '<div class="mw-pi-face"><img src="' + ((def && def.src) || '') + '" alt=""></div>'
+    +     '<i class="mw-pi-tap"></i></div>'
     +   '<div class="mw-pi-hi">처음 만났어요</div>'
     +   '<div class="mw-pi-name">' + ((def && def.name) || t.label) + '</div>'
     +   '<div class="mw-pi-lead">' + t.lead + '</div>'
@@ -5591,6 +5668,49 @@ window.mwPetIntroShow = function (id, onOk) {
     }
     onOk && onOk();
   };
+};
+
+
+// ===== 코치마크 — 방에 나온 그 아이를 실제로 가리킨다 (대표 8-26: "코치마크도 좀 들어가고") =====
+//
+// ★안내창을 읽어도 "그래서 어디를 누르지?"가 남는다. 방에 나온 **그 펫 위**에 링을 씌우고
+//   눌러 보게 한다. 링 메뉴가 열리는 순간이 곧 학습 완료라, 그때 스스로 사라진다.
+// ★펫은 걸어다닌다 — 자리를 계속 따라간다. 안 따라가면 엉뚱한 바닥을 가리킨다.
+// ★클릭을 가로채지 않는다(pointer-events:none). 가로채면 정작 펫을 못 누른다.
+window.mwPetCoach = function (id) {
+  var room = document.getElementById('charworld-room'); if (!room) return;
+  window.mwPetCoachEnd();
+  var find = function () {
+    var arr = window._mwPets || [];
+    for (var i = 0; i < arr.length; i++) if (arr[i] && arr[i].id === id && arr[i].el) return arr[i];
+    return arr[arr.length - 1] || null;
+  };
+  var p = find(); if (!p) return;
+  var el = document.createElement('div');
+  el.id = 'mw-petcoach';
+  el.innerHTML = '<i class="mw-pc-ring"></i><i class="mw-pc-ring d2"></i>'
+    + '<div class="mw-pc-tip">펫을 눌러 보세요<i></i></div>';
+  room.appendChild(el);
+
+  var move = function () {
+    var q = find();
+    if (!q || !q.el || !q.el.isConnected) { window.mwPetCoachEnd(); return; }
+    var rb = room.getBoundingClientRect(), hb = q.el.getBoundingClientRect();
+    var y = Math.round(hb.top - rb.top + hb.height * 0.62);
+    el.style.transform = 'translate3d(' + Math.round(hb.left - rb.left + hb.width / 2) + 'px,'
+      + y + 'px,0)';
+    // ★방은 overflow:hidden 이다. 펫이 위쪽 끝에 있으면 말풍선이 잘려서 안 보인다 -> 아래로 뒤집는다.
+    el.classList.toggle('flip', y < 70);
+  };
+  move();
+  window._mwPetCoachT = setInterval(move, 180);
+  // 30초면 충분하다. 계속 떠 있으면 그때부터는 방해다.
+  window._mwPetCoachX = setTimeout(window.mwPetCoachEnd, 30000);
+};
+window.mwPetCoachEnd = function () {
+  clearInterval(window._mwPetCoachT); window._mwPetCoachT = null;
+  clearTimeout(window._mwPetCoachX); window._mwPetCoachX = null;
+  var m = document.getElementById('mw-petcoach'); if (m) m.remove();
 };
 
 // ===== 데리고 나오기 =====
@@ -5646,7 +5766,11 @@ window.mwPetTake = async function (id) {
   //   링 메뉴가 있다는 걸 아무도 몰라서, 사자마자 방에 넣으면 그냥 돌아다니기만 한다.
   var _kind = (window._mwPetDef(id) || {}).kind === 'cat' ? 'cat' : 'dog';
   if (window.mwPetIntroShow && !window._mwPetIntroSeen(_kind)) {
-    window.mwPetIntroShow(id, _place);
+    window.mwPetIntroShow(id, function () {
+      _place();
+      // 방에 나온 그 아이를 실제로 가리킨다. 그림이 붙은 다음이라야 자리를 잰다.
+      setTimeout(function () { window.mwPetCoach && window.mwPetCoach(id); }, 420);
+    });
     return;
   }
   _place();
