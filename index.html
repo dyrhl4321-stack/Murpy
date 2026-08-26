@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '749';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '750';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -1303,7 +1303,15 @@ window._SW_V = '749';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   /* 제목 밑줄(head의 border-bottom)과 첫 콘텐츠가 붙어 보이던 문제 → 위 여백 확보.
      체크인의 FITNESS PASSPORT 줄, 지도의 지도 상자가 선에 딱 붙어 답답했다(대표 지적 7-24). */
   .mw-wpanel-body { flex:1; overflow-y:auto; padding:16px 16px calc(30px + env(safe-area-inset-bottom)) }
-  .mw-wclose { margin-left:auto; width:40px; height:40px; background:#141a28; border:3px solid #05070c;
+  /* ★경매는 꾸미기의 한 분류가 아니다 (대표 8-26: "경매가 그냥 단순 꾸미기로 소비되선 안 됨").
+     앞으로 히든 아이템·한정 의류까지 올라갈 자리라 **독립된 입구**가 있어야 한다.
+     그래서 칩 맨 끝이 아니라 **패널 제목 줄, X 왼쪽**에 둔다.
+     margin-left:auto 는 여기(먼저 나오는 쪽)에만 준다 — X 는 그 뒤에 자연히 붙는다. */
+  .mw-wpanel-head .mw-hbtn { margin-left:auto; flex-shrink:0; background:none;
+    border:2px solid rgba(245,194,75,.62); color:#F5C24B; font-family:'Galmuri11',sans-serif;
+    font-size:11.5px; padding:8px 13px; cursor:pointer; display:inline-flex; align-items:center; gap:5px }
+  .mw-wpanel-head .mw-hbtn:active { transform:scale(.96) }
+  .mw-wclose { width:40px; height:40px; background:#141a28; border:3px solid #05070c;
     box-shadow:0 0 0 2px #2b3350; color:#8a93a8; font-size:15px; cursor:pointer; flex-shrink:0 }
   details.mw-region { background:#101624; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; margin-bottom:10px }
   details.mw-region summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:9px;
@@ -5664,7 +5672,7 @@ window.mwRoomEdit = function () {
   let el = document.getElementById('mw-wpanel'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'mw-wpanel'; el.className = 'mw-wpanel'; document.body.appendChild(el);
   el.innerHTML = `
-    <div class="mw-wpanel-head"><b>방 꾸미기</b><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
+    <div class="mw-wpanel-head"><b>방 꾸미기</b><button class="mw-hbtn" onclick="window.mwMarketOpen()">경매</button><button class="mw-wclose" onclick="document.getElementById('mw-wpanel').remove()">✕</button></div>
     <div class="mw-wpanel-body">
       ${window._mwRoomSlotHtml()}
       <div id="mw-redit-room" style="position:relative;width:100%;aspect-ratio:1/1;max-width:320px;margin:0 auto;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;touch-action:none;image-rendering:auto"></div>
@@ -5758,9 +5766,9 @@ window._reditArtCard = function (a, owner) {
 
 // 칩 목록. 개수가 0인 분류는 아예 안 만든다.
 window._reditCatList = function () {
-  // ★장터를 **맨 앞**에 둔다 (대표 8-26: "칩 UI 가장 끝에 있어서 존나 찾기 어렵다").
-  //   기본 선택은 가구('bed')라 열자마자 장터가 뜨진 않지만, 가로 스크롤 맨 앞이라 항상 보인다.
-  const out = [{ id: '_market', name: '장터', n: null, hot: 1 }];
+  // ★장터(경매)는 칩에 없다 — **패널 제목 줄의 '경매' 버튼**으로 옮겼다(대표 8-26).
+  //   꾸미기의 한 분류로 두면 '단순 꾸미기 소비'로 읽힌다. 앞으로 히든템·한정 의류가 올라갈 자리다.
+  const out = [];
   const items = window.ROOM_ITEMS || [], seen = {};
   (window.ROOM_CATS || []).forEach(function (c) {
     const list = items.filter(function (r) { return r.cat === c.id && !r.legacy && !r.hidden; });
@@ -5781,7 +5789,6 @@ window._reditCatList = function () {
 // 선택된 분류의 목록 HTML. 장터만 비동기라 자리만 잡고 _reditMarketPaint 가 채운다.
 window._reditCatHtml = function (cat) {
   const wrap = function (inner) { return '<div class="mw-redit-cat">' + inner + '</div>'; };
-  if (cat === '_market') return '<div class="mw-redit-empty">장터를 불러오는 중…</div>';
   if (cat === '_art') {
     const arts = (window._myArt || []).filter(function (a) { return a && a.px; });
     if (!arts.length) return '<div class="mw-redit-empty">아직 그린 그림이 없어요<br>같이 그리기에서 그리고 저장해 보세요</div>';
@@ -5830,30 +5837,43 @@ window._reditCatPaint = function () {
     try { on.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (e) {}
   }
   list.innerHTML = window._reditCatHtml(window._reditCat);
-  if (window._reditCat === '_market') window._reditMarketPaint();
 };
 
-// 장터 목록. 데이터는 모듈 안의 _mwMarketLoad 가 읽는다(편집기는 db 를 못 본다).
-window._reditMarketPaint = async function (force) {
-  const list = document.getElementById('mw-redit-list');
-  if (!list) return;
-  if (!window._mwMarket || force) {
-    list.innerHTML = '<div class="mw-redit-empty">장터를 불러오는 중…</div>';
-    // ★`x.f && x.f()` 로 감싸지 않는다 — 함수 이름이 틀려도 조용히 넘어가 버린다.
-    if (typeof window._mwMarketLoad !== 'function') {
-      list.innerHTML = '<div class="mw-redit-empty">장터를 열 수 없어요 · 잠시 뒤에 다시</div>';
-      return;
-    }
-    try { await window._mwMarketLoad(); } catch (e) { console.warn('market paint', e); }
-  }
-  if (window._reditCat !== '_market') return;   // 그 사이 다른 칩으로 갔으면 그리지 않는다
+// ===== 경매장 =====
+// ★그림 갤러리(#mw-artgal)와 **같은 상자**를 쓴다. 새 오버레이를 만들지 않는다 —
+//   한 번에 하나만 뜨면 되고, .ag-* CSS 를 그대로 물려받아 문법이 갈라지지 않는다.
+window.mwMarketOpen = async function () {
+  const esc = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); };
+  let el = document.getElementById('mw-artgal'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'mw-artgal';
+  el.innerHTML = '<div class="ag-box">'
+    + '<div class="ag-head"><b>경매장</b>'
+    +   '<button class="ag-x" onclick="var e=document.getElementById(&quot;mw-artgal&quot;);if(e)e.remove()">닫기</button></div>'
+    + '<div class="ag-list" id="mw-market-list"><div class="ag-empty">불러오는 중…</div></div>'
+    + '</div>';
+  el.onclick = function (e) { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+
+  if (typeof window._mwMarketLoad !== 'function') return;
+  // 열 때마다 새로 읽는다 — 캐시를 두면 방금 올린 경매가 안 보인다(대표 8-26)
+  try { await window._mwMarketLoad(); } catch (e) { console.warn('market open', e); }
+  const list = document.getElementById('mw-market-list'); if (!list) return;
   const m = window._mwMarket || [];
   if (!m.length) {
-    list.innerHTML = '<div class="mw-redit-empty">지금 팔고 있는 그림이 없어요<br>내 그림에 값을 매겨 내놓아 보세요</div>';
+    list.innerHTML = '<div class="ag-empty">지금 올라온 물건이 없어요<br>내 그림에 값을 매기거나 경매를 열어 보세요</div>';
     return;
   }
-  list.innerHTML = '<div class="mw-redit-cat">'
-    + m.map(function (x) { return window._reditArtCard(x.art, x.owner); }).join('') + '</div>';
+  list.innerHTML = m.map(function (x) {
+    const a = x.art, price = a.price | 0;
+    const auc = !!(window.mwAucOn && window.mwAucOn(a));
+    const tag = auc
+      ? '<span class="ag-tag" style="color:#F5C24B">경매 중</span>'
+      : '<span class="ag-tag" style="color:#F5C24B">' + (window._mwCoinImg || '') + price + '</span>';
+    return '<button class="ag-card" onclick="window.mwArtOpenFrom(&quot;' + esc(x.owner) + '&quot;,&quot;' + esc(a.id) + '&quot;)">'
+      + '<img src="' + window.mwArtImg(a.px, 'frame', a.id) + '" alt="경매 물건">'
+      + '<span class="ag-by">' + esc((a.by || []).join('·')) + '</span>'
+      + tag + '</button>';
+  }).join('');
 };
 
 window._reditPaint = function () {
@@ -20965,10 +20985,12 @@ window.mwArtTake = async function (id) {
                       { credits: Math.max(0, ((window._creditState || {}).credits | 0) - price) });
       window._creditState.credits = Math.max(0, (window._creditState.credits | 0) - price);
       window.mwUpdateCoin && window.mwUpdateCoin();
+      // ★amount = 판 사람 몫(수수료 제외). 경매와 같은 규칙이어야 한다.
       await setDoc(doc(db, 'notifications', 'as_' + id + '_' + me.uid), {
         toUid: window.mwArtOwner(), fromUid: me.uid,
         fromNickname: window._mwMyNick || '머피', type: 'art_sold',
-        amount: price, artId: id, read: false, createdAt: serverTimestamp()
+        amount: window.mwArtNet(price), gross: price, artId: id, paid: false,
+        read: false, createdAt: serverTimestamp()
       });
     } catch (e) { console.warn('art buy', e); showToast('사지 못했어요 · 잠시 뒤에 다시'); return; }
   }
@@ -20990,7 +21012,9 @@ window.mwArtPrice = async function (id) {
   // ★★prompt() 를 쓰지 않는다 (8-26). 홈 화면에 설치한 앱(standalone)에서는 iOS 가
   //   prompt 를 **그냥 무시한다.** 눌러도 아무 일이 없어 "버튼이 죽었다"로 보였다.
   //   앱 안 모달로 받는다 — 펫 이름 모달과 같은 문법이다.
-  const n = await window.mwArtPriceAsk(a.price | 0);
+  const n = await window.mwArtPriceAsk(a.price | 0, {
+    desc: '0 으로 두면 팔지 않아요 · 팔리면 수수료 '
+        + Math.round(window.MW_ART_FEE * 100) + '%를 뺀 만큼 들어와요' });
   if (n == null) return;
   a.price = n;
   await window._mwSaveArt(window._myArt);
@@ -21007,9 +21031,8 @@ window.mwArtPriceAsk = function (cur, opt) {
   const _t  = opt.title || '몇 머피에 팔까요?';
   const _s  = opt.desc  || '0 으로 두면 팔지 않아요';
   const _ok = opt.ok    || '정하기';
-  // ★상한 999 — 보안 규칙이 **한 번에 1000 초과 증가를 거부**한다(firestore.rules).
-  //   9999 로 두면 1000 넘는 거래는 판 사람이 대금을 **영영 못 받는다**. 값을 여기서 막는다.
-  const _max = opt.max == null ? 999 : (opt.max | 0);
+  // ★기본 상한 = MW_AUC_MAX(200). 경매와 고정가를 다른 값으로 두면 유저가 헷갈린다.
+  const _max = opt.max == null ? (window.MW_AUC_MAX || 200) : (opt.max | 0);
   const _min = opt.min == null ? 0   : (opt.min | 0);
   return new Promise(function (resolve) {
     let el = document.getElementById('mw-artprice'); if (el) el.remove();
@@ -21055,9 +21078,23 @@ window.mwArtPriceAsk = function (cur, opt) {
 //   주인 문서라 주인만 쓰고, 손님은 `_mwVisitArtWatch` 로 **이미 실시간 구독 중**이라
 //   구독을 새로 만들 필요가 없다.
 //
-// ★상한 999 — firestore.rules 가 **1회 1000 초과 증가를 거부**한다.
-//   9999 로 두면 1000 넘는 거래는 판 사람이 대금을 **영영 못 받는다.**
-window.MW_AUC_MAX = 999;
+// ★★상한 200 (대표 확정 2026-08-26). 999 는 기술 상한(규칙이 1회 1000 초과 증가를 거부)이지
+//   경제를 보고 정한 값이 아니었다. 999(약 22,700원)는 세 가지가 걸린다:
+//     ① 매칭(100)보다 10배 비싸져 **"이 앱에서 제일 값나가는 건 그림"** 이 된다 —
+//        매칭이 최고가여야 앱 정체성이 산다
+//     ② 활동 유저 월 획득이 185 라 **5.4개월치 전 재산** → 살 사람이 없어 시장이 안 선다
+//     ③ 부계정에 머피를 몰아주는 **세탁 통로**가 된다. 상한이 높을수록 한 번에 옮기는 양이 크다
+//   200 = 매칭 2회치. 한 달 조금 넘게 모으면 사므로 **거래가 실제로 일어난다.**
+//   ★나중에 유통량이 늘면 올리면 된다. 올리는 건 반발이 없다(내리는 것이 문제다).
+window.MW_AUC_MAX = 200;
+
+// ★거래 수수료 = 소각분. 유저 간 거래는 머피를 옮길 뿐 **총량을 줄이지 않아** 물가가 오른다.
+//   적립으로만 늘어나는 머피를 여기서 회수한다. 200 낙찰 → 산 사람 -200 / 판 사람 +180 / 20 소각.
+//   나중에 진짜 결제가 붙었을 때의 수수료 구조를 미리 연습하는 셈이기도 하다.
+window.MW_ART_FEE = 0.10;
+window.mwArtNet = function (price) {
+  return Math.max(1, Math.round((price | 0) * (1 - window.MW_ART_FEE)));
+};
 
 window.mwAucOn = function (a) { return !!(a && a.auc && a.aucAt); };
 
@@ -21124,10 +21161,13 @@ window.mwAucHammer = async function (id) {
   const bids = await window.mwAucBids(id, a.aucAt);
   const top = bids[0];
   if (!top) { showToast('아직 값을 부른 사람이 없어요'); return; }
+  // ★수수료를 여기서 밝힌다. 안 밝히면 판 사람이 "왜 180만 들어와?" 가 된다.
+  const net = window.mwArtNet(top.amount);
   const ok = await window.murpyConfirm({
     title: top.nick + '님에게 넘길까요?',
-    desc: '<b style="color:#F5C24B">' + top.amount + '머피</b>에 낙찰돼요 · '
-        + '대금은 상대가 받아갈 때 들어와요',
+    desc: '<b style="color:#F5C24B">' + top.amount + '머피</b>에 낙찰돼요<br>'
+        + '수수료 ' + Math.round(window.MW_ART_FEE * 100) + '%를 빼고 <b style="color:#F5C24B">'
+        + net + '머피</b>가 들어와요 · 대금은 상대가 받아갈 때 들어와요',
     confirmText: '낙찰' });
   if (!ok) return;
   a.auc = 0;
@@ -21215,10 +21255,11 @@ window.mwAucClaim = async function (artId, ownerUid, amount, notifId) {
     window.mwUpdateCoin && window.mwUpdateCoin();
     window.renderCreditUI && window.renderCreditUI();
     // ★대금은 판 사람 문서에 직접 못 쓴다(남의 문서). 알림으로 보내고 그쪽 앱이 적립한다.
+    // ★알림의 amount = **판 사람이 실제로 받는 몫**(수수료 제외). _mwArtSettle 이 이 값을 적립한다.
     await setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid), {
       toUid: ownerUid, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
-      type: 'art_sold', amount: amount, artId: artId, paid: false,
-      read: false, createdAt: serverTimestamp() });
+      type: 'art_sold', amount: window.mwArtNet(amount), gross: amount,
+      artId: artId, paid: false, read: false, createdAt: serverTimestamp() });
   } catch (e) { console.warn('auc claim pay', e); showToast('가져오지 못했어요 · 잠시 뒤에 다시'); return; }
   const copy = { id: artId, px: px, by: by, byUids: byUids, at: Date.now(), price: 0, from: ownerUid };
   window._myArt = [copy].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
