@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '769';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '770';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3418,7 +3418,19 @@ window._charSkinSrc = function (bodyKey, skin) {
   const b = window._CHAR_BODIES[bodyKey] || {};
   // 옛 데이터는 skin 에 색상값(#F0C9A0)이 들어 있다 — t1~t7 이 아니면 원본을 쓴다
   if (!b.skinBase || !skin || window.CHAR_SKINS.indexOf(skin) < 0 || skin === 't3') return b.src;
-  return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=1';
+  return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=2';
+};
+// ★헤어 시트도 톤을 태운다. 헤어는 **이마 피부를 같이 들고 있어서**(추출할 때 머리카락 밑
+//   그림자진 이마가 딸려 들어왔다) 몸통만 바꾸면 이마에 가로 경계가 생긴다
+//   (대표 8-26: "남자 기본헤어 + 세미리프컷은 이마쪽에서 아직 피부톤 경계짐,
+//   아이비리그컷만 안 생김" — 아이비리그는 그 이마 피부가 거의 없는 시트였다).
+//   구운 시트가 있는 헤어만 바꾼다. 모자 조합 시트는 모자가 이마를 덮으므로 원본 그대로 쓴다.
+window._CHAR_SKIN_HAIRS = ['hair_m_basic', 'hair_ivyleague', 'hair_m_semileaf',
+                           'hair_f_basic', 'hair_f_bob_bang', 'hair_f_long', 'hair_f_ponytail'];
+window._charHairSrc = function (itemId, sheet, skin) {
+  if (!skin || skin === 't3' || window.CHAR_SKINS.indexOf(skin) < 0) return sheet;
+  if (window._CHAR_SKIN_HAIRS.indexOf(itemId) < 0) return sheet;
+  return 'char/skin/' + itemId + '_' + skin + '.png?v=1';
 };
 // 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 4행[아래/위/좌/우]). 4방향 각각 그려 미러 없음.
 window._SPR = { w: 52, h: 88, cols: 3, rows: 4 };
@@ -3505,6 +3517,8 @@ window._charEquippedSheets = function (cfg) {
     if (slot === 'hat' && item && item.hairVariants && cfg.hair && (cfg.hair in item.hairVariants)) {
       sheet = item.hairVariants[cfg.hair];
     }
+    // 헤어 본 시트만 톤을 태운다(모자 조합 시트로 갈아탔으면 sheet 가 달라져 그대로 남는다)
+    if (slot === 'hair' && item && sheet === item.sheet) sheet = window._charHairSrc(item.id, sheet, cfg.skin);
     out[slot] = sheet ? window._iv(sheet) : null;   // 시트 없는(SVG전용) 아이템은 겹 없음. _iv=캐시버전 부착
   });
   return out;

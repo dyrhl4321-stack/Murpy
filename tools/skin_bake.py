@@ -53,7 +53,13 @@ def hsl2rgb(H, S, L):
 
 log = io.open("skin_bake2.txt", "w", encoding="utf-8")
 
-def bake(src, pre):
+def bake(src, pre, hair=False):
+    """hair=True: 헤어 시트. ★헤어는 **이마 피부를 같이 들고 있다**(추출할 때 머리카락 밑
+    그림자진 이마가 딸려 들어왔다). 그래서 몸통만 톤을 바꾸면 이마에 가로 경계가 생긴다
+    (대표 8-26: "남자 기본헤어 + 세미리프컷은 이마쪽에서 아직 피부톤 경계짐,
+    아이비리그컷만 안 생김" — 아이비리그는 이마 피부가 거의 없는 시트였다).
+    그 이마를 지우면 그림자가 사라지니, 몸통과 **같은 변환을 걸어** 색을 맞춘다.
+    단 마스크를 타이트한 살색 판정으로 한정한다 — 안 그러면 머리카락 색까지 바뀐다."""
     im = Image.open(src).convert("RGBA")
     a = np.array(im)
     H, S, L = rgb2hsl(a)
@@ -69,6 +75,11 @@ def bake(src, pre):
     #   어두운 톤에서 그 라인이 적갈색으로 튀어 "눈이 빨개진다"가 됐다(대표 8-26).
     wL = np.clip((L - 0.20) / 0.16, 0, 1) * np.clip((0.985 - L) / 0.06, 0, 1)
     w = wH * wS * wL
+    if hair:
+        # ★헤어에서는 '누가 봐도 살색'인 픽셀에만 건다. 갈색 머리카락이 색상·채도만으로는
+        #   피부와 구분되지 않아, 느슨하게 잡으면 머리색이 통째로 바뀐다(실측으로 확인).
+        R, G, B = a[..., 0].astype(int), a[..., 1].astype(int), a[..., 2].astype(int)
+        w = w * ((R > G + 20) & (G > B) & (L > 0.35) & (R > 120))
     w = np.where(alpha > 128, w, 0)
     log.write("  %-22s 가중치>0.5 인 픽셀 %.1f%%  (평균 %.2f)\n"
               % (os.path.basename(src), (w > 0.5).mean() * 100, w[w > 0].mean() if (w > 0).any() else 0))
@@ -103,5 +114,11 @@ for src, pre in [(os.path.join(M, "char", "walk.png"), "walk"),
                  (os.path.join(M, "char", "walk_female.png"), "walk_female"),
                  (os.path.join(M, "char", "faces", "jaejin.png"), "face_jaejin")]:
     bake(src, pre)
+
+# 헤어 본 시트. 모자 조합 시트(__hat_*)는 모자가 이마를 덮으므로 건드리지 않는다.
+HAIRS = ["hair_m_basic", "hair_ivyleague", "hair_m_semileaf",
+         "hair_f_basic", "hair_f_bob_bang", "hair_f_long", "hair_f_ponytail"]
+for h in HAIRS:
+    bake(os.path.join(M, "char", "items", h + ".png"), h, hair=True)
 log.close()
 print("ok")
