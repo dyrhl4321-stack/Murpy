@@ -22,13 +22,27 @@ from PIL import Image
 CW, CH, COLS, ROWS = 141, 224, 3, 4
 
 
-def dechroma(a):
-    """형광 마젠타/그린 배경을 알파 0 으로. 가장자리 섞인 픽셀까지 잡는다."""
-    r, g, b = a[..., 0].astype(int), a[..., 1].astype(int), a[..., 2].astype(int)
-    mag = (r > g + 40) & (b > g + 40)
-    grn = (g > r + 40) & (g > b + 40)
+def dechroma(a, thr=100):
+    """형광 마젠타/그린 배경을 알파 0 으로.
+
+    ★색만 보고 지우면 안 된다. "R·B 가 높고 G 가 낮다"는 마젠타 조건에 **분홍 옷이 그대로
+      걸린다** — 핑크 드레스에서 진한 음영 553,559 픽셀이 배경으로 오인돼 옷이 조각조각
+      찢겼다(대표 8-26: "핑크드레스 이쁘기만 하구만 마젠타 배경이랑 헷갈려서 그런 거 아님?").
+    → 배경은 **모서리에서 이어진 영역**이다. 네 모서리 색을 배경색으로 삼고 번져 나간다.
+      옷 안쪽의 같은 색은 배경과 이어져 있지 않으므로 살아남는다."""
+    from scipy import ndimage          # 파이썬 BFS 로는 420만 픽셀에서 2분을 넘긴다
+    H, W = a.shape[:2]
+    rgb = a[..., :3].astype(np.int16)
+    corners = [rgb[0, 0], rgb[0, W - 1], rgb[H - 1, 0], rgb[H - 1, W - 1]]
+    near = np.zeros((H, W), bool)
+    for c in corners:
+        near |= np.abs(rgb - c.astype(np.int16)).sum(2) <= thr
+    lab, n = ndimage.label(near)      # 배경색과 가까운 픽셀을 덩어리로 묶고
+    keep = set(int(lab[y, x]) for y, x in ((0, 0), (0, W - 1), (H - 1, 0), (H - 1, W - 1))
+               if lab[y, x] > 0)      # 모서리가 속한 덩어리만 배경으로 본다
+    bg = np.isin(lab, list(keep)) if keep else np.zeros((H, W), bool)
     out = a.copy()
-    out[..., 3] = np.where(mag | grn, 0, out[..., 3])
+    out[..., 3] = np.where(bg, 0, out[..., 3])
     return out
 
 

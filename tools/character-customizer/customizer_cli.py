@@ -293,8 +293,13 @@ def cmd_extract_diff(args) -> None:
     worn_orig = Image.open(resolve_path(args.worn)).convert("RGBA")
     worn, norm_info = normalize_worn(worn_orig, base_size, cols, rows)
 
-    y0 = int(SLOT_REGIONS[slot][0] * FH)
-    y1 = int(SLOT_REGIONS[slot][1] * FH)
+    # ★슬롯 기본 영역은 보통 옷 기준이다. 드레스처럼 상의 슬롯인데 발까지 내려오는 옷은
+    #   기본 영역(top = 0.30~0.84)으로 자르면 치마가 무릎에서 잘린다.
+    #   그런 옷만 --region 으로 덮어쓴다. 슬롯 기본값 자체는 절대 넓히지 말 것 —
+    #   영역이 넓어지면 캐릭터 아웃라인·그림자가 통째로 아이템에 딸려 들어온다.
+    reg = getattr(args, "region", None) or SLOT_REGIONS[slot]
+    y0 = int(reg[0] * FH)
+    y1 = int(reg[1] * FH)
     thr = args.threshold
     bp, wp = base.load(), worn.load()
     item = Image.new("RGBA", base_size, (0, 0, 0, 0))
@@ -463,6 +468,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--threshold", type=int, default=85, help="diff 임계(픽셀 채널합)")
     p_diff.add_argument("--thumb", help="제공 썸네일 PNG (없으면 아이템에서 자동 생성)")
     p_diff.add_argument("--manifest", default="murpy_layers_v2.json", help="프레임 규격 매니페스트")
+    p_diff.add_argument("--region", nargs=2, type=float, metavar=("Y0", "Y1"),
+                        help="슬롯 기본 영역 대신 쓸 세로 범위(0~1). 드레스처럼 길이가 다른 옷 전용.")
     p_diff.set_defaults(func=cmd_extract_diff)
 
     return parser
