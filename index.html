@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '761';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '762';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3227,6 +3227,16 @@ window._CHAR_BODIES = {
   heltori: { name: '헬토리', src: "char/heltori.png?v=4", cw: 150, ch: 224, code: 'GBD2026', limited: true, tag: '근방단 한정', desc: '근방단에게 받은 <b style="color:#F5C24B">코드</b>를 입력하면<br>한정판 캐릭터가 열려요' },
   // 돼쫀토 = 코드 해금 한정판(2026-08-10). 헬토리와 같은 방식.
   // 에셋: 원본 → char/remove_gemini_watermark.py -f → char/nukki.py → char/extract_hidden.py ddungddung
+  // ===== 얼굴 커스터마이징 (커마권) =====
+  // ★owner = **그 사람만** 쓴다. 본인 얼굴이라 남이 쓰면 안 된다.
+  //   헬토리처럼 code 로 열면 **코드가 새는 순간 누구나 쓴다** — 커마권에는 못 쓰는 방식이다.
+  // ★fixedHair = 머리카락이 몸통 시트에 **구워져 있다**(AI 가 얼굴과 함께 그린다).
+  //   헤어·모자를 얹으면 두 겹이 되므로 그 두 슬롯을 잠근다. 옷은 그대로 입는다.
+  // 시트는 char/faces/{사람}.png — 우리 규격(423x896, 셀 141x224)으로 정렬해 넣는다.
+  jaejin: { name: '조재진', src: "char/faces/jaejin.png?v=1", cw: 141, ch: 224,
+            wearable: true, fixedHair: true, tag: '커마',
+            owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
+            desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
   ddungddung: { name: '돼쫀토', src: "char/ddungddung.png?v=2", cw: 145, ch: 224, code: 'DDUNGDDUNG', limited: true, tag: '한정', desc: '개발자가 눈찢어진 토끼상을 좋아해서 만든 캐릭터.' },
   // 히든 3종(고정 캐릭터). 해금=users.hiddenChars, 소유 판정은 mwHasHidden. 실제 발동/연출은 mwEvalHidden/mwHiddenReveal.
   cult:   { name: '요일교 교주',   src: "char/hidden_cult.png?v=1",   cw: 135, ch: 224, hidden: true, limited: true, tag: '히든' },
@@ -3438,6 +3448,8 @@ window._charEquippedSheets = function (cfg) {
   if (!b.wearable) return out;   // 헬토리·히든 등 고정 캐릭터는 통짜 유지(사람용 옷 금지)
   const bodyKey = cfg.body || 'human';
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
+    // ★머리카락이 몸통에 구워진 캐릭터(얼굴 커마)는 헤어·모자를 얹지 않는다 — 두 겹이 된다.
+    if (b.fixedHair && (slot === 'hair' || slot === 'hat')) return;
     const id = cfg[slot]; if (!id) return;
     const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
     // 다른 몸통 전용 아이템은 무시한다. 성별 백필로 남캐 헤어 id가 여캐에 남아 있어도 안 얹힌다.
@@ -7365,6 +7377,23 @@ window.charSave = function () {
   window._charAutoSave(true);
 };
 // ===== 캐릭터(body) 선택 + 근방단 한정 코드 해금 =====
+// ★머리카락이 몸통에 구워진 캐릭터(얼굴 커마)는 헤어·모자 탭을 **숨긴다.**
+//   남겨두면 눌러도 아무 일이 없는 죽은 탭이 된다 — 센터 탭에서 이미 겪은 함정이다.
+//   지금 보고 있는 탭이 숨겨지면 상의로 옮겨 준다(빈 화면을 보여주지 않는다).
+window._charSyncSlotTabs = function () {
+  const bar = document.getElementById('charworld-slot-tabs'); if (!bar) return;
+  const key = (window._charDraft && window._charDraft.body) || 'human';
+  const b = window._CHAR_BODIES[key] || {};
+  let movedTo = null;
+  bar.querySelectorAll('.tab-btn').forEach(function (t) {
+    const slot = t.dataset.slot; if (!slot) return;
+    const hide = !!(b.fixedHair && (slot === 'hair' || slot === 'hat'));
+    t.style.display = hide ? 'none' : '';
+    if (hide && t.classList.contains('active')) movedTo = bar.querySelector('.tab-btn[data-slot="top"]');
+  });
+  if (movedTo && window.charSlot) window.charSlot('top', movedTo);
+};
+
 window.charPickBody = function (key) {
   if (!window._charDraft || !window._CHAR_BODIES[key]) return;
   window._charDraft.body = key;
@@ -7390,6 +7419,7 @@ window.charPickBody = function (key) {
   window._charRenderAvatar();      // dress 탭이면 프리뷰 갱신(아니면 무시)
   window._charAutoSave();          // 유저 피드백 #16 — 몸통 교체도 바로 저장
   window.charRenderRoster();       // 로스터 '착용중' 갱신
+  window._charSyncSlotTabs();      // 잠근 슬롯(헤어·모자) 탭 숨김
 };
 window.openCharCodeModal = function (key) {
   window._charCodeTarget = key;
@@ -7441,6 +7471,8 @@ window.charRenderRoster = function () {
   const _bothGenders = (typeof isAdmin === 'function' && isAdmin());
   grid.innerHTML = Object.keys(window._CHAR_BODIES).filter(key => {
     const b = window._CHAR_BODIES[key];
+    // ★얼굴 커마 캐릭터는 **주인에게만** 보인다. 남에게는 목록에 아예 없다.
+    if (b.owner) return b.owner === ((window.currentUser || {}).uid || '');
     if (!b.gender) return true;                 // 성별 무관(헬토리·히든)
     return _bothGenders || key === _myBody;
   }).map(key => {
@@ -7548,11 +7580,11 @@ window.charHubTab = function (name, btn) {
     const body = (window._charDraft && window._charDraft.body) || 'human';
     panel.innerHTML =
       '<div class="tab-bar" id="charworld-slot-tabs" style="margin-bottom:14px">'
-      + '<button class="tab-btn active" onclick="window.charSlot(\'hair\',this)">헤어</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'top\',this)">상의</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'bottom\',this)">하의</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'shoes\',this)">신발</button>'
-      + '<button class="tab-btn" onclick="window.charSlot(\'hat\',this)">모자</button>'
+      + '<button class="tab-btn active" data-slot="hair" onclick="window.charSlot(\'hair\',this)">헤어</button>'
+      + '<button class="tab-btn" data-slot="top" onclick="window.charSlot(\'top\',this)">상의</button>'
+      + '<button class="tab-btn" data-slot="bottom" onclick="window.charSlot(\'bottom\',this)">하의</button>'
+      + '<button class="tab-btn" data-slot="shoes" onclick="window.charSlot(\'shoes\',this)">신발</button>'
+      + '<button class="tab-btn" data-slot="hat" onclick="window.charSlot(\'hat\',this)">모자</button>'
       // ★'색상' 탭 제거 (대표 결정 2026-08-05). 누르면 반응은 하는데 캐릭터는 안 바뀌는
       //   죽은 UI 였다 — 색을 적용하는 코드는 옛 SVG 렌더러(CHAR_SHAPES)에만 있고,
       //   지금 쓰는 스프라이트 렌더러(_mwSpriteLayers)는 PNG 시트를 그대로 겹칠 뿐이라
@@ -7566,7 +7598,10 @@ window.charHubTab = function (name, btn) {
       panel.insertAdjacentHTML('beforeend', '<div style="text-align:center;margin-top:14px;font-size:12px;color:#8a93a8;line-height:1.6">' + ((window._CHAR_BODIES[body] || {}).name || '이 캐릭터') + '는 <b style="color:#cfd6e6">고정 캐릭터</b>예요 · 꾸미기는 기본 캐릭터에서!</div>');
     }
     window._charRenderAvatar();
-    window.charSlot('hair');
+    // ★탭을 먼저 맞춘다 — 얼굴 커마 캐릭터는 헤어 탭이 없으므로 'hair' 로 열면 빈 화면이 된다.
+    window._charSyncSlotTabs();
+    const _bd0 = window._CHAR_BODIES[(window._charDraft || {}).body || 'human'] || {};
+    window.charSlot(_bd0.fixedHair ? 'top' : 'hair');
     window._charSetSaveStatus(window.currentUser ? '' : 'guest');   // 안내 문구 초기 표시(#16)
   } else {
     panel.innerHTML = '<div class="mw-panel" style="text-align:center;padding:30px 18px;color:#8a93a8">'
