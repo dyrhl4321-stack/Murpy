@@ -18,12 +18,29 @@ def clean(src, out, flip=False, maxside=256, min_frag=40, log=print):
     a = np.array(im).astype(int)
     r, g, b, al = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
     # 형광 마젠타/그린 · 흰 배경 · 이미 투명한 곳을 배경으로 본다
-    # ★g<70 을 빼면 안 된다 — 분홍·보라 **옷 색까지** 배경으로 걸려 드레스 안쪽이 비었다.
-    #   형광 마젠타는 G 가 거의 0 이다. 남는 보라 점은 아래 '바깥 잔여'가 잡는다.
-    bg = (((r > g + 40) & (b > g + 40) & (g < 70))
-          | ((g > r + 40) & (g > b + 40))
-          | (al < 128)
-          | ((r > 240) & (g > 240) & (b > 240)))
+    # ★★배경을 **색으로 판정하지 않는다.** 아무리 조건을 좁혀도 옷 색과 겹친다 —
+    #   진한 분홍(#E8306A)이 마젠타 조건에, 흰 레이스가 흰 배경 조건에 걸려
+    #   **드레스 치마가 통째로 뚫렸다**(대표 8-27: "치마 중앙 부분 왜 다 날아가 있냐").
+    #   → 배경은 **모서리에서 이어진 영역**이다. 네 모서리 색에서 번져 나간다.
+    #     옷 안쪽의 같은 색은 배경과 이어져 있지 않으므로 살아남는다.
+    #     (tools/fit_sheet.py 의 dechroma 와 같은 방법이다)
+    rgb = a[..., :3]
+    H, W = rgb.shape[:2]
+    corners = [rgb[0, 0], rgb[0, W - 1], rgb[H - 1, 0], rgb[H - 1, W - 1]]
+    near = np.zeros((H, W), bool)
+    for cpx in corners:
+        near |= np.abs(rgb - cpx).sum(2) <= 110
+    bg = np.zeros((H, W), bool)
+    try:
+        from scipy import ndimage as _nd
+        lab0, n0 = _nd.label(near)
+        seeds = set(int(lab0[y, x]) for y, x in ((0, 0), (0, W - 1), (H - 1, 0), (H - 1, W - 1))
+                    if lab0[y, x] > 0)
+        if seeds:
+            bg = np.isin(lab0, list(seeds))
+    except ImportError:
+        bg = near
+    bg |= (al < 128)
     keep = ~bg
     # ★잔여물 제거 — **가장 큰 덩어리의 테두리 밖**에 있는 것만 버린다.
     #   "가장 큰 덩어리만 남기기"는 쓰면 안 된다: 옷은 윤곽선과 색면이 서로 다른 덩어리라
@@ -55,7 +72,11 @@ def clean(src, out, flip=False, maxside=256, min_frag=40, log=print):
         im2 = im2.crop(bb)
     k = maxside / max(im2.size)
     if k < 1:
-        im2 = im2.resize((max(1, round(im2.width * k)), max(1, round(im2.height * k))), Image.LANCZOS)
+        # ★★NEAREST 로 줄인다 (대표 8-27: "검정반스 썸네일 누끼 딴 게 퀄리티 저급화,
+        #   특히 흰 선이 너무 깨져 있는 느낌"). 원본은 픽셀아트를 크게 그린 것이라
+        #   LANCZOS 로 줄이면 **한 칸이 여러 색으로 뭉개져** 가는 흰 선이 뭉그러진다.
+        #   에셋 하드룰(NEAREST 외 보간 금지)이 여기에도 그대로 적용된다.
+        im2 = im2.resize((max(1, round(im2.width * k)), max(1, round(im2.height * k))), Image.NEAREST)
     if flip:
         im2 = im2.transpose(Image.FLIP_LEFT_RIGHT)
     im2.save(out)
