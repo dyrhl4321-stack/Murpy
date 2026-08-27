@@ -318,7 +318,10 @@ def cmd_extract_diff(args) -> None:
                         if w[3] > 60 and not _is_skin(w):
                             ip[ox + x, oy + y] = w
 
-    frags_removed = _remove_small_fragments(item, FW, FH, cols, rows)
+    # ★파편 임계를 인자로 받는다. 레이스·자수가 많은 옷은 기본값(22)으로는
+    #   diff 노이즈가 남아 밑단 아래에 검은 조각으로 보인다(대표 8-27 드레스).
+    frags_removed = _remove_small_fragments(item, FW, FH, cols, rows,
+                                            getattr(args, "min_frag", None) or 22)
     holes_filled = _fill_interior_holes(item, FW, FH, cols, rows)
 
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -468,6 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--threshold", type=int, default=85, help="diff 임계(픽셀 채널합)")
     p_diff.add_argument("--thumb", help="제공 썸네일 PNG (없으면 아이템에서 자동 생성)")
     p_diff.add_argument("--manifest", default="murpy_layers_v2.json", help="프레임 규격 매니페스트")
+    p_diff.add_argument("--min-frag", type=int, dest="min_frag",
+                        help="이보다 작은 조각은 버린다(기본 22). 레이스가 많은 옷은 올린다")
     p_diff.add_argument("--region", nargs=2, type=float, metavar=("Y0", "Y1"),
                         help="슬롯 기본 영역 대신 쓸 세로 범위(0~1). 드레스처럼 길이가 다른 옷 전용.")
     p_diff.set_defaults(func=cmd_extract_diff)

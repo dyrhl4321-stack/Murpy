@@ -15,6 +15,11 @@ def magenta_mask(a, kind="magenta"):
     if kind == "green":
         # 형광 그린 = G 가 R·B 보다 뚜렷하게 높다. 살색·분홍·회색 어디에도 없는 조합이다.
         return (al > 0) & (g > r + 22) & (g > b + 22) & (g > 60)
+    if kind == "green-bleed":
+        # ★배경이 **밝은 색 위로 번진 것**. 흰 레이스 가장자리가 민트(#BAF9CE)가 된다.
+        #   형광 그린 자체는 아니라 위 판정에 안 걸리는데, 눈에는 확실히 초록으로 보인다.
+        #   자연 색에는 'G 만 18 이상 높고 전체가 밝은' 조합이 거의 없다.
+        return (al > 0) & (g > r + 18) & (g > b + 18) & (g > 150)
     # 마젠타 = R·B 가 G 보다 뚜렷하게 높다. 붉은 살색(R만 높음)·보라 옷(R≈B 지만 G도 따라옴)과 구분된다.
     return (al > 0) & (r > g + 22) & (b > g + 22) & (r > 55) & (b > 45)
 
@@ -33,7 +38,7 @@ def edge_band(alpha, width=2):
     return band
 
 
-def clean(path, out=None, rounds=6, kind="magenta", width=2):
+def clean(path, out=None, rounds=6, kind="magenta", width=2, anywhere=False):
     """누끼 배경의 **잔여 픽셀**을 이웃 정상 색으로 치환한다.
 
     ★처리 대상은 **알파 경계 띠 안**으로 한정한다. 색만 보고 지우면 같은 색 옷을 뜯는다 —
@@ -43,7 +48,9 @@ def clean(path, out=None, rounds=6, kind="magenta", width=2):
     """
     im = Image.open(path).convert("RGBA")
     a = np.array(im)
-    band = edge_band(a[..., 3], width)
+    # anywhere = 경계 띠 제한을 푼다. **그 색이 옷에 없다고 확신할 때만** 쓴다
+    #   (민트 번짐처럼 자연 색과 겹치지 않는 경우).
+    band = np.ones(a.shape[:2], bool) if anywhere else edge_band(a[..., 3], width)
     total = int((magenta_mask(a, kind) & band).sum())
     inner = int((magenta_mask(a, kind) & ~band & (a[..., 3] > 0)).sum())
     for _ in range(rounds):
@@ -72,6 +79,8 @@ def clean(path, out=None, rounds=6, kind="magenta", width=2):
 
 if __name__ == "__main__":
     args = [x for x in sys.argv[1:] if not x.startswith("--")]
-    kind = "green" if "--green" in sys.argv else "magenta"
+    kind = ("green-bleed" if "--green-bleed" in sys.argv
+            else ("green" if "--green" in sys.argv else "magenta"))
+    aw = "--anywhere" in sys.argv
     for p in args:
-        clean(p, kind=kind)
+        clean(p, kind=kind, anywhere=aw)
