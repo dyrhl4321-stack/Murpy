@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '778';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '779';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -5949,7 +5949,9 @@ window.mwPetTake = async function (id) {
     window._mwPetSync && window._mwPetSync();
     window._mwPetCatSync && window._mwPetCatSync();
     if (document.getElementById('mw-redit-room')) {
-      showToast("'" + def.name + "' 이(가) 방에 나왔어요 · 꾸미기를 닫으면 보여요");
+      // ★"꺼내라"로 읽히지 않게 (대표 8-27: "다시 펫 꺼내라고 알림 뜸").
+      //   이미 나온 것이니 **다 됐다**는 말이 먼저 와야 한다.
+      showToast("'" + def.name + "' 나왔어요 · 저장하고 나가면 방에서 만나요");
     }
   };
 
@@ -5981,16 +5983,12 @@ window._mwPetCatSync = function () {
     if (window.mwFurnOwned && window.mwFurnOwned(id)) b.style.opacity = '';
     var on = outIds.indexOf(id) >= 0;
     b.style.borderColor = on ? '#3D7EFF' : '';
+    // ★배지를 만들거나 지우지 않는다 — **켜고 끄기만** 한다. 카드가 이미 둘 다 들고 있다.
+    //   (만들고 지우던 시절엔 클래스가 안 맞아 '나와 있음'이 눌어붙었다)
     var tag = b.querySelector('b.pet-now');
-    if (on) {
-      if (!tag) {
-        tag = document.createElement('b');
-        tag.className = 'pet-now';
-        tag.style.cssText = 'color:#3D7EFF;font-size:10px;font-weight:700';
-        tag.textContent = '나와 있음';
-        b.appendChild(tag);
-      }
-    } else if (tag) { tag.remove(); }
+    var own = b.querySelector('.own-tag');
+    if (tag) tag.style.display = on ? '' : 'none';
+    if (own) own.style.display = on ? 'none' : '';
   });
 };
 
@@ -6459,8 +6457,13 @@ window._reditCard = function (r) {
     : `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">${window._mwCoinImg || ''}${r.price}</span>`;
   const th = r.thumbH ? ` style="height:${r.thumbH}px"` : '';
   const outNow = r.pet && (window._myPets || []).some(function (x) { return x && x.id === r.id; });
-  const petTag = outNow ? '<b style="color:#3D7EFF">나와 있음</b>' : '';
-  return `<button onclick="window._reditAdd('${r.id}')"${outNow ? ' style="border-color:#3D7EFF"' : (has ? '' : ' style="opacity:.72"')}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${petTag || tag}</button>`;
+  // ★배지에 **class 를 준다.** 예전엔 클래스 없는 <b> 라 _mwPetCatSync 가 못 찾아
+  //   들여보내도 '나와 있음' 이 그대로 남았다(대표 8-27: "비활성화 시 파란 테두리만
+  //   없어지고 나와 있음은 그대로"). 켤 때는 클래스 붙은 배지를 또 만들어 둘이 되기도 했다.
+  // ★가격/구입완료는 지우지 않고 **숨겨 둔다.** 지우면 다시 켰을 때 되살릴 방법이 없다.
+  const petTag = r.pet ? `<b class="pet-now" style="color:#3D7EFF${outNow ? '' : ';display:none'}">나와 있음</b>` : '';
+  const ownTag = `<span class="own-tag"${outNow ? ' style="display:none"' : ''}>${tag}</span>`;
+  return `<button onclick="window._reditAdd('${r.id}')"${outNow ? ' style="border-color:#3D7EFF"' : (has ? '' : ' style="opacity:.72"')}><span class="thumb"><img src="${r.src}"${th} draggable="false"></span><span>${r.name}</span>${petTag}${ownTag}</button>`;
 };
 
 // 그림 카드 한 칸. 값이 매겨졌는지·경매 중인지가 **여기서 보여야 한다**

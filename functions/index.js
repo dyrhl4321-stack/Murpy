@@ -84,17 +84,24 @@ function compose(n) {
     // ── 그림 경매 (2026-08-26) ──────────────────────────────
     // ★재입찰은 문서를 덮어쓰므로 onDocumentCreated 가 안 뛴다 = 푸시가 안 간다.
     //   **한 사람의 첫 입찰에만** 알림이 간다. 값 경쟁은 앱 화면에서 본다.
+    // ★잠금화면에서는 제목 한 줄만 읽힌다 — **누가·얼마**를 제목에 넣는다.
+    //   본문은 '그래서 뭘 하면 되는지' 한 마디로 끝낸다(대표 8-27: 경매 푸시 멘트 커마).
     case "art_bid":
-      return { title: "🔨 값을 불렀어요",
-               body: `${who}님이 내 그림에 ${Number(n.amount || 0).toLocaleString()}머피를 불렀어요` };
+      return { title: `🔨 ${who}님이 ${Number(n.amount || 0).toLocaleString()}머피를 불렀어요`,
+               body: "내 그림 경매 · 눌러서 낙찰하거나 더 기다릴 수 있어요" };
 
     case "art_won":
-      return { title: "🖼 그림이 낙찰됐어요",
-               body: `${Number(n.amount || 0).toLocaleString()}머피에 낙찰됐어요. 대금을 내고 가져가세요` };
+      return { title: `🖼 ${Number(n.amount || 0).toLocaleString()}머피에 낙찰됐어요`,
+               body: `${who}님의 그림이에요 · 앱을 열면 바로 가져갈 수 있어요` };
 
     case "art_sold":
-      return { title: "🪙 그림이 팔렸어요",
-               body: `${who}님이 그림을 가져갔어요. ${Number(n.amount || 0).toLocaleString()}머피가 들어왔어요` };
+      // 같이 그린 그림은 **판 사람과 나머지의 몫이 다르다.** 같은 문구를 쓰면
+      // "내가 판 적 없는데?" 가 된다 — seller 로 갈라서 말한다.
+      return (n.seller && n.toUid && n.seller === n.toUid)
+        ? { title: `🪙 그림이 팔렸어요 · ${Number(n.amount || 0).toLocaleString()}머피`,
+            body: `${who}님이 가져갔어요 · 머피가 들어왔어요` }
+        : { title: `🪙 같이 그린 그림이 팔렸어요 · ${Number(n.amount || 0).toLocaleString()}머피`,
+            body: `${who}님이 가져갔어요 · 내 몫이 들어왔어요` };
 
     // ── 스쿼드 ──────────────────────────────────────────────
     case "squad_invite":
