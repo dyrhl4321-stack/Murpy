@@ -25,6 +25,13 @@ CW, CH, COLS, ROWS = 141, 224, 3, 4
 UNDERWEAR_Y = (158, 196)
 
 
+# 대표가 눈으로 보고 **이대로 간다**고 승인한 것. 흔들림 경고를 띄우지 않는다.
+#   (경고가 계속 뜨면 다음 사람이 "고쳐야 하나" 하고 또 붙잡는다)
+APPROVED_WOBBLE = {
+    "top_f_dress.png": "2026-08-27 대표 승인 — 치마가 넓게 퍼지는 옷이라 프레임마다 경계가 다르다",
+}
+
+
 def is_skin(rgb):
     r, g, b = rgb[..., 0].astype(int), rgb[..., 1].astype(int), rgb[..., 2].astype(int)
     mx = rgb[..., :3].max(2).astype(int); mn = rgb[..., :3].min(2).astype(int)
@@ -86,6 +93,9 @@ def main():
         for w in warn: print("  ~ " + w)
         sys.exit(1)
     print("OK %s — 다른 부위를 베껴 온 것 없음" % name)
+    if name in APPROVED_WOBBLE:
+        if warn: print("  · 흔들림 경고 있음 — " + APPROVED_WOBBLE[name])
+        return
     for w in warn:
         print("  ~ 살펴볼 것: " + w + "  ※걸음 자세 때문일 수 있다")
 
