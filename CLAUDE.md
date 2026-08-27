@@ -197,7 +197,13 @@ diff 추출(trimap 3분류), 선별 4분류 + 픽셀 도구, seal_gaps/extend_he
   `node tools/dogam-syntax-check.mjs` (일반 script) + `node tools/module-syntax-check.mjs` (module).
   **앞의 것은 module 블록을 안 본다.** 그래서 `else` 고아 하나를 놓쳐 module 이 통째로 죽었고
   **Firebase 초기화가 안 돼 전 유저 로그인이 막혔다**(v758). 버전은 `python tools/check_version.py` 로 확인.
+- ★**캐릭터 겹 순서를 손으로 적지 말 것** — `window._charLayerOrder(cfg)` 로만 물어본다.
+  사본이 **여섯 곳**이었고 그중 하나가 overShoes(버뮤다 밑단이 신발 목을 덮는 규칙)를
+  빠뜨릴 때마다 그 화면에서만 신발이 바지 위로 올라왔다(8-10 미리보기 · 8-26 홈 인기 카드 ·
+  8-27 머피캠 — 같은 사고 세 번). 검사: `node tools/layer-order-check.mjs`
 - **로컬 미리보기 말고 푸시** — 대표가 배포앱에서 확인하는 게 기본 (내 미리보기는 신뢰 안 함)
+  ★단 **검증용 mock 을 만들 때는 index.html 의 `<style>` 전체를 그대로 넣는다.**
+  `body{max-width:390px}` 같은 전역 규칙을 빠뜨린 mock 으로 "중앙이다"라고 잘못 판정한 적이 있다(8-27)
 - **`sw.js`를 PowerShell로 편집 금지** (인코딩 깨짐). Write 도구 사용. 한글 md/html도 동일
 - **에셋 하드룰** — `char/walk.png` 재수정 금지 · 정수배 NEAREST만 · 알파 128 이진화 ·
   레이어 z = body→bottom→shoes→top→hair→hat→acc

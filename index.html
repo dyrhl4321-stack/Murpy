@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '776';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '777';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -686,6 +686,11 @@ window._SW_V = '776';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-petintro .mw-pi-b b { color:#fff; font-weight:700 }
   #mw-petintro .mw-pi-foot { padding:12px 16px 16px; border-top:1px solid rgba(255,255,255,.07) }
   #mw-petintro .mw-pi-ok { width:100%; padding:13px; font-size:14px }
+  /* '다시 보지 않기' — 되돌리는 길이라 글자 버튼으로 낮춘다(경매 '내리기'와 같은 문법) */
+  #mw-petintro .mw-pi-dont { display:block; margin:10px auto 0; background:none; border:none;
+    color:#4a5266; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; padding:5px 10px }
+  /* 캐릭터 얼굴은 그림이 아니라 **_charRenderTo 가 그린 DOM** 이라 크기를 여기서 잡는다 */
+  #mw-petintro #mw-ci-face { display:flex; align-items:center; justify-content:center }
   #mw-petintro .mw-pi-x { position:absolute; right:6px; top:6px; width:34px; height:34px;
     background:none; border:none; cursor:pointer; display:flex; align-items:center;
     justify-content:center; z-index:2 }
@@ -3545,7 +3550,7 @@ window._charSkinSrc = function (bodyKey, skin) {
   const b = window._CHAR_BODIES[bodyKey] || {};
   // 옛 데이터는 skin 에 색상값(#F0C9A0)이 들어 있다 — t1~t7 이 아니면 원본을 쓴다
   if (!b.skinBase || !skin || window.CHAR_SKINS.indexOf(skin) < 0 || skin === 't3') return b.src;
-  return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=2';
+  return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=3';
 };
 // ★헤어 시트도 톤을 태운다. 헤어는 **이마 피부를 같이 들고 있어서**(추출할 때 머리카락 밑
 //   그림자진 이마가 딸려 들어왔다) 몸통만 바꾸면 이마에 가로 경계가 생긴다
@@ -3557,7 +3562,7 @@ window._CHAR_SKIN_HAIRS = ['hair_m_basic', 'hair_ivyleague', 'hair_m_semileaf',
 window._charHairSrc = function (itemId, sheet, skin) {
   if (!skin || skin === 't3' || window.CHAR_SKINS.indexOf(skin) < 0) return sheet;
   if (window._CHAR_SKIN_HAIRS.indexOf(itemId) < 0) return sheet;
-  return 'char/skin/' + itemId + '_' + skin + '.png?v=1';
+  return 'char/skin/' + itemId + '_' + skin + '.png?v=2';
 };
 // 오버월드 걷기 스프라이트 시트: char/walk.png (3열[정지·걸음A·걸음B] × 4행[아래/위/좌/우]). 4방향 각각 그려 미러 없음.
 window._SPR = { w: 52, h: 88, cols: 3, rows: 4 };
@@ -5645,33 +5650,57 @@ window.mwPetIntroShow = function (id, onOk) {
   var kind = meta.kind === 'cat' ? 'cat' : 'dog';
   var t = window.MW_PET_INTRO[kind];
   if (!t) { onOk && onOk(); return; }
-  var old = document.getElementById('mw-petintro'); if (old) old.remove();
+  window._mwIntroShow({
+    faceHtml: '<img src="' + ((def && def.src) || '') + '" alt="">',
+    demo: [
+      { k:'move', t:'행동',      x:0,   y:-52 },
+      { k:'poke', t:'쓰다듬기',   x:49,  y:-16 },
+      { k:'bub',  t:'이름',      x:31,  y:42 },
+      { k:'kick', t:'들여보내기', x:-31, y:42 },
+      { k:'bowl', t:'밥 주기',    x:-49, y:-16 }
+    ],
+    hi: '처음 만났어요',
+    name: (def && def.name) || t.label,
+    lead: t.lead,
+    cards: t.cards,
+    okText: '방으로 데려오기',
+    onOk: function () {
+      if (!window._mwPetIntroSeen(kind)) {
+        if (!Array.isArray(window._myPetIntro)) window._myPetIntro = [];
+        window._myPetIntro.push(kind);
+        window._mwSavePetIntro && window._mwSavePetIntro(window._myPetIntro);
+      }
+      onOk && onOk();
+    },
+    onBack: function () {
+      showToast("'" + ((def && def.name) || t.label) + "' 은(는) 꾸미기에서 다시 꺼낼 수 있어요");
+    }
+  });
+};
 
-  // ★색은 카드마다 바꾸지 않는다 (대표 8-26: "어떤 글자는 파란색이고 어떤 글자는 황금색인데,
-  //   황금색은 강조할 때만 써"). 순서 1~4 는 전부 블루로 통일하고,
-  //   골드는 이 창에서 **'처음 만났어요' 한 곳**에만 쓴다.
-  var cards = t.cards.map(function (c, i) {
+// ===== 안내창 공통 (펫 · 캐릭터가 같이 쓴다) =====
+// ★상자를 두 벌 만들지 않는다. 펫에서 쓰던 화면을 그대로 캐릭터에도 쓴다
+//   (대표 8-27: "이왕 이 UI 만든 김에 ... 펫 구매 전용 UI 를 캐릭터 버전으로 바꾸자").
+// cfg = { faceHtml, demo:[{k,t,x,y}], hi, name, lead, cards:[{t,b}],
+//         okText, onOk, onBack, dontKey }
+window._mwIntroShow = function (cfg) {
+  cfg = cfg || {};
+  var old = document.getElementById('mw-petintro'); if (old) old.remove();
+  var I = window._RING_ICONS || {};
+
+  var cards = (cfg.cards || []).map(function (c, i) {
+    // ★색은 카드마다 바꾸지 않는다 (대표 8-26: "황금색은 강조할 때만 써").
+    //   순서는 전부 블루, 골드는 이 창에서 머리말 한 곳뿐이다.
     return '<div class="mw-pi-card" style="animation-delay:' + (180 + i * 90) + 'ms">'
       + '<div class="mw-pi-t"><span class="mw-pi-no">' + (i + 1) + '</span>' + c.t + '</div>'
       + '<div class="mw-pi-b">' + c.b + '</div></div>';
   }).join('');
 
   // ★말로 "누르세요"라고 쓰는 대신 **펼쳐지는 걸 보여준다**
-  //   (대표 8-26: "내가 원한 애니메이션은 클릭하면 그 5방향 버튼 뜨는 그것도 보여주게").
-  //   자리는 실제 링 메뉴(mwPetMenu)와 같은 배치를 그대로 줄인 것이다 — 그래야 학습이 된다.
-  var I = window._RING_ICONS || {};
-  // ★다섯 방향을 **균등하게** 둘러 세운다. 실제 링 메뉴는 네 방향이 차서 '이름'만 좌하단
-  //   대각인데, 그대로 줄이면 왼쪽에 버튼이 둘·오른쪽에 하나라 무게가 왼쪽으로 쏠리고
-  //   **펫이 오른쪽으로 밀려 보인다**(대표 8-27: "하얀고양이가 우측으로 쏠려있음").
-  //   실물은 펫을 따라다니니 문제가 없지만 데모는 고정된 무대라 비대칭이 그대로 보인다.
-  //   여기서 보여주려는 것은 '둘레에 펼쳐진다'는 것이지 각 버튼의 정확한 각도가 아니다.
-  var demo = [
-    { k:'move', t:'행동',      x:0,   y:-52 },
-    { k:'poke', t:'쓰다듬기',   x:49,  y:-16 },
-    { k:'bub',  t:'이름',      x:31,  y:42 },
-    { k:'kick', t:'들여보내기', x:-31, y:42 },
-    { k:'bowl', t:'밥 주기',    x:-49, y:-16 }
-  ].map(function (d, i) {
+  //   (대표 8-26: "클릭하면 그 방향 버튼 뜨는 그것도 보여주게").
+  //   ★균등하게 둘러 세운다 — 실물 배치를 그대로 줄이면 한쪽에 몰려
+  //   **가운데 것이 반대편으로 밀려 보인다**(대표 8-27). 보여줄 것은 '둘레에 펼쳐진다'이다.
+  var demo = (cfg.demo || []).map(function (d, i) {
     return '<b class="mw-pi-db" style="--x:' + d.x + 'px;--y:' + d.y + 'px;'
       + 'animation-delay:' + (i * 70) + 'ms">' + (I[d.k] || '') + '<span>' + d.t + '</span></b>';
   }).join('');
@@ -5682,84 +5711,145 @@ window.mwPetIntroShow = function (id, onOk) {
     '<div class="mw-panel mw-pi-box">'
     + '<div class="mw-pi-head">'
     +   '<div class="mw-pi-stage">' + demo
-    +     '<div class="mw-pi-face"><img src="' + ((def && def.src) || '') + '" alt=""></div>'
+    +     '<div class="mw-pi-face">' + (cfg.faceHtml || '') + '</div>'
     +     '<i class="mw-pi-tap"></i></div>'
-    +   '<div class="mw-pi-hi">처음 만났어요</div>'
-    +   '<div class="mw-pi-name">' + ((def && def.name) || t.label) + '</div>'
-    +   '<div class="mw-pi-lead">' + t.lead + '</div>'
+    +   '<div class="mw-pi-hi">' + (cfg.hi || '') + '</div>'
+    +   '<div class="mw-pi-name">' + (cfg.name || '') + '</div>'
+    +   '<div class="mw-pi-lead">' + (cfg.lead || '') + '</div>'
     + '</div>'
     + '<div class="mw-pi-list">' + cards + '</div>'
     + '<div class="mw-pi-foot">'
-    +   '<button class="mw-btn mw-pi-ok" onclick="window._mwPetIntroOk()">방으로 데려오기</button>'
+    +   '<button class="mw-btn mw-pi-ok" onclick="window._mwIntroOk()">' + (cfg.okText || '확인') + '</button>'
+    +   (cfg.dontKey ? '<button class="mw-pi-dont" onclick="window._mwIntroDont()">다시 보지 않기</button>' : '')
     + '</div>'
-    + '<button class="mw-pi-x" onclick="window._mwPetIntroBack()" aria-label="닫기">'
+    + '<button class="mw-pi-x" onclick="window._mwIntroBack()" aria-label="닫기">'
     +   '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" '
     +   'stroke="#8a93a8" stroke-width="2" fill="none"/></svg></button>'
     + '</div>';
   document.body.appendChild(el);
-  // ★나갈 길을 둔다 (대표 8-27: "그리고 뒤로가기가 안 됨"). 닫으면 방에 안 내보내고,
-  //   카탈로그에서 다시 누르면 안내부터 다시 뜬다 — 산 것은 그대로 남는다.
-  window._mwPetIntroBack = function () {
+
+  var close = function () {
     var m = document.getElementById('mw-petintro'); if (m) m.remove();
-    window._mwPetIntroOk = null; window._mwPetIntroBack = null;
-    showToast("'" + ((def && def.name) || t.label) + "' 은(는) 꾸미기에서 다시 꺼낼 수 있어요");
+    window._mwIntroOk = window._mwIntroBack = window._mwIntroDont = null;
+  };
+  // ★나갈 길을 둔다 (대표 8-27: "뒤로가기가 안 됨")
+  window._mwIntroBack = function () { close(); cfg.onBack && cfg.onBack(); };
+  window._mwIntroOk = function () { close(); cfg.onOk && cfg.onOk(); };
+  window._mwIntroDont = function () {
+    // ★'다시 보지 않기'를 누르기 전까지는 계속 뜬다(대표 8-27). 그러니 이 버튼이 곧 끄는 스위치다.
+    if (cfg.dontKey) { try { localStorage.setItem(cfg.dontKey, '1'); } catch (e) {} }
+    close(); showToast('이 안내는 더 이상 안 떠요');
+    cfg.onOk && cfg.onOk();
   };
   el.addEventListener('click', function (e) {
-    if (e.target === el) window._mwPetIntroBack();       // 바깥을 눌러도 닫힌다
+    if (e.target === el) window._mwIntroBack();       // 바깥을 눌러도 닫힌다
   });
-  window._mwPetIntroOk = function () {
-    var m = document.getElementById('mw-petintro'); if (m) m.remove();
-    window._mwPetIntroOk = null; window._mwPetIntroBack = null;
-    if (!window._mwPetIntroSeen(kind)) {
-      if (!Array.isArray(window._myPetIntro)) window._myPetIntro = [];
-      window._myPetIntro.push(kind);
-      window._mwSavePetIntro && window._mwSavePetIntro(window._myPetIntro);
-    }
-    onOk && onOk();
-  };
 };
 
-
-// ===== 코치마크 — 방에 나온 그 아이를 실제로 가리킨다 (대표 8-26: "코치마크도 좀 들어가고") =====
-//
-// ★안내창을 읽어도 "그래서 어디를 누르지?"가 남는다. 방에 나온 **그 펫 위**에 링을 씌우고
-//   눌러 보게 한다. 링 메뉴가 열리는 순간이 곧 학습 완료라, 그때 스스로 사라진다.
-// ★펫은 걸어다닌다 — 자리를 계속 따라간다. 안 따라가면 엉뚱한 바닥을 가리킨다.
-// ★클릭을 가로채지 않는다(pointer-events:none). 가로채면 정작 펫을 못 누른다.
-window.mwPetCoach = function (id) {
+// ===== 코치마크 공통 — 실제 그 대상을 가리킨다 =====
+// ★안내창을 읽어도 "그래서 어디를 누르지?"가 남는다. 화면의 **그것 위**에 링을 씌운다.
+//   눌러 보는 순간이 곧 학습 완료라 그때 스스로 사라진다.
+// ★클릭을 가로채지 않는다(pointer-events:none). 가로채면 정작 그것을 못 누른다.
+window._mwCoachOn = function (find, text) {
   var room = document.getElementById('charworld-room'); if (!room) return;
   window.mwPetCoachEnd();
-  var find = function () {
-    var arr = window._mwPets || [];
-    for (var i = 0; i < arr.length; i++) if (arr[i] && arr[i].id === id && arr[i].el) return arr[i];
-    return arr[arr.length - 1] || null;
-  };
-  var p = find(); if (!p) return;
+  if (!find()) return;
   var el = document.createElement('div');
   el.id = 'mw-petcoach';
   el.innerHTML = '<i class="mw-pc-ring"></i><i class="mw-pc-ring d2"></i>'
-    + '<div class="mw-pc-tip">펫을 눌러 보세요<i></i></div>';
+    + '<div class="mw-pc-tip">' + text + '<i></i></div>';
   room.appendChild(el);
-
   var move = function () {
-    var q = find();
-    if (!q || !q.el || !q.el.isConnected) { window.mwPetCoachEnd(); return; }
-    var rb = room.getBoundingClientRect(), hb = q.el.getBoundingClientRect();
+    var t = find();
+    if (!t || !t.isConnected) { window.mwPetCoachEnd(); return; }
+    var rb = room.getBoundingClientRect(), hb = t.getBoundingClientRect();
     var y = Math.round(hb.top - rb.top + hb.height * 0.62);
-    el.style.transform = 'translate3d(' + Math.round(hb.left - rb.left + hb.width / 2) + 'px,'
-      + y + 'px,0)';
-    // ★방은 overflow:hidden 이다. 펫이 위쪽 끝에 있으면 말풍선이 잘려서 안 보인다 -> 아래로 뒤집는다.
+    el.style.transform = 'translate3d(' + Math.round(hb.left - rb.left + hb.width / 2) + 'px,' + y + 'px,0)';
+    // ★방은 overflow:hidden 이다. 위쪽 끝이면 말풍선이 잘려서 안 보인다 -> 아래로 뒤집는다.
     el.classList.toggle('flip', y < 70);
   };
   move();
   window._mwPetCoachT = setInterval(move, 180);
-  // 30초면 충분하다. 계속 떠 있으면 그때부터는 방해다.
-  window._mwPetCoachX = setTimeout(window.mwPetCoachEnd, 30000);
+  window._mwPetCoachX = setTimeout(window.mwPetCoachEnd, 30000);   // 30초면 충분하다
 };
 window.mwPetCoachEnd = function () {
   clearInterval(window._mwPetCoachT); window._mwPetCoachT = null;
   clearTimeout(window._mwPetCoachX); window._mwPetCoachX = null;
   var m = document.getElementById('mw-petcoach'); if (m) m.remove();
+};
+window.mwPetCoach = function (id) {
+  window._mwCoachOn(function () {
+    var arr = window._mwPets || [];
+    for (var i = 0; i < arr.length; i++) if (arr[i] && arr[i].id === id && arr[i].el) return arr[i].el;
+    return (arr[arr.length - 1] || {}).el || null;
+  }, '펫을 눌러 보세요');
+};
+
+
+
+// ===== 머피월드 첫 화면 안내 — 캐릭터 편 (대표 2026-08-27) =====
+//
+// 대표: "머피월드 첫 진입 시 캐릭터 클릭해야지 UI 뜨는 거, 이것도 사람들이 은근 찾기 어려워하더라.
+//        캐릭터 버전으로도 저 팝업창 만들어줘야 할 듯 (다시 보지 않기 누르기 전까지는 계속 뜨게).
+//        원래 쓰던 황금색 코치마크는 없애고 ... 나가도 그 파란색 코치마크까지 뜨는 것도 동일하게"
+//
+// ★펫 안내와 **같은 상자**를 쓴다(_mwIntroShow). 화면을 새로 만들지 않는다.
+// ★펫은 종류마다 한 번뿐이지만 이건 **'다시 보지 않기'를 누르기 전까지 계속** 뜬다 —
+//   못 찾는 사람이 있으니 한 번 보고 잊는 것으로는 부족하다는 것이 대표 판단이다.
+window.MW_CHAR_INTRO_KEY = 'mw_charintro_off';
+window.mwCharIntroShow = function (force) {
+  if (!force) { try { if (localStorage.getItem(window.MW_CHAR_INTRO_KEY)) return; } catch (e) {} }
+  if (document.getElementById('mw-petintro')) return;          // 안내가 이미 떠 있으면 겹치지 않는다
+  var home = window._curField === 'home';
+  // 실제 링 메뉴(mwCharMenu)와 같은 항목이다. 방에서는 넷, 밖에서는 둘.
+  var demo = home ? [
+    { k:'move',  t:'이동',   x:0,   y:-52 },
+    { k:'edit',  t:'꾸미기', x:52,  y:0 },
+    { k:'bub',   t:'말풍선', x:0,   y:52 },
+    { k:'title', t:'칭호',   x:-52, y:0 }
+  ] : [
+    { k:'move',  t:'이동',   x:0,   y:-52 },
+    { k:'title', t:'칭호',   x:0,   y:52 }
+  ];
+  var cards = [
+    { t: '내 캐릭터를 톡 누르면 메뉴가 열려요',
+      b: '캐릭터 몸을 누르면 둘레에 <b>동그란 버튼</b>이 펼쳐져요.<br>'
+       + (home
+          ? '<b>이동</b> · <b>꾸미기</b> · <b>말풍선</b> · <b>칭호</b> 가 전부 여기 있어요.'
+          : '<b>이동</b> 과 <b>칭호</b> 가 여기 있어요. 내 방에서는 꾸미기·말풍선도 열려요.') },
+    { t: '걸어다니기',
+      b: '바닥을 <b>톡 누르면</b> 그 자리로 걸어가요.<br>'
+       + '왼쪽 아래 <b>조이스틱</b>을 밀어도 움직여요.' },
+    { t: '내 방 꾸미기',
+      b: '<b>꾸미기</b>에서 가구·펫·그림을 방에 놓아요.<br>'
+       + '놓은 뒤 <b>끌어서</b> 자리를 옮기고, 다 되면 <b>저장</b>을 눌러요.' },
+    { t: '다른 곳으로 가기',
+      b: '<b>이동</b>을 누르면 헬스장·공원 같은 다른 곳으로 갈 수 있어요.<br>'
+       + '친구를 불러 <b>같이</b> 있을 수도 있어요.' }
+  ];
+  window._mwIntroShow({
+    faceHtml: '<div id="mw-ci-face"></div>',
+    demo: demo,
+    hi: '머피월드',
+    name: (window._mwMyNick || '내 캐릭터'),
+    lead: '캐릭터를 눌러 보세요. 여기서 다 시작해요.',
+    cards: cards,
+    okText: '알겠어요',
+    dontKey: window.MW_CHAR_INTRO_KEY,
+    onOk: function () {
+      // ★닫으면 캐릭터 위에 **파란 코치마크**가 뜬다 — 펫과 똑같이(대표 8-27).
+      setTimeout(function () {
+        window._mwCoachOn(function () { return document.getElementById('charworld-avatar'); },
+                          '캐릭터를 눌러 보세요');
+      }, 360);
+    }
+  });
+  // 얼굴 자리에 **내 캐릭터를 그대로** 그린다 — 그림을 따로 만들지 않는다.
+  //   ★_charRenderTo 가 캐릭터를 그리는 유일한 경로다(조합 규칙이 전부 여기 있다).
+  setTimeout(function () {
+    var f = document.getElementById('mw-ci-face');
+    if (f && window._charRenderTo) window._charRenderTo(f, 96);
+  }, 0);
 };
 
 // ===== 데리고 나오기 =====
@@ -14723,7 +14813,8 @@ window._COACH_MARKS = {
   home:   { spotlightSel: '#feed-verify-btn', text: '여기서 <b>오늘 운동을 인증</b>하고<br>머피를 받아요!' },
   match:  { spotlightSel: '#match-like-btn', text: '마음에 드는 사람에게<br><b>같이 운동해요</b>로 먼저 다가가요' },
   bamboo: { spotlightSel: '#bamboo-compose-trigger', color: 'green', text: '여기에 <b style="color:#22B266">익명으로</b><br>운동 고민·자랑을 남겨요' },
-  char:   { spotlightSel: '#charworld-avatar', color: 'gold', text: '내 캐릭터를 <b style="color:#C9902A">톡! 누르면</b> 메뉴가 열려요<br><b style="color:#C9902A">이동 · 꾸미기 · 말풍선 · 칭호</b> 전부 여기서!' }
+  // ★char 는 비웠다 (2026-08-27). 황금 스포트라이트 대신 mwCharIntroShow() 안내창을 쓴다.
+  //   지우지 않고 남겨 두면 어디선가 다시 불려 두 안내가 겹친다.
 };
 window.showCoach = function (cfg) {
   cfg = cfg || {};
@@ -14797,15 +14888,20 @@ window._maybeCoach = function (name) {
     }, 480);
   } catch (e) {}
 };
-// 머피월드: 입장 연출이 끝나고 캐릭터가 보일 때 캐릭터에 골드 코치(콜드유저·1회)
+// 머피월드: 입장 연출이 끝나고 캐릭터가 보일 때 안내를 띄운다.
+// ★★황금 스포트라이트 코치마크(_COACH_MARKS.char)는 **쓰지 않는다** (대표 8-27:
+//   "우리가 원래 쓰던 황금색 코치마크는 없애고 펫 구매 전용 UI 를 캐릭터 버전으로 바꾸자").
+//   대신 펫과 같은 안내창을 띄우고, 닫으면 캐릭터 위에 **파란 코치마크**가 뜬다.
+// ★콜드유저(coach_on)에만 걸지 않는다 — 기존 유저도 링 메뉴를 못 찾는다는 것이 지적의 요지다.
+//   '다시 보지 않기'를 누르기 전까지 머피월드에 들어올 때마다 뜬다.
 window._maybeCoachChar = function () {
   try {
-    if (!localStorage.getItem('coach_on')) return;
-    if (localStorage.getItem('coach_char')) return;
     const pg = document.getElementById('page-char');
     if (!pg || !pg.classList.contains('active')) return;
-    if (document.getElementById('coach-overlay').style.display === 'block') return;
-    window.showCoach(Object.assign({ key: 'char' }, window._COACH_MARKS.char));
+    const ov = document.getElementById('coach-overlay');
+    if (ov && ov.style.display === 'block') return;
+    if (window._mwIsVisiting && window._mwIsVisiting()) return;   // 남의 방에서는 안 띄운다
+    window.mwCharIntroShow && window.mwCharIntroShow();
   } catch (e) {}
 };
 // 남의 방에 처음 들어갔을 때: 방 주인 캐릭터를 누르면 뭐가 되는지 알려준다.
@@ -17754,7 +17850,11 @@ window._mcamDrawChar = async function (ctx, cfg, box) {
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg) : null;
   if (!sheets) return false;
   ctx.imageSmoothingEnabled = false;
-  for (const slot of ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc']) {
+  // ★겹 순서는 반드시 _charLayerOrder 로 물어본다. 손으로 적은 배열을 쓰면 overShoes
+  //   (버뮤다 밑단이 신발 목을 덮는 규칙)가 빠진다 — 대표 8-27: "인기 캐릭터·방에서는
+  //   해결됐는데 아직 머피캠에 뜨는 건 해결 안 됨". 사본이 여섯 곳이었다.
+  for (const slot of (window._charLayerOrder ? window._charLayerOrder(cfg)
+                      : ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'])) {
     const url = sheets[slot]; if (!url) continue;
     const im = await window._loadImg(url); if (!im) continue;
     ctx.drawImage(im, 0, 0, im.width / 3, im.height / 4, box.x, box.y, box.w, box.h);
@@ -23972,7 +24072,9 @@ window._mwLoadCharSheets = function (cfg) {
   const safe = window._charSafe ? window._charSafe(cfg) : cfg;
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(safe) : null;
   if (!sheets) return Promise.resolve([]);
-  const order = ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];   // 이 순서가 곧 레이어 z
+  // 이 순서가 곧 레이어 z. ★손으로 적지 않는다 — overShoes 예외가 빠진다(_charLayerOrder 참고)
+  const order = window._charLayerOrder ? window._charLayerOrder(safe)
+              : ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];
   return Promise.all(order.filter(function (k) { return sheets[k]; })
     .map(function (k) { return window._mwLoadImg(sheets[k]); }));
 };
@@ -28961,7 +29063,8 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
     if (sheets) {
       x.imageSmoothingEnabled=false;
       const CH2=340, CW2=Math.round(CH2*141/224);
-      const ordr=['body','bottom','shoes','top','hair','hat','acc'];
+      // ★손으로 적지 않는다 — overShoes 가 빠져 신발이 바지 위로 올라온다(8-27)
+      const ordr=window._charLayerOrder?window._charLayerOrder(cfg):['body','bottom','shoes','top','hair','hat','acc'];
       for (const slot of ordr) {
         const url=sheets[slot]; if(!url) continue;
         const im=await new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>res(null);i.src=url;});
