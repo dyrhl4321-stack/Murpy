@@ -20,7 +20,14 @@ from PIL import Image
 CW, CH, COLS, ROWS = 141, 224, 3, 4
 
 
-def run(face_path, base_path, rect, rows, out_path=None, log=print):
+def run(face_path, base_path, rect, rows, out_path=None, fill_from=None, log=print):
+    """fill_from 이 있으면 base 가 아니라 **그 y 줄의 색**으로 채운다.
+
+    ★base 로 되돌리는 것만으로는 부족할 때가 있다. 조재진 볼은 base 도 그 자리가
+      밝기 87 의 턱 그림자라, 기본 톤에서는 티가 안 나도 **어두운 피부톤(t4~t6)에서는
+      다시 검은 줄로 보였다**(대표 8-27: "인기캐릭터에서는 아직 볼따구 왼쪽 검은선 안 없어짐").
+      톤 변환은 어두운 픽셀을 더 어둡게 만들기 때문이다.
+      -> 볼 피부(밝기 170대)를 끌어와 채우면 어떤 톤으로 구워도 선이 안 생긴다."""
     y0, y1, x0, x1 = rect
     f = np.array(Image.open(face_path).convert("RGBA"))
     b = np.array(Image.open(base_path).convert("RGBA"))
@@ -29,12 +36,17 @@ def run(face_path, base_path, rect, rows, out_path=None, log=print):
     n = 0
     for r in rows:
         for c in range(COLS):
-            ys = slice(r * CH + y0, r * CH + y1)
             xs = slice(c * CW + x0, c * CW + x1)
-            f[ys, xs] = b[ys, xs]
+            if fill_from is None:
+                f[slice(r * CH + y0, r * CH + y1), xs] = b[slice(r * CH + y0, r * CH + y1), xs]
+            else:
+                src = f[r * CH + fill_from, xs].copy()      # 그 줄의 색을 아래로 늘린다
+                for y in range(y0, y1):
+                    f[r * CH + y, xs] = src
             n += (y1 - y0) * (x1 - x0)
-    log("%s  y%d~%d x%d~%d · 행 %s · %d px 를 base 로 되돌림"
-        % (os.path.basename(face_path), y0, y1 - 1, x0, x1 - 1, rows, n))
+    log("%s  y%d~%d x%d~%d · 행 %s · %d px 를 %s 로 채움"
+        % (os.path.basename(face_path), y0, y1 - 1, x0, x1 - 1, rows, n,
+           ("y%d 줄" % fill_from) if fill_from is not None else "base"))
     Image.fromarray(f, "RGBA").save(out_path or face_path)
 
 
@@ -45,5 +57,7 @@ if __name__ == "__main__":
     ap.add_argument("--rect", nargs=4, type=int, required=True, metavar=("Y0", "Y1", "X0", "X1"))
     ap.add_argument("--rows", default="0", help="적용할 방향 행(쉼표). 0아래 1위 2좌 3우")
     ap.add_argument("--out")
+    ap.add_argument("--fill-from", type=int, dest="fill_from",
+                    help="base 대신 이 y 줄의 색으로 채운다(어두운 톤에서 되살아나는 그림자용)")
     a = ap.parse_args()
-    run(a.face, a.base, a.rect, [int(x) for x in a.rows.split(",")], a.out)
+    run(a.face, a.base, a.rect, [int(x) for x in a.rows.split(",")], a.out, a.fill_from)
