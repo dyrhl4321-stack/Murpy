@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '775';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '776';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3360,7 +3360,7 @@ window._CHAR_BODIES = {
   // ★kin = **옷 계열**. 이 몸통은 목 아래가 human base 와 픽셀 단위로 같은 몸이므로
   //   human 전용 옷(top/bottom/shoes)을 그대로 입는다. 시트는 tools/face_graft.py 가
   //   'base 몸통 + AI 머리'로 구워낸다 — AI 몸통을 쓰면 실루엣이 어긋나 옷이 안 맞는다.
-  jaejin: { name: '조재진', skinBase: 'face_jaejin', src: "char/faces/jaejin.png?v=3", cw: 141, ch: 224,
+  jaejin: { name: '조재진', skinBase: 'face_jaejin', src: "char/faces/jaejin.png?v=4", cw: 141, ch: 224,
             wearable: true, fixedHair: true, kin: 'human', tag: '커마',
             defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
             owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
@@ -4194,7 +4194,12 @@ window.mwFurnHtml = function (roomData, edit) {
     const pe = ((def.art || _dinoStill) && !edit) ? 'pointer-events:auto;cursor:pointer;'
              : (edit ? 'pointer-events:auto;cursor:grab;touch-action:none;' : 'pointer-events:none;');
     if (def.art === 'rug') {
-      return `<div class="${cls}" data-idx="${idx}"${extra} style="left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;z-index:${z};${pe}">`
+      // ★★height 를 반드시 준다 (대표 8-27: "카펫이 등장도 안 한다").
+      //   .mw-artrug 는 position:absolute 뿐이고 자식 img 가 inset:0/height:100% 라,
+      //   부모에 높이가 없으면 **0px 로 그려져 화면에서 사라진다.**
+      //   8-26 에 CSS 를 재작성하면서 높이를 주던 것이 같이 빠졌다.
+      //   방(#charworld-room)이 aspect-ratio 1/1 이라 세로 % 도 가로와 같은 기준이다.
+      return `<div class="${cls}" data-idx="${idx}"${extra} style="left:${(it.x/7.68).toFixed(2)}%;top:${(it.y/7.68).toFixed(2)}%;width:${(def.w/7.68).toFixed(2)}%;height:${(def.h/7.68).toFixed(2)}%;z-index:${z};${pe}">`
         + `<img src="${src}" draggable="false" alt="같이 그린 도화지 카펫"></div>`;
     }
     return window._mwShadowHtml(it.x, it.y, def, z, idx)
@@ -6576,8 +6581,10 @@ window.mwFurnOwned = function (id) {
 // (대표 8-25: "어디에 깔 건지는 이야기해줘야지 · 마음대로 깔아버리면 어떡함").
 window._reditAddArt = async function (artId) {
   const a = (window._myArt || []).filter(function (q) { return q && q.id === artId; })[0];
-  if (!a) return;
-  const f = window._reditDraft && window._reditDraft.f; if (!f) return;
+  if (!a) { showToast('그림을 찾지 못했어요'); return; }
+  // ★꾸미기가 열려 있어야 놓을 수 있다. 예전엔 그냥 return 이라 **아무 일도 안 일어났다**.
+  const f = window._reditDraft && window._reditDraft.f;
+  if (!f) { showToast('꾸미기를 연 다음에 놓을 수 있어요'); return; }
   const cap = window.mwRoomCap();
   if (f.length >= cap) { showToast('가구는 ' + cap + '개까지예요'); return; }
   const kind = await window.murpyConfirm({
@@ -6587,7 +6594,8 @@ window._reditAddArt = async function (artId) {
   });
   // murpyConfirm 은 true/false 를 준다. 취소(false)를 '카펫'으로 쓴다 — 새 화면을 안 만든다.
   const id = kind ? 'art_frame' : 'art_rug';
-  const def = window.mwItemDef(id); if (!def) return;
+  const def = window.mwItemDef(id);
+  if (!def) { showToast('놓을 물건을 찾지 못했어요'); return; }
   window._reditDraft.art = window._reditDraft.art || {};
   window._reditDraft.art[artId] = { px: a.px, by: a.by || [], at: a.at || Date.now() };
   f.push({ id: id, a: artId,
@@ -21437,7 +21445,10 @@ window.mwJamClear = function () {
 // ---- 방에 남기기 : 바닥 카펫 / 벽 액자 ----
 window.mwJamPlace = async function (kind) {
   const J = window._mwJam, R = window._rt, me = auth.currentUser;
-  if (!J || !me) return;
+  // ★조용히 끝나지 않는다 (대표 8-27: "카펫으로 깔기 눌렀는데 연동이 안 됨").
+  //   왜 안 되는지 화면에 안 뜨면 누른 사람은 고장으로 본다.
+  if (!J) { showToast('낙서판이 닫혔어요 · 다시 열어 주세요'); return; }
+  if (!me) { window.memberGate && window.memberGate('방에 남기려면 로그인이 필요해요'); return; }
   if (!window.mwJamIsHost()) { showToast('방 주인만 놓을 수 있어요'); return; }
   const px = J.px.map(function (v) { return String(v || 0); }).join('');
   if (!/[1-6]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
@@ -21450,8 +21461,13 @@ window.mwJamPlace = async function (kind) {
   } catch (e) {}
   if (!by.length) by = [window._mwMyNick || '머피'];
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  const def = window.mwItemDef(kind === 'rug' ? 'art_rug' : 'art_frame'); if (!def) return;
+  const def = window.mwItemDef(kind === 'rug' ? 'art_rug' : 'art_frame');
+  if (!def) { showToast('놓을 물건을 찾지 못했어요'); return; }
   const room = window._mwRoomClone ? window._mwRoomClone(window._myRoom) : JSON.parse(JSON.stringify(window._myRoom || { f: [] }));
+  // 가구 상한에 걸리면 조용히 넘어가지 않는다 — 놓았다고 생각하는데 방에 없으면 고장으로 보인다
+  if (window.mwRoomCap && (room.f || []).length >= window.mwRoomCap()) {
+    showToast('가구가 꽉 찼어요 · 꾸미기에서 하나 치우고 다시 놓아 주세요'); return;
+  }
   room.f = room.f || []; room.art = room.art || {};
   room.art[id] = { px: px, by: by.slice(0, 4), at: Date.now() };
   // ★어디에 놓을지 **먼저 묻는다**(대표 8-25: "어디에 깔 건지는 이야기해줘야지 · 마음대로
