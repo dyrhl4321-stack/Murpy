@@ -66,6 +66,33 @@ def clean(src, out, flip=False, maxside=256, min_frag=40, log=print):
     except ImportError:
         pass
     o = np.array(im); o[..., 3] = np.where(keep, 255, 0)
+    # ★배경을 지워도 **경계에 섞인 크로마 픽셀**이 남는다 (대표 8-27: "브라탑 썸네일 누끼
+    #   바깥쪽에 마젠타 배경 아직 잔류"). 어두운 자주(#3D0042)라 형광 판정에 안 걸린다.
+    #   → 남은 가장자리에서 '크로마 쪽으로 치우친' 픽셀을 **이웃 정상 색으로** 바꾼다.
+    #     픽셀아트가 아니라 일러스트라 median 으로 자연스럽게 메워진다.
+    rr, gg, bb = o[..., 0].astype(int), o[..., 1].astype(int), o[..., 2].astype(int)
+    for _ in range(3):
+        opq = o[..., 3] > 0
+        edge = np.zeros_like(opq)
+        edge[1:, :] |= ~opq[:-1, :]; edge[:-1, :] |= ~opq[1:, :]
+        edge[:, 1:] |= ~opq[:, :-1]; edge[:, :-1] |= ~opq[:, 1:]
+        rr, gg, bb = o[..., 0].astype(int), o[..., 1].astype(int), o[..., 2].astype(int)
+        # ★가장자리만 보면 안 된다 — 잔여가 윤곽선 **안쪽**까지 들어와 있다(브라탑 927px).
+        #   대신 **어두운 것만** 잡는다: 배경이 섞인 테두리는 밝기 70 미만의 자주(#3D0042)인데,
+        #   분홍 드레스의 옷 색은 밝기 70 이상이라 하나도 안 걸린다(실측: 드레스 0 / 브라탑 921).
+        lm = (np.maximum(np.maximum(rr, gg), bb) + np.minimum(np.minimum(rr, gg), bb)) / 2.0
+        chroma = opq & (lm < 70) & (((rr > gg + 25) & (bb > gg + 25)) | ((gg > rr + 25) & (gg > bb + 25)))
+        if not chroma.any(): break
+        good = opq & ~chroma
+        ys2, xs2 = np.where(chroma)
+        H2, W2 = chroma.shape
+        for y, x in zip(ys2, xs2):
+            ya, yb2 = max(0, y - 2), min(H2, y + 3)
+            xa, xb2 = max(0, x - 2), min(W2, x + 3)
+            nb = good[ya:yb2, xa:xb2]
+            if not nb.any():
+                o[y, x, 3] = 0; continue
+            o[y, x, :3] = np.median(o[ya:yb2, xa:xb2, :3][nb], axis=0)
     im2 = Image.fromarray(o, "RGBA")
     bb = im2.split()[3].point(lambda v: 255 if v > 50 else 0).getbbox()
     if bb:
