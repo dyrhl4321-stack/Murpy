@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '774';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '775';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -645,7 +645,7 @@ window._SW_V = '774';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
      비대칭이 된다(실측: 340 이어야 할 폭이 306, 무대가 34px 오른쪽으로 치우쳤다).
      margin:auto 로 확실히 가운데 두고 flex-shrink 를 끈다. */
   #mw-petintro .mw-pi-box { width:100%; max-width:340px; padding:0; overflow:hidden;
-    flex:0 0 auto; margin:auto;
+    flex:0 0 auto; margin:auto; position:relative;
     animation:mwPiPop .26s cubic-bezier(.2,1.2,.4,1) both }
   @keyframes mwPiIn { from{opacity:0} to{opacity:1} }
   @keyframes mwPiPop { from{opacity:0;transform:translateY(14px) scale(.965)} to{opacity:1;transform:none} }
@@ -686,6 +686,9 @@ window._SW_V = '774';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-petintro .mw-pi-b b { color:#fff; font-weight:700 }
   #mw-petintro .mw-pi-foot { padding:12px 16px 16px; border-top:1px solid rgba(255,255,255,.07) }
   #mw-petintro .mw-pi-ok { width:100%; padding:13px; font-size:14px }
+  #mw-petintro .mw-pi-x { position:absolute; right:6px; top:6px; width:34px; height:34px;
+    background:none; border:none; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; z-index:2 }
   /* 링 메뉴 펼침 데모. 5.6초 주기로 저절로 반복한다 —
      탭(0~0.6s) → 펼침(0.6~1.3s) → 유지(~4.6s) → 접힘 → 다시. */
   #mw-petintro .mw-pi-stage { position:relative; height:172px; margin:0 auto 4px; max-width:280px }
@@ -1093,6 +1096,15 @@ window._SW_V = '774';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-artbig .ab-sell svg { flex-shrink:0 }
   #mw-artbig .ab-undo { display:block; margin:11px auto 0; background:none; border:none;
     color:#4a5266; font-size:11px; cursor:pointer; font-family:'Galmuri11',sans-serif; padding:4px 8px }
+  /* 팔린 그림 — 누를 것이 없으므로 버튼이 아니라 **알림줄**이다.
+     틴트 색면 금지 규칙대로 배경 없이 테두리와 글자색으로만 구분한다. */
+  #mw-artbig .ab-sold { width:100%; margin-top:9px; box-sizing:border-box;
+    background:none; border:2px solid rgba(245,194,75,.42); color:#F5C24B;
+    padding:13px 12px; font-size:12px; line-height:1.6; text-align:center;
+    font-family:'Galmuri11',sans-serif;
+    display:flex; align-items:center; justify-content:center; gap:7px; flex-wrap:wrap }
+  #mw-artbig .ab-sold span { color:#8a93a8; font-size:10.5px }
+  #mw-artbig .ab-sold svg { flex-shrink:0 }
   /* 공동룸 상단의 오늘의 추억: 사진과 그림을 한곳에 모은다. */
   body.mw-party #mw-art-chip { display:none !important }
   /* ★공용룸에서는 필드 안 '친구 초대' 칩도 숨긴다 (대표 8-26: "상단에 부르기가 있는데
@@ -5133,7 +5145,22 @@ window._mwPetSync = function () {
   };
   // ★방을 못 재는 동안에는 만들지 않는다. 꾸미기가 열려 있으면 clientWidth 가 0 인데,
   //   그때 만들면 크기 0 으로 굳어 꾸미기를 닫아도 안 보인다.
-  if (!room || !room.clientWidth || !list.length) { clear(); return; }
+  if (!room || !room.clientWidth || !list.length) {
+    clear();
+    // ★★그런데 **포기하면 안 된다** (대표 8-27: "펫이 머피월드 갔을 때 바로 로드 안 되고
+    //   꾸미기 들어가서 저장해야 로드됨"). 머피월드에 막 들어온 순간에도 방 크기가 0 이라
+    //   여기서 끝나 버렸고, 다음에 mwRenderFurn 을 부르는 것이 **꾸미기 저장뿐**이었다.
+    //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
+    if (room && !room.clientWidth && list.length) {
+      window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
+      if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
+        clearTimeout(window._mwPetSyncT);
+        window._mwPetSyncT = setTimeout(function () { window._mwPetSync(); }, 160);
+      }
+    }
+    return;
+  }
+  window._mwPetSyncTry = 0;
 
   var same = window._mwPets.length === list.length
     && window._mwPets.every(function (p, i) { return list[i] && p.id === list[i].id; });
@@ -5493,15 +5520,14 @@ window._mwNameModal = function (cur, whatName, saveJs) {
   el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">'
     + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:4px">'
     + '이 아이의 이름</div>'
-    + '<div style="font-size:11px;color:#8a93a8;margin-bottom:10px">비워 두면 \'' + (def.name || '펫')
+    + '<div style="font-size:11px;color:#8a93a8;margin-bottom:10px">비워 두면 \'' + whatName
     + '\' 으로 불러요</div>'
     + '<input id="mw-petname-input" maxlength="8" placeholder="예: 도로" '
     + 'style="width:100%;box-sizing:border-box;background:#0e1420;border:2px solid #2b3350;'
     + 'border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;font-family:inherit;'
     + 'margin-bottom:12px">'
     + '<div style="display:flex;gap:7px">'
-    + '<button class="mw-btn" style="flex:1" onclick="window.mwPetSetName(' + idx
-    + ',document.getElementById(\'mw-petname-input\').value)">저장</button>'
+    + '<button class="mw-btn" style="flex:1" onclick="' + saveJs + '">저장</button>'
     + '<button class="mw-btn" style="background:#1b2233;color:#8a93a8" '
     + 'onclick="window.mwPetNameClose()">취소</button>'
     + '</div></div>';
@@ -5629,12 +5655,17 @@ window.mwPetIntroShow = function (id, onOk) {
   //   (대표 8-26: "내가 원한 애니메이션은 클릭하면 그 5방향 버튼 뜨는 그것도 보여주게").
   //   자리는 실제 링 메뉴(mwPetMenu)와 같은 배치를 그대로 줄인 것이다 — 그래야 학습이 된다.
   var I = window._RING_ICONS || {};
+  // ★다섯 방향을 **균등하게** 둘러 세운다. 실제 링 메뉴는 네 방향이 차서 '이름'만 좌하단
+  //   대각인데, 그대로 줄이면 왼쪽에 버튼이 둘·오른쪽에 하나라 무게가 왼쪽으로 쏠리고
+  //   **펫이 오른쪽으로 밀려 보인다**(대표 8-27: "하얀고양이가 우측으로 쏠려있음").
+  //   실물은 펫을 따라다니니 문제가 없지만 데모는 고정된 무대라 비대칭이 그대로 보인다.
+  //   여기서 보여주려는 것은 '둘레에 펼쳐진다'는 것이지 각 버튼의 정확한 각도가 아니다.
   var demo = [
-    { k:'move', t:'행동',      x:0,   y:-56 },
-    { k:'bowl', t:'밥 주기',    x:-52, y:3 },
-    { k:'poke', t:'쓰다듬기',   x:52,  y:3 },
-    { k:'kick', t:'들여보내기', x:0,   y:62 },
-    { k:'bub',  t:'이름',      x:-46, y:50 }
+    { k:'move', t:'행동',      x:0,   y:-52 },
+    { k:'poke', t:'쓰다듬기',   x:49,  y:-16 },
+    { k:'bub',  t:'이름',      x:31,  y:42 },
+    { k:'kick', t:'들여보내기', x:-31, y:42 },
+    { k:'bowl', t:'밥 주기',    x:-49, y:-16 }
   ].map(function (d, i) {
     return '<b class="mw-pi-db" style="--x:' + d.x + 'px;--y:' + d.y + 'px;'
       + 'animation-delay:' + (i * 70) + 'ms">' + (I[d.k] || '') + '<span>' + d.t + '</span></b>';
@@ -5655,12 +5686,25 @@ window.mwPetIntroShow = function (id, onOk) {
     + '<div class="mw-pi-list">' + cards + '</div>'
     + '<div class="mw-pi-foot">'
     +   '<button class="mw-btn mw-pi-ok" onclick="window._mwPetIntroOk()">방으로 데려오기</button>'
-    + '</div></div>';
+    + '</div>'
+    + '<button class="mw-pi-x" onclick="window._mwPetIntroBack()" aria-label="닫기">'
+    +   '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" '
+    +   'stroke="#8a93a8" stroke-width="2" fill="none"/></svg></button>'
+    + '</div>';
   document.body.appendChild(el);
-  // 바깥을 눌러도 안 닫는다 — 읽고 확인을 눌러야 데려온다(대표 지시)
+  // ★나갈 길을 둔다 (대표 8-27: "그리고 뒤로가기가 안 됨"). 닫으면 방에 안 내보내고,
+  //   카탈로그에서 다시 누르면 안내부터 다시 뜬다 — 산 것은 그대로 남는다.
+  window._mwPetIntroBack = function () {
+    var m = document.getElementById('mw-petintro'); if (m) m.remove();
+    window._mwPetIntroOk = null; window._mwPetIntroBack = null;
+    showToast("'" + ((def && def.name) || t.label) + "' 은(는) 꾸미기에서 다시 꺼낼 수 있어요");
+  };
+  el.addEventListener('click', function (e) {
+    if (e.target === el) window._mwPetIntroBack();       // 바깥을 눌러도 닫힌다
+  });
   window._mwPetIntroOk = function () {
     var m = document.getElementById('mw-petintro'); if (m) m.remove();
-    window._mwPetIntroOk = null;
+    window._mwPetIntroOk = null; window._mwPetIntroBack = null;
     if (!window._mwPetIntroSeen(kind)) {
       if (!Array.isArray(window._myPetIntro)) window._myPetIntro = [];
       window._myPetIntro.push(kind);
@@ -5880,6 +5924,18 @@ window._mwDinoSync = function (editing) {
   };
   // 꾸미기 중이거나 집이 아니면 손대지 않는다 — 드래그는 원본 <img> 그대로여야 한다
   if (!room || !furn || editing || window._curField !== 'home') { clear(); return; }
+  // ★펫과 같은 함정 — 방을 아직 못 재면 자리를 못 잡는다. 포기하지 말고 곧 다시 본다.
+  //   (같은 버그는 두 곳에 있다: 손님 따라오기를 펫에서만 고쳤던 8-25 와 같은 자리)
+  if (!room.clientWidth) {
+    clear();
+    window._mwDinoSyncTry = (window._mwDinoSyncTry || 0) + 1;
+    if (window._mwDinoSyncTry <= 24) {
+      clearTimeout(window._mwDinoSyncT);
+      window._mwDinoSyncT = setTimeout(function () { window._mwDinoSync(false); }, 160);
+    }
+    return;
+  }
+  window._mwDinoSyncTry = 0;
   var data = window._mwRoomShown ? window._mwRoomShown() : window._myRoom;
   var list = (data && data.f) || [];
   // ★**기본은 정지**다(대표 8-25: "디폴트가 돌아다니는 게 아니라고").
@@ -18264,6 +18320,12 @@ window.ensureCreditsInit = async (uid) => {
     window._myArt = Array.isArray(d.artworks) ? d.artworks.filter(function (x) { return x && x.px; }) : [];
     window._mwArtOpenIfLinked && window._mwArtOpenIfLinked();   // 내 그림 링크로 들어온 경우
     window._myPetIntro = Array.isArray(d.petIntro) ? d.petIntro : [];
+    // ★그림 대금 정산과 낙찰 확인을 **여기서** 돌린다. 예전엔 알림 목록을 열어야만 돌았다
+    //   (대표 8-27). 크레딧 상태가 아직이면 조금 뒤에 다시 시도한다.
+    setTimeout(function () {
+      if (window._mwArtSettle) window._mwArtSettle();
+      if (window._mwArtWonCheck) window._mwArtWonCheck();
+    }, 1500);
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
       : ((d.pet && d.pet.id) ? [d.pet] : []);
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
@@ -21756,6 +21818,10 @@ window.mwArtSplit = function (net, uids, sellerUid) {
 };
 
 window.mwAucOn = function (a) { return !!(a && a.auc && a.aucAt); };
+// ★낙찰은 됐고 대금은 아직인 상태. 이때 아무 것도 못 하게 잠근다 —
+//   예전엔 auc 만 봐서 **낙찰된 그림을 다시 경매에 올릴 수 있었고**, 올리는 순간
+//   won 이 지워져 대금이 들어올 길이 끊겼다(대표 8-27).
+window.mwAucSold = function (a) { return !!(a && a.won && a.won.uid && !a.auc); };
 
 // 열려 있는 그림 화면을 다시 그린다 (경매 상태가 바뀔 때마다)
 window._mwArtRefresh = function (id) {
@@ -21787,6 +21853,7 @@ window.mwAucBids = async function (id, aucAt) {
 window.mwAucOpen = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
+  if (window.mwAucSold(a)) { showToast('이미 팔린 그림이에요 · 대금이 들어오면 목록에서 빠져요'); return; }
   const start = await window.mwArtPriceAsk((a.price | 0) || 10, {
     title: '얼마부터 시작할까요?',
     desc: '이 값보다 높게만 부를 수 있어요 · 팔리면 수수료 '
@@ -21847,7 +21914,12 @@ window.mwAucHammer = async function (id) {
       fromNickname: window._mwMyNick || '머피', type: 'art_won',
       artId: id, amount: top.amount, read: false, createdAt: serverTimestamp() });
   } catch (e) { console.warn('auc won', e); }
-  showToast(top.nick + '님에게 낙찰됐어요');
+  // ★★낙찰 순간 **방에서 바로 내린다** (대표 8-27: "낙찰됐는데 액자에 걸고 있는 게 바로
+  //   없어져야 하는데 계속 떠 있고"). 예전엔 낙찰자가 대금을 내고 판 사람이 앱을 다시 열어야
+  //   비로소 내려갔다 — 그 사이 **한 그림이 양쪽에 다 있는 복제 상태**였다.
+  //   목록에서 완전히 빼는 것은 대금이 들어올 때(_mwArtSettle)다. 그 전까지는 '팔렸어요'로 잠근다.
+  try { await window._mwArtUnplace(id); } catch (e) {}
+  showToast(top.nick + '님에게 낙찰됐어요 · 대금이 들어오면 목록에서 빠져요');
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
   window._mwArtRefresh(id);
 };
@@ -21943,6 +22015,23 @@ window.mwAucClaim = async function (artId, ownerUid, amount, notifId) {
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
 };
 
+// 그림을 **방에서 내린다**(액자·카펫). 목록에서 빼는 것과는 다른 일이라 따로 둔다.
+// ★낙찰 순간과 대금 정산 순간 두 곳에서 쓴다 — 사본이 두 벌이 되면 한쪽만 고치는 사고가 난다.
+window._mwArtUnplace = async function (aid) {
+  if (!aid) return false;
+  const room = window._myRoom;
+  const inRoom = room && (((room.f || []).some(function (it) { return it && it.a === aid; }))
+                        || ((room.art || {})[aid]));
+  if (!inRoom) return false;
+  const r2 = window._mwRoomClone ? window._mwRoomClone(room) : JSON.parse(JSON.stringify(room));
+  r2.f = (r2.f || []).filter(function (it) { return !(it && it.a === aid); });
+  if (r2.art) delete r2.art[aid];
+  window._myRoom = r2;
+  try { await window._charPersistRoom(r2); } catch (e) {}
+  if (window.mwRenderFurn) window.mwRenderFurn();
+  return true;
+};
+
 // ---- ★★판 사람이 대금을 받는 곳 ----
 // 8-26 이전에는 **이 고리가 통째로 없었다.** 산 사람 지갑에서는 빠지는데 판 사람에게는
 // `art_sold` 알림 문서만 만들어졌고, **그것을 읽는 코드가 어디에도 없었다.**
@@ -21979,21 +22068,40 @@ window._mwArtSettle = async function () {
           try { await window._mwSaveArt(window._myArt); } catch (e3) {}
         }
         // 방에 깔거나 걸어 뒀으면 같이 걷는다 — 안 걷으면 빈 액자/카펫이 남는다
-        const room = window._myRoom;
-        const inRoom = room && (((room.f || []).some(function (it) { return it && it.a === aid; }))
-                              || ((room.art || {})[aid]));
-        if (inRoom) {
-          const r2 = window._mwRoomClone ? window._mwRoomClone(room) : JSON.parse(JSON.stringify(room));
-          r2.f = (r2.f || []).filter(function (it) { return !(it && it.a === aid); });
-          if (r2.art) delete r2.art[aid];
-          window._myRoom = r2;
-          try { await window._charPersistRoom(r2); } catch (e4) {}
-          if (window.mwRenderFurn) window.mwRenderFurn();
-        }
+        // (낙찰 순간 이미 내렸을 수 있다. 그때는 아무 일도 안 한다)
+        await window._mwArtUnplace(aid);
       }
     }
   } catch (e) { console.warn('art settle', e); }
   finally { window._mwSettling = false; }
+};
+
+// ---- ★낙찰자에게 **알림을 안 눌러도** 바로 묻는다 ----
+// 대표 8-27: "알림을 무조건 탭해야지만 그게 이뤄지네… 알림 탭 안 하고도 바로 팝업으로 뜨게".
+// 맞는 지적이다 — 대금과 그림이 오가는 일이 **알림 화면을 여는 사람**에게만 일어났다.
+// 낙찰자가 알림 탭에 안 들어가면 판 사람 목록에서도 영영 안 빠져서, 한 그림이
+// 양쪽에 다 있는 것처럼 보였다.
+window._mwArtWonAsked = false;
+window._mwArtWonCheck = async function () {
+  const me = window.currentUser && window.currentUser.uid; if (!me) return;
+  if (window._mwArtWonAsked) return;          // 한 번 물었으면 이 세션에서는 다시 안 묻는다
+  if (!window._creditState || !window._creditState.ready) return;
+  window._mwArtWonAsked = true;
+  try {
+    const qs = await getDocs(query(collection(db, 'notifications'),
+                                   where('toUid', '==', me), where('type', '==', 'art_won')));
+    for (const d of qs.docs) {
+      const n = d.data() || {};
+      if (n.read === true) continue;
+      if (window.mwArtHave(n.artId)) {         // 이미 받아 뒀으면 알림만 접는다
+        if (window.markFirebaseNotifRead) window.markFirebaseNotifRead(d.id);
+        continue;
+      }
+      // mwAucClaim 이 확인창을 띄우고 대금·그림을 처리한다. 취소하면 알림이 남아 다음에 또 뜬다.
+      await window.mwAucClaim(n.artId, n.fromUid, n.amount | 0, d.id);
+      break;                                   // 한 번에 하나씩만 묻는다
+    }
+  } catch (e) { console.warn('art won check', e); }
 };
 
 // ===== 장터 — 남들이 내놓은 그림 =====
@@ -22237,7 +22345,7 @@ window.mwArtBig = function (id) {
   btns += '<button onclick="window.mwArtShare(' + q + ')">' + IC_SHARE + '공유</button>';
   // ★'가지고 있어요' 는 버튼으로도 글로도 두지 않는다 (대표 8-26).
   //   살 수 있으면 버튼이 있고, 없으면 없다. 그 이상 알릴 게 없다.
-  if (!have) {
+  if (!have && !window.mwAucSold(a)) {
     if (mine) btns += '<button onclick="window.mwArtTake(' + q + ')">가져오기</button>';
     else if (aucOn) btns += '<button onclick="window.mwAucBid(' + q + ')">값 부르기</button>';
     else if ((a.price | 0) > 0) btns += '<button onclick="window.mwArtTake(' + q + ')">' + (a.price | 0) + '머피로 사기</button>';
@@ -22247,7 +22355,11 @@ window.mwArtBig = function (id) {
   //   그 안에서 시작가를 정한다(mwAucOpen 이 값 입력 모달을 띄운다). 입구는 하나여야 한다.
   let sell = '';
   if (!visiting) {
-    if (aucOn) {
+    if (window.mwAucSold(a)) {
+      // 판 그림이다. 되돌릴 길은 없다 — 대금이 들어오면 목록에서 저절로 빠진다.
+      sell = '<div class="ab-sold">' + IC_GAVEL + (a.won.nick || '누군가') + '님에게 '
+           + (a.won.amount | 0) + '머피에 팔렸어요<br><span>대금이 들어오면 목록에서 빠져요</span></div>';
+    } else if (aucOn) {
       // 낙찰이 주인공이다. '내리기'는 되돌리는 길이라 **글자 버튼**으로 낮춘다.
       sell = '<button class="ab-sell" onclick="window.mwAucHammer(' + q + ')">' + IC_GAVEL + '낙찰하기</button>'
            + '<button class="ab-undo" onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
