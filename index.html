@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '800';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '801';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3994,14 +3994,6 @@ window.ROOM_ITEMS = [
   { id:'pk_door', cat:'pink', name:'핑크 문', src:'char/rooms/pk_door.png?v=1', w:100, h:156, wall:true, price:15 },
   { id:'pk_window', cat:'pink', name:'핑크 창문', src:'char/rooms/pk_window.png?v=1', w:108, h:116, wall:true, price:15 },
   { id:'pk_counter_u', cat:'pink', name:'ㄷ자 조리대', src:'char/rooms/pk_counter_u.png?v=1', w:192, h:172, surface:true, sbw:192, topDepth:44, blockBand:0.55, price:25 },
-  // ★액자는 **5배**다. 6배(168)로 키웠다가 너무 컸다(대표 8-29: "액자를 저따구로 크게
-  //   만들면 어뜨카냐 · 아까 거기서 진짜 살짝만 키우면 액자가 그림에 살짝 낑궈지는 느낌").
-  //   4배(112)에서 한 칸 위인 5배(140). 구멍 80px 이 그림(96px)보다 조금 작아
-  //   액자가 그림 가장자리를 물고 **낑기는** 모양이 된다.
-  { id:'pk_frame', cat:'pink', name:'핑크 액자', src:'char/rooms/pk_frame.png?v=3', w:140, h:140, wall:true, frameSlot:true, price:15 },
-  { id:'pk_frame_b', cat:'pink', name:'꽃무늬 액자', src:'char/rooms/pk_frame_b.png?v=2', w:130, h:130, wall:true, frameSlot:true, price:15 },
-  { id:'pk_frame_c', cat:'pink', name:'두꺼운 액자', src:'char/rooms/pk_frame_c.png?v=2', w:130, h:130, wall:true, frameSlot:true, price:15 },
-  // 세로액자·핑크 모니터·나무상자·식빵 토스터·핑크 선물상자·달력·크림 수납장은 뺐다(대표 8-29)
   { id:'pk_rug', cat:'pink', name:'핑크 러그', src:'char/rooms/pk_rug.png?v=1', w:140, h:184, flat:true, price:15 },
   { id:'pk_rug_heart', cat:'pink', name:'하트 러그', src:'char/rooms/pk_rug_heart.png?v=1', w:112, h:72, flat:true, price:15 },
   // ===== 핑크 2차 (대표 8-28: "넣다 말지 말고 다 넣어라고") =====
@@ -4232,21 +4224,6 @@ window._mwFurnZ = function (f) {
     arr.forEach(s => {
       // 진짜 얹혀 있을 때만 상판보다 앞에 그린다
       if (window._mwRestsOn(p.it, p.def, s.it, s.def)) p.z = Math.max(p.z, s.z + 2);
-    });
-  });
-  // ★★그림을 **액자 위에 포개면 그림이 앞**이어야 한다 (대표 8-28: "액자랑 같이 포갤 경우
-  //   이쁘게 같이 포개지는 걸 의도한 거임").
-  //   벽에 거는 것끼리도 z 는 '바닥선(y+h)'으로 매긴다. 액자(h168)가 그림(h96)보다 아래까지
-  //   내려와 z 가 더 커서, 포개면 **그림이 액자 뒤로 숨었다.**
-  //   -> 액자 칸(frameSlot) 위에 겹친 그림은 그 액자보다 앞에 그린다. 상판 위 소품과 같은 규칙이다.
-  arr.forEach(p => {
-    if (!p.def || p.def.art !== 'frame') return;
-    arr.forEach(s => {
-      if (!s.def || !s.def.frameSlot) return;
-      const ax = p.it.x, ay = p.it.y, aw = p.def.w, ah = p.def.h;
-      const bx = s.it.x, by = s.it.y, bw = s.def.w, bh = s.def.h;
-      const over = ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
-      if (over) p.z = Math.max(p.z, s.z + 2);
     });
   });
   return arr;
@@ -18758,9 +18735,39 @@ window.ensureCreditsInit = async (uid) => {
       const _live = window._myRoom.f.filter(it => window.mwItemDef(it.id));
       if (_live.length !== window._myRoom.f.length) {
         const _n = window._myRoom.f.length - _live.length;
-        window._myRoom = { f: _live };
+        // ★★★2026-08-29 사고 — 예전엔 여기서 `window._myRoom = { f: _live }` 로 방을 **통째로
+        //   갈아치웠다.** room 에는 f 말고 **그림 데이터(art)** 가 같이 산다.
+        //   그래서 카탈로그에서 가구 id 하나가 빠지는 순간(그날 핑크 에셋 7종을 뺐다)
+        //   **방에 걸어둔 그림이 전부 사라졌다**(대표: "액자 하면서 내 방에 걸려있던 그림들 다
+        //   내려갔는데"). 방에 건 그림은 그림 목록(artworks)에 없는 것도 있어서 곧 소실이다.
+        //   -> 나머지 필드는 그대로 두고 f 만 바꾼다. 지울 때는 **지울 것만** 지운다.
+        window._myRoom = Object.assign({}, window._myRoom, { f: _live });
         try { await updateDoc(ref, { room: window._myRoom }); } catch (e) { console.warn('room prune', e); }
         console.log('[room] 카탈로그에 없는 옛 가구 ' + _n + '개 정리');
+      }
+    }
+    // ★★위 사고로 이미 지워진 사람을 **되살린다** (한 번만 돌고 끝난다).
+    //   방 슬롯 저장(roomSaves)에는 옛 방이 통째로 남아 있어서, 액자는 f 에 남았는데
+    //   그림만 없는 경우 거기서 px 를 되찾아 채운다.
+    if (window._myRoom && Array.isArray(window._myRoom.f)) {
+      const _artNow = window._myRoom.art || {};
+      const _lost = window._myRoom.f.filter(it => it && it.a && !_artNow[it.a]);
+      if (_lost.length) {
+        const _saves = Array.isArray(d.roomSaves) ? d.roomSaves : [];
+        const _back = {};
+        _lost.forEach(it => {
+          for (let si = 0; si < _saves.length; si++) {
+            const _a = _saves[si] && _saves[si].art && _saves[si].art[it.a];
+            if (_a && _a.px) { _back[it.a] = _a; break; }
+          }
+        });
+        const _cnt = Object.keys(_back).length;
+        if (_cnt) {
+          window._myRoom = Object.assign({}, window._myRoom, { art: Object.assign({}, _artNow, _back) });
+          try { await updateDoc(ref, { room: window._myRoom }); } catch (e) { console.warn('room art restore', e); }
+          console.log('[room] 사라졌던 그림 ' + _cnt + '장을 되살렸습니다');
+          if (window.showToast) setTimeout(function () { window.showToast('방에서 사라졌던 그림 ' + _cnt + '장을 되살렸어요'); }, 2200);
+        }
       }
     }
     // 월간 한정 오브젝트 상태
