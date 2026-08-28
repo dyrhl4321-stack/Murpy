@@ -268,12 +268,27 @@ service cloud.firestore {
       //   바꾸거나 스쿼드장을 자기로 바꿔치기할 수 있었다.
       //   멤버가 정상적으로 건드리는 값들(출석·입금 표시 등)은 그대로 두고,
       //   **스쿼드의 정체성에 해당하는 필드만** 스쿼드장·관리자로 잠근다.
+      // ★★2026-08-28 — **운영진이 공지를 못 고치고 있었다** (대표: 수정하면 "저장하지
+      //   못했어요"). 위 8-25 잠금이 notice 를 잠그면서 staff 를 빠뜨렸다 —
+      //   앱은 스쿼드장·운영진 둘 다 허용하는데 규칙은 스쿼드장만 통과시켰다.
+      //   운영진은 **공지만** 고친다. 제목·시간·회비·스쿼드장·staff 는 그대로 잠가 둔다.
+      //   (승인·입금 토글은 members 문서라 아래 규칙이 이미 열어 뒀다)
       allow update: if signedIn() && (
           resource.data.hostUid == request.auth.uid || isAdmin()
+          || (isSquadStaff(squadId)
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+                   ['hostUid', 'title', 'location', 'scheduledAt', 'capacity',
+                    'feeAmount', 'status', 'staff']))
           || !request.resource.data.diff(resource.data).affectedKeys().hasAny(
                ['hostUid', 'title', 'location', 'scheduledAt', 'capacity',
                 'feeAmount', 'status', 'notice', 'staff'])
       );
+      // ★exists() 로 먼저 확인한다 — 멤버 문서가 없는 사람이 부르면 get() 이 터져서
+      //   규칙 전체가 거부로 떨어진다(아래 members 규칙에 적어 둔 것과 같은 함정).
+      function isSquadStaff(sid) {
+        return exists(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid))
+            && get(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid)).data.get('staff', false) == true;
+      }
       allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
 
       // 멤버 문서 = 본인 or 벙주 or **운영진(staff)**  (승인/입금 토글)
