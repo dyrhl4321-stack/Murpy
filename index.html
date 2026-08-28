@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '793';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '794';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -187,9 +187,13 @@ window._SW_V = '793';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 390px; background: rgba(10,10,10,0.9); backdrop-filter: blur(24px); border-top: 1px solid rgba(255,255,255,0.06); padding: 10px 0 24px; display: flex; z-index: 50; }
   /* iOS visualViewport의 하단 안전영역·반올림이나 일부 모바일 키보드 동작 때문에
      상세 아래의 하단 탭이 몇 px 비치는 틈을 막는다. 입력 중에만 z889를 검정으로 덮는다. */
-  body.sq-quick-kb::before, body.mw-kb::before { content:''; position:fixed; inset:-120px 0; z-index:889;
+  /* ★낙서판(#mw-jam)도 **같은 가림막**을 쓴다 (대표 8-28: "그림그리기에서 채팅 누르면
+     방채팅창 + 방명단 비쳐보임"). 낙서판은 키보드가 뜨면 vv 높이로 줄어드는데, 그 밑에
+     생기는 몇 px 틈으로 뒤에 깔린 머피룸(#page-char 의 입력줄·명단)이 그대로 비쳤다.
+     스쿼드·머피룸이 이미 겪고 막아 둔 것과 같은 틈이다 — 새로 만들지 않고 여기에 얹는다. */
+  body.sq-quick-kb::before, body.mw-kb::before, body.mw-jam-kb::before { content:''; position:fixed; inset:-120px 0; z-index:889;
     background:#05070c; pointer-events:none; }
-  body.sq-quick-kb .bottom-nav, body.mw-kb .bottom-nav { visibility:hidden; }
+  body.sq-quick-kb .bottom-nav, body.mw-kb .bottom-nav, body.mw-jam-kb .bottom-nav { visibility:hidden; }
   .nav-btn { flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; padding: 4px 0; transition: transform 0.1s ease; }
   .nav-btn:active { transform: scale(0.88); }
   .nav-icon-wrap { display: flex; align-items: center; justify-content: center; width: 36px; height: 28px; color: rgba(255,255,255,0.28); transition: color 0.2s ease, transform 0.2s cubic-bezier(0.34,1.56,0.64,1); }
@@ -8076,10 +8080,23 @@ window._charAutoSave = function (immediate) {
   if (window._charSaveT) { clearTimeout(window._charSaveT); window._charSaveT = null; }
   const run = async () => {
     const okSave = window._charPersistCharacter ? await window._charPersistCharacter(window._charDraft) : false;
-    window._charSetSaveStatus(okSave ? 'saved' : 'error');
+    // null = 문서 로드 전이라 미뤄 둔 것. 저장 중으로 두고, 실제로 보낸 뒤 '저장됨'이 된다.
+    window._charSetSaveStatus(okSave === null ? 'saving' : (okSave ? 'saved' : 'error'));
   };
   if (immediate) run(); else window._charSaveT = setTimeout(run, 600);
 };
+// ★0.6초 모아 두는 저장은 **화면을 떠나면 그대로 사라진다** (대표 8-28).
+//   옷을 고르고 바로 앱을 내리거나 탭을 옮기면 그 마지막 한 벌이 안 저장됐다.
+//   나가기 전에 밀어 보낸다 — 펫 배치에서 배운 것과 같다(막을 거면 미뤄 뒀다 보낸다).
+window._charFlushSave = function () {
+  if (!window._charSaveT) return;
+  clearTimeout(window._charSaveT); window._charSaveT = null;
+  window._charAutoSave(true);
+};
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') window._charFlushSave();
+});
+window.addEventListener('pagehide', function () { window._charFlushSave(); });
 // 옛 이름 유지 — 다른 곳에서 부르고 있어도 안 깨지게(이제는 즉시 저장 트리거)
 window.charSave = function () {
   if (!window.currentUser) { window.requireLogin && requireLogin('로그인 후 캐릭터를 저장할 수 있어요'); return; }
@@ -15512,8 +15529,15 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
   if (!window._mwDocReady()) {
-    window._mwQueueWrite('character', function () { window._charPersistCharacter(cfg); });
-    return false;
+    // ★미뤄 두는 것은 **실패가 아니다.** 예전엔 여기서 false 를 돌려줘 꾸미기가
+    //   '저장 실패 · 인터넷 확인'을 띄웠다(대표 8-28). 실제로는 곧 저장된다 —
+    //   보낸 뒤에 상태를 '저장됨'으로 바꿔 준다.
+    window._mwQueueWrite('character', function () {
+      window._charPersistCharacter(cfg).then(function (ok) {
+        window._charSetSaveStatus && window._charSetSaveStatus(ok ? 'saved' : 'error');
+      });
+    });
+    return null;                       // false(실패) 와 구분한다
   }
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
@@ -18524,7 +18548,16 @@ window.ensureCreditsInit = async (uid) => {
       window._creditState.credits = d.credits;
       window._creditState.lastEarned = d.creditsLastEarned || '';
       window._creditState.streak = (typeof d.streak === 'number') ? d.streak : 0;
-      window._charState.character = d.character || { ...window.CHAR_DEFAULT };
+      // ★★★로드가 끝나기 전에 고른 옷이 있으면 **그게 최신이다** (대표 8-28: "캐릭터
+      //   꾸미기 저장도 자동으로 잘 안 됨").
+      //   문서가 늦게 도착하면 여기서 서버 값으로 덮었다. 그러면 화면이 예전 옷으로
+      //   되돌아가고, 그 뒤 꾸미기가 draft 를 다시 뜨는 순간 **되돌아간 옷이 저장돼**
+      //   방금 고른 것이 진짜로 사라진다 — 저장이 안 된 게 아니라 **덮인 것**이었다.
+      //   미뤄 둔 저장(_mwPending.character)이 있으면 그쪽이 이긴다. 몇 줄 아래
+      //   _mwFlushWrites 가 그 값을 서버에도 보낸다.
+      if (!(window._mwPending && window._mwPending.character)) {
+        window._charState.character = d.character || { ...window.CHAR_DEFAULT };
+      }
       window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
       window._charState.hidden = (d.hiddenChars && typeof d.hiddenChars === 'object') ? d.hiddenChars : {};
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
@@ -18577,6 +18610,7 @@ window.ensureCreditsInit = async (uid) => {
     //   (대표 8-27). 크레딧 상태가 아직이면 조금 뒤에 다시 시도한다.
     setTimeout(function () {
       if (window._mwArtSettle) window._mwArtSettle();
+      if (window._mwArtCoPick) window._mwArtCoPick();     // 같이 그린 그림 받아 담기
       if (window._mwArtWonCheck) window._mwArtWonCheck();
     }, 1500);
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
@@ -21544,7 +21578,7 @@ window.mwJamShow = async function (asHost) {
     +   ' inputmode="text" enterkeyhint="send"'
     +   ' onfocus="window._mwJamKbStart&&window._mwJamKbStart()"'
     +   ' onblur="window._mwJamKbEnd&&window._mwJamKbEnd()"'
-    +   ' onkeydown="if(event.key===\'Enter\')window.mwJamSay()">'
+    +   '>'
     +   '<button onmousedown="event.preventDefault()" onclick="window.mwJamSay()">보내기</button>'
     + '</div>'
     + '<div class="jam-chat" id="mw-jam-log"><div class="pl-empty">그리면서 이야기해요</div></div>'
@@ -21560,6 +21594,7 @@ window.mwJamShow = async function (asHost) {
           + '<button class="go" onclick="window.mwJamPlace(\'frame\')">액자</button>'
         : '<button onclick="window.mwJamX()">닫기</button>') + '</div>';
   document.body.appendChild(el);
+  window._mwEnterSend(document.getElementById('mw-jam-input'), window.mwJamSay);
   window._mwChatPaint && window._mwChatPaint();   // 지금까지 오간 말을 곧바로 채운다
 
   const wrap = el.querySelector('.jam-wrap'), cv = wrap.querySelector('canvas');
@@ -21806,6 +21841,17 @@ window.mwArtHave = function (id) {
   return (window._myArt || []).some(function (a) { return a && a.id === id; });
 };
 
+// ★내가 그린 그림만 판다 (대표 8-28: "내가 그림 산거 가꼬오면 다시 올릴수있는데 이거 왜그런거임").
+//   막는 코드가 아예 없었다 — 산 그림도 경매 올리기 버튼이 그대로 떴다.
+//   판정은 `from`(가져온 자리) 하나로 하면 안 된다. **같이 그린 그림을 친구 방에서
+//   가져올 때도 from 이 붙기 때문이다** — 그건 내 그림이라 팔 수 있어야 한다.
+//   -> 가져온 것이면서 그린 사람 목록에 내가 없을 때만 막는다.
+//      (byUids 가 없던 옛 그림은 from 도 없어 그대로 팔린다)
+window.mwArtCanSell = function (a) {
+  if (!a) return false;
+  return !a.from || window.mwArtIsMine(a);
+};
+
 // 손님도 방주의 그림 목록을 실시간으로 본다. 입장 때 한 번 복사한 _mwVisit.artworks 만 쓰면
 // 방주가 방금 저장한 그림은 손님이 나갔다 다시 들어오기 전까지 목록에 나타나지 않는다.
 window._mwVisitArtUnwatch = function () {
@@ -21843,8 +21889,17 @@ window.mwJamSaveArt = async function () {
     const sn = await R.get(R.ref(R.db, 'roomLive/' + J.owner + '/players'));
     const all = sn.val() || {};
     Object.keys(all).forEach(function (k) {
-      if (!all[k] || !all[k].nick) return;
-      by.push(all[k].nick); byUids.push(k);
+      const v = all[k];
+      // ★★지금 방에 **붙어 있는 사람만** 서명에 넣는다 (대표 8-28: "예전 방에 있었던
+      //   사람들까지 다 로그가 반영되는 버그").
+      //   presence 노드는 나가기를 누르기 전까지 **12시간** 남는다(MW_ROOM_TTL_MS) —
+      //   어제 다녀간 사람이 그대로 들어 있어서 같이 그리지도 않은 사람이 공동 작가가 됐다.
+      //   그림은 방에 남지만 서명은 **그 자리에 있던 사람**의 것이어야 한다.
+      //   _mwRoomOnline = 끊김 표시가 없고 70초 안에 소식이 있는 사람(심장박동 25초).
+      //   승인 대기(wait)는 아직 방 사람이 아니다.
+      if (!v || !v.nick || v.wait) return;
+      if (!window._mwRoomOnline(v)) return;
+      by.push(v.nick); byUids.push(k);
     });
   } catch (e) {}
   if (!by.length) { by = [window._mwMyNick || '머피']; byUids = [me.uid]; }
@@ -21854,6 +21909,21 @@ window.mwJamSaveArt = async function () {
   window._myArt = [art].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
   const ok = await window._mwSaveArt(window._myArt);
   showToast(ok === false ? '목록에 담았어요 · 곧 저장돼요' : '그림 목록에 저장했어요');
+  // ★★같이 그린 사람 목록에도 **각자 사본**이 들어간다 (대표 8-28: "뚱이 마조리카랑
+  //   같이 그린 게 있는데 마조리카는 내 그림에 저장 안 됐다고 함").
+  //   지금까지 저장은 **방 주인 문서에만** 됐다. 같이 그린 사람은 주인 방에 찾아와
+  //   '가져오기'를 눌러야 했는데, 그런 길이 있는 줄 아무도 몰랐다.
+  //   남의 문서에는 못 쓴다 — 대금 정산(art_sold)과 **같은 길**로 보내고 받는 쪽 앱이 담는다.
+  //   px 를 같이 실어 보낸다(1024자). 그래야 받는 쪽이 주인 문서를 다시 안 읽어도 된다.
+  try {
+    for (const _u of art.byUids) {
+      if (!_u || _u === me.uid) continue;
+      await setDoc(doc(db, 'notifications', 'ac_' + art.id + '_' + _u), {
+        toUid: _u, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
+        type: 'art_co', artId: art.id, px: art.px, by: art.by, byUids: art.byUids,
+        at: art.at, taken: false, read: false, createdAt: serverTimestamp() });
+    }
+  } catch (e) { console.warn('art co send', e); }
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
   window.mwArtChip && window.mwArtChip(window._curField);
 };
@@ -21966,6 +22036,7 @@ window.mwArtTake = async function (id) {
 window.mwArtPrice = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
+  if (!window.mwArtCanSell(a)) { showToast('사 온 그림은 되팔 수 없어요'); return; }
   // ★★prompt() 를 쓰지 않는다 (8-26). 홈 화면에 설치한 앱(standalone)에서는 iOS 가
   //   prompt 를 **그냥 무시한다.** 눌러도 아무 일이 없어 "버튼이 죽었다"로 보였다.
   //   앱 안 모달로 받는다 — 펫 이름 모달과 같은 문법이다.
@@ -22136,6 +22207,8 @@ window.mwAucOpen = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
   if (window.mwAucSold(a)) { showToast('이미 팔린 그림이에요 · 대금이 들어오면 목록에서 빠져요'); return; }
+  // ★산 그림은 다시 못 올린다. 버튼도 안 뜨지만 다른 길로 들어와도 여기서 막힌다.
+  if (!window.mwArtCanSell(a)) { showToast('사 온 그림은 되팔 수 없어요'); return; }
   const _r = await window.mwArtPriceAsk((a.price | 0) || 10, {
     title: '얼마부터 시작할까요?',
     desc: '이 값보다 높게만 부를 수 있어요 · 팔리면 수수료 '
@@ -22361,6 +22434,41 @@ window._mwArtSettle = async function () {
     }
   } catch (e) { console.warn('art settle', e); }
   finally { window._mwSettling = false; }
+};
+
+// ---- ★같이 그린 그림을 **내 목록에 담는다** (대표 8-28) ----
+// 방 주인이 저장할 때 `art_co` 알림을 보내 둔다. 받는 쪽 앱이 자기 문서에 담는다 —
+// 남의 문서는 못 고치므로 대금 정산(_mwArtSettle)과 같은 구조다.
+// 중복은 `taken` 플래그와 mwArtHave 로 두 번 막는다(문서 id 가 `ac_{artId}_{uid}` 라 하나뿐).
+window._mwArtCoPick = async function () {
+  const me = window.currentUser && window.currentUser.uid; if (!me) return;
+  if (window._mwCoPicking) return; window._mwCoPicking = true;
+  try {
+    const qs = await getDocs(query(collection(db, 'notifications'),
+                                   where('toUid', '==', me), where('type', '==', 'art_co')));
+    let added = 0;
+    for (const d of qs.docs) {
+      const n = d.data() || {};
+      if (n.taken === true) continue;
+      const aid = n.artId, px = String(n.px || '');
+      // 그림이 안 실려 왔으면 다시 볼 것도 없다 — 표시만 하고 넘어간다
+      if (!aid || !/[1-6]/.test(px)) { try { await updateDoc(d.ref, { taken: true }); } catch (e) {} continue; }
+      try { await updateDoc(d.ref, { taken: true }); } catch (e) { continue; }
+      if (window.mwArtHave(aid)) continue;          // 이미 가져다 놨으면 그만
+      window._myArt = [{ id: aid, px: px,
+                         by: Array.isArray(n.by) ? n.by : [],
+                         byUids: Array.isArray(n.byUids) ? n.byUids : [],
+                         at: n.at || Date.now(), price: 0 }]
+                      .concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+      added++;
+    }
+    if (added) {
+      await window._mwSaveArt(window._myArt);
+      showToast('같이 그린 그림 ' + added + '장이 내 그림에 담겼어요');
+      window.mwArtChip && window.mwArtChip(window._curField || 'home');
+    }
+  } catch (e) { console.warn('art co pick', e); }
+  finally { window._mwCoPicking = false; }
 };
 
 // ---- ★낙찰자에게 **알림을 안 눌러도** 바로 묻는다 ----
@@ -22674,6 +22782,10 @@ window.mwArtBig = function (id) {
       // 낙찰이 주인공이다. '내리기'는 되돌리는 길이라 **글자 버튼**으로 낮춘다.
       sell = '<button class="ab-sell" onclick="window.mwAucHammer(' + q + ')">' + IC_GAVEL + '낙찰하기</button>'
            + '<button class="ab-undo" onclick="window.mwAucClose(' + q + ')">경매 내리기</button>';
+    } else if (!window.mwArtCanSell(a)) {
+      // 사 온 그림 — 버튼을 지우기만 하면 "왜 없지"가 된다. 한 줄로 이유를 말한다.
+      sell = '<div style="font-size:10.5px;color:#4a5266;margin-top:12px">'
+           + '사 온 그림이라 되팔 수 없어요</div>';
     } else {
       sell = '<button class="ab-sell" onclick="window.mwAucOpen(' + q + ')">' + IC_TAG + '경매 올리기</button>';
     }
@@ -22976,6 +23088,13 @@ window._mwRlQueueRender = function (all) {
   const digest = window._mwRlVisualDigest(window._mwRl.last);
   if (window._mwRl.digest === digest) return;
   window._mwRl.digest = digest;
+  // ★★명단은 **그림과 따로** 갱신한다 (대표 8-28: "방에 들어왔는데 채팅 안 치면
+  //   명단에 반영이 안 된다").
+  //   예전엔 명단을 부르는 곳이 ①_mwRlRender 의 **맨 끝** ②채팅이 올 때, 두 곳뿐이었다.
+  //   그런데 _mwRlRender 는 방을 못 재면(꾸미기가 열려 있거나 다른 탭이면) **맨 위에서
+  //   되돌아간다** — 그러면 명단까지 같이 안 돌았다. 그래서 누가 말을 해야 그제야 떴다.
+  //   명단은 글자다. 방을 못 재도 그릴 수 있다 — 스냅샷이 바뀌는 여기서 바로 갱신한다.
+  window._mwRTalkWho && window._mwRTalkWho();
   if (window._mwRl.renderJob) return;
   const run = function () {
     window._mwRl.renderJob = 0; window._mwRl.renderKind = '';
@@ -23478,12 +23597,13 @@ window.mwRTalkOpen = function () {
     + '<div class="rt-log" id="mw-rtalk-log"></div>'
     + '<div class="rt-row">'
     +   '<input id="mw-rtalk-input" maxlength="40" placeholder="한마디 하면 머리 위에 떠요" autocomplete="off"'
-    +   ' onkeydown="if(event.key===\'Enter\')window.mwRTalkSay()">'
+    +   ' inputmode="text" enterkeyhint="send">'
     +   '<button onmousedown="event.preventDefault()" onclick="window.mwRTalkSay()">말하기</button>'
     + '</div>';
   document.body.appendChild(el);
   const inp = document.getElementById('mw-rtalk-input');
   if (inp) {
+    window._mwEnterSend(inp, window.mwRTalkSay);
     // 스쿼드 톡과 같은 짝: 포커스에 실측 보정을 걸고, blur 에 되돌린다.
     inp.addEventListener('focus', function () { window._mwRtKbCompact(true); window._mwRtKbWatch(); });
     inp.addEventListener('blur', function () {
@@ -23660,6 +23780,7 @@ window._mwJamKbFit = function () {
 window._mwJamKbStart = function () {
   if (window._mwJamKbOn) return;
   window._mwJamKbOn = 1; window._mwJamKbH = 0;
+  document.body.classList.add('mw-jam-kb');      // 뒤에 깔린 머피룸이 틈으로 비치는 것을 막는다
   window._mwJamOwnedLock = !_bodyLocked;
   if (window._mwJamOwnedLock) { try { lockBodyScroll(); } catch (e) {} }
   const vv = window.visualViewport;
@@ -23672,6 +23793,7 @@ window._mwJamKbEnd = function (immediate) {
     const ae = document.activeElement;
     if (!immediate && ae && ae.id === 'mw-jam-input') return;   // 다시 치고 있다
     window._mwJamKbOn = 0; window._mwJamKbH = 0;
+    document.body.classList.remove('mw-jam-kb');
     const vv = window.visualViewport;
     if (vv) vv.removeEventListener('resize', window._mwJamKbFit);
     const el = document.getElementById('mw-jam'); if (el) el.style.height = '';
@@ -24082,6 +24204,8 @@ window._mwKbStart = function () {
   if (vv) {
     vv.addEventListener('resize', window._mwPartyVVFit);
     vv.addEventListener('scroll', window._mwPartyVVFit);
+    vv.addEventListener('resize', window._mwPartyKbFix);
+    vv.addEventListener('scroll', window._mwPartyKbFix);
   }
   window.addEventListener('scroll', window._mwKbScrollGuard, { passive:true });
   let hold = 0;
@@ -24091,7 +24215,9 @@ window._mwKbStart = function () {
     if (++hold < 70) requestAnimationFrame(keep); // 키보드 애니메이션 전체를 약 1초간 붙잡는다
   };
   requestAnimationFrame(keep);
-  [0, 80, 180, 320, 520, 760].forEach(function (t) { setTimeout(window._mwPartyVVFit, t); });
+  [0, 80, 180, 320, 520, 760].forEach(function (t) {
+    setTimeout(function () { window._mwPartyVVFit(); window._mwPartyKbFix(); }, t);
+  });
 };
 window._mwKbScrollGuard = function () {
   if (!window._mwKbOn) return;
@@ -24110,15 +24236,63 @@ window._mwKbEnd = function (immediate) {
     if (vv) {
       vv.removeEventListener('resize', window._mwPartyVVFit);
       vv.removeEventListener('scroll', window._mwPartyVVFit);
+      vv.removeEventListener('resize', window._mwPartyKbFix);
+      vv.removeEventListener('scroll', window._mwPartyKbFix);
     }
     window.removeEventListener('scroll', window._mwKbScrollGuard);
     document.body.classList.remove('mw-kb');
     const el = document.getElementById('page-char');
     if (el) { el.style.top = '0px'; el.style.bottom = '0px'; el.style.height = ''; }
+    window._mwPartyKbReset();
     if (window._mwKbOwnedLock) { try { unlockBodyScroll(); } catch (e) {} }
     window._mwKbOwnedLock = false;
   };
   if (immediate) finish(); else setTimeout(finish, 100);
+};
+// ★★엔터(전송) 한 번으로 보낸다 (대표 8-28: "키보드 치고 다시 체크하고 다시 전송을
+//   눌러야만 되는 귀찮음이 없게").
+//   inline onkeydown 하나로는 **한글에서 새는 구간**이 있다 — 조합 중(마지막 글자가 아직
+//   맺히지 않은 상태)에 전송키를 누르면 브라우저가 keyCode 229 를 주거나 isComposing 이
+//   켜져 있어, 거기서 보내면 마지막 글자가 빠지고 기본동작을 막으면 글자가 안 맺힌다.
+//   -> 조합 중이면 **막지 않고 표시만 해 뒀다가, 조합이 끝나는 순간 보낸다.**
+window._mwEnterSend = function (inp, fn) {
+  if (!inp || inp._entSend) return; inp._entSend = 1;
+  var pend = false;
+  inp.addEventListener('compositionend', function () {
+    if (!pend) return; pend = false; setTimeout(fn, 0);
+  });
+  inp.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.keyCode !== 13) return;
+    if (e.isComposing || e.keyCode === 229) { pend = true; return; }
+    e.preventDefault(); fn();
+  });
+};
+// ★★필드 입력줄이 아이폰 키보드 윗줄 바(이전/다음/완료)에 덮이던 것 (대표 8-28).
+//   방(#page-char)을 vv 높이로 줄여도, 위에 있는 월드바+정사각형 방이 그 높이를 거의 다
+//   먹어서 입력줄이 보이는 영역 **맨 끝자락**에 걸린다 — 거기가 바가 앉는 자리다.
+//   ★방은 건드리지 않는다(대표 8-25 "고정한다는 건 아무 것도 안 움직인다는 뜻").
+//     계산하지 말고 **잰다** — 머피룸 톡(_mwRtKbFix)과 같은 식으로, 입력줄이 든 상자만
+//     가려진 만큼 위로 올린다. 안 가려져 있으면 잰 값이 0 이라 아무 일도 안 일어난다.
+window._mwPartyKbLift = 0;
+window._mwPartyKbFix = function () {
+  const box = document.getElementById('mw-party-chat');
+  const inp = document.getElementById('mw-party-input');
+  if (!box || !inp || !window._mwKbOn) return;
+  const vv = window.visualViewport;
+  const visBottom = vv ? ((vv.offsetTop || 0) + vv.height) : (window.innerHeight || 0);
+  const cur = window._mwPartyKbLift || 0;
+  const rawBottom = inp.getBoundingClientRect().bottom + cur;   // 올려둔 만큼 되돌린 '원래' 바닥
+  let lift = Math.ceil(rawBottom - visBottom + 10);             // 10 = 바 밑에 두는 여유
+  if (!(lift > 0)) lift = 0;
+  if (lift > (window.innerHeight || 9999)) lift = 0;            // 이상값 방어
+  if (lift === cur) return;
+  window._mwPartyKbLift = lift;
+  box.style.transform = lift ? ('translateY(-' + lift + 'px)') : '';
+};
+window._mwPartyKbReset = function () {
+  const box = document.getElementById('mw-party-chat');
+  window._mwPartyKbLift = 0;
+  if (box) box.style.transform = '';
 };
 window._mwBubblePin = false;
 window.mwRoomQuickBar = function () {
@@ -24143,7 +24317,7 @@ window.mwRoomQuickBar = function () {
     + 'outline:none;font-family:inherit;border-radius:0"'
     + ' onpointerdown="window._mwKbStart&&window._mwKbStart()"'
     + ' onfocus="window._mwKbStart&&window._mwKbStart()" onblur="window._mwKbEnd&&window._mwKbEnd()"'
-    + ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.mwRoomSay();}">'
+    + '>'
     + '<button id="mw-quick-pin" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="window.mwBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
     + (on ? 'background:#F5C24B;color:#3a2a00;' : 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);')
@@ -24156,6 +24330,7 @@ window.mwRoomQuickBar = function () {
     + "box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;"
     + "font-family:'Galmuri11',sans-serif;border-radius:0\">말하기</button>";
   host.appendChild(bar);
+  window._mwEnterSend(document.getElementById('mw-party-input'), window.mwRoomSay);
   window._sqNoJump && window._sqNoJump(document.getElementById('mw-party-input'), 'page-char');
 };
 // 고정 = 내 말풍선이 안 사라진다. 스쿼드의 sqBubblePinToggle 과 같은 뜻이다.
@@ -26222,6 +26397,20 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:13px;line-height:1.6;color:#ddd">${n.seller ? '그림이 팔렸어요' : '같이 그린 그림이 팔렸어요'} <b style="color:#F5C24B">+${Number(n.amount||0).toLocaleString()}머피</b></div>
             <div style="font-size:11.5px;color:#8a93a8;margin-top:2px">${safeNick}님이 가져갔어요${n.seller ? '' : ' · 같이 그린 몫이에요'}</div>
             <div style="font-size:11px;color:#444;margin-top:2px">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'art_co') {
+        // 담는 것은 _mwArtCoPick 이 이미 했다. 여기는 알리기만 한다(같이 팔린 알림과 같은 모양).
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}')">
+          <div style="width:34px;height:34px;background:none;border:1.5px solid rgba(122,168,255,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7aa8ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16"/><path d="M7 15l3.2-3.6 2.4 2.6 2-2.2L17 15"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:2px">같이 그린 그림이 <b style="color:#7aa8ff">내 그림</b>에 담겼어요</div>
+            <div style="font-size:11.5px;color:#8a93a8;margin-bottom:2px">${safeNick}님의 방에서 같이 그렸어요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0"></div>' : ''}
         </div>`;
@@ -33436,7 +33625,7 @@ window._sqTalkOpen = function () {
     <div id="sq-part-board" style="flex-shrink:0">${window._sqPartBoardHtml ? window._sqPartBoardHtml(s, window._sqMembers || {}) : ''}</div>
     <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
     <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
-      <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.sqChatSend('${sid}')">
+      <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" inputmode="text" enterkeyhint="send">
       <button id="sq-chat-send" onmousedown="event.preventDefault()" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
     </div>`;
   const host = document.getElementById('sq-detail') || document.body;
@@ -33451,6 +33640,8 @@ window._sqTalkOpen = function () {
   // ★키보드 실측 보정을 붙인다 (위 _sqKbFix 설명 참조)
   const _ci = document.getElementById('sq-chat-input');
   if (_ci) {
+    // ★엔터 한 번으로 보낸다 — 머피룸과 **같은 헬퍼**다(한글 조합 중이면 조합 뒤에 보낸다)
+    window._mwEnterSend(_ci, function () { window.sqChatSend(sid); });
     _ci.addEventListener('focus', function () { window._sqKbCompact(true); window._sqKbWatch(); });
     _ci.addEventListener('blur', function () {
       setTimeout(function () { window._sqKbCompact(false); window._sqKbReset(); }, 60);
@@ -33793,7 +33984,7 @@ window._sqQuickBar = function (s) {
     + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(255,255,255,.06);'
     + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
     + 'outline:none;font-family:inherit;border-radius:0"'
-    + ' onkeydown="if(event.key===\'Enter\')window.sqChatSend(\'' + s.id + '\',\'sq-quick-input\')">'
+    + ' inputmode="text" enterkeyhint="send">'
     // 고정 토글 — 켜면 내 말풍선이 안 사라진다(켜져 있으면 골드)
     + '<button id="sq-quick-pin" onmousedown="event.preventDefault()" onclick="window.sqBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
@@ -33809,6 +34000,7 @@ window._sqQuickBar = function (s) {
   host.appendChild(bar);
   const input = document.getElementById('sq-quick-input');
   if (input) {
+    window._mwEnterSend(input, function () { window.sqChatSend(s.id, 'sq-quick-input'); });
     // focus 순간은 키보드 애니메이션 전이라 뒤 화면을 밀기 전에 잠글 수 있다.
     input.addEventListener('focus', window._sqQuickKbStart);
     input.addEventListener('blur', function () { window._sqQuickKbEnd(false); });
