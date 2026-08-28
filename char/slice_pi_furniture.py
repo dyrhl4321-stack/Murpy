@@ -80,7 +80,7 @@ PINK_ITEMS = [
     ('pk_nightstand', '핑크 협탁',    100, 103, 124, 127, {}),
     # --- 의자·탁자 ---
     ('pk_sofa',       '핑크 소파',    294, 217, 345, 240, {}),
-    ('pk_sofa_s',     '핑크 1인 소파',  5, 147,  25, 176, {}),
+    # ('pk_sofa_s') 폐기 — 안락의자의 **옆모습**이었다(대표 8-28). pk_armchair_d1 로 간다
     ('pk_armchair',   '핑크 안락의자', 36, 147,  61, 176, {}),
     ('pk_bench',      '핑크 벤치',    112, 161, 160, 192, {}),
     ('pk_ottoman',    '핑크 스툴',      5, 236,  42, 256, {}),
@@ -112,9 +112,46 @@ PINK_ITEMS = [
     # ★'커튼'이 아니라 **ㄷ자 조리대**다 (대표 8-28 지적). 벽에 거는 게 아니라 바닥에 놓는다 —
     #   wall:true 로 두면 접지 그림자도 안 그린다.
     ('pk_counter_u',  'ㄷ자 조리대',  216,  53, 264,  96, {}),
-    ('pk_frame',      '핑크 액자',    314,  26, 342,  54, {'wall': True}),
     ('pk_rug',        '핑크 러그',    150, 209, 185, 255, {'flat': True}),
     ('pk_rug_heart',  '하트 러그',     34,  93,  62, 111, {'flat': True}),
+
+    # ===== 2차 (대표 8-28: "넣다 말지 말고 다 넣어라고") =====
+    # 1차에서 빠진 것 전부. 여러 개가 한 덩어리로 붙어 있던 곳은 4방향 연결요소로 다시 갈랐다.
+    ('pk_stool',      '핑크 스툴의자',279,  43, 298,  65, {}),
+    ('pk_towel',      '핑크 수건걸이',181,  71, 207,  93, {'wall': True}),
+    ('pk_counter_long','긴 싱크대',  128,  98, 256, 128, {}),   # y130 까지 잡으면 아래 선반·책상 윗선이 딸려온다
+    ('pk_shelf',      '핑크 선반',   177, 128, 206, 160, {}),
+    ('pk_desk_drawer','핑크 서랍책상',212, 128, 252, 160, {}),
+    ('pk_plates',     '접시',        150,  75, 170,  93, {}),
+    ('pk_monitor',    '핑크 모니터', 310, 153, 326, 168, {}),
+    ('pk_gamepad',    '핑크 게임패드',313, 166, 330, 178, {}),   # 308 부터 잡으면 모니터 받침이 붙는다
+    ('pk_box_wood',   '나무 상자',   256, 141, 274, 160, {}),
+    ('pk_box_pink',   '핑크 상자',   274, 142, 289, 160, {}),
+    ('pk_fireplace',  '핑크 벽난로',  66, 160, 112, 192, {}),   # 위=창문 밑선, 아래=토스터 윗선을 뺀다
+    ('pk_toaster',    '토스터',       64, 193,  80, 209, {}),
+    ('pk_toaster2',   '핑크 토스터',  80, 193,  96, 212, {}),
+    ('pk_toaster3',   '식빵 토스터',  97, 198, 118, 214, {}),
+    ('pk_table',      '핑크 테이블',  21, 184,  44, 206, {}),
+    ('pk_giftbox',    '핑크 선물상자',30, 204,  48, 225, {}),
+    ('pk_lampstand',  '램프 협탁',   304, 176, 321, 209, {}),
+    ('pk_calendar',   '달력',        240, 203, 257, 225, {'wall': True}),
+    ('pk_letter',     '편지',          1, 212,  15, 223, {}),
+    ('pk_cabinet_cream','크림 수납장',228, 235, 252, 257, {}),
+    ('pk_window_b',   '핑크 창문(작은)',69, 130,  93, 160, {'wall': True}),
+
+    # ★액자 3종은 **6배**로 굽는다(구멍 16px x6 = 96px = 그림 표시크기).
+    #   대표 8-28: "그림그리기 벽에 거는 에셋이랑 크기가 아다리가 맞았으면 · 액자랑 같이
+    #   포갤 경우 이쁘게 같이 포개지는 걸 의도한 것".
+    ('pk_frame',      '핑크 액자',   314,  26, 342,  54, {'wall': True, 'scale': 6}),
+    ('pk_frame_b',    '꽃무늬 액자',  75,  59, 101,  85, {'wall': True, 'scale': 6}),
+    ('pk_frame_c',    '두꺼운 액자', 107,  59, 133,  85, {'wall': True, 'scale': 6}),
+    ('pk_frame_tall', '세로 액자',   290, 145, 302, 160, {'wall': True}),
+
+    # ★방향이 있는 것 — **좌우 반전이 아니라 시트에 실제로 그려진 다른 각도**다(대표 8-28:
+    #   "핑크 1인소파랑 핑크 안락의자랑 똑같은 거임, 그 방향이 서로 다른 거임").
+    #   _d1 은 카탈로그에서 dirs 로 묶어 '돌리기' 버튼에 쓴다.
+    ('pk_armchair_d1','핑크 안락의자(옆)', 5, 147,  26, 177, {}),
+    ('pk_chair_d1',   '핑크 의자(옆)',    50, 184,  63, 209, {}),
 ]
 
 ROOMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rooms')
@@ -170,7 +207,10 @@ def main():
         r, g, b, a = crop.split()
         crop = Image.merge('RGBA', (r, g, b, a.point(lambda v: 255 if v >= SHADOW_CUT else 0)))
         w, h = crop.size
-        big = crop.resize((w * SCALE, h * SCALE), Image.NEAREST)
+        # ★항목별 배율. 정수배만 쓴다(픽셀 하드룰). 액자는 안쪽 구멍 16px 이 그림 표시크기
+        #   96px 과 맞아떨어지는 6배로 굽는다 — 그래야 그림을 액자에 포개면 딱 들어간다.
+        sc = int(extra.get('scale', SCALE))
+        big = crop.resize((w * sc, h * sc), Image.NEAREST)
         big.save(os.path.join(args.out, name + '.png'))
         made.append((name, label, big.size[0], big.size[1], extra, big))
         print(f'  {name:18s} {w}x{h} -> {big.size[0]}x{big.size[1]}  {label}')
@@ -178,7 +218,7 @@ def main():
     if args.catalog:
         print('\n--- ROOM_ITEMS ---')
         for name, label, w, h, extra, _ in made:
-            flags = ''.join(f", {k}:true" for k in extra)
+            flags = ''.join(f", {k}:true" for k in extra if k != 'scale')
             print(f"  {{ id:'{name}', name:'{label}', src:'char/rooms/{name}.png?v=1', w:{w}, h:{h}{flags} }},")
 
     if args.footprint:
