@@ -66,6 +66,55 @@ ITEMS = [
     ('pi_fridge_white','화이트 냉장고',450, 169, 478, 215, {}),
 ]
 
+# ===== 핑크 에디션 (대표 8-28: "방꾸미기 핑크를 좋아하는 사람이 많아서 특별에셋으로") =====
+# 시트 = 핑크인테리어.png (352x288). ★반투명 픽셀이 하나도 없다(알파 0/255뿐) —
+#   구워진 그림자가 없다는 뜻이라, 우리 접지 그림자(_mwShadowHtml)가 그대로 붙는다.
+# 좌표는 알파 연결요소 분석 실측값(54덩어리). 여러 개가 한 덩어리로 붙은 곳만 손으로 갈랐다.
+PINK_ITEMS = [
+    # --- 침대·수납 ---
+    ('pk_bed',        '핑크 침대',      1,  90,  31, 143, {}),
+    ('pk_wardrobe',   '핑크 옷장',     97, 199, 142, 255, {}),
+    ('pk_dresser',    '핑크 서랍장',   50, 215,  94, 255, {}),
+    ('pk_drawer_s',   '핑크 3단 서랍', 86, 264, 108, 288, {}),
+    ('pk_cabinet_low','핑크 낮은 수납장', 196, 236, 221, 256, {}),
+    ('pk_nightstand', '핑크 협탁',    100, 103, 124, 127, {}),
+    # --- 의자·탁자 ---
+    ('pk_sofa',       '핑크 소파',    294, 217, 345, 240, {}),
+    ('pk_sofa_s',     '핑크 1인 소파',  5, 147,  25, 176, {}),
+    ('pk_armchair',   '핑크 안락의자', 36, 147,  61, 176, {}),
+    ('pk_bench',      '핑크 벤치',    112, 161, 160, 192, {}),
+    ('pk_ottoman',    '핑크 스툴',      5, 236,  42, 256, {}),
+    ('pk_desk',       '핑크 책상',    162, 163, 206, 192, {}),
+    ('pk_desk_long',  '핑크 긴 책상',   2, 259,  46, 288, {}),
+    ('pk_chair',      '핑크 의자',      2, 184,  14, 208, {}),
+    # --- 주방 ---
+    ('pk_fridge',     '핑크 냉장고',  291,  78, 317, 128, {}),
+    ('pk_oven',       '핑크 오븐',    262, 100, 282, 128, {}),
+    ('pk_microwave',  '핑크 전자레인지', 212, 173, 235, 192, {}),
+    # --- 욕실 ---
+    ('pk_bath',       '핑크 욕조',    129, 132, 174, 159, {}),
+    ('pk_toilet',     '핑크 변기',    257, 166, 272, 192, {}),
+    ('pk_sink',       '핑크 세면대',  279,   3, 298,  32, {}),
+    ('pk_washstand',  '핑크 세면장',   52, 260,  78, 288, {}),
+    # --- 소품·조명 ---
+    ('pk_tv',         '딸기 TV',       68,  96,  91, 128, {}),
+    ('pk_clock',      '핑크 괘종시계',240, 170, 255, 192, {}),
+    ('pk_sewing',     '핑크 재봉틀',  277, 170, 298, 192, {}),
+    ('pk_mirror',     '핑크 거울',    260, 208, 284, 240, {}),
+    ('pk_vase',       '핑크 꽃병',    211, 200, 222, 222, {}),
+    ('pk_vase_rose',  '장미 꽃병',    194, 201, 206, 223, {}),
+    ('pk_bin',        '핑크 휴지통',   40, 123,  57, 142, {}),
+    ('pk_teapot',     '핑크 주전자',   18, 209,  31, 223, {}),
+    ('pk_books',      '핑크 책',      227, 209, 237, 223, {}),
+    # --- 벽·바닥 ---
+    ('pk_door',       '핑크 문',      212,   9, 237,  48, {'wall': True}),
+    ('pk_window',     '핑크 창문',     98, 130, 125, 159, {'wall': True}),
+    ('pk_curtain',    '핑크 커튼',    216,  53, 264,  96, {'wall': True}),
+    ('pk_frame',      '핑크 액자',    314,  26, 342,  54, {'wall': True}),
+    ('pk_rug',        '핑크 러그',    150, 209, 185, 255, {'flat': True}),
+    ('pk_rug_heart',  '하트 러그',     34,  93,  62, 111, {'flat': True}),
+]
+
 ROOMS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'rooms')
 
 
@@ -94,6 +143,8 @@ def solid_bbox(im):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('sheet')
+    ap.add_argument('--set', default='pi', choices=['pi', 'pink'],
+                    help='pi=Pixel Interiors(기본) / pink=핑크 에디션')
     ap.add_argument('--out', default=ROOMS)
     ap.add_argument('--contact', default=None, help='이름·크기 확인용 대조표')
     ap.add_argument('--catalog', action='store_true', help='ROOM_ITEMS 코드 출력')
@@ -105,7 +156,8 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     made = []
 
-    for name, label, x0, y0, x1, y1, extra in ITEMS:
+    table = PINK_ITEMS if args.set == 'pink' else ITEMS
+    for name, label, x0, y0, x1, y1, extra in table:
         crop = sheet.crop((x0, y0, x1, y1))
         bb = solid_bbox(crop)
         if not bb:
