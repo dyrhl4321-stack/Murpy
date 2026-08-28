@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '797';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '798';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3989,7 +3989,7 @@ window.ROOM_ITEMS = [
   // 벽·바닥 — wall/flat 은 접지 그림자를 안 그린다(벽에 걸리거나 바닥에 깔리는 것)
   { id:'pk_door', cat:'pink', name:'핑크 문', src:'char/rooms/pk_door.png?v=1', w:100, h:156, wall:true, price:15 },
   { id:'pk_window', cat:'pink', name:'핑크 창문', src:'char/rooms/pk_window.png?v=1', w:108, h:116, wall:true, price:15 },
-  { id:'pk_curtain', cat:'pink', name:'핑크 커튼', src:'char/rooms/pk_curtain.png?v=1', w:192, h:172, wall:true, price:20 },
+  { id:'pk_counter_u', cat:'pink', name:'ㄷ자 조리대', src:'char/rooms/pk_counter_u.png?v=1', w:192, h:172, surface:true, sbw:192, topDepth:44, blockBand:0.55, price:25 },
   { id:'pk_frame', cat:'pink', name:'핑크 액자', src:'char/rooms/pk_frame.png?v=1', w:112, h:112, wall:true, price:10 },
   { id:'pk_rug', cat:'pink', name:'핑크 러그', src:'char/rooms/pk_rug.png?v=1', w:140, h:184, flat:true, price:15 },
   { id:'pk_rug_heart', cat:'pink', name:'하트 러그', src:'char/rooms/pk_rug_heart.png?v=1', w:112, h:72, flat:true, price:15 }
@@ -5050,6 +5050,45 @@ window._mwPetPick = function (p) {
 };
 
 // 목적지로 한 칸 간다. 마지막 한 칸일 때만 목적지(가구 위)로 올라선다.
+// ===== 길찾기 (대표 8-28) =====
+// ★"고양이는 캣타워 바로 앞에 책상으로 막아놨는데 돌아가면 되는데 가구에 막혀서 왔다갔다
+//   존나함", "밥그릇 갖다놨는데 조금이라도 살짝 가로막혀 있으면 못 가고 와리가리함".
+// 원인은 **한 칸씩 욕심내서 고르던 것**이다. 가고 싶은 방향이 막히면 후보 목록에서
+// 아무 방향으로나 한 칸 갔고, 다음 틱에 그 자리에서 다시 원래 방향으로 한 칸 —
+// 두 칸을 영원히 오갔다(막다른 자리면 영영). 돌아가는 길을 **본 적이 없다.**
+// -> 16x16 = 256칸이다. 매번 제대로 찾아도 싸다. 너비 우선(BFS)으로 최단 경로의 첫 걸음을 준다.
+// ★도착 칸은 막혀 있어도 목적지로 인정한다 — 개집·캣타워·밥그릇 자리는 원래 '가구가 깔린 칸'이고
+//   (blockBand), 마지막 한 걸음은 그 위로 올라서는 것이다. 이걸 막으면 집에 영영 못 들어간다.
+window._mwPetPath = function (c0, r0, c1, r1) {
+  if (!window._mwCritterWalkable) return null;
+  if (c0 === c1 && r0 === r1) return null;
+  var N = 16, start = r0 * N + c0, goal = r1 * N + c1;
+  if (c1 < 0 || r1 < 0 || c1 >= N || r1 >= N) return null;
+  var prev = new Int16Array(N * N); prev.fill(-1);
+  prev[start] = -2;
+  var q = [start], head = 0, found = false;
+  var D = [[0, -1], [0, 1], [-1, 0], [1, 0]];      // 한 칸씩만 — 대각선은 가구를 스쳐 지난다
+  while (head < q.length) {
+    var cur = q[head++];
+    if (cur === goal) { found = true; break; }
+    var cy = (cur / N) | 0, cx = cur % N;
+    for (var i = 0; i < 4; i++) {
+      var nx = cx + D[i][0], ny = cy + D[i][1];
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      var k = ny * N + nx;
+      if (prev[k] !== -1) continue;
+      if (k !== goal && !window._mwCritterWalkable(nx, ny)) continue;
+      prev[k] = cur; q.push(k);
+    }
+  }
+  if (!found) return null;
+  var step = goal, guard = 0;
+  while (prev[step] !== start) {
+    step = prev[step];
+    if (step < 0 || ++guard > 256) return null;    // 있을 수 없는 일이지만 무한루프는 막는다
+  }
+  return { tc: step % N, tr: (step / N) | 0 };
+};
 window._mwPetGoto = function (p, spot, thenAnim) {
   if (!p || !p.el || !spot) return false;
   var dc = spot.tc - p.tc, dr = spot.tr - p.tr, midway = false;
@@ -5065,23 +5104,12 @@ window._mwPetGoto = function (p, spot, thenAnim) {
     return true;
   }
   if (Math.abs(dc) + Math.abs(dr) > 1) {
-    // ★막히면 돌아간다. 예전엔 두 방향만 보고 막히면 멈춰서, 위로 가려는데 바로 위가
-    //   가구면 영영 못 갔다.
-    var cand = [];
-    if (Math.abs(dc) >= Math.abs(dr)) {
-      if (dc) cand.push({ dc: dc > 0 ? 1 : -1, dr: 0 });
-      if (dr) cand.push({ dc: 0, dr: dr > 0 ? 1 : -1 });
-    } else {
-      if (dr) cand.push({ dc: 0, dr: dr > 0 ? 1 : -1 });
-      if (dc) cand.push({ dc: dc > 0 ? 1 : -1, dr: 0 });
-    }
-    cand.push({ dc: 0, dr: -1 }, { dc: 0, dr: 1 }, { dc: -1, dr: 0 }, { dc: 1, dr: 0 });
-    var pick = null, ci;
-    for (ci = 0; ci < cand.length; ci++) {
-      if (window._mwCritterWalkable(p.tc + cand[ci].dc, p.tr + cand[ci].dr)) { pick = cand[ci]; break; }
-    }
-    if (!pick) return false;
-    spot = { tc: p.tc + pick.dc, tr: p.tr + pick.dr, up: false };
+    // ★★돌아가는 길을 **찾아서** 간다(_mwPetPath). 예전엔 후보 네 방향 중 걸을 수 있는
+    //   첫 칸으로 갔는데, 그게 목적지에서 멀어지는 칸이면 다음 틱에 되돌아와 와리가리가 됐다.
+    var nxt = window._mwPetPath(p.tc, p.tr, spot.tc, spot.tr);
+    if (!nxt) return false;      // 길이 아예 없다 — 헤매지 말고 하던 일을 한다
+    var pick = { dc: nxt.tc - p.tc, dr: nxt.tr - p.tr };
+    spot = { tc: nxt.tc, tr: nxt.tr, up: false };
     // ★중간 칸에서는 **애니메이션을 바꾸지 않는다**(null). 예전엔 'stand' 로 되돌려서
     //   한 칸 갈 때마다 뛰다-서다-뛰다가 반복됐다
     //   (대표 8-26: "하우스 했을 때 바로 뛰어서 가야 하는데 뛰었다 말았다 하면서 집 들어감").
