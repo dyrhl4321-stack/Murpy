@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '792';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '793';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -1106,6 +1106,12 @@ window._SW_V = '792';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 �
   #mw-artprice input { width:100%; box-sizing:border-box; height:38px; background:rgba(255,255,255,.06);
     border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350; color:#fff; padding:0 10px;
     font-size:16px; outline:none; font-family:inherit; border-radius:0; text-align:center }
+  /* 작품 설명 — 값 아래에 붙는다. 입력칸과 같은 문법이되 여러 줄이라 왼쪽 정렬. */
+  #mw-artprice textarea { width:100%; box-sizing:border-box; margin-top:8px;
+    background:rgba(255,255,255,.06); border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
+    color:#fff; padding:8px 10px; font-size:13px; line-height:1.5; outline:none;
+    font-family:inherit; border-radius:0; resize:none }
+  #mw-artprice textarea::placeholder { color:#4a5266 }
   #mw-artprice .ap-btns { display:flex; gap:6px; margin-top:14px }
   #mw-artprice .ap-btns button { flex:1; height:38px; background:#141a28; border:3px solid #05070c;
     color:#cfd6e6; font-size:11.5px; cursor:pointer; font-family:inherit; border-radius:0 }
@@ -5217,7 +5223,7 @@ window._mwPetSync = function () {
     //   꾸미기 들어가서 저장해야 로드됨"). 머피월드에 막 들어온 순간에도 방 크기가 0 이라
     //   여기서 끝나 버렸고, 다음에 mwRenderFurn 을 부르는 것이 **꾸미기 저장뿐**이었다.
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
-    if (room && !room.clientWidth && list.length) {
+    if (room && !room.clientWidth) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -6680,6 +6686,10 @@ window.mwMarketOpen = async function () {
       +     '<span style="color:' + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
       +     (window.mwArtEdition(a) === 1 ? '1장 한정' : window.mwArtEdition(a) + '장 한정') + '</span>'
       +     (when ? ' · ' + when : '') + '</div>'
+      +   (a.desc
+            ? ('<div style="font-size:11px;color:#b9c0d0;margin-top:4px;overflow:hidden;'
+               + 'text-overflow:ellipsis;white-space:nowrap">' + esc(a.desc) + '</div>')
+            : '')
       +   '<div style="font-size:11.5px;color:#F5C24B;margin-top:4px">' + money
       +     ' <span style="color:#8a93a8;font-size:10px">' + sub + '</span></div>'
       + '</div>' + right + '</div>';
@@ -18571,6 +18581,13 @@ window.ensureCreditsInit = async (uid) => {
     }, 1500);
     window._myPets = Array.isArray(d.petsOut) ? d.petsOut.filter(function (x) { return x && x.id; })
       : ((d.pet && d.pet.id) ? [d.pet] : []);
+    // ★★★펫·공룡을 **여기서 다시 그린다** (대표 8-28: "아직도 펫들 바로 머피월드에서 로드
+    //   안 되고 꾸미기 한번 들어가서 저장해야만 로드됨").
+    //   머피월드 진입이 이 로드보다 빠르면 그때 _myPets 가 비어 있어서 아무것도 안 그린다.
+    //   그 뒤로 mwRenderFurn 을 부르는 것이 **꾸미기 저장뿐**이라 저장해야 나왔다.
+    //   ※재시도 로직(_mwPetSync)만으로는 못 고친다 — 그쪽은 '방을 못 재는 경우'만 다시 보고,
+    //     **목록이 비어 있으면 재시도조차 안 한다.** 목록이 채워지는 순간을 여기서 잡는다.
+    setTimeout(function () { window.mwRenderFurn && window.mwRenderFurn(); }, 0);
     // 프로필 머피 탭이 내 방을 남의 방과 **같은 방식**으로 그리려면 저장 좌표가 필요하다
     window._myRoomPos = (d.roomPos && typeof d.roomPos.tc === 'number') ? d.roomPos : null;
     window._roomSlotExt = d.roomSlotExt | 0;   // 산 슬롯 확장권 수
@@ -21952,11 +21969,14 @@ window.mwArtPrice = async function (id) {
   // ★★prompt() 를 쓰지 않는다 (8-26). 홈 화면에 설치한 앱(standalone)에서는 iOS 가
   //   prompt 를 **그냥 무시한다.** 눌러도 아무 일이 없어 "버튼이 죽었다"로 보였다.
   //   앱 안 모달로 받는다 — 펫 이름 모달과 같은 문법이다.
-  const n = await window.mwArtPriceAsk(a.price | 0, {
+  // ★고정가에도 설명을 받는다 — 경매에만 있으면 반쪽이다(대표 8-28)
+  const _pr = await window.mwArtPriceAsk(a.price | 0, {
     desc: '0 으로 두면 팔지 않아요 · 팔리면 수수료 '
-        + Math.round(window.MW_ART_FEE * 100) + '%를 뺀 만큼 들어와요' });
-  if (n == null) return;
-  a.price = n;
+        + Math.round(window.MW_ART_FEE * 100) + '%를 뺀 만큼 들어와요',
+    withDesc: true, descVal: a.desc || '' });
+  if (_pr == null) return;
+  const n = _pr.n;
+  a.price = n; a.desc = _pr.desc || '';
   await window._mwSaveArt(window._myArt);
   showToast(n > 0 ? (n + '머피에 내놨어요') : '판매를 내렸어요');
   const g = document.getElementById('mw-artgal'); if (g) { g.remove(); window.mwArtGallery(); }
@@ -21982,6 +22002,13 @@ window.mwArtPriceAsk = function (cur, opt) {
       + '<div class="ap-s">' + _s + '</div>'
       + '<input id="mw-artprice-in" type="number" inputmode="numeric" min="' + _min + '" max="' + _max + '"'
       + ' enterkeyhint="done" value="' + (cur | 0) + '">'
+      // ★작품 설명 (대표 8-28: "경매 올릴 때 작품 설명란 왜 없노").
+      //   값만 있으면 사는 쪽이 판단할 게 없다 — 무엇을 그렸는지 한 줄이 있어야 팔린다.
+      + (opt.withDesc
+          ? ('<textarea id="mw-artprice-desc" rows="2" maxlength="60" placeholder="'
+             + (opt.descPh || '무엇을 그렸는지 한 줄로 (선택)') + '">'
+             + String(opt.descVal || '').replace(/</g, '&lt;') + '</textarea>')
+          : '')
       + '<div class="ap-btns">'
       +   '<button id="mw-artprice-x">취소</button>'
       +   '<button class="go" id="mw-artprice-ok">' + _ok + '</button>'
@@ -21992,7 +22019,10 @@ window.mwArtPriceAsk = function (cur, opt) {
     el.onclick = function (e) { if (e.target === el) done(null); };
     el.querySelector('#mw-artprice-x').onclick = function () { done(null); };
     el.querySelector('#mw-artprice-ok').onclick = function () {
-      done(Math.max(_min, Math.min(_max, parseInt(inp.value, 10) || 0)));
+      const n = Math.max(_min, Math.min(_max, parseInt(inp.value, 10) || 0));
+      if (!opt.withDesc) { done(n); return; }
+      const d = el.querySelector('#mw-artprice-desc');
+      done({ n: n, desc: (d ? String(d.value || '').trim().slice(0, 60) : '') });
     };
     inp.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') el.querySelector('#mw-artprice-ok').click();
@@ -22106,12 +22136,15 @@ window.mwAucOpen = async function (id) {
   if (window._mwIsVisiting && window._mwIsVisiting()) return;
   const a = window.mwArtEnsure(id) && window.mwArtFind(id); if (!a) return;
   if (window.mwAucSold(a)) { showToast('이미 팔린 그림이에요 · 대금이 들어오면 목록에서 빠져요'); return; }
-  const start = await window.mwArtPriceAsk((a.price | 0) || 10, {
+  const _r = await window.mwArtPriceAsk((a.price | 0) || 10, {
     title: '얼마부터 시작할까요?',
     desc: '이 값보다 높게만 부를 수 있어요 · 팔리면 수수료 '
         + Math.round(window.MW_ART_FEE * 100) + '%를 뺀 만큼 들어와요',
-    ok: '경매 열기', min: 1, max: window.MW_AUC_MAX });
-  if (start == null) return;
+    ok: '경매 열기', min: 1, max: window.MW_AUC_MAX,
+    withDesc: true, descVal: a.desc || '' });
+  if (_r == null) return;
+  const start = _r.n;
+  a.desc = _r.desc || '';                       // 작품 설명(60자). 장터·상세에 같이 뜬다
   a.auc = 1; a.min = start; a.aucAt = Date.now(); a.price = 0;   // 경매 중엔 고정가를 내린다
   a.won = null;
   if (!(await window._mwSaveArt(window._myArt))) { showToast('열지 못했어요 · 잠시 뒤에 다시'); return; }
@@ -22447,6 +22480,9 @@ window.mwArtOpenFrom = function (owner, id) {
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
     + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + esc(by)
           + (window.mwArtEdition(a) > 1 ? '님이 같이 그렸어요' : '님이 그렸어요') + '</div>' : '')
+        // ★작품 설명 — 판 사람이 무엇을 그렸는지 적어 둔 것(대표 8-28)
+        + (a.desc ? ('<div style="font-size:12px;color:#b9c0d0;line-height:1.6;margin-top:9px;'
+                     + 'padding:0 6px">' + String(a.desc).replace(/</g, '&lt;') + '</div>') : '')
     + '<div style="font-size:10.5px;margin-top:6px;color:'
       + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
       + window.mwArtEditionText(a) + '</div>'
@@ -22649,6 +22685,9 @@ window.mwArtBig = function (id) {
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
     + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by
           + (window.mwArtEdition(a) > 1 ? '님이 같이 그렸어요' : '님이 그렸어요') + '</div>' : '')
+        // ★작품 설명 — 판 사람이 무엇을 그렸는지 적어 둔 것(대표 8-28)
+        + (a.desc ? ('<div style="font-size:12px;color:#b9c0d0;line-height:1.6;margin-top:9px;'
+                     + 'padding:0 6px">' + String(a.desc).replace(/</g, '&lt;') + '</div>') : '')
     // ★한정 수량 — 혼자 그린 1장 한정만 골드로 띄운다(희소한 쪽이 눈에 띄어야 한다)
     + '<div style="font-size:10.5px;margin-top:6px;color:'
       + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
