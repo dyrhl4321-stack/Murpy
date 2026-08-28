@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 
-def clean(src, out, flip=False, maxside=256, min_frag=40, log=print):
+def clean(src, out, flip=False, maxside=256, min_frag=40, neutralize_magenta=False, log=print):
     im = Image.open(src).convert("RGBA")
     a = np.array(im).astype(int)
     r, g, b, al = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
@@ -93,6 +93,29 @@ def clean(src, out, flip=False, maxside=256, min_frag=40, log=print):
             if not nb.any():
                 o[y, x, 3] = 0; continue
             o[y, x, :3] = np.median(o[ya:yb2, xa:xb2, :3][nb], axis=0)
+    # 회색 아이템은 마젠타가 디자인 색일 수 없다. 브라탑처럼 형광 배경이 윤곽선 안쪽까지
+    # 번진 경우에는 밝기 제한(lm < 70)만으로 밝은 핑크 잔여가 남는다. 회색 전용 옵션에서는
+    # 남은 마젠타 픽셀을 전부 가장 가까운 정상 불투명 픽셀 색으로 치환한다. 알파/윤곽은 유지해
+    # 테두리를 뜯어내지 않고 색 오염만 없앤다.
+    if neutralize_magenta:
+        opq = o[..., 3] > 0
+        rr, gg, bb = o[..., 0].astype(int), o[..., 1].astype(int), o[..., 2].astype(int)
+        # 본체의 회보라 음영은 채널 차가 약 8~14다. 배경이 묻은 테두리는 16 이상으로
+        # 실측 분리되므로 그 경계만 잡는다(전체 옷 색을 회색으로 평탄화하지 않는다).
+        magenta = opq & (rr > gg + 15) & (bb > gg + 15)
+        if magenta.any():
+            good = opq & ~magenta
+            try:
+                from scipy import ndimage
+                nearest = ndimage.distance_transform_edt(~good, return_distances=False, return_indices=True)
+                o[magenta, :3] = o[nearest[0][magenta], nearest[1][magenta], :3]
+            except ImportError:
+                # scipy 없는 환경에서도 회색 아이템답게 중립화한다.
+                gray = np.rint(0.299 * rr + 0.587 * gg + 0.114 * bb).astype(np.uint8)
+                o[magenta, 0] = gray[magenta]
+                o[magenta, 1] = gray[magenta]
+                o[magenta, 2] = gray[magenta]
+            log("  마젠타 잔여 %d px 중립화" % int(magenta.sum()))
     im2 = Image.fromarray(o, "RGBA")
     bb = im2.split()[3].point(lambda v: 255 if v > 50 else 0).getbbox()
     if bb:
@@ -115,5 +138,7 @@ if __name__ == "__main__":
     ap.add_argument("--src", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--flip", action="store_true", help="파일명이 좌우반전을 지시할 때")
+    ap.add_argument("--neutralize-magenta", action="store_true",
+                    help="회색 아이템의 남은 마젠타 색 오염을 전부 주변색으로 치환")
     a = ap.parse_args()
-    clean(a.src, a.out, a.flip)
+    clean(a.src, a.out, a.flip, neutralize_magenta=a.neutralize_magenta)

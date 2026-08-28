@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '801';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '802';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -3563,7 +3563,7 @@ window.CHAR_ITEMS = [
   // { id: 'hat_f_ladodgers', slot: 'hat', body: 'human_f', name: 'LA 볼캡', price: 0, sheet: 'char/items/hat_f_ladodgers.png', thumb: 'char/items/hat_ladodgers_thumb.png', hairVariants: { hair_f_basic: null, hair_f_bob_bang: null, hair_f_long: null } }
 ];
 // 아이템 이미지 캐시버전 — 아이템 시트/썸네일 바꿀 때마다 올리면 SW 캐시 무시하고 새로 받음
-window._ITEM_V = 133;
+window._ITEM_V = 134;
 window._iv = function (u) { return u ? (u + (u.indexOf('?') < 0 ? '?v=' : '&v=') + (window._ITEM_V || 1)) : u; };
 window.CHAR_FREE = ['hair_short', 'top_tee', 'mask_simple'];
 window.CHAR_SHAPES = {
@@ -32527,6 +32527,7 @@ window._sqClose = function () {
   try { window._sqVVOff && window._sqVVOff(); } catch (e) {}
   try { window._sqDocUnsub && window._sqDocUnsub(); } catch (e) {} window._sqDocUnsub = null;
   try { window._sqMemUnsub && window._sqMemUnsub(); } catch (e) {} window._sqMemUnsub = null;
+  try { window._sqCharLiveStop && window._sqCharLiveStop(); } catch (e) {}
   try { window._sqChatStop && window._sqChatStop(); } catch (e) {}
   try { window._sqRtLeave && window._sqRtLeave(_sid); } catch (e) {}
   try { clearTimeout(window._sqWalkT); } catch (e) {}
@@ -32591,9 +32592,12 @@ window._sqRenderDetailInner = function () {
   const el = document.getElementById('sq-detail'); if (!el) return;
   const me = (auth.currentUser || window.currentUser || {}).uid || null;
   const mem = window._sqMembers || {};
-  // ★멤버들이 **지금** 입고 있는 것을 받아 둔다. 받아 오면(바뀌었으면) 이 화면을 다시 그린다.
-  //   캐시가 살아 있으면 아무 것도 안 읽고 아무 일도 안 일어난다.
-  window.mwCharLiveFetch(Object.keys(mem), function () { window._sqRenderDetailInner(); });
+  // ★멤버들이 **지금** 저장한 캐릭터를 이 상세가 열려 있는 동안 계속 듣는다.
+  //   참가 시점의 members/{uid}.character 와 3분 getDoc 캐시는 최신 복장을 보장하지 못한다.
+  //   구독 콜백은 명단과 필드 양쪽을 같은 users/{uid}.character 로 다시 그린다.
+  window._sqCharLiveWatch && window._sqCharLiveWatch(Object.keys(mem).filter(function (uid) {
+    return mem[uid] && mem[uid].status !== 'left';
+  }));
   const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
   const n = (s.memberUids||[]).length;
   const now = Date.now();
@@ -34044,7 +34048,7 @@ window._charLiveCache = {};              // uid -> { cfg, at }
 window.MW_CHAR_LIVE_TTL = 180000;        // 3분
 window.mwCharLive = function (uid) {
   if (!uid) return null;
-  const me = (window.currentUser || {}).uid;
+  const me = (auth.currentUser || window.currentUser || {}).uid;
   if (uid === me) return window.getMyCharacter ? window.getMyCharacter() : null;
   const c = window._charLiveCache[uid];
   return (c && c.cfg) ? c.cfg : null;
@@ -34076,6 +34080,56 @@ window.mwCharLiveFetch = async function (uids, done) {
   }));
   if (changed && typeof done === 'function') { try { done(); } catch (e) {} }
   return changed;
+};
+// 스쿼드 상세 전용 실시간 캐릭터 구독.
+// ★members/{uid}.character 는 참가 순간의 스냅샷일 뿐이다. 화면이 열려 있는 동안에는
+//   users/{uid}.character 를 소스로 삼아야 명단과 필드가 같은 최신 복장으로 보인다.
+// ★멤버 수가 바뀌면 필요한 uid 만 더 듣고, 나간 uid 는 즉시 해제한다. 상세를 닫을 때도 전부
+//   해제해서 다른 화면에서 읽기가 계속 쌓이지 않게 한다.
+window._sqCharLiveWatches = {};
+window._sqCharLivePaintT = null;
+window._sqCharLivePaint = function () {
+  if (window._sqCharLivePaintT) return;
+  window._sqCharLivePaintT = setTimeout(function () {
+    window._sqCharLivePaintT = null;
+    const sid = window._sqCurId;
+    if (!sid || !document.getElementById('sq-detail')) return;
+    // 명단은 live cache 를 읽어 다시 그리고, 필드는 현재 위치/방향은 그대로 둔 채 복장만 바꾼다.
+    window._sqRenderDetail && window._sqRenderDetail();
+    const me = (auth.currentUser || window.currentUser || {}).uid || null;
+    if (window._sqRtLast) window._sqRenderRemotes && window._sqRenderRemotes(sid, window._sqRtLast, me);
+    if (window._SQUAD_RT_OFF) window._sqRoomSync && window._sqRoomSync(window._sqDoc, window._sqMembers || {});
+  }, 45);                         // 여러 명의 최초 스냅샷을 한 번의 화면 갱신으로 묶는다
+};
+window._sqCharLiveWatch = function (uids) {
+  if (window._sqCurId === 'preview') { window._sqCharLiveStop(); return; }
+  const me = (auth.currentUser || window.currentUser || {}).uid || null;
+  const want = {};
+  (uids || []).forEach(function (uid) { if (uid && uid !== me) want[uid] = 1; });
+  const watching = window._sqCharLiveWatches || (window._sqCharLiveWatches = {});
+  Object.keys(watching).forEach(function (uid) {
+    if (want[uid]) return;
+    try { watching[uid](); } catch (e) {}
+    delete watching[uid];
+  });
+  Object.keys(want).forEach(function (uid) {
+    if (watching[uid]) return;
+    watching[uid] = onSnapshot(doc(db, 'users', uid), function (sn) {
+      const cfg = (sn.exists() && sn.data().character) || null;
+      const old = (window._charLiveCache[uid] || {}).cfg || null;
+      window._charLiveCache[uid] = { cfg: cfg, at: Date.now() };
+      if (JSON.stringify(cfg) !== JSON.stringify(old)) window._sqCharLivePaint();
+    }, function (e) {
+      console.warn('squad live character ' + uid, e);
+      // 실시간 구독이 일시 실패해도 참가 시점 캐릭터로 화면은 계속 사용할 수 있다.
+    });
+  });
+};
+window._sqCharLiveStop = function () {
+  clearTimeout(window._sqCharLivePaintT); window._sqCharLivePaintT = null;
+  const watching = window._sqCharLiveWatches || {};
+  Object.keys(watching).forEach(function (uid) { try { watching[uid](); } catch (e) {} });
+  window._sqCharLiveWatches = {};
 };
 window._sqCharEl = function (uid, nick, cfg, dir, title, aura) {   // uid별 캐릭터 DOM 재사용 (dir/cfg/aura 바뀔 때만 리렌더)
   const stage = document.getElementById('sq-room-stage'); if (!stage) return null;
@@ -34324,7 +34378,7 @@ window._sqRoomSync = function (s, mem) {   // RT 꺼짐(폴백)일 때: 다른 �
   const spots = window.mwFieldPlace ? window.mwFieldPlace(uids, s.id) : {};
   // 접속 중인 사람은 프레즌스가 지금 모습을 실어 온다. 여기는 **안 들어와 있는 사람**이다 —
   // 그 사람들도 유저 문서의 지금 캐릭터로 그린다(대표 8-28).
-  window.mwCharLiveFetch(uids, function () { window._sqRoomSync(s, mem); });
+  window._sqCharLiveWatch && window._sqCharLiveWatch(uids);
   uids.forEach(uid => {
     const sp = spots[uid] || { x: 50, y: 70 };
     const c = window._sqCharEl(uid, mem[uid].nickname,
@@ -34469,7 +34523,9 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     // poseV가 없는 옛 노드의 `up`은 이전 자동 입장 연출이 남긴 뒷모습이다.
     // 새 버전에서 사용자가 직접 위를 보게 한 상태(poseV:2)는 그대로 보존한다.
     const dir = (!p.poseV && p.dir === 'up') ? 'down' : (p.dir || 'down');
-    const c = window._sqCharEl(uid, p.nick, p.character, dir, p.title, p.aura);
+    // RTDB 의 character 는 마지막 입장/이동 때 저장된 값이라 오래될 수 있다.
+    // users/{uid} 실시간 구독값을 최우선으로 써야 명단과 필드가 같은 최신 복장으로 보인다.
+    const c = window._sqCharEl(uid, p.nick, window.mwCharLive(uid) || p.character, dir, p.title, p.aura);
     if (!c) return;
     const x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
     if (first && !p.off) {   // 지금 들어오는 멤버만 하단 입장 연출; 남아 있던 캐릭터는 제자리에
