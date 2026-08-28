@@ -21,10 +21,19 @@ sw = sw.replace(/murpy-v\d+/g, `murpy-v${next}`)
        .replace(/murpy-static-v\d+/g, `murpy-static-v${next}`)
        .replace(/murpy-cdn-v\d+/g, `murpy-cdn-v${next}`);
 
-const before = ix;
+// ★있는지부터 본다. 예전엔 바뀌었는지로 판단해서, 이미 그 버전이면 '못 찾았다'로 죽었다(8-28)
+if (!/window\._SW_V = '\d+'/.test(ix)) { console.error('index.html 에서 window._SW_V 를 못 찾았다'); process.exit(1); }
 ix = ix.replace(/window\._SW_V = '\d+'/, `window._SW_V = '${next}'`);
-if (ix === before) { console.error('index.html 에서 window._SW_V 를 못 찾았다'); process.exit(1); }
 
 fs.writeFileSync(SW, sw);
 fs.writeFileSync(IX, ix);
-console.log(`v${cur} -> v${next}   (sw.js ${swHits}곳, index.html _SW_V 1곳)`);
+
+// ★version.txt 도 같이 올린다 (8-28). 여기를 빠뜨려 check_version.py 가 배포를 막았다 —
+//   버전이 적힌 곳이 셋인데 스크립트가 둘만 고치면 "손으로 고치다 빠뜨리는 사고"가 그대로 남는다.
+const VT = 'version.txt';
+if (fs.existsSync(VT)) {
+  const curTxt = fs.readFileSync(VT, 'utf8');
+  const tail = curTxt.slice(String(cur).length);   // 줄바꿈이 있었으면 그대로 둔다
+  fs.writeFileSync(VT, String(next) + tail);
+}
+console.log(`v${cur} -> v${next}   (sw.js ${swHits}곳, index.html _SW_V 1곳, version.txt)`);
