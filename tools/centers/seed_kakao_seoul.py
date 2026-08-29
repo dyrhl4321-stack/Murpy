@@ -65,12 +65,14 @@ def cell(lng, lat, w, h, kw):
     cells += 1; full = False
     for page in (1, 2, 3):
         j = kakao(kw, rect, page); calls += 1
+        # ★"꽉 찼다"는 total_count 로 본다. is_end 는 3쪽이면 늘 true 라 그걸로는 쪼개기가 한 번도 안 일어났다
+        #   (8-29 1차 전국 실행이 3,342곳에 그친 원인).
+        if page == 1 and (j.get('meta', {}).get('total_count', 0) or 0) > 45: full = True
         for d in j.get('documents', []):
             if not any(k in d.get('category_name', '') for k in KEEP): continue
             if not ALL and not d.get('address_name', '').startswith('서울'): continue
             found[d['id']] = d
         if j.get('meta', {}).get('is_end', True): break
-        if page == 3: full = True
     if full and min(w * 111 * math.cos(37 * math.pi / 180), h * 111) > 0.8:
         for dx in (0, w / 2):
             for dy in (0, h / 2): cell(lng + dx, lat + dy, w / 2, h / 2, kw)
@@ -176,6 +178,7 @@ for i in range(0, len(new), 100):
             'img': '', 'rating': 0, 'reviews': 0, 'members': [], 'partner': False, 'partnerPosts': [], 'reviewList': [],
             'phone': d.get('phone') or '', 'kakaoId': d['id'], 'kakaoUrl': d.get('place_url') or '',
             'nameKey': d['place_name'].lower().replace(' ', ''),   # 앱 searchCenters 가 앞부분 검색하는 키
+            'g': '%d_%d' % (math.floor(float(d['y']) * 50), math.floor(float(d['x']) * 50)),   # 앱 loadCentersNear 격자 칸(≈2.2km)
             'source': 'kakao', 'createdBy': 'seed_kakao', 'createdAt': {'timestampValue': now}
         }
         fs = {k: (v if k == 'createdAt' else val(v)) for k, v in fields.items()}

@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '822';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '823';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -27754,12 +27754,20 @@ window.loadCentersNear = async function (lat, lng, km) {
   const key = Math.round(lat * 100) + ',' + Math.round(lng * 100) + ',' + km;
   window._centersNearHit = window._centersNearHit || {};
   if (window._centersNearHit[key] && Date.now() - window._centersNearHit[key] < 10 * 60000) return 0;
+  // ★격자 칸(g = floor(lat*50)_floor(lng*50), 한 칸 ≈ 2.2km) 로 2차원을 자른다. lat 범위만 걸면 같은 위도의
+  //   서울 전체가 딸려 와서 limit 에 잘린다(강남역 ±2km 만 400+). 시딩·백필이 g 를 쓴다.
   const dLat = km / 111, dLng = km / (111 * Math.cos(lat * Math.PI / 180));
+  const cells = [];
+  for (let a = Math.floor((lat - dLat) * 50); a <= Math.floor((lat + dLat) * 50); a++)
+    for (let b = Math.floor((lng - dLng) * 50); b <= Math.floor((lng + dLng) * 50); b++) cells.push(a + '_' + b);
   try {
-    const snap = await getDocs(query(collection(db, 'centers'), where('lat', '>=', lat - dLat), where('lat', '<=', lat + dLat), limit(400)));
-    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => typeof c.lng === 'number' && Math.abs(c.lng - lng) <= dLng);
+    let added = 0;
+    for (let i = 0; i < cells.length; i += 30) {
+      const snap = await getDocs(query(collection(db, 'centers'), where('g', 'in', cells.slice(i, i + 30)), limit(600)));
+      added += window._centersMerge(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }
     window._centersNearHit[key] = Date.now();
-    return window._centersMerge(rows);
+    return added;
   } catch (e) { console.warn('centers near', e); return 0; }
 };
 // 이름 앞부분 검색(nameKey = 소문자·공백 제거). 시딩 문서엔 nameKey 가 있고, 옛 60곳은 백필했다.
