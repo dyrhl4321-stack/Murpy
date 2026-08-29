@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '819';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '820';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -6970,9 +6970,10 @@ window.mwMarketOpen = async function () {
       +     '<span style="color:' + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
       +     (window.mwArtEdition(a) === 1 ? '1장 한정' : window.mwArtEdition(a) + '장 한정') + '</span>'
       +     (when ? ' · ' + when : '') + '</div>'
+      // ★작품 설명 — 경매장 카드에도 뜬다(대표 8-28·8-29). 한 줄로 자르지 않고 두 줄까지 보인다.
       +   (a.desc
-            ? ('<div style="font-size:11px;color:#b9c0d0;margin-top:4px;overflow:hidden;'
-               + 'text-overflow:ellipsis;white-space:nowrap">' + esc(a.desc) + '</div>')
+            ? ('<div style="font-size:11px;color:#b9c0d0;margin-top:4px;line-height:1.45;overflow:hidden;'
+               + 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-all">' + esc(a.desc) + '</div>')
             : '')
       +   '<div style="font-size:11.5px;color:#F5C24B;margin-top:4px">' + money
       +     ' <span style="color:#8a93a8;font-size:10px">' + sub + '</span></div>'
@@ -23052,8 +23053,9 @@ window._mwArtWonCheck = async function () {
 window._mwMarket = null;
 window._mwMarketLoad = async function () {
   try {
-    // 내가 방금 올린 그림은 바로 보여야 한다(대표 8-26) → 내 문서만 새로 읽어 덮는다
-    const qs = await window._usersAll();
+    // 내가 방금 올린 그림은 바로 보여야 한다(대표 8-26) → 내 것은 _myArt(로컬 최신)로 덮는다.
+    // 남이 방금 올린 것·설명은 1분 안에 보이면 된다(경매장은 자주 여는 화면이 아니라 캐시를 짧게 둔다)
+    const qs = await window._usersAll(60000);
     const me = (window.currentUser || {}).uid || '';
     const out = [];
     qs.forEach(function (d) {
