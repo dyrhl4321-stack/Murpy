@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '805';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '806';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -10227,6 +10227,7 @@ window._diagPush = async function () {
     const sw = await (await fetch('./sw.js?probe=' + Date.now(), { cache: 'no-store' })).text();
     const m = sw.match(/murpy-v(\d+)/);
     const real = m ? m[1] : '?';
+    L.push('kakao: ' + (window._kakaoMode || '-') + ' (custom 이면 Worker 교체 완료)');
     L.push('빌드: index _SW_V=' + (window._SW_V || '?') + ' / sw.js=' + real
       + (real !== String(window._SW_V) ? '  ★어깋남' : ''));
   } catch (e) { L.push('sw.js 버전 확인 실패'); }
@@ -14323,8 +14324,8 @@ if ('serviceWorker' in navigator) {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, deleteField, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -21157,19 +21158,56 @@ function _kakaoRedirectUri() {
   return 'https://dyrhl4321-stack.github.io/Murpy';
 }
 
-async function _kakaoCodeToAuth(code) {
+// ★8-29 보안: Worker 가 customToken 을 주면 그걸로 로그인한다(비밀번호 없음). access_token 만 주면 옛 방식.
+//   옛 방식은 비밀번호가 kp_{카카오id}_mk 로 고정이라 **누구나 남의 계정으로 들어올 수 있었다**(C1).
+//   Worker 교체(tools/kakao-worker/) 전에도 이 코드는 옛 응답으로 그대로 돈다 — 순서에 안전.
+function _kakaoLinkUid() { const c = auth.currentUser; return (c && c.isAnonymous) ? c.uid : undefined; }
+async function _kakaoWorker(body) {
   const resp = await fetch('https://murpy-kakao.dyrhl2356.workers.dev', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    // redirect_uri 를 함께 보낸다 — 카카오는 authorize 때와 **같은 값**으로 교환해야 통과시킨다.
-    body: JSON.stringify({ code, redirect_uri: _kakaoRedirectUri() })
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ linkUid: _kakaoLinkUid() }, body))
   });
-  const data = await resp.json();
-  if (!data.access_token) throw new Error(data.error_description || data.error || '토큰 교환 실패');
-  await _kakaoFirebaseAuth(data.access_token);
+  return resp.json();
+}
+async function _kakaoCodeToAuth(code) {
+  // redirect_uri 를 함께 보낸다 — 카카오는 authorize 때와 **같은 값**으로 교환해야 통과시킨다.
+  const data = await _kakaoWorker({ code, redirect_uri: _kakaoRedirectUri() });
+  if (data.customToken) return _kakaoCustomAuth(data);
+  if (!data.access_token) throw new Error(data.error_description || data.error || data.message || '토큰 교환 실패');
+  await _kakaoLegacyAuth(data.access_token);
+}
+// 액세스 토큰을 이미 들고 있는 경로(하위호환) — Worker 에 토큰을 보내 커스텀 토큰으로 바꿔 받는다
+async function _kakaoFirebaseAuth(accessToken) {
+  let data = null;
+  try { data = await _kakaoWorker({ access_token: accessToken }); } catch (e) { data = null; }
+  if (data && data.customToken) return _kakaoCustomAuth(data);
+  await _kakaoLegacyAuth(accessToken);
+}
+async function _kakaoCustomAuth(data) {
+  const _cur = auth.currentUser;
+  const _wasAnon = !!(_cur && _cur.isAnonymous);
+  const userCred = await signInWithCustomToken(auth, data.customToken);
+  const uid = userCred.user.uid;
+  window._kakaoMode = 'custom';
+  const nickname = data.nickname || '카카오유저', photoURL = data.photoURL || '';
+  if (_wasAnon && !data.linked && _cur.uid !== uid) showToast('이미 쓰던 카카오 계정이라 그쪽으로 들어왔어요');
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  // ★kakaoId 는 더 이상 users 에 두지 않는다(누구나 읽는 문서). 남아 있던 값도 지운다.
+  const patch = { provider: 'kakao', updatedAt: serverTimestamp(), kakaoId: deleteField() };
+  if (data.linked) patch.guest = false;
+  if (!userSnap.exists() || !userSnap.data().nickname) { patch.nickname = nickname; patch.photoURL = photoURL; }
+  try { await setDoc(userRef, patch, { merge: true }); } catch (e) { console.warn('kakao profile', e); }
+  window.currentUser = userCred.user;
+  window.currentUser.firestorePhotoURL = photoURL;
+  updateUI(userCred.user);
+  await checkAndSetNickname(userCred.user);
+  dismissLanding();
+  showToast(`✓ ${nickname}님, 환영해요!`);
 }
 
-async function _kakaoFirebaseAuth(accessToken) {
+async function _kakaoLegacyAuth(accessToken) {
+  window._kakaoMode = 'legacy';
   if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
   Kakao.Auth.setAccessToken(accessToken);
   const kakaoUser = await Kakao.API.request({ url: '/v2/user/me' });
