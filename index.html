@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '816';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '817';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -33672,12 +33672,31 @@ window._sqPartBoardHtml = function (s, mem) {
         const dot = '<span style="color:rgba(255,255,255,.16);font-size:11px">·</span>';
         const acts = [];
         if (canAssign) acts.push(link('배정', `window.sqPartAssign('${s.id}')`));
+        if (isHost) acts.push(link('시간', `window.sqSlotEdit('${s.id}')`));
         acts.push(link('명단', `window.sqPartList('${s.id}')`));
         if (isHost) acts.push(link('끄기', `window.sqTeamToggle('${s.id}',true)`, true));
         return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <div style="flex:1;min-width:0;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">${T.label}
             ${joined ? '<span style="font-weight:500;color:rgba(255,255,255,.3)"> · 눌러서 등록</span>' : ''}</div>
           <div style="flex-shrink:0;display:flex;align-items:center;gap:7px">${acts.join(dot)}</div>
+        </div>`;
+      })()}
+      ${(function () {
+        // ★참석 시간(7시/8시 팀) — 8-14 정모 뒤 남았던 유일한 스쿼드 숙제. 부위 줄과 같은 모양의 줄 하나.
+        //   벙주가 '시간'에서 후보를 적어 두면(s.slots) 참가자가 눌러서 고른다. 저장 = 내 멤버 문서 slot.
+        //   명단 복사(sqPartList)는 이미 slot 별로 묶으므로 그쪽은 손댈 것 없다.
+        const slots = Array.isArray(s.slots) ? s.slots.filter(Boolean) : [];
+        if (!slots.length) return '';
+        const mySlot = ((mem[me] || {}).slot || '').trim();
+        const chips = slots.map(sl => {
+          const n = live.filter(u => ((mem[u].slot || '').trim()) === sl).length;
+          const on = mySlot === sl;
+          return `<span ${joined ? `onclick="window.sqSlotTap('${s.id}','${esc(sl).replace(/'/g, '&#39;')}')"` : ''}
+            style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;${joined ? 'cursor:pointer;' : ''}background:none;border:1px solid ${on ? 'rgba(61,126,255,.9)' : 'rgba(255,255,255,.14)'};color:${on ? '#7aa8ff' : 'rgba(255,255,255,.6)'}">${esc(sl)}${n ? `<span style="font-size:10.5px;color:rgba(255,255,255,.35)">${n}</span>` : ''}</span>`;
+        }).join('');
+        return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border-radius:10px;margin-bottom:2px">
+          <div style="flex:0 0 42px;font-size:12.5px;font-weight:800;color:${mySlot ? '#7aa8ff' : 'rgba(255,255,255,.55)'}">시간</div>
+          <div style="flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
         </div>`;
       })()}
       ${rows}
@@ -33716,6 +33735,30 @@ window.sqAfterTap = async function (sid) {
   window._sqChatPaintBoard && window._sqChatPaintBoard();
   try { await updateDoc(doc(db, 'squads', sid, 'members', me), { after: next }); }
   catch (e) { if (mem[me]) mem[me].after = !next; showToast('저장하지 못했어요'); }
+};
+// 참석 시간 — 같은 걸 다시 누르면 해제. sqPartTap 과 같은 모양.
+window.sqSlotTap = async function (sid, sl) {
+  const me = (auth.currentUser || {}).uid; if (!me) return;
+  const mem = window._sqMembers || {};
+  const cur = ((mem[me] || {}).slot || '').trim();
+  const next = (cur === sl) ? '' : sl;
+  if (mem[me]) mem[me].slot = next;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid, 'members', me), { slot: next }); }
+  catch (e) { if (mem[me]) mem[me].slot = cur; showToast('저장하지 못했어요'); }
+};
+// 벙주가 시간 후보를 적는다 — "7시, 8시" 처럼 쉼표로. 비우면 시간 줄이 사라진다.
+window.sqSlotEdit = async function (sid) {
+  const s = window._sqDoc, me = (auth.currentUser || {}).uid;
+  if (!s || !me || me !== s.hostUid) return;
+  const cur = (Array.isArray(s.slots) ? s.slots : []).join(', ');
+  const v = prompt('참석 시간을 쉼표로 적어 주세요 (예: 7시, 8시)\n비우면 시간 줄이 사라져요', cur);
+  if (v == null) return;
+  const slots = v.split(',').map(x => x.trim()).filter(Boolean).slice(0, 6);
+  const prev = s.slots; s.slots = slots;
+  window._sqChatPaintBoard && window._sqChatPaintBoard();
+  try { await updateDoc(doc(db, 'squads', sid), { slots }); }
+  catch (e) { s.slots = prev; window._sqChatPaintBoard && window._sqChatPaintBoard(); showToast('저장하지 못했어요'); }
 };
 window._sqChatPaintBoard = function () {
   const box = document.getElementById('sq-part-board');
