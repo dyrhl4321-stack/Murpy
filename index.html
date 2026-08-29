@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '825';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '826';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -29529,6 +29529,7 @@ window.mwRenderTodayMurpys = async function () {
       //   핀에 찍힌 인원 숫자까지는 보여주되, 들어가는 건 회원부터다.
       drawn[c.id] = L.marker([c.lat,c.lng], { icon }).addTo(layer).on('click', ()=>{
         if (guest) { window._mwJoinGate((c.name || '이 센터') + '에 누가 왔는지 보려면'); return; }
+        window._mwCenterReturn = 'map';   // ★X 를 누르면 지도로 돌아온다(대표 8-29: 홈으로 떨어지던 것)
         window.mwCenterField && window.mwCenterField(c.id);
       });
     };
@@ -29684,6 +29685,12 @@ window.sqGoCenterField = function (centerId) {
   if (typeof goPage === 'function') goPage('char');
   setTimeout(function () { window.mwCenterField && window.mwCenterField(centerId); }, 260);
 };
+// 센터 필드는 지도와 같은 패널 자리(mw-wpanel)를 쓴다 — 열면 지도가 사라지고, 닫으면 홈에 떨어졌다.
+//   지도에서 들어온 경우(_mwCenterReturn='map')엔 닫을 때 지도를 다시 연다(대표 8-29).
+window._mwCenterBack = function () {
+  const k = window._mwCenterReturn; window._mwCenterReturn = null;
+  if (k && window.mwWorldPanel) window.mwWorldPanel(k);
+};
 window.mwCenterField = async function (centerId) {
   // 어디서 불러도 회원부터 — 지도 핀·스쿼드 카드 등 입구가 여럿이라 여기서 한 번 더 막는다
   if (window._notMember && window._notMember()) {
@@ -29702,7 +29709,7 @@ window.mwCenterField = async function (centerId) {
         <b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</b>
         <span id="mw-cfd-head-n" style="font-size:11px;color:#F5C24B">불러오는 중…</span>
       </div>
-      <button class="mw-wclose" onclick="window._mwCtalkStop&&window._mwCtalkStop();document.getElementById('mw-wpanel').remove()">✕</button>
+      <button class="mw-wclose" onclick="window._mwCtalkStop&&window._mwCtalkStop();document.getElementById('mw-wpanel').remove();window._mwCenterBack&&window._mwCenterBack()">✕</button>
     </div>
     <div class="mw-wpanel-body" style="display:flex;flex-direction:column;overflow:hidden;padding-bottom:0">
       <div class="mw-cfd-stage" id="mw-cfd-stage" style="background-image:url('${window.centerFieldSrc(c)}');flex-shrink:0"></div>

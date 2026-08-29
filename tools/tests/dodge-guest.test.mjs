@@ -203,7 +203,7 @@ console.log('  + 카톡 인앱 화면 높이·스크롤 잠금 OK');
 
 // 21) ★게임 링크로 들어왔으면 스쿼드 닉네임 시트를 띄우면 안 된다 (대표 8-20)
 const chk = grab(/async function checkAndSetNickname\(user\)[\s\S]*?\n\}/, 'checkAndSetNickname');
-assert(/if \(window\._dodgeFromLink\) return;/.test(chk),
+assert(/if \(window\._dodgeFromLink(?: \|\| window\._golfFromLink)?\) return;/.test(chk),   // 8-29 골프 링크도 같은 가드
   '게임 링크로 들어와도 스쿼드 닉네임 시트가 뜬다');
 // guestAskNick 을 부르기 **전에** 빠져야 한다
 assert(chk.indexOf('_dodgeFromLink') < chk.indexOf('guestAskNick'),
