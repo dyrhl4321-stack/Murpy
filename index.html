@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '802';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '803';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -5164,6 +5164,77 @@ window._mwPetGoto = function (p, spot, thenAnim) {
   return true;
 };
 
+// ===== 손님이 부르기 (대표 2026-08-29) =====
+//
+// 지금까지 펫은 **주인만** 부렸다. 손님이 "따라와" 를 쳐도 펫은 주인을 따라가서
+// 손님 화면에선 엉뚱하게 움직였고(8-25), 그래서 손님에겐 늘 '자유' 로 막아 뒀다.
+//
+// ★고칠 곳은 하나다 — 따라가는 **대상이 부른 사람**이어야 한다.
+//   굴리는 건 여전히 주인 앱 하나다(양쪽이 굴리면 서로 덮어써 떨린다).
+//   손님은 말을 걸고, 주인 앱이 듣고 굴리고, 손님은 받아서 그린다.
+//
+// ★말은 **채팅 노드로 간다.** roomLive/{주인}/chat 은 규칙에 이미 아무나 쓸 수 있다
+//   (rules: chat -> auth != null). 새 하위 키를 파면 RTDB 규칙을 고치고 **배포까지** 해야
+//   하는데, 규칙은 노드 단위라 파일만 고치면 조용히 거부된다(8-25에 데였다).
+//   덤으로 "도로야 이리와" 가 채팅에 그대로 남아 **옆 사람도 왜 움직이는지 안다.**
+//
+// ★부름은 **저장하지 않는다.** 손님이 부른 것을 주인 문서(petsOut.mode)에 적으면
+//   손님이 나간 뒤에도 그 행동이 남는다. 화면 위 펫 객체에만 얹고 2분이면 저절로 풀린다.
+window.MW_PET_CALL_MS = 120000;
+
+// 아직 유효한 부름만 돌려준다. 시간이 지났으면 스스로 지운다.
+window._mwPetCallOf = function (p) {
+  var c = p && p.call;
+  if (!c) return null;
+  if (Date.now() - (c.t || 0) > window.MW_PET_CALL_MS) { p.call = null; return null; }
+  return c;
+};
+// 부른 사람이 지금 선 칸. 나면 내 캐릭터, 남이면 실시간 명단(_mwRl.last)에서 찾는다.
+// ★못 찾으면 null = **방을 나갔다는 뜻**이다. 그때는 부름을 푼다 — 안 그러면 없는 사람을 향해 간다.
+window._mwPetCallPos = function (c) {
+  var me = (window.currentUser && window.currentUser.uid) || '';
+  if (!c || !c.uid || c.uid === me) return window._charPos || null;
+  var all = (window._mwRl && window._mwRl.last) || {};
+  var v = all[c.uid];
+  if (!v || v.tc == null || v.tr == null) return null;
+  return { tc: v.tc | 0, tr: v.tr | 0 };
+};
+// 부르기 실행 — 저장 없이 그 자리에서만. uid = 부른 사람.
+window.mwPetCall = function (idx, k, uid) {
+  var p = window._mwPetAt(idx); if (!p) return false;
+  if (k === 'bowl') {
+    // 밥은 문서에 남는 일이라 **주인 앱만** 실제로 준다.
+    var bowl = window._mwPetNearest(p, 'bowl'); if (!bowl) return false;
+    if (window._mwPetIsOwner()) { window.mwPetFeed && window.mwPetFeed(idx, true); return true; }
+    // 손님 화면에서 억지로 굴리지 않는다 — 주인이 굴리고 있으면 서로 덮어써 떨린다.
+    if (!window._mwPetLiveFresh()) window._mwPetRushTo && window._mwPetRushTo(p, bowl);
+    return true;
+  }
+  if (k === 'house' && !window._mwPetNearest(p, 'house')) return false;
+  p.call = { k: k, uid: uid || '', t: Date.now() };
+  p.rush = false; p.moving = false;
+  window._mwPetStep(p);
+  return true;
+};
+// 방 대화에서 **남이 부른 것**만 주워 듣는다. 주인 앱에서만 돈다.
+// ★들어오기 전에 오간 말은 실행하지 않는다 — limitToLast(60) 이라 지난 대화가 통째로 온다.
+//   그걸 그대로 돌리면 방에 들어설 때마다 옛날 명령이 한꺼번에 재생된다.
+window._mwPetHear = function (map) {
+  if (!window._mwPetIsOwner()) return;
+  var me = (window.currentUser && window.currentUser.uid) || '';
+  var seen = window._mwPetHeard || (window._mwPetHeard = {});
+  var t0 = window._mwPetHearT0 || 0, now = Date.now();
+  Object.keys(map || {}).forEach(function (k) {
+    var m = map[k];
+    if (!m || !m.text || !m.uid || m.uid === me) return;
+    if (seen[k]) return;
+    seen[k] = 1;                                   // 표시는 **먼저** 남긴다(지난 대화도 다시 안 보게)
+    if ((m.t || 0) < t0 || now - (m.t || 0) > 60000) return;
+    window.mwPetChatCmd && window.mwPetChatCmd(m.text, { uid: m.uid, nick: m.nick });
+  });
+  if (Object.keys(seen).length > 400) window._mwPetHeard = {};
+};
+
 // ===== 드라이버 (한 마리분) =====
 window._mwPetStep = function (p) {
   if (!p || !p.el || p.moving || p.rush) return;
@@ -5173,8 +5244,12 @@ window._mwPetStep = function (p) {
   // ★남의 방에서는 행동 설정을 따르지 않는다(대표 8-25: "내가 손님인데 펫들이 나를 다 따라옴").
   //   '따라와' 는 **주인을 따라오라는 뜻**인데, 손님 화면에서 그대로 돌리면
   //   주인이 아닌 손님을 따라온다. 손님에게는 늘 '자유' 로 보인다.
+  //   ★단, **부른 사람이 있으면** 그 사람에게 간다(mwPetCall / 2026-08-29).
+  //     대상이 uid 로 박혀 있어 주인 화면에서도 손님 화면에서도 **같은 사람**에게 간다 —
+  //     8-25 에 데인 그 문제(손님 화면에서만 어긋남)가 구조로 없다.
   var guest = !!(window._mwIsVisiting && window._mwIsVisiting());
-  var mode = guest ? 'free' : ((saved && saved.mode) || 'free');
+  var call = window._mwPetCallOf(p);
+  var mode = call ? call.k : (guest ? 'free' : ((saved && saved.mode) || 'free'));
   var petDef = window._mwPetDef(p.id) || {};
   if (mode === 'house' && petDef.kind === 'dog') {
     var dogHouse = window._mwPetNearest(p, 'house');
@@ -5196,7 +5271,13 @@ window._mwPetStep = function (p) {
       if (p.anim !== 'sit') window._mwPetPlay(p, 'sit', null);
       return;
     }
-    var me = window._charPos;
+    // ★부른 사람 옆으로 간다. 부름이 없으면 예전 그대로 내 캐릭터 옆이다.
+    var me = call ? window._mwPetCallPos(call) : window._charPos;
+    if (call && !me) {                 // 부른 사람이 방을 나갔다 — 부름을 푼다
+      p.call = null; p.run = false;
+      if (p.anim !== 'stand') window._mwPetPlay(p, 'stand', null);
+      return;
+    }
     if (me) {
       var want = { tc: me.tc + (p.tc > me.tc ? 1 : -1), tr: me.tr };
       if (!window._mwCritterWalkable(want.tc, want.tr)) want = { tc: me.tc, tr: me.tr + 1 };
@@ -5433,16 +5514,39 @@ window.mwPetMenu = function (p) {
   if (!room || !p || !p.el) return;
   var old = document.getElementById('mw-charmenu'); if (old) { old.remove(); return; }
   window.mwPetCoachEnd && window.mwPetCoachEnd();   // 눌러 봤으면 코치마크는 끝이다
-  if (window._mwIsVisiting && window._mwIsVisiting()) {
-    var v = window._mwVisit || {}, sv = (v.petsOut || [])[p.i] || {};
-    var vn = sv.name || (window.mwItemDef(p.id) || {}).name || '펫';
-    showToast((v.nick || '머피') + ' 님의 ' + vn);
-    return;
-  }
   var rb = room.getBoundingClientRect(), hb = p.el.getBoundingClientRect();
   var cx = hb.left - rb.left + hb.width / 2;
   var cy = hb.top - rb.top + hb.height * 0.55;
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 64;
+  // ★손님은 **부를 수만 있다**(2026-08-29). 밥·이름·들여보내기는 주인 것이라 안 준다.
+  //   새 화면을 만들지 않는다 — 주인 것과 **같은 링 메뉴·같은 버튼**이고 항목만 셋이다.
+  //   누른 것은 채팅으로 나가고(mwPetGuestCall) 주인 앱이 듣는다.
+  if (window._mwIsVisiting && window._mwIsVisiting()) {
+    var v = window._mwVisit || {}, sv = (v.petsOut || [])[p.i] || {};
+    var vn = sv.name || (window.mwItemDef(p.id) || {}).name || '펫';
+    var gacts = [
+      { k: 'follow', t: '이리와', dx: 0, dy: -R - 12 },
+      { k: 'stay', t: '기다려', dx: -R - 6, dy: 4 },
+      { k: 'free', t: '놀아', dx: R + 6, dy: 4 }
+    ];
+    var gel = document.createElement('div');
+    gel.id = 'mw-charmenu';
+    gel.style.cssText = 'position:absolute;inset:0;z-index:900;background:rgba(5,7,12,.38)';
+    var _gc = window._mwRingCenter(cx, cy, W, H, R, 20);
+    gel.innerHTML = gacts.map(function (a, i) {
+      var x = _gc.x + a.dx, y = _gc.y + a.dy;   // 중심이 이미 안전하다 — 개별 클램프 금지
+      return '<button class="mw-ringbtn" style="left:' + x + 'px;top:' + y + 'px;animation-delay:'
+        + (i * 30) + 'ms" onclick="document.getElementById(\'mw-charmenu\').remove();'
+        + 'window.mwPetGuestCall(' + p.i + ',\'' + a.k + '\')"><span>' + a.t + '</span></button>';
+    }).join('');
+    gel.addEventListener('pointerdown', function (e) {
+      if (e.target === gel) { gel.remove(); if (e.cancelable) e.preventDefault(); }
+    });
+    room.appendChild(gel);
+    showToast((v.nick || '머피') + ' 님의 ' + vn);
+    if (navigator.vibrate) navigator.vibrate(8);
+    return;
+  }
   var acts = [
     { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
     { k: 'bowl', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed(' + p.i + ')' },
@@ -5521,6 +5625,8 @@ window.mwPetSetMode = function (idx, k, quiet) {
     showToast('방에 개집을 먼저 놓아 주세요');
     return;
   }
+  // ★주인이 직접 고르면 손님이 걸어둔 부름은 풀린다 — 주인이 이긴다.
+  if (p) p.call = null;
   saved.mode = k;
   if (window._mwSavePets) window._mwSavePets(window._myPets);
   if (!quiet) showToast(m.t + ' · ' + m.d);   // 채팅 명령은 마지막에 한 번만 알린다
@@ -5535,9 +5641,9 @@ window.mwPetSetMode = function (idx, k, quiet) {
 //   키워드를 넓게 잡으면 "비슷하게"는 그대로 만족된다. 틀리게 잡혀도 펫이 움직일 뿐 피해가 없고,
 //   무엇으로 알아들었는지 **토스트로 알려주므로** 유저가 바로 안다.
 //
-// ★주인만 부린다. 손님이 "따라와" 를 쳐도 펫은 **주인**을 따라가므로 화면이 어긋난다
-//   (8-25 에 손님 따라오기로 이미 한 번 데였다). 부른 사람을 따라가게 하려면
-//   follow 대상 uid 를 실어 보내야 하는데, 그건 다음 작업이다.
+// ★손님도 부를 수 있다(2026-08-29). 부른 사람 uid 를 같이 실어 보내고 **주인 앱이** 그
+//   사람을 향해 굴린다 — 손님 앱이 직접 굴리면 8-25 처럼 화면이 갈린다.
+//   왜 채팅 노드로 가는지는 mwPetCall 위 주석에 적어 뒀다.
 window.MW_PET_CMDS = [
   // 위에서부터 먼저 맞춘다 — 구체적인 것(밥)이 앞이다
   // ★'밥먹'·'먹어' 처럼 너무 넓게 잡으면 **"오늘 밥 먹었어?" 같은 평범한 대화**까지
@@ -5549,13 +5655,20 @@ window.MW_PET_CMDS = [
   { k: 'free',   t: '알아서 지내요', w: ['놀아', '자유', '풀어', '가서놀', '가서 놀'] }
 ];
 // 채팅 한 줄에서 명령을 읽어 실행한다. 실행했으면 true.
-window.mwPetChatCmd = function (text) {
+// by = { uid, nick } — **손님이 부른 것을 주인 앱이 대신 들을 때** 실린다. 없으면 내가 한 말이다.
+window.mwPetChatCmd = function (text, by) {
   var t = String(text || '');
   if (!t) return false;
-  // 남의 방에서는 안 먹는다 — 그 방 펫은 주인이 굴린다
-  if (window._mwIsVisiting && window._mwIsVisiting()) return false;
-  var pets = window._myPets || [];
+  // ★펫 목록은 **지금 보고 있는 방**의 것이다. 남의 방에선 _myPets 가 아니라 방문 데이터다
+  //   — 여기서 _myPets 를 보면 손님이 남의 방에서 자기 펫 문서를 건드리게 된다.
+  var pets = (window._mwPetsData && window._mwPetsData()) || [];
   if (!pets.length) return false;
+  var meUid = (window.currentUser && window.currentUser.uid) || '';
+  var byUid = (by && by.uid) || meUid;
+  var mine = !by || byUid === meUid;
+  var owner = window._mwPetIsOwner();
+  // 남이 한 말은 **주인 앱만** 듣는다. 손님끼리 각자 굴리면 화면이 갈린다.
+  if (!mine && !owner) return false;
 
   var cmd = null, i, j;
   for (i = 0; i < window.MW_PET_CMDS.length && !cmd; i++) {
@@ -5566,14 +5679,22 @@ window.mwPetChatCmd = function (text) {
 
   // 이름을 불렀으면 그 아이만. 안 불렀으면 전부.
   //   ★긴 이름부터 본다 — '도로'와 '도로시'가 같이 있으면 긴 쪽이 맞다
-  var idxs = [], named = [];
+  //   ★종 이름('강아지')으로도 부를 수 있다 — **손님은 대개 지어 준 이름을 모른다.**
+  //     종 이름은 같은 종 **전부**를 가리킨다(두 마리를 키우면 둘 다 온다).
+  var idxs = [], named = [], byKind = {};
   for (i = 0; i < pets.length; i++) {
     var nm = String((pets[i] || {}).name || '').trim();
-    if (nm) named.push({ i: i, nm: nm });
+    if (nm) named.push({ nm: nm, is: [i] });
+  }
+  for (i = 0; i < pets.length; i++) {
+    var kn = String(((window.mwItemDef && window.mwItemDef((pets[i] || {}).id)) || {}).name || '').trim();
+    if (!kn) continue;
+    if (!byKind[kn]) { byKind[kn] = { nm: kn, is: [] }; named.push(byKind[kn]); }
+    byKind[kn].is.push(i);
   }
   named.sort(function (a, b) { return b.nm.length - a.nm.length; });
   for (i = 0; i < named.length; i++) {
-    if (t.indexOf(named[i].nm) >= 0) { idxs = [named[i].i]; break; }
+    if (t.indexOf(named[i].nm) >= 0) { idxs = named[i].is.slice(); break; }
   }
   if (!idxs.length) for (i = 0; i < pets.length; i++) idxs.push(i);
 
@@ -5581,13 +5702,40 @@ window.mwPetChatCmd = function (text) {
     ? String(pets[idxs[0]].name) : '모두';
   var done = 0;
   idxs.forEach(function (k) {
-    if (cmd.k === 'bowl') { if (window.mwPetFeed) { window.mwPetFeed(k, true); done++; } }
-    else if (window.mwPetSetMode) { window.mwPetSetMode(k, cmd.k, true); done++; }
+    // 내가 주인이고 **내가** 한 말이면 저장되는 행동을 바꾼다(예전 그대로).
+    if (mine && owner) {
+      if (cmd.k === 'bowl') { if (window.mwPetFeed) { window.mwPetFeed(k, true); done++; } }
+      else if (window.mwPetSetMode) { window.mwPetSetMode(k, cmd.k, true); done++; }
+      return;
+    }
+    // 그 밖(손님이 부른 것)은 **저장 없이** 그 자리에서만 — 부른 사람을 향해 간다.
+    if (window.mwPetCall && window.mwPetCall(k, cmd.k, byUid)) done++;
   });
   if (!done) return false;
-  showToast(who + ' · ' + cmd.t);
-  if (navigator.vibrate) navigator.vibrate([6, 30, 6]);
+  // 남이 부른 것은 **부른 사람이 자기 화면에서 이미 안내를 봤다.** 주인에게 또 띄우지 않는다.
+  if (mine) {
+    showToast(who + ' · ' + cmd.t);
+    if (navigator.vibrate) navigator.vibrate([6, 30, 6]);
+  }
   return true;
+};
+
+// 링 메뉴로 부르면 **말로 부른다** — 채팅에 그대로 남아 주인 앱이 듣고, 옆 사람도 이유를 안다.
+// ★새 길을 내지 않는다. 유저가 직접 "도로야 이리와" 라고 친 것과 **완전히 같은 길**이라,
+//   한쪽만 고쳐지는 일이 생기지 않는다.
+window.MW_PET_CALL_SAY = { follow: '이리와', stay: '기다려', free: '놀아' };
+window._mwCallJosa = function (s) {
+  var c = String(s || '').charCodeAt(String(s || '').length - 1);
+  if (!(c >= 0xAC00 && c <= 0xD7A3)) return '야';
+  return ((c - 0xAC00) % 28) ? '아' : '야';      // 받침이 있으면 '아'
+};
+window.mwPetGuestCall = function (idx, k) {
+  var pets = (window._mwPetsData && window._mwPetsData()) || [];
+  var sv = pets[idx] || {};
+  var nm = String(sv.name || ((window.mwItemDef && window.mwItemDef(sv.id)) || {}).name || '').trim();
+  var word = window.MW_PET_CALL_SAY[k] || '이리와';
+  var line = nm ? (nm + window._mwCallJosa(nm) + ' ' + word) : word;
+  if (!(window.mwRoomSayText && window.mwRoomSayText(line))) showToast('방에 연결되면 부를 수 있어요');
 };
 
 // ===== 밥 주기 =====
@@ -23654,11 +23802,19 @@ window._mwChatWatch = function (ownerUid) {
   const R = window._rt;
   window._mwChatUnwatch();
   if (!R || !ownerUid) return;
+  // ★지금 이후의 말만 명령으로 듣는다. 지난 60줄이 통째로 오므로, 표시가 없으면
+  //   방에 들어설 때마다 옛날 명령이 한꺼번에 재생된다.
+  window._mwPetHearT0 = Date.now();
+  window._mwPetHeard = {};
   try {
     const q = R.query ? R.query(R.ref(R.db, 'roomLive/' + ownerUid + '/chat'), R.limitToLast(60))
                       : R.ref(R.db, 'roomLive/' + ownerUid + '/chat');
     const un = R.onValue(q, function (sn) {
       const v = sn.val() || {};
+      // ★손님이 부른 것을 **주인 앱이 듣는다**(2026-08-29). 펫을 굴리는 건 주인 하나뿐이라,
+      //   손님의 말은 여기서 주워 **그 손님을 향해** 굴린다. 새 노드를 파지 않는 이유는
+      //   mwPetCall 위 주석에 적어 뒀다(RTDB 규칙은 노드 단위다).
+      try { window._mwPetHear && window._mwPetHear(v); } catch (e) { console.warn('pet hear', e); }
       const rows = Object.keys(v).map(function (k) { return v[k]; })
         .filter(function (m) { return m && m.text; })
         .sort(function (a, b) { return (b.t || 0) - (a.t || 0); })   // 최신이 앞(목록이 column-reverse)
@@ -23810,23 +23966,49 @@ window._mwRTalkWho = function () {
   const n = document.querySelector('#mw-party-talkbtn b');
   if (n) n.textContent = ((window._mwRl && window._mwRl.log) || []).length || '';
 };
+// ===== 방에 한 줄 남기기 (한 곳) =====
+// 필드 입력줄·톡 패널·낙서판·펫 부르기가 **모두 이 길로** 간다.
+// ★예전엔 같은 push 코드가 세 곳에 복사돼 있었다. uid 를 싣는 것 같은 걸 한 곳만 고치면
+//   나머지가 조용히 옛것으로 남는다 — 8-28 에 입력줄 다섯 곳에서 겪은 그 일이다.
+// ★uid 를 싣는 이유 = 주인 앱이 **누가 불렀는지** 알아야 손님을 향해 펫을 굴릴 수 있다.
+// 보냈으면 true. 말풍선은 보내기 성공과 상관없이 띄운다(예전 그대로).
+window.mwRoomSayText = function (t, ow) {
+  t = String(t || '').trim().slice(0, 40);
+  if (!t) return false;
+  if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return false; }
+  const R = window._rt;
+  ow = ow || (window._mwRl && window._mwRl.owner);
+  let sent = false;
+  if (R && ow) {
+    try {
+      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
+        nick: String(window._mwMyNick || '머피').slice(0, 12),
+        text: t, t: Date.now(), uid: auth.currentUser.uid
+      });
+      sent = true;
+    } catch (e) { console.warn('chat push', e); }
+  }
+  // ★말풍선은 **보낸 다음**이다. 여기서 예외가 나도 전송은 이미 끝나 있어야 한다(8-26 낙서판).
+  try {
+    if (window._mwRl) {
+      window._mwRl.msg = { text: t, t: Date.now() };
+      window._mwRlSend && window._mwRlSend();
+      window._charApplyPos && window._charApplyPos();
+    }
+  } catch (e) { console.warn('say bubble', e); }
+  // ★펫 명령 (대표 8-26). 말은 **그대로 남긴다** — 명령이어도 대화의 일부다.
+  //   "도로야 이리와" 가 채팅에 안 보이면 옆 사람은 펫이 왜 움직이는지 모른다.
+  try { window.mwPetChatCmd && window.mwPetChatCmd(t); } catch (e) { console.warn('pet cmd', e); }
+  return sent;
+};
+
 // 톡 패널에서 한마디 — 필드의 한마디(mwRoomSay)와 **같은 곳**에 쓴다.
 window.mwRTalkSay = function () {
   const inp = document.getElementById('mw-rtalk-input'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
   if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
   inp.value = '';
-  window._mwRl.msg = { text: t, t: Date.now() };
-  window._mwRlSend && window._mwRlSend();
-  window._charApplyPos && window._charApplyPos();
-  try {
-    const R = window._rt, ow = window._mwRl.owner;
-    if (R && ow) {
-      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
-        nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: Date.now()
-      });
-    }
-  } catch (e) { console.warn('rtalk push', e); }
+  window.mwRoomSayText(t);          // ★펫 명령까지 여기서 같이 처리된다(예전엔 필드 입력줄만 됐다)
 };
 // ---- 키보드: 스쿼드 톡(_sqKbFix)과 **같은 식** ----
 // 계산하지 않고 **잰다**. 입력칸이 보이는 영역 아래로 내려간 만큼 패널째 위로 올린다.
@@ -23876,26 +24058,9 @@ window.mwJamSay = function () {
   const R = window._rt, ow = (window._mwJam && window._mwJam.owner)
                           || (window._mwRl && window._mwRl.owner);
   if (!R || !ow) { showToast('방에 연결되면 보낼 수 있어요'); return; }
-  try {
-    R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
-      nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: Date.now()
-    });
-  } catch (e) {
-    console.warn('jam chat push', e);
-    showToast('보내지 못했어요 · 잠시 뒤에 다시');
-    return;
-  }
+  if (!window.mwRoomSayText(t, ow)) { showToast('보내지 못했어요 · 잠시 뒤에 다시'); return; }
   inp.value = '';
   inp.blur();                       // 키보드를 내려야 바로 그릴 수 있다
-  // 머리 위 말풍선도 같이 띄운다 — 방에서 구경하는 사람에게도 보여야 한다.
-  // ★여기서 나는 예외가 위 전송을 막지 못하게 **뒤로** 뺐다.
-  try {
-    if (window._mwRl) {
-      window._mwRl.msg = { text: t, t: Date.now() };
-      window._mwRlSend && window._mwRlSend();
-      window._charApplyPos && window._charApplyPos();
-    }
-  } catch (e) { console.warn('jam bubble', e); }
 };
 // 낙서판 키보드 — 머피룸과 **같은 방식**이다. 잠그고, 높이만 잠깐 줄인다.
 //   #mw-jam 은 이미 position:fixed 라 '상자로 바꾸는' 전환이 없다(그게 방에서 겪은 흔들림이었다).
@@ -24484,11 +24649,7 @@ window.mwRoomSay = function () {
   const t = String(inp.value || '').trim().slice(0, 40); if (!t) return;
   if (!auth.currentUser) { window.memberGate && window.memberGate('한마디 하려면 로그인이 필요해요'); return; }
   inp.value = '';                    // 스쿼드 필드처럼 전송 뒤에도 포커스·키보드를 유지한다
-  // ★펫 명령 (대표 8-26). 말은 **그대로 남긴다** — 명령이어도 대화의 일부다.
-  //   "도로야 이리와" 가 채팅에 안 보이면 옆 사람은 펫이 왜 움직이는지 모른다.
-  try { window.mwPetChatCmd && window.mwPetChatCmd(t); } catch (e) { console.warn('pet cmd', e); }
-  window._mwRl.msg = { text: t, t: Date.now() };
-  window._mwRlSend();
+  window.mwRoomSayText(t);           // 보내기·말풍선·펫 명령이 전부 여기 한 곳에 있다
   // ★★말을 **방에 남긴다** (대표 8-25: "손님은 톡 목록이 잘 안 뜨고 최신화가 안 되는데
   //   초대자 입장에선 잘 반영된다").
   //   원인은 **대화가 어디에도 저장되지 않던 것**이었다. 말풍선은 presence 에 실려 6초면
@@ -24497,19 +24658,9 @@ window.mwRoomSay = function () {
   //   존재 자체가 사라진 뒤다.
   //   ★새 노드를 파지 않는다. roomLive/{주인}/chat 은 **규칙에 이미 쓰기 권한이 있고**
   //     아무도 안 쓰고 있었다(rules: chat -> auth != null). 규칙 재배포가 필요 없다.
-  try {
-    const R = window._rt, ow = window._mwRl.owner;
-    if (R && ow) {
-      R.push(R.ref(R.db, 'roomLive/' + ow + '/chat'), {
-        nick: String(window._mwMyNick || '머피').slice(0, 12),
-        text: t, t: Date.now()
-      });
-    }
-  } catch (e) { console.warn('chat push', e); }
-  window._charApplyPos && window._charApplyPos();          // 내 머리 위에 바로 띄운다
   clearTimeout(window._mwRl.msgClr);
   clearTimeout(window._mwRl.msgT);
-  if (!window._mwBubblePin) {
+  if (!window._mwBubblePin && window._mwRl.msg) {
     const sentAt = window._mwRl.msg.t;
     window._mwRl.msgClr = setTimeout(function () {
       // 그 사이 새 말을 썼으면 옛 타이머가 새 말풍선을 지우면 안 된다.
