@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '803';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '804';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -11411,6 +11411,12 @@ function handlePass() {
   const p = list[window._matchIdx || 0]; if (!p) return;
   window._matchPassed = window._matchPassed || new Set();
   window._matchPassed.add(p.uid);
+  // ★패스를 기기에 14일 남긴다(8-29). 메모리 Set 만 쓰면 새로고침·다음날 1번 카드로 되돌아왔다.
+  try {
+    const k = 'murpy_pass_' + (window.currentUser?.uid || 'guest');
+    const m = JSON.parse(localStorage.getItem(k) || '{}'); m[p.uid] = Date.now();
+    localStorage.setItem(k, JSON.stringify(m));
+  } catch (e) {}
   _matchAdvance('translateX(-40px)');
 }
 
@@ -19890,7 +19896,14 @@ window.loadMatchCandidates = async function () {
       try { const ls = await getDocs(query(collection(db, 'likes'), where('from', '==', me))); ls.forEach(d => liked.add(d.data().to)); } catch (e) {}
       try { const ms = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me))); ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matchedSet.add(u); })); } catch (e) {}
     }
-    const passed = window._matchPassed || new Set();
+    const passed = new Set(window._matchPassed || []);
+    // 기기에 남긴 패스(14일) 도 합친다 — handlePass 가 저장하는 것과 같은 키
+    try {
+      const k = 'murpy_pass_' + (me || 'guest');
+      const m = JSON.parse(localStorage.getItem(k) || '{}'); let dirty = false;
+      Object.keys(m).forEach(u => { if (Date.now() - m[u] > 14 * 86400e3) { delete m[u]; dirty = true; } else passed.add(u); });
+      if (dirty) localStorage.setItem(k, JSON.stringify(m));
+    } catch (e) {}
 
     // 내가 다니는 곳 — #10 이후 gyms[](최대 3) 가 진짜 소스이고 gym 은 그 첫 번째다
     const myGyms = new Set([...(myProf.gyms || []), myGym].filter(Boolean));
@@ -19923,7 +19936,19 @@ window.loadMatchCandidates = async function () {
                    + _matchActScore(data) + _matchRecentScore(data);
       arr.push({ uid: u, ...data, _sameCenter: sameGym, _score });
     });
-    arr.sort((a, b) => (b._score - a._score) || ((b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0)));
+    // ★날마다 새 얼굴이 나오게 (대표 8-29 지적: "아침마다 항상 똑같은 사람만 뜬다").
+    //   전엔 점수→updatedAt 순으로 **결정적**이라 날이 바뀌어도 상위 5명이 그대로였다.
+    //   ① 최근 6일 덱에 나왔던 사람은 뒤로 민다(풀이 모자라면 다시 나온다)
+    //   ② 같은 점수 안에서는 '오늘+나' 시드 해시로 섞는다 — 같은 날 안에서는 순서가 안 바뀐다
+    const _dayKey = _matchDayKey();
+    const _seenRecently = new Set();
+    try {
+      const h = JSON.parse(localStorage.getItem('murpy_deck_hist_' + (me || 'guest')) || '{}');
+      Object.keys(h).forEach(dk => { if (dk !== _dayKey && (Number(_dayKey) - Number(dk)) < 7) (h[dk] || []).forEach(u => _seenRecently.add(u)); });
+    } catch (e) {}
+    const _h32 = str => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0; } return x; };
+    arr.forEach(c => { c._rnd = _h32(_dayKey + '|' + (me || '') + '|' + c.uid); if (_seenRecently.has(c.uid)) c._score -= 10; });
+    arr.sort((a, b) => (b._score - a._score) || (a._rnd - b._rnd));
 
     // ===== 오늘의 추천 5명 (대표 8-09 확정) =====
     // 전체를 다 뿌리면 (1) 회원 수가 그대로 드러나고 (2) 매일 다시 올 이유가 없다.
@@ -19947,6 +19972,13 @@ window.loadMatchCandidates = async function () {
         deck = picked.map(c => c.uid);
         try {
           localStorage.setItem(key, JSON.stringify(deck));
+          // 오늘 덱을 이력에 남긴다(최근 7일만) — 위 '최근에 본 사람 뒤로 밀기'가 읽는다
+          try {
+            const hk = 'murpy_deck_hist_' + (me || 'guest');
+            const h = JSON.parse(localStorage.getItem(hk) || '{}'); h[_dayKey] = deck;
+            Object.keys(h).forEach(dk => { if (Number(_dayKey) - Number(dk) >= 7) delete h[dk]; });
+            localStorage.setItem(hk, JSON.stringify(h));
+          } catch (e) {}
           // 지난 날짜 덱은 지운다(브라우저 저장소가 무한히 쌓이지 않게)
           Object.keys(localStorage).forEach(k => {
             if (k.indexOf('murpy_deck_') === 0 && k !== key) localStorage.removeItem(k);
