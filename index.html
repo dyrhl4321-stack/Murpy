@@ -75,11 +75,15 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '815';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '816';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
 window._escHtml = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+// ★8-29 imgBB 키 제거. 8-25 부터 사진은 Firebase Storage 로 간다(api.imgbb.com 요청을 가로채는 구조라
+//   호출부 10곳은 그대로). 무료 키 하나를 전 유저가 공유 + 공개 저장소 노출이라 코드에서 뺐다.
+//   빈 값이면 imgBB 로는 절대 못 올라간다 = Storage 가 죽으면 업로드도 실패한다(폴백 없음, 의도).
+window.IMGBB_KEY = '';
 // ★8-29 계측. GA 가 아직 안 붙었으면 줄에 세워 뒀다가 붙는 순간 보낸다(module 블록이 연결한다).
 window._trackQ = [];
 window.track = function (name, params) {
@@ -13307,7 +13311,7 @@ window.confirmProfileCrop = async function() {
       try {
         const formData = new FormData();
         formData.append('image', blob, 'profile.jpg');
-        formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+        formData.append('key', (window.IMGBB_KEY || ''));
         const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
         const json = await res.json();
         if (!json.success) { showToast('업로드 실패'); return; }
@@ -14164,7 +14168,7 @@ async function handleCrewCoverUpload(input) {
   try {
     const formData = new FormData();
     formData.append('image', await window._compressImg(file), 'photo.jpg');
-    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    formData.append('key', (window.IMGBB_KEY || ''));
     const res = await fetch('https://api.imgbb.com/1/upload', { method:'POST', body:formData });
     const json = await res.json();
     if (!json.success) { showToast('업로드 실패'); return; }
@@ -14470,9 +14474,12 @@ window.mwUploadImage = async function (blob, kind) {
         data: { url: url2, display_url: url2, image: { url: url2 } }
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }).catch(function (e) {
-      console.warn('[storage upload] 실패 → imgBB 로 되돌립니다', e);
+      // ★8-29: imgBB 폴백 제거(키를 코드에서 뺐다). Storage 가 실패하면 실패로 돌려준다 —
+      //   호출부는 j.success 를 보고 "업로드 실패" 토스트를 낸다. 원인은 ?diag=1 의 _mwStorageFail.
+      console.warn('[storage upload] 실패', e);
       window._mwStorageFail = (e && (e.code || e.message)) || 'unknown';
-      return orig(input, init);                  // 원래 요청을 그대로 다시 보낸다
+      return new Response(JSON.stringify({ success: false, status: 500, error: { message: window._mwStorageFail } }),
+                          { status: 200, headers: { 'Content-Type': 'application/json' } });
     });
   };
 })();
@@ -15643,7 +15650,7 @@ window.uploadImgbb = async (file) => {
     if (!file) { say('파일이 없어요'); return ''; }
     const fd = new FormData();
     fd.append('image', await window._compressImg(file), 'photo.jpg');
-    fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    fd.append('key', (window.IMGBB_KEY || ''));
     // fetch 는 기본 타임아웃이 없다 — 매달리면 사용자는 영영 아무 반응도 못 본다
     const ac = ('AbortController' in window) ? new AbortController() : null;
     const timer = ac ? setTimeout(() => ac.abort(), 30000) : null;
@@ -18472,7 +18479,7 @@ window.showFeedHairFix = async function () {
         const blob = await new Promise(r => it.after.toBlob(r, 'image/jpeg', 0.9));
         const fd = new FormData();
         fd.append('image', blob, 'fixed.jpg');
-        fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+        fd.append('key', (window.IMGBB_KEY || ''));
         const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
         const json = await res.json();
         if (!json.success) throw new Error('imgBB 업로드 실패');
@@ -26001,7 +26008,7 @@ window.submitFeedPost = async function() {
 
     const formData = new FormData();
     formData.append('image', file, 'photo.jpg'); // 이미 크롭+JPEG 압축된 blob — 재압축 불필요(속도)
-    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    formData.append('key', (window.IMGBB_KEY || ''));
     // ★여기만 타임아웃도 오류 안내도 없었다 (대표 8-19 제보: 다른 폰에서 "Failed to fetch").
     //   ①fetch 는 기본 타임아웃이 없다 → 응답이 안 오면 '공유 중...' 인 채로 하염없이 매달렸다.
     //   ②실패하면 개발자 영어(Failed to fetch)가 그대로 토스트에 나갔다. 유저는 뭘 할지 모른다.
@@ -26424,7 +26431,7 @@ window.postBambooFirestore = async (text, title) => {
     try {
       const fd = new FormData();
       fd.append('image', window._bambooPhoto, 'bamboo.jpg');
-      fd.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+      fd.append('key', (window.IMGBB_KEY || ''));
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 30000);   // 30초 넘으면 끊는다(모바일 회선 대비)
       const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd, signal: ctl.signal });
@@ -27841,7 +27848,7 @@ window.uploadCenterPhoto = async (file) => {
   try {
     const formData = new FormData();
     formData.append('image', await window._compressImg(file), 'photo.jpg');
-    formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+    formData.append('key', (window.IMGBB_KEY || ''));
     const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
     const json = await res.json();
     return json.success ? json.data.url : '';
@@ -30794,7 +30801,7 @@ window.createScheduleFirestore = async () => {
     try {
       const formData = new FormData();
       formData.append('image', await window._compressImg(thumbFile), 'thumb.jpg');
-      formData.append('key', 'd12b915d2ed184170a0fd4aff714234d');
+      formData.append('key', (window.IMGBB_KEY || ''));
       const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.success) thumbnailURL = data.data.url;
@@ -31306,7 +31313,7 @@ window.uploadCrewPhoto = async (crewId, file) => {
   if (!user) { requireLogin('사진을 올리려면 로그인이 필요해요'); return; }
   showToast('사진 업로드 중...');
   try {
-    const fd = new FormData(); fd.append('image', await window._compressImg(file), 'photo.jpg'); fd.append('key','d12b915d2ed184170a0fd4aff714234d');
+    const fd = new FormData(); fd.append('image', await window._compressImg(file), 'photo.jpg'); fd.append('key',(window.IMGBB_KEY || ''));
     const res = await fetch('https://api.imgbb.com/1/upload',{method:'POST',body:fd});
     const json = await res.json();
     if (!json.success) { showToast('업로드 실패'); return; }
