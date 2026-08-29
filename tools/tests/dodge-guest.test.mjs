@@ -146,7 +146,8 @@ assert(/mwShareSheet\(\)/.test(ig), '공유시트를 안 연다');
 console.log('  + 공유 링크·인스타 복사 OK');
 
 // 14) ★비로그인 if/else 사슬을 건드리지 않았는가 (다른 창 구역)
-const chain = grab(/if \(window\._mwRoomInvite && window\.mwRoomEnterChoice\)[\s\S]*?showSplashOnboarding\(\), 1700\);/, '비로그인 사슬');
+// (8-29) 사슬 머리가 `&& !window._mwRoomSkipEnterSheet` 로 바뀌어 옛 정규식이 못 잡았다 — 시작 조건을 느슨하게
+const chain = grab(/if \(window\._mwRoomInvite && window\.mwRoomEnterChoice[^\n]*\)[\s\S]*?showSplashOnboarding\(\), 1700\);/, '비로그인 사슬');
 assert(!/game/.test(chain), '게임 링크 처리가 비로그인 사슬에 들어갔다 → 다른 창과 충돌한다');
 
 // 15) 온보딩은 사슬을 고치지 말고 **감싸서** 미룬다 (온보딩 z 30000 > 게임 z 2300)
