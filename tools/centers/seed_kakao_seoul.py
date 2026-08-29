@@ -45,8 +45,7 @@ def kakao(q, rect, page):
         try: return json.loads(urllib.request.urlopen(req, timeout=20).read().decode())
         except Exception as e:
             time.sleep(min(60, 2 ** i)); last = e
-    print('
-호출 포기(건너뜀):', rect, last, flush=True)
+    print('호출 포기(건너뜀):', rect, last, flush=True)
     return {'documents': [], 'meta': {'is_end': True, 'total_count': 0}}
 
 def norm(s): return re.sub(r'[\s\-\(\)\[\]·,.]|점$|본점$', '', str(s or '')).lower()
