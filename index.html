@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '810';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '811';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -19983,6 +19983,19 @@ window.matchBuyMore = async function () {
 };
 
 // ===== 매칭 후보 로더 (users → 지역/센터 우선 정렬) =====
+// ★8-29 트래픽: users 컬렉션 **전체 읽기**가 홈·매칭·경매장 세 곳에 있었다 — 탭을 옮길 때마다
+//   회원 수만큼 문서를 다시 받았다(131명 = 1.8MB, 1,000명이면 홈 한 번에 13MB). 5분 동안은 한 번 받은
+//   스냅샷을 셋이 같이 쓴다. 남의 프로필은 5분 늦어도 된다. 제대로 된 해법(집계 문서·필드 분리)은 나중.
+window._usersAll = async function (maxAge) {
+  const now = Date.now();
+  const c = window._usersAllCache;
+  if (c && (now - c.at) < (maxAge || 300000)) return c.snap;
+  if (window._usersAllPending) return window._usersAllPending;
+  window._usersAllPending = getDocs(collection(db, 'users')).then(function (snap) {
+    window._usersAllCache = { snap: snap, at: Date.now() }; window._usersAllPending = null; return snap;
+  }, function (e) { window._usersAllPending = null; throw e; });
+  return window._usersAllPending;
+};
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
   if (window._matchLoading) return;   // me 없어도(게스트) 실데이터 미리보기 로드
@@ -20011,7 +20024,7 @@ window.loadMatchCandidates = async function () {
     // 내가 다니는 곳 — #10 이후 gyms[](최대 3) 가 진짜 소스이고 gym 은 그 첫 번째다
     const myGyms = new Set([...(myProf.gyms || []), myGym].filter(Boolean));
 
-    const snap = await getDocs(collection(db, 'users'));
+    const snap = await window._usersAll();
     const arr = [];
     const seeAll = (window.isMatchSeeAll && window.isMatchSeeAll())
                 || (window.isMatchTester && window.isMatchTester());
@@ -22972,7 +22985,8 @@ window._mwArtWonCheck = async function () {
 window._mwMarket = null;
 window._mwMarketLoad = async function () {
   try {
-    const qs = await getDocs(collection(db, 'users'));
+    // 내가 방금 올린 그림은 바로 보여야 한다(대표 8-26) → 내 문서만 새로 읽어 덮는다
+    const qs = await window._usersAll();
     const me = (window.currentUser || {}).uid || '';
     const out = [];
     qs.forEach(function (d) {
@@ -22980,7 +22994,8 @@ window._mwMarketLoad = async function () {
       //   빼놓으면 **내가 올리고 내 경매장에서 못 찾는다.** 시장이면 내 물건도 걸려 있어야 한다.
       //   대신 카드에 '내가 올림'을 표시하고 입찰은 막는다(mwAucBidFrom 이 이미 막는다).
       const u = d.data() || {};
-      (u.artworks || []).forEach(function (a) {
+      const arts = (d.id === me && Array.isArray(window._myArt)) ? window._myArt : (u.artworks || []);
+      arts.forEach(function (a) {
         if (!a || !a.px) return;
         const auc = !!(a.auc && a.aucAt);
         if (!auc && !((a.price | 0) > 0)) return;     // 안 내놓은 그림은 안 보인다
@@ -30257,7 +30272,7 @@ window.loadHomeTrending = async () => {
       //   계산 대상이 아니었다. 바로 위 스쿼드 쿼리에 같은 버그를 8-11 에 고친 기록이 있는데
       //   users 는 그대로 뒀다. → 전부 읽는다(46명이면 한 번에 읽어도 무시할 수준).
       //   ※사람이 500명쯤 되면 상위 20명만 담은 집계 문서로 바꿀 것.
-      safe(getDocs(collection(db, 'users'))),
+      safe(window._usersAll()),
       safe(getDocs(query(collection(db, 'checkins'), limit(80))))
     ]);
 
@@ -35199,7 +35214,8 @@ async function bpDbgSave(outcome) {
     });
     const snap = await getDoc(doc(db, 'users', u.uid));
     const prev = (snap.exists() && snap.data().bumpDiag) || [];
-    await setDoc(doc(db, 'users', u.uid), { bumpDiag: [rec].concat(prev).slice(0, 20) }, { merge: true });
+    // ★8-29: 20건 → 5건. 진단용인데 users 문서 무게 1위(전체 94KB)였다 — 홈·매칭이 전원 문서를 읽는다
+    await setDoc(doc(db, 'users', u.uid), { bumpDiag: [rec].concat(prev).slice(0, 5) }, { merge: true });
   } catch (e) {}
 }
 function bpOnMotion(e) {
