@@ -45,6 +45,17 @@ d = ImageDraw.Draw(canvas)
 
 
 def font(sz, bold=True):
+    # ★맑은 고딕(malgun)은 작은 크기에서 받침이 뭉개진다 — '같이'의 ㅌ 이 깨져 보였다(대표 8-29).
+    #   Noto Sans KR 가변 폰트를 쓴다. 앱이 쓰는 Pretendard 와 같은 계열(고딕 산세리프)이고
+    #   윈도우에 기본으로 들어 있다.
+    noto = r'C:\Windows\Fonts\NotoSansKR-VF.ttf'
+    if os.path.exists(noto):
+        f = ImageFont.truetype(noto, sz)
+        try:
+            f.set_variation_by_name('Bold' if bold else 'Regular')
+        except Exception:
+            pass
+        return f
     for p in [(r'C:\Windows\Fonts\malgunbd.ttf' if bold else r'C:\Windows\Fonts\malgun.ttf'),
               r'C:\Windows\Fonts\malgun.ttf']:
         if os.path.exists(p):
@@ -58,19 +69,20 @@ def center(y, text, f, fill):
 
 
 # ── 로고 (가운데 위). 로고 파일에 MURPY 글자가 이미 들어 있다 — 워드마크를 또 찍지 않는다.
-logo = Image.open('logo-nukki.png').convert('RGBA').resize((104, 104), Image.LANCZOS)
-canvas.paste(logo, ((W - 104) // 2, 62), logo)
+LS = 150                      # 로고 크기 (대표 8-29: "로고도 좀 더 키워줘")
+logo = Image.open('logo-nukki.png').convert('RGBA').resize((LS, LS), Image.LANCZOS)
+canvas.paste(logo, ((W - LS) // 2, 30), logo)
 
 # ── 한 문장 (og-card 와 같은 카피를 한 줄로)
-center(196, '운동을 좋아하는 사람들은', font(52), (255, 255, 255))
-center(266, '아직 만나지 못했을 뿐.', font(52), (255, 255, 255))
+center(198, '운동을 좋아하는 사람들은', font(50), (255, 255, 255))
+center(262, '아직 만나지 못했을 뿐.', font(50), (255, 255, 255))
 
 # 브랜드 블루 구분선
-d.rectangle([(W - 64) // 2, 348, (W + 64) // 2, 352], fill=(61, 126, 255))
+d.rectangle([(W - 64) // 2, 344, (W + 64) // 2, 348], fill=(61, 126, 255))
 
-center(378, '같이 운동할 사람을 찾고, 인증하고, 기록하는 운동 커뮤니티',
-       font(24, False), (206, 212, 224))
-center(430, 'murpy.app', font(24), (61, 126, 255))
+center(374, '같이 운동할 사람을 찾고, 인증하고, 기록하는 운동 커뮤니티',
+       font(25, False), (206, 212, 224))
+center(428, 'murpy.app', font(25), (61, 126, 255))
 
 os.makedirs(OUT_DIR, exist_ok=True)
 canvas.save(OUT, quality=95)
