@@ -75,11 +75,19 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '811';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '812';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
 window._escHtml = function (v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+// ★8-29 계측. GA 가 아직 안 붙었으면 줄에 세워 뒀다가 붙는 순간 보낸다(module 블록이 연결한다).
+window._trackQ = [];
+window.track = function (name, params) {
+  try {
+    if (window._gaLog) window._gaLog(name, params || {});
+    else if (window._trackQ.length < 50) window._trackQ.push([name, params || {}]);
+  } catch (e) {}
+};
 window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c').replace(/>/g, '\\x3e').replace(/&/g, '\\x26').replace(/"/g, '\\x22').replace(/\r?\n/g, '\\n'); };
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
@@ -8619,7 +8627,7 @@ window.charHubTab = function (name, btn) {
   }
 };
 // 머피 충전(결제) 진입점 — 지금은 자리/구조만, 추후 PG/IAP 로직 연결
-window.openMurpyCharge = function () { if (window.openModal) openModal('murpy-charge-modal'); };
+window.openMurpyCharge = function () { window.track && window.track('charge_open'); if (window.openModal) openModal('murpy-charge-modal'); };
 // ===== 머피월드 입장 연출 (첫 방문 인트로 + 매번 짧은 포털) — 주인공은 캐릭터/세계 =====
 // 저장된 내 캐릭터의 착용 레이어를 합성한 스프라이트 divs (몸통→하의→신발→상의→머리→모자→소품).
 // ★인트로/포털이 예전엔 몸통 시트 하나만 깔아 저장 캐릭터와 무관하게 '빡빡이'로 나왔다(대표 지적
@@ -10253,6 +10261,7 @@ window._diagPush = async function () {
     const m = sw.match(/murpy-v(\d+)/);
     const real = m ? m[1] : '?';
     L.push('kakao: ' + (window._kakaoMode || '-') + ' (custom 이면 Worker 교체 완료)');
+    L.push('analytics: ' + (window._gaLog ? 'on' : 'off (콘솔에서 Google Analytics 켜야 함) · 대기 ' + ((window._trackQ || []).length)));
     L.push('빌드: index _SW_V=' + (window._SW_V || '?') + ' / sw.js=' + real
       + (real !== String(window._SW_V) ? '  ★어깋남' : ''));
   } catch (e) { L.push('sw.js 버전 확인 실패'); }
@@ -14349,6 +14358,7 @@ if ('serviceWorker' in navigator) {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, deleteField, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -14365,6 +14375,25 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+// ★8-29 계측 (경제 v2 §8). 지금까지 이벤트가 0건이라 "유저 몇 명·한 달 뒤 몇 %·한 명이 몇 명 데려오나"에
+//   답할 수 없었다. window.track(name, params) 하나로 보낸다(classic 블록에서 정의, 여기서 GA 에 연결).
+//   ★measurementId 가 config 에 없다 — Firebase 콘솔에서 Google Analytics 를 켜면 SDK 가 알아서 받아온다.
+//     켜기 전까지는 조용히 버려진다(?diag=1 에 analytics: off).
+gaSupported().then(function (ok) {
+  if (!ok) return;
+  try {
+    window._ga = getAnalytics(app);
+    window._gaLog = function (name, params) { logEvent(window._ga, name, params || {}); };
+    (window._trackQ || []).splice(0).forEach(function (e) { try { window._gaLog(e[0], e[1]); } catch (x) {} });
+  } catch (e) { console.warn('analytics off', e && e.message); }
+}).catch(function () {});
+// 꾸미기 저장 = 리텐션 지표. 정의는 classic 블록(_reditSave)이라 여기서 감싼다
+(function () {
+  const orig = window._reditSave;
+  if (typeof orig !== 'function' || orig._tracked) return;
+  const w = async function () { window.track && window.track('room_decorate'); return orig.apply(this, arguments); };
+  w._tracked = 1; window._reditSave = w;
+})();
 const auth = getAuth(app);
 // 오프라인 영구 캐시: 재방문 시 IndexedDB에서 즉시 로드 후 백그라운드 동기화
 let db;
@@ -14453,11 +14482,12 @@ window._mwRoomInvite = (function () {
   try {
     const q = new URLSearchParams(location.search);
     const room = q.get('room') || '';
-    if (room) return room;
+    if (room) { window.track && window.track('invite_open', { kind: 'room' }); return room; }
     const art = q.get('art') || '';
     if (!art) return '';
     const cut = art.indexOf('_');
     if (cut < 1) return '';
+    window.track && window.track('invite_open', { kind: 'art' });
     window._mwArtOpen = art.slice(cut + 1);
     return art.slice(0, cut);
   } catch (e) { return ''; }
@@ -18770,6 +18800,7 @@ window.grantBetaGift = async function () {
     //             30이 100에 먹혀 130이 아니라 100이 된다(대표 8-18: "총 130으로 시작").
     const next = window.BETA_GIFT_ON ? Math.max(d.credits | 0, gift) : (d.credits | 0) + gift;
     await updateDoc(ref, { credits: next, [BETA_GRANT_KEY]: true, betaGrantPending: false });
+    window.track && window.track('first_verify', { gift: gift });
     window._creditState.credits = next;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -19818,6 +19849,7 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
   // free = 수락(상대가 이미 보냈다). 비용은 먼저 신청한 쪽이 냈으므로 받는 쪽은 안 낸다.
   // ★8-29: 하루 MATCH_FREE_DAY 회 무료 → 그 뒤 COST_MATCH. 무료 카운터와 잔액을 한 트랜잭션에서.
   if (!free) { const r = await window.matchSpend(me); if (!r.ok) { showToast(window.creditSpendFailMessage()); return; }
+    window.track && window.track('match_request', { free: r.free ? 1 : 0, cost: r.cost | 0 });
     if (r.free && typeof r.left === 'number') showToast(r.left > 0 ? '무료로 보냈어요 · 오늘 ' + r.left + '회 남음' : '오늘 무료 신청을 다 썼어요 · 다음부턴 ' + COST_MATCH + '머피'); }
   try {
     await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() });
@@ -21511,6 +21543,7 @@ window.obComplete = async () => {
         sports: window._obData.sports,
         district, bio, onboardingComplete: true, updatedAt: serverTimestamp()
       }, _obChar ? { character: _obChar } : {}), { merge: true });
+      window.track && window.track('signup_done', { gender: _obG || '', via: window._mwRoomInvite ? 'invite' : 'direct' });
       // 화면 쪽 상태도 같이 바꾼다 — 안 그러면 이번 세션은 남캐로 그려진다
       if (_obChar && window._charState) window._charState.character = _obChar;
       if (window.currentUser) window.currentUser.nickname = nickname;
@@ -21772,6 +21805,7 @@ window.mwRoomShareLink = async function () {
   // 보내고 나면 시트는 할 일이 끝났다 — 남아 있으면 또 눌러야 하나 싶어진다(대표 8-20)
   const _close = function () { const e = document.getElementById('mw-room-invite'); if (e) e.remove(); };
   try {
+    window.track && window.track('share_click', { kind: 'room' });
     if (navigator.share) { await navigator.share({ title: '머피룸 초대', text: nick + '님의 방에 놀러 오세요', url: url }); _close(); return; }
     await navigator.clipboard.writeText(url);
     showToast('초대 링크를 복사했어요'); _close();
@@ -28125,6 +28159,7 @@ window.mwHiddenNext = async function () {
 };
 window.mwHiddenShare = function () {
   const t = '나 머피월드에서 히든 캐릭터 떴다 ㅋㅋ #머피월드';
+  window.track && window.track('share_click', { kind: 'text' });
   if (navigator.share) navigator.share({ text: t }).catch(function () {});
   else if (window.showToast) showToast('스크린샷으로 자랑해보세요!');
 };
