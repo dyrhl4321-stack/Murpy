@@ -17296,6 +17296,137 @@ window.HOF_EXCLUDE_UID = ['3ojRNNyRutYE4IDQn2GrJDcXz0Q2'];   // 관리자 패수
 // ★mwSeasonKey() 를 **인자 없이** 부르면 관리자 시즌 실험실 오버라이드를 탄다.
 //   랭킹이 그걸 타면 대표가 시즌을 실험하는 동안 전 유저의 기준 달이 같이 바뀐다.
 window.HOF_MONTH = function () { return window.mwSeasonKey(new Date()); };
+// ===== 골프 스윙 (2026-08-29) — 덤벨 피하기 뼈대 복제, 규칙만 골프 =====
+// 설계: docs/superpowers/specs/2026-08-29-golf-swing-minigame-design.md · 계획: plans/2026-08-29-golf-swing-minigame.md
+// 좌표 = dodge 와 같은 % 좌표(가로 0~100, 세로 0~100, 티는 아래·홀은 위). 순수 로직은 DOM·Firestore 없음.
+window.GOLF = {
+  W: 100, TEE_X: 50, TEE_Y: 86,
+  DRAG_MAX: 38, V_MAX: 3.4,          // 당김 상한(논리 단위) · 최대 속도(단위/16ms틱)
+  FRICTION: 0.982, ROUGH: 0.95, BUNKER: 0.86, BUNKER_POWER: 0.7,
+  ROUGH_X: 8,                        // x<8 또는 x>92 는 러프
+  STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 1.2, CUP_BOUNCE: 0.6,
+  TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
+  MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20
+};
+// 난이도 — 바람 세기(단위/틱²), 컵 배율, 페어웨이 마찰 보정, 점수 배율
+window.GOLF_LV = {
+  easy: { name: '하', wind: 0,     cup: 1.4,  fric: 0.975, mul: 0.7 },
+  mid:  { name: '중', wind: 0.004, cup: 1.0,  fric: null,  mul: 1.0 },
+  hard: { name: '상', wind: 0.010, cup: 0.85, fric: null,  mul: 2.5 }
+};
+// 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
+window.GOLF_HOLES = [
+  { x: 50, y: 22, par: 3, bunkers: [], ponds: [], trees: [] },
+  { x: 34, y: 20, par: 3, bunkers: [{ cx: 42, cy: 40, rx: 11, ry: 5 }], ponds: [], trees: [{ cx: 62, cy: 55 }] },
+  { x: 66, y: 16, par: 3, bunkers: [{ cx: 74, cy: 34, rx: 9, ry: 4 }], ponds: [{ cx: 50, cy: 50, rx: 15, ry: 6 }], trees: [] }
+];
+// 선수 특성 — 게임 안에서만(매칭·피드 무관, 공정성 하드룰). body 키 = _CHAR_BODIES. mulligan = 홀당 벌타 면제 횟수
+window.GOLF_CHARS = {
+  human:      { name: '머피',     power: 1.0,  jitter: 0, windMul: 1.0, cup: 1.0, mulligan: 0, tip: '균형 잡힌 기본기' },
+  human_f:    { name: '머피',     power: 1.0,  jitter: 0, windMul: 1.0, cup: 1.0, mulligan: 0, tip: '균형 잡힌 기본기' },
+  heltori:    { name: '헬토리',   power: 1.25, jitter: 4, windMul: 1.0, cup: 1.0, mulligan: 0, tip: '힘은 센데 손이 떨린다' },
+  ddungddung: { name: '뚱뚱이',   power: 0.85, jitter: 0, windMul: 0.4, cup: 1.0, mulligan: 0, tip: '무거워서 바람을 덜 탄다' },
+  jaejin:     { name: '재진',     power: 1.1,  jitter: 0, windMul: 1.0, cup: 1.0, mulligan: 0, tip: '한 방이 있다' },
+  cult:       { name: '교주',     power: 1.0,  jitter: 0, windMul: 0,   cup: 1.0, mulligan: 0, tip: '바람이 비켜 간다' },
+  somm:       { name: '소믈리에', power: 1.0,  jitter: 0, windMul: 1.0, cup: 1.3, mulligan: 0, tip: '컵이 넓어 보인다' },
+  zombie:     { name: '좀비',     power: 1.0,  jitter: 2, windMul: 1.0, cup: 1.0, mulligan: 1, tip: '홀마다 한 번은 없던 일로' }
+};
+// LCG 난수 (dodge 와 같은 식) — 시드가 같으면 바람·지터가 재현된다
+window._golfRnd = function (s) { s.rnd = (s.rnd * 1103515245 + 12345) % 2147483648; return s.rnd / 2147483648; };
+window.golfHoleScore = function (par, strokes) { return Math.max(0, (par + 3 - strokes)) * 10; };
+window._golfWindFor = function (s) {
+  const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
+  if (!lv.wind) return { x: 0, y: 0 };
+  const ang = window._golfRnd(s) * Math.PI * 2, k = lv.wind * (s.lv === 'hard' ? (0.6 + window._golfRnd(s) * 0.8) : 1);
+  return { x: Math.cos(ang) * k, y: Math.sin(ang) * k };
+};
+window.golfNew = function (seed, lvKey, chKey) {
+  const s = { rnd: (seed | 0) || 1, lv: lvKey || 'mid', ch: chKey || 'human',
+              hole: 0, strokes: [0, 0, 0], x: window.GOLF.TEE_X, y: window.GOLF.TEE_Y, vx: 0, vy: 0,
+              moving: false, inBunker: false, done: false, last: '', t: 0,
+              px: window.GOLF.TEE_X, py: window.GOLF.TEE_Y, mulligan: 0, wind: { x: 0, y: 0 } };
+  s.mulligan = (window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human).mulligan;
+  s.wind = window._golfWindFor(s);
+  return s;
+};
+// 손가락을 (dx,dy) 만큼 당겼다 놓음(논리 단위). 공은 반대 방향으로. 성공하면 true.
+window.golfShot = function (s, dx, dy) {
+  const G = window.GOLF;
+  if (s.done || s.moving) return false;
+  const len = Math.hypot(dx, dy); if (len < 1) return false;
+  const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
+  let pow = Math.min(len, G.DRAG_MAX) / G.DRAG_MAX * G.V_MAX * ch.power * (s.inBunker ? G.BUNKER_POWER : 1);
+  pow = Math.min(pow, G.V_MAX);
+  let ang = Math.atan2(-dy, -dx);
+  if (ch.jitter) ang += (window._golfRnd(s) * 2 - 1) * ch.jitter * Math.PI / 180;
+  s.vx = Math.cos(ang) * pow; s.vy = Math.sin(ang) * pow;
+  s.px = s.x; s.py = s.y; s.moving = true; s.last = ''; s.inBunker = false;
+  s.strokes[s.hole]++;
+  return true;
+};
+window._golfInEllipse = function (x, y, e) { const a = (x - e.cx) / e.rx, b = (y - e.cy) / e.ry; return a * a + b * b <= 1; };
+// 한 틱. dt(ms). 반환 = s.last ('in' | 'ob' | 'water' | 'tree' | 'bunker' | 'stop' | '')
+window.golfTick = function (s, dt) {
+  const G = window.GOLF, lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid, ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
+  const H = window.GOLF_HOLES[s.hole];
+  if (s.done || !H) return s.last;
+  s.t += dt;
+  if (!s.moving) return s.last;
+  const k = dt / 16;
+  s.vx += s.wind.x * ch.windMul * k; s.vy += s.wind.y * ch.windMul * k;
+  s.x += s.vx * k; s.y += s.vy * k;
+  // 나무 반사
+  for (const tr of H.trees) {
+    const d = Math.hypot(s.x - tr.cx, s.y - tr.cy);
+    if (d < G.TREE_R && d > 1e-6) {
+      const nx = (s.x - tr.cx) / d, ny = (s.y - tr.cy) / d, dot = s.vx * nx + s.vy * ny;
+      s.vx = (s.vx - 2 * dot * nx) * G.TREE_BOUNCE; s.vy = (s.vy - 2 * dot * ny) * G.TREE_BOUNCE;
+      s.x = tr.cx + nx * G.TREE_R; s.y = tr.cy + ny * G.TREE_R; s.last = 'tree';
+    }
+  }
+  const penalty = function (why) {
+    if (s.mulligan > 0) s.mulligan--; else s.strokes[s.hole]++;
+    s.x = s.px; s.y = s.py; s.vx = 0; s.vy = 0; s.moving = false; s.last = why;
+    if (s.strokes[s.hole] >= G.MAX_STROKES) window._golfNextHole(s);
+  };
+  // OB
+  if (s.x < 2 || s.x > 98 || s.y < 1 || s.y > 99) { penalty('ob'); return s.last; }
+  const sp = Math.hypot(s.vx, s.vy);
+  // 연못 — 들어가면 끝. 벌타 + 복귀
+  for (const p of H.ponds) if (window._golfInEllipse(s.x, s.y, p)) { penalty('water'); return s.last; }
+  // 홀
+  const dh = Math.hypot(s.x - H.x, s.y - H.y);
+  if (dh < G.CUP_R * lv.cup * ch.cup) {
+    if (sp < G.CUP_MAX_V) { s.vx = 0; s.vy = 0; s.moving = false; s.last = 'in'; window._golfNextHole(s); return s.last; }
+    s.vx *= G.CUP_BOUNCE; s.vy *= G.CUP_BOUNCE;
+  }
+  // 마찰
+  let f = lv.fric || G.FRICTION;
+  const inB = H.bunkers.some(function (b) { return window._golfInEllipse(s.x, s.y, b); });
+  if (inB) f = G.BUNKER; else if (s.x < G.ROUGH_X || s.x > G.W - G.ROUGH_X) f = G.ROUGH;
+  const fk = Math.pow(f, k); s.vx *= fk; s.vy *= fk;
+  if (Math.hypot(s.vx, s.vy) < G.STOP_V) {
+    s.vx = 0; s.vy = 0; s.moving = false; s.inBunker = inB; s.last = inB ? 'bunker' : 'stop';
+    if (s.strokes[s.hole] >= G.MAX_STROKES) window._golfNextHole(s);
+  }
+  return s.last;
+};
+window._golfNextHole = function (s) {
+  s.hole++;
+  s.x = window.GOLF.TEE_X; s.y = window.GOLF.TEE_Y; s.px = s.x; s.py = s.y; s.vx = 0; s.vy = 0;
+  s.moving = false; s.inBunker = false;
+  s.mulligan = (window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human).mulligan;
+  if (s.hole >= window.GOLF.HOLES) { s.done = true; s.hole = window.GOLF.HOLES; return; }
+  s.wind = window._golfWindFor(s);
+};
+window.golfTotal = function (s) {
+  const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
+  let sum = 0;
+  for (let i = 0; i < window.GOLF.HOLES; i++) sum += window.golfHoleScore(window.GOLF_HOLES[i].par, s.strokes[i] || window.GOLF.MAX_STROKES);
+  return Math.min(window.GOLF.MAX_SCORE, Math.round(sum * lv.mul));
+};
+//__GOLF_UI__
+
 window.HOF_KINDS = {
   feed:    { label: '인증',    unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).feed || 0; } },
   checkin: { label: '체크인',  unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).checkin || 0; } },
