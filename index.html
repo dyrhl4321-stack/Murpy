@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '812';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '813';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -14359,6 +14359,7 @@ if ('serviceWorker' in navigator) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, deleteField, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
@@ -14387,6 +14388,20 @@ gaSupported().then(function (ok) {
     (window._trackQ || []).splice(0).forEach(function (e) { try { window._gaLog(e[0], e[1]); } catch (x) {} });
   } catch (e) { console.warn('analytics off', e && e.message); }
 }).catch(function () {});
+// ★8-29 머피 적립 **그림자 기록** (보안 C2 1단계). 적립하는 자리마다 window.earnLog(reason, amount, key) 를
+//   불러 서버(functions earn)에 남긴다. 서버는 기록 + 자기 기준 판정만 하고 **잔액은 안 건드린다.**
+//   며칠 뒤 claimed/allowed 가 맞으면 2단계(규칙 잠금 + 서버 지급). 실패해도 앱 흐름엔 영향 없음.
+try {
+  const _fns = getFunctions(app, 'asia-northeast3');
+  const _earn = httpsCallable(_fns, 'earn');
+  window.earnLog = function (reason, amount, key) {
+    try {
+      _earn({ reason: String(reason || 'other'), amount: Number(amount) | 0, key: key ? String(key) : '' })
+        .then(function (r) { const v = (r && r.data) || {}; if (v.why) { window._earnMismatch = (window._earnMismatch | 0) + 1; console.warn('earn shadow', reason, amount, v); } })
+        .catch(function (e) { console.warn('earn shadow fail', reason, e && e.message); });
+    } catch (e) {}
+  };
+} catch (e) { console.warn('functions init', e); }
 // 꾸미기 저장 = 리텐션 지표. 정의는 classic 블록(_reditSave)이라 여기서 감싼다
 (function () {
   const orig = window._reditSave;
@@ -18801,6 +18816,7 @@ window.grantBetaGift = async function () {
     const next = window.BETA_GIFT_ON ? Math.max(d.credits | 0, gift) : (d.credits | 0) + gift;
     await updateDoc(ref, { credits: next, [BETA_GRANT_KEY]: true, betaGrantPending: false });
     window.track && window.track('first_verify', { gift: gift });
+    window.earnLog && window.earnLog('first_post', gift, BETA_GRANT_KEY);
     window._creditState.credits = next;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -18878,6 +18894,7 @@ window.ensureCreditsInit = async (uid) => {
       if (!_anon && d.creditsMigrated !== true && d.credits < CREDIT_WELCOME) {
         try {
           await updateDoc(ref, { credits: CREDIT_WELCOME, creditsMigrated: true });
+          window.earnLog && window.earnLog('welcome', CREDIT_WELCOME, 'welcome');
           d.credits = CREDIT_WELCOME;
         } catch (e) {}
       } else if (!_anon && d.creditsMigrated !== true) {
@@ -19066,6 +19083,7 @@ window.grantDailyCreditOnVerify = async (uid) => {
   const gain = CREDIT_DAILY + bonus;
   try {
     await updateDoc(doc(db, 'users', uid), { credits: increment(gain), creditsLastEarned: today, streak: newStreak });
+    window.earnLog && window.earnLog('daily', gain, 'daily_' + today);
     window._creditState.credits += gain;
     window._creditState.lastEarned = today;
     window._creditState.streak = newStreak;
@@ -19101,6 +19119,7 @@ window.mwBirthdayCheck = async function (data) {
   if (String(data.bdayGift || '') === year) return;      // 올해 이미 받음
   try {
     await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_BIRTHDAY), bdayGift: year });
+    window.earnLog && window.earnLog('birthday', CREDIT_BIRTHDAY, 'bday_' + year);
     if (window._creditState) window._creditState.credits += CREDIT_BIRTHDAY;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -19117,6 +19136,7 @@ window.earnCredit = async function (amount, reason) {
   if (!uid || !amount) return false;
   try {
     await updateDoc(doc(db, 'users', uid), { credits: increment(amount) });
+    window.earnLog && window.earnLog('other', amount, '');   // 공용 경로(체크인·스쿼드 출석·시즌 등) — 그림자 기록은 사유 없이
     window._creditState.credits += amount;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -19170,6 +19190,7 @@ window.mwEarnSocial = async function (kind, reason, once) {   // kind: 'visit' |
       next[kind] = n + 1;
       const upd = { credits: increment(amount), socialEarn: next };
       if (key) upd['earnOnce.' + key] = true;
+      window.earnLog && window.earnLog(kind === 'visit' || kind === 'like' ? kind : 'other', amount, key || '');
       tx.update(meRef, upd);
       return true;
     });
@@ -28475,7 +28496,7 @@ window._mwDogamBonusCheck = async function () {
   if (!due.length) return;
   const total = due.reduce((s, d) => s + d.amount, 0);
   const flags = { ...claimed }; due.forEach(d => { flags[d.key] = true; });
-  try { await updateDoc(doc(db, 'users', user.uid), { credits: increment(total), dogamBonus: flags }); }
+  try { await updateDoc(doc(db, 'users', user.uid), { credits: increment(total), dogamBonus: flags }); window.earnLog && window.earnLog('dogam', total, 'dogam_' + Object.keys(flags || {}).join('_')); }
   catch(e) { console.warn('dogam bonus fail', e); return; }
   if (window._creditState) window._creditState.credits = (window._creditState.credits || 0) + total;
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
@@ -35105,6 +35126,7 @@ window.sqComplete = async function (sid) {
     try { await updateDoc(doc(db,'users',me), reward
       ? { 'hostStats.completed': increment(1), credits: increment(CREDIT_SQUAD_HOST) }
       : { 'hostStats.completed': increment(1) }); } catch(e) {}
+    if (reward) window.earnLog && window.earnLog('squad_host', CREDIT_SQUAD_HOST, 'host_' + sid);
     window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
     if (reward) {
       // 로컬 잔액도 맞춰준다 — 예전엔 서버만 올려서 화면 숫자가 새로고침 전까지 안 맞았다
@@ -35547,6 +35569,7 @@ async function bpAttend(sid, otherUid) {
         if (freshMember.data().bumpAttendRewardKey === bumpAttendRewardKey) return 0;
         tx.update(mRef, { bumpAttendRewardKey: bumpAttendRewardKey, lastBumpAt: serverTimestamp() });
         tx.update(meRef, { credits: increment(CREDIT_SQUAD_BUMP_ATTEND) });
+        window.earnLog && window.earnLog('bump_attend', CREDIT_SQUAD_BUMP_ATTEND, '');
         return CREDIT_SQUAD_BUMP_ATTEND;
       });
       if (!got) return 0;
@@ -35673,6 +35696,7 @@ async function bpEarn(stacked, first) {
       const next = same ? Object.assign({}, se) : { d: day };
       next.d = day; next.bump = n + 1;
       tx.update(meRef, { credits: increment(amount), socialEarn: next });
+      window.earnLog && window.earnLog('bump', amount, 'bump_' + day + '_' + (n + 1));
       return amount;
     });
     if (got) {

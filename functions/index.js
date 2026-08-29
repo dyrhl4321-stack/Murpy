@@ -253,3 +253,55 @@ exports.settleArtSold = onDocumentCreated("notifications/{id}", async (event) =>
     await snap.ref.set({ paid: false, failed: String(e.message || e) }, { merge: true });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★8-29 머피 적립 서버 판정 — **그림자 모드** (보안 C2 준비).
+//   지금은 각자 폰이 자기 잔액을 올린다(규칙은 1회 +1000 만 막음 → 반복하면 뚫림).
+//   1단계(지금): 앱이 적립할 때마다 여기로 {reason, amount, key} 를 보내고, 서버는 **기록만** 하면서
+//     자기 기준(사유별 하루 상한)으로 "허용했을 값"을 같이 적는다 → ledger/{자동id}.
+//     며칠 뒤 claimed 와 allowed 가 맞으면 2단계로: 규칙에서 클라이언트 credits 증가를 막고 여기서 직접 올린다.
+//   ★상한표는 index.html 의 CREDIT_* 와 같은 뜻이어야 한다. 값을 바꾸면 양쪽을 같이.
+// ─────────────────────────────────────────────────────────────────────────────
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const EARN_CAPS = {
+  daily:        { max: 10,   perDay: 1 },     // 하루 첫 인증 5 + 7일 연속 5
+  birthday:     { max: 55,   perDay: 1 },
+  welcome:      { max: 30,   perDay: 1 },
+  first_post:   { max: 500,  perDay: 1 },     // 창립 선물 500 / 출시 후 100
+  visit:        { max: 1,    perDay: 2 },
+  like:         { max: 1,    perDay: 2 },
+  checkin:      { max: 5,    perDay: 3 },     // 체크인 2 + 처음 센터 3
+  dogam:        { max: 120,  perDay: 1 },     // 도장 랠리 10+30+80
+  squad_host:   { max: 10,   perDay: 3 },
+  squad_attend: { max: 2,    perDay: 3 },
+  bump_attend:  { max: 5,    perDay: 3 },
+  bump:         { max: 10,   perDay: 3 },     // 첫 만남 10 / 이후 3, 하루 3명
+  season:       { max: 10,   perDay: 2 },
+  streak7:      { max: 5,    perDay: 1 },
+  admin:        { max: 2000, perDay: 50 },
+  gift:         { max: 2000, perDay: 50 },
+  other:        { max: 20,   perDay: 5 },
+};
+exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "login");
+  const d = req.data || {};
+  const reason = String(d.reason || "other").slice(0, 32);
+  const claimed = Number(d.amount) | 0;
+  const key = String(d.key || "").slice(0, 120);
+  const cap = EARN_CAPS[reason] || EARN_CAPS.other;
+  const db = getFirestore();
+  const dayKey = new Date(Date.now() + 9 * 3600e3 - 5 * 3600e3).toISOString().slice(0, 10); // KST, 새벽 5시 경계(앱과 같음)
+  // 오늘 같은 사유로 몇 번 인정했나 (같은 key 는 한 번만)
+  const prev = await db.collection("ledger").where("uid", "==", uid).where("reason", "==", reason).where("day", "==", dayKey).get();
+  let n = 0, dupKey = false;
+  prev.forEach((s) => { const x = s.data() || {}; if (x.allowed > 0) n++; if (key && x.key === key) dupKey = true; });
+  let allowed = Math.min(Math.max(0, claimed), cap.max);
+  let why = "";
+  if (dupKey) { allowed = 0; why = "dup_key"; }
+  else if (n >= cap.perDay) { allowed = 0; why = "day_cap"; }
+  else if (claimed > cap.max) { why = "over_max"; }
+  await db.collection("ledger").add({ uid, reason, key, day: dayKey, claimed, allowed, why, mode: "shadow",
+                                      at: FieldValue.serverTimestamp() });
+  return { ok: true, allowed, claimed, why, mode: "shadow" };
+});
