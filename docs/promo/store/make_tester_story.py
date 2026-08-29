@@ -76,15 +76,21 @@ center(925, '안드로이드 폰만 가능', font(46), (255, 255, 255))
 center(984, '아이폰은 설치가 안 돼요', font(28, False), (232, 131, 138))
 
 # ── 할 일
-center(1110, '하실 일', font(34), BLUE)
+center(1104, '순서', font(34), BLUE)
+# ★"링크 눌러 테스터 되기"로 적었더니 **아무나 링크만 누르면 되는 것처럼** 읽혔다(대표 8-29).
+#   실제로는 그 계정을 테스터 목록에 **먼저 등록**해야 링크가 열린다. 순서를 그대로 적는다.
 steps = [
-    '1.  지메일 주소 알려주기',
-    '2.  링크 눌러 테스터 되기',
-    '3.  설치하고 14일 두기',
+    ('1.', 'DM으로 지메일 주소 보내기'),
+    ('2.', '등록해 드리면 링크를 보내요'),
+    ('3.', '링크 눌러 설치 · 14일 두기'),
 ]
-y = 1180
-for s in steps:
-    center(y, s, font(38, False), (232, 236, 244))
+y = 1174
+for num, txt in steps:
+    fb, fr = font(38), font(38, False)
+    full = num + '  ' + txt
+    x = (W - d.textbbox((0, 0), full, font=fr)[2]) // 2
+    d.text((x, y), num, font=fb, fill=BLUE)
+    d.text((x + d.textbbox((0, 0), num + '  ', font=fr)[2], y), txt, font=fr, fill=(232, 236, 244))
     y += 66
 
 # ── 보상
