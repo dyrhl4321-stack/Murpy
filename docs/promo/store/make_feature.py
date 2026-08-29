@@ -1,72 +1,77 @@
 # -*- coding: utf-8 -*-
-"""플레이스토어 그래픽 이미지(1024x500) — og-card.png 를 그대로 재구성한다.
-og-card 는 이미 대표가 승인해서 카톡 공유에 쓰는 카드다. 새로 디자인하지 않는다.
+"""플레이스토어 그래픽 이미지(1024x500).
+
+★구글은 이 배너를 기기·지면마다 **다르게 잘라서** 보여준다(좌우 또는 위아래).
+  그래서 중요한 것(로고·한 문장)은 반드시 **가운데**에 있어야 살아남는다.
+  왼쪽에 몰아 두면 미리보기부터 글자가 날아간다(대표 8-29 확인).
+
+사진·문장은 og-card.png(카톡 공유 카드, 대표 승인본)와 같은 것을 쓴다.
+새로 디자인하지 않는다.
+
+    python docs/promo/store/make_feature.py         # 저장소 루트에서 실행
 """
-import io, os
-from PIL import Image, ImageDraw, ImageFont
+import os
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1024, 500
-SRC = 'og-card.png'          # 1200x630
-OUT = os.path.join(os.environ.get('TMPDIR', '.'), 'feature_graphic.png')
+SRC = 'og-card.png'
+OUT_DIR = os.path.join('docs', 'promo', 'store')
+OUT = os.path.join(OUT_DIR, 'feature_graphic_1024x500.png')
 
+# ── 배경: og-card 의 사진을 화면 전체에 깐다(잘려도 사진은 어디를 봐도 사진이다)
 src = Image.open(SRC).convert('RGB')
 sw, sh = src.size
+photo = src.crop((int(sw * 0.415), 0, sw, sh))      # 오른쪽 사진 부분만
 
-# ── 사진 부분만 잘라 온다. og-card 는 오른쪽 약 58%~ 가 사진이다(실측: x≈500/1200).
-PHOTO_X0 = int(sw * 0.415)
-photo = src.crop((PHOTO_X0, 0, sw, sh))
+scale = max(W / photo.size[0], H / photo.size[1])
+photo = photo.resize((int(photo.size[0] * scale) + 1, int(photo.size[1] * scale) + 1),
+                     Image.LANCZOS)
+ox = (photo.size[0] - W) // 2
+oy = int((photo.size[1] - H) * 0.42)                # 인물 얼굴/상체가 살도록 살짝 위에서
+canvas = photo.crop((ox, oy, ox + W, oy + H))
 
-# 1024x500 중 오른쪽 56% 를 사진이 차지한다
-pw = int(W * 0.56)
-# 높이에 맞춰 비율 유지 후 가운데 자르기
-scale = H / photo.size[1]
-nw = int(photo.size[0] * scale)
-photo = photo.resize((nw, H), Image.LANCZOS)
-if nw > pw:
-    off = (nw - pw) // 2
-    photo = photo.crop((off, 0, off + pw, H))
-else:
-    pw = nw
+# ── 사진 위에 어두운 막을 덮는다. 글자가 어디에 놓여도 읽힌다.
+veil = Image.new('RGB', (W, H), (8, 9, 12))
+canvas = Image.blend(canvas, veil, 0.62)
 
-canvas = Image.new('RGB', (W, H), (10, 10, 10))
-canvas.paste(photo, (W - pw, 0))
-
-# ── 사진 왼쪽에 검정 그라데이션을 겹쳐 글자가 사진 위로 자연스럽게 이어지게
-grad = Image.new('L', (240, 1), 0)
-for x in range(240):
-    grad.putpixel((x, 0), int(255 * (1 - x / 240)))
-grad = grad.resize((240, H))
-black = Image.new('RGB', (240, H), (10, 10, 10))
-canvas.paste(black, (W - pw, 0), grad)
+# 가운데를 한 번 더 눌러 준다(비네트) — 글자 뒤가 가장 어둡다
+vign = Image.new('L', (W, H), 0)
+vd = ImageDraw.Draw(vign)
+vd.ellipse([-W * 0.15, -H * 0.55, W * 1.15, H * 1.55], fill=150)
+vign = vign.filter(ImageFilter.GaussianBlur(90))
+canvas.paste(Image.new('RGB', (W, H), (8, 9, 12)), (0, 0), vign)
 
 d = ImageDraw.Draw(canvas)
 
+
 def font(sz, bold=True):
-    # Pretendard 가 없으면 맑은 고딕. 둘 다 없으면 기본.
-    for p in [r'C:\Windows\Fonts\malgunbd.ttf' if bold else r'C:\Windows\Fonts\malgun.ttf',
+    for p in [(r'C:\Windows\Fonts\malgunbd.ttf' if bold else r'C:\Windows\Fonts\malgun.ttf'),
               r'C:\Windows\Fonts\malgun.ttf']:
         if os.path.exists(p):
             return ImageFont.truetype(p, sz)
     return ImageFont.load_default()
 
-# ── 로고 (누끼 원본을 흰 원 안에 그대로)
-# ★로고 파일에 MURPY 글자가 이미 들어 있다 — 워드마크를 따로 찍으면 두 번 나온다.
-logo = Image.open('logo-nukki.png').convert('RGBA')
-LS = 118
-logo = logo.resize((LS, LS), Image.LANCZOS)
-canvas.paste(logo, (64, 62), logo)
 
-# ── 카피 (og-card 와 같은 문장)
-d.text((64, 214), '운동을 좋아하는', font=font(48), fill=(255, 255, 255))
-d.text((64, 274), '사람들은', font=font(48), fill=(255, 255, 255))
+def center(y, text, f, fill):
+    w = d.textbbox((0, 0), text, font=f)[2]
+    d.text(((W - w) // 2, y), text, font=f, fill=fill)
 
-# 파란 구분선 (브랜드 블루 #3D7EFF)
-d.rectangle([64, 348, 118, 352], fill=(61, 126, 255))
 
-d.text((64, 378), '아직 만나지 못했을 뿐.', font=font(23, False), fill=(214, 218, 226))
+# ── 로고 (가운데 위). 로고 파일에 MURPY 글자가 이미 들어 있다 — 워드마크를 또 찍지 않는다.
+logo = Image.open('logo-nukki.png').convert('RGBA').resize((104, 104), Image.LANCZOS)
+canvas.paste(logo, ((W - 104) // 2, 62), logo)
 
-# 하단 도메인
-d.text((64, 434), 'murpy.app', font=font(22), fill=(61, 126, 255))
+# ── 한 문장 (og-card 와 같은 카피를 한 줄로)
+center(196, '운동을 좋아하는 사람들은', font(52), (255, 255, 255))
+center(266, '아직 만나지 못했을 뿐.', font(52), (255, 255, 255))
 
+# 브랜드 블루 구분선
+d.rectangle([(W - 64) // 2, 348, (W + 64) // 2, 352], fill=(61, 126, 255))
+
+center(378, '같이 운동할 사람을 찾고, 인증하고, 기록하는 운동 커뮤니티',
+       font(24, False), (206, 212, 224))
+center(430, 'murpy.app', font(24), (61, 126, 255))
+
+os.makedirs(OUT_DIR, exist_ok=True)
 canvas.save(OUT, quality=95)
 print(OUT, canvas.size)
