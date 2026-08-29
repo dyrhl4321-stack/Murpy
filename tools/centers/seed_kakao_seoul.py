@@ -41,11 +41,13 @@ def kakao(q, rect, page):
     url = ('https://dapi.kakao.com/v2/local/search/keyword.json?' + urllib.parse.urlencode(
         {'query': q, 'rect': rect, 'size': 15, 'page': page}))
     req = urllib.request.Request(url, headers={'Authorization': 'KakaoAK ' + KEY})
-    for i in range(3):
-        try: return json.loads(urllib.request.urlopen(req, timeout=15).read().decode())
+    for i in range(8):
+        try: return json.loads(urllib.request.urlopen(req, timeout=20).read().decode())
         except Exception as e:
-            time.sleep(1 + i); last = e
-    raise last
+            time.sleep(min(60, 2 ** i)); last = e
+    print('
+호출 포기(건너뜀):', rect, last, flush=True)
+    return {'documents': [], 'meta': {'is_end': True, 'total_count': 0}}
 
 def norm(s): return re.sub(r'[\s\-\(\)\[\]·,.]|점$|본점$', '', str(s or '')).lower()
 def hav(a, b, c, d):
@@ -57,7 +59,15 @@ def hav(a, b, c, d):
 #    서울: 1.2km 고정 격자 (--seoul) / 전국: 24km 에서 시작 → 최소 0.8km (--all)
 ALL = '--all' in sys.argv
 if ALL: LNG0, LNG1, LAT0, LAT1 = 124.5, 131.9, 33.0, 38.7
-found = {}; calls = 0; cells = 0
+CKPT = os.path.expanduser('~/.config/murpy/seed_ckpt_%s.json' % ('all' if ALL else 'seoul'))
+found = {}; calls = 0; cells = 0; done_top = set()
+try:
+    _c = json.load(io.open(CKPT, encoding='utf-8')); found = _c.get('found', {}); done_top = set(_c.get('done', []))
+    print('체크포인트 이어서: 후보 %d · 끝난 큰 칸 %d' % (len(found), len(done_top)))
+except Exception: pass
+def save_ckpt():
+    try: io.open(CKPT, 'w', encoding='utf-8').write(json.dumps({'found': found, 'done': sorted(done_top)}, ensure_ascii=False))
+    except Exception as e: print('체크포인트 저장 실패', e)
 def cell(lng, lat, w, h, kw):
     """(lng,lat) 좌하 모서리, 폭 w·높이 h(도). 꽉 차면 쪼갠다."""
     global calls, cells
@@ -83,7 +93,10 @@ lat = LAT0
 while lat < LAT1:
     lng = LNG0
     while lng < LNG1:
-        for kw in KEYWORDS: cell(lng, lat, min(w0, LNG1 - lng), min(h0, LAT1 - lat), kw)
+        tk = '%.3f_%.3f' % (lng, lat)
+        if tk not in done_top:
+            for kw in KEYWORDS: cell(lng, lat, min(w0, LNG1 - lng), min(h0, LAT1 - lat), kw)
+            done_top.add(tk); save_ckpt()
         lng += w0
     lat += h0
 print('수집 끝 — 칸 %d · 호출 %d · 후보 %d' % (cells, calls, len(found)))
