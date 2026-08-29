@@ -1,5 +1,10 @@
 murpy-kakao Worker 교체 절차 (카카오 계정 탈취 취약점 C1 수정) — 2026-08-29
 
+★★ 2026-08-29 13:30 완료됨. 새 Worker = https://murpy-kakao.dyrhl4321.workers.dev (클라우드플레어 계정 dyrhl4321, wrangler 로그인 상태)
+   Secret 3개 등록(KAKAO_JS_KEY · FIREBASE_SA · ALLOWED_ORIGINS). firestore.rules 도 같은 날 배포됨(kakaoLinks 403 확인).
+   옛 Worker(dyrhl2356 계정)는 손대지 않았고 앱은 v807 부터 새 주소를 본다.
+   다시 배포할 땐: cd tools/kakao-worker && npx wrangler deploy --keep-vars
+
 무엇이 문제였나
   카카오 로그인이 kakao_{id}@kakao.murpy.app / kp_{id}_mk 이메일·비밀번호 계정을 만들었고,
   카카오 id 가 users 문서(누구나 읽음)에 저장돼 있어 아무나 남의 카카오 계정으로 로그인할 수 있었다.
