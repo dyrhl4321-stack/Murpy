@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """서울 헬스장을 카카오 로컬 API 로 긁어 centers 도감에 넣는다 (2026-08-29, 대표 지시).
 
-    python tools/centers/seed_kakao_seoul.py            # 드라이런: 몇 곳 새로 들어갈지만 센다
+    python tools/centers/seed_kakao_seoul.py            # 드라이런(서울): 몇 곳 새로 들어갈지만 센다
+    python tools/centers/seed_kakao_seoul.py --all      # 전국 드라이런(적응 격자)
     python tools/centers/seed_kakao_seoul.py --write    # 실제로 Firestore 에 쓴다
 
 준비물
@@ -52,30 +53,38 @@ def hav(a, b, c, d):
     x = math.sin((c - a) * r / 2) ** 2 + math.cos(a * r) * math.cos(c * r) * math.sin((d - b) * r / 2) ** 2
     return 2 * R * math.asin(math.sqrt(x))
 
-# 1) 카카오 수집
-found = {}
-lat_step = CELL_KM / 111.0
-lng_step = CELL_KM / (111.0 * math.cos(37.55 * math.pi / 180))
-cells = 0; calls = 0
+# 1) 카카오 수집 — 적응 격자. 한 칸에서 45건(3쪽)이 다 차면 4등분해서 다시 묻는다.
+#    서울: 1.2km 고정 격자 (--seoul) / 전국: 24km 에서 시작 → 최소 0.8km (--all)
+ALL = '--all' in sys.argv
+if ALL: LNG0, LNG1, LAT0, LAT1 = 124.5, 131.9, 33.0, 38.7
+found = {}; calls = 0; cells = 0
+def cell(lng, lat, w, h, kw):
+    """(lng,lat) 좌하 모서리, 폭 w·높이 h(도). 꽉 차면 쪼갠다."""
+    global calls, cells
+    rect = '%f,%f,%f,%f' % (lng, lat, lng + w, lat + h)
+    cells += 1; full = False
+    for page in (1, 2, 3):
+        j = kakao(kw, rect, page); calls += 1
+        for d in j.get('documents', []):
+            if not any(k in d.get('category_name', '') for k in KEEP): continue
+            if not ALL and not d.get('address_name', '').startswith('서울'): continue
+            found[d['id']] = d
+        if j.get('meta', {}).get('is_end', True): break
+        if page == 3: full = True
+    if full and min(w * 111 * math.cos(37 * math.pi / 180), h * 111) > 0.8:
+        for dx in (0, w / 2):
+            for dy in (0, h / 2): cell(lng + dx, lat + dy, w / 2, h / 2, kw)
+    if cells % 25 == 0: print('칸 %d · 호출 %d · 후보 %d' % (cells, calls, len(found)), flush=True)
+start_km = 24.0 if ALL else 1.2
+h0 = start_km / 111.0; w0 = start_km / (111.0 * math.cos(36.5 * math.pi / 180))
 lat = LAT0
 while lat < LAT1:
     lng = LNG0
     while lng < LNG1:
-        rect = '%f,%f,%f,%f' % (lng, lat, min(lng + lng_step, LNG1), min(lat + lat_step, LAT1))
-        cells += 1
-        for kw in KEYWORDS:
-            for page in (1, 2, 3):
-                j = kakao(kw, rect, page); calls += 1
-                for d in j.get('documents', []):
-                    cat = d.get('category_name', '')
-                    if not any(k in cat for k in KEEP): continue
-                    if not (d.get('address_name', '').startswith('서울')): continue
-                    found[d['id']] = d
-                if j.get('meta', {}).get('is_end', True): break
-        lng += lng_step
-    lat += lat_step
-    print('\r격자 %d칸 · 호출 %d · 후보 %d' % (cells, calls, len(found)), end='', flush=True)
-print()
+        for kw in KEYWORDS: cell(lng, lat, min(w0, LNG1 - lng), min(h0, LAT1 - lat), kw)
+        lng += w0
+    lat += h0
+print('수집 끝 — 칸 %d · 호출 %d · 후보 %d' % (cells, calls, len(found)))
 
 # 2) 기존 센터
 def fs_list():
