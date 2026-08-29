@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '820';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '821';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -32495,7 +32495,12 @@ window.openSquadCreate = function () {
       ${lbl('제목')}
       <input id="sq-c-title" maxlength="40" value="오늘 헬스 스쿼드" oninput="window._sqForm.titleTouched=true" style="${inputCss}">
       ${lbl('장소')}
-      <input id="sq-c-loc" maxlength="40" placeholder="예) MK휘트니스 논현 · 반포 한강공원" style="${inputCss}">
+      <input id="sq-c-loc" maxlength="40" placeholder="예) MK휘트니스 논현 · 반포 한강공원" style="${inputCss}" autocomplete="off"
+             oninput="window._sqLocInput(this.value)" onfocus="window._sqLocInput(this.value)">
+      <!-- ★헬스장 도감 검색 목록 (대표 8-29: 헬스 스쿼드면 헬스장을 목록에서 고르게). 고르면 centerId 가 스쿼드에 남고
+           출석·범프 때 그 헬스장에 도장이 찍힌다 = B2B 송객 근거 -->
+      <div id="sq-c-loc-list" style="display:none;margin-top:-6px;margin-bottom:10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;overflow:hidden;background:#0e1320"></div>
+      <div id="sq-c-loc-picked" style="display:none;font-size:11px;color:#7aa8ff;margin:-4px 0 10px 2px"></div>
       ${lbl('언제 모여요?')}
       <div style="display:flex;gap:8px">
         <input id="sq-c-date" type="date" value="${dstr}" style="${inputCss};flex:1.3;color-scheme:dark">
@@ -32595,6 +32600,82 @@ window._sqCapFix = function (el) {
   window._sqForm.capacity = isNaN(n) ? 4 : Math.max(2, Math.min(30, n));
   el.value = window._sqForm.capacity;
 };
+// ★헬스장 도감에서 고르기 (대표 8-29). 장소 칸에 치면 centers 에서 이름·동네가 맞는 곳이 아래로 뜬다.
+//   고르면 _sqForm.centerId 에 남는다. 손으로 고쳐 쓰면 다시 자유 입력(한강공원 등)으로 돌아간다.
+window._sqLocInput = function (v) {
+  const box = document.getElementById('sq-c-loc-list'), pk = document.getElementById('sq-c-loc-picked');
+  if (!box) return;
+  const f = window._sqForm || (window._sqForm = {});
+  const q = String(v || '').trim().toLowerCase();
+  if (f.centerId && f.centerName !== String(v || '').trim()) { f.centerId = null; f.centerName = ''; }
+  if (pk) pk.style.display = f.centerId ? '' : 'none';
+  if (!q || f.centerId) { box.style.display = 'none'; return; }
+  if (!Array.isArray(window.centersData) || !window.centersData.length) {
+    if (window.loadCentersFirestore) window.loadCentersFirestore().then(function () { window._sqLocInput(v); });
+    return;
+  }
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const hits = window.centersData.filter(function (c) {
+    if (!c || !c.name) return false;
+    const hay = (c.name + ' ' + (c.loc || '') + ' ' + (c.address || '') + ' ' + (c.region || '')).toLowerCase();
+    return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
+  }).slice(0, 8);
+  if (!hits.length) { box.style.display = 'none'; return; }
+  box.innerHTML = hits.map(function (c) {
+    return '<div onclick="window._sqLocPick(\'' + esc(c.id) + '\')" style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">'
+      + '<div style="font-size:13px;color:#e8edf7">' + esc(c.name) + (c.partner ? ' <span style="font-size:10px;color:#F5C24B">PARTNER</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:#8a93a8;margin-top:2px">' + esc(c.loc || c.address || '') + (c.lat ? '' : ' · 좌표 없음(도장 불가)') + '</div></div>';
+  }).join('');
+  box.style.display = '';
+};
+window._sqLocPick = function (id) {
+  const c = (window.centersData || []).find(function (x) { return String(x.id) === String(id); });
+  const inp = document.getElementById('sq-c-loc'), box = document.getElementById('sq-c-loc-list'), pk = document.getElementById('sq-c-loc-picked');
+  if (!c || !inp) return;
+  const f = window._sqForm || (window._sqForm = {});
+  f.centerId = String(c.id); f.centerName = c.name;
+  inp.value = c.name;
+  if (box) box.style.display = 'none';
+  if (pk) { pk.textContent = '헬스장 도감 연결됨 · 출석하면 여기에 도장이 찍혀요'; pk.style.display = ''; }
+};
+// ★출석·범프 출석 = 그 헬스장 체크인 (대표 8-26 지정 ①, 8-29 착수). B2B "이번 달 N명 보냈습니다"의 근거.
+//   스쿼드에 centerId 가 있고, GPS 로 잰 거리가 반경 안이면 checkins 문서를 만든다(source·squadId 를 남긴다).
+//   실내라 GPS 가 튀므로 일반 체크인(100m)보다 넓은 300m. 범위 밖·GPS 실패면 출석은 그대로, 도장만 건너뛴다.
+window.SQ_CHECKIN_RADIUS = 300;
+window._sqAutoCheckin = async function (sid, source) {
+  try {
+    const user = auth.currentUser; if (!user || !sid) return;
+    let s = (window._sqDoc && window._sqDoc.id === sid) ? window._sqDoc : null;
+    if (!s) { const sn = await getDoc(doc(db, 'squads', sid)); if (!sn.exists()) return; s = Object.assign({ id: sid }, sn.data()); }
+    if (!s.centerId) return;
+    if (!Array.isArray(window.centersData) || !window.centersData.length) { try { await window.loadCentersFirestore(); } catch (e) {} }
+    const c = (window.centersData || []).find(function (x) { return String(x.id) === String(s.centerId); });
+    if (!c || !c.lat || !c.lng) return;
+    const id = user.uid + '_' + c.id + '_' + mwTodayKey();
+    try { if ((await getDoc(doc(db, 'checkins', id))).exists()) return; } catch (e) {}
+    const pos = await new Promise(function (res) {
+      if (!navigator.geolocation) return res(null);
+      navigator.geolocation.getCurrentPosition(function (p) { res(p); }, function () { res(null); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+    });
+    if (!pos) { showToast('위치를 못 잡아 헬스장 도장은 건너뛰었어요'); return; }
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    const dist = Math.round(mwHaversine(lat, lng, c.lat, c.lng));
+    if (dist > window.SQ_CHECKIN_RADIUS) { showToast(c.name + '에서 ' + dist + 'm 떨어져 있어 도장은 건너뛰었어요'); return; }
+    let isNewCenter = false;
+    try { const hist = await mwLoadCheckins(); isNewCenter = Array.isArray(hist) && !hist.some(function (k) { return String(k.centerId) === String(c.id); }); } catch (e) {}
+    await setDoc(doc(db, 'checkins', id), {
+      uid: user.uid, centerId: String(c.id), centerName: c.name, day: mwTodayKey(),
+      at: serverTimestamp(), lat: lat, lng: lng, dist: dist, photo: '',
+      source: source || 'squad', squadId: sid
+    });
+    const amt = isNewCenter ? CREDIT_CHECKIN + CREDIT_NEW_CENTER : CREDIT_CHECKIN;
+    if (window.earnCredit) window.earnCredit(amt, '');
+    window.earnLog && window.earnLog('checkin', amt, 'ck_' + id);
+    window.track && window.track('squad_checkin', { source: source || 'squad' });
+    setTimeout(function () { if (window.murpyMini) window.murpyMini(amt, c.name + ' 도장'); }, 1800);
+    if (window.mwBumpMonthly) window.mwBumpMonthly('checkin');
+  } catch (e) { console.warn('sq auto checkin', e); }
+};
 window._sqSubmitCreate = async function () {
   const user = auth.currentUser; if (!user) return;
   const f = window._sqForm;
@@ -32615,7 +32696,7 @@ window._sqSubmitCreate = async function () {
     const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
     const dRef = await addDoc(collection(db,'squads'), {
       hostUid: user.uid, memberUids: [user.uid],
-      title, exerciseType: f.type, centerId: null, location: loc,
+      title, exerciseType: f.type, centerId: f.centerId || null, location: loc,   // centerId = 헬스장 도감에서 고른 곳(8-29)
       img: f.img || null,          // 대표 사진. 없으면 화면마다 종목 필드 그림으로 떨어진다
       scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + 4*3600*1000,
       capacity: f.capacity, level: f.level, oneLineMemo: (document.getElementById('sq-c-memo').value||'').trim(),
@@ -35151,6 +35232,7 @@ window.sqSubmitCode = async function (sid, codeArg) {
     if (mSnap.data().checkedIn) { showToast('이미 도장 찍었어요'); return; }
     const late = Date.now() > s.scheduledAt + 5 * 60 * 1000;
     await updateDoc(mRef, { checkedIn: true, checkinTime: serverTimestamp(), checkinType: late ? 'late' : 'present', status: 'checkedIn' });
+    window._sqAutoCheckin && window._sqAutoCheckin(sid, 'squad');   // 헬스장 도장(centerId 있을 때만)
     // 출석 적립 — 위에서 checkedIn 을 이미 걸러내므로 스쿼드당 1회만 들어온다
     if (window.earnCredit) window.earnCredit(CREDIT_SQUAD_ATTEND, '스쿼드 출석');
     if (window.mwBumpMonthly) window.mwBumpMonthly('squad');
@@ -35682,6 +35764,7 @@ async function bpAttend(sid, otherUid) {
       checkinType: late ? 'late' : 'present', checkinVia: 'bump',
       verifiedBy: otherUid || null, status: 'checkedIn'
     });
+    window._sqAutoCheckin && window._sqAutoCheckin(sid, 'bump');   // 헬스장 도장(centerId 있을 때만)
     // 출석 적립 — 여기서는 **조용히** 준다(reason 없음). 곧바로 범프 완료 화면이 뜨는데
     // 그 위에 코인 연출을 겹치면 상대·시각차를 가린다. 대신 완료 화면의 합계에 얹는다.
     await grantBumpAttendReward();
