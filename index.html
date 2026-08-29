@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '823';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '824';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -28876,18 +28876,43 @@ window.mwRenderTodayMurpys = async function () {
       tileSize:512, zoomOffset:-1, minZoom:1, maxZoom:20, crossOrigin:true,
       attribution:'&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(map);
-    const pts = [];
-    centers.forEach(c => {
+    // ★8-29 전국 도감(1.5만 곳): 마커는 **지도가 보고 있는 동네**만 찍는다. 지도가 멈출 때마다 그 범위의
+    //   센터를 읽어(loadCentersNear) 아직 안 찍은 것만 더 찍는다. 너무 멀리서(줌 11 미만) 보면
+    //   체크인 있는 곳·제휴만 남겨 수천 개를 안 그린다.
+    const drawn = {};
+    const layer = L.layerGroup().addTo(map);
+    const addPin = c => {
+      if (drawn[c.id] || !c.lat || !c.lng) return;
       const n = byCenter[c.id] ? byCenter[c.id].list.length : 0;
       const icon = L.divIcon({ className:'', html:`<div class="mw-pin${n?' on':''}">${n||''}</div>`, iconSize:[26,32], iconAnchor:[13,32] });
       // 핀 = 바로 '우리 센터 머피들' 필드로. ★비로그인은 여기서 막고 가입으로 보낸다(대표 8-12) —
       //   핀에 찍힌 인원 숫자까지는 보여주되, 들어가는 건 회원부터다.
-      L.marker([c.lat,c.lng], { icon }).addTo(map).on('click', ()=>{
+      drawn[c.id] = L.marker([c.lat,c.lng], { icon }).addTo(layer).on('click', ()=>{
         if (guest) { window._mwJoinGate((c.name || '이 센터') + '에 누가 왔는지 보려면'); return; }
         window.mwCenterField && window.mwCenterField(c.id);
       });
-      pts.push([c.lat,c.lng]);
+    };
+    const paint = () => {
+      const z = map.getZoom(), b = map.getBounds();
+      (typeof getCentersList==='function'?getCentersList():[]).forEach(c => {
+        if (!c || !c.lat || !c.lng) return;
+        if (z < 11 && !(byCenter[c.id] || c.partner)) return;
+        if (b.contains([c.lat, c.lng])) addPin(c);
+      });
+    };
+    let _moveT = 0;
+    map.on('moveend', () => {
+      clearTimeout(_moveT);
+      _moveT = setTimeout(async () => {
+        if (map.getZoom() < 11) { paint(); return; }
+        const b = map.getBounds(), ct = b.getCenter();
+        const km = Math.min(12, Math.max(1.5, mwHaversine(b.getSouth(), b.getWest(), b.getNorth(), b.getEast()) / 2000));
+        try { await window.loadCentersNear(ct.lat, ct.lng, km); } catch (e) {}
+        paint();
+      }, 250);
     });
+    const pts = [];
+    centers.forEach(c => { addPin(c); pts.push([c.lat,c.lng]); });
     if (!pts.length) {
       mapEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#4a5266;font-size:12px;font-family:\'Galmuri11\',sans-serif">좌표 등록된 센터가 아직 없어요</div>';
       return;
@@ -28915,13 +28940,16 @@ window._mwAddLocateBtn = function (map, mapEl, centers) {
     if (btn.classList.contains('busy')) return;
     if (!navigator.geolocation) { showToast('이 기기는 위치를 지원하지 않아요'); return; }
     btn.classList.add('busy'); btn.classList.remove('on');
-    navigator.geolocation.getCurrentPosition(pos => {
+    navigator.geolocation.getCurrentPosition(async pos => {
       btn.classList.remove('busy'); btn.classList.add('on');
       const { latitude:lat, longitude:lng } = pos.coords;
       const dot = L.divIcon({ className:'', html:'<div class="mw-mypos"><b></b><i></i></div>',
         iconSize:[16,16], iconAnchor:[8,8] });
       if (myMarker) myMarker.setLatLng([lat, lng]);
       else myMarker = L.marker([lat, lng], { icon:dot, interactive:false, zIndexOffset:500 }).addTo(map);
+      // ★8-29 전국 도감: 내 주변 3km 를 먼저 읽어 온다(작업 집합에 없던 시딩 센터가 여기서 들어온다)
+      try { await window.loadCentersNear(lat, lng, 3); } catch (e) {}
+      const centers = (typeof getCentersList === 'function' ? getCentersList() : []).filter(c => c && c.lat && c.lng);
       const near = centers.map(c => ({ c, d: mwHaversine(lat, lng, c.lat, c.lng) }))
         .filter(x => x.d <= MW_LOCATE_RADIUS).sort((a, b) => a.d - b.d);
       if (near.length) {
