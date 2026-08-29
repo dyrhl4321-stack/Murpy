@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v807';
-const STATIC_CACHE = 'murpy-static-v807';
-const CDN_CACHE = 'murpy-cdn-v807';
+const CACHE_NAME = 'murpy-v808';
+const STATIC_CACHE = 'murpy-static-v808';
+const CDN_CACHE = 'murpy-cdn-v808';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
@@ -111,7 +111,9 @@ self.addEventListener('fetch', e => {
   //   (대표: "푸시한 게 계속 늦게 반영된다"). no-store 면 매번 원본까지 간다.
   if (url.origin === self.location.origin && (url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/')) {
     e.respondWith(
-      fetch(e.request, { cache: 'no-store' }).then(res => {
+      // ★8-29: no-store → **no-cache**. 매번 원본에 물어보는 건 같지만(ETag 재검증) 안 바뀌었으면 304 로
+      //   본문(gzip 740KB)을 안 받는다. 1,000명이면 월 66GB → 수 GB. 최신성은 그대로다.
+      fetch(e.request, { cache: 'no-cache' }).then(res => {
         const clone = res.clone();
         caches.open(STATIC_CACHE).then(c => c.put(e.request, clone));
         return res;

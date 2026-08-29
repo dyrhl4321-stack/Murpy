@@ -1,7 +1,7 @@
 // notifications 컬렉션에 새 문서가 생기면, 받는 사람(toUid)의 기기로 FCM 푸시 전송
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 
 initializeApp();
@@ -215,5 +215,41 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
     await getFirestore().doc("users/" + n.toUid).update({
       fcmTokens: FieldValue.arrayRemove(...invalid),
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★8-29 경매 대금 정산 (보안 C3). 예전엔 산 사람 폰이 자기 잔액을 빼고, 판 사람 폰이 art_sold 알림을 읽어
+//   자기 잔액을 더했다 → 아무나 자기 앞으로 art_sold 알림을 만들면 머피가 생겼다.
+//   이제 서버가 한 트랜잭션에서 산 사람(fromUid) 에게서 gross 를 빼고 받는 사람(toUid) 에게 amount 를 준다.
+//   한 구매는 참여자 수만큼 알림이 생기므로(각자 몫), **빼는 것은 seller 가 적힌 문서 하나에서만** 한다.
+//   앱 쪽 스위치 = index.html `window.SERVER_SETTLE` (true 로 켜야 앱이 자기 잔액을 안 뺀다).
+// ─────────────────────────────────────────────────────────────────────────────
+exports.settleArtSold = onDocumentCreated("notifications/{id}", async (event) => {
+  const snap = event.data; if (!snap) return;
+  const n = snap.data() || {};
+  if (n.type !== "art_sold" || n.paid === true) return;
+  const buyer = n.fromUid, to = n.toUid;
+  const amount = Number(n.amount) | 0, gross = Number(n.gross) | 0;
+  if (!buyer || !to || amount <= 0 || amount > 1000 || gross < amount) {
+    await snap.ref.set({ paid: false, failed: "bad_fields" }, { merge: true }); return;
+  }
+  const db = getFirestore();
+  const chargeBuyer = !!n.seller;   // seller 가 적힌 문서 = 판 사람 몫 = 이 구매의 대표 문서
+  try {
+    await db.runTransaction(async (tx) => {
+      const bRef = db.collection("users").doc(buyer), tRef = db.collection("users").doc(to);
+      const bSnap = await tx.get(bRef);
+      const bal = (bSnap.exists && typeof bSnap.data().credits === "number") ? bSnap.data().credits : 0;
+      if (chargeBuyer) {
+        if (bal < gross) throw new Error("insufficient");
+        tx.update(bRef, { credits: bal - gross });
+      }
+      // 자기한테 보낸 문서(가짜 정산)라도 빼고 더하는 구조라 이득이 없다(수수료만큼 손해)
+      tx.set(tRef, { credits: FieldValue.increment(amount) }, { merge: true });
+      tx.set(snap.ref, { paid: true, settledAt: FieldValue.serverTimestamp(), settledBy: "server" }, { merge: true });
+    });
+  } catch (e) {
+    await snap.ref.set({ paid: false, failed: String(e.message || e) }, { merge: true });
   }
 });
