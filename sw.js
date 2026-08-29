@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v818';
-const STATIC_CACHE = 'murpy-static-v818';
-const CDN_CACHE = 'murpy-cdn-v818';
+const CACHE_NAME = 'murpy-v819';
+const STATIC_CACHE = 'murpy-static-v819';
+const CDN_CACHE = 'murpy-cdn-v819';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
@@ -41,7 +41,8 @@ self.addEventListener('activate', e => {
       )
     ).then(() => clients.claim()).then(() =>
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list =>
-        Promise.all(list.map(client => client.postMessage({ type: 'MURPY_SW_ACTIVATED', version: '731' })))
+        // 버전은 CACHE_NAME 에서 뽑는다 — 예전엔 '731' 이 하드코딩돼 배포마다 안 올라갔다(8-29 발견)
+        Promise.all(list.map(client => client.postMessage({ type: 'MURPY_SW_ACTIVATED', version: CACHE_NAME.replace(/^murpy-v/, '') })))
       )
     )
   );

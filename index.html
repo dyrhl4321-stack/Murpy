@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '818';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '819';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -23140,6 +23140,11 @@ window.mwArtOpenFrom = function (owner, id) {
       + (window.mwArtEdition(a) === 1 ? '#F5C24B' : '#4a5266') + '">'
       + window.mwArtEditionText(a) + '</div>'
     + '<div style="font-size:10.5px;color:#4a5266;margin-top:5px">' + esc(rec.nick) + '님의 방에 있어요</div>'
+    // ★신고 경로 (8-20 스펙 "3단계에서 검토" → 8-29). 남의 그림에만 뜬다. 기존 신고 시트(openReportSheet) 재사용, kind='art'
+    + ((window.currentUser && window.currentUser.uid !== owner)
+        ? '<div style="margin-top:8px"><button style="background:none;border:none;padding:4px 8px;font-family:inherit;font-size:10.5px;color:#4a5266;cursor:pointer" '
+          + 'onclick="event.stopPropagation();window.openReportSheet(&quot;art&quot;,&quot;' + esc(id) + '&quot;,&quot;' + esc(owner) + '&quot;,&quot;' + esc(rec.nick || '') + '&quot;)">이 그림 신고</button></div>'
+        : '')
     + '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px"></div>'
     + '<div class="ab-btns">' + btns + '</div></div>';
   el.querySelectorAll('.ab-btns button').forEach(function (b) {
@@ -29819,9 +29824,12 @@ window._mwHomeList = function () {
 };
 window.mwSetHome = async function (centerId) {
   const user = auth.currentUser || window.currentUser; if (!user) return;
-  await setDoc(doc(db,'users',user.uid), { homeCenterId: String(centerId) }, { merge:true });
-  showToast('홈 센터 설정 완료!');
-  window.mwRenderDogam();
+  // ★8-29: onclick 에서 바로 부르는데 try 가 없어 실패하면 아무 표시 없이 조용히 죽었다
+  try {
+    await setDoc(doc(db,'users',user.uid), { homeCenterId: String(centerId) }, { merge:true });
+    showToast('홈 센터 설정 완료!');
+    window.mwRenderDogam();
+  } catch (e) { console.warn('mwSetHome', e); showToast('홈 센터를 저장하지 못했어요 · 잠시 뒤에 다시'); }
 };
 // ---------- 체크인 (GPS → 반경 판정) ----------
 window.mwCheckin = function () {

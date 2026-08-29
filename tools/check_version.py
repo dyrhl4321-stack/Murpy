@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+import sys as _sys
+try: _sys.stdout.reconfigure(encoding='utf-8')   # 8-29: cp949 콘솔에서 마지막 print 가 크래시해 exit 1 로 오탐
+except Exception: pass
 """배포 전 버전 검사 — 세 곳이 같은 숫자인지, 대입이 하나뿐인지 본다.
 
     python tools/check_version.py
