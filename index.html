@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '809';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '810';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -4557,13 +4557,19 @@ window._mwPetPublish = function () {
     if (it.fl) o.fl = 1;
     return o;
   });
-  var key = JSON.stringify(list) + '|' + JSON.stringify(dl) + '|' + JSON.stringify(fl) + '|' + JSON.stringify(liveArt);
+  // ★8-29 트래픽: 펫 위치(1초에 한 번 바뀜)와 가구·그림(어쩌다 바뀜)을 **다른 노드**에 둔다.
+  //   예전엔 한 노드라 펫이 한 걸음 걸을 때마다 걸어둔 그림 픽셀(장당 1,024자)까지 통째로 다시 나갔고
+  //   손님 전원이 그걸 다시 받았다. pets/live = 펫·공룡, pets/scene = 가구·그림.
+  var liveKey = JSON.stringify(list) + '|' + JSON.stringify(dl);
+  var sceneKey = JSON.stringify(fl) + '|' + JSON.stringify(liveArt);
+  var sceneDirty = sceneKey !== window._mwPetSceneKey;
+  var key = liveKey;
   // ★바뀐 게 없어도 **가끔은 올려야 한다.** 펫이 자고 있으면 몇 시간이고 상태가 안 바뀌는데,
   //   그동안 데이터가 오래돼서(TTL 25초) 손님이 각자 계산으로 되돌아간다
   //   — 그래서 주인 화면과 손님 화면이 갈렸다(대표 8-25).
   //   심장박동처럼 12초마다 시각만 갱신해 '주인이 여기 있다'를 유지한다.
   var beat = (Date.now() - (window._mwPetBeatT || 0)) > 8000;   // TTL(20초)의 절반 이하
-  if (key === window._mwPetLiveKey && !beat) return;
+  if (key === window._mwPetLiveKey && !sceneDirty && !beat) return;
   window._mwPetLiveKey = key;
   window._mwPetBeatT = Date.now();
   // ★올렸는지·왜 실패했는지를 남긴다. 손님 화면에 안 뜰 때 **주인 쪽에서 확인**할 유일한 단서다
@@ -4571,11 +4577,16 @@ window._mwPetPublish = function () {
   try {
     if (!list.length && !dl.length && !fl.length) {
       R.remove(R.ref(R.db, 'roomLive/' + uid + '/pets'));
-      window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
+      window._mwPetPubT = Date.now(); window._mwPetPubErr = ''; window._mwPetSceneKey = '';
       return;
     }
-    var pr = R.set(R.ref(R.db, 'roomLive/' + uid + '/pets'),
-                   { t: Date.now(), list: list, dinos: dl, furn: fl, art: liveArt });
+    if (sceneDirty) {
+      window._mwPetSceneKey = sceneKey;
+      var ps = R.set(R.ref(R.db, 'roomLive/' + uid + '/pets/scene'), { furn: fl, art: liveArt });
+      if (ps && ps.catch) ps.catch(function (e) { window._mwPetSceneKey = ''; console.warn('scene publish 거부', e); });
+    }
+    var pr = R.set(R.ref(R.db, 'roomLive/' + uid + '/pets/live'),
+                   { t: Date.now(), list: list, dinos: dl });
     window._mwPetPubT = Date.now(); window._mwPetPubErr = '';
     // ★RTDB 쓰기는 **약속(Promise)으로 실패한다.** try/catch 만으로는 권한 오류를 못 잡는다 —
     //   규칙에 막히면 여기서만 드러난다.
@@ -4595,18 +4606,27 @@ window._mwPetLiveWatch = function (ownerUid) {
   window._mwPetLiveUnwatch();
   if (!R || !ownerUid) return;
   try {
-    var un = R.onValue(R.ref(R.db, 'roomLive/' + ownerUid + '/pets'), function (sn) {
-      window._mwPetLive = sn.val() || null;
+    // live(펫·공룡)와 scene(가구·그림)을 따로 받아 예전 모양 { t, list, dinos, furn, art } 로 합친다
+    var live = null, scene = null;
+    var merge = function () {
+      window._mwPetLive = live ? Object.assign({}, live, scene || {}) : null;
       // 손님이면 받은 위치로 곧바로 그린다
-      if (!window._mwPetIsOwner()) window._mwPetLiveApply();
+      if (window._mwPetLive && !window._mwPetIsOwner()) window._mwPetLiveApply();
+    };
+    var un1 = R.onValue(R.ref(R.db, 'roomLive/' + ownerUid + '/pets/live'), function (sn) {
+      live = sn.val() || null; merge();
     }, function (e) { console.warn('pet live', e); });
-    window._mwPetLiveUn = function () { try { un(); } catch (e) {} };
+    var un2 = R.onValue(R.ref(R.db, 'roomLive/' + ownerUid + '/pets/scene'), function (sn) {
+      scene = sn.val() || null; merge();
+    }, function (e) { console.warn('pet scene', e); });
+    window._mwPetLiveUn = function () { try { un1(); } catch (e) {} try { un2(); } catch (e) {} };
   } catch (e) { console.warn('pet watch', e); }
 };
 window._mwPetLiveUnwatch = function () {
   if (window._mwPetLiveUn) { window._mwPetLiveUn(); window._mwPetLiveUn = null; }
   window._mwPetLive = null;
   window._mwPetLiveKey = '';
+  window._mwPetSceneKey = '';
   window._mwFurnKey = '';
 };
 
@@ -23878,8 +23898,12 @@ window._mwRlJoin = function (ownerUid) {
     window._mwSrvOffOn = 1;
     try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._mwSrvOff = sn.val() || 0; }); } catch (e) {}
   }
-  const unsub = R.onValue(R.ref(R.db, base), function (snap) {
-    const all = snap.val() || {};
+  // ★8-29 트래픽: 예전엔 players 노드 **전체**를 onValue 로 받았다 — 한 명이 한 칸 움직이면 방 안
+  //   전원이 전원의 데이터(캐릭터 설정 포함)를 다시 내려받았다(20명 = 20×20 배). 이제 **바뀐 사람 한 명분**만
+  //   받는다(onChildAdded/Changed/Removed). 화면 쪽은 예전과 같은 `all` 맵을 받는다.
+  const allMap = {}; window._mwRl.all = allMap;
+  const handle = function () {
+    const all = Object.assign({}, allMap);
     const mine = u && all[u.uid];
     if (u && ownerUid !== u.uid && window._mwRl.waiting && window._mwRl.waitNodeWritten) {
       if (mine && !mine.wait && mine.approvedAt) {
@@ -23905,8 +23929,15 @@ window._mwRlJoin = function (ownerUid) {
       }
     }
     window._mwRlQueueRender(all);
-  }, function (e) { console.warn('roomLive', e); });
-  window._mwRl.unsub = function () { try { unsub(); } catch (e) {} };
+  };
+  const pRef = R.ref(R.db, base), subs = [];
+  const onErr = function (e) { console.warn('roomLive', e); };
+  subs.push(R.onChildAdded(pRef, function (sn) { allMap[sn.key] = sn.val(); handle(); }, onErr));
+  subs.push(R.onChildChanged(pRef, function (sn) { allMap[sn.key] = sn.val(); handle(); }, onErr));
+  subs.push(R.onChildRemoved(pRef, function (sn) { delete allMap[sn.key]; handle(); }, onErr));
+  // 빈 방이면 child 이벤트가 하나도 안 와서 위 handle 이 한 번도 안 돈다 — 한 번은 돌려 준다
+  try { R.get(pRef).then(function (sn) { if (!sn.exists()) handle(); }).catch(function () {}); } catch (e) {}
+  window._mwRl.unsub = function () { subs.forEach(function (f) { try { f(); } catch (e) {} }); };
   if (!pendingOnly) {
     window.mwJamWatch(ownerUid);                  // 낙서판이 열렸는지도 같이 지켜본다
     window._mwChatWatch && window._mwChatWatch(ownerUid);        // 대화도 같이 본다
