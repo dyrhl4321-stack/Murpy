@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '814';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '815';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -20198,7 +20198,9 @@ window.startNotifListener = (uid) => {
   if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
   _notifFirst = true;
   try {
-    const q = query(collection(db, 'notifications'), where('toUid', '==', uid));
+    // ★8-29: 최근 100개만 구독. 예전엔 내 알림 **전부**를 구독해서 오래 쓴 사람일수록 로그인마다 수백 문서를 받았다.
+    //   복합 인덱스(toUid, createdAt desc)는 firestore.indexes.json 에 있고 8-29 배포됨.
+    const q = query(collection(db, 'notifications'), where('toUid', '==', uid), orderBy('createdAt', 'desc'), limit(100));
     _notifUnsub = onSnapshot(q, snap => {
       const unread = snap.docs.filter(d => !d.data().read).length;
       const badge = document.getElementById('notif-badge');
@@ -26710,7 +26712,7 @@ window.loadNotificationsFirestore = async () => {
     //   유저가 늘수록 반드시 터지고, 활동이 뜸한 사람부터 걸린다(유꾸미).
     //   ※where + orderBy 는 복합 인덱스가 필요하므로 **정렬은 아래에서 직접** 한다.
     //     실시간 배지 리스너(startNotifListener)도 where 만 쓰므로 방식이 같아진다.
-    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid));
+    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));   // 8-29 복합 인덱스 배포 후 limit
     const snap = await getDocs(q);
     // ★같은 알림이 두 번 뜨던 문제(대표 리포트 2026-08-04) — 표시 단계에서 걸러낸다.
     //   생성 쪽에 중복 방지가 없어 같은 행동이 두 번 기록될 수 있고, 이미 쌓인 문서도 있다.
@@ -27216,7 +27218,7 @@ window.markAllFirestoreRead = async () => {
   try {
     // ★여기도 같은 버그였다 — 남들 알림 50개만 훑어서 **내 알림이 안 읽혔고**
     //   그래서 '모두 읽음'을 눌러도 배지가 안 사라졌다.
-    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid));
+    const q = query(collection(db, 'notifications'), where('toUid', '==', user.uid), orderBy('createdAt', 'desc'), limit(200));
     const snap = await getDocs(q);
     const unread = snap.docs.filter(d => !d.data().read);
     await Promise.all(unread.map(d => updateDoc(d.ref, { read: true })));
