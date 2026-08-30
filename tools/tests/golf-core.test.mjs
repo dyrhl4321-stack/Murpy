@@ -15,6 +15,8 @@ new Function('window', grab(/window\.GOLF_CHARS = \{[\s\S]*?\n\};/, 'GOLF_CHARS'
 new Function('window', grab(/window\._golfRnd = function[\s\S]*?\n\};/, '_golfRnd'))(w);
 new Function('window', grab(/window\.golfHoleScore = function[\s\S]*?\n\};/, 'golfHoleScore'))(w);
 new Function('window', grab(/window\._golfWindFor = function[\s\S]*?\n\};/, '_golfWindFor'))(w);
+new Function('window', grab(/window\._golfVillainsFor = function[\s\S]*?\n\};/, '_golfVillainsFor'))(w);
+new Function('window', grab(/window\._golfMoleUp = function[\s\S]*?\n\};/, '_golfMoleUp'))(w);
 new Function('window', grab(/window\.golfNew = function[\s\S]*?\n\};/, 'golfNew'))(w);
 new Function('window', grab(/window\.golfShot = function[\s\S]*?\n\};/, 'golfShot'))(w);
 new Function('window', grab(/window\._golfInEllipse = function[\s\S]*?\n\};/, '_golfInEllipse'))(w);
@@ -83,4 +85,20 @@ for (let i = 0; i < 6; i++) { w.golfShot(s, 0, 1.5); run(s, 3000); }   // 1 미�
 assert.strictEqual(s.hole, 1, '6타면 다음 홀'); assert.strictEqual(s.strokes[0], 6);
 s.strokes = [1, 3, 4]; s.hole = 3; s.done = true;
 assert.strictEqual(w.golfTotal(s), Math.round((50 + 30 + 20) * w.GOLF_LV.hard.mul));
+// 10) ★빠른 공은 컵을 스치고 지나가야 한다 — 한 방에 홀인되던 버그(8-30). 홀 6 앞에서 세게 치면 홀인 아님
+s = w.golfNew(5, 'easy', 'human'); s.wind = { x: 0, y: 0 }; s.crow = null; s.mole = null;
+s.x = w.GOLF_HOLES[0].x; s.y = w.GOLF_HOLES[0].y + 6;
+w.golfShot(s, 0, 38); run(s, 200);
+assert.strictEqual(s.hole, 0, '세게 친 공이 홀인되면 안 된다 (last=' + s.last + ')');
+
+// 11) 빌런: 하는 없음, 중은 까마귀, 상은 까마귀+두더지. 까마귀는 공이 멈춰 있어도 움직인다
+assert.strictEqual(w.golfNew(1, 'easy', 'human').crow, null); assert(w.golfNew(1, 'mid', 'human').crow);
+const hd = w.golfNew(1, 'hard', 'human'); assert(hd.crow && hd.mole);
+const cx0 = hd.crow.x; run(hd, 500); assert(hd.crow.x !== cx0, '까마귀가 안 움직인다');
+
+// 12) 까마귀에 맞으면 옆으로 밀린다
+s = w.golfNew(9, 'mid', 'human'); s.wind = { x: 0, y: 0 };
+s.crow = { x: 50, y: 78, dir: 1, hit: 0 }; s.x = 50; s.y = 80;   // 공 바로 앞 — 까마귀는 계속 움직이므로 멀리 두면 못 만난다
+w.golfShot(s, 0, 4); run(s, 400);
+assert(s.last === 'crow' || s.x > 50.5, '까마귀 충돌이 안 먹는다 (x=' + s.x.toFixed(2) + ' last=' + s.last + ')');
 console.log('golf-core: OK');
