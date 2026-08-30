@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '839';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '840';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17498,7 +17498,7 @@ window.GOLF = {
   STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 0.42, CUP_BOUNCE: 0.6,   // 8-30 팡야식: 구르는 속도가 0~0.55 라 컵 잡히는 상한도 그 안(풀파워 퍼팅은 스친다)
   TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
   MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20,
-  ZOOM: 1.7, CAM_Y: 0.6, LIFT: 0.9, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
+  SPEED: 1.9, ZOOM: 1.7, CAM_Y: 0.6, LIFT: 0.9, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
   // 빌런 (대표 8-30: "헬스장 아저씨처럼 골프에도 방해하는 빌런 몇 명")
   CROW_Y: 48, CROW_V: 0.55, CROW_R: 4.2, CROW_KICK: 1.4,   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
@@ -18020,7 +18020,10 @@ window.golfGo = function () {
 window._golfFrame = function (ts) {
   const s = window._golfS; if (!s) return;
   const dt = Math.min(50, ts - (window._golfLast || ts)); window._golfLast = ts;
-  const before = s.hole, wasMoving = s.moving, r = window.golfTick(s, dt);
+  // ★8-30 공 애니메이션이 너무 느렸다 — 날아가는 동안은 물리 시간을 SPEED 배로 돌린다(작은 걸음 여러 번 = 충돌 판정 그대로)
+  const before = s.hole, wasMoving = s.moving; let r = null;
+  if (s.moving) { const n = Math.ceil(window.GOLF.SPEED); for (let i = 0; i < n; i++) { const rr = window.golfTick(s, dt * window.GOLF.SPEED / n); if (rr && rr !== 'land') r = rr; else if (rr === 'land' && !r) r = rr; if (!s.moving) break; } }
+  else r = window.golfTick(s, dt);
   window._golfGaugeTick(dt);
   if (s.moving && s.z > 0 && (window._golfTrail || []).length < 40 && (s.t % 48) < dt) window._golfTrail.push({ x: s.x, y: s.y, z: s.z });
   if (r === 'land') { window._golfFx = { kind: 'puff', x: s.x, y: s.y, at: s.t }; }
