@@ -150,6 +150,10 @@ function compose(n) {
       return { title: `📍 ${n.text || "내 헬스장"}에서 스쿼드`,
                body: post ? `"${post}" · ${who}님이 열었어요` : `${who}님이 근처에서 스쿼드를 열었어요` };
 
+    case "squad_host_again":
+      return { title: `🔁 다음 ${post || "스쿼드"} 열까요?`,
+               body: "지난 멤버들에게 알림이 가요 · 누르면 그대로 세팅돼요" };
+
     case "nag": {
       const d = Number(n.amount || 7);
       return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,

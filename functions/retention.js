@@ -185,3 +185,33 @@ exports.nagInactive = onSchedule({ region: REGION, schedule: "0 10 * * *", timeZ
   }
   console.log(`nag sent=${sent} of ${users.length}`);
 });
+
+// ── 6) 스쿼드장에게 "다음 회차 열까요?" — 끝난 지 6~8일 된 스쿼드, 같은 시리즈 하나만 (8-30) ──
+//   대표: "누리가 요가 스쿼드를 열었으면 다음 주에 '다음 요가 열까요' 푸시 → 누르면 그대로 세팅".
+//   ★자동으로 열지 않는다(모임은 사람이 연다). 푸시만 보내고, 누르면 값이 채워진 만들기 화면이다.
+exports.hostAgain = onSchedule({ region: REGION, schedule: "5 10 * * *", timeZone: "UTC" }, async () => {
+  const now = Date.now();
+  const qs = await db().collection("squads")
+    .where("scheduledAt", ">=", now - 8 * 86400000)
+    .where("scheduledAt", "<=", now - 6 * 86400000).get();
+  const byHost = {};
+  qs.forEach((d) => {
+    const q = d.data() || {};
+    if (!q.hostUid || !["completed", "expired"].includes(q.status)) return;
+    const key = q.hostUid + "|" + String(q.title || "").replace(/\s*\d+\s*회차\s*$/, "").trim();
+    if (!byHost[key]) byHost[key] = { id: d.id, ...q };
+  });
+  let sent = 0;
+  for (const key of Object.keys(byHost)) {
+    const q = byHost[key];
+    // 이미 이어서 열었으면(seriesOf 로 새 스쿼드가 있으면) 보내지 않는다
+    const again = await db().collection("squads").where("seriesOf", "==", q.id).limit(1).get();
+    if (!again.empty) continue;
+    const ok = await notifyOnce(`ha_${q.hostUid}_${q.id}`, {
+      toUid: q.hostUid, fromUid: "", fromNickname: "",
+      type: "squad_host_again", squadId: q.id, postText: String(q.title || "").replace(/\s*\d+\s*회차\s*$/, "").trim(),
+    });
+    if (ok) sent++;
+  }
+  console.log(`host_again sent=${sent}`);
+});
