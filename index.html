@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '846';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '842';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10094,6 +10094,7 @@ window.mwPortal = function () {
 .golf-teebox{position:absolute;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.28);box-sizing:border-box}
 .golf-obs.deco{opacity:.92}
 .golf-aimdot.end.out{background:#e5484d;box-shadow:0 0 0 2px rgba(229,72,77,.35)}
+.golf-aimdot.end.in{background:#F5C24B}
 .golf-obs{position:absolute;transform:translate(-50%,-50%);border-radius:50%;image-rendering:pixelated;background:center/contain no-repeat;box-sizing:border-box}
 .golf-obs.bunker.css{background:#f3e4b3;border:2px solid #d9c58c}
 .golf-obs.pond.css{background:#8fd3f4;border:2px solid #5fb0dc}
@@ -17515,8 +17516,8 @@ window.GOLF_LV = {
   // ★대표 8-30: 난이도마다 차별점이 확실해야 한다. 하 = 편하게(바람 0·큰 컵·짧게 굴러 통제 쉬움·빌런 없음)
   //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
   easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6 },
-  mid:  { name: '중', wind: 0.004, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
-  hard: { name: '상', wind: 0.012, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
+  mid:  { name: '중', wind: 0.002, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
+  hard: { name: '상', wind: 0.006, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
 window.GOLF_HOLES = [
@@ -17704,7 +17705,8 @@ window._golfPredict = function (s, power, club) {
     if (!window.golfShot(t, power, 0, club)) return null;
     for (let i = 0; i < 900 && t.moving; i++) { window.golfTick(t, 16); if (i % 6 === 0) pts.push({ x: t.x, y: t.y, z: t.z }); if (!land && t.z === 0 && t.last === 'land') land = { x: t.x, y: t.y }; if (t.hole !== s.hole || t.last === 'ob' || t.last === 'water') break; }
   } finally { if (ch) ch.jitter = savedJ; }
-  const val = { pts: pts, end: { x: t.x, y: t.y }, land: land, out: t.last === 'ob' || t.last === 'water' };
+  const holed = t.hole !== s.hole, HH = window.GOLF_HOLES[s.hole];
+  const val = { pts: pts, end: holed ? { x: HH.x, y: HH.y } : { x: t.x, y: t.y }, land: land, out: t.last === 'ob' || t.last === 'water', holed: holed };
   window._golfPredCache = { key: key, val: val }; return val;
 };
 window._golfPenalty = function (s, why) {
@@ -17959,7 +17961,7 @@ window._golfPaint = function (s) {
       pr.pts.forEach(function (q, i) { if (i % 2) return; const c = P(q.x, q.y); if (c.vy < -10 || c.vy > 110) return;
         h += '<div class="golf-aimdot" style="left:' + c.x + 'px;top:' + (c.y - q.z * G.LIFT * U) + 'px;transform:translate(-50%,-50%) scale(' + (q.z > 0 ? 0.8 : 1) + ')"></div>'; });
       const e = P(pr.end.x, pr.end.y);
-      h += '<div class="golf-aimdot end' + (pr.out ? ' out' : '') + '" style="left:' + e.x + 'px;top:' + e.y + 'px;transform:translate(-50%,-50%) scale(1.6)"></div>';
+      h += '<div class="golf-aimdot end' + (pr.out ? ' out' : '') + (pr.holed ? ' in' : '') + '" style="left:' + e.x + 'px;top:' + e.y + 'px;transform:translate(-50%,-50%) scale(1.6)"></div>';
     }
   }
   host.innerHTML = h;

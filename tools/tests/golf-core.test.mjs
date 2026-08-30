@@ -72,12 +72,12 @@ w.golfShot(c, 0.4, 0, 'iron'); w.golfShot(d, 0.4, 0, 'iron'); run(c, 9000); run(
 assert(Math.abs(d.x - 50) < Math.abs(c.x - 50), '뚱뚱이가 바람에 덜 밀린다 (human x=' + c.x.toFixed(1) + ' ddung x=' + d.x.toFixed(1) + ')');
 
 // 10) OB 벌타 + 복귀 — 홀 8 앞에서 풀파워 드라이버를 치면 홀을 한참 넘어 코스 밖(y<1)
-s = calm(w.golfNew(5, 'easy', 'human')); s.x = 50; s.y = 30;
+s = calm(w.golfNew(5, 'easy', 'human')); s.x = 50; s.y = 24;   // 8-30 코스가 홀 뒤 -20 까지 연장됨(홀 앞에서 풀파워 → -37)
 w.golfShot(s, 1, 0, 'driver'); run(s, 9000);
-assert.strictEqual(s.last, 'ob', 'OB 가 안 났다 (y=' + s.y.toFixed(1) + ')'); assert.strictEqual(s.strokes[0], 2); assert.strictEqual(s.y, 30, '샷 전 자리로 복귀');
+assert.strictEqual(s.last, 'ob', 'OB 가 안 났다 (y=' + s.y.toFixed(1) + ')'); assert.strictEqual(s.strokes[0], 2); assert.strictEqual(s.y, 24, '샷 전 자리로 복귀');
 
 // 11) 좀비 멀리건: 첫 OB 는 벌타 없음
-s = calm(w.golfNew(5, 'easy', 'zombie')); s.x = 50; s.y = 30;
+s = calm(w.golfNew(5, 'easy', 'zombie')); s.x = 50; s.y = 24;
 w.golfShot(s, 1, 0, 'driver'); run(s, 9000); assert.strictEqual(s.strokes[0], 1, '멀리건'); assert.strictEqual(s.mulligan, 0);
 w.golfShot(s, 1, 0, 'driver'); run(s, 9000); assert.strictEqual(s.strokes[0], 3, '두 번째부터 벌타');
 
@@ -94,7 +94,8 @@ s = calm(w.golfNew(5, 'easy', 'human')); s.x = H0.x; s.y = H0.y + 6;
 w.golfShot(s, 1, 0, 'putter'); run(s, 200); assert.strictEqual(s.hole, 0, '세게 친 퍼팅이 홀인되면 안 된다 (last=' + s.last + ')');
 
 // 14) 빌런: 하 없음 · 중 까마귀 · 상 둘 다. 까마귀는 공이 멈춰 있어도 움직인다
-assert.strictEqual(w.golfNew(1, 'easy', 'human').crow, null); assert(w.golfNew(1, 'mid', 'human').crow);
+assert.strictEqual(w.golfNew(1, 'easy', 'human').crow, null);
+const md = w.golfNew(1, 'mid', 'human'); assert.strictEqual(md.crow, null, '중은 1홀엔 까마귀 없음(8-30)'); md.hole = 1; w._golfVillainsFor(md); assert(md.crow, '중 2홀부터 까마귀');
 const hd = w.golfNew(1, 'hard', 'human'); assert(hd.crow && hd.mole);
 const cx0 = hd.crow.x; run(hd, 500); assert(hd.crow.x !== cx0, '까마귀가 안 움직인다');
 console.log('golf-core: OK');
