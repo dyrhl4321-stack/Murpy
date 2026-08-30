@@ -132,7 +132,7 @@ function compose(n) {
     //   ★쪼아대는 톤은 대표·송정현 형님이 원한 것("제정신이냐" 류). 선은 '친구가 놀리는 말'까지.
     case "friend_workout":
       return { title: `🔥 ${who}님이 방금 운동했어요`,
-               body: post ? `"${post}" · 넌 뭐 하고 있어?` : "넌 뭐 하고 있어? 오늘 한 번 나가볼까" };
+               body: post ? `"${post}" · 누워 계신 건 아니죠?` : "오늘 몫을 채웠어요 · 누워 계신 건 아니죠?" };
 
     case "bamboo_nearby":
       return { title: `🎋 ${n.text || "우리 동네"} 대숲에 새 글`,
@@ -140,11 +140,11 @@ function compose(n) {
 
     case "gym_now":
       return { title: `🏋️ ${n.text || "내 헬스장"}에 ${who}님 도착`,
-               body: "지금 운동 중이에요. 같이 갈래요?" };
+               body: "지금 가면 아는 얼굴이 있어요" };
 
     case "squad_again":
       return { title: `⚡ ${who}님이 또 열었어요`,
-               body: post ? `"${post}" · 지난번처럼 같이 가요` : "지난번에 같이 한 스쿼드가 또 열렸어요" };
+               body: post ? `"${post}" · 지난번 멤버 소집 중, 빠지면 서운해요` : "지난번 멤버 소집 중 · 빠지면 서운해요" };
 
     case "squad_nearby":
       return { title: `📍 ${n.text || "내 헬스장"}에서 스쿼드`,
@@ -153,7 +153,7 @@ function compose(n) {
     case "nag": {
       const d = Number(n.amount || 7);
       return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,
-               body: d >= 14 ? "근손실 괜찮으시겠어요? 친구들은 오늘도 인증했어요" : "근손실 괜찮으시겠어요? 오늘 한 번만 나가요" };
+               body: "근손실은 알림을 안 보내요. 그래서 저희가 보냅니다" };
     }
 
     default:
