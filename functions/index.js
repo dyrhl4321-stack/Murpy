@@ -153,7 +153,7 @@ function compose(n) {
     case "nag": {
       const d = Number(n.amount || 7);
       return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,
-               body: d >= 14 ? "제정신이에요? 친구들은 오늘도 인증했어요" : "일주일 지났어요. 오늘 한 번만 나가요" };
+               body: d >= 14 ? "근손실 괜찮으시겠어요? 친구들은 오늘도 인증했어요" : "근손실 괜찮으시겠어요? 오늘 한 번만 나가요" };
     }
 
     default:
