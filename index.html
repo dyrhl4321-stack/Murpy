@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '836';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '837';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -27575,32 +27575,15 @@ window.sendBambooRequest = async (postId, authorUid) => {
   }
   if (!user) { showToast('로그인 후 신청할 수 있어요'); return; }
   if (user.uid === authorUid) return;
-  // 이미 매칭된 사이면 바로 채팅으로 (일반 매칭 or 대숲 매칭 둘 다 체크)
+  // ★★'이미 연결된 사이면 기존 채팅으로' 바로가기를 **없앴다** (대표 8-30: "이미 연결된 사람도
+  //   몰래 쓸 수 있잖아"). 그 바로가기가 곧 **작성자 신원 노출**이었다 — 저에요를 눌러 보면
+  //   "이미 연결된 사이에요"가 뜨면서 누가 썼는지 알게 된다. 대숲은 글쓴이가 익명인 것이 전부다.
+  //   이제 아는 사이든 아니든 똑같이 '신청됐어요'만 본다. 밝힐지는 글쓴이가 정한다.
+  // ★중복 신청도 여기서 막는다 — 버튼만 잠그고 함수는 안 막아서, 다른 길로 오면 3머피가 또 나갔다.
   try {
-    const chatId = _pairKey(user.uid, authorUid);
-    const [matchSnap, chatSnap] = await Promise.all([
-      getDoc(doc(db, 'matches', chatId)),
-      getDoc(doc(db, 'chats', chatId))
-    ]);
-    const alreadyMatched = matchSnap.exists() || (chatSnap.exists() && chatSnap.data().bambooChat === false);
-    if (alreadyMatched) {
-      let partnerName = '상대', partnerPhoto = '';
-      if (chatSnap.exists()) {
-        const d = chatSnap.data();
-        partnerName = (d.participantNames || {})[authorUid] || partnerName;
-        partnerPhoto = (d.participantPhotos || {})[authorUid] || '';
-      }
-      if (!partnerName || partnerName === '상대') {
-        try {
-          const us = await getDoc(doc(db, 'users', authorUid));
-          if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || ''; }
-        } catch(e) {}
-      }
-      showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
-      window.openChatFirestore(chatId, authorUid, partnerName, partnerPhoto, false);
-      return;
-    }
-  } catch(e) {}
+    const _pre = await getDoc(doc(db, 'bamboo', postId));
+    if (_pre.exists() && (_pre.data().requesters || []).includes(user.uid)) { showToast('이미 손을 들었어요 · 글쓴이가 보면 알림이 와요'); return; }
+  } catch (e) {}
   try {
     const postRef = doc(db, 'bamboo', postId);
     const postSnap = await getDoc(postRef);
