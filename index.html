@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '841';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '842';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -3445,6 +3445,9 @@ window.expandBambooCompose = function () {
       f.insertBefore(h, f.firstChild);
     }
     try { lockBodyScroll && lockBodyScroll(); } catch (e) {}
+    // ★열자마자 닫히던 것 (대표 8-30). 트리거를 누른 손가락 자리에 닫기 버튼이 올라와서
+    //   같은 탭이 넘어갔다. 여는 순간부터 잠깐은 닫기를 무시한다.
+    window._bwOpenedAt = Date.now();
   }
   if (window.renderBambooChips) window.renderBambooChips();
   const ti = document.getElementById('bamboo-title'); if (ti) ti.focus();   // 제목부터 — 본문은 그 아래로 펼쳐진다
@@ -3497,6 +3500,7 @@ window.clearBambooPhoto = function () {
 };
 
 window.collapseBambooCompose = function () {
+  if (Date.now() - (window._bwOpenedAt || 0) < 600) return;   // 여는 탭이 닫기로 새는 것 방지
   const t = document.getElementById('bamboo-compose-trigger');
   const f = document.getElementById('bamboo-compose-full');
   const ta = document.getElementById('bamboo-input'); if (ta) ta.value = '';
@@ -17498,7 +17502,7 @@ window.GOLF = {
   STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 0.42, CUP_BOUNCE: 0.6,   // 8-30 팡야식: 구르는 속도가 0~0.55 라 컵 잡히는 상한도 그 안(풀파워 퍼팅은 스친다)
   TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
   MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20,
-  SPEED: 1.9, ZOOM: 1.7, CAM_Y: 0.6, LIFT: 2.2, Z_REF: 9, CROW_ZMIN: 2.5, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
+  SPEED: 1.9, ZOOM: 1.0, CAM_Y: 0.74, LIFT: 1.5, Z_REF: 9, CROW_ZMIN: 2.5, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
   // 빌런 (대표 8-30: "헬스장 아저씨처럼 골프에도 방해하는 빌런 몇 명")
   CROW_Y: 48, CROW_V: 0.55, CROW_R: 4.2, CROW_KICK: 1.4,   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
@@ -17867,7 +17871,7 @@ window._golfCamSet = function (s, instant) {
 };
 window._golfCamStep = function () {
   const c = window._golfCam, t = window._golfCamTo; if (!c || !t) return;
-  const e = 0.16; c.x += (t.x - c.x) * e; c.y += (t.y - c.y) * e; c.rot = 0;
+  const e = 0.1; c.x += (t.x - c.x) * e; c.y += (t.y - c.y) * e; c.rot = 0;
 };
 // 1 논리단위 = 몇 px. 코스 폭 100 이 화면 폭의 ZOOM 배 — 확대돼 있어 한 샷에 필드가 눈에 띄게 흐른다
 window._golfUnit = function (W) { return W * window.GOLF.ZOOM / 100; };
@@ -17941,7 +17945,7 @@ window._golfPaint = function (s) {
   // 캐릭터 — 공 옆(뷰 기준 왼쪽 아래), 홀 쪽을 본다
   const me = document.getElementById('golf-me');
   if (me) {
-    const chH = Math.round(0.11 * H);
+    const chH = Math.round(0.075 * H);
     let face = window._golfFace || 'up';
     // ★조준 방향을 본다 — 홀을 지나쳤으면 아래(코스 반대)를 보고 친다(대표 8-30 "지금 뒤로 보고 치고 있잖아")
     if (!s.moving && !s.done) { const ang = window._golfAimAngle(s), cx = Math.cos(ang), sy = Math.sin(ang); face = Math.abs(sy) >= Math.abs(cx) * 0.7 ? (sy < 0 ? 'up' : 'down') : (cx < 0 ? 'left' : 'right'); window._golfFace = face; }
@@ -18042,7 +18046,7 @@ window._golfFrame = function (ts) {
   // ★공이 날아가는 동안에도 카메라가 공을 따라간다(대표 8-30: "필드가 그대로니까 공이 어디쯤 갔는지 모르겠다").
   //   공은 늘 화면 아래 중앙, 필드·깃발·장애물이 흘러 내려온다. 홀이 바뀌면 새 티로 즉시.
   if (s.hole !== before) { window._golfCamSet(s, true); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
-  else if (s.moving) { window._golfCamSet(s, true); }
+  else if (s.moving) { /* 8-30 비행 중 카메라 정지 — 공이 필드를 가로질러 가는 게 보여야 앞뒤·높이가 읽힌다 */ }
   else if (wasMoving) { window._golfCamSet(s, false); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
   window._golfCamStep(); window._golfApplyBg(s);
   window._golfPaint(s);
