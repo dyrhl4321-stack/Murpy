@@ -17466,7 +17466,7 @@ window.GOLF = {
   DRAG_MAX: 38, V_MAX: 3.4,          // 당김 상한(논리 단위) · 최대 속도(단위/16ms틱)
   FRICTION: 0.982, ROUGH: 0.95, BUNKER: 0.86, BUNKER_POWER: 0.7,
   ROUGH_X: 8,                        // x<8 또는 x>92 는 러프
-  STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 1.2, CUP_BOUNCE: 0.6,
+  STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 0.42, CUP_BOUNCE: 0.6,   // 8-30 팡야식: 구르는 속도가 0~0.55 라 컵 잡히는 상한도 그 안(풀파워 퍼팅은 스친다)
   TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
   MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20,
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
@@ -17532,7 +17532,7 @@ window._golfMoleUp = function (s) { return !!(s.mole && ((s.t + s.mole.ph) % win
 // 입력은 화면이 게이지로 받는다: ①탭 → 게이지 오름 ②탭 → 세기(power 0~1) ③되돌아오는 바늘이 0 에 올 때 탭 → 정확(acc -1~1, 0이 완벽).
 // 코어는 그 결과값만 받는다. 공은 **날아간다**(z 높이, 중력) → 착지 튐 → 구름. 퍼터는 안 뜨고 구르기만.
 window.GOLF_CLUBS = {
-  driver: { name: '드라이버', dist: 52, angle: 32, roll: 0.28 },   // 티(86)→홀(22) 64 거리에 굴림까지 딱 맞게. 78이면 OB 로 나갔다   // dist = 풀파워 비거리(논리 단위) · angle = 발사각 · roll = 착지 후 남는 속도 비율
+  driver: { name: '드라이버', dist: 46, angle: 32, roll: 0.28 },   // 풀파워 정확샷이 홀 5~8 앞에 서서 퍼팅이 남게(52면 홀인원)   // 티(86)→홀(22) 64 거리에 굴림까지 딱 맞게. 78이면 OB 로 나갔다   // dist = 풀파워 비거리(논리 단위) · angle = 발사각 · roll = 착지 후 남는 속도 비율
   iron:   { name: '아이언',   dist: 34, angle: 46, roll: 0.18 },
   putter: { name: '퍼터',     dist: 26, angle: 0,  roll: 1.0  }
 };
@@ -17774,7 +17774,8 @@ window._golfApplyBg = function () {
 window._golfCheckArt = function () {
   if (window._golfArt != null) return;
   const im = new Image();
-  im.onload = function () { window._golfArt = true; const a = document.getElementById('golf-art-bg'); if (a) a.style.backgroundImage = "url('char/game/golf_title.png?v=1')"; window._golfPaintStart(); };
+  // ★덤벨 마크업을 복사하면서 #golf-art-bg 에 display:none 이 딸려왔다 — 켜 주지 않으면 타이틀이 검은 화면(대표 8-30)
+  im.onload = function () { window._golfArt = true; const a = document.getElementById('golf-art-bg'); if (a) { a.style.backgroundImage = "url('char/game/golf_title.png?v=1')"; a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in'); } window._golfPaintStart(); };
   im.onerror = function () { window._golfArt = false; window._golfPaintStart(); };
   im.src = 'char/game/golf_title.png?v=1';
   window._golfObj = {};
@@ -17794,7 +17795,7 @@ window.golfOpen = function () {
   const ss = document.getElementById('golf-start-screen');
   if (ss) { ss.style.display = 'flex'; ss.classList.remove('in'); void ss.offsetWidth; ss.classList.add('in'); }
   window._golfShowPane('golf-pane-title'); window._golfPaintStart();
-  const ab = document.getElementById('golf-art-bg'); if (ab && window._golfArt) { ab.classList.remove('in'); void ab.offsetWidth; ab.classList.add('in'); }
+  const ab = document.getElementById('golf-art-bg'); if (ab && window._golfArt) { ab.style.display = ''; ab.classList.remove('in'); void ab.offsetWidth; ab.classList.add('in'); }
   window._golfBind();
   window.track && window.track('game_open', { game: 'golf' });
 };
@@ -27897,7 +27898,7 @@ window.loadNotificationsFirestore = async () => {
           squad_nearby: { c: '#3D7EFF', h: `${_txt || '내 헬스장'}에서 스쿼드`, s: _post ? `"${_post}" · ${safeNick}님이 열었어요` : `${safeNick}님이 근처에서 열었어요`,
             go: _sq ? `window.openSquadDetail&&window.openSquadDetail('${_sq}')` : `goPage('crew')`,
             svg: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>' },
-          nag: { c: '#FF4D67', h: `마지막 운동이 <b>${Number(n.amount||7)}일 전</b>이에요`, s: Number(n.amount||7) >= 14 ? '제정신이에요? 친구들은 오늘도 인증했어요' : '일주일 지났어요 · 오늘 한 번만 나가요',
+          nag: { c: '#FF4D67', h: `마지막 운동이 <b>${Number(n.amount||7)}일 전</b>이에요`, s: Number(n.amount||7) >= 14 ? '근손실 괜찮으시겠어요? 친구들은 오늘도 인증했어요' : '근손실 괜찮으시겠어요? 오늘 한 번만 나가요',
             go: `goPage('home');setTimeout(function(){window.startWorkoutVerify&&window.startWorkoutVerify()},600)`,
             svg: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/>' },
         }[n.type];
