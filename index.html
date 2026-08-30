@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '847';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '848';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -27473,7 +27473,7 @@ window.loadBamboo = async (tab) => {
       const meta = [];
       if (post.likes) meta.push(_num(_icLike, post.likes, 'rgba(255,255,255,0.66)'));
       if (post.commentCount) meta.push(_num(_icCmt, post.commentCount, 'rgba(255,255,255,0.66)'));
-      if ((post.requesters || []).length) meta.push(_num(_icMe, post.requesters.length, '#4ADE80'));
+      if ((post.requesters || []).length) meta.push(`<span style="display:inline-flex;align-items:center;gap:4px;color:#4ADE80;margin-left:-4px">${_icMe}${post.requesters.length}</span>`);
       return `<article class="bamboo-item" role="button" tabindex="0"
         onclick="window.openBambooDetail('${post.id}')"
         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.openBambooDetail('${post.id}')}">
@@ -31780,11 +31780,21 @@ window.loadHomeTrending = async () => {
     }
 
     // 4. 인기 대숲 글 (좋아요 많은 순) — 다크 카드(초록은 칩 아이콘만)
-    const bambooPosts = !bambooSnap ? [] : bambooSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.likedBy || []).length) - ((a.likedBy || []).length));
+    // ★좋아요 총합만 보면 **옛 글이 영원히 1등**이다(대표 8-30: "너무 옛날 거"). 시간으로 식힌다 —
+    //   점수 = (좋아요×3 + 댓글×2 + 저에요×4) ÷ (지난 일수+1)^1.3. 2주 지난 글은 제외(그때만 뒤로 떨어짐).
+    const _bScore = (x) => {
+      const at = x.createdAt && x.createdAt.seconds ? x.createdAt.seconds * 1000 : 0;
+      const days = at ? Math.max(0, (Date.now() - at) / 86400000) : 30;
+      const raw = (x.likedBy || []).length * 3 + (x.commentCount | 0) * 2 + (x.requesters || []).length * 4;
+      return { raw, days, score: raw / Math.pow(days + 1, 1.3) };
+    };
+    let bambooPosts = !bambooSnap ? [] : bambooSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    bambooPosts.forEach(x => { x._s = _bScore(x); });
+    const recent = bambooPosts.filter(x => x._s.days <= 14 && x._s.raw > 0);
+    bambooPosts = (recent.length ? recent : bambooPosts).sort((a, b) => b._s.score - a._s.score);
     if (bambooPosts[0]) {
-      // ★사진 있는 글을 우선으로 고른다 (#13). 대숲에 사진 업로드가 생겼으니(#11)
-      //   썸네일로 쓸 그림이 이제 존재한다. 좋아요가 같으면 사진 있는 쪽이 카드가 산다.
-      const p = bambooPosts.find(x => x.photoURL) || bambooPosts[0];
+      // ★사진 있는 글을 우선으로 — 단 **상위 3개 안에서만**. 사진 때문에 옛 글이 튀어 오르면 안 된다.
+      const p = bambooPosts.slice(0, 3).find(x => x.photoURL) || bambooPosts[0];
       const t = window._bambooTitle ? window._bambooTitle(p) : ((p.text || '').trim() || '대나무숲');
       cards.push(card({
         // 글 하나를 집어 보여줬으니 목록이 아니라 **그 글**로 보낸다
