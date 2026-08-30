@@ -128,6 +128,34 @@ function compose(n) {
                body: `관리자가 ${amt} 머피 선물을 보냈어요` };
     }
 
+    // ── 리텐션 (2026-08-30, functions/retention.js) ─────────────────────
+    //   ★쪼아대는 톤은 대표·송정현 형님이 원한 것("제정신이냐" 류). 선은 '친구가 놀리는 말'까지.
+    case "friend_workout":
+      return { title: `🔥 ${who}님이 방금 운동했어요`,
+               body: post ? `"${post}" · 넌 뭐 하고 있어?` : "넌 뭐 하고 있어? 오늘 한 번 나가볼까" };
+
+    case "bamboo_nearby":
+      return { title: `🎋 ${n.text || "우리 동네"} 대숲에 새 글`,
+               body: post ? `"${post}"` : "동네 사람이 뭔가 털어놨어요" };
+
+    case "gym_now":
+      return { title: `🏋️ ${n.text || "내 헬스장"}에 ${who}님 도착`,
+               body: "지금 운동 중이에요. 같이 갈래요?" };
+
+    case "squad_again":
+      return { title: `⚡ ${who}님이 또 열었어요`,
+               body: post ? `"${post}" · 지난번처럼 같이 가요` : "지난번에 같이 한 스쿼드가 또 열렸어요" };
+
+    case "squad_nearby":
+      return { title: `📍 ${n.text || "내 헬스장"}에서 스쿼드`,
+               body: post ? `"${post}" · ${who}님이 열었어요` : `${who}님이 근처에서 스쿼드를 열었어요` };
+
+    case "nag": {
+      const d = Number(n.amount || 7);
+      return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,
+               body: d >= 14 ? "제정신이에요? 친구들은 오늘도 인증했어요" : "일주일 지났어요. 오늘 한 번만 나가요" };
+    }
+
     default:
       return { title: "머피", body: "새 소식이 도착했어요" };
   }
@@ -141,6 +169,7 @@ function linkFor(n) {
   if (n.postId) q.set("p", String(n.postId));
   const sid = n.squadId || n.crewId;
   if (sid) q.set("sq", String(sid));
+  if (n.centerId) q.set("c", String(n.centerId));
   const qs = q.toString();
   return "https://murpy.app/" + (qs ? "?" + qs : "");
 }
@@ -305,3 +334,6 @@ exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
                                       at: FieldValue.serverTimestamp() });
   return { ok: true, allowed, claimed, why, mode: "shadow" };
 });
+
+// ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
+Object.assign(exports, require("./retention.js"));
