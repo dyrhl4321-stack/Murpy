@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '856';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '857';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10112,7 +10112,7 @@ window.mwPortal = function () {
 @keyframes golfSwing{0%{transform:translate(-50%,-100%) scale(1)}40%{transform:translate(-50%,-100%) scale(1.1,.92)}100%{transform:translate(-50%,-100%) scale(1)}}
 #golf-me.swing{animation:golfSwing .25s ease}
 .gg-track{position:relative;height:100%;background:rgba(5,7,12,.72);border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden}
-.gg-zone{position:absolute;top:0;bottom:0;left:0;background:#0b0e16;z-index:2;box-shadow:inset 0 0 0 1px #2b3350}   /* 8-31 정확 단계 = 꽉 찬 게이지에서 이 자리만 비운다(빈 곳에 바늘이 오면 탭) */
+.gg-zone{position:absolute;top:0;bottom:0;left:0;background:linear-gradient(90deg,#3D7EFF,#6ea3ff);z-index:2;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}   /* 8-31 정확 단계 = 빈 게이지에서 채워진 구간이 목표(바늘이 채워진 데 오면 탭) */
 .gg-needle{z-index:3}
 .gg-power{position:absolute;top:0;bottom:0;left:0;width:0;background:linear-gradient(90deg,#3D7EFF,#F5C24B 85%,#e5484d)}
 .gg-needle{position:absolute;top:-4px;bottom:-4px;left:0;width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 0 1px #05070c}
@@ -17516,9 +17516,9 @@ window.GOLF = {
 window.GOLF_LV = {
   // ★대표 8-30: 난이도마다 차별점이 확실해야 한다. 하 = 편하게(바람 0·큰 컵·짧게 굴러 통제 쉬움·빌런 없음)
   //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
-  easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6 },
-  mid:  { name: '중', wind: 0.0005, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
-  hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
+  easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6, accW: 1.4, accSpd: 2.0 },
+  mid:  { name: '중', wind: 0.0005, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1, accW: 1.0, accSpd: 1.4,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
+  hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5, accW: 0.6, accSpd: 0.8 }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
 window.GOLF_HOLES = [
@@ -18012,11 +18012,12 @@ window._golfGaugePaint = function (s) {
   if (!show) return;
   const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
   const zone = g.querySelector('.gg-zone'), pw = g.querySelector('.gg-power'), nd = g.querySelector('.gg-needle');
-  const zc = (st && st.phase === 'acc' && st.zone != null) ? st.zone : 0.5, zw = ch.accZone * 100;   // 빈 칸 반폭 = accZone(머피 10% → 칸 20%)
+  const lvg = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
+  const zc = (st && st.phase === 'acc' && st.zone != null) ? st.zone : 0.5, zw = ch.accZone * (lvg.accW || 1) * 100;   // 구간 반폭 = accZone × 난이도 배율
   if (zone) { zone.style.left = (zc * 100 - zw) + '%'; zone.style.width = (zw * 2) + '%'; zone.style.display = (st && st.phase === 'acc') ? '' : 'none'; }   // 정확 칸: 정확 단계에만, 랜덤 위치
   if (!st || st.phase === 'idle') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = '0%'; if (hint) hint.textContent = '화면을 탭해서 게이지 시작 · 좌우로 끌면 조준'; return; }
   if (st.phase === 'power') { if (pw) pw.style.width = (st.v * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '원하는 세기에서 탭!'; }
-  else if (st.phase === 'acc') { if (pw) pw.style.width = '100%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 빈 칸에 올 때 탭! 한가운데면 곧게 갑니다'; }
+  else if (st.phase === 'acc') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 파란 구간에 올 때 탭! 한가운데면 곧게 갑니다'; }
 };
 window._golfGaugeTick = function (dt) {
   const st = window._golfGauge; if (!st || st.phase === 'idle') return;
@@ -18024,7 +18025,8 @@ window._golfGaugeTick = function (dt) {
   if (st.phase === 'power') { st.v += st.dirn * k / 1.1; if (st.v >= 1) { st.v = 1; st.dirn = -1; } else if (st.v <= 0) { st.v = 0; st.dirn = 1; } }
   else if (st.phase === 'acc') {   // 8-31 정확 칸이 매 샷 **랜덤 위치**(대표). 탭할 때까지 좌우 왕복, 자동 발사 없음
     if (st.adir == null) st.adir = -1;
-    st.v += st.adir * k / 1.4;
+    const lvs = window.GOLF_LV[(window._golfS || {}).lv] || window.GOLF_LV.mid;
+    st.v += st.adir * k / (lvs.accSpd || 1.4);   // 난이도별 바늘 속도(한 번 가로지르는 초)
     if (st.v <= 0) { st.v = 0; st.adir = 1; } else if (st.v >= 1) { st.v = 1; st.adir = -1; } }   // 놓치면 최악의 정확도
 };
 window._golfGaugeTap = function () {
@@ -18037,7 +18039,7 @@ window._golfGaugeTap = function () {
 window._golfGaugeFire = function (v) {
   const s = window._golfS, st = window._golfGauge; if (!s || !st) return;
   // 8-31 빈 칸 안(±accZone)이면 완벽(0). 벗어난 만큼만 완만하게 — 전엔 0.15만 벗어나도 8단위 휘어 거의 매 샷이 휘었다
-  const az = (window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human).accZone;
+  const az = (window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human).accZone * ((window.GOLF_LV[s.lv] || window.GOLF_LV.mid).accW || 1);
   const off = Math.abs(v) <= az ? 0 : (Math.abs(v) - az) * (v > 0 ? 1 : -1);
   const acc = Math.max(-1, Math.min(1, off / 0.4 + (off ? (v > 0 ? az : -az) : 0)));   // golfShot 이 accZone 을 다시 빼므로 그만큼 더해 준다
   window._golfGauge = { phase: 'idle', v: 0, dirn: 1, power: 0 };
