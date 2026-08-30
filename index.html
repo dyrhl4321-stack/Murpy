@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '857';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '858';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -33780,6 +33780,7 @@ window.openSquadCreate = function (preset) {
   // ★내가 열었던 스쿼드가 **맨 위에** (대표 8-30: "내가 열었던 스쿼드 목록 먼저 뜨게").
   //   한 번 연 사람은 다음도 거의 같은 모임을 연다 — 누르면 그대로 세팅되고 회차만 +1.
   if (user) window._sqMineStrip(user.uid);   // preset 이어도 최근 사진 줄은 필요하다(바꿀 수 있게)
+  window._sqThumbStrip && window._sqThumbStrip();
   // ★'이어서 열기' (대표 8-30, 캐치테이블식). 끝난 스쿼드의 값을 그대로 채우고 회차만 +1.
   //   날짜는 같은 요일 다음 주, 시간은 그대로. 헬스장 도감 연결(centerId)도 따라온다.
   if (preset) {
@@ -33845,15 +33846,18 @@ window._sqMineStrip = async function (uid) {
 // 예전에 쓴 대표 사진들 — 썸네일 버튼 밑에 작은 줄로. 누르면 바로 바뀐다(대표 8-30: "쉽게 바꿀 수도 있게").
 window._sqThumbStrip = function () {
   const imgs = window._sqRecentImgs || [];
-  const host = document.getElementById('sq-c-thumb-recent'); if (!host || !imgs.length) return;
+  const host = document.getElementById('sq-c-thumb-recent'); if (!host) return;
   host.style.display = 'flex';
   const cur = (window._sqForm || {}).img || '';
+  const dft = window.squadFieldSrc((window._sqForm || {}).type || 'gym');
   host.innerHTML = '<span style="flex-shrink:0;align-self:center;font-size:10.5px;color:rgba(255,255,255,.38);margin-right:2px">최근</span>'
+    + `<div onclick="window._sqUseThumb('')" title="종목 기본 그림" style="position:relative;width:60px;height:36px;flex-shrink:0;border-radius:8px;overflow:hidden;cursor:pointer;border:2px solid ${cur ? 'rgba(255,255,255,.08)' : 'var(--accent)'};background:url('${dft}') center/cover"><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);color:#fff;font-size:9.5px;font-weight:700">기본</span></div>`
     + imgs.map(u => `<img src="${String(u).replace(/"/g,'')}" onclick="window._sqUseThumb('${String(u).replace(/'/g,'')}')" style="width:60px;height:36px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:pointer;border:2px solid ${u === cur ? 'var(--accent)' : 'rgba(255,255,255,.08)'}">`).join('');
 };
 window._sqUseThumb = function (u) {
-  window._sqForm.img = u;
-  const pv = document.getElementById('sq-c-thumb-prev'); if (pv) pv.style.backgroundImage = "url('" + u + "')";
+  window._sqForm.img = u || null;   // '' = 기본(종목 그림)으로 되돌리기
+  const pv = document.getElementById('sq-c-thumb-prev');
+  if (pv) pv.style.backgroundImage = "url('" + (u || window.squadFieldSrc((window._sqForm || {}).type || 'gym')) + "')";
   window._sqThumbStrip();
 };
 window.sqReopen = async function (sid) {
@@ -33876,6 +33880,7 @@ window._sqPickType = function (k) {
 };
 // 대표 사진 고르기. 고르는 즉시 올린다 — '열기'를 누른 뒤에 올리면 그 자리에서 몇 초를 더 기다린다.
 window._sqPickThumb = async function (input) {
+  setTimeout(function () { window._sqThumbStrip && window._sqThumbStrip(); }, 1500);
   const f = input && input.files && input.files[0]; if (!f) return;
   const btn = document.getElementById('sq-c-thumb-btn');
   const pv = document.getElementById('sq-c-thumb-prev');
