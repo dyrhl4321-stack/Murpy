@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '840';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '841';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -15931,7 +15931,7 @@ window.CREDITS_MODE = 'enforced'; // 'beta'(표시+적립+무제한) | 'enforced
 //   | 하루 첫 운동 인증 |  +5  | 하루 1회    |  150   |
 //   | 센터 체크인(GPS)  |  +2  | 하루 1회    |   30   |  ← 실제로 가야 하니 인증보다 무겁다
 //   | 스트릭 7일 달성   |  +5  | 7일마다     |   20   |
-//   | 남의 방 구경      |  +1  | 하루 2회    |   20   |  ← ★내가 '가면' 받는다(아래 참고)
+//   | 남의 방 구경      |  +2  | 하루 2회    |   40   |  ← ★내가 '가면' 받는다(아래 참고) · 8-30 1→2
 //   | 좋아요 누르기     |  +1  | 하루 2회    |   20   |  ← ★내가 '누르면' 받는다
 //   | 스쿼드 벙 완료    | +10  | 회당(호스트)|   20   |
 //   | 일반 스쿼드 출석  |  +2  | 회당        |    8   |
@@ -16018,7 +16018,7 @@ const BETA_GRANT_KEY = 'betaGrant300';
 // 생일 선물 (유저 피드백 #15). 1년에 한 번이라 하루 적립(+1)과는 급이 달라야 한다.
 // ★숫자만 여기서 바꾸면 된다. 홀수로 둔 것은 범프 보상과 같은 결(홀수 법칙).
 const CREDIT_BIRTHDAY = 55;
-const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 1, CREDIT_LIKE = 1,
+const CREDIT_CHECKIN = 2, CREDIT_STREAK7 = 5, CREDIT_VISIT = 2, CREDIT_LIKE = 1,   // 방 구경 1→2 (대표 8-30)
       CREDIT_SQUAD_HOST = 10, CREDIT_SQUAD_ATTEND = 2, CREDIT_SQUAD_BUMP_ATTEND = 5,
       CREDIT_NEW_CENTER = 3, CREDIT_SEASON = 10;
 // 하루 한도가 있는 소셜 보상 — 어뷰징(서로 눌러주기·껐다켜기)을 막는 상한
@@ -20153,11 +20153,13 @@ window.mwEarnSocial = async function (kind, reason, once) {   // kind: 'visit' |
       next[kind] = n + 1;
       const upd = { credits: increment(amount), socialEarn: next };
       if (key) upd['earnOnce.' + key] = true;
-      window.earnLog && window.earnLog(kind === 'visit' || kind === 'like' ? kind : 'other', amount, key || '');
       tx.update(meRef, upd);
       return true;
     });
     if (!paid) return false;
+    // ★그림자 장부는 **트랜잭션이 끝난 뒤** 한 번만 (8-30). 안에서 부르면 겹쳐서 재시도될 때마다
+    //   또 찍혀 '중복' 경고가 났다(대표: "방 구경 머피 계속 중복 오류 같은 게 뜬다").
+    window.earnLog && window.earnLog(kind === 'visit' || kind === 'like' ? kind : 'other', amount, key || (kind + '_' + day + '_' + Date.now()));
     window._creditState.credits += amount;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -28018,7 +28020,7 @@ window.loadNotificationsFirestore = async () => {
         const R = {
           friend_workout: { c: '#F5C24B', h: `<b>${safeNick}</b>님이 방금 운동했어요`, s: _post ? `"${_post}" · 누워 계신 건 아니죠?` : '누워 계신 건 아니죠?',
             go: _pid ? `window._notifGoPost('${_pid}')` : `goPage('home')`,
-            svg: '<path d="M6.5 6.5h11M6.5 17.5h11M4 12h16"/><path d="M8 3v18M16 3v18"/>' },
+            svg: '<path d="M6 7v10M18 7v10M3 9v6M21 9v6"/><path d="M6 12h12"/>' },
           bamboo_nearby: { c: '#4ADE80', h: `${_txt || '우리 동네'} 대숲에 새 글`, s: _post ? `"${_post}"` : '동네 사람이 뭔가 털어놨어요',
             go: `goPage('bamboo')`, svg: '<path d="M12 3v18"/><path d="M8 7c2 0 4 1 4 3M16 11c-2 0-4 1-4 3M8 15c2 0 4 1 4 3"/>' },
           gym_now: { c: '#3D7EFF', h: `${_txt || '내 헬스장'}에 <b>${safeNick}</b>님 도착`, s: '지금 가면 아는 얼굴이 있어요',
@@ -36995,9 +36997,10 @@ async function bpEarn(stacked, first) {
       const next = same ? Object.assign({}, se) : { d: day };
       next.d = day; next.bump = n + 1;
       tx.update(meRef, { credits: increment(amount), socialEarn: next });
-      window.earnLog && window.earnLog('bump', amount, 'bump_' + day + '_' + (n + 1));
+      window._bpEarnN = n + 1;   // 장부는 트랜잭션 밖에서(재시도 중복 방지)
       return amount;
     });
+    if (got) window.earnLog && window.earnLog('bump', got, 'bump_' + day + '_' + (window._bpEarnN | 0));
     if (got) {
       window._creditState.credits += got;
       if (window.renderCreditUI) window.renderCreditUI();
