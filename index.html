@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '845';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '846';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10093,6 +10093,7 @@ window.mwPortal = function () {
 .golf-green{position:absolute;border-radius:50%;background:rgba(215,250,170,.55);box-shadow:inset 0 0 0 3px rgba(255,255,255,.18)}
 .golf-teebox{position:absolute;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.28);box-sizing:border-box}
 .golf-obs.deco{opacity:.92}
+.golf-aimdot.end.out{background:#e5484d;box-shadow:0 0 0 2px rgba(229,72,77,.35)}
 .golf-obs{position:absolute;transform:translate(-50%,-50%);border-radius:50%;image-rendering:pixelated;background:center/contain no-repeat;box-sizing:border-box}
 .golf-obs.bunker.css{background:#f3e4b3;border:2px solid #d9c58c}
 .golf-obs.pond.css{background:#8fd3f4;border:2px solid #5fb0dc}
@@ -17503,7 +17504,7 @@ window.GOLF = {
   STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 0.42, CUP_BOUNCE: 0.6,   // 8-30 팡야식: 구르는 속도가 0~0.55 라 컵 잡히는 상한도 그 안(풀파워 퍼팅은 스친다)
   TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
   MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20,
-  SPEED: 1.9, ZOOM: 1.15, CAM_Y: 0.8, LIFT: 1.5, Z_REF: 9, CROW_ZMIN: 2.5, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
+  SPEED: 1.9, ZOOM: 1.15, CAM_Y: 0.8, LIFT: 1.5, Z_REF: 9, CROW_ZMIN: 2.5, GREEN_R: 9, COURSE_TOP: -20, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
   // 빌런 (대표 8-30: "헬스장 아저씨처럼 골프에도 방해하는 빌런 몇 명")
   CROW_Y: 48, CROW_V: 0.55, CROW_R: 4.2, CROW_KICK: 0.45,   // 8-30 1.4 → 0.45: 공 속도(0.9)보다 커서 샷마다 옆으로 확 꺾였다(대표 '공이 존나 휜다')   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
@@ -17558,7 +17559,7 @@ window.golfNew = function (seed, lvKey, chKey) {
 // 홀마다 빌런 배치. 까마귀는 페어웨이 중간 높이를 좌우로, 두더지는 홀 옆에서 튀어나온다.
 window._golfVillainsFor = function (s) {
   const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid, H = window.GOLF_HOLES[s.hole];
-  s.crow = (lv.crow && H) ? { x: window._golfRnd(s) * 60 + 20, y: window.GOLF.CROW_Y + (window._golfRnd(s) * 10 - 5), dir: window._golfRnd(s) < 0.5 ? -1 : 1, hit: 0 } : null;
+  s.crow = (lv.crow && H && s.hole >= (lv.crowFrom || 0)) ? { x: window._golfRnd(s) * 60 + 20, y: window.GOLF.CROW_Y + (window._golfRnd(s) * 10 - 5), dir: window._golfRnd(s) < 0.5 ? -1 : 1, hit: 0 } : null;
   s.mole = (lv.mole && H) ? { x: H.x + (window._golfRnd(s) < 0.5 ? -7 : 7), y: H.y + 9, ph: Math.floor(window._golfRnd(s) * window.GOLF.MOLE_CYCLE), up: false } : null;
   s.cupCool = 0;
 };
@@ -17567,8 +17568,8 @@ window._golfMoleUp = function (s) { return !!(s.mole && ((s.t + s.mole.ph) % win
 // 입력은 화면이 게이지로 받는다: ①탭 → 게이지 오름 ②탭 → 세기(power 0~1) ③되돌아오는 바늘이 0 에 올 때 탭 → 정확(acc -1~1, 0이 완벽).
 // 코어는 그 결과값만 받는다. 공은 **날아간다**(z 높이, 중력) → 착지 튐 → 구름. 퍼터는 안 뜨고 구르기만.
 window.GOLF_CLUBS = {
-  driver: { name: '드라이버', dist: 46, angle: 32, roll: 0.28 },   // 풀파워 정확샷이 홀 5~8 앞에 서서 퍼팅이 남게(52면 홀인원)   // 티(86)→홀(22) 64 거리에 굴림까지 딱 맞게. 78이면 OB 로 나갔다   // dist = 풀파워 비거리(논리 단위) · angle = 발사각 · roll = 착지 후 남는 속도 비율
-  iron:   { name: '아이언',   dist: 34, angle: 46, roll: 0.18 },
+  driver: { name: '드라이버', dist: 38, angle: 32, roll: 0.28 },   // 8-30 총 도달거리(튕김·굴림 포함) ≈ dist×1.6 → 풀파워 ≈ 61(홀 64 바로 앞)   // 풀파워 정확샷이 홀 5~8 앞에 서서 퍼팅이 남게(52면 홀인원)   // 티(86)→홀(22) 64 거리에 굴림까지 딱 맞게. 78이면 OB 로 나갔다   // dist = 풀파워 비거리(논리 단위) · angle = 발사각 · roll = 착지 후 남는 속도 비율
+  iron:   { name: '아이언',   dist: 28, angle: 46, roll: 0.18 },
   putter: { name: '퍼터',     dist: 26, angle: 0,  roll: 1.0  }
 };
 window.GOLF.G = 0.022;          // 중력(단위/틱²)
@@ -17632,7 +17633,7 @@ window.golfTick = function (s, dt) {
   // 바람(공중에서 더 세게) + 돌풍
   let wx = s.wind.x, wy = s.wind.y;
   if (lv.gust) { const a = Math.sin(s.t / 900) * 0.9; const c = Math.cos(a), sn = Math.sin(a); const nx = wx * c - wy * sn, ny = wx * sn + wy * c; wx = nx * (1 + 0.5 * Math.sin(s.t / 1300)); wy = ny * (1 + 0.5 * Math.sin(s.t / 1300)); }
-  const wm = ch.windMul * (flying ? G.WIND_AIR : 0.6);
+  const wm = ch.windMul * (flying ? G.WIND_AIR : 0);   // 8-30 땅에선 바람 0 — 굴림 마찰과 평형이 돼 공이 영원히 굴렀다
   s.vx += wx * wm * k; s.vy += wy * wm * k;
   // 휨(정확 실패)은 공중에서만 — 진행 방향의 수직으로
   if (flying && s.curve) { const qx = -Math.sin(s.dir), qy = Math.cos(s.dir); s.vx += qx * s.curve * k; s.vy += qy * s.curve * k; }
@@ -17667,7 +17668,7 @@ window.golfTick = function (s, dt) {
     }
   }
   // OB
-  if (s.x < 2 || s.x > 98 || s.y < 1 || s.y > 99) { window._golfPenalty(s, 'ob'); return s.last; }
+  if (s.x < 2 || s.x > 98 || s.y < G.COURSE_TOP + 1 || s.y > 99) { window._golfPenalty(s, 'ob'); return s.last; }
   if (s.z > 0) return s.last;
   // ---- 구르는 중 ----
   const sp = Math.hypot(s.vx, s.vy);
@@ -17689,6 +17690,22 @@ window.golfTick = function (s, dt) {
     if (s.strokes[s.hole] >= (lv.maxStrokes || G.MAX_STROKES)) window._golfNextHole(s);
   }
   return s.last;
+};
+// ★8-30 조준선 = 실제 물리를 미리 돌린 착지 경로(팡야식). 공식 계산은 튕김·굴림을 못 잡아 점선(38)과 실제(62)가 달랐다.
+//   바람·빌런은 뺀 '무풍 예측'. 게이지 올리는 동안 세기를 따라 실시간으로 늘어난다.
+window._golfPredict = function (s, power, club) {
+  const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, s.aim | 0, s.inBunker ? 1 : 0, s.ch].join('|');
+  const c = window._golfPredCache; if (c && c.key === key) return c.val;
+  const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
+  t.rnd = s.rnd; const ch = window.GOLF_CHARS[s.ch]; const jit = ch && ch.jitter; if (ch) { }
+  const pts = []; let land = null;
+  const savedJ = ch ? ch.jitter : 0; if (ch) ch.jitter = 0;
+  try {
+    if (!window.golfShot(t, power, 0, club)) return null;
+    for (let i = 0; i < 900 && t.moving; i++) { window.golfTick(t, 16); if (i % 6 === 0) pts.push({ x: t.x, y: t.y, z: t.z }); if (!land && t.z === 0 && t.last === 'land') land = { x: t.x, y: t.y }; if (t.hole !== s.hole || t.last === 'ob' || t.last === 'water') break; }
+  } finally { if (ch) ch.jitter = savedJ; }
+  const val = { pts: pts, end: { x: t.x, y: t.y }, land: land, out: t.last === 'ob' || t.last === 'water' };
+  window._golfPredCache = { key: key, val: val }; return val;
 };
 window._golfPenalty = function (s, why) {
   const G = window.GOLF, lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
@@ -17934,13 +17951,16 @@ window._golfPaint = function (s) {
   // 착지 먼지·홀인 연출 (짧게)
   if (window._golfFx) { const f = window._golfFx; const c = P(f.x, f.y); const age = (s.t - f.at);
     if (age < 520) h += '<div class="golf-fx ' + f.kind + '" style="left:' + c.x + 'px;top:' + c.y + 'px;--p:' + (age / 520) + '"></div>'; else window._golfFx = null; }
-  // 조준선 (멈춰 있을 때) — 홀 방향 + aim
+  // 조준선 (멈춰 있을 때) — 예측 착지 경로 + 도착점 표시. 게이지 세기 단계면 그 세기로, 아니면 풀파워
   if (!s.moving && !s.done) {
-    const ang = window._golfAimAngle(s), C = window.GOLF_CLUBS[s.club] || window.GOLF_CLUBS.iron;
-    const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
-    const reach = C.dist * ch.power * (s.inBunker ? G.BUNKER_POWER : 1);
-    for (let i = 1; i <= 8; i++) { const d = reach * i / 8; const c = P(s.x + Math.cos(ang) * d, s.y + Math.sin(ang) * d); if (c.vy < -10 || c.vy > 110) break;
-      h += '<div class="golf-aimdot' + (i === 8 ? ' end' : '') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;transform:translate(-50%,-50%) scale(' + c.s + ')"></div>'; }
+    const st = window._golfGauge, pw = (st && st.phase === 'power') ? Math.max(0.05, st.v) : ((st && st.phase === 'acc') ? st.power : 1);
+    const pr = window._golfPredict(s, pw, s.club);
+    if (pr) {
+      pr.pts.forEach(function (q, i) { if (i % 2) return; const c = P(q.x, q.y); if (c.vy < -10 || c.vy > 110) return;
+        h += '<div class="golf-aimdot" style="left:' + c.x + 'px;top:' + (c.y - q.z * G.LIFT * U) + 'px;transform:translate(-50%,-50%) scale(' + (q.z > 0 ? 0.8 : 1) + ')"></div>'; });
+      const e = P(pr.end.x, pr.end.y);
+      h += '<div class="golf-aimdot end' + (pr.out ? ' out' : '') + '" style="left:' + e.x + 'px;top:' + e.y + 'px;transform:translate(-50%,-50%) scale(1.6)"></div>';
+    }
   }
   host.innerHTML = h;
   // 캐릭터 — 공 옆(뷰 기준 왼쪽 아래), 홀 쪽을 본다
@@ -27169,6 +27189,11 @@ window._bambooCommentLike = async (postId, cid) => {
   const me = window.currentUser && window.currentUser.uid;
   if (!me) { showToast('로그인 후 누를 수 있어요'); return; }
   const ref = doc(db, 'bamboo', postId, 'comments', cid);
+  // 누른 순간 하트부터 바꾼다 — 서버 다녀온 뒤 목록을 갈아끼우면 깜빡인다(대표 8-30)
+  try {
+    const btn = document.querySelector(`[onclick*="_bambooCommentLike('${postId.replace(/'/g,'')}','${cid.replace(/'/g,'')}')"]`);
+    if (btn) { const on = btn.style.color !== 'rgb(74, 222, 128)'; btn.style.color = on ? '#4ADE80' : 'rgba(255,255,255,.38)'; const sv = btn.querySelector('svg'); if (sv) sv.setAttribute('fill', on ? '#4ADE80' : 'none'); }
+  } catch (e) {}
   try {
     const sn = await getDoc(ref); if (!sn.exists()) return;
     const liked = (sn.data().likedBy || []).includes(me);
@@ -27219,7 +27244,7 @@ window._bambooFetchComments = async (postId) => {
 window._bambooInline = async (postId, all) => {
   const box = document.getElementById('bcm-' + postId); if (!box) return;
   box.dataset.open = all ? 'all' : 'some';
-  box.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0">불러오는 중…</div>';
+  if (!box.innerHTML.trim()) box.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0">불러오는 중…</div>';   // 이미 떠 있으면 깜빡이지 않게 그대로 두고 갈아끼운다
   let r; try { r = await window._bambooFetchComments(postId); } catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0">댓글을 불러올 수 없어요</div>'; return; }
   const shown = all ? r.list : r.list.slice(0, 2);
   const rest = r.list.length - shown.length;
@@ -27466,7 +27491,7 @@ window.loadBamboo = async (tab) => {
             <span style="font-size:11px;font-weight:500;color:#3f4757">${window._bambooAgo(post.createdAt)}</span>
           </div>
         </div>
-        <div id="bcm-${post.id}" onclick="event.stopPropagation()" style="flex-basis:100%;padding:0 2px;margin-top:-6px"></div>
+        <div id="bcm-${post.id}" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()" style="flex-basis:100%;padding:0 2px;margin-top:-6px"></div>
         ${post.photoURL ? `<div style="width:64px;height:64px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#111">
           <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 180) : post.photoURL}" loading="lazy" decoding="async" alt=""
                onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
@@ -27549,7 +27574,7 @@ window.postBambooFirestore = async (text, title) => {
 window.icHandUp = function (size, variant) {
   const s = size || 16;
   const f = (variant === 'dark') ? 'ic_me_dark' : 'ic_me_green';
-  return '<img src="char/ui/' + f + '.png?v=2" alt="" aria-hidden="true"'
+  return '<img src="char/ui/' + f + '.png?v=3" alt="" aria-hidden="true"'
     + ' style="width:' + s + 'px;height:' + s + 'px;display:block;flex-shrink:0">';
 };
 
@@ -33268,8 +33293,9 @@ window.renderSquadHero = async function () {
       // ★제목은 **센터 이름만**(대표 8-12: 글이 너무 길다). 인원은 아랫줄로 내린다 —
       //   한 줄에 '오늘 ○○에 N명'을 다 넣으니 긴 상호에서 말줄임으로 잘려 나갔다.
       title: esc(byCenter[top].name || '우리 센터'),
-      sub: '지금 ' + byCenter[top].n + '명이 운동 중이에요',
-      cta: '누가 있는지 보기',
+      // ★"N명이 운동 중" 만 있으면 헬스장 광고처럼 읽힌다(대표 8-30). 이 카드는 **같이 할 사람 찾기**다.
+      sub: '지금 ' + byCenter[top].n + '명이 운동 중 · 같이 운동할 파트너 찾아볼까요?',
+      cta: '같이 할 사람 보기',
       // 스쿼드 만들기가 아니라 **그 헬스장 필드로** 간다(대표 8-12).
       click: "window.sqGoCenterField('" + String(top).replace(/'/g, '') + "')"
     });
