@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '833';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '835';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17775,7 +17775,10 @@ window._golfApplyBg = function (s) {
     if (bg._img !== want) { bg._img = want; bg.style.backgroundImage = want; }
     const zoom = green ? 100 : Math.round(100 + Math.max(0, 1 - d / 64) * 30);
     bg.style.backgroundSize = 'auto ' + zoom + '%';
-    bg.style.transition = 'background-size .6s ease';
+    // 확대된 만큼의 여유 안에서, 공이 올라간 비율만큼 그림을 아래로 내린다(스크롤)
+    const prog = Math.max(0, Math.min(1, (window.GOLF.TEE_Y - s.y) / (window.GOLF.TEE_Y - H.y)));
+    bg.style.backgroundPosition = 'center ' + Math.round(prog * 100) + '%';
+    bg.style.transition = 'background-size .6s ease, background-position .6s ease';
     bg.style.opacity = '.62';
     return;
   }
@@ -17839,7 +17842,9 @@ window.golfFieldBtn = function (key) {
 //   공이 날아가는 동안 카메라는 샷 시점에 고정, 멈추면 새 자리로 부드럽게 옮긴다.
 window._golfCamSet = function (s, instant) {
   const H = window.GOLF_HOLES[Math.min(s.hole, window.GOLF.HOLES - 1)];
-  const target = { x: s.x, y: s.y, rot: Math.atan2(H.y - s.y, H.x - s.x) + Math.PI / 2 };   // 홀이 -y(위)로 오게
+  // ★회전하지 않는다(8-30: 홀을 지나치면 화면이 돌아 깃발이 휙 날아다녔다). 위아래로만 따라가는 스크롤 카메라 —
+  //   공이 올라간 만큼 필드가 내려오고 깃발은 제자리에서 점점 커진다. 지나쳤으면 깃발이 아래에 보인다.
+  const target = { x: 50, y: s.y, rot: 0 };
   if (instant || !window._golfCam) window._golfCam = Object.assign({}, target);
   window._golfCamTo = target;
 };
