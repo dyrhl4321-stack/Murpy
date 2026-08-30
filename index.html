@@ -18001,30 +18001,31 @@ window._golfGaugePaint = function (s) {
   if (!show) return;
   const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
   const zone = g.querySelector('.gg-zone'), pw = g.querySelector('.gg-power'), nd = g.querySelector('.gg-needle');
-  if (zone) { zone.style.left = '0'; zone.style.width = (ch.accZone * 100) + '%'; }
+  const zc = (st && st.phase === 'acc' && st.zone != null) ? st.zone : 0.5, zw = ch.accZone * 0.3 * 100;
+  if (zone) { zone.style.left = (zc * 100 - zw) + '%'; zone.style.width = (zw * 2) + '%'; zone.style.display = (st && st.phase === 'acc') ? '' : 'none'; }   // 정확 칸: 정확 단계에만, 랜덤 위치
   if (!st || st.phase === 'idle') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = '0%'; if (hint) hint.textContent = '화면을 탭해서 게이지 시작 · 좌우로 끌면 조준'; return; }
   if (st.phase === 'power') { if (pw) pw.style.width = (st.v * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '원하는 세기에서 탭!'; }
-  else if (st.phase === 'acc') { if (pw) pw.style.width = (st.power * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 왼쪽 끝 파란 칸에 올 때 탭! (탭해야만 칩니다)'; }
+  else if (st.phase === 'acc') { if (pw) pw.style.width = (st.power * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 파란 칸에 올 때 탭! 딱 맞추면 곧게 갑니다'; }
 };
 window._golfGaugeTick = function (dt) {
   const st = window._golfGauge; if (!st || st.phase === 'idle') return;
   const k = dt / 1000;
   if (st.phase === 'power') { st.v += st.dirn * k / 1.1; if (st.v >= 1) { st.v = 1; st.dirn = -1; } else if (st.v <= 0) { st.v = 0; st.dirn = 1; } }
-  else if (st.phase === 'acc') {   // 8-30 자동 발사 없음(대표: "지멋대로 왼쪽 닿으면 쳐버림") — 탭할 때까지 왼쪽 끝↔세기 위치를 왕복
+  else if (st.phase === 'acc') {   // 8-31 정확 칸이 매 샷 **랜덤 위치**(대표). 탭할 때까지 좌우 왕복, 자동 발사 없음
     if (st.adir == null) st.adir = -1;
-    st.v += st.adir * k / 1.7;
-    if (st.v <= -0.12) { st.v = -0.12; st.adir = 1; } else if (st.v >= st.power) { st.v = st.power; st.adir = -1; } }   // 놓치면 최악의 정확도
+    st.v += st.adir * k / 1.4;
+    if (st.v <= 0) { st.v = 0; st.adir = 1; } else if (st.v >= 1) { st.v = 1; st.adir = -1; } }   // 놓치면 최악의 정확도
 };
 window._golfGaugeTap = function () {
   const s = window._golfS; if (!s || s.moving || s.done) return;
   let st = window._golfGauge;
   if (!st || st.phase === 'idle') { window._golfGauge = { phase: 'power', v: 0, dirn: 1, power: 0 }; return; }
-  if (st.phase === 'power') { st.power = Math.max(0.05, st.v); st.phase = 'acc'; st.v = st.power; return; }
-  if (st.phase === 'acc') { window._golfGaugeFire(st.v); }
+  if (st.phase === 'power') { st.power = Math.max(0.05, st.v); st.phase = 'acc'; st.v = 1; st.adir = -1; st.zone = 0.12 + Math.random() * 0.76; return; }   // 정확 칸 위치 랜덤(0.12~0.88)
+  if (st.phase === 'acc') { window._golfGaugeFire(st.v - (st.zone == null ? 0.5 : st.zone)); }   // 칸 중심 기준 어긋남
 };
 window._golfGaugeFire = function (v) {
   const s = window._golfS, st = window._golfGauge; if (!s || !st) return;
-  const acc = Math.max(-1, Math.min(1, v / 0.35));   // 0 = 완벽, 왼쪽 끝을 지나치면 음수
+  const acc = Math.max(-1, Math.min(1, v / 0.3));   // 0 = 칸 정중앙, 오른쪽 +, 왼쪽 − (±0.3 이 최악)
   window._golfGauge = { phase: 'idle', v: 0, dirn: 1, power: 0 };
   if (window.golfShot(s, st.power, acc, s.club)) {
     const me = document.getElementById('golf-me'); if (me) { me.classList.remove('swing'); void me.offsetWidth; me.classList.add('swing'); }
