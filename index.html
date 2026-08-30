@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '851';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '852';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18004,13 +18004,16 @@ window._golfGaugePaint = function (s) {
   if (zone) { zone.style.left = '0'; zone.style.width = (ch.accZone * 100) + '%'; }
   if (!st || st.phase === 'idle') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = '0%'; if (hint) hint.textContent = '화면을 탭해서 게이지 시작 · 좌우로 끌면 조준'; return; }
   if (st.phase === 'power') { if (pw) pw.style.width = (st.v * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '원하는 세기에서 탭!'; }
-  else if (st.phase === 'acc') { if (pw) pw.style.width = (st.power * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 돌아와 왼쪽 끝(파란 칸)에 닿는 순간 탭! 놓치면 휘어요'; }
+  else if (st.phase === 'acc') { if (pw) pw.style.width = (st.power * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 왼쪽 끝 파란 칸에 올 때 탭! (탭해야만 칩니다)'; }
 };
 window._golfGaugeTick = function (dt) {
   const st = window._golfGauge; if (!st || st.phase === 'idle') return;
   const k = dt / 1000;
   if (st.phase === 'power') { st.v += st.dirn * k / 1.1; if (st.v >= 1) { st.v = 1; st.dirn = -1; } else if (st.v <= 0) { st.v = 0; st.dirn = 1; } }
-  else if (st.phase === 'acc') { st.v -= k / 1.7; if (st.v <= -0.5) { window._golfGaugeFire(-1); } }   // 8-30 절반 속도 — 대표 폰에서 탭할 틈도 없이 지나갔다   // 놓치면 최악의 정확도
+  else if (st.phase === 'acc') {   // 8-30 자동 발사 없음(대표: "지멋대로 왼쪽 닿으면 쳐버림") — 탭할 때까지 왼쪽 끝↔세기 위치를 왕복
+    if (st.adir == null) st.adir = -1;
+    st.v += st.adir * k / 1.7;
+    if (st.v <= -0.12) { st.v = -0.12; st.adir = 1; } else if (st.v >= st.power) { st.v = st.power; st.adir = -1; } }   // 놓치면 최악의 정확도
 };
 window._golfGaugeTap = function () {
   const s = window._golfS; if (!s || s.moving || s.done) return;
@@ -33921,8 +33924,16 @@ window._sqLocInput = function (v) {
   //   ①영문/한글 표기가 달라 검색에 안 잡혔고 ②시딩 15,000곳이 같은 줄에 섞였다.
   //   → 표기를 맞춰 찾고(mk↔엠케이 등), **우리가 직접 등록한 곳·제휴점을 맨 앞에** 둔다.
   const _alias = function (t) {
-    return String(t || '').toLowerCase()
-      .replace(/엠케이/g, 'mk').replace(/휘트니스|피트니스|fitness/g, 'fit').replace(/헬스장|헬스|짐|gym/g, 'gym').replace(/\s+/g, '');
+    let x = String(t || '').toLowerCase();
+    // 한글 표기 → 영문 하나로 (양쪽 다 이 표를 거치면 같은 글자가 된다)
+    const T = [[/엠케이/g,'mk'],[/제이케이/g,'jk'],[/지앤비|지엔비/g,'gnb'],[/디케이/g,'dk'],[/케이/g,'k'],
+      [/휘트니스|피트니스|피트|핏니스|fitness|fit/g,'fit'],[/헬스클럽|헬스장|헬스|짐|gym|health/g,'gym'],
+      [/스포애니|spoany/g,'spoany'],[/애플/g,'apple'],[/바디/g,'body'],[/클럽/g,'club'],[/센터/g,'center'],
+      [/파워/g,'power'],[/스타/g,'star'],[/원/g,'one'],[/더/g,'the'],[/크로스핏|crossfit/g,'crossfit'],
+      [/필라테스|pilates/g,'pilates'],[/요가|yoga/g,'yoga'],[/복싱|boxing/g,'boxing'],[/스포츠|sports?/g,'sport'],
+      [/점$/,''],[/[\s\-_.·&]/g,'']];
+    T.forEach(function (pr) { x = x.replace(pr[0], pr[1]); });
+    return x;
   };
   const qa = _alias(q);
   const hits = window.centersData.filter(function (c) {
@@ -33936,11 +33947,25 @@ window._sqLocInput = function (v) {
     const sa = _alias(a.name).indexOf(qa) === 0 ? 0 : 1, sb = _alias(b.name).indexOf(qa) === 0 ? 0 : 1;
     return sa - sb;                                                  // 이름이 검색어로 시작하는 것 먼저
   }).slice(0, 8);
-  if (!hits.length) { box.style.display = 'none'; return; }
-  box.innerHTML = hits.map(function (c) {
+  // 권역 기본값 = 내 동네가 서울 구면 서울. 한 번 고르면 그걸 기억한다.
+  if (window._sqRegion == null) {
+    const d = String((window._cachedProfile || {}).district || '');
+    window._sqRegion = /구$|서울/.test(d) ? '서울' : '전체';
+  }
+  const region = window._sqRegion;
+  const inRegion = region === '전체' ? hits : hits.filter(function (c) { return window._sqRegionOf(c) === region; });
+  const shown = (inRegion.length ? inRegion : hits).slice(0, 8);
+  const chips = '<div style="display:flex;gap:5px;overflow-x:auto;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);scrollbar-width:none">'
+    + window.SQ_REGIONS.map(function (r) {
+        return '<button onmousedown="event.preventDefault()" onclick="window._sqRegionPick(\'' + r + '\')" style="flex-shrink:0;background:none;border:1px solid ' + (r === region ? '#3D7EFF' : 'rgba(255,255,255,.14)') + ';color:' + (r === region ? '#3D7EFF' : 'rgba(255,255,255,.55)') + ';border-radius:20px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">' + r + '</button>';
+      }).join('') + '</div>';
+  if (!shown.length) { box.style.display = 'none'; return; }
+  box.innerHTML = chips + (inRegion.length ? '' : '<div style="font-size:10.5px;color:#8a93a8;padding:6px 12px 0">' + esc(region) + '에는 없어서 전체에서 찾았어요</div>')
+    + shown.map(function (c) {
+    const rg = window._sqRegionOf(c);
     return '<div onclick="window._sqLocPick(\'' + esc(c.id) + '\')" style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">'
-      + '<div style="font-size:13px;color:#e8edf7">' + esc(c.name) + (c.partner ? ' <span style="font-size:10px;color:#F5C24B">PARTNER</span>' : '') + '</div>'
-      + '<div style="font-size:11px;color:#8a93a8;margin-top:2px">' + esc(c.loc || c.address || '') + (c.lat ? '' : ' · 좌표 없음(도장 불가)') + '</div></div>';
+      + '<div style="font-size:13px;color:#e8edf7">' + esc(c.name) + (c.partner || c.premium ? ' <span style="font-size:10px;color:#F5C24B">PARTNER</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:#8a93a8;margin-top:2px">' + (rg ? '<span style="color:#7aa8ff">' + rg + '</span> · ' : '') + esc(c.loc || c.address || '') + (c.lat ? '' : ' · 좌표 없음(도장 불가)') + '</div></div>';
   }).join('');
   box.style.display = '';
 };
