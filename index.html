@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '849';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '850';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17516,8 +17516,8 @@ window.GOLF_LV = {
   // ★대표 8-30: 난이도마다 차별점이 확실해야 한다. 하 = 편하게(바람 0·큰 컵·짧게 굴러 통제 쉬움·빌런 없음)
   //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
   easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6 },
-  mid:  { name: '중', wind: 0.002, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
-  hard: { name: '상', wind: 0.006, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
+  mid:  { name: '중', wind: 0.0008, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
+  hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
 window.GOLF_HOLES = [
@@ -17693,12 +17693,13 @@ window.golfTick = function (s, dt) {
   return s.last;
 };
 // ★8-30 조준선 = 실제 물리를 미리 돌린 착지 경로(팡야식). 공식 계산은 튕김·굴림을 못 잡아 점선(38)과 실제(62)가 달랐다.
-//   바람·빌런은 뺀 '무풍 예측'. 게이지 올리는 동안 세기를 따라 실시간으로 늘어난다.
+//   빌런·돌풍은 뺀 예측(바람은 넣는다). 게이지 올리는 동안 세기를 따라 실시간으로 늘어난다.
 window._golfPredict = function (s, power, club) {
-  const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, s.aim | 0, s.inBunker ? 1 : 0, s.ch].join('|');
+  const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, s.aim | 0, s.inBunker ? 1 : 0, s.ch, s.wind.x.toFixed(4), s.wind.y.toFixed(4)].join('|');
   const c = window._golfPredCache; if (c && c.key === key) return c.val;
-  const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
-  t.rnd = s.rnd; const ch = window.GOLF_CHARS[s.ch]; const jit = ch && ch.jitter; if (ch) { }
+  const t = Object.assign({}, s, { wind: { x: s.wind.x, y: s.wind.y }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
+  // 8-30 바람 포함 — 예측선이 휘어질 걸 미리 보여줘야 '휜다'가 아니라 '읽힌다'
+  const ch = window.GOLF_CHARS[s.ch];
   const pts = []; let land = null;
   const savedJ = ch ? ch.jitter : 0; if (ch) ch.jitter = 0;
   try {
