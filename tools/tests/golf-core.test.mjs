@@ -16,7 +16,7 @@ for (const [re, name] of [
   [/window\.GOLF\.G = [^\n]*\n(?:window\.GOLF\.[A-Z_]+ = [^\n]*\n)+/, 'GOLF 추가 상수'],
   [/window\._golfAimAngle = function[\s\S]*?\n\};/, '_golfAimAngle'], [/window\._golfSuggestClub = function[\s\S]*?\n\};/, '_golfSuggestClub'],
   [/window\.golfShot = function[\s\S]*?\n\};/, 'golfShot'], [/window\._golfInEllipse = function[\s\S]*?\n\};/, '_golfInEllipse'],
-  [/window\.golfTick = function[\s\S]*?\n\};/, 'golfTick'], [/window\._golfPenalty = function[\s\S]*?\n\};/, '_golfPenalty'],
+  [/window\.golfTick = function[\s\S]*?\n\};/, 'golfTick'], [/window\._golfCrowRepos = function[\s\S]*?\n\};/, '_golfCrowRepos'], [/window\._golfPenalty = function[\s\S]*?\n\};/, '_golfPenalty'],
   [/window\._golfNextHole = function[\s\S]*?\n\};/, '_golfNextHole'], [/window\.golfTotal = function[\s\S]*?\n\};/, 'golfTotal']
 ]) new Function('window', grab(re, name))(w);
 

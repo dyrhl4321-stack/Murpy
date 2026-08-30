@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '854';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '855';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17628,6 +17628,7 @@ window.golfTick = function (s, dt) {
   if (s.done || !H) return s.last;
   s.t += dt;
   const k = dt / 16;
+  if (s.crow && s.crow.ty != null) { s.crow.y += (s.crow.ty - s.crow.y) * Math.min(1, 0.03 * k); }   // 8-31 다음 샷 경로로 날아와 자리 잡는다
   if (s.crow) { s.crow.x += s.crow.dir * (lv.crowV != null ? lv.crowV : G.CROW_V) * k; if (s.crow.x < 6) { s.crow.x = 6; s.crow.dir = 1; } else if (s.crow.x > 94) { s.crow.x = 94; s.crow.dir = -1; } if (s.crow.hit > 0) s.crow.hit -= k; }
   if (s.cupCool > 0) s.cupCool -= k;
   if (!s.moving) return s.last;
@@ -17687,7 +17688,7 @@ window.golfTick = function (s, dt) {
   if (inB) f = G.BUNKER; else if (s.x < rx || s.x > G.W - rx) f = G.ROUGH;
   const fk = Math.pow(f, k); s.vx *= fk; s.vy *= fk;
   if (Math.hypot(s.vx, s.vy) < G.STOP_V) {
-    s.vx = 0; s.vy = 0; s.moving = false; s.inBunker = inB; s.last = inB ? 'bunker' : 'stop';
+    s.vx = 0; s.vy = 0; s.moving = false; s.inBunker = inB; s.last = inB ? 'bunker' : 'stop'; window._golfCrowRepos(s);
     s.club = window._golfSuggestClub(s);
     if (s.strokes[s.hole] >= (lv.maxStrokes || G.MAX_STROKES)) window._golfNextHole(s);
   }
@@ -17713,10 +17714,16 @@ window._golfPredict = function (s, power, club) {
   const val = { pts: pts, end: holed ? { x: HH.x, y: HH.y } : { x: t.x, y: t.y }, land: land, out: t.last === 'ob' || t.last === 'water', holed: holed };
   window._golfPredCache = { key: key, val: val }; return val;
 };
+// ★8-31 까마귀는 공이 멈출 때마다 **공과 홀 사이**(다음 샷 경로 40~70% 지점)로 옮겨 간다 — 지나간 뒤에 뒤에서 돌면 의미 없다(대표)
+window._golfCrowRepos = function (s) {
+  if (!s.crow) return; const H = window.GOLF_HOLES[Math.min(s.hole, window.GOLF.HOLES - 1)];
+  const f = 0.4 + window._golfRnd(s) * 0.3; s.crow.ty = s.y + (H.y - s.y) * f;
+  if (Math.abs(s.crow.ty - s.crow.y) > 25) s.crow.y = s.crow.ty;   // 너무 멀면 바로(홀 바뀜 등)
+};
 window._golfPenalty = function (s, why) {
   const G = window.GOLF, lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
   if (s.mulligan > 0) s.mulligan--; else s.strokes[s.hole]++;
-  s.x = s.px; s.y = s.py; s.vx = 0; s.vy = 0; s.z = 0; s.vz = 0; s.moving = false; s.last = why;
+  s.x = s.px; s.y = s.py; s.vx = 0; s.vy = 0; s.z = 0; s.vz = 0; s.moving = false; s.last = why; window._golfCrowRepos(s);
   s.club = window._golfSuggestClub(s);
   if (s.strokes[s.hole] >= (lv.maxStrokes || G.MAX_STROKES)) window._golfNextHole(s);
 };
