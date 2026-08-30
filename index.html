@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '858';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '859';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -33961,12 +33961,13 @@ window._sqLocInput = function (v) {
   const hits = window.centersData.filter(function (c) {
     if (!c || !c.name) return false;
     const hay = (c.name + ' ' + (c.loc || '') + ' ' + (c.address || '') + ' ' + (c.region || '')).toLowerCase();
-    const haya = _alias(c.name);
+    // ★별칭은 센터마다 **한 번만** 계산해 둔다 — 15,000곳 × 정규식 20개를 매 글자마다 돌리면 폰이 멈춘다(대표 8-31: "색인 갑자기 안 됨")
+    const haya = c._al || (c._al = _alias(c.name));
     return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; }) || (qa.length >= 2 && haya.indexOf(qa) >= 0);
-  }).sort(function (a, b) {
+  }).slice(0, 200).sort(function (a, b) {   // 정렬은 앞 200개만 — 그 이상은 어차피 8개 안에 못 든다
     const ra = (a.premium ? 0 : (a.source === 'kakao' ? 2 : 1)), rb = (b.premium ? 0 : (b.source === 'kakao' ? 2 : 1));
     if (ra !== rb) return ra - rb;                                   // 제휴 > 직접 등록 > 카카오 시딩
-    const sa = _alias(a.name).indexOf(qa) === 0 ? 0 : 1, sb = _alias(b.name).indexOf(qa) === 0 ? 0 : 1;
+    const sa = (a._al || '').indexOf(qa) === 0 ? 0 : 1, sb = (b._al || '').indexOf(qa) === 0 ? 0 : 1;
     return sa - sb;                                                  // 이름이 검색어로 시작하는 것 먼저
   }).slice(0, 8);
   // 권역 기본값 = 내 동네가 서울 구면 서울. 한 번 고르면 그걸 기억한다.
