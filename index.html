@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '837';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '838';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -309,7 +309,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* ★게시판은 '상자의 나열'이 아니라 '선으로 나뉜 행'이다.
      카드(배경+테두리+라운드)를 걷어내니 같은 화면에 글이 두 배로 들어오고,
      피드가 아니라 목록으로 읽힌다. 높이는 썸네일(64px)이 잡아준다. */
-  .bamboo-item { display:flex; gap:13px; align-items:flex-start; width:100%;
+  .bamboo-item { display:flex; flex-wrap:wrap; gap:13px; align-items:flex-start; width:100%;
     padding:15px 2px; background:none; border:none; border-bottom:1px solid rgba(255,255,255,0.055);
     border-radius:0; margin:0; text-align:left; cursor:pointer;
     transition: background 0.14s ease; }
@@ -1074,6 +1074,21 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* ★하단에서 올라오는 시트가 아니라 **중앙에 뜨는 창**이다 (대표 8-27:
      "경매장 UI 가 하단부에서 나오는 탭 형식이 아니라 명예의 전당처럼 딱 중앙에 창 하나 크게").
      시트는 '잠깐 보는 것'이라 값을 견주며 고르는 화면과 안 맞는다. */
+  /* ★대숲 글쓰기 = 전체화면 (대표 8-30: "장문 글쓸 때 UI 불편 · 팝업으로"). 카드 안에서 펼치면
+     위아래 카드에 눌려 3줄짜리 칸에서 스크롤했다. 같은 요소(#bamboo-compose-full)를 그대로
+     붙박이로 띄운다 — 입력칸 id 가 안 바뀌니 postBamboo 는 손댈 게 없다. */
+  #bamboo-compose-full.bw-open { position:fixed; inset:0; z-index:900; background:#0a0a0a; max-width:390px;
+    margin:0 auto; padding:14px 16px calc(16px + env(safe-area-inset-bottom)); overflow-y:auto;
+    display:flex !important; flex-direction:column }
+  #bamboo-compose-full.bw-open .bw-head { display:flex; align-items:center; gap:10px; padding:2px 0 12px }
+  #bamboo-compose-full.bw-open .bw-head b { flex:1; font-size:16px; font-weight:800; color:#fff }
+  #bamboo-compose-full.bw-open .bw-head button { background:none; border:none; color:rgba(255,255,255,.55);
+    font-size:13px; cursor:pointer; font-family:inherit; padding:6px 2px }
+  #bamboo-compose-full.bw-open #bamboo-title { font-size:17px !important; font-weight:700; padding:10px 0 !important }
+  #bamboo-compose-full.bw-open #bamboo-input { flex:1; min-height:40vh !important; height:auto !important;
+    font-size:15px !important; line-height:1.65 !important; resize:none }
+  #bamboo-compose-full.bw-open > div:has(#bamboo-input) { flex:1; display:flex }
+  #bamboo-compose-full.bw-open > div:has(#bamboo-input) > div:last-child { flex:1; display:flex; flex-direction:column }
   #mw-artgal { position:fixed; inset:0; z-index:40030; background:rgba(5,7,12,.9);
     display:flex; align-items:center; justify-content:center; padding:18px 14px;
     font-family:'Galmuri11',sans-serif }
@@ -3421,9 +3436,18 @@ window.expandBambooCompose = function () {
   // ★임시 계정도 막는다 — currentUser 만 보면 스쿼드 초대로 들어온 익명 계정이 그대로 통과했다(8-12)
   if (window.requireRealAccount && window.requireRealAccount('대나무숲 글을 쓰려면 계정이 필요해요')) return;
   if (t) t.style.display = 'none';
-  if (f) f.style.display = 'block';
+  if (f) {
+    f.style.display = 'block';
+    f.classList.add('bw-open');
+    if (!f.querySelector('.bw-head')) {
+      const h = document.createElement('div'); h.className = 'bw-head';
+      h.innerHTML = '<b>익명으로 이야기 남기기</b><button onclick="window.collapseBambooCompose()">닫기</button>';
+      f.insertBefore(h, f.firstChild);
+    }
+    try { lockBodyScroll && lockBodyScroll(); } catch (e) {}
+  }
   if (window.renderBambooChips) window.renderBambooChips();
-  const ta = document.getElementById('bamboo-input'); if (ta) ta.focus();
+  const ti = document.getElementById('bamboo-title'); if (ti) ti.focus();   // 제목부터 — 본문은 그 아래로 펼쳐진다
 };
 // 사진 한 장 크게 보기 (대숲 사진용, 다른 곳에서도 재사용 가능)
 window.openPhotoViewer = function (url) {
@@ -3478,7 +3502,8 @@ window.collapseBambooCompose = function () {
   const ta = document.getElementById('bamboo-input'); if (ta) ta.value = '';
   const ti = document.getElementById('bamboo-title'); if (ti) ti.value = '';
   if (window.clearBambooPhoto) window.clearBambooPhoto();   // 접을 때 붙인 사진도 비운다
-  if (f) f.style.display = 'none';
+  if (f) { f.style.display = 'none'; f.classList.remove('bw-open'); }
+  try { unlockBodyScroll && unlockBodyScroll(); } catch (e) {}
   if (t) t.style.display = 'flex';
 };
 
@@ -10060,6 +10085,10 @@ window.mwPortal = function () {
 .golf-hole{position:absolute;width:26px;height:40px;background:center bottom/contain no-repeat;image-rendering:pixelated}
 .golf-hole.css::before{content:'';position:absolute;left:50%;bottom:0;width:16px;height:8px;margin-left:-8px;border-radius:50%;background:#1a1f16;border:2px solid #e8edf7;box-sizing:border-box}
 .golf-hole.css::after{content:'';position:absolute;left:50%;bottom:6px;width:2px;height:30px;background:#fff;box-shadow:3px -22px 0 3px #e5484d}
+.golf-fairway{position:absolute;background:rgba(190,240,150,.42);box-shadow:inset 0 0 0 3px rgba(255,255,255,.12)}
+.golf-green{position:absolute;border-radius:50%;background:rgba(215,250,170,.55);box-shadow:inset 0 0 0 3px rgba(255,255,255,.18)}
+.golf-teebox{position:absolute;background:rgba(255,255,255,.14);border:2px solid rgba(255,255,255,.28);box-sizing:border-box}
+.golf-obs.deco{opacity:.92}
 .golf-obs{position:absolute;transform:translate(-50%,-50%);border-radius:50%;image-rendering:pixelated;background:center/contain no-repeat;box-sizing:border-box}
 .golf-obs.bunker.css{background:#f3e4b3;border:2px solid #d9c58c}
 .golf-obs.pond.css{background:#8fd3f4;border:2px solid #5fb0dc}
@@ -17469,6 +17498,7 @@ window.GOLF = {
   STOP_V: 0.05, CUP_R: 2.2, CUP_MAX_V: 0.42, CUP_BOUNCE: 0.6,   // 8-30 팡야식: 구르는 속도가 0~0.55 라 컵 잡히는 상한도 그 안(풀파워 퍼팅은 스친다)
   TREE_R: 4.5, TREE_BOUNCE: 0.5, WATER_V: 0.6,
   MAX_STROKES: 6, HOLES: 3, PAR: 3, MAX_SCORE: 999, RECS_MAX: 20,
+  ZOOM: 1.7, CAM_Y: 0.6, LIFT: 0.9, GREEN_R: 9, COURSE_TOP: 0, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
   // 빌런 (대표 8-30: "헬스장 아저씨처럼 골프에도 방해하는 빌런 몇 명")
   CROW_Y: 48, CROW_V: 0.55, CROW_R: 4.2, CROW_KICK: 1.4,   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
@@ -17765,27 +17795,16 @@ window._golfPaintChars = function () {
   }).join('');
 };
 window._golfApplyBg = function (s) {
+  // ★8-30 오픈월드식: 배경은 한 장 그림이 아니라 **이어지는 잔디 타일**. 카메라(공)가 움직인 만큼 타일이 흘러
+  //   공·깃발·장애물·나무와 같은 속도로 움직인다 → "필드 연속성"이 생긴다(대표: "필드가 그냥 연속성이 없음").
   const bg = document.getElementById('golf-bg'); if (!bg) return;
-  // ★턴마다 배경이 바뀐다: 홀까지 거리로 확대율(멀면 100%, 가까우면 130%), 퍼팅 거리면 그린 클로즈업으로 교체
-  if (s && window.GOLF_HOLES) {
-    const H = window.GOLF_HOLES[Math.min(s.hole, window.GOLF.HOLES - 1)];
-    const d = Math.hypot(H.x - s.x, H.y - s.y);
-    const green = d <= window.GOLF.PUTT_DIST + 4;
-    const want = green ? "url('char/game/golf_green.jpg?v=1')" : "url('char/game/golf_bg.jpg?v=1')";
-    if (bg._img !== want) { bg._img = want; bg.style.backgroundImage = want; }
-    const zoom = green ? 100 : Math.round(100 + Math.max(0, 1 - d / 64) * 30);
-    bg.style.backgroundSize = 'auto ' + zoom + '%';
-    // 확대된 만큼의 여유 안에서, 공이 올라간 비율만큼 그림을 아래로 내린다(스크롤)
-    const prog = Math.max(0, Math.min(1, (window.GOLF.TEE_Y - s.y) / (window.GOLF.TEE_Y - H.y)));
-    bg.style.backgroundPosition = 'center ' + Math.round(prog * 100) + '%';
-    bg.style.transition = 'background-size .25s linear, background-position .25s linear';
-    bg.style.opacity = '.62';
-    return;
-  }
-  bg.style.backgroundImage = "url('char/game/golf_bg.jpg?v=1')"; bg._img = ''; bg.style.backgroundSize = 'cover'; bg.style.opacity = '.62';
-  const probe = new Image();
-  probe.onerror = function () { bg.style.backgroundImage = "url('char/fields/field_golf.png?v=3')"; bg.style.opacity = '.45'; };
-  probe.src = 'char/game/golf_bg.jpg?v=1';
+  if (bg._img !== 1) { bg._img = 1; bg.style.backgroundImage = "url('char/game/golf_grass.png?v=1')"; bg.style.backgroundSize = 'auto'; bg.style.backgroundRepeat = 'repeat'; bg.style.opacity = '1'; bg.style.transition = 'none'; bg.style.filter = 'brightness(.78) saturate(.85)'; }
+  if (!s) { bg.style.backgroundPosition = '0 0'; return; }
+  const host = document.getElementById('golf-field'); const W = (host && host.clientWidth) || 360, H = (host && host.clientHeight) || 640;
+  const c = window._golfCam || { x: 50, y: 86 }, U = window._golfUnit(W);
+  const tile = Math.max(64, Math.round(U * 22));   // 타일 한 장 = 22단위
+  bg.style.backgroundSize = tile + 'px ' + tile + 'px';
+  bg.style.backgroundPosition = Math.round(W / 2 - c.x * U) + 'px ' + Math.round(H * window.GOLF.CAM_Y - c.y * U) + 'px';
 };
 window._golfCheckArt = function () {
   if (window._golfArt != null) return;
@@ -17829,7 +17848,7 @@ window.golfFieldBtn = function (key) {
   let b = document.getElementById('golf-start');
   if (key !== 'golf') { if (b) b.remove(); return; }
   // ★필드에 들어온 순간 게임 그림을 미리 받아 둔다(대표 8-30: "게임이 너무 늦게 뜬다") — 칩을 누를 땐 이미 캐시에 있다
-  if (!window._golfPreloaded) { window._golfPreloaded = 1; ['golf_title.png?v=1', 'golf_bg.jpg?v=1', 'golf_green.jpg?v=1', 'golf_ball.png?v=1', 'golf_hole.png?v=1', 'golf_bunker.png?v=1', 'golf_pond.png?v=1', 'golf_tree.png?v=1', 'golf_crow.png?v=1', 'golf_mole.png?v=1'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
+  if (!window._golfPreloaded) { window._golfPreloaded = 1; ['golf_title.png?v=1', 'golf_grass.png?v=1', 'golf_ball.png?v=1', 'golf_hole.png?v=1', 'golf_bunker.png?v=1', 'golf_pond.png?v=1', 'golf_tree.png?v=1', 'golf_crow.png?v=1', 'golf_mole.png?v=1'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
   if (b) return;
   b = document.createElement('button');
   b.id = 'golf-start'; b.className = 'mw-fieldchip'; b.style.top = '52px'; b.textContent = '홀인 머피';
@@ -17841,58 +17860,67 @@ window.golfFieldBtn = function (key) {
 //   공은 늘 화면 아래 중앙(뷰 50,86), 홀 방향이 위. 논리 좌표 → 카메라 기준 회전·이동 → 원근(위로 갈수록 좁고 작게).
 //   공이 날아가는 동안 카메라는 샷 시점에 고정, 멈추면 새 자리로 부드럽게 옮긴다.
 window._golfCamSet = function (s, instant) {
-  const H = window.GOLF_HOLES[Math.min(s.hole, window.GOLF.HOLES - 1)];
-  // ★회전하지 않는다(8-30: 홀을 지나치면 화면이 돌아 깃발이 휙 날아다녔다). 위아래로만 따라가는 스크롤 카메라 —
-  //   공이 올라간 만큼 필드가 내려오고 깃발은 제자리에서 점점 커진다. 지나쳤으면 깃발이 아래에 보인다.
-  const target = { x: s.x, y: s.y, rot: 0 };   // 공이 늘 화면 가운데 — 공 위치에 따라 깃발 자리가 달라진다(대표 8-30)
+  // ★8-30: 카메라는 공을 화면 (50%, CAM_Y) 에 두고 따라만 간다. 회전·원근 없음(둘 다 깃발을 날뛰게 했다).
+  const target = { x: s.x, y: s.y, rot: 0 };
   if (instant || !window._golfCam) window._golfCam = Object.assign({}, target);
   window._golfCamTo = target;
 };
 window._golfCamStep = function () {
   const c = window._golfCam, t = window._golfCamTo; if (!c || !t) return;
-  const e = 0.14;
-  c.x += (t.x - c.x) * e; c.y += (t.y - c.y) * e;
-  let dr = t.rot - c.rot; while (dr > Math.PI) dr -= 2 * Math.PI; while (dr < -Math.PI) dr += 2 * Math.PI;
-  c.rot += dr * e;
+  const e = 0.16; c.x += (t.x - c.x) * e; c.y += (t.y - c.y) * e; c.rot = 0;
 };
-// 논리 → 뷰(0~100). 카메라 기준 회전 후 공을 (50,86)에 놓는다. 거리 1 = 세로 1.
+// 1 논리단위 = 몇 px. 코스 폭 100 이 화면 폭의 ZOOM 배 — 확대돼 있어 한 샷에 필드가 눈에 띄게 흐른다
+window._golfUnit = function (W) { return W * window.GOLF.ZOOM / 100; };
+// 논리 → 뷰(0~100). 다른 코드 호환용(바람 화살표 등)
 window._golfView = function (x, y) {
   const c = window._golfCam || { x: 50, y: 86, rot: 0 };
-  const dx = x - c.x, dy = y - c.y, cs = Math.cos(-c.rot), sn = Math.sin(-c.rot);
-  return { x: 50 + dx * cs - dy * sn, y: 86 + dx * sn + dy * cs };
+  return { x: 50 + (x - c.x) * window.GOLF.ZOOM, y: window.GOLF.CAM_Y * 100 + (y - c.y) * window.GOLF.ZOOM * 0.5625 };
 };
-window._golfSx = function (vx, vy, W) { return (50 + (vx - 50) * (0.62 + 0.38 * Math.max(0, Math.min(100, vy)) / 100)) / 100 * W; };
-// 배율 = 공(카메라)에서의 거리로 정한다. 70 이상 떨어지면 0.45배, 코앞이면 1.7배 — 매 턴 깃발이 점점 커진다(대표 8-30 "오픈월드처럼")
-window._golfScale = function (vy) { const d = Math.max(0, 86 - vy); return Math.max(0.45, Math.min(1.7, 1.7 - d / 70 * 1.25)); };
+window._golfSx = function (vx, vy, W) { return vx / 100 * W; };
+window._golfScale = function () { return 1; };
 window._golfPaint = function (s) {
   const host = document.getElementById('golf-field'); if (!host) return;
   const W = host.clientWidth || 360, H = host.clientHeight || 640, G = window.GOLF, O = window._golfObj || {};
   const Hh = window.GOLF_HOLES[Math.min(s.hole, G.HOLES - 1)];
   const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid, om = lv.obsMul || 1;
-  const P = function (x, y) { const v = window._golfView(x, y); return { x: window._golfSx(v.x, v.y, W), y: v.y / 100 * H, s: window._golfScale(v.y), vy: v.y, vx: v.x }; };
+  const cam = window._golfCam || { x: 50, y: 86 }, U = window._golfUnit(W);
+  // 논리 → 화면 px. vy/vx 는 화면 비율(0~100) — 밖이면 안 그린다
+  const P = function (x, y) { const px = W / 2 + (x - cam.x) * U, py = H * G.CAM_Y + (y - cam.y) * U; return { x: px, y: py, s: 1, vy: py / H * 100, vx: px / W * 100 }; };
   let h = '';
+  // ★월드 장식(카메라와 같이 흐른다): 페어웨이 띠 · 그린 · 티박스 · 양옆 나무 열 · 코스 끝 숲
+  const rx = lv.roughX || G.ROUGH_X;
+  const fw = P(rx, G.COURSE_TOP), fh = (G.COURSE_BOTTOM - G.COURSE_TOP) * U;
+  h += '<div class="golf-fairway" style="left:' + fw.x + 'px;top:' + fw.y + 'px;width:' + ((100 - rx * 2) * U) + 'px;height:' + fh + 'px"></div>';
+  const gc = P(Hh.x, Hh.y), gr = G.GREEN_R * U;
+  h += '<div class="golf-green" style="left:' + (gc.x - gr) + 'px;top:' + (gc.y - gr * 0.8) + 'px;width:' + (gr * 2) + 'px;height:' + (gr * 1.6) + 'px"></div>';
+  const tb = P(G.TEE_X, G.TEE_Y); h += '<div class="golf-teebox" style="left:' + (tb.x - 4 * U) + 'px;top:' + (tb.y - 2.5 * U) + 'px;width:' + (8 * U) + 'px;height:' + (5 * U) + 'px"></div>';
+  const tsz = G.TREE_R * 2 * U;
+  const deco = function (x, y) { const c = P(x, y); if (c.vy < -25 || c.vy > 125 || c.vx < -15 || c.vx > 115) return;
+    h += '<div class="golf-obs tree deco' + (O.tree ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + tsz + 'px;height:' + (O.tree ? tsz * 1.25 : tsz) + 'px;' + (O.tree ? "border-radius:0;background-image:url('char/game/golf_tree.png?v=1');background-position:center bottom" : '') + '"></div>'; };
+  for (let yy = G.COURSE_TOP - 6; yy <= G.COURSE_BOTTOM + 6; yy += 11) { deco(rx * 0.45 + ((yy * 7) % 3), yy); deco(100 - rx * 0.45 - ((yy * 5) % 3), yy + 5); }
+  for (let xx = -6; xx <= 106; xx += 9) { deco(xx, G.COURSE_TOP - 7 + ((xx * 3) % 4)); deco(xx + 4, G.COURSE_BOTTOM + 7 - ((xx * 3) % 4)); }
   const ov = function (e, cls, k) {
     const c = P(e.cx, e.cy); if (c.vy < -20 || c.vy > 130) return;
-    const w = e.rx * om * 2 / 100 * W * (0.62 + 0.38 * Math.max(0, Math.min(100, c.vy)) / 100), hh = e.ry * om * 2 / 100 * H;
+    const w = e.rx * om * 2 * U, hh = e.ry * om * 2 * U;
     h += '<div class="golf-obs ' + cls + (O[k] ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + w + 'px;height:' + hh + 'px;' + (O[k] ? "border-radius:0;background-image:url('char/game/golf_" + k + ".png?v=1')" : '') + '"></div>';
   };
   Hh.ponds.forEach(function (e) { h += ov(e, 'pond', 'pond'); });
   Hh.bunkers.forEach(function (e) { h += ov(e, 'bunker', 'bunker'); });
-  Hh.trees.forEach(function (t) { const c = P(t.cx, t.cy); if (c.vy < -20 || c.vy > 130) return; const sz = G.TREE_R * 2 / 100 * W * c.s;
+  Hh.trees.forEach(function (t) { const c = P(t.cx, t.cy); if (c.vy < -20 || c.vy > 130) return; const sz = G.TREE_R * 2 * U;
     h += '<div class="golf-obs tree' + (O.tree ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + sz + 'px;height:' + (O.tree ? sz * 1.25 : sz) + 'px;' + (O.tree ? "border-radius:0;background-image:url('char/game/golf_tree.png?v=1');background-position:center bottom" : '') + '"></div>'; });
   const hc = P(Hh.x, Hh.y);
   h += '<div class="golf-hole' + (O.hole ? '' : ' css') + '" style="left:' + hc.x + 'px;top:' + (hc.y + 4 * hc.s) + 'px;transform:translate(-50%,-100%) scale(' + hc.s + ');transform-origin:50% 100%;' + (O.hole ? "background-image:url('char/game/golf_hole.png?v=1')" : '') + '"></div>';
-  if (s.mole) { const c = P(s.mole.x, s.mole.y); const up = window._golfMoleUp(s), sz = G.MOLE_R * 2 / 100 * W * c.s;
+  if (s.mole) { const c = P(s.mole.x, s.mole.y); const up = window._golfMoleUp(s), sz = G.MOLE_R * 2 * U;
     h += '<div class="golf-mole' + (up ? ' up' : '') + (O.mole ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + sz + 'px;height:' + (sz * 1.1) + 'px;' + (O.mole ? "background-image:url('char/game/golf_mole.png?v=1')" : '') + '"></div>'; }
-  if (s.crow) { const c = P(s.crow.x, s.crow.y); const sz = G.CROW_R * 2 / 100 * W * c.s;
+  if (s.crow) { const c = P(s.crow.x, s.crow.y); const sz = G.CROW_R * 2 * U;
     // 까마귀는 위아래로 파닥인다(애니메이션)
     const flap = Math.sin(s.t / 90) * 3;
     h += '<div class="golf-crow' + (O.crow ? '' : ' css') + (s.crow.hit > 0 ? ' hit' : '') + '" style="left:' + c.x + 'px;top:' + (c.y - 18 * c.s + flap) + 'px;width:' + (sz * 1.6) + 'px;height:' + sz + 'px;transform:translate(-50%,-50%) scaleX(' + (s.crow.dir > 0 ? 1 : -1) + ') rotate(' + (Math.sin(s.t / 90) * 6) + 'deg);' + (O.crow ? "background-image:url('char/game/golf_crow.png?v=1')" : '') + '"></div>'; }
   // 궤적 점(공이 날아간 자리) — 애니메이션 느낌
-  (window._golfTrail || []).forEach(function (t, i) { const c = P(t.x, t.y); const a = 0.06 + 0.5 * (i / Math.max(1, (window._golfTrail || []).length)); h += '<div class="golf-trail" style="left:' + c.x + 'px;top:' + (c.y - t.z * 0.9 / 100 * H) + 'px;opacity:' + a + '"></div>'; });
+  (window._golfTrail || []).forEach(function (t, i) { const c = P(t.x, t.y); const a = 0.06 + 0.5 * (i / Math.max(1, (window._golfTrail || []).length)); h += '<div class="golf-trail" style="left:' + c.x + 'px;top:' + (c.y - t.z * G.LIFT * U) + 'px;opacity:' + a + '"></div>'; });
   // 공 + 그림자 (z 만큼 위로 뜨고 그림자는 바닥에)
   const bc = P(s.x, s.y);
-  const lift = (s.z || 0) * 0.9 / 100 * H;
+  const lift = (s.z || 0) * G.LIFT * U;   // 높이 → 화면 위로 (그림자는 바닥에 남아 '떠 있음'이 보인다)
   h += '<div class="golf-shadow" style="left:' + bc.x + 'px;top:' + bc.y + 'px;transform:translate(-50%,-50%) scale(' + (bc.s * Math.max(0.35, 1 - (s.z || 0) / 40)) + ')"></div>';
   const spin = s.moving ? (s.t / 3) % 360 : 0;
   h += '<div class="golf-ball' + (O.ball ? ' img' : '') + '" style="left:' + bc.x + 'px;top:' + (bc.y - lift) + 'px;transform:translate(-50%,-50%) scale(' + (bc.s * (1 + (s.z || 0) / 60)) + ') rotate(' + spin + 'deg);' + (O.ball ? "background-image:url('char/game/golf_ball.png?v=1')" : '') + '"></div>';
@@ -17904,18 +17932,22 @@ window._golfPaint = function (s) {
     const ang = window._golfAimAngle(s), C = window.GOLF_CLUBS[s.club] || window.GOLF_CLUBS.iron;
     const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
     const reach = C.dist * ch.power * (s.inBunker ? G.BUNKER_POWER : 1);
-    for (let i = 1; i <= 8; i++) { const d = reach * i / 8; const c = P(s.x + Math.cos(ang) * d, s.y + Math.sin(ang) * d); if (c.vy < -10) break;
+    for (let i = 1; i <= 8; i++) { const d = reach * i / 8; const c = P(s.x + Math.cos(ang) * d, s.y + Math.sin(ang) * d); if (c.vy < -10 || c.vy > 110) break;
       h += '<div class="golf-aimdot' + (i === 8 ? ' end' : '') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;transform:translate(-50%,-50%) scale(' + c.s + ')"></div>'; }
   }
   host.innerHTML = h;
   // 캐릭터 — 공 옆(뷰 기준 왼쪽 아래), 홀 쪽을 본다
   const me = document.getElementById('golf-me');
   if (me) {
-    const chH = Math.round(0.11 * H), face = window._golfFace || 'up';
+    const chH = Math.round(0.11 * H);
+    let face = window._golfFace || 'up';
+    // ★조준 방향을 본다 — 홀을 지나쳤으면 아래(코스 반대)를 보고 친다(대표 8-30 "지금 뒤로 보고 치고 있잖아")
+    if (!s.moving && !s.done) { const ang = window._golfAimAngle(s), cx = Math.cos(ang), sy = Math.sin(ang); face = Math.abs(sy) >= Math.abs(cx) * 0.7 ? (sy < 0 ? 'up' : 'down') : (cx < 0 ? 'left' : 'right'); window._golfFace = face; }
     if (me._h !== chH || me._face !== face) { me._h = chH; me._face = face; try { me.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(window._golfCharCfg(s.ch), chH, face) : ''; } catch (e) {} }
     const mc = P(s.moving ? s.px : s.x, s.moving ? s.py : s.y);
     me.style.display = (mc.vy < -15 || mc.vy > 120) ? 'none' : '';
-    me.style.left = (mc.x - 0.09 * W) + 'px'; me.style.top = (mc.y + 4) + 'px'; me.style.transform = 'translate(-50%,-100%) scale(' + mc.s + ')';
+    const side = face === 'left' ? 1 : -1;   // 공 옆에 선다(조준 반대쪽)
+    me.style.left = (mc.x + side * 3.2 * U) + 'px'; me.style.top = (mc.y + 2.2 * U) + 'px'; me.style.transform = 'translate(-50%,-100%)';
   }
   // HUD
   const hn = document.getElementById('golf-hole-n'), st = document.getElementById('golf-strokes'), sc = document.getElementById('golf-score'), wd = document.getElementById('golf-wind'), cb = document.getElementById('golf-club');
@@ -18005,9 +18037,9 @@ window._golfFrame = function (ts) {
   // ★공이 날아가는 동안에도 카메라가 공을 따라간다(대표 8-30: "필드가 그대로니까 공이 어디쯤 갔는지 모르겠다").
   //   공은 늘 화면 아래 중앙, 필드·깃발·장애물이 흘러 내려온다. 홀이 바뀌면 새 티로 즉시.
   if (s.hole !== before) { window._golfCamSet(s, true); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
-  else if (s.moving) { window._golfCamSet(s, false); if ((s.t | 0) % 4 === 0) window._golfApplyBg(s); }
+  else if (s.moving) { window._golfCamSet(s, false); }
   else if (wasMoving) { window._golfCamSet(s, false); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
-  window._golfCamStep();
+  window._golfCamStep(); window._golfApplyBg(s);
   window._golfPaint(s);
   if (s.done) { window._golfEnd(s); return; }
   window._golfRaf = requestAnimationFrame(window._golfFrame);
@@ -27022,21 +27054,10 @@ window.submitComment = async (postId) => {
   // 대숲(익명) 댓글 — 닉네임/프사 저장 안 함, userId만(글쓴이/익명N 구분·모더레이션용)
   if ((window._commentType || 'feed') === 'bamboo') {
     const anonName = (document.getElementById('bamboo-anon-name')?.value || '').trim().slice(0, 12);
-    try {
-      await addDoc(collection(db, 'bamboo', postId, 'comments'), { text, userId: user.uid, anonName, createdAt: serverTimestamp() });
-      await updateDoc(doc(db, 'bamboo', postId), { commentCount: increment(1) });
-      try {
-        const ps = await getDoc(doc(db, 'bamboo', postId));
-        if (ps.exists()) _sendNotif(ps.data().userId, 'bamboo_comment', { postId, commentText: text.substring(0, 30) }, '익명', '');
-      } catch (e) {}
+    if (await window._bambooPostComment(postId, text, anonName)) {
       if (input) input.value = '';
       const anEl = document.getElementById('bamboo-anon-name'); if (anEl) anEl.value = '';
-      const cEl = document.getElementById(`bamboo-comment-count-${postId}`);
-      if (cEl) cEl.textContent = (parseInt(cEl.textContent) || 0) + 1;
       loadComments(postId);
-    } catch (e) {
-      console.error('대숲 댓글 저장 실패:', e.code, e.message);
-      showToast('댓글 저장 실패: ' + (e.code || e.message || ''));
     }
     return;
   }
@@ -27078,44 +27099,143 @@ window.submitComment = async (postId) => {
 };
 
 // 댓글 불러오기
+// ── 대숲 댓글 저장 (목록 안 댓글칸과 댓글 패널이 같이 쓴다) ──
+window._bambooPostComment = async (postId, text, anonName) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 댓글을 달 수 있어요'); return false; }
+  text = String(text || '').trim(); if (!text) return false;
+  if (FILTER_WORDS.some(w => text.toLowerCase().includes(w.toLowerCase()))) { showToast('외부 연락처는 입력할 수 없어요'); return false; }
+  try {
+    await addDoc(collection(db, 'bamboo', postId, 'comments'), { text, userId: user.uid, anonName: anonName || '', likes: 0, likedBy: [], createdAt: serverTimestamp() });
+    await updateDoc(doc(db, 'bamboo', postId), { commentCount: increment(1) });
+    try {
+      const ps = await getDoc(doc(db, 'bamboo', postId));
+      if (ps.exists()) _sendNotif(ps.data().userId, 'bamboo_comment', { postId, commentText: text.substring(0, 30) }, '익명', '');
+    } catch (e) {}
+    const cEl = document.getElementById(`bamboo-comment-count-${postId}`);
+    if (cEl) cEl.textContent = (parseInt(cEl.textContent) || 0) + 1;
+    if (window._bambooCache && window._bambooCache[postId]) window._bambooCache[postId].commentCount = (window._bambooCache[postId].commentCount | 0) + 1;
+    return true;
+  } catch (e) {
+    console.error('대숲 댓글 저장 실패:', e.code, e.message);
+    showToast('댓글 저장 실패: ' + (e.code || e.message || ''));
+    return false;
+  }
+};
+// ── 댓글 한 줄 (좋아요 + 글쓴이 고정). 목록·패널 공용 ──
+window._bambooCommentRow = (c, ctx) => {
+  const E = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const J = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  const me = window.currentUser && window.currentUser.uid;
+  const lbl = ctx.labelFor(c);
+  const mine = me && c.userId === me;
+  const liked = me && (c.likedBy || []).includes(me);
+  const pinned = ctx.pinnedId && ctx.pinnedId === c._id;
+  const nameColor = lbl.author ? '#86efac' : (lbl.custom ? '#cdd6e4' : '#fff');
+  const heart = `<button onclick="event.stopPropagation();window._bambooCommentLike('${J(ctx.postId)}','${J(c._id)}')" aria-label="댓글 좋아요"
+      style="display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:${liked ? '#4ADE80' : 'rgba(255,255,255,.38)'};font-size:11.5px;cursor:pointer;font-family:inherit;padding:2px 4px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="${liked ? '#4ADE80' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>${c.likes ? c.likes : ''}</button>`;
+  const pin = ctx.isAuthor
+    ? `<button onclick="event.stopPropagation();window._bambooCommentPin('${J(ctx.postId)}','${J(c._id)}')" aria-label="댓글 고정"
+        style="background:none;border:none;color:${pinned ? '#F5C24B' : 'rgba(255,255,255,.3)'};font-size:11px;cursor:pointer;font-family:inherit;padding:2px 4px">${pinned ? '고정 해제' : '고정'}</button>`
+    : '';
+  const menu = mine ? '' : `<button aria-label="댓글 더보기" onclick="event.stopPropagation();window.openPostMenu('comment','bamboo:${J(ctx.postId)}:${J(c._id)}','${J(c.userId||'')}','')" style="background:none;border:none;padding:2px 4px;cursor:pointer">${window.mIcon('kebab', { size:14, color:'rgba(255,255,255,0.26)' })}</button>`;
+  return `<div style="display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid rgba(255,255,255,.05)">
+    <div style="flex-shrink:0;margin-top:1px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${lbl.author ? '#86efac' : 'rgba(255,255,255,0.4)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0 1 12 0v1"/></svg></div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+        <span style="font-size:12px;font-weight:700;color:${nameColor}">${E(lbl.name)}</span>
+        ${pinned ? '<span style="font-size:10px;color:#F5C24B;border:1px solid rgba(245,194,75,.5);padding:1px 5px">고정됨</span>' : ''}
+        <span style="font-size:10.5px;color:rgba(255,255,255,.3)">${window._bambooAgo ? window._bambooAgo(c.createdAt) : ''}</span>
+      </div>
+      <div style="font-size:13px;line-height:1.55;color:#ddd;word-break:break-word">${E(c.text)}</div>
+    </div>
+    <div style="display:flex;align-items:center;flex-shrink:0">${heart}${pin}${menu}</div>
+  </div>`;
+};
+window._bambooCommentLike = async (postId, cid) => {
+  const me = window.currentUser && window.currentUser.uid;
+  if (!me) { showToast('로그인 후 누를 수 있어요'); return; }
+  const ref = doc(db, 'bamboo', postId, 'comments', cid);
+  try {
+    const sn = await getDoc(ref); if (!sn.exists()) return;
+    const liked = (sn.data().likedBy || []).includes(me);
+    await updateDoc(ref, liked ? { likes: increment(-1), likedBy: arrayRemove(me) } : { likes: increment(1), likedBy: arrayUnion(me) });
+  } catch (e) { console.warn('comment like', e); return; }
+  window._bambooRefreshComments && window._bambooRefreshComments(postId);
+};
+// ★고정은 댓글 문서가 아니라 **글 문서**(pinnedCommentId)에 적는다 — 남의 댓글은 규칙상 못 고치지만
+//   내 글은 고칠 수 있다. 글쓴이만, 하나만.
+window._bambooCommentPin = async (postId, cid) => {
+  const me = window.currentUser && window.currentUser.uid; if (!me) return;
+  try {
+    const ps = await getDoc(doc(db, 'bamboo', postId)); if (!ps.exists() || ps.data().userId !== me) { showToast('글쓴이만 고정할 수 있어요'); return; }
+    const cur = ps.data().pinnedCommentId || '';
+    await updateDoc(doc(db, 'bamboo', postId), { pinnedCommentId: cur === cid ? '' : cid });
+    if (window._bambooCache && window._bambooCache[postId]) window._bambooCache[postId].pinnedCommentId = cur === cid ? '' : cid;
+    showToast(cur === cid ? '고정을 풀었어요' : '맨 위에 고정했어요');
+  } catch (e) { console.warn('pin', e); return; }
+  window._bambooRefreshComments && window._bambooRefreshComments(postId);
+};
+// 목록 안 댓글칸 — 열려 있으면 그것을, 패널이 열려 있으면 패널을 다시 그린다
+window._bambooRefreshComments = (postId) => {
+  const box = document.getElementById('bcm-' + postId);
+  if (box && box.dataset.open) window._bambooInline(postId, box.dataset.open === 'all');
+  if (document.getElementById('comment-panel') && window._commentType === 'bamboo' && currentPostId === postId) loadComments(postId);
+};
+// 댓글을 읽어 정렬한다: 고정 → 오래된 순. 라벨 계산(글쓴이/익명N)도 여기서.
+window._bambooFetchComments = async (postId) => {
+  const bq = query(collection(db, 'bamboo', postId, 'comments'), orderBy('createdAt', 'asc'));
+  const [bsnap, ps] = await Promise.all([getDocs(bq), getDoc(doc(db, 'bamboo', postId))]);
+  const post = ps.exists() ? ps.data() : {};
+  const authorUid = post.userId || null, pinnedId = post.pinnedCommentId || '';
+  const anonMap = {}; let anonIdx = 0;
+  const labelFor = (c) => {
+    if (c.userId && c.userId === authorUid) return { name: '글쓴이', author: true, custom: false };
+    if (c.anonName) return { name: c.anonName, author: false, custom: true };
+    if (!anonMap[c.userId]) { anonIdx++; anonMap[c.userId] = '익명' + anonIdx; }
+    return { name: anonMap[c.userId], author: false, custom: false };
+  };
+  let list = window._visiblePosts(bsnap.docs.map(d => ({ _id: d.id, ...d.data() })));
+  list.forEach(labelFor);                       // 익명 번호는 **작성 순**으로 매긴다(고정으로 순서가 바뀌어도 같게)
+  if (pinnedId) list = list.filter(c => c._id === pinnedId).concat(list.filter(c => c._id !== pinnedId));
+  const me = window.currentUser && window.currentUser.uid;
+  return { list, ctx: { postId, labelFor, pinnedId, isAuthor: !!(me && me === authorUid) } };
+};
+// ★목록 카드 안에서 바로 댓글을 본다 (대표 8-30: "댓글 보려면 글 타고 들어가야 해서 불편").
+//   쓰레드처럼 미리보기 2개 + '더 보기' + 바로 쓰는 칸. 상세로 안 간다.
+window._bambooInline = async (postId, all) => {
+  const box = document.getElementById('bcm-' + postId); if (!box) return;
+  box.dataset.open = all ? 'all' : 'some';
+  box.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0">불러오는 중…</div>';
+  let r; try { r = await window._bambooFetchComments(postId); } catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0">댓글을 불러올 수 없어요</div>'; return; }
+  const shown = all ? r.list : r.list.slice(0, 2);
+  const rest = r.list.length - shown.length;
+  const me = window.currentUser && window.currentUser.uid;
+  box.innerHTML = shown.map(c => window._bambooCommentRow(c, r.ctx)).join('')
+    + (rest > 0 ? `<button onclick="event.stopPropagation();window._bambooInline('${postId}',true)" style="background:none;border:none;color:#4ADE80;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;padding:8px 0 4px">댓글 ${rest}개 더 보기</button>` : '')
+    + (!r.list.length ? '<div style="font-size:11.5px;color:rgba(255,255,255,.3);padding:8px 0 4px">첫 익명 댓글을 남겨봐요</div>' : '')
+    + (me ? `<div style="display:flex;gap:6px;margin-top:8px" onclick="event.stopPropagation()">
+        <input id="bci-${postId}" maxlength="200" placeholder="익명으로 댓글 남기기…" autocomplete="off"
+          style="flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 11px;color:#fff;font-size:14px;outline:none;font-family:inherit">
+        <button onclick="window._bambooInlineSubmit('${postId}')" style="flex-shrink:0;background:rgba(74,222,128,.14);border:1px solid rgba(74,222,128,.4);color:#4ADE80;border-radius:10px;padding:0 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">남기기</button>
+      </div>` : '');
+  const inp = document.getElementById('bci-' + postId);
+  if (inp && window._mwEnterSend) window._mwEnterSend(inp, function () { window._bambooInlineSubmit(postId); });
+};
+window._bambooInlineSubmit = async (postId) => {
+  const inp = document.getElementById('bci-' + postId); if (!inp) return;
+  if (await window._bambooPostComment(postId, inp.value, '')) { inp.value = ''; window._bambooInline(postId, true); }
+};
 window.loadComments = async (postId) => {
   const list = document.getElementById('comment-list');
   if (!list) return;
   // 대숲(익명) 댓글: 글쓴이/익명N으로 표시, 프사 없음
   if ((window._commentType || 'feed') === 'bamboo') {
     try {
-      const bq = query(collection(db, 'bamboo', postId, 'comments'), orderBy('createdAt', 'asc'));
-      const bsnap = await getDocs(bq);
-      if (bsnap.empty) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 익명 댓글을 남겨봐요</div>'; return; }
-      let authorUid = null;
-      try { const ps = await getDoc(doc(db, 'bamboo', postId)); if (ps.exists()) authorUid = ps.data().userId; } catch (e) {}
-      const anonMap = {}; let anonIdx = 0;
-      // ★`<` 만 막고 있었다 — 따옴표가 안 막히면 속성 안에 넣을 때 뚫린다. 전부 막는다.
-      const _escA = s => String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-      const labelFor = (c) => {
-        if (c.userId && c.userId === authorUid) return { name: '글쓴이', author: true, custom: false };
-        if (c.anonName) return { name: c.anonName, author: false, custom: true };
-        if (!anonMap[c.userId]) { anonIdx++; anonMap[c.userId] = '익명' + anonIdx; }
-        return { name: anonMap[c.userId], author: false, custom: false };
-      };
-      // 차단·신고 필터 + 신고 버튼. ★대숲은 익명이라 메뉴에 이름을 넘기지 않는다.
-      const _bMe = window.currentUser && window.currentUser.uid;
-      const _bjq = s => String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const _bcs = window._visiblePosts(bsnap.docs.map(d => ({ _id: d.id, ...d.data() })));
-      if (!_bcs.length) { list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">첫 익명 댓글을 남겨봐요</div>'; return; }
-      list.innerHTML = _bcs.map(c => {
-        const lbl = labelFor(c);
-        const isAuthor = lbl.author;
-        const nameColor = isAuthor ? '#86efac' : (lbl.custom ? '#cdd6e4' : '#fff');
-        const mine = _bMe && c.userId === _bMe;
-        return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04)">
-          <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${isAuthor ? 'rgba(74,222,128,0.18)' : 'rgba(255,255,255,0.06)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${isAuthor ? '#86efac' : 'rgba(255,255,255,0.4)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M6 20v-1a6 6 0 0 1 12 0v1"/></svg></div>
-          <div style="flex:1;min-width:0"><span style="font-size:12px;font-weight:700;margin-right:6px;color:${nameColor}">${_escA(lbl.name)}</span><span style="font-size:13px;color:#fff;word-break:break-word">${_escA(c.text)}</span></div>
-          ${mine ? '' : `<button aria-label="댓글 더보기" onclick="window.openPostMenu('comment','bamboo:${_bjq(postId)}:${_bjq(c._id)}','${_bjq(c.userId||'')}','')" style="background:none;border:none;padding:2px 0 0 4px;color:rgba(255,255,255,0.26);cursor:pointer;font-family:inherit;flex-shrink:0;align-self:flex-start">${window.mIcon('kebab', { size:15, color:'rgba(255,255,255,0.26)' })}</button>`}
-        </div>`;
-      }).join('');
+      const r = await window._bambooFetchComments(postId);
+      if (!r.list.length) { list.innerHTML = '<div style="text-align:center;padding:24px;color:rgba(255,255,255,0.3);font-size:13px">첫 익명 댓글을 남겨봐요</div>'; return; }
+      list.innerHTML = r.list.map(c => window._bambooCommentRow(c, r.ctx)).join('');
     } catch (e) {
       console.error('대숲 댓글 로드 실패:', e.code, e.message);
       list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">댓글을 불러올 수 없어요</div>';
@@ -27299,7 +27419,7 @@ window.loadBamboo = async (tab) => {
       const _icLike = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
       const _icCmt = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       // 손가락 다섯 개짜리라 획이 많다. 14px 에선 뭉개져서 16px 로 쓴다.
-      const _icMe  = window.icHandUp(16);
+      const _icMe  = window.icHandUp(13);   // 좋아요·댓글 아이콘(13)과 같은 크기 — 크기가 다르면 간격도 달라 보인다(대표 8-30)
       const meta = [];
       if (post.likes) meta.push(_num(_icLike, post.likes, 'rgba(255,255,255,0.66)'));
       if (post.commentCount) meta.push(_num(_icCmt, post.commentCount, 'rgba(255,255,255,0.66)'));
@@ -27319,9 +27439,11 @@ window.loadBamboo = async (tab) => {
           ${body ? `<div style="font-size:12.5px;color:rgba(255,255,255,0.36);line-height:1.5;margin-top:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;word-break:break-all">${_bEsc(body)}</div>` : ''}
           <div style="display:flex;align-items:center;gap:14px;margin-top:9px;font-size:12px;font-weight:600;letter-spacing:-0.2px">
             ${meta.join('')}
+            <button onclick="event.stopPropagation();window._bambooInline('${post.id}',false)" style="display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:#4ADE80;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:0">${post.commentCount ? '댓글 보기' : '댓글 남기기'}</button>
             <span style="font-size:11px;font-weight:500;color:#3f4757">${window._bambooAgo(post.createdAt)}</span>
           </div>
         </div>
+        <div id="bcm-${post.id}" onclick="event.stopPropagation()" style="flex-basis:100%;padding:0 2px;margin-top:-6px"></div>
         ${post.photoURL ? `<div style="width:64px;height:64px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#111">
           <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 180) : post.photoURL}" loading="lazy" decoding="async" alt=""
                onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
@@ -27404,7 +27526,7 @@ window.postBambooFirestore = async (text, title) => {
 window.icHandUp = function (size, variant) {
   const s = size || 16;
   const f = (variant === 'dark') ? 'ic_me_dark' : 'ic_me_green';
-  return '<img src="char/ui/' + f + '.png?v=1" alt="" aria-hidden="true"'
+  return '<img src="char/ui/' + f + '.png?v=2" alt="" aria-hidden="true"'
     + ' style="width:' + s + 'px;height:' + s + 'px;display:block;flex-shrink:0">';
 };
 
@@ -27484,7 +27606,7 @@ window.openBambooDetail = async function (postId) {
       <h2 style="font-size:23px;font-weight:800;color:#fff;letter-spacing:-0.7px;line-height:1.32;word-break:break-all;margin:0">${esc(window._bambooTitle(p))}</h2>
       <div style="margin-top:11px;font-size:12px;color:#3f4757;letter-spacing:-0.2px">익명 · ${window._bambooAgo(p.createdAt)}</div>
       ${!isMine && requesters.length ? `<div style="margin-top:12px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#4ADE80;letter-spacing:-0.2px">
-        ${window.icHandUp(17)}${requesters.length}명이 저에요를 눌렀어요
+        ${window.icHandUp(16)}${requesters.length}명이 저에요를 눌렀어요
       </div>` : ''}
     </header>
     ${shownBody ? `<div class="bamboo-quote" style="margin:24px 20px 0 6px;font-size:15.5px;line-height:1.85;color:rgba(255,255,255,0.86);white-space:pre-wrap;word-break:break-word">${esc(shownBody)}</div>` : ''}
@@ -28186,34 +28308,11 @@ window.openBambooChat = async (fromUid, fromNickname, postId, notifId) => {
   if (!user) { showToast('로그인이 필요해요'); return; }
   if (notifId) { try { await updateDoc(doc(db, 'notifications', notifId), { read: true }); } catch(e) {} }
   // 이미 연결된 사이면(일반 매칭 or 대숲 매칭 모두) 익명 없이 실명 채팅
-  try {
-    const chatId = _pairKey(user.uid, fromUid);
-    const [matchSnap, chatSnap] = await Promise.all([
-      getDoc(doc(db, 'matches', chatId)),
-      getDoc(doc(db, 'chats', chatId))
-    ]);
-    const alreadyConnected = matchSnap.exists() || (chatSnap.exists() && chatSnap.data().bambooChat === false);
-    if (alreadyConnected) {
-      let partnerName = fromNickname || '상대', partnerPhoto = '';
-      if (chatSnap.exists()) {
-        const d = chatSnap.data();
-        partnerName = (d.participantNames || {})[fromUid] || partnerName;
-        partnerPhoto = (d.participantPhotos || {})[fromUid] || '';
-      }
-      if (!partnerName || partnerName === '상대' || partnerName === '익명') {
-        try {
-          const us = await getDoc(doc(db, 'users', fromUid));
-          if (us.exists()) { partnerName = us.data().nickname || partnerName; partnerPhoto = us.data().photoURL || partnerPhoto; }
-        } catch(e) {}
-      }
-      showToast('이미 연결된 사이에요! 기존 채팅으로 연결할게요');
-      closePanel('notif-panel');
-      closeModal('requesters-modal');
-      window.openChatFirestore(chatId, fromUid, partnerName, partnerPhoto, false);
-      return;
-    }
-  } catch(e) {}
-  const chatId = [user.uid, fromUid].sort().join('_');
+  // ★★익명 대화방 id 를 실명 채팅방(uid_uid)과 **분리**한다 (대표 8-30). 예전엔 같은 id 라
+  //   이미 매칭된 사람이 저에요를 누르면 글쓴이가 '대화 열기'를 눌렀을 때 **실명 채팅방이 열렸고**,
+  //   거기서 한마디 하는 순간 누가 썼는지 나갔다. 이제 대숲 대화는 b_ 방에서만 한다.
+  //   ('이미 연결된 사이' 바로가기도 같은 이유로 없앴다.)
+  const chatId = 'b_' + [user.uid, fromUid].sort().join('_');
   const chatRef = doc(db, 'chats', chatId);
   try {
     const chatSnap = await getDoc(chatRef);
