@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '848';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '849';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -33915,10 +33915,25 @@ window._sqLocInput = function (v) {
     window.searchCenters(q).then(function (n) { if (n && document.getElementById('sq-c-loc') && document.getElementById('sq-c-loc').value.trim().toLowerCase() === q) window._sqLocInput(v); });
   }
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  // ★★8-30 사고: 'MK' 를 치면 우리 제휴점 '엠케이휘트니스'(논현)는 안 뜨고 카카오 시딩된
+  //   'MK휘트니스 전주본점'이 떴다(대표: "MK 없어졌는데 덮어쓰기 한 거냐"). 덮어쓴 게 아니라
+  //   ①영문/한글 표기가 달라 검색에 안 잡혔고 ②시딩 15,000곳이 같은 줄에 섞였다.
+  //   → 표기를 맞춰 찾고(mk↔엠케이 등), **우리가 직접 등록한 곳·제휴점을 맨 앞에** 둔다.
+  const _alias = function (t) {
+    return String(t || '').toLowerCase()
+      .replace(/엠케이/g, 'mk').replace(/휘트니스|피트니스|fitness/g, 'fit').replace(/헬스장|헬스|짐|gym/g, 'gym').replace(/\s+/g, '');
+  };
+  const qa = _alias(q);
   const hits = window.centersData.filter(function (c) {
     if (!c || !c.name) return false;
     const hay = (c.name + ' ' + (c.loc || '') + ' ' + (c.address || '') + ' ' + (c.region || '')).toLowerCase();
-    return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
+    const haya = _alias(c.name);
+    return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; }) || (qa.length >= 2 && haya.indexOf(qa) >= 0);
+  }).sort(function (a, b) {
+    const ra = (a.premium ? 0 : (a.source === 'kakao' ? 2 : 1)), rb = (b.premium ? 0 : (b.source === 'kakao' ? 2 : 1));
+    if (ra !== rb) return ra - rb;                                   // 제휴 > 직접 등록 > 카카오 시딩
+    const sa = _alias(a.name).indexOf(qa) === 0 ? 0 : 1, sb = _alias(b.name).indexOf(qa) === 0 ? 0 : 1;
+    return sa - sb;                                                  // 이름이 검색어로 시작하는 것 먼저
   }).slice(0, 8);
   if (!hits.length) { box.style.display = 'none'; return; }
   box.innerHTML = hits.map(function (c) {
