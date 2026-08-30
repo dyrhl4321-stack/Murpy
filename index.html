@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '853';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '854';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17517,7 +17517,7 @@ window.GOLF_LV = {
   // ★대표 8-30: 난이도마다 차별점이 확실해야 한다. 하 = 편하게(바람 0·큰 컵·짧게 굴러 통제 쉬움·빌런 없음)
   //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
   easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6 },
-  mid:  { name: '중', wind: 0.0008, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
+  mid:  { name: '중', wind: 0.0005, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.3,  crowFrom: 1,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
   hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
@@ -17577,7 +17577,7 @@ window.GOLF_CLUBS = {
 window.GOLF.G = 0.022;          // 중력(단위/틱²)
 window.GOLF.BOUNCE = 0.32;      // 착지 튐 계수(수직)
 window.GOLF.BOUNCE_H = 0.5;     // 튈 때 앞으로 가는 속도가 이만큼 남는다(첫 실측: 0.8 이면 튀는 동안 22 를 더 가 OB)
-window.GOLF.CURVE = 0.012;      // 정확도 어긋남 → 옆으로 휘는 가속(단위/틱²)
+window.GOLF.CURVE = 0.006;      // 정확도 어긋남 → 옆으로 휘는 가속(단위/틱²)
 window.GOLF.WIND_AIR = 2.2;     // 공중에서 바람이 더 세게 먹는다
 window.GOLF.AIM_MAX = 35;       // 조준 회전 한계(도)
 window.GOLF.PUTT_DIST = 18;     // 홀까지 이 거리 안이면 퍼터를 권한다
@@ -17698,7 +17698,8 @@ window.golfTick = function (s, dt) {
 window._golfPredict = function (s, power, club) {
   const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, s.aim | 0, s.inBunker ? 1 : 0, s.ch, s.wind.x.toFixed(4), s.wind.y.toFixed(4)].join('|');
   const c = window._golfPredCache; if (c && c.key === key) return c.val;
-  const t = Object.assign({}, s, { wind: { x: s.wind.x, y: s.wind.y }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
+  // 8-31 바람 뺀 곧은 궤적(대표: 휘어진 궤적이 헷갈림) — 바람은 HUD 화살표로
+  const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
   // 8-30 바람 포함 — 예측선이 휘어질 걸 미리 보여줘야 '휜다'가 아니라 '읽힌다'
   const ch = window.GOLF_CHARS[s.ch];
   const pts = []; let land = null;
@@ -18004,7 +18005,7 @@ window._golfGaugePaint = function (s) {
   if (!show) return;
   const ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
   const zone = g.querySelector('.gg-zone'), pw = g.querySelector('.gg-power'), nd = g.querySelector('.gg-needle');
-  const zc = (st && st.phase === 'acc' && st.zone != null) ? st.zone : 0.5, zw = ch.accZone * 0.3 * 100;
+  const zc = (st && st.phase === 'acc' && st.zone != null) ? st.zone : 0.5, zw = ch.accZone * 100;   // 빈 칸 반폭 = accZone(머피 10% → 칸 20%)
   if (zone) { zone.style.left = (zc * 100 - zw) + '%'; zone.style.width = (zw * 2) + '%'; zone.style.display = (st && st.phase === 'acc') ? '' : 'none'; }   // 정확 칸: 정확 단계에만, 랜덤 위치
   if (!st || st.phase === 'idle') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = '0%'; if (hint) hint.textContent = '화면을 탭해서 게이지 시작 · 좌우로 끌면 조준'; return; }
   if (st.phase === 'power') { if (pw) pw.style.width = (st.v * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '원하는 세기에서 탭!'; }
@@ -18028,7 +18029,10 @@ window._golfGaugeTap = function () {
 };
 window._golfGaugeFire = function (v) {
   const s = window._golfS, st = window._golfGauge; if (!s || !st) return;
-  const acc = Math.max(-1, Math.min(1, v / 0.3));   // 0 = 칸 정중앙, 오른쪽 +, 왼쪽 − (±0.3 이 최악)
+  // 8-31 빈 칸 안(±accZone)이면 완벽(0). 벗어난 만큼만 완만하게 — 전엔 0.15만 벗어나도 8단위 휘어 거의 매 샷이 휘었다
+  const az = (window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human).accZone;
+  const off = Math.abs(v) <= az ? 0 : (Math.abs(v) - az) * (v > 0 ? 1 : -1);
+  const acc = Math.max(-1, Math.min(1, off / 0.4 + (off ? (v > 0 ? az : -az) : 0)));   // golfShot 이 accZone 을 다시 빼므로 그만큼 더해 준다
   window._golfGauge = { phase: 'idle', v: 0, dirn: 1, power: 0 };
   if (window.golfShot(s, st.power, acc, s.club)) {
     const me = document.getElementById('golf-me'); if (me) { me.classList.remove('swing'); void me.offsetWidth; me.classList.add('swing'); }
