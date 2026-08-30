@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '852';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '853';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10112,7 +10112,8 @@ window.mwPortal = function () {
 @keyframes golfSwing{0%{transform:translate(-50%,-100%) scale(1)}40%{transform:translate(-50%,-100%) scale(1.1,.92)}100%{transform:translate(-50%,-100%) scale(1)}}
 #golf-me.swing{animation:golfSwing .25s ease}
 .gg-track{position:relative;height:100%;background:rgba(5,7,12,.72);border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden}
-.gg-zone{position:absolute;top:0;bottom:0;left:0;background:rgba(61,222,124,.35);border-right:2px solid #3dde7c}
+.gg-zone{position:absolute;top:0;bottom:0;left:0;background:#0b0e16;z-index:2;box-shadow:inset 0 0 0 1px #2b3350}   /* 8-31 정확 단계 = 꽉 찬 게이지에서 이 자리만 비운다(빈 곳에 바늘이 오면 탭) */
+.gg-needle{z-index:3}
 .gg-power{position:absolute;top:0;bottom:0;left:0;width:0;background:linear-gradient(90deg,#3D7EFF,#F5C24B 85%,#e5484d)}
 .gg-needle{position:absolute;top:-4px;bottom:-4px;left:0;width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 0 1px #05070c}
 .golf-shadow{position:absolute;width:11px;height:5px;border-radius:50%;background:rgba(0,0,0,.35);pointer-events:none}
@@ -17508,7 +17509,7 @@ window.GOLF = {
   SPEED: 1.9, ZOOM: 1.15, CAM_Y: 0.8, LIFT: 1.5, Z_REF: 9, CROW_ZMIN: 2.5, GREEN_R: 9, COURSE_TOP: -20, COURSE_BOTTOM: 100,   // 8-30 오픈월드식 화면: 코스 폭 100 = 화면폭×1.7, 공은 화면 60% 높이
   CUP_COOL: 14,                      // 컵에서 튕긴 뒤 이 틱 동안은 다시 안 잡힌다(빠른 공이 다음 틱에 홀인되던 버그)
   // 빌런 (대표 8-30: "헬스장 아저씨처럼 골프에도 방해하는 빌런 몇 명")
-  CROW_Y: 48, CROW_V: 0.55, CROW_R: 4.2, CROW_KICK: 0.45,   // 8-30 1.4 → 0.45: 공 속도(0.9)보다 커서 샷마다 옆으로 확 꺾였다(대표 '공이 존나 휜다')   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
+  CROW_Y: 48, CROW_V: 0.55, CROW_R: 2.6, CROW_KICK: 0.45,   // 8-30 1.4 → 0.45: 공 속도(0.9)보다 커서 샷마다 옆으로 확 꺾였다(대표 '공이 존나 휜다')   // 까마귀: 가로로 날아다니며 공을 옆으로 쳐낸다
   MOLE_R: 3.2, MOLE_UP: 1500, MOLE_CYCLE: 3600, MOLE_BOUNCE: 0.55   // 두더지: 홀 근처에서 주기적으로 튀어나와 공을 튕긴다
 };
 // 난이도 — 바람 세기(단위/틱²), 컵 배율, 페어웨이 마찰 보정, 점수 배율
@@ -17704,7 +17705,8 @@ window._golfPredict = function (s, power, club) {
   const savedJ = ch ? ch.jitter : 0; if (ch) ch.jitter = 0;
   try {
     if (!window.golfShot(t, power, 0, club)) return null;
-    for (let i = 0; i < 900 && t.moving; i++) { window.golfTick(t, 16); if (i % 6 === 0) pts.push({ x: t.x, y: t.y, z: t.z }); if (!land && t.z === 0 && t.last === 'land') land = { x: t.x, y: t.y }; if (t.hole !== s.hole || t.last === 'ob' || t.last === 'water') break; }
+    let px = t.x, py = t.y;
+    for (let i = 0; i < 900 && t.moving; i++) { px = t.x; py = t.y; window.golfTick(t, 16); if (i % 6 === 0) pts.push({ x: t.x, y: t.y, z: t.z }); if (!land && t.z === 0 && t.last === 'land') land = { x: t.x, y: t.y }; if (t.hole !== s.hole || t.last === 'ob' || t.last === 'water') { if (t.last === 'ob' || t.last === 'water') { t.x = px; t.y = py; } break; } }   // 벌타로 되돌아가기 전 자리를 끝점으로
   } finally { if (ch) ch.jitter = savedJ; }
   const holed = t.hole !== s.hole, HH = window.GOLF_HOLES[s.hole];
   const val = { pts: pts, end: holed ? { x: HH.x, y: HH.y } : { x: t.x, y: t.y }, land: land, out: t.last === 'ob' || t.last === 'water', holed: holed };
@@ -17929,8 +17931,9 @@ window._golfPaint = function (s) {
     const w = e.rx * om * 2 * U, hh = e.ry * om * 2 * U;
     h += '<div class="golf-obs ' + cls + (O[k] ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + w + 'px;height:' + hh + 'px;' + (O[k] ? "border-radius:0;background-image:url('char/game/golf_" + k + ".png?v=1')" : '') + '"></div>';
   };
-  Hh.ponds.forEach(function (e) { h += ov(e, 'pond', 'pond'); });
-  Hh.bunkers.forEach(function (e) { h += ov(e, 'bunker', 'bunker'); });
+  // ★8-31 `h += ov(...)` 였다 — ov 가 안에서 h 에 붙이는데 반환값(undefined)으로 덮어써 연못·벙커가 **한 번도 안 그려졌다**(대표: 안 보이는데 빠졌다고 뜸)
+  Hh.ponds.forEach(function (e) { ov(e, 'pond', 'pond'); });
+  Hh.bunkers.forEach(function (e) { ov(e, 'bunker', 'bunker'); });
   Hh.trees.forEach(function (t) { const c = P(t.cx, t.cy); if (c.vy < -20 || c.vy > 130) return; const sz = G.TREE_R * 2 * U;
     h += '<div class="golf-obs tree' + (O.tree ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + sz + 'px;height:' + (O.tree ? sz * 1.25 : sz) + 'px;' + (O.tree ? "border-radius:0;background-image:url('char/game/golf_tree.png?v=1');background-position:center bottom" : '') + '"></div>'; });
   const hc = P(Hh.x, Hh.y);
@@ -18005,7 +18008,7 @@ window._golfGaugePaint = function (s) {
   if (zone) { zone.style.left = (zc * 100 - zw) + '%'; zone.style.width = (zw * 2) + '%'; zone.style.display = (st && st.phase === 'acc') ? '' : 'none'; }   // 정확 칸: 정확 단계에만, 랜덤 위치
   if (!st || st.phase === 'idle') { if (pw) pw.style.width = '0%'; if (nd) nd.style.left = '0%'; if (hint) hint.textContent = '화면을 탭해서 게이지 시작 · 좌우로 끌면 조준'; return; }
   if (st.phase === 'power') { if (pw) pw.style.width = (st.v * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '원하는 세기에서 탭!'; }
-  else if (st.phase === 'acc') { if (pw) pw.style.width = (st.power * 100) + '%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 파란 칸에 올 때 탭! 딱 맞추면 곧게 갑니다'; }
+  else if (st.phase === 'acc') { if (pw) pw.style.width = '100%'; if (nd) nd.style.left = (st.v * 100) + '%'; if (hint) hint.textContent = '바늘이 빈 칸에 올 때 탭! 한가운데면 곧게 갑니다'; }
 };
 window._golfGaugeTick = function (dt) {
   const st = window._golfGauge; if (!st || st.phase === 'idle') return;
