@@ -16497,7 +16497,8 @@ window.DODGE_LV = {
   //     둘 다 두면 '운빨 + 아저씨'가 된다. 물건은 줄이고 압박은 아저씨가 만든다.
   //   uncleAt = 아저씨가 나오는 시각(ms). 0 이면 안 나온다.
   easy: { key: 'easy', name: '하', gap: 1.35, fall: 0.85, mul: 0.7, uncleAt: 0 },
-  mid:  { key: 'mid',  name: '중', gap: 1.00, fall: 1.00, mul: 1.0, uncleAt: 0 },
+  // ★8-30 대표: 다들 상만 하니 중에도 아재를 넣되 **늦게(40초)·드물게(간격 1.8배)·약하게(판정 폭 0.7·붙잡힘 0.6배)**
+  mid:  { key: 'mid',  name: '중', gap: 1.00, fall: 1.00, mul: 1.0, uncleAt: 40000, uncleAgainMul: 1.8, uncleHitMul: 0.7, uncleSlowMul: 0.6 },
   hard: { key: 'hard', name: '상', gap: 0.62, fall: 1.50, mul: 2.5, uncleAt: 25000 }
 };
 // 시드 난수 — 테스트가 재현 가능해야 한다. Math.random 을 쓰면 같은 판을 두 번 못 돌린다.
@@ -16582,14 +16583,14 @@ window.dodgeTick = function (s, dt, targetX) {
     if (u.out) {
       // 훈수 다 두고 올라간다
       u.y -= D.UNCLE_OUT * (dt / 1000);
-      if (u.y < D.UNCLE_Y0 - 15) { s.uncle = null; s.uncleNext = s.t + D.UNCLE_AGAIN; }
+      if (u.y < D.UNCLE_Y0 - 15) { s.uncle = null; s.uncleNext = s.t + D.UNCLE_AGAIN * (lv.uncleAgainMul || 1); }
     } else if (u.grab) {
       // ── 붙잡고 훈수 두는 중 ──
       // 내 옆에 딱 붙어 **같이 움직인다.** 떠다님도 끌림도 없다 — 이때만 완전히 추종한다.
       // 나는 이미 느려져 있어서(UNCLE_SLOW_MUL) 떼어내려 해도 잘 안 떨어진다.
       u.x = Math.max(0, Math.min(D.W, s.x + u.side * D.UNCLE_GRAB_OFF));
       u.y = D.PLAYER_Y - 2 + Math.sin(s.t / 200) * 1.2;
-      if (s.t >= u.grab + D.UNCLE_SLOW_MS) u.out = true;   // 훈수가 끝나야 놓아준다
+      if (s.t >= u.grab + D.UNCLE_SLOW_MS * (lv.uncleSlowMul || 1)) u.out = true;   // 훈수가 끝나야 놓아준다
     } else {
       // ★버블버블 유령처럼 **떠다닌다** (대표 8-19). 내려온 뒤엔 위아래로 살짝 흔들려서
       //   가만히 박혀 있지 않고 살아 있는 것처럼 보인다. 좌우는 아래에서 내 x 를 따라간다.
@@ -16603,8 +16604,8 @@ window.dodgeTick = function (s, dt, targetX) {
       // 내 몸통 높이까지 내려왔고 가로도 겹치면 잡힌다.
       // ★느려진 동안에는 다시 안 잡힌다 — 안 그러면 붙어서 영영 못 움직인다.
       const lowEnough = u.y >= D.PLAYER_Y - D.PLAYER_H;
-      if (!slowed && lowEnough && Math.abs(u.x - s.x) < (D.PLAYER_HIT_W + D.UNCLE_HIT_W) / 2) {
-        s.slowUntil = s.t + D.UNCLE_SLOW_MS;
+      if (!slowed && lowEnough && Math.abs(u.x - s.x) < (D.PLAYER_HIT_W + D.UNCLE_HIT_W * (lv.uncleHitMul || 1)) / 2) {
+        s.slowUntil = s.t + D.UNCLE_SLOW_MS * (lv.uncleSlowMul || 1);
         s.hit = 'uncle';
         // 튕겨 나가지 않는다. 붙잡는다 — 내가 있던 쪽 옆에 붙어 훈수가 끝날 때까지 따라온다.
         u.grab = s.t;
@@ -17017,6 +17018,7 @@ window.dodgeFieldBtn = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('dodge-start');
   if (key !== 'gym') { if (b) b.remove(); return; }
+  if (!window._dodgePreloaded) { window._dodgePreloaded = 1; ['dodge_title.png?v=2', 'dodge_bg.jpg?v=3', 'dumbbell.png', 'protein.png', 'chicken.png', 'uncle.png?v=1', 'uncle_side.png?v=1'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
   if (b) return;
   b = document.createElement('button');
   b.id = 'dodge-start'; b.className = 'mw-fieldchip'; b.style.top = '52px';
@@ -17447,9 +17449,11 @@ window.GOLF = {
 };
 // 난이도 — 바람 세기(단위/틱²), 컵 배율, 페어웨이 마찰 보정, 점수 배율
 window.GOLF_LV = {
-  easy: { name: '하', wind: 0,     cup: 1.4,  fric: 0.975, mul: 0.7, crow: false, mole: false },
-  mid:  { name: '중', wind: 0.004, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false },
-  hard: { name: '상', wind: 0.010, cup: 0.85, fric: null,  mul: 2.5, crow: true,  mole: true }
+  // ★대표 8-30: 난이도마다 차별점이 확실해야 한다. 하 = 편하게(바람 0·큰 컵·짧게 굴러 통제 쉬움·빌런 없음)
+  //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
+  easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6 },
+  mid:  { name: '중', wind: 0.004, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: false, crowV: 0.4,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
+  hard: { name: '상', wind: 0.012, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5 }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
 window.GOLF_HOLES = [
@@ -17511,7 +17515,7 @@ window.golfShot = function (s, dx, dy) {
   s.strokes[s.hole]++;
   return true;
 };
-window._golfInEllipse = function (x, y, e) { const a = (x - e.cx) / e.rx, b = (y - e.cy) / e.ry; return a * a + b * b <= 1; };
+window._golfInEllipse = function (x, y, e, m) { m = m || 1; const a = (x - e.cx) / (e.rx * m), b = (y - e.cy) / (e.ry * m); return a * a + b * b <= 1; };
 // 한 틱. dt(ms). 반환 = s.last ('in' | 'ob' | 'water' | 'tree' | 'bunker' | 'stop' | '')
 window.golfTick = function (s, dt) {
   const G = window.GOLF, lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid, ch = window.GOLF_CHARS[s.ch] || window.GOLF_CHARS.human;
@@ -17520,10 +17524,13 @@ window.golfTick = function (s, dt) {
   s.t += dt;
   const k = dt / 16;
   // 까마귀는 공이 멈춰 있어도 날아다닌다(살아 있는 화면). 양 끝에서 방향을 바꾼다.
-  if (s.crow) { s.crow.x += s.crow.dir * G.CROW_V * k; if (s.crow.x < 6) { s.crow.x = 6; s.crow.dir = 1; } else if (s.crow.x > 94) { s.crow.x = 94; s.crow.dir = -1; } if (s.crow.hit > 0) s.crow.hit -= k; }
+  if (s.crow) { s.crow.x += s.crow.dir * (lv.crowV != null ? lv.crowV : G.CROW_V) * k; if (s.crow.x < 6) { s.crow.x = 6; s.crow.dir = 1; } else if (s.crow.x > 94) { s.crow.x = 94; s.crow.dir = -1; } if (s.crow.hit > 0) s.crow.hit -= k; }
   if (s.cupCool > 0) s.cupCool -= k;
   if (!s.moving) return s.last;
-  s.vx += s.wind.x * ch.windMul * k; s.vy += s.wind.y * ch.windMul * k;
+  // 상 난이도 돌풍 — 바람 방향이 시간에 따라 천천히 돈다(구르는 동안 예측이 어렵다)
+  let wx = s.wind.x, wy = s.wind.y;
+  if (lv.gust) { const a = Math.sin(s.t / 900) * 0.9; const c = Math.cos(a), sn = Math.sin(a); const nx = wx * c - wy * sn, ny = wx * sn + wy * c; wx = nx * (1 + 0.5 * Math.sin(s.t / 1300)); wy = ny * (1 + 0.5 * Math.sin(s.t / 1300)); }
+  s.vx += wx * ch.windMul * k; s.vy += wy * ch.windMul * k;
   s.x += s.vx * k; s.y += s.vy * k;
   // 나무 반사
   for (const tr of H.trees) {
@@ -17550,13 +17557,14 @@ window.golfTick = function (s, dt) {
   const penalty = function (why) {
     if (s.mulligan > 0) s.mulligan--; else s.strokes[s.hole]++;
     s.x = s.px; s.y = s.py; s.vx = 0; s.vy = 0; s.moving = false; s.last = why;
-    if (s.strokes[s.hole] >= G.MAX_STROKES) window._golfNextHole(s);
+    if (s.strokes[s.hole] >= (lv.maxStrokes || G.MAX_STROKES)) window._golfNextHole(s);
   };
   // OB
   if (s.x < 2 || s.x > 98 || s.y < 1 || s.y > 99) { penalty('ob'); return s.last; }
   const sp = Math.hypot(s.vx, s.vy);
   // 연못 — 들어가면 끝. 벌타 + 복귀
-  for (const p of H.ponds) if (window._golfInEllipse(s.x, s.y, p)) { penalty('water'); return s.last; }
+  const om = lv.obsMul || 1;
+  for (const p of H.ponds) if (window._golfInEllipse(s.x, s.y, p, om)) { penalty('water'); return s.last; }
   // 홀
   const dh = Math.hypot(s.x - H.x, s.y - H.y);
   if (s.cupCool <= 0 && dh < G.CUP_R * lv.cup * ch.cup) {
@@ -17567,12 +17575,13 @@ window.golfTick = function (s, dt) {
   }
   // 마찰
   let f = lv.fric || G.FRICTION;
-  const inB = H.bunkers.some(function (b) { return window._golfInEllipse(s.x, s.y, b); });
-  if (inB) f = G.BUNKER; else if (s.x < G.ROUGH_X || s.x > G.W - G.ROUGH_X) f = G.ROUGH;
+  const inB = H.bunkers.some(function (b) { return window._golfInEllipse(s.x, s.y, b, om); });
+  const rx = lv.roughX != null ? lv.roughX : G.ROUGH_X;
+  if (inB) f = G.BUNKER; else if (s.x < rx || s.x > G.W - rx) f = G.ROUGH;
   const fk = Math.pow(f, k); s.vx *= fk; s.vy *= fk;
   if (Math.hypot(s.vx, s.vy) < G.STOP_V) {
     s.vx = 0; s.vy = 0; s.moving = false; s.inBunker = inB; s.last = inB ? 'bunker' : 'stop';
-    if (s.strokes[s.hole] >= G.MAX_STROKES) window._golfNextHole(s);
+    if (s.strokes[s.hole] >= (lv.maxStrokes || G.MAX_STROKES)) window._golfNextHole(s);
   }
   return s.last;
 };
@@ -17651,9 +17660,12 @@ window._golfPaintStart = function () {
     return '<button class="dodge-lv-btn' + (on ? ' on' : '') + '" onclick="window.golfPickLv(\'' + k + '\')" style="flex:1;font-family:inherit;font-size:13px;padding:9px 0;cursor:pointer;border:2px solid ' + (on ? 'var(--accent)' : 'rgba(255,255,255,.18)') + ';background:' + (on ? 'var(--accent)' : 'none') + ';color:#fff">' + window.GOLF_LV[k].name + '</button>';
   }).join('');
   const lv = window.GOLF_LV[window._golfLv] || window.GOLF_LV.mid;
-  if (desc) desc.textContent = (lv.wind ? ('바람 ' + (window._golfLv === 'hard' ? '강함' : '약함')) : '바람 없음') + ' · 컵 ' + lv.cup + '배 · 점수 ×' + lv.mul;
+  if (desc) desc.textContent = window._golfLv === 'easy' ? '바람 없음 · 큰 컵 · 방해 없음 · 점수 ×0.7'
+    : window._golfLv === 'hard' ? '돌풍 · 좁은 페어웨이 · 까마귀+두더지 · 작은 컵 · 홀당 5타 · 점수 ×2.5'
+    : '약한 바람 · 까마귀 · 점수 ×1';
   const best = document.getElementById('golf-best'); if (best) best.textContent = window._golfBest > 0 ? ('내 최고 ' + window._golfBest + '점') : '';
-  const tt = document.getElementById('golf-title-txt'); if (tt) tt.style.display = window._golfArt ? 'none' : '';
+  // ★골프 타이틀 그림엔 글자가 없다(AI 가 "골고 스윙" 으로 깨뜨려서 앱이 얹는다) → 제목 글자는 항상 보인다
+  const tt = document.getElementById('golf-title-txt'); if (tt) tt.style.display = '';
 };
 window._golfPaintChars = function () {
   const row = document.getElementById('golf-char-row'); if (!row) return;
@@ -17720,6 +17732,8 @@ window.golfFieldBtn = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('golf-start');
   if (key !== 'golf') { if (b) b.remove(); return; }
+  // ★필드에 들어온 순간 게임 그림을 미리 받아 둔다(대표 8-30: "게임이 너무 늦게 뜬다") — 칩을 누를 땐 이미 캐시에 있다
+  if (!window._golfPreloaded) { window._golfPreloaded = 1; ['golf_title.png?v=1', 'golf_bg.jpg?v=1', 'golf_ball.png?v=1', 'golf_hole.png?v=1', 'golf_bunker.png?v=1', 'golf_pond.png?v=1', 'golf_tree.png?v=1', 'golf_crow.png?v=1', 'golf_mole.png?v=1'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
   if (b) return;
   b = document.createElement('button');
   b.id = 'golf-start'; b.className = 'mw-fieldchip'; b.style.top = '52px'; b.textContent = '골프 스윙';
@@ -17735,8 +17749,9 @@ window._golfPaint = function (s) {
   const W = host.clientWidth || 360, H = host.clientHeight || 640, G = window.GOLF, O = window._golfObj || {};
   const Hh = window.GOLF_HOLES[Math.min(s.hole, G.HOLES - 1)];
   const px = function (x, y) { return window._golfSx(x, y, W); }, py = function (y) { return y / 100 * H; };
+  const om = (window.GOLF_LV[s.lv] || window.GOLF_LV.mid).obsMul || 1;
   const ov = function (e, cls, k) {
-    const w = e.rx * 2 / 100 * W * (0.62 + 0.38 * e.cy / 100), hh = e.ry * 2 / 100 * H;
+    const w = e.rx * om * 2 / 100 * W * (0.62 + 0.38 * e.cy / 100), hh = e.ry * om * 2 / 100 * H;
     return '<div class="golf-obs ' + cls + (O[k] ? '' : ' css') + '" style="left:' + px(e.cx, e.cy) + 'px;top:' + py(e.cy) + 'px;width:' + w + 'px;height:' + hh + 'px;' + (O[k] ? "border-radius:0;background-image:url('char/game/golf_" + k + ".png?v=1')" : '') + '"></div>';
   };
   let h = '';

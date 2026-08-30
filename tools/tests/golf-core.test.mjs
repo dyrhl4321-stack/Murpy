@@ -81,8 +81,9 @@ assert.strictEqual(s.strokes[0], 3, '두 번째부터는 벌타');
 
 // 9) 6타 상한: 홀을 못 넣어도 넘어간다 · 총점·배율
 s = w.golfNew(5, 'hard', 'human'); s.wind = { x: 0, y: 0 };
-for (let i = 0; i < 6; i++) { w.golfShot(s, 0, 1.5); run(s, 3000); }   // 1 미만은 샷으로 안 친다
-assert.strictEqual(s.hole, 1, '6타면 다음 홀'); assert.strictEqual(s.strokes[0], 6);
+const mx = w.GOLF_LV.hard.maxStrokes || w.GOLF.MAX_STROKES;   // 상은 홀당 5타(8-30 난이도 차별)
+for (let i = 0; i < mx; i++) { w.golfShot(s, 0, 1.5); run(s, 3000); }   // 1 미만은 샷으로 안 친다
+assert.strictEqual(s.hole, 1, '타수 상한이면 다음 홀'); assert.strictEqual(s.strokes[0], mx);
 s.strokes = [1, 3, 4]; s.hole = 3; s.done = true;
 assert.strictEqual(w.golfTotal(s), Math.round((50 + 30 + 20) * w.GOLF_LV.hard.mul));
 // 10) ★빠른 공은 컵을 스치고 지나가야 한다 — 한 방에 홀인되던 버그(8-30). 홀 6 앞에서 세게 치면 홀인 아님
