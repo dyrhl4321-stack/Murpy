@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '827';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '828';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -5515,7 +5515,9 @@ window._mwPetSync = function () {
     //   꾸미기 들어가서 저장해야 로드됨"). 머피월드에 막 들어온 순간에도 방 크기가 0 이라
     //   여기서 끝나 버렸고, 다음에 mwRenderFurn 을 부르는 것이 **꾸미기 저장뿐**이었다.
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
-    if (room && !room.clientWidth) {
+    // ★목록이 비어 있어도 재시도한다 — 문서가 아직 안 왔을 뿐일 수 있다(8-30).
+    //   home 필드가 아닐 때만 진짜로 그만둔다.
+    if (room && (!room.clientWidth || (!list.length && window._curField === 'home'))) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -10563,6 +10565,12 @@ function goPage(name, navOpts) {
       window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField);
       window.mwArtChip && window.mwArtChip(window._curField);
       window.mwRoomFieldSync && window.mwRoomFieldSync(window._curField);
+      // ★★★펫이 '꾸미기 저장'을 해야만 뜨던 진짜 원인 (대표 8-30, 세 번째 지적).
+      //   v793 은 '문서가 늦게 오는' 경우만 잡았다. 반대 순서 — 문서가 **먼저** 오고 나중에
+      //   머피월드를 열면, 문서 로드 때 돌린 mwRenderFurn 은 방 크기 0 에서 끝났고, 진입 경로
+      //   (renderCharSpace → mwRoomFieldSync) 에는 mwRenderFurn 이 **한 번도 없었다.**
+      //   _mwRlReplay 는 사람만 다시 그린다. 여기서 방을 잴 수 있으니 지금 그린다.
+      window.mwRenderFurn && window.mwRenderFurn();
     });
   }
   // 머피월드 = 몰입 모드: 헤더 즉시 숨김, 로고 광택은 포털이 걷힌 뒤(_mwWorldReveal)
@@ -33304,7 +33312,9 @@ window.openSquadCreate = function () {
       <!-- ★헬스장 도감 검색 목록 (대표 8-29: 헬스 스쿼드면 헬스장을 목록에서 고르게). 고르면 centerId 가 스쿼드에 남고
            출석·범프 때 그 헬스장에 도장이 찍힌다 = B2B 송객 근거 -->
       <div id="sq-c-loc-list" style="display:none;margin-top:-6px;margin-bottom:10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;overflow:hidden;background:#0e1320"></div>
-      <div id="sq-c-loc-picked" style="display:none;font-size:11px;color:#7aa8ff;margin:-4px 0 10px 2px"></div>
+      <!-- ★도감 연결 안내 — 예전엔 margin -4px 로 입력칸에 바짝 붙어 오른쪽 박스에 글자가 걸렸다(대표 8-30).
+           입력칸 밑에 여유를 두고, 왼쪽에 점 하나로 '연결됨' 표시. 줄바꿈 허용. -->
+      <div id="sq-c-loc-picked" style="display:none;align-items:flex-start;gap:6px;font-size:11.5px;line-height:1.5;color:#7aa8ff;margin:6px 4px 12px"></div>
       ${lbl('언제 모여요?')}
       <div style="display:flex;gap:8px">
         <input id="sq-c-date" type="date" value="${dstr}" style="${inputCss};flex:1.3;color-scheme:dark">
@@ -33444,7 +33454,11 @@ window._sqLocPick = function (id) {
   f.centerId = String(c.id); f.centerName = c.name;
   inp.value = c.name;
   if (box) box.style.display = 'none';
-  if (pk) { pk.textContent = '헬스장 도감 연결됨 · 출석하면 여기에 도장이 찍혀요'; pk.style.display = ''; }
+  if (pk) {
+    pk.innerHTML = '<span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#7aa8ff;margin-top:6px"></span>'
+      + '<span>헬스장 도감 연결됨 · 출석하면 여기에 도장이 찍혀요</span>';
+    pk.style.display = 'flex';
+  }
 };
 // ★출석·범프 출석 = 그 헬스장 체크인 (대표 8-26 지정 ①, 8-29 착수). B2B "이번 달 N명 보냈습니다"의 근거.
 //   스쿼드에 centerId 가 있고, GPS 로 잰 거리가 반경 안이면 checkins 문서를 만든다(source·squadId 를 남긴다).
