@@ -24,6 +24,7 @@ ap.add_argument('--nukki', action='store_true'); ap.add_argument('--greenness', 
 ap.add_argument('--model', default='gemini-2.5-flash-image')
 ap.add_argument('--from-raw', action='store_true', help='생성하지 않고 out 옆 .raw.png 로 누끼·규격만 다시')
 ap.add_argument('--tol', type=int, default=48, help='배경색 허용 거리(0~441)')
+ap.add_argument('--ref', action='append', default=[], help='레퍼런스 이미지(여러 개 가능) — 캐릭터·화풍을 그대로 따르게')
 a = ap.parse_args()
 
 KEY = os.environ.get('GEMINI_API_KEY', '').strip()
@@ -47,7 +48,12 @@ raw = os.path.splitext(a.out)[0] + '.raw.png'
 if a.from_raw:
     img = Image.open(raw).convert('RGBA'); print('원본 재사용', img.size, raw)
 else:
-    body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'responseModalities': ['IMAGE']}}
+    parts = []
+    for rp in a.ref:
+        mime = 'image/png' if rp.lower().endswith('.png') else 'image/jpeg'
+        parts.append({'inlineData': {'mimeType': mime, 'data': base64.b64encode(open(rp, 'rb').read()).decode()}})
+    parts.append({'text': prompt})
+    body = {'contents': [{'parts': parts}], 'generationConfig': {'responseModalities': ['IMAGE']}}
     req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s' % (a.model, KEY),
                                  data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
     try: r = json.loads(urllib.request.urlopen(req, timeout=120).read().decode())
