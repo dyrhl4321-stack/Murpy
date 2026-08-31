@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '859';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '861';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17698,7 +17698,7 @@ window.golfTick = function (s, dt) {
 // ★8-30 조준선 = 실제 물리를 미리 돌린 착지 경로(팡야식). 공식 계산은 튕김·굴림을 못 잡아 점선(38)과 실제(62)가 달랐다.
 //   빌런·돌풍은 뺀 예측(바람은 넣는다). 게이지 올리는 동안 세기를 따라 실시간으로 늘어난다.
 window._golfPredict = function (s, power, club) {
-  const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, s.aim | 0, s.inBunker ? 1 : 0, s.ch, s.wind.x.toFixed(4), s.wind.y.toFixed(4)].join('|');
+  const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, (s.aim || 0).toFixed(1), s.inBunker ? 1 : 0, s.ch, s.wind.x.toFixed(4), s.wind.y.toFixed(4)].join('|');
   const c = window._golfPredCache; if (c && c.key === key) return c.val;
   // 8-31 바람 뺀 곧은 궤적(대표: 휘어진 궤적이 헷갈림) — 바람은 HUD 화살표로
   const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
@@ -18104,7 +18104,8 @@ window._golfBind = function () {
   const skip = function (t) { const s = window._golfS; return !s || s.done || (t && t.closest && t.closest('button')); };
   const down = function (cx, cy, t) { if (skip(t)) return; window._golfDrag = { sx: cx, cx: cx, moved: false, aim0: (window._golfS.aim || 0) }; };
   const move = function (cx) { const d = window._golfDrag, s = window._golfS; if (!d || !s || s.moving) return; d.cx = cx;
-    if (Math.abs(cx - d.sx) > 8) { d.moved = true; const st = window._golfGauge; if (!st || st.phase === 'idle') { s.aim = Math.max(-window.GOLF.AIM_MAX, Math.min(window.GOLF.AIM_MAX, d.aim0 + (cx - d.sx) / 4)); } } };
+    if (Math.abs(cx - d.sx) > 3) { d.moved = true; }   // 8-31 문턱 8→3px — 조준이 늦게 시작돼 끈적했다
+    if (d.moved) { const st = window._golfGauge; if (!st || st.phase === 'idle') { s.aim = Math.max(-window.GOLF.AIM_MAX, Math.min(window.GOLF.AIM_MAX, d.aim0 + (cx - d.sx) / 5.5)); } } };
   const up = function () { const d = window._golfDrag; window._golfDrag = null; if (!d) return; if (!d.moved) window._golfGaugeTap(); };
   el.addEventListener('touchstart', function (e) { const t = e.touches[0]; down(t.clientX, t.clientY, e.target); if (window._golfDrag) e.preventDefault(); }, { passive: false });
   el.addEventListener('touchmove', function (e) { if (!window._golfDrag) return; move(e.touches[0].clientX); e.preventDefault(); }, { passive: false });
