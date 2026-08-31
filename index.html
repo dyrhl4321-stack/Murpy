@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '869';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '870';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -34576,11 +34576,11 @@ window.openSquadDetail = function (sid, preview) {
   // ★가이드 캡처용 — 구독 없이 미리 넣어둔 데이터로 **진짜 화면**을 그대로 그린다.
   //   (bumpPreview·sqSheetPreview 와 같은 취지: 새로 그리지 않고 실제 렌더를 부른다)
   if (preview) { window._sqRenderDetail && window._sqRenderDetail(); return; }
-  window._sqDoc = null; window._sqMembers = {}; window._sqHostStats = null;
+  window._sqDoc = null; window._sqMembers = {};   // _sqHostStats 는 지우지 않는다 — 같은 스쿼드 재진입 시 재조회를 건너뛰므로(아래 _sqHostFetched) 지우면 새싹으로 강등 표시됐다(8-31)
   window._sqDocUnsub = onSnapshot(doc(db,'squads',sid), s => {
     if (!s.exists()) { showToast('삭제된 스쿼드예요'); window._sqClose(); return; }
     window._sqDoc = { id: s.id, ...s.data() };
-    if (window._sqHostFetched !== sid) { window._sqHostFetched = sid;   // 벙주 등급용 hostStats 1회 로드
+    if (window._sqHostFetched !== sid) { window._sqHostFetched = sid; window._sqHostStats = null;   // 스쿼드장 등급용 hostStats 1회 로드
       getDoc(doc(db,'users',window._sqDoc.hostUid)).then(u => {
         window._sqHostStats = (u.exists() && u.data().hostStats) || {}; window._sqRenderDetail();
       }).catch(()=>{});
@@ -34787,7 +34787,7 @@ window._sqRenderDetailInner = function () {
     m._uid = uid;   // stChip 이 누구를 바꾸는지 알아야 한다
       // ★캐릭터·이름을 누르면 그 사람 프로필(대표 8-11). 같이 운동할 사람이 누군지 보고 정하는 게
       //   이 목록의 목적인데, 예전엔 픽셀 캐릭터와 닉네임만 보이고 눌러도 아무 일이 없었다.
-      const openMe = `window.sqMemberProfile('${uid}','${(m.nickname||'').replace(/'/g,"\\'").replace(/</g,'&lt;')}')`;
+      const openMe = `window.sqMemberProfile('${uid}','${(m.nickname||'').replace(/\\/g,'').replace(/'/g,"\\'").replace(/</g,'&lt;').replace(/"/g,'&quot;')}')`;   // 8-31 닉네임의 " 가 onclick 속성을 끊었다
       return `
       <!-- ★흐림(opacity)은 **이름·아바타에만** 건다 (대표 8-14: "승인 버튼이 꺼진 것처럼 보인다").
            줄 전체에 걸면 승인 버튼까지 흐려지는데, 자식에 opacity:1 을 줘도 소용없다 —
@@ -34835,7 +34835,7 @@ window._sqRenderDetailInner = function () {
              줄이 캐릭터·이름·상태·입금·실명·내보내기까지 붙어 너무 길었다.
              ★표시는 그대로다 — 왼쪽 이름은 여전히 '닉네임 (실명)' 으로 나온다.
                **고치는 자리만** 톡 > 명단(부위 배정)의 '실명' 버튼 하나로 모은다. -->
-        ${_canApprove && uid !== s.hostUid && uid !== me ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/'/g,"").replace(/</g,'&lt;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
+        ${_canApprove && uid !== s.hostUid && uid !== me ? `<button onclick="window.sqKickMember('${s.id}','${uid}','${(m.nickname||'').replace(/[\\']/g,'').replace(/</g,'&lt;').replace(/"/g,'&quot;')}')" aria-label="내보내기" style="flex-shrink:0;background:none;border:none;color:rgba(255,77,103,.55);cursor:pointer;padding:6px 4px;font-family:inherit;display:flex;align-items:center">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>` : ''}
       </div>`; };
@@ -34924,6 +34924,10 @@ window.joinSquad = async function (sid) {
       const sRef = doc(db,'squads',sid); const snap = await tx.get(sRef);
       if (!snap.exists()) throw new Error('없는 스쿼드예요');
       const d = snap.data();
+      // 8-31 종료·만료 스쿼드 참가 차단 — 상세 화면·초대 수락이 걸러도 여기가 최종 방어선
+      if (['completed', 'cancelled', 'expired'].includes(d.status)) throw new Error('종료된 스쿼드예요');
+      const _wh = d.expiresAt || d.scheduledAt || 0;
+      if (_wh && _wh < Date.now()) throw new Error('종료된 스쿼드예요');
       if ((d.memberUids||[]).includes(user.uid)) throw new Error('이미 참가중이에요');
       const instant = d.joinMode !== 'approval';
       if (instant && (d.memberUids||[]).length >= d.capacity) throw new Error('정원이 찼어요');
@@ -34951,7 +34955,7 @@ window.acceptSquadInvite = async function (sid, title, notifId) {
     const d = s.data();
     // ★끝난 벙에 참가시키면 안 된다. 상태를 먼저 본다.
     //   status: recruiting(모집중) / active(진행중) / done(종료) / expired(시간지남)
-    if (d.status === 'done' || d.status === 'expired') { showToast('종료된 스쿼드입니다'); return; }
+    if (['completed', 'cancelled', 'expired', 'done'].includes(d.status)) { showToast('종료된 스쿼드입니다'); return; }   // 8-31 실제 값은 completed/cancelled — 'done' 오타로 종료 스쿼드 초대가 뚫렸다
     // 상태가 안 바뀐 채 시간만 지난 경우도 종료로 본다(만료 처리는 목록을 열 때 도는 배치라 늦다)
     const when = (d.expiresAt || d.scheduledAt) || 0;
     if (when && when < Date.now()) { showToast('종료된 스쿼드입니다'); return; }
@@ -35629,7 +35633,14 @@ window.sqPaidToggleIn = async function (sid, uid) {
     chip.style.color = cur ? 'rgba(255,255,255,.45)' : '#F5C24B';
   }
   try { await updateDoc(doc(db, 'squads', sid, 'members', uid), { paid: !cur }); }
-  catch (e) { showToast('변경 실패'); }
+  catch (e) {
+    showToast('변경 실패');
+    if (chip) {   // 8-31 실패하면 칩을 원래대로 — 바뀐 표시가 남아 스쿼드장이 잘못된 입금 상태를 믿었다
+      chip.textContent = cur ? '입금 ✓' : '미입금';
+      chip.style.borderColor = cur ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)';
+      chip.style.color = cur ? '#F5C24B' : 'rgba(255,255,255,.45)';
+    }
+  }
 };
 
 // ★운영진 임명 — 리더가 **여러 명을 한 번에** 고른다 (대표 8-14 설계).
