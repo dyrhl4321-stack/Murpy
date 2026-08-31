@@ -296,12 +296,13 @@ exports.settleArtSold = onDocumentCreated("notifications/{id}", async (event) =>
 //   ★상한표는 index.html 의 CREDIT_* 와 같은 뜻이어야 한다. 값을 바꾸면 양쪽을 같이.
 // ─────────────────────────────────────────────────────────────────────────────
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const EARN_LIVE = true;   // 8-31 C2: false 로 내리면 그림자(기록만)로 돌아간다
 const EARN_CAPS = {
   daily:        { max: 10,   perDay: 1 },     // 하루 첫 인증 5 + 7일 연속 5
   birthday:     { max: 55,   perDay: 1 },
   welcome:      { max: 30,   perDay: 1 },
   first_post:   { max: 500,  perDay: 1 },     // 창립 선물 500 / 출시 후 100
-  visit:        { max: 1,    perDay: 2 },
+  visit:        { max: 2,    perDay: 2 },   // 8-30 방 구경 1→2
   like:         { max: 1,    perDay: 2 },
   checkin:      { max: 5,    perDay: 3 },     // 체크인 2 + 처음 센터 3
   dogam:        { max: 120,  perDay: 1 },     // 도장 랠리 10+30+80
@@ -325,18 +326,46 @@ exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
   const cap = EARN_CAPS[reason] || EARN_CAPS.other;
   const db = getFirestore();
   const dayKey = new Date(Date.now() + 9 * 3600e3 - 5 * 3600e3).toISOString().slice(0, 10); // KST, 새벽 5시 경계(앱과 같음)
-  // 오늘 같은 사유로 몇 번 인정했나 (같은 key 는 한 번만)
+  // 오늘 같은 사유로 몇 번 인정했나
   const prev = await db.collection("ledger").where("uid", "==", uid).where("reason", "==", reason).where("day", "==", dayKey).get();
   let n = 0, dupKey = false;
-  prev.forEach((s) => { const x = s.data() || {}; if (x.allowed > 0) n++; if (key && x.key === key) dupKey = true; });
+  prev.forEach((s) => { const x = s.data() || {}; if (x.allowed > 0) n++; if (key && x.key === key && x.allowed > 0) dupKey = true; });
   let allowed = Math.min(Math.max(0, claimed), cap.max);
   let why = "";
   if (dupKey) { allowed = 0; why = "dup_key"; }
   else if (n >= cap.perDay) { allowed = 0; why = "day_cap"; }
   else if (claimed > cap.max) { why = "over_max"; }
-  await db.collection("ledger").add({ uid, reason, key, day: dayKey, claimed, allowed, why, mode: "shadow",
-                                      at: FieldValue.serverTimestamp() });
-  return { ok: true, allowed, claimed, why, mode: "shadow" };
+
+  // ★2단계 승격 (8-31, C2): 기록만 하던 그림자에서 **서버가 직접 지급**으로.
+  //   key 가 있으면 장부 문서 id 를 결정적으로 만들어(l_uid_reason_key) 트랜잭션 create 로
+  //   중복을 원자적으로 막는다 — 같은 key 두 번째 요청은 create 가 실패한다.
+  if (!EARN_LIVE) {
+    await db.collection("ledger").add({ uid, reason, key, day: dayKey, claimed, allowed, why, mode: "shadow",
+                                        at: FieldValue.serverTimestamp() });
+    return { ok: true, allowed, claimed, why, mode: "shadow" };
+  }
+  const ledRef = key
+    ? db.collection("ledger").doc(("l_" + uid + "_" + reason + "_" + key).replace(/[^\w-]/g, "_").slice(0, 900))
+    : db.collection("ledger").doc();
+  let balance = null;
+  try {
+    await db.runTransaction(async (tx) => {
+      const uRef = db.collection("users").doc(uid);
+      const uSnap = await tx.get(uRef);
+      const bal = (uSnap.exists && typeof uSnap.data().credits === "number") ? uSnap.data().credits : 0;
+      if (allowed > 0) { balance = bal + allowed; tx.update(uRef, { credits: balance }); }
+      else balance = bal;
+      tx.create(ledRef, { uid, reason, key, day: dayKey, claimed, allowed, why, mode: "live",
+                          at: FieldValue.serverTimestamp() });
+    });
+  } catch (e) {
+    // create 충돌 = 이미 준 key. 지급 없이 현재 잔액만 알려준다.
+    const uSnap = await db.collection("users").doc(uid).get();
+    balance = (uSnap.exists && typeof uSnap.data().credits === "number") ? uSnap.data().credits : 0;
+    return { ok: true, allowed: 0, granted: 0, claimed, why: why || "dup_key", mode: "live", balance };
+  }
+  console.log(`earn live uid=${uid} reason=${reason} claimed=${claimed} granted=${allowed} why=${why}`);
+  return { ok: true, allowed, granted: allowed, claimed, why, mode: "live", balance };
 });
 
 // ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
