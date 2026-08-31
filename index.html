@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '863';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '864';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -20400,7 +20400,7 @@ window.loadRelations = async function (force) {
   window._relAt = Date.now();
   try {
     const [ls, ms, bs] = await Promise.all([
-      getDocs(query(collection(db, 'likes'), where('from', '==', me))),
+      getDocs(query(collection(db, 'likes'), where('from', '==', me), orderBy('createdAt', 'desc'), limit(300))),   // 전량 -> 최근 300 (중복표시용 셋)
       getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me))),
       // ★차단은 matches 와 **같은 모양**으로 저장한다(users 배열 + array-contains).
       //   그래서 이 한 번의 조회로 '내가 차단한 사람'과 '나를 차단한 사람'이 같이 온다 =
@@ -21117,7 +21117,7 @@ window.loadMatchCandidates = async function () {
     const liked = new Set();
     const matchedSet = new Set();
     if (me) {
-      try { const ls = await getDocs(query(collection(db, 'likes'), where('from', '==', me))); ls.forEach(d => liked.add(d.data().to)); } catch (e) {}
+      try { const ls = await getDocs(query(collection(db, 'likes'), where('from', '==', me), orderBy('createdAt', 'desc'), limit(300))); ls.forEach(d => liked.add(d.data().to)); } catch (e) {}
       try { const ms = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me))); ms.forEach(d => (d.data().users || []).forEach(u => { if (u !== me) matchedSet.add(u); })); } catch (e) {}
     }
     const passed = new Set(window._matchPassed || []);
@@ -28259,7 +28259,7 @@ window._loadInterestPanel = async (silent) => {
   // 1) 매칭 좋아요 받은 사람: likes 컬렉션에서 to==me 인 문서
   const likeDocs = [], bambooDocs = [];
   try {
-    const q = query(collection(db, 'likes'), where('to', '==', user.uid));
+    const q = query(collection(db, 'likes'), where('to', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
     const snap = await getDocs(q);
     // ★제외 기준은 **매칭**이다 (2026-08-07 수정). 예전엔 _isConnected(채팅만 있어도 true)로
     //   걸렀는데, 그러면 대숲 익명채팅 등으로 대화방만 열려 있는 상대가 보낸 좋아요가
@@ -28291,7 +28291,7 @@ window._loadInterestPanel = async (silent) => {
   // 3) 내가 보낸 좋아요: likes 컬렉션에서 from==me (이미 연결/매칭된 사람 제외 = 대기중만)
   const sentDocs = [];
   try {
-    const q = query(collection(db, 'likes'), where('from', '==', user.uid));
+    const q = query(collection(db, 'likes'), where('from', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
     const snap = await getDocs(q);
     for (const d of snap.docs) {
       const toUid = d.data().to;
