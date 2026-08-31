@@ -31113,8 +31113,27 @@ window.mwCheckin = function () {
     try { await window.loadCentersNear(lat, lng, 2); } catch (e) {}
     const centers2 = (typeof getCentersList==='function'?getCentersList():[]).filter(c=>c&&c.lat&&c.lng);
     let best=null, bestD=1e12;
-    centers2.forEach(c => { const dd=mwHaversine(lat,lng,c.lat,c.lng); if(dd<bestD){bestD=dd;best=c;} });
+    const cands=[];
+    centers2.forEach(c => { const dd=mwHaversine(lat,lng,c.lat,c.lng); if(dd<bestD){bestD=dd;best=c;} if(dd<=MW_CHECKIN_RADIUS) cands.push({c:c,d:dd}); });
+    cands.sort((a,b)=>a.d-b.d);
     window._mwOverlayClose();
+    // ★8-31 반경 안에 센터가 **여럿**이면 가장 가까운 곳을 자동으로 찍지 않는다 — 신림에서 자마이카(등록)와
+    //   유앤아이짐(카카오 시딩)이 46m 라 GPS 오차로 매번 옆집에 도장이 찍혔다(대표 8-31, 염철범).
+    //   ①내 프로필의 '다니는 센터' 이름과 맞는 후보가 있으면 그곳으로 ②아니면 목록에서 고르게 한다.
+    if (cands.length > 1) {
+      let mine = [];
+      try { const us = await getDoc(doc(db, 'users', (auth.currentUser || window.currentUser).uid)); const me = us.exists() ? us.data() : {};
+            mine = Array.isArray(me.gyms) && me.gyms.length ? me.gyms : (me.gym ? [me.gym] : []); } catch (e) {}
+      const fav = cands.find(x => mine.includes(x.c.name));
+      if (fav) { window.mwConfirmCheckin(fav.c, Math.round(fav.d), lat, lng); return; }
+      window._mwCkCands = { cands: cands, lat: lat, lng: lng };
+      window._mwOverlay(`
+        <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:6px">근처에 센터가 ${cands.length}곳 있어요</div>
+        <div style="font-size:11.5px;color:#8a93a8;margin-bottom:12px">어디에 도장을 찍을까요?</div>
+        ${cands.slice(0, 5).map((x, i) => `<button class="mw-btn" style="display:block;width:100%;margin-top:8px;text-align:left" onclick="window._mwCkPick(${i})">${_escHtml(x.c.name)} <span style="opacity:.6;font-size:11px">· ${Math.round(x.d)}m</span></button>`).join('')}
+        <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
+      return;
+    }
     if (best && bestD <= MW_CHECKIN_RADIUS) window.mwConfirmCheckin(best, Math.round(bestD), lat, lng);
     else {
       const near = best ? `가장 가까운 <b style=\"color:#cfd6e6\">${best.name}</b>까지 <b style=\"color:#F5C24B\">${bestD<1000?Math.round(bestD)+'m':(bestD/1000).toFixed(1)+'km'}</b>` : '좌표 등록된 센터가 없어요';
@@ -31134,6 +31153,11 @@ window.mwCheckin = function () {
     if (err.code === 1) window.mwGeoDeniedHelp();
     else showToast('위치를 가져오지 못했어요 · 실외에서 다시 시도해 주세요');
   }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
+};
+window._mwCkPick = function (i) {
+  const st = window._mwCkCands; if (!st || !st.cands[i]) return;
+  window._mwOverlayClose();
+  window.mwConfirmCheckin(st.cands[i].c, Math.round(st.cands[i].d), st.lat, st.lng);
 };
 window.mwConfirmCheckin = async function (center, dist, lat, lng) {
   const admin = (typeof isAdmin==='function') && isAdmin();
