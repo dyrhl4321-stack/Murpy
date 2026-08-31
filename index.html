@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '870';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '871';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -20361,6 +20361,21 @@ window.matchSpend = async (uid) => {
   } catch (e) { console.warn('matchSpend', e); window._creditSpendFail = 'unavailable'; return { ok: false, reason: 'unavailable' }; }
 };
 // 확인창 문구 — 무료가 남았으면 그걸 먼저 말한다
+// ★8-31 환불 — 차감 후 likes 쓰기가 실패하면 무료 횟수/머피를 그대로 돌려준다(전엔 돈만 나갔다)
+window.matchRefund = async (uid, r) => {
+  if (!window.creditsEnforcedFor(uid) || !r || !r.ok) return;
+  await runTransaction(db, async tx => {
+    const ref = doc(db, 'users', uid);
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const day = _matchDayKey();
+    const upd = {};
+    if (d.mfDay === day && (d.mfN | 0) > 0) { upd.mfN = (d.mfN | 0) - 1; }
+    if (!r.free && r.cost) upd.credits = (typeof d.credits === 'number' ? d.credits : 0) + r.cost;
+    if (Object.keys(upd).length) tx.update(ref, upd);
+  });
+  if (!r.free && r.cost) { window._creditState.credits = (window._creditState.credits | 0) + r.cost; window.renderCreditUI && window.renderCreditUI(); }
+};
 window.matchCostDesc = async (uid) => {
   const q = await window.matchQuota(uid);
   if (q.used >= q.cap) return '오늘은 여기까지예요 · 하루 ' + q.cap + '명까지 보낼 수 있어요';
@@ -20945,11 +20960,16 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
   }
   // free = 수락(상대가 이미 보냈다). 비용은 먼저 신청한 쪽이 냈으므로 받는 쪽은 안 낸다.
   // ★8-29: 하루 MATCH_FREE_DAY 회 무료 → 그 뒤 COST_MATCH. 무료 카운터와 잔액을 한 트랜잭션에서.
-  if (!free) { const r = await window.matchSpend(me); if (!r.ok) { showToast(window.creditSpendFailMessage()); return; }
+  let _spent = null;
+  if (!free) { const r = await window.matchSpend(me); if (!r.ok) { showToast(window.creditSpendFailMessage()); return; } _spent = r;
     window.track && window.track('match_request', { free: r.free ? 1 : 0, cost: r.cost | 0 });
     if (r.free && typeof r.left === 'number') showToast(r.left > 0 ? '무료로 보냈어요 · 오늘 ' + r.left + '회 남음' : '오늘 무료 신청을 다 썼어요 · 다음부턴 ' + COST_MATCH + '머피'); }
   try {
-    await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() });
+    try { await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() }); }
+    catch (e) {   // 8-31 여기서 실패하면 방금 차감한 무료 횟수/머피를 돌려준다
+      if (_spent) { try { await window.matchRefund(me, _spent); showToast('전송이 안 돼서 사용한 횟수·머피를 돌려드렸어요'); } catch (e2) {} }
+      throw e;
+    }
     const rev = await getDoc(doc(db, 'likes', toUid + '_' + me));
     if (rev.exists()) {
       await setDoc(doc(db, 'matches', _pairKey(me, toUid)), { users: [me, toUid], createdAt: serverTimestamp() }, { merge: true });
@@ -28700,10 +28720,11 @@ window.loadChatListFirestore = async () => {
       const isBamboo = !!c.bambooChat;
       const pName = isBamboo ? '익명 대화' : ((c.participantNames || {})[pid] || extraProfiles[pid]?.name || '익명');
       const pPhoto = isBamboo ? '' : ((c.participantPhotos || {})[pid] || extraProfiles[pid]?.photo || '');
-      const lastMsg = c.lastMessage || '대화를 시작해봐요';
+      const _E = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');   // 8-31 목록 미리보기가 innerHTML 에 생으로 들어갔다(저장형 XSS)
+      const lastMsg = _E(c.lastMessage || '대화를 시작해봐요');
       const lastTime = c.lastMessageTime ? new Date(c.lastMessageTime.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric'}) : '';
-      const snJs = pName.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      const spJs = pPhoto.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const snJs = _E(pName.replace(/\\/g,'').replace(/'/g,"\\'"));
+      const spJs = _E(pPhoto.replace(/\\/g,'').replace(/'/g,"\\'"));
       const avatarInner = isBamboo
         ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>'
         : (pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.style.display='none'}">` : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>');
@@ -28712,7 +28733,7 @@ window.loadChatListFirestore = async () => {
           ${avatarInner}
         </div>
         <div style="flex:1;min-width:0">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700;font-size:14px">${pName}</span><span style="font-size:11px;color:#444">${lastTime}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:700;font-size:14px">${_E(pName)}</span><span style="font-size:11px;color:#444">${lastTime}</span></div>
           <div style="font-size:13px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastMsg}</div>
         </div>
       </div>`;
@@ -28862,7 +28883,10 @@ window.sendChatFirestore = async () => {
   window._chatInputToggle();
   let nickname = '익명';
   let myPhoto = '';
-  try {
+  // ★8-31 대숲 '저에요' 익명 방(b_)에선 실명·프사를 어디에도 싣지 않는다 — 메시지 senderName·
+  //   participantNames·알림까지 전부. 여기가 뚫려 "실명님이 메시지를 보냈어요" 알림으로 익명이 깨졌다.
+  const _anonRoom = String(chatId).indexOf('b_') === 0;
+  if (!_anonRoom) try {
     const us = await getDoc(doc(db, 'users', user.uid));
     if (us.exists()) {
       const d = us.data();
@@ -28878,7 +28902,7 @@ window.sendChatFirestore = async () => {
     const _partner = window._currentChatPartner;
     await setDoc(doc(db, 'chats', chatId), Object.assign({
       participants: [user.uid, _partner].filter(Boolean),
-      participantNames: Object.assign({ [user.uid]: nickname }, _partner ? { [_partner]: window._currentChatPartnerName || '상대' } : {}),
+      participantNames: Object.assign({ [user.uid]: nickname }, _partner ? { [_partner]: _anonRoom ? '익명' : (window._currentChatPartnerName || '상대') } : {}),
       participantPhotos: Object.assign({ [user.uid]: myPhoto }, _partner ? { [_partner]: window._currentChatPartnerPhoto || '' } : {}),
       lastMessage: text, lastMessageTime: serverTimestamp()
     }), { merge: true });
