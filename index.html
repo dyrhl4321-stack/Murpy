@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '871';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '872';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -2846,7 +2846,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06)">
     <input id="bamboo-anon-name" maxlength="12" placeholder="1회용 닉네임 (선택 · 비우면 익명)" style="display:none;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:8px 12px;color:#fff;font-size:12.5px;outline:none;font-family:inherit;margin-bottom:8px">
     <div style="display:flex;gap:10px">
-      <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')handleCommentSubmit()">
+      <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)handleCommentSubmit()">
       <button onclick="handleCommentSubmit()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
     </div>
   </div>
@@ -20336,7 +20336,7 @@ window.matchQuota = async (uid) => {
     const day = _matchDayKey();
     const used = d.mfDay === day ? (d.mfN | 0) : 0;
     return { free: Math.max(0, MATCH_FREE_DAY - used), used, cap: MATCH_DAY_CAP };
-  } catch (e) { return { free: 0, used: 0, cap: MATCH_DAY_CAP }; }
+  } catch (e) { return { free: 0, used: 0, cap: MATCH_DAY_CAP, unknown: true }; }   // 8-31 읽기 실패 표시
 };
 window.matchSpend = async (uid) => {
   if (!window.creditsEnforcedFor(uid)) return { ok: true, free: true, cost: 0 };
@@ -20361,6 +20361,16 @@ window.matchSpend = async (uid) => {
   } catch (e) { console.warn('matchSpend', e); window._creditSpendFail = 'unavailable'; return { ok: false, reason: 'unavailable' }; }
 };
 // 확인창 문구 — 무료가 남았으면 그걸 먼저 말한다
+// ★8-31 공용 환불 — 차감 후 본 작업이 실패했을 때 머피를 돌려준다(대숲 글 1·저에요 3 등)
+window.creditRefund = async (uid, n) => {
+  if (!window.creditsEnforcedFor(uid) || !(n > 0)) return;
+  await runTransaction(db, async tx => {
+    const ref = doc(db, 'users', uid); const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    tx.update(ref, { credits: (typeof d.credits === 'number' ? d.credits : 0) + n });
+  });
+  window._creditState.credits = (window._creditState.credits | 0) + n; window.renderCreditUI && window.renderCreditUI();
+};
 // ★8-31 환불 — 차감 후 likes 쓰기가 실패하면 무료 횟수/머피를 그대로 돌려준다(전엔 돈만 나갔다)
 window.matchRefund = async (uid, r) => {
   if (!window.creditsEnforcedFor(uid) || !r || !r.ok) return;
@@ -20379,6 +20389,7 @@ window.matchRefund = async (uid, r) => {
 window.matchCostDesc = async (uid) => {
   const q = await window.matchQuota(uid);
   if (q.used >= q.cap) return '오늘은 여기까지예요 · 하루 ' + q.cap + '명까지 보낼 수 있어요';
+  if (q.unknown) return '연결이 불안정해요 · 무료가 남아 있으면 무료로 나가요';   // 8-31 읽기 실패인데 "무료 다 썼다"고 거짓말하던 것
   if (q.free > 0) return '<b style="color:#F5C24B">오늘 무료 ' + q.free + '회 남음</b> · 무료로 보내요';
   return '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>를 사용해요 · 오늘 무료 ' + MATCH_FREE_DAY + '회는 다 썼어요';
 };
@@ -27065,6 +27076,7 @@ window.googleLogin = async () => {
 window.submitFeedPost = async function() {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('먼저 로그인해주세요'); return; }
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('인증글을 쓰려면') : showToast('계정이 필요해요'); return; }   // 8-31 임시 계정 차단
   let file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
   // ★머피캠 필터를 켰으면 글이 **사진 안에 이미 찍혀 있다.** 본문으로 또 내보내면
@@ -27183,6 +27195,7 @@ window.submitFeedPost = async function() {
 window.submitComment = async (postId) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 댓글을 달 수 있어요'); return; }
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('댓글을 쓰려면') : showToast('계정이 필요해요'); return; }   // 8-31 임시 계정 차단
   const input = document.getElementById('comment-input');
   const text = input?.value?.trim();
   if (!text) return;
@@ -27239,6 +27252,7 @@ window.submitComment = async (postId) => {
 window._bambooPostComment = async (postId, text, anonName) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 댓글을 달 수 있어요'); return false; }
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('댓글을 쓰려면') : showToast('계정이 필요해요'); return false; }   // 8-31 임시 계정 차단
   text = String(text || '').trim(); if (!text) return false;
   if (FILTER_WORDS.some(w => text.toLowerCase().includes(w.toLowerCase()))) { showToast('외부 연락처는 입력할 수 없어요'); return false; }
   try {
@@ -27564,6 +27578,10 @@ window.loadBamboo = async (tab) => {
     //   목록은 **훑는 곳**이고 읽는 곳은 상세다 → 제목 + 본문 두 줄 + 작은 썸네일.
     //   좋아요·저에요·삭제 같은 행동은 전부 상세로 옮겼다(목록에서 잘못 누르는 것도 막힌다).
     window._bambooCache = {};
+    // 8-31 다음 장을 붙일 때 전체를 다시 그리므로, 열려 있던 댓글칸과 입력 중이던 글을 지켰다가 되살린다
+    const _keep = {};
+    if (_append) list.querySelectorAll('[id^="bci-"]').forEach(i => { if (i.value) _keep[i.id] = i.value; });
+    if (_append) list.querySelectorAll('[id^="bcm-"]').forEach(b => { if (b.style.display !== 'none') _keep[b.id] = true; });
     list.innerHTML = posts.map(post => {
       window._bambooCache[post.id] = post;          // 상세를 다시 조회하지 않고 바로 연다
       const t = window._bambooTitle(post);
@@ -27613,6 +27631,7 @@ window.loadBamboo = async (tab) => {
         </div>` : ''}
       </article>`;
     }).join('');
+    Object.keys(_keep).forEach(id => { const el = document.getElementById(id); if (!el) return; if (id.indexOf('bci-') === 0) el.value = _keep[id]; else el.style.display = ''; });
     // ★바닥 400px 앞에서 다음 장을 청한다. 다 읽었으면 심지 않는다.
     if (!window._bambooDone) {
       const sn = document.createElement('div');
@@ -27671,6 +27690,7 @@ window.postBambooFirestore = async (text, title) => {
     if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
   }
   if (!(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast(window.creditSpendFailMessage()); return false; }
+  window._bamSpent = COST_BAMBOO;   // 8-31 아래 addDoc 실패 시 환불용
   try {
     let nickname = '익명';
     let userPhoto = '';
@@ -27681,7 +27701,11 @@ window.postBambooFirestore = async (text, title) => {
     await addDoc(collection(db, 'bamboo'), { text, title: title || '', photoURL, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
     if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
-  } catch(e) { console.error(e); showToast('글 작성 실패'); return false; }
+  } catch(e) {
+    console.error(e); showToast('글 작성 실패');
+    if (window._bamSpent) { try { await window.creditRefund(user.uid, window._bamSpent); showToast('작성이 안 돼서 머피를 돌려드렸어요'); } catch (e2) {} }
+    return false;
+  } finally { window._bamSpent = 0; }
 };
 
 // ★'저에요' 손 아이콘 — 손가락이 잘려 보인다는 지적(2026-08-07)으로 다시 그렸다.
@@ -27887,17 +27911,21 @@ window.sendBambooRequest = async (postId, authorUid) => {
     if (!(await window.murpyConfirm({ title: "'저에요' 보내기", desc: '<b style="color:#F5C24B">' + COST_BAMBOO_REQ + '머피</b>가 들어요', cost: true, confirmText: '보내기' }))) return;
     if (!(await window.spendCredit(user.uid, COST_BAMBOO_REQ))) { showToast(window.creditSpendFailMessage()); return; }
     const postText = (postSnap.data().text || '').substring(0, 30);
-    await updateDoc(postRef, { requesters: arrayUnion(user.uid) });
+    try { await updateDoc(postRef, { requesters: arrayUnion(user.uid) }); }
+    catch (e) {   // 8-31 차감 후 실패하면 환불 — 전엔 머피만 사라졌다
+      try { await window.creditRefund(user.uid, COST_BAMBOO_REQ); showToast('신청이 안 돼서 머피를 돌려드렸어요'); } catch (e2) {}
+      throw e;
+    }
     let nickname = '익명';
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid));
       if (userSnap.exists() && userSnap.data().nickname) nickname = userSnap.data().nickname;
     } catch(e) {}
-    await addDoc(collection(db, 'notifications'), {
+    try { await addDoc(collection(db, 'notifications'), {
       toUid: authorUid, fromUid: user.uid, fromNickname: nickname,
       type: 'bamboo_request', postId, postText,
       read: false, createdAt: serverTimestamp()
-    });
+    }); } catch (e) {}   // 알림 실패가 신청 자체(requesters 반영·차감)를 실패로 보이게 하지 않는다
     showToast('신청됐어요! 작성자가 알림을 받았어요');
     window.loadBamboo(window.bambooTab || 'all');
   } catch(e) { console.error(e); showToast('신청 실패'); }
@@ -27961,7 +27989,7 @@ window.loadNotificationsFirestore = async () => {
       const safeNick = (n.fromNickname || '익명').replace(/</g,'&lt;').replace(/"/g,'&quot;');
       const safeText = (n.postText || '').replace(/</g,'&lt;');
       const safeFromUid = (n.fromUid || '').replace(/'/g,'');
-      const safeNickJs = (n.fromNickname || '익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const safeNickJs = (n.fromNickname || '익명').replace(/\\/g,'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const safePostId = (n.postId || '').replace(/'/g,'');
       const safeId = (n._id || '').replace(/'/g,'');
       // onclick="..." 안의 '문자열' 로 넣을 값. 큰따옴표까지 막아야 속성이 안 깨진다
@@ -28875,6 +28903,7 @@ window.sendChatFirestore = async () => {
   const chatId = window._currentChatId;
   const user = auth.currentUser || window.currentUser;
   if (!chatId || !user) return;
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('채팅을 보내려면') : showToast('계정이 필요해요'); return; }   // 8-31 임시 계정 차단
   const input = document.getElementById('chat-input');
   const text = input?.value?.trim();
   if (!text) return;
