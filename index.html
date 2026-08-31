@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '872';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '873';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -23994,12 +23994,13 @@ window.mwAucClaim = async function (artId, ownerUid, amount, notifId) {
     // ★같이 그린 사람들에게도 몫을 보낸다. 문서 id 에 받는 사람을 넣어야 서로 안 덮어쓴다.
     //   seller = 판 사람 uid (그 사람만 자기 목록에서 그림을 뺀다 — _mwArtSettle 참고).
     const _parts = window.mwArtSplit(window.mwArtNet(amount), byUids, ownerUid);
-    for (const _pt of _parts) {
-      await setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid + '_' + _pt.uid), {
+    for (const _pt of _parts) {   // 8-31 문서 id 가 고정이라 재시도해도 안 겹친다 — 한 번 실패는 즉시 한 번 더
+      const _w = () => setDoc(doc(db, 'notifications', 'as_' + artId + '_' + me.uid + '_' + _pt.uid), {
         toUid: _pt.uid, fromUid: me.uid, fromNickname: window._mwMyNick || '머피',
         type: 'art_sold', amount: _pt.amount, gross: amount,
         artId: artId, seller: _pt.seller ? ownerUid : '',
         paid: false, read: false, createdAt: serverTimestamp() });
+      try { await _w(); } catch (e) { await _w(); }
     }
   } catch (e) { console.warn('auc claim pay', e); showToast('가져오지 못했어요 · 잠시 뒤에 다시'); return; }
   const copy = { id: artId, px: px, by: by, byUids: byUids, at: Date.now(), price: 0, from: ownerUid };
@@ -25203,7 +25204,8 @@ window._mwChatWatch = function (ownerUid) {
       window._mwRl.chatRows = rows.map(function (m) {
         return { nick: String(m.nick || '머피'), text: String(m.text).slice(0, 40), t: m.t || 0 };
       });
-  window._mwRl.unsubCap = function () { try { unsubCap(); } catch (e) {} };
+      // (8-31 여기 붙어 있던 _mwRl.unsubCap 재대입을 걷어냄 — 이 스코프엔 unsubCap 이 없어
+      //  진짜 해지 함수(_mwRlJoin)가 헛함수로 덮였다. 붙여넣기 사고)
       window._mwChatPaint();
     }, function (e) { console.warn('chat watch', e); });
     window._mwChatUn = function () { try { un(); } catch (e) {} };
@@ -29560,7 +29562,7 @@ window.mwRenderDogam = async function () {
             <span class="mw-lvbadge" style="--lvc:${lv.color}">${lv.name}</span>
             <button onclick="window.mwPickHome()" style="margin-left:auto;background:none;border:none;color:#4a5266;font-size:11px;cursor:pointer;font-family:inherit;flex-shrink:0">변경</button>
           </div>
-          <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">${home.name}</div>
+          <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">${_escHtml(home.name)}</div>
           <div style="font-size:11.5px;color:#8a93a8">방문 <b style="color:#F5C24B">${hs.n}</b>회${hs.first?` · 첫 발자국 ${fmt(hs.first)}`:''}</div>
         </div>
       </div>
@@ -29595,7 +29597,7 @@ window.mwRenderDogam = async function () {
         return `<button class="mw-panel" onclick="window.mwCenterField && mwCenterField('${c.id}')" style="display:flex;align-items:center;gap:11px;padding:11px 12px;border:3px solid #05070c;width:100%;text-align:left;cursor:pointer;font-family:inherit">
           <div style="flex-shrink:0;filter:${st.n ? 'none' : 'grayscale(.6) brightness(.85)'}">${window.mwBadgeHtml(c, 38)}</div>
           <div style="flex:1;min-width:0">
-            <div style="font-family:'Galmuri14',sans-serif;font-size:12.5px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>
+            <div style="font-family:'Galmuri14',sans-serif;font-size:12.5px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(c.name)}</div>
             <div style="font-size:10.5px;color:#8a93a8;margin-top:3px">${l.name} · 방문 <b style="color:#F5C24B">${st.n}</b>회</div>
           </div>
           <span style="flex-shrink:0;font-size:10.5px;color:${done ? '#4ADE80' : '#4a5266'}">${done ? '오늘 완료' : '미방문'}</span>
@@ -30068,7 +30070,7 @@ window.mwRenderTodayMurpys = async function () {
                        : `window.mwVisitRoom('${k.uid}')`;
       return `<div onclick="${go}" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
         ${window.mwMiniCharHtml(p.character, 58)}
-        <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.nickname||'머피'}</span></div>`;
+        <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(p.nickname||'머피')}</span></div>`;
     }).join('');
     const goField = guest ? `window._mwJoinGate('${(g.name||'이 센터').replace(/'/g,"")} 필드에 들어가려면')`
                           : `window.mwCenterField('${cid}')`;
@@ -30319,7 +30321,7 @@ window.mwCenterField = async function (centerId) {
     <div class="mw-wpanel-head" style="gap:11px">
       ${window.mwBadgeHtml ? window.mwBadgeHtml(c, 46) : ''}
       <div style="min-width:0;flex:1">
-        <b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</b>
+        <b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(c.name)}</b>
         <span id="mw-cfd-head-n" style="font-size:11px;color:#F5C24B">불러오는 중…</span>
       </div>
       <button class="mw-wclose" onclick="window._mwCtalkStop&&window._mwCtalkStop();document.getElementById('mw-wpanel').remove();window._mwCenterBack&&window._mwCenterBack()">✕</button>
@@ -30366,7 +30368,7 @@ window.mwCenterField = async function (centerId) {
     return `<div class="mw-cfd-char" style="left:${s.x}%;top:${s.y}%;z-index:${Math.round(s.y)}" onclick="window._mwCtalkStop&&window._mwCtalkStop();window.mwVisitRoom('${uid}')">
       ${vt ? `<span class="mw-cfd-title" style="color:${window.mwTitleColor(vt)}">&lt;${vt}&gt;</span>` : ''}
       <div class="mw-cfd-walk" style="--wd:-${wd}s">${window.mwMiniCharHtml(p.character, 44)}</div>
-      <span class="mw-cfd-nick">${p.nickname || '머피'}</span>
+      <span class="mw-cfd-nick">${_escHtml(p.nickname || '머피')}</span>
     </div>`;
   }).join(''));
 };
@@ -30610,7 +30612,7 @@ window.mwVisitRoom = async function (uid) {
     ? `<span style="font-family:'Galmuri11',sans-serif;font-size:10.5px;color:${_tColor};border:2px solid #05070c;background:#1a2233;padding:3px 7px;margin-left:8px;flex-shrink:0">${_title}</span>`
     : '';
   el.innerHTML = `
-    <div class="mw-wpanel-head"><b>${nick}의 방</b>${_titleHtml}<button class="mw-wclose" onclick="window._mwRoomClose&&window._mwRoomClose()">✕</button></div>
+    <div class="mw-wpanel-head"><b>${_escHtml(nick)}의 방</b>${_titleHtml}<button class="mw-wclose" onclick="window._mwRoomClose&&window._mwRoomClose()">✕</button></div>
     <div class="mw-wpanel-body">
       <div id="mw-vroom-stage" style="position:relative;width:100%;aspect-ratio:1/1;max-width:300px;margin:0 auto 6px;background:url('char/fields/field_room.png?v=1') center/100% 100% no-repeat;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;image-rendering:auto;overflow:hidden">
         ${window.mwFurnHtml(p.room)}${window.mwBoxHtml(p.pendingBox, false, { room: p.room, uid: uid })}
@@ -31024,7 +31026,7 @@ window.mwGbLoad = async function (uid, listId) {
         box-shadow:0 0 0 2px rgba(245,194,75,.55)${go?';cursor:pointer':''}">
         <div style="flex-shrink:0;width:34px">${window.mwMiniCharHtml ? window.mwMiniCharHtml(g.fromChar, 34) : ''}</div>
         <div style="min-width:0;flex:1">
-          <b style="font-size:12px;color:#F5C24B">${g.fromNick||'머피'}</b>
+          <b style="font-size:12px;color:#F5C24B">${_escHtml(g.fromNick||'머피')}</b>
           <div style="font-size:12.5px;color:#e7ecf6;line-height:1.5;word-break:break-all;margin-top:2px">${(g.text||'').replace(/</g,'&lt;')}</div>
           ${bumpMark(g)}
         </div>
@@ -31169,7 +31171,7 @@ window._mwHomeList = async function () {
   }
   el.innerHTML = centers.map(c => `
     <button class="mw-panel" style="padding:13px 14px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;border:3px solid #05070c;width:100%;font-family:inherit" onclick="window.mwSetHome('${c.id}')">
-      <span style="flex:1;font-size:13.5px;color:#fff;font-weight:700">${c.name}</span>
+      <span style="flex:1;font-size:13.5px;color:#fff;font-weight:700">${_escHtml(c.name)}</span>
       <span style="font-size:11px;color:#4a5266">${c.loc || ''}</span>
     </button>`).join('');
 };
@@ -31263,7 +31265,7 @@ window.mwConfirmCheckin = async function (center, dist, lat, lng) {
       window._mwOverlay(`
         <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>${center.name.slice(0,4)}</i></div>
         <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:8px">오늘은 이미 도장 찍었어요</div>
-        <div style="font-size:12px;color:#8a93a8;margin-bottom:6px">${center.name} — 내일 또 만나요!</div>
+        <div style="font-size:12px;color:#8a93a8;margin-bottom:6px">${_escHtml(center.name)} — 내일 또 만나요!</div>
         ${admin?`<button class="mw-btn" style="margin-top:12px" onclick="window.mwAdminPickCenter()">다른 센터로 테스트 (관리자)</button>`:''}
         <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
       return;
@@ -31272,7 +31274,7 @@ window.mwConfirmCheckin = async function (center, dist, lat, lng) {
   window._mwCkTarget = { center, dist, lat, lng };
   window._mwOverlay(`
     <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>GO</i></div>
-    <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;margin-bottom:6px">${center.name}</div>
+    <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:#fff;margin-bottom:6px">${_escHtml(center.name)}</div>
     <div style="font-size:12px;color:#8a93a8;margin-bottom:18px">${dist}m 거리 · 인증샷을 찍으면 도장이 찍혀요</div>
     <button class="mw-btn" style="width:100%" onclick="window.mwOpenCam()">픽셀 카메라 켜기</button>
     ${admin?`<button onclick="window.mwAdminPickCenter()" style="display:block;margin:13px auto 0;background:none;border:none;color:#F5C24B;font-size:12px;cursor:pointer;font-family:inherit">다른 센터로 테스트 (관리자)</button>`:''}
@@ -31286,7 +31288,7 @@ window.mwAdminPickCenter = function () {
   window._mwOverlay(`
     <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:14px">테스트 도장 찍을 센터</div>
     <select id="mw-testc-sel" style="width:100%;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:12px;font-size:13px;font-family:inherit;outline:none">
-      ${centers.map(c=>`<option value="${c.id}">${c.name}${c.loc?` · ${c.loc}`:''}</option>`).join('')}
+      ${centers.map(c=>`<option value="${_escHtml(c.id)}">${_escHtml(c.name)}${c.loc?` · ${_escHtml(c.loc)}`:''}</option>`).join('')}
     </select>
     <button class="mw-btn" style="width:100%;margin-top:14px" onclick="window.mwAdminTestCheckin(document.getElementById('mw-testc-sel').value)">이 센터로 테스트 체크인</button>
     <button onclick="window._mwOverlayClose()" style="display:block;margin:13px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
