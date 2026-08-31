@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '867';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '868';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -16146,7 +16146,12 @@ window._charPersistRoom = async (room) => { if (!window.currentUser) return;
   window._mwRoomSlots = Array.isArray(window._mwRoomSlots) ? window._mwRoomSlots.slice(0, 5) : [];
   while (window._mwRoomSlots.length < 5) window._mwRoomSlots.push(null);
   window._mwRoomSlots[idx] = window._mwRoomClone(room);
-  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room, roomSaves: window._mwRoomSlots, roomActive: idx }); } catch (e) { console.error('room save', e); } };
+  // ★roomSaves 는 8-31 부터 private/roomSaves 문서에 산다 — users 는 공개 읽기라 방 5개짜리
+  //   짐을 전 유저가 받아 갔다(매칭 후보·인기 캐릭터가 users 전체를 읽는다). 주인만 쓰는 데이터다.
+  try {
+    await updateDoc(doc(db, 'users', window.currentUser.uid), { room: room, roomActive: idx });
+    await setDoc(doc(db, 'users', window.currentUser.uid, 'private', 'roomSaves'), { slots: window._mwRoomSlots }, { merge: false });
+  } catch (e) { console.error('room save', e); } };
 // 슬롯 확장권 사용 저장 (모듈 밖 편집기에서 부른다)
 window._mwGrantRoomSlot = async () => {
   const uid = window.currentUser && window.currentUser.uid; if (!uid) return false;
@@ -19996,7 +20001,22 @@ window.ensureCreditsInit = async (uid) => {
       }
     }
     const _legacyRoom = (d.room && Array.isArray(d.room.f)) ? d.room : null;
-    const _slots = Array.isArray(d.roomSaves) ? d.roomSaves.slice(0, 5) : [];
+    // ★슬롯은 private/roomSaves 가 정본(8-31 분리). 옛 자리(d.roomSaves)에 남아 있으면
+    //   여기서 한 번 옮기고 users 문서에서 지운다 — 다음 로드부터 문서가 가벼워진다.
+    let _slotsSrc = null;
+    try {
+      const _ps = await getDoc(doc(db, 'users', uid, 'private', 'roomSaves'));
+      if (_ps.exists() && Array.isArray(_ps.data().slots)) _slotsSrc = _ps.data().slots;
+    } catch (e) { console.warn('roomSaves priv read', e); }
+    if (!_slotsSrc && Array.isArray(d.roomSaves)) {
+      _slotsSrc = d.roomSaves;
+      try {
+        await setDoc(doc(db, 'users', uid, 'private', 'roomSaves'), { slots: d.roomSaves.slice(0, 5) });
+        await updateDoc(ref, { roomSaves: deleteField() });
+        console.log('[room] roomSaves 를 private 로 옮겼습니다');
+      } catch (e) { console.warn('roomSaves migrate', e); }
+    }
+    const _slots = Array.isArray(_slotsSrc) ? _slotsSrc.slice(0, 5) : [];
     while (_slots.length < 5) _slots.push(null);
     if (!_slots[0] && _legacyRoom) _slots[0] = _legacyRoom;
     window._mwRoomSlots = _slots.map(function (r) { return r && Array.isArray(r.f) ? r : null; });
@@ -20055,7 +20075,7 @@ window.ensureCreditsInit = async (uid) => {
       const _artNow = window._myRoom.art || {};
       const _lost = window._myRoom.f.filter(it => it && it.a && !_artNow[it.a]);
       if (_lost.length) {
-        const _saves = Array.isArray(d.roomSaves) ? d.roomSaves : [];
+        const _saves = Array.isArray(window._mwRoomSlots) ? window._mwRoomSlots : [];   // 8-31: 슬롯 정본이 private 로 갔다
         const _back = {};
         _lost.forEach(it => {
           for (let si = 0; si < _saves.length; si++) {
