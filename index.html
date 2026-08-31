@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '866';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '867';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -27476,13 +27476,23 @@ window.loadBamboo = async (tab) => {
   //   따로 잠금 화면을 만들지 않는다(내가 없던 UI를 만들어서 대표가 지적함).
   //   임시 계정을 걸러내는 건 그 팝업을 띄우는 게이트들(_notMember)이 이미 한다.
   if (window.renderBambooChips) window.renderBambooChips();
-  list.innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
+  // ★무한스크롤 (8-31): '__more' 로 불리면 지금 탭의 다음 장을 이어 붙인다.
+  const _append = tab === '__more';
+  if (_append) { tab = window._bambooTab || 'all'; }
+  else { window._bambooAll = []; window._bambooLast = null; window._bambooDone = false; }
+  window._bambooTab = tab;
+  if (!_append) list.innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
   try {
-    // ★8-29: limit 없이 전체를 읽었다 — 글 3천이면 탭마다 3,000 읽기. 최근 200건만(더 보기는 나중 과제)
-    const q = query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'), limit(200));
+    // ★8-31: 60개씩 끊어 읽는다(8-29의 '더 보기는 나중 과제'가 이것). 바닥에 닿으면 다음 장.
+    const q = window._bambooLast
+      ? query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'), startAfter(window._bambooLast), limit(60))
+      : query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'), limit(60));
     const snap = await getDocs(q);
+    if (snap.docs.length) window._bambooLast = snap.docs[snap.docs.length - 1];
+    if (snap.docs.length < 60) window._bambooDone = true;
+    window._bambooAll = (window._bambooAll || []).concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     // 차단한 사람 글 + 3명 이상 신고된 글은 목록에서 뺀다(대숲도 실명 계정이 쓴다)
-    let posts = window._visiblePosts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    let posts = window._visiblePosts(window._bambooAll);
     const myCount = user ? posts.filter(p => p.userId === user.uid).length : 0;
     const countEl = document.getElementById('my-post-count');
     if (countEl) countEl.textContent = myCount > 0 ? myCount : '';
@@ -27563,6 +27573,17 @@ window.loadBamboo = async (tab) => {
         </div>` : ''}
       </article>`;
     }).join('');
+    // ★바닥 400px 앞에서 다음 장을 청한다. 다 읽었으면 심지 않는다.
+    if (!window._bambooDone) {
+      const sn = document.createElement('div');
+      sn.id = 'bamboo-more';
+      sn.style.cssText = 'padding:18px;text-align:center;color:rgba(255,255,255,.3);font-size:12px';
+      sn.textContent = '더 불러오는 중…';
+      list.appendChild(sn);
+      new IntersectionObserver(function (es, ob) {
+        if (es[0].isIntersecting) { ob.disconnect(); window.loadBamboo('__more'); }
+      }, { rootMargin: '400px' }).observe(sn);
+    }
   } catch(e) {
     console.error('bamboo load error:', e);
     list.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">불러올 수 없어요</div>';
