@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '899';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '900';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36833,6 +36833,18 @@ window._sqQzCanHost = function () {
   const m = (window._sqMembers || {})[me];
   return me === s.hostUid || !!(m && m.staff) || !!(typeof isAdmin === 'function' && isAdmin());   // 9-01 앱 관리자도
 };
+// ★9-02 대표: "스쿼드장 없이 아무나 들어와서 하는 거지" — **판 여는 것**은 스쿼드 멤버면 누구나.
+//   (비멤버까지 열게 하면 지나가던 사람이 남의 스쿼드에 판을 깔고 멤버 전원에게 알림이 간다.)
+window._sqQzCanStart = function () {
+  const s = window._sqDoc, me = (auth.currentUser || {}).uid; if (!s || !me) return false;
+  return (s.memberUids || []).indexOf(me) >= 0 || window._sqQzCanHost();
+};
+// 반대로 **남의 판을 끄거나 시작 신호를 주는 것**은 아무나 하면 안 된다 —
+//   판을 연 사람 + 스쿼드장·운영진으로 둔다.
+window._sqQzIsOwner = function () {
+  const v = window._sqQzV, me = (auth.currentUser || {}).uid;
+  return !!(me && v && v.host === me) || window._sqQzCanHost();
+};
 // 9-01 참석하기 — 로비에서 누른 사람만 참가·채점된다 (규칙: quiz/join/$uid 는 본인만 쓰기)
 window.sqQuizJoin = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
@@ -36844,7 +36856,7 @@ window.sqQuizJoin = function () {
 // 9-01 스쿼드장 [시작] — 참석자 1명 이상일 때 문제 시작
 window.sqQuizBegin = function () {
   const s = window._sqDoc, R = window._rt;
-  if (!s || !R || !window._sqQzCanHost()) return;
+  if (!s || !R || !window._sqQzIsOwner()) return;
   const v = window._sqQzV; if (!v || v.st !== 'lb') return;
   if (!Object.keys(v.join || {}).length) { showToast('참석하기를 누른 사람이 아직 없어요'); return; }
   R.update(window._sqQzRef(s.id), { st: 'q', qi: 0, dl: window._sqQzNow() + window.SQ_QZ.ANS_MS, t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' })
@@ -36853,14 +36865,14 @@ window.sqQuizBegin = function () {
 // 9-01 대표: 게임 중단 — 진행 권한자가 즉시 종료(그때까지 점수로 순위판)
 window.sqQuizStop = function () {
   const s = window._sqDoc, R = window._rt;
-  if (!s || !R || !window._sqQzCanHost()) return;
+  if (!s || !R || !window._sqQzIsOwner()) return;
   R.update(window._sqQzRef(s.id), { st: 'end', t: Date.now() }).catch(function () {});
 };
 // 시작 — 문제 뽑기(공통 6 + 종목 4) 후 노드를 통째로 새로 쓴다
 window.sqQuizStart = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
-  if (!window._sqQzCanHost()) { showToast('스쿼드장·운영진이 시작할 수 있어요'); return; }
+  if (!window._sqQzCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
   const cur = window._sqQzV;
   if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_QZ.STALE_MS) { showToast('이미 진행 중이에요'); return; }
   const stEl = document.getElementById('sq-room-stage'); if (stEl) { try { stEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
@@ -36890,12 +36902,32 @@ window.sqQuizStart = function () {
   window.track && window.track('game_start', { game: 'oxquiz', type: tk });
 };
 // 진행자 타이머 — 마감되면 판정하고, 잠깐 보여준 뒤 다음 문제/종료
+// ★9-02 진행자 자동 승계 — 전엔 v.host 한 사람만 타이머를 굴려서, 그 사람이 앱을 나가면
+//   판이 40초 뒤 소리소문 없이 사라졌다(순위판도 못 보고). 아무나 들락날락하는 판이면 더 자주 터진다.
+//   **선출하지 않는다.** 참석자를 uid 순으로 줄 세운 '내 순번'을 각자 계산하고, 순번만큼 늦게 움직인다.
+//     1등이 제때 처리 → 그 결과가 RTDB 로 오고 → 모두 다시 arm 되면서 뒷사람 타이머는 취소된다.
+//     1등이 나갔거나 폰이 얼었으면 → 2등이 2초 뒤 대신 처리한다.
+//   둘이 동시에 써도 **같은 데이터로 같은 답**을 내므로 결과가 같다(경합이 사고로 안 이어진다).
+//   그래서 '누가 진행자인가'를 합의할 필요가 없다 — 합의 과정이 없으면 거기서 터질 일도 없다.
+window._sqQzMyTurn = function () {
+  const v = window._sqQzV, me = (auth.currentUser || {}).uid;
+  if (!v || !me) return -1;
+  const players = window._sqRtLast || {};
+  const line = Object.keys(v.join || {}).filter(function (u) {
+    const p = players[u]; return p && !p.off;          // off = onDisconnect 가 켜는 '앱 나감' 표시
+  }).sort();
+  const i = line.indexOf(me);
+  if (i >= 0) return i;
+  return (v.host === me) ? line.length : -1;           // 명단이 다 비면 판을 연 사람이 마지막 보루
+};
 window._sqQzHostArm = function (sid) {
   clearTimeout(window._sqQzHostT);
-  const v = window._sqQzV; if (!v || v.host !== (auth.currentUser || {}).uid) return;
+  const v = window._sqQzV; if (!v) return;
+  const turn = window._sqQzMyTurn(); if (turn < 0) return;
+  const back = Math.min(turn, 3) * 2000;               // 순번당 2초씩 뒤로. 4등부터는 같은 칸(중복 써도 결과 같음)
   const Z = window.SQ_QZ, now = window._sqQzNow();
-  if (v.st === 'q') window._sqQzHostT = setTimeout(function () { window._sqQzJudge(sid); }, Math.max(120, v.dl - now + 250));
-  else if (v.st === 'rv') window._sqQzHostT = setTimeout(function () { window._sqQzNext(sid); }, Z.RV_MS);
+  if (v.st === 'q') window._sqQzHostT = setTimeout(function () { window._sqQzJudge(sid); }, Math.max(120, v.dl - now + 250) + back);
+  else if (v.st === 'rv') window._sqQzHostT = setTimeout(function () { window._sqQzNext(sid); }, Z.RV_MS + back);
 };
 window._sqQzJudge = function (sid) {
   const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'q' || !Array.isArray(v.qs)) return;
@@ -36945,20 +36977,34 @@ window._sqQzPaint = function (sid) {
   const stale = v && v.st !== 'end' && (Date.now() - (v.t || 0)) > (v.st === 'lb' ? 300000 : Z.STALE_MS);   // 로비는 5분
   clearInterval(window._sqQzTick);
   const active = v && !stale && (v.st === 'lb' || v.st === 'q' || v.st === 'rv');
-  window._sqQzUiOn = !!active;
+  // ★9-02 대표: "시작 누르면 무조건 OX 필드로 다 들어갔잖아. 참여 희망하는 사람만 들어가는 거임"
+  //   inField = 문제가 도는 중이고 **내가 참석하기를 누른** 사람. 이 사람만 경기장으로 들어간다.
+  //   로비(lb)는 아직 접수 중이니 필드를 안 바꾸고 카드만 모두에게 보인다([참석하기]를 눌러야 하니까).
+  //   참여 안 한 사람은 원래 스쿼드 필드 그대로 + 평소 UI 그대로 —
+  //   그래서 게임 중에 온 사람도 참가 신청 버튼(#sq-d-actions)이 안 접히고 스쿼드에 들어올 수 있다.
+  const _meQz = (auth.currentUser || {}).uid;
+  const inField = !!(active && (v.st === 'q' || v.st === 'rv') && _meQz && (v.join || {})[_meQz]);
+  const showCard = !!(active && (v.st === 'lb' || inField));
+  window._sqQzUiOn = showCard;
   try {   // 9-01 대표: CSS 색칠 대신 전용 OX 경기장 필드로 통째로 교체
-    if (active) { if (!stage._qzBg) { stage._qzBg = stage.style.backgroundImage || '1'; stage.style.backgroundImage = "url('char/fields/field_oxquiz_tall.png?v=3')"; } }
+    if (inField) { if (!stage._qzBg) { stage._qzBg = stage.style.backgroundImage || '1'; stage.style.backgroundImage = "url('char/fields/field_oxquiz_tall.png?v=3')"; } }
     else if (stage._qzBg) { stage.style.backgroundImage = stage._qzBg === '1' ? '' : stage._qzBg; stage._qzBg = null;
       Object.keys(window._sqChars || {}).forEach(function (u2) { const c2 = window._sqChars[u2]; if (c2 && c2.el) c2.el.classList.remove('sq-qz-fall'); }); }
   } catch (e) {}
   try {
-    const _rn = document.getElementById('sq-room-notice'); if (_rn) _rn.style.display = active ? 'none' : '';   // 9-01 대표: 스쿼드 톡 공지(필드 위 고정)도 게임 중 숨김
-    const _rh = document.getElementById('sq-room-hint'); if (_rh) _rh.style.display = active ? 'none' : '';
-    stage.classList.toggle('sq-qz-big', !!active);
-    const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', !!active);   // 주변 UI 디졸브(극장 모드)
-    if (active && !window._sqQzWasOn) { window._sqQzWasOn = 1; setTimeout(function () { try { stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }, 300); }
-    if (!active) window._sqQzWasOn = 0;
+    const _rn = document.getElementById('sq-room-notice'); if (_rn) _rn.style.display = showCard ? 'none' : '';   // 9-01 대표: 스쿼드 톡 공지(필드 위 고정)도 게임 중 숨김
+    const _rh = document.getElementById('sq-room-hint'); if (_rh) _rh.style.display = showCard ? 'none' : '';
+    stage.classList.toggle('sq-qz-big', inField);
+    const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', inField);   // 극장 모드 = 경기장에 들어간 사람만
+    if (inField && !window._sqQzWasOn) { window._sqQzWasOn = 1; setTimeout(function () { try { stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }, 300); }
+    if (!inField) window._sqQzWasOn = 0;
   } catch (e) {}
+  if (active && !showCard) {   // ★9-02 참여 안 한 사람 — 경기장도, 문제 카드도 없다. 평소 화면 그대로.
+    if (el) el.remove();
+    if (card) card.remove();
+    window._sqQzApplyVis();
+    return;
+  }
   if (!v || stale || !active) {
     if (el && (!v || stale)) el.remove();
     if (card) card.remove();   // 전용 카드 제거(공지는 원래 자리에 그대로 있으니 복구 불필요)
@@ -36968,7 +37014,7 @@ window._sqQzPaint = function (sid) {
   }
   if (!v || stale) return;
   if (!Array.isArray(v.qs) || !v.qs[v.qi | 0]) {   // 9-01 깨진 노드(qs 없음) — 그리다 터져 UI 전체가 죽었다
-    if (window._sqQzCanHost() && window._rt) { try { window._rt.remove(window._sqQzRef(sid)); } catch (e) {} }
+    if (window._sqQzIsOwner() && window._rt) { try { window._rt.remove(window._sqQzRef(sid)); } catch (e) {} }
     if (el) el.remove();
     if (card) card.remove();
     return;
@@ -36989,7 +37035,7 @@ window._sqQzPaint = function (sid) {
       + (my != null ? '<span style="color:#3a4258">|</span><span style="color:#7aa8ff">나 ' + (my | 0) + '점</span>' : '')
       + '</div>';
   };
-  const stopBtn = window._sqQzCanHost()
+  const stopBtn = window._sqQzIsOwner()
     ? '<button onclick="window.sqQuizStop()" style="position:absolute;right:8px;top:8px;background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.55);border-radius:8px;color:#ff8a8e;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;padding:5px 10px">게임 종료</button>'
     : '';
   if (v.st === 'lb') {
@@ -37017,7 +37063,7 @@ window._sqQzPaint = function (sid) {
         + '<div style="display:flex;gap:8px;margin-top:10px">'
         +   (jn[meU] ? '<button disabled style="flex:1;background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:700;font-family:inherit">참석 완료</button>'
                      : '<button onclick="window.sqQuizJoin()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">참석하기</button>')
-        +   (window._sqQzCanHost() ? '<button onclick="window.sqQuizBegin()" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + Object.keys(jn).length + '명)</button>' : '')
+        +   (window._sqQzIsOwner() ? '<button onclick="window.sqQuizBegin()" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + Object.keys(jn).length + '명)</button>' : '')
         + '</div></div>';
       window._sqQzTick = setInterval(function () {
         if (!document.getElementById('sq-qz-card')) { clearInterval(window._sqQzTick); window._sqQzPaint(sid); }
@@ -37081,7 +37127,7 @@ window._sqQzPaint = function (sid) {
             + '<span style="flex:1;color:#fff;font-size:' + (i === 0 ? '15px' : '13px') + ';font-weight:' + (i === 0 ? '800' : '400') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(r.nick) + '</span>'
             + '<b style="color:#7aa8ff;font-size:' + (i === 0 ? '16px' : '13px') + '">' + r.s + '점</b></div>';
         }).join('') : '<div style="color:#8a93a8;font-size:12px;padding:10px 0">참가자가 없었어요</div>')
-      + (window._sqQzCanHost() ? '<button onclick="window.sqQuizStart()" style="margin-top:12px;width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">한 판 더</button>' : '')
+      + (window._sqQzCanStart() ? '<button onclick="window.sqQuizStart()" style="margin-top:12px;width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">한 판 더</button>' : '')
       + '<button onclick="window._sqQzClose()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;margin-top:4px;font-family:inherit;padding:6px">닫기</button>'
       + '</div>';
   }
@@ -37110,9 +37156,15 @@ window._sqQzApplyVis = function () {
   const v = window._sqQzV;
   const on = !!(v && (v.st === 'q' || v.st === 'rv') && (Date.now() - (v.t || 0)) < ((window.SQ_QZ || {}).STALE_MS || 40000));
   const jn = (v && v.join) || {};
+  // ★9-02: 경기장은 따로 있는 공간이다 — **내 쪽 사람만** 보인다.
+  //   참여자에겐 참여자만(전과 같음), 참여 안 한 사람에겐 참여 안 한 사람만
+  //   (경기장에 들어간 사람들은 '나간' 것처럼 보인다). 전엔 비참여자 화면에서도
+  //   참여자만 남아서, 구경꾼 눈에는 필드가 텅 빈 것처럼 보였다.
+  const _meV = (auth.currentUser || {}).uid;
+  const iAmIn = !!(_meV && jn[_meV]);
   Object.keys(window._sqChars || {}).forEach(function (uid) {
     const c = window._sqChars[uid]; if (!c || !c.el) return;
-    c.el.style.display = (on && !jn[uid]) ? 'none' : '';
+    c.el.style.display = (on && (!!jn[uid] !== iAmIn)) ? 'none' : '';
   });
 };
 // 위치 스냅샷이 올 때마다(새 캐릭터 생성 포함) 참가자 필터를 다시 건다
@@ -37124,7 +37176,7 @@ if (!window._sqRenderRemotesQzWrapped) {
 window._sqQzClose = function () {
   const s = window._sqDoc, R = window._rt;
   const v = window._sqQzV;
-  if (s && R && v && v.st === 'end' && window._sqQzCanHost()) { try { R.remove(window._sqQzRef(s.id)); } catch (e) {} }
+  if (s && R && v && v.st === 'end' && window._sqQzIsOwner()) { try { R.remove(window._sqQzRef(s.id)); } catch (e) {} }
   const md = document.getElementById('sq-qz-endmodal'); if (md) md.remove();
   const el = document.getElementById('sq-qz'); if (el) el.remove();
   window._sqQzPaint(s && s.id);
