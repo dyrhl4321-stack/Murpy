@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '903';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '904';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -37392,41 +37392,48 @@ window._sqMgArm = function (sid) {
   const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + 200) + back;
   window._sqMgT = setTimeout(function () { window._sqMgTick(sid); }, wait);
 };
-// 진행자가 구간을 넘긴다. 같은 데이터로 같은 답이 나오므로 둘이 동시에 써도 결과가 같다.
-window._sqMgTick = function (sid) {
-  const R = window._rt, v = window._sqMgV, Z = window.SQ_MG;
-  if (!R || !v) return;
-  const players = window._sqRtLast || {}, jn = v.join || {}, out = v.out || {};
+// ★판정은 순수 함수로 뺀다 — RTDB 없이 테스트할 수 있어야 아침에 틀린 채로 켜지지 않는다.
+//   (tools/tests/mugung-core.test.mjs 가 이 함수만 뽑아서 검증한다)
+//   상태와 위치만 받아서 '다음에 뭘 써야 하나' 를 돌려준다. 쓰기는 _sqMgTick 이 한다.
+window._sqMgJudge = function (v, players) {
+  const Z = window.SQ_MG, jn = (v && v.join) || {}, out = (v && v.out) || {};
   const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
   if (v.st === 'go') {
     // 돌아본다 — 지금 위치를 박아둔다. 이게 정지 판정의 기준선이다.
     const snap = {};
     alive.forEach(function (u) { const p = players[u]; if (p) snap[u] = { x: +p.x || 0, y: +p.y || 0 }; });
-    R.update(window._sqMgRef(sid), { st: 'st', snap: snap, dl: window._sqMgNow() + Z.STOP_MS, t: Date.now(),
-                                     host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
-    return;
+    return { next: 'st', snap: snap };
   }
-  if (v.st !== 'st') return;
-  // 다시 등을 돌린다 — 그 전에 움직인 사람을 걸러낸다.
+  if (v.st !== 'st') return null;
+  // 등을 다시 돌리기 전에 움직인 사람을 걸러낸다.
   const snap = v.snap || {}, newOut = Object.assign({}, out);
-  let caught = 0;
   alive.forEach(function (u) {
     const a = snap[u], p = players[u]; if (!a || !p) return;
     const dx = (+p.x || 0) - a.x, dy = (+p.y || 0) - a.y;
-    if (Math.sqrt(dx * dx + dy * dy) > Z.MOVE_TOL) { newOut[u] = 1; caught++; }
+    if (Math.sqrt(dx * dx + dy * dy) > Z.MOVE_TOL) newOut[u] = 1;
   });
   const still = Object.keys(jn).filter(function (u) { return !newOut[u]; });
-  // 결승선에 닿은 사람이 있으면 거기서 끝
+  // 결승선에 닿은 사람이 있으면 거기서 끝. ★움직여서 걸린 사람은 결승선에 있어도 진다.
   let win = null;
   still.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !win) win = u; });
-  if (win || !still.length) {
-    R.update(window._sqMgRef(sid), { st: 'end', out: newOut, win: win || null, t: Date.now(),
-                                     host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
-    return;
+  if (win || !still.length) return { next: 'end', out: newOut, win: win || null };
+  return { next: 'go', out: newOut };
+};
+// 진행자가 구간을 넘긴다. 같은 데이터로 같은 답이 나오므로 둘이 동시에 써도 결과가 같다.
+window._sqMgTick = function (sid) {
+  const R = window._rt, v = window._sqMgV, Z = window.SQ_MG;
+  if (!R || !v) return;
+  const r = window._sqMgJudge(v, window._sqRtLast || {});
+  if (!r) return;
+  const base = { t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' };
+  if (r.next === 'st') {
+    R.update(window._sqMgRef(sid), Object.assign({ st: 'st', snap: r.snap, dl: window._sqMgNow() + Z.STOP_MS }, base)).catch(function () {});
+  } else if (r.next === 'end') {
+    R.update(window._sqMgRef(sid), Object.assign({ st: 'end', out: r.out, win: r.win }, base)).catch(function () {});
+  } else {
+    R.update(window._sqMgRef(sid), Object.assign({ st: 'go', out: r.out, snap: null,
+      dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN) }, base)).catch(function () {});
   }
-  R.update(window._sqMgRef(sid), { st: 'go', out: newOut, snap: null,
-                                   dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN),
-                                   t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
 };
 
 // ── 구독 ────────────────────────────────────────────────────────────────
