@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '898';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '899';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36964,6 +36964,7 @@ window._sqQzPaint = function (sid) {
     if (card) card.remove();   // 전용 카드 제거(공지는 원래 자리에 그대로 있으니 복구 불필요)
     card = null;
     if (!v || stale) { const _md = document.getElementById('sq-qz-endmodal'); if (_md) _md.remove(); }
+    window._sqQzApplyVis();
   }
   if (!v || stale) return;
   if (!Array.isArray(v.qs) || !v.qs[v.qi | 0]) {   // 9-01 깨진 노드(qs 없음) — 그리다 터져 UI 전체가 죽었다
@@ -37036,6 +37037,7 @@ window._sqQzPaint = function (sid) {
       el.innerHTML = '';
       Object.keys(window._sqChars || {}).forEach(function (u2) { const c2 = window._sqChars[u2]; if (c2 && c2.el) c2.el.classList.remove('sq-qz-fall'); });
     }
+    window._sqQzApplyVis();
     if (card) {
       if (v.st === 'q') {
         card.innerHTML = '<div id="sq-qz-card" style="position:relative;background:rgba(5,7,12,.92);border:1px solid #2b3350;border-radius:13px;padding:11px 13px">'
@@ -37064,6 +37066,7 @@ window._sqQzPaint = function (sid) {
     }
   } else if (v.st === 'end') {
     if (window._sqQzGrantT !== v.t) { window._sqQzGrantT = v.t; window._sqQzGrant(v, sid); }   // 판당 1회 지급 시도
+    window._sqQzApplyVis();
     if (el) el.remove();
     let md = document.getElementById('sq-qz-endmodal');
     if (!md) { md = document.createElement('div'); md.id = 'sq-qz-endmodal';
@@ -37103,6 +37106,21 @@ window._sqQzGrant = async function (v, sid) {
     if (ok) { try { await updateDoc(doc(db, 'users', me), { ['earnOnce.oxqs_' + sid + '_' + day]: true }); } catch (e) {} }
   } catch (e) { console.warn('oxq grant', e); }
 };
+window._sqQzApplyVis = function () {
+  const v = window._sqQzV;
+  const on = !!(v && (v.st === 'q' || v.st === 'rv') && (Date.now() - (v.t || 0)) < ((window.SQ_QZ || {}).STALE_MS || 40000));
+  const jn = (v && v.join) || {};
+  Object.keys(window._sqChars || {}).forEach(function (uid) {
+    const c = window._sqChars[uid]; if (!c || !c.el) return;
+    c.el.style.display = (on && !jn[uid]) ? 'none' : '';
+  });
+};
+// 위치 스냅샷이 올 때마다(새 캐릭터 생성 포함) 참가자 필터를 다시 건다
+if (!window._sqRenderRemotesQzWrapped) {
+  window._sqRenderRemotesQzWrapped = 1;
+  const _origRR = window._sqRenderRemotes;
+  window._sqRenderRemotes = function (a, b, c) { _origRR(a, b, c); try { window._sqQzApplyVis(); } catch (e) {} };
+}
 window._sqQzClose = function () {
   const s = window._sqDoc, R = window._rt;
   const v = window._sqQzV;
