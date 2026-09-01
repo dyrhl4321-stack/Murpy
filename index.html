@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '877';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '878';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36668,7 +36668,7 @@ window._sqRtJoin = function (sid, sArg) {
 // 필드가 반반(왼쪽 O·오른쪽 X)으로 갈라지고, 제한시간 안에 캐릭터를 옮겨 답한다.
 // 동기화 = squadRooms/{sid}/quiz 노드 하나. 스쿼드장(운영진) 폰이 심판(판정·진행)을 맡는다.
 // 보상 없음(경제 무관) · 판이 끝나면 다음 시작이 덮어쓴다.
-window.SQ_QZ = { N: 10, ANS_MS: 15000, RV_MS: 4500, STALE_MS: 40000, COMMON: 6 };
+window.SQ_QZ = { N: 10, ANS_MS: 10000, RV_MS: 3500, STALE_MS: 40000, COMMON: 6 };   // 9-01 대표: 타이머 더 빠르게(15→10초)
 // 문제 은행 — a: 정답('O'|'X'), w: 한 줄 해설. ★사실관계가 확실한 것만 넣는다.
 window.SQ_QUIZ_COMMON = [
   { q: '근육통이 있어야만 근육이 성장한다', a: 'X', w: '근성장의 필수 조건이 아니에요. 통증 없이도 자랍니다' },
@@ -36800,7 +36800,13 @@ window._sqQzGet = function (it) { const bank = it.c === 'c' ? window.SQ_QUIZ_COM
 window._sqQzCanHost = function () {
   const s = window._sqDoc, me = (auth.currentUser || {}).uid; if (!s || !me) return false;
   const m = (window._sqMembers || {})[me];
-  return me === s.hostUid || !!(m && m.staff);
+  return me === s.hostUid || !!(m && m.staff) || !!(typeof isAdmin === 'function' && isAdmin());   // 9-01 앱 관리자도
+};
+// 9-01 대표: 게임 중단 — 진행 권한자가 즉시 종료(그때까지 점수로 순위판)
+window.sqQuizStop = function () {
+  const s = window._sqDoc, R = window._rt;
+  if (!s || !R || !window._sqQzCanHost()) return;
+  R.update(window._sqQzRef(s.id), { st: 'end', t: Date.now() }).catch(function () {});
 };
 // 시작 — 문제 뽑기(공통 6 + 종목 4) 후 노드를 통째로 새로 쓴다
 window.sqQuizStart = function () {
@@ -36878,16 +36884,30 @@ window._sqQzPaint = function (sid) {
     return Object.keys(v.sc || {}).map(function (uid) { return { uid: uid, nick: (players[uid] || {}).nick || '머피', s: v.sc[uid] | 0 }; })
       .sort(function (a, b) { return b.s - a.s; }).slice(0, n);
   };
+  const myUid = (auth.currentUser || {}).uid;
+  const scoreBar = function () {   // 9-01 대표: "점수는 어디에 나오냐" — 진행 중에도 필드 하단에 실시간 점수
+    const rows = scRows(3);
+    if (!rows.length && !(myUid in (v.sc || {}))) return '';
+    const my = (v.sc || {})[myUid];
+    return '<div style="position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(5,7,12,.82);border:1px solid #2b3350;border-radius:9px;padding:5px 10px;font-size:10.5px;white-space:nowrap">'
+      + rows.map(function (r, i) { return '<span style="color:' + (i === 0 ? '#F5C24B' : '#cfd6e6') + '">' + (i + 1) + '위 ' + E(r.nick) + ' ' + r.s + '</span>'; }).join('<span style="color:#3a4258">·</span>')
+      + (my != null ? '<span style="color:#3a4258">|</span><span style="color:#7aa8ff">나 ' + (my | 0) + '점</span>' : '')
+      + '</div>';
+  };
+  const stopBtn = window._sqQzCanHost()
+    ? '<button onclick="window.sqQuizStop()" style="position:absolute;right:6px;top:6px;pointer-events:auto;background:rgba(5,7,12,.8);color:#ff8a8e;border:1px solid rgba(229,72,77,.5);border-radius:8px;padding:4px 9px;font-size:10.5px;cursor:pointer;font-family:inherit;z-index:3">중단</button>'
+    : '';
   if (v.st === 'q') {
-    el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,.18);border-right:2px dashed rgba(255,255,255,.5)"></div>'
+    el.innerHTML = '<div style="position:absolute;inset:0;box-shadow:inset 0 0 0 3px rgba(245,194,75,.85)"></div>'
+      + '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,.18);border-right:2px dashed rgba(255,255,255,.5)"></div>'
       + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,.18)"></div>'
       + '<div style="position:absolute;left:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(61,126,255,.55);font-family:\'Galmuri14\',sans-serif">O</div>'
       + '<div style="position:absolute;right:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(229,72,77,.55);font-family:\'Galmuri14\',sans-serif">X</div>'
-      + '<div style="position:absolute;left:50%;top:6px;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.86);border:2px solid #2b3350;border-radius:12px;padding:9px 12px;text-align:center">'
-      +   '<div style="font-size:10.5px;color:#8a93a8">OX 퀴즈 ' + num + ' · 캐릭터를 옮겨 답하세요</div>'
-      +   '<div style="font-size:13.5px;color:#fff;margin-top:3px;line-height:1.45;font-family:\'Galmuri14\',sans-serif">' + E(q.q) + '</div>'
+      + '<div style="position:absolute;left:50%;top:13%;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.92);border:2px solid #F5C24B;border-radius:12px;padding:10px 12px;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.5)">'
+      +   '<div style="font-size:10.5px;color:#F5C24B;letter-spacing:1px">OX 퀴즈 ' + num + ' · 캐릭터를 옮겨 답하세요</div>'
+      +   '<div style="font-size:15px;color:#fff;margin-top:4px;line-height:1.45;font-family:\'Galmuri14\',sans-serif">' + E(q.q) + '</div>'
       +   '<div id="sq-qz-timer" style="margin-top:6px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden"><i style="display:block;height:100%;background:#F5C24B;width:100%"></i></div>'
-      + '</div>';
+      + '</div>' + scoreBar() + stopBtn;
     const bar = el.querySelector('#sq-qz-timer i');
     window._sqQzTick = setInterval(function () {
       const left = (v.dl - window._sqQzNow()) / Z.ANS_MS;
@@ -36899,11 +36919,11 @@ window._sqQzPaint = function (sid) {
     const item = q;
     el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,' + (item.a === 'O' ? '.34' : '.06') + ')"></div>'
       + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,' + (item.a === 'X' ? '.34' : '.06') + ')"></div>'
-      + '<div style="position:absolute;left:50%;top:6px;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.9);border:2px solid ' + (item.a === 'O' ? '#3D7EFF' : '#e5484d') + ';border-radius:12px;padding:10px 12px;text-align:center">'
+      + '<div style="position:absolute;left:50%;top:13%;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.92);box-shadow:0 6px 18px rgba(0,0,0,.5);border:2px solid ' + (item.a === 'O' ? '#3D7EFF' : '#e5484d') + ';border-radius:12px;padding:10px 12px;text-align:center">'
       +   '<div style="font-size:19px;color:#fff;font-family:\'Galmuri14\',sans-serif">정답은 <b style="color:' + (item.a === 'O' ? '#7aa8ff' : '#ff8a8e') + '">' + item.a + '</b>!</div>'
       +   '<div style="font-size:11.5px;color:#cfd6e6;margin-top:4px;line-height:1.5">' + E(item.w || '') + '</div>'
       +   '<div style="font-size:11px;color:#F5C24B;margin-top:5px">맞춘 사람 ' + okN + '명 · +10점</div>'
-      + '</div>';
+      + '</div>' + scoreBar() + stopBtn;
   } else if (v.st === 'end') {
     const rows = scRows(8);
     el.innerHTML = '<div style="position:absolute;inset:0;background:rgba(5,7,12,.72);pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px">'
