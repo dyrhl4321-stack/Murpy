@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '880';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '881';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36964,6 +36964,7 @@ window._sqQzPaint = function (sid) {
       }
     }
   } else if (v.st === 'end') {
+    if (window._sqQzGrantT !== v.t) { window._sqQzGrantT = v.t; window._sqQzGrant(v, sid); }   // 판당 1회 지급 시도
     if (!el) { el = document.createElement('div'); el.id = 'sq-qz'; el.style.cssText = 'position:absolute;inset:0;z-index:9;pointer-events:none;font-family:\'Galmuri11\',sans-serif'; stage.appendChild(el); }
     const rows = scRows(8);
     el.innerHTML = '<div style="position:absolute;inset:0;background:rgba(5,7,12,.72);pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px;overflow:auto">'
@@ -36978,6 +36979,25 @@ window._sqQzPaint = function (sid) {
       + '<button onclick="window._sqQzClose()" style="background:none;border:none;color:#8a93a8;font-size:12px;cursor:pointer;margin-top:4px;font-family:inherit">닫기</button>'
       + '</div>';
   }
+};
+// ★9-01 대표: OX 퀴즈 1등 = 5머피. 한 사람 **하루 1회**(earnOnce 키 = 날짜, 트랜잭션 보장),
+//   같은 스쿼드는 **총 3회까지만** 보상(oxqs_{sid}_N 키 개수) — 혼자 반복 파밍 방지로 점수 있는 참가자 2명 이상일 때만.
+window._sqQzGrant = async function (v, sid) {
+  try {
+    const me = (auth.currentUser || {}).uid; if (!me || !v || v.st !== 'end') return;
+    const sc = v.sc || {}; const uids = Object.keys(sc);
+    const scored = uids.filter(function (u) { return (sc[u] | 0) > 0; });
+    if (uids.length < 2 || !scored.length) return;                       // 참가 2명 미만·전원 0점이면 없음
+    const max = Math.max.apply(null, uids.map(function (u) { return sc[u] | 0; }));
+    if (!(max > 0) || (sc[me] | 0) !== max) return;                      // 내가 1등이 아니면
+    const ymd = new Date(); const day = ymd.getFullYear() + String(ymd.getMonth() + 1).padStart(2, '0') + String(ymd.getDate()).padStart(2, '0');
+    let eo = {};
+    try { const us = await getDoc(doc(db, 'users', me)); eo = (us.exists() && us.data().earnOnce) || {}; } catch (e) {}
+    const sqN = Object.keys(eo).filter(function (k) { return k.indexOf('oxqs_' + sid + '_') === 0; }).length;
+    if (sqN >= 3) return;                                                // 이 스쿼드 보상은 3회까지
+    const ok = await window.earnCredit(5, 'OX 퀴즈 1등!', 'oxquiz', 'oxq_' + day);   // 하루 1회
+    if (ok) { try { await updateDoc(doc(db, 'users', me), { ['earnOnce.oxqs_' + sid + '_' + day]: true }); } catch (e) {} }
+  } catch (e) { console.warn('oxq grant', e); }
 };
 window._sqQzClose = function () {
   const s = window._sqDoc, R = window._rt;
