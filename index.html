@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '873';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '874';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -31185,6 +31185,27 @@ window.mwSetHome = async function (centerId) {
   } catch (e) { console.warn('mwSetHome', e); showToast('홈 센터를 저장하지 못했어요 · 잠시 뒤에 다시'); }
 };
 // ---------- 체크인 (GPS → 반경 판정) ----------
+// ★9-01 GPS 를 3초간 여러 개 받아 **오차가 가장 작은 값**을 쓴다(대표: 체크인 위치 어긋남 계속).
+//   전엔 getCurrentPosition 1회 + maximumAge 30000 이라 30초 묵은 좌표로도 찍혔다. 오차 15m 안이면 조기 종료.
+window._mwGeoBest = function (ms) {
+  return new Promise(function (res, rej) {
+    if (!navigator.geolocation) { rej({ code: 2 }); return; }
+    var best = null, done = false, wid = null, tid = null;
+    var finish = function (err) {
+      if (done) return; done = true;
+      if (wid != null) try { navigator.geolocation.clearWatch(wid); } catch (e) {}
+      if (tid) clearTimeout(tid);
+      if (best) res(best); else rej(err || { code: 3 });
+    };
+    try {
+      wid = navigator.geolocation.watchPosition(function (pos) {
+        if (!best || (pos.coords.accuracy || 9999) < (best.coords.accuracy || 9999)) best = pos;
+        if ((pos.coords.accuracy || 9999) <= 15) finish();
+      }, function (err) { if (!best) finish(err); }, { enableHighAccuracy: true, timeout: ms, maximumAge: 0 });
+    } catch (e) { rej({ code: 2 }); return; }
+    tid = setTimeout(function () { finish({ code: 3 }); }, ms);
+  });
+};
 window.mwCheckin = function () {
   // ★여기에 문이 아예 없었다(대표 8-12: "체크인도 다 뚫린다"). 도장은 레벨·칭호·시즌
   //   카운터로 이어지는 **기록**이라 임시 계정이 찍으면 갈 곳이 없다.
@@ -31200,7 +31221,7 @@ window.mwCheckin = function () {
     <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-top:18px">위치 확인 중…</div>
     <div style="font-size:11.5px;color:#8a93a8;margin-top:7px">GPS 신호를 잡고 있어요</div>`);
   if (!navigator.geolocation) { window._mwOverlayClose(); showToast('이 기기는 위치를 지원하지 않아요'); return; }
-  navigator.geolocation.getCurrentPosition(async pos => {
+  window._mwGeoBest(3000).then(async pos => {
     const { latitude:lat, longitude:lng } = pos.coords;
     // ★GPS 오차값. 반경을 100 으로 좁혔으므로 **실패했을 때 왜 실패했는지**를 이걸로 가른다.
     //   "반경 밖"과 "GPS 가 부정확함"은 유저가 해야 할 행동이 다르다
@@ -31245,11 +31266,11 @@ window.mwCheckin = function () {
         ${admin?`<button class="mw-btn" style="margin-top:16px" onclick="window.mwAdminPickCenter()">테스트 체크인 — 센터 선택 (관리자)</button>`:''}
         <button onclick="window._mwOverlayClose()" style="display:block;margin:14px auto 0;background:none;border:none;color:#4a5266;font-size:12px;cursor:pointer;font-family:inherit">닫기</button>`);
     }
-  }, err => {
+  }).catch(err => {
     window._mwOverlayClose();
-    if (err.code === 1) window.mwGeoDeniedHelp();
+    if (err && err.code === 1) window.mwGeoDeniedHelp();
     else showToast('위치를 가져오지 못했어요 · 실외에서 다시 시도해 주세요');
-  }, { enableHighAccuracy:true, timeout:12000, maximumAge:30000 });
+  });
 };
 window._mwCkPick = function (i) {
   const st = window._mwCkCands; if (!st || !st.cands[i]) return;
@@ -34088,21 +34109,22 @@ window._sqCapFix = function (el) {
 };
 // ★헬스장 도감에서 고르기 (대표 8-29). 장소 칸에 치면 centers 에서 이름·동네가 맞는 곳이 아래로 뜬다.
 //   고르면 _sqForm.centerId 에 남는다. 손으로 고쳐 쓰면 다시 자유 입력(한강공원 등)으로 돌아간다.
-window._sqLocInput = function (v) {
-  const box = document.getElementById('sq-c-loc-list'), pk = document.getElementById('sq-c-loc-picked');
+window._sqLocInput = function (v, w) {   // 9-01 w: 'c'=만들기(기본) · 'e'=수정 — 같은 검색을 두 화면이 쓴다
+  w = w || 'c'; window._sqLocW = w;
+  const box = document.getElementById('sq-' + w + '-loc-list'), pk = document.getElementById('sq-' + w + '-loc-picked');
   if (!box) return;
-  const f = window._sqForm || (window._sqForm = {});
+  const f = w === 'e' ? (window._sqEdit || (window._sqEdit = {})) : (window._sqForm || (window._sqForm = {}));
   const q = String(v || '').trim().toLowerCase();
   if (f.centerId && f.centerName !== String(v || '').trim()) { f.centerId = null; f.centerName = ''; }
   if (pk) pk.style.display = f.centerId ? '' : 'none';
   if (!q || f.centerId) { box.style.display = 'none'; return; }
   if (!Array.isArray(window.centersData) || !window.centersData.length) {
-    if (window.loadCentersFirestore) window.loadCentersFirestore().then(function () { window._sqLocInput(v); });
+    if (window.loadCentersFirestore) window.loadCentersFirestore().then(function () { window._sqLocInput(v, w); });
     return;
   }
   // ★전국 도감 — 두 글자부터 서버 검색을 보태고, 결과가 오면 다시 그린다(같은 글자면 한 번만)
   if (q.length >= 2 && window.searchCenters && !(window._centersQHit || {})[q.replace(/\s+/g, '')]) {
-    window.searchCenters(q).then(function (n) { if (n && document.getElementById('sq-c-loc') && document.getElementById('sq-c-loc').value.trim().toLowerCase() === q) window._sqLocInput(v); });
+    window.searchCenters(q).then(function (n) { const el2 = document.getElementById('sq-' + w + '-loc'); if (n && el2 && el2.value.trim().toLowerCase() === q) window._sqLocInput(v); });
   }
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   // ★★8-30 사고: 'MK' 를 치면 우리 제휴점 '엠케이휘트니스'(논현)는 안 뜨고 카카오 시딩된
@@ -34173,14 +34195,16 @@ window._sqRegionOf = function (c) {
 };
 window._sqRegionPick = function (r) {
   window._sqRegion = r;
-  const el = document.getElementById('sq-c-loc');
-  if (el) { window._sqLocInput(el.value); el.focus && el.focus(); }
+  const w = window._sqLocW || 'c';
+  const el = document.getElementById('sq-' + w + '-loc');
+  if (el) { window._sqLocInput(el.value, w); el.focus && el.focus(); }
 };
 window._sqLocPick = function (id) {
+  const w = window._sqLocW || 'c';
   const c = (window.centersData || []).find(function (x) { return String(x.id) === String(id); });
-  const inp = document.getElementById('sq-c-loc'), box = document.getElementById('sq-c-loc-list'), pk = document.getElementById('sq-c-loc-picked');
+  const inp = document.getElementById('sq-' + w + '-loc'), box = document.getElementById('sq-' + w + '-loc-list'), pk = document.getElementById('sq-' + w + '-loc-picked');
   if (!c || !inp) return;
-  const f = window._sqForm || (window._sqForm = {});
+  const f = w === 'e' ? (window._sqEdit || (window._sqEdit = {})) : (window._sqForm || (window._sqForm = {}));
   f.centerId = String(c.id); f.centerName = c.name;
   inp.value = c.name;
   if (box) box.style.display = 'none';
@@ -34316,7 +34340,10 @@ window.sqEditOpen = function (sid) {
       ${lbl('제목')}
       <input id="sq-e-title" maxlength="40" value="${esc(s.title)}" style="${inputCss}">
       ${lbl('장소')}
-      <input id="sq-e-loc" maxlength="40" value="${esc(s.location)}" style="${inputCss}">
+      <input id="sq-e-loc" maxlength="40" value="${esc(s.location)}" style="${inputCss}" autocomplete="off"
+             oninput="window._sqLocInput(this.value,'e')" onfocus="window._sqLocInput(this.value,'e')">
+      <div id="sq-e-loc-list" style="display:none;margin-top:-6px;margin-bottom:10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;overflow:hidden;background:#0e1320"></div>
+      <div id="sq-e-loc-picked" style="display:none;align-items:flex-start;gap:6px;font-size:11.5px;line-height:1.5;color:#7aa8ff;margin:6px 4px 12px"></div>
       ${lbl('언제 모여요?')}
       <div style="display:flex;gap:8px">
         <input id="sq-e-date" type="date" value="${dstr}" style="${inputCss};flex:1.3;color-scheme:dark">
@@ -34439,12 +34466,12 @@ window.sqEditSubmit = async function () {
   try {
     // ★expiresAt 을 같이 옮긴다. 안 옮기면 시간을 미뤘을 때 **시작하기도 전에 만료**된다
     //   (목록이 expiresAt 으로 살아 있는 벙을 거른다).
-    await updateDoc(doc(db, 'squads', e.sid), {
+    await updateDoc(doc(db, 'squads', e.sid), Object.assign({
       title: title, location: loc, scheduledAt: sched, expiresAt: sched + e.dur,
       capacity: e.capacity, img: e.img || null,
       feeAmount: Math.max(0, parseInt(document.getElementById('sq-e-fee').value || '0', 10) || 0),
       oneLineMemo: (document.getElementById('sq-e-memo').value || '').trim()
-    });
+    }, ('centerId' in e) ? { centerId: e.centerId || null, centerName: e.centerName || '' } : {}));   // 9-01 색인에서 다시 골랐으면 도감 연결도 갱신
     const p = document.getElementById('sq-edit'); if (p) p.remove();
     showToast('수정했어요');
     window.renderSquadPage && window.renderSquadPage();   // 상세는 onSnapshot 이 알아서 다시 그린다
