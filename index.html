@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '900';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '901';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -15288,6 +15288,17 @@ document.addEventListener('murpy-logout', async () => {
   userPhotoCache.clear();
   window.currentUser = null;
   window._setHeaderAvatar('');   // 사진 지우고 대체 아이콘을 되살린다
+  // ★★나가기 전에 이 기기의 푸시토큰을 계정에서 뺀다.
+  //   안 빼면 한 폰에서 계정을 바꿔 쓸 때 **옛 계정에 토큰이 그대로 남아**,
+  //   그 뒤로 그 폰이 두 계정 알림을 다 받는다(9-02 진단에서 실제로 확인).
+  //   실패해도 로그아웃은 그대로 진행한다 — 알림은 부가기능이라 나가는 길을 막으면 안 된다.
+  try {
+    const _prev = JSON.parse(localStorage.getItem('mw_fcm_prev') || 'null');
+    if (_prev && _prev.token && _prev.uid) {
+      await updateDoc(doc(db, 'users', _prev.uid), { fcmTokens: arrayRemove(_prev.token) });
+    }
+    localStorage.removeItem('mw_fcm_prev');
+  } catch (e) { console.warn('로그아웃 푸시토큰 정리(무시)', e); }
   try { await signOut(auth); } catch (e) { console.warn('signOut', e); }
   try { if (typeof closePanel === 'function') closePanel('mypage-panel'); } catch (e) {}
   showToast('로그아웃됐어요');
@@ -21491,7 +21502,19 @@ window.initPush = async (uid, ask) => {
   try {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
     if (!(await isSupported())) return;
-    const reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './firebase-cloud-messaging-push-scope' });
+    // ★★푸시 워커에도 **버전을 붙이고 캐시를 무시**한다 (대표 9-02: "유꾸미 폰만 알림이 두 개씩").
+    //   예전엔 './firebase-messaging-sw.js' 를 버전 없이, updateViaCache 도 없이 등록했다.
+    //   그래서 폰이 **옛 파일을 계속 물고 있었다.** 8-14 에 넣은 중복방지 가드
+    //   (payload.notification 이 있으면 우리가 안 띄운다 / 커밋 6995c11)가 그 폰에는
+    //   영영 도착하지 않아, FCM 이 띄운 것 + 옛 워커가 띄운 것 = **정확히 두 개**가 떴다.
+    //   ★자가치유(_mwForceFresh)는 /sw\.js/ 에 맞는 워커만 지운다(_mwMainWorker) — 이 파일은
+    //     일부러 건드리지 않으므로, 새 버전을 아무리 배포해도 여기가 안 바뀐다.
+    //     주소에 ?v= 를 붙이는 것이 이 파일을 갱신시키는 **유일한 길**이다.
+    //   ★_SW_V 를 올릴 때 이 주소도 같이 바뀐다 — 따로 손댈 것 없다.
+    const reg = await navigator.serviceWorker.register(
+      './firebase-messaging-sw.js?v=' + (window._SW_V || '1'),
+      { scope: './firebase-cloud-messaging-push-scope', updateViaCache: 'none' });
+    try { await reg.update(); } catch (e) {}
     // ★★팝업은 사용자가 뭐라도 눌렀을 때만 뜬다 (대표 8-14: "알림 허용 팝업이 안 뜬다").
     //   iOS 는 requestPermission 을 **탭(사용자 제스처) 안에서** 부를 때만 팝업을 띄운다.
     //   지금처럼 앱이 켜질 때 자동으로 부르면 **조용히 무시**된다 — 유저는 영문도 모른다.
@@ -21505,7 +21528,29 @@ window.initPush = async (uid, ask) => {
     _messaging = getMessaging(app);
     const token = await getToken(_messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     window._pushTok = token || '';                     // ?diag=1 에서 이 기기의 토큰을 확인한다
-    if (token && uid) await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+    if (token && uid) {
+      // ★★이 기기가 **전에 올려둔 토큰을 먼저 지운다.**
+      //   서버는 fcmTokens 에 든 토큰마다 한 번씩 보낸다(sendEachForMulticast). 그런데 여기서
+      //   arrayUnion 으로 **더하기만** 했기 때문에, 토큰이 새로 발급될 때마다(사이트 데이터 삭제,
+      //   PWA 재설치, ?nuke=1, 브라우저 교체) 옛 토큰이 계정에 그대로 남았다.
+      //   -> 그 폰만 두 번, 세 번 울린다. 9-02 진단에서 실제로 **같은 기기 토큰 2개**를 가진
+      //      사용자가 있었다(두 토큰의 기기식별자 부분이 동일).
+      //   지우는 곳은 '그때 올린 계정'이다 — 한 폰에서 계정을 바꿔 로그인하면 옛 계정에 남는다.
+      try {
+        const prev = JSON.parse(localStorage.getItem('mw_fcm_prev') || 'null');
+        // ★지우는 대상은 **같은 계정에 남은 옛 토큰**뿐이다.
+        //   다른 계정 문서는 못 지운다 — 보안규칙이 users/{uid} 쓰기를 isOwner 로 막는다.
+        //   그래서 "한 폰에서 계정을 바꿔 쓰면 옛 계정에 토큰이 남는" 건은 여기서 못 푼다.
+        //   그건 **로그아웃할 때**(murpy-logout) 아직 그 계정으로 로그인돼 있는 동안 지운다.
+        if (prev && prev.token && prev.uid === uid && prev.token !== token) {
+          try {
+            await updateDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(prev.token) });
+          } catch (e) { console.warn('옛 푸시토큰 정리 실패(무시)', e); }
+        }
+      } catch (e) {}
+      await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+      try { localStorage.setItem('mw_fcm_prev', JSON.stringify({ uid, token })); } catch (e) {}
+    }
     window._pushOk = !!token;
     onMessage(_messaging, payload => {
       const n = (payload && (payload.data || payload.notification)) || {};

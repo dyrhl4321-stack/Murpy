@@ -13,6 +13,14 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// ★★새 워커가 **곧바로** 일하게 한다 (9-02).
+//   서비스워커는 새로 받아도 기본적으로 waiting 에 머물고, **옛 워커가 계속 푸시를 받는다.**
+//   그래서 이 파일을 고쳐 배포해도 그 폰에서는 한동안 옛 동작(알림 두 개)이 그대로였다.
+//   이 워커는 fetch 를 가로채지도, 캐시를 들고 있지도 않으므로 즉시 교체해도 잃을 것이 없다.
+//   (메인 sw.js 는 캐시를 다루므로 postMessage 로 신중히 교체한다 — 여기는 그럴 이유가 없다.)
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+
 // ★★알림이 두 번 뜨던 원인 (대표 8-14: "푸시알람이 두 번씩 계속 뜸").
 //   서버가 notification 필드를 함께 보내면 **브라우저가 스스로 하나를 띄운다.**
 //   그런데 여기서 onBackgroundMessage 가 또 showNotification 을 불러 **두 번째**가 떴다.

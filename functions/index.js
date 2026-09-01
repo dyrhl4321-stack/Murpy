@@ -183,8 +183,22 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
   if (!n || !n.toUid) return;
 
   const userSnap = await getFirestore().doc("users/" + n.toUid).get();
-  const tokens = (userSnap.exists && userSnap.data().fcmTokens) || [];
-  if (!tokens.length) return;
+  const rawTokens = (userSnap.exists && userSnap.data().fcmTokens) || [];
+  if (!rawTokens.length) return;
+
+  // ★★같은 기기의 토큰이 여러 개면 **그 폰만 여러 번 울린다** (대표 9-02: "푸시가 두 개씩").
+  //   FCM 웹 토큰은 `기기식별자:인증부분` 구조라, ':' 앞이 같으면 **같은 브라우저 설치**다.
+  //   앱이 arrayUnion 으로 더하기만 해 온 탓에 이미 쌓인 계정이 있다(진단: 같은 기기 토큰 2개).
+  //   앱 쪽도 고쳤지만, **이미 쌓인 사람은 앱을 고쳐도 배열이 저절로 줄지 않는다.**
+  //   그래서 보내기 직전에 기기당 하나만 남긴다. 남기는 것은 **가장 나중에 등록된 것**이다
+  //   (arrayUnion 은 뒤에 붙이므로 배열 뒤쪽이 최신).
+  //   혹시 그게 죽어 있으면 아래 '만료/무효 토큰 정리'가 지우고, 다음 발송 때 남은 것이 쓰인다.
+  const byDevice = new Map();
+  for (const t of rawTokens) byDevice.set(String(t).split(":")[0], t);
+  const tokens = Array.from(byDevice.values());
+  if (tokens.length !== rawTokens.length) {
+    console.log(`같은 기기 중복 토큰 ${rawTokens.length - tokens.length}개 제외 (uid=${n.toUid})`);
+  }
 
   const { title, body } = compose(n);
 
