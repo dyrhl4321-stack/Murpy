@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '902';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '903';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1593,6 +1593,26 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .sq-char { position:absolute; transform:translate(-50%,-100%); display:flex; flex-direction:column; align-items:center;
     pointer-events:none; will-change:left,top; transition:left .4s linear, top .4s linear }
   .sq-char.walking .sq-body > div > div { animation:mwWalk4 .55s step-end infinite }
+  /* ── 9-02 무궁화꽃이 피었습니다 ── */
+  /* 술래(헬창형) — 시트 423x896 의 한 칸(141x224)만 보여준다.
+     ★1행1열은 나시가 밝게 나와서 정면은 **1행2열**을 쓴다(생성 결함, 이미지 대신 좌표로 피함). */
+  .sq-mg-sulle { position:absolute; left:50%; top:4%; width:60px; height:96px; margin-left:-30px;
+    background-image:url('char/game/walk_npc_helchang.png?v=1'); background-repeat:no-repeat;
+    background-size:180px 384px; image-rendering:pixelated; z-index:7; pointer-events:none;
+    transition:filter .18s ease }
+  .sq-mg-sulle.back  { background-position:0    -96px }   /* 2행1열 = 뒷모습 */
+  .sq-mg-sulle.front { background-position:-60px 0 }      /* 1행2열 = 정면 */
+  .sq-mg-sulle.front { filter:drop-shadow(0 0 6px rgba(255,90,140,.85)) }
+  /* 결승선 — 술래 발치. 여기 닿으면 이긴다 */
+  .sq-mg-goal { position:absolute; left:0; right:0; z-index:6; pointer-events:none;
+    border-top:2px dashed rgba(255,255,255,.5); box-shadow:0 -6px 14px rgba(255,90,140,.18) }
+  /* 하트 — 걸린 사람에게 날아간다(총 대신). 납작한 도트라 프레임 흔들림이 없다 */
+  .sq-mg-heart { position:absolute; z-index:9; pointer-events:none; font-size:0; width:18px; height:18px;
+    background:#FF4D7E; clip-path:polygon(50% 100%,0 38%,0 16%,14% 0,50% 14%,86% 0,100% 16%,100% 38%);
+    animation:sqMgHeart .5s linear forwards }
+  @keyframes sqMgHeart { 0% { transform:scale(.6) } 70% { transform:scale(1.15) } 100% { transform:scale(.9); opacity:.2 } }
+  /* 정지 구간엔 화면 테두리가 붉게 — 폰을 안 보고 있어도 '지금 멈춰야 한다'가 보인다 */
+  .sq-stage.sq-mg-freeze { box-shadow:0 0 0 2px #2b3350, inset 0 0 0 4px rgba(255,77,126,.75) }
   /* 9-01 OX 퀴즈: 오답 쪽에 서 있던 캐릭터는 바닥이 꺼지며 낙사한다(운동회식) */
   .sq-char.sq-qz-fall { animation:sqQzFall .95s ease-in forwards }
   @keyframes sqQzFall { 0% { transform:translate(-50%,-100%) rotate(0deg); opacity:1 }
@@ -21416,6 +21436,7 @@ window.startNotifListener = (uid) => {
             showToast('매칭됐어요! ' + (n.fromNickname || '상대') + '님과 프로필이 공개됐어요');
           }
           else if (n.type === 'oxquiz') showToast('OX 퀴즈가 시작됐어요! 스쿼드 필드로 모이세요');
+          else if (n.type === 'mugung') showToast('무궁화꽃이 피었습니다! 스쿼드 필드로 모이세요');
           else showToast('새 알림이 도착했어요');
         });
       }
@@ -28178,6 +28199,17 @@ window.loadNotificationsFirestore = async () => {
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;
       }
+      if (n.type === 'mugung') {
+        const _msid = String(n.sid || '').replace(/[^A-Za-z0-9_-]/g, '');
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1};cursor:pointer" onclick="window.markFirebaseNotifRead('${n.id}');window.openSquadDetail&&window.openSquadDetail('${_msid}')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(255,77,126,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#FF4D7E;font-weight:900;font-size:11px">무궁</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd"><b>${safeNick}</b>님이 무궁화꽃이 피었습니다를 시작했어요! 필드로 모이세요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'oxquiz') {
         const _qsid = String(n.sid || '').replace(/[^A-Za-z0-9_-]/g, '');
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1};cursor:pointer" onclick="window.markFirebaseNotifRead('${n.id}');window.openSquadDetail&&window.openSquadDetail('${_qsid}')">
@@ -34924,6 +34956,7 @@ window._sqRenderDetailInner = function () {
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
       <button onclick="window.sqQuizStart&&window.sqQuizStart()" style="${sub};color:#F5C24B">OX 퀴즈</button>
+      <button onclick="window.sqMugungStart&&window.sqMugungStart()" style="${sub};color:#FF4D7E">무궁화꽃</button>
       ${inviteBtn}
       ${isHost ? `<button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>`
                : `<button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>`}
@@ -36952,8 +36985,10 @@ window.sqQuizStart = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
   if (!window._sqQzCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
-  const cur = window._sqQzV;
-  if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_QZ.STALE_MS) { showToast('이미 진행 중이에요'); return; }
+  const cur = window._sqGameRaw;   // ★무궁화꽃이 돌고 있어도 막아야 한다 — 같은 노드를 쓴다
+  if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_QZ.STALE_MS) {
+    showToast(cur.g === 'mg' ? '무궁화꽃이 진행 중이에요' : '이미 진행 중이에요'); return;
+  }
   const stEl = document.getElementById('sq-room-stage'); if (stEl) { try { stEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
   const tk = window._sqTypeKey(s.exerciseType), Z = window.SQ_QZ;
   const pick = function (n, len) { const idx = []; while (idx.length < Math.min(n, len)) { const r = Math.floor(Math.random() * len); if (idx.indexOf(r) < 0) idx.push(r); } return idx; };
@@ -37035,12 +37070,20 @@ window._sqQuizWatch = function (sid) {
   try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._sqQzOff = sn.val() || 0; }); } catch (e) {}
   window._sqQuizUnsub && window._sqQuizUnsub();
   const un = R.onValue(window._sqQzRef(sid), function (snap) {
-    window._sqQzV = snap.val();
+    // ★9-02 quiz 노드는 이제 두 게임이 같이 쓴다. 여기 한 곳에서 갈라준다 —
+    //   갈라주는 자리가 하나라야 "둘 다 자기 것인 줄 알고 그리는" 사고가 안 난다.
+    const _raw = snap.val();
+    window._sqGameRaw = _raw;
+    const _isMg = !!(_raw && _raw.g === 'mg');
+    window._sqMgV = _isMg ? _raw : null;
+    window._sqQzV = _isMg ? null : _raw;
+    try { window._sqMgPaint(sid); window._sqMgArm(sid); } catch (e) { console.warn('mugung paint', e); }
     try { window._sqQzPaint(sid); }
     catch (e) { window._sqQzErr = String((e && e.message) || e).slice(0, 80) + ' @v' + (window._SW_V || ''); console.warn('quiz paint', e); try { window._sqRtSend && window._sqRtSend(); } catch (e2) {} }
     window._sqQzHostArm(sid);
   }, function (e) { window._sqQzErr = 'watch:' + String((e && e.message) || e).slice(0, 60); console.warn('quiz watch', e); });
-  window._sqQuizUnsub = function () { try { un(); } catch (e) {} clearTimeout(window._sqQzHostT); clearInterval(window._sqQzTick); window._sqQzUiOn = false; };   // 플래그 원복 — 안 하면 공지가 영영 안 돌아온다
+  window._sqQuizUnsub = function () { try { un(); } catch (e) {} clearTimeout(window._sqQzHostT); clearInterval(window._sqQzTick); clearTimeout(window._sqMgT);
+    window._sqQzUiOn = false; window._sqMgUiOn = false; window._sqQzInField = false; window._sqMgInField = false; window._sqGameRaw = null; };   // 플래그 원복 — 안 하면 공지가 영영 안 돌아온다
 };
 // 그리기 — 스테이지 위 오버레이 한 장(#sq-qz)을 상태에 맞춰 다시 그린다
 window._sqQzPaint = function (sid) {
@@ -37065,16 +37108,18 @@ window._sqQzPaint = function (sid) {
   const inField = !!(active && (v.st === 'q' || v.st === 'rv') && _meQz && (v.join || {})[_meQz]);
   const showCard = !!(active && (v.st === 'lb' || inField));
   window._sqQzUiOn = showCard;
+  window._sqQzInField = inField;   // ★9-02 무궁화꽃과 같은 DOM 을 쓴다 — 서로 지우지 않게 플래그를 남긴다
   try {   // 9-01 대표: CSS 색칠 대신 전용 OX 경기장 필드로 통째로 교체
     if (inField) { if (!stage._qzBg) { stage._qzBg = stage.style.backgroundImage || '1'; stage.style.backgroundImage = "url('char/fields/field_oxquiz_tall.png?v=3')"; } }
     else if (stage._qzBg) { stage.style.backgroundImage = stage._qzBg === '1' ? '' : stage._qzBg; stage._qzBg = null;
-      Object.keys(window._sqChars || {}).forEach(function (u2) { const c2 = window._sqChars[u2]; if (c2 && c2.el) c2.el.classList.remove('sq-qz-fall'); }); }
+      if (!window._sqMgInField) Object.keys(window._sqChars || {}).forEach(function (u2) { const c2 = window._sqChars[u2]; if (c2 && c2.el) c2.el.classList.remove('sq-qz-fall'); }); }   // ★무궁화꽃이 쓰는 중이면 안 지운다
   } catch (e) {}
   try {
     const _rn = document.getElementById('sq-room-notice'); if (_rn) _rn.style.display = showCard ? 'none' : '';   // 9-01 대표: 스쿼드 톡 공지(필드 위 고정)도 게임 중 숨김
     const _rh = document.getElementById('sq-room-hint'); if (_rh) _rh.style.display = showCard ? 'none' : '';
-    stage.classList.toggle('sq-qz-big', inField);
-    const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', inField);   // 극장 모드 = 경기장에 들어간 사람만
+    const _anyField = inField || !!window._sqMgInField;   // ★둘 중 하나라도 필드에 있으면 유지
+    stage.classList.toggle('sq-qz-big', _anyField);
+    const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', _anyField);   // 극장 모드 = 경기장에 들어간 사람만
     if (inField && !window._sqQzWasOn) { window._sqQzWasOn = 1; setTimeout(function () { try { stage.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }, 300); }
     if (!inField) window._sqQzWasOn = 0;
   } catch (e) {}
@@ -37234,6 +37279,8 @@ window._sqQzGrant = async function (v, sid) {
 window._sqQzApplyVis = function () {
   const v = window._sqQzV;
   const on = !!(v && (v.st === 'q' || v.st === 'rv') && (Date.now() - (v.t || 0)) < ((window.SQ_QZ || {}).STALE_MS || 40000));
+  // ★9-02 내 게임이 꺼져 있는데 무궁화꽃이 켜져 있으면 손대지 않는다 — 그쪽이 숨긴 캐릭터를 도로 켠다.
+  if (!on && window._sqMgInField) return;
   const jn = (v && v.join) || {};
   // ★9-02: 경기장은 따로 있는 공간이다 — **내 쪽 사람만** 보인다.
   //   참여자에겐 참여자만(전과 같음), 참여 안 한 사람에겐 참여 안 한 사람만
@@ -37260,6 +37307,250 @@ window._sqQzClose = function () {
   const el = document.getElementById('sq-qz'); if (el) el.remove();
   window._sqQzPaint(s && s.id);
 };
+// ═══════════════ 무궁화꽃이 피었습니다 (스쿼드 게임 2 · 9-02) ═══════════════
+// OX 퀴즈가 깔아둔 것을 그대로 쓴다 — 필드·위치동기화(_sqRtLast)·참석자명단·진행자승계·낙사연출.
+// 새로 만드는 건 판정 하나다.
+window.SQ_MG = {
+  GO_MIN: 1400, GO_MAX: 3400,   // 술래가 등 보이는 시간(랜덤) — 예측 못 하게
+  STOP_MS: 2000,                // 돌아본 채 노려보는 시간
+  MOVE_TOL: 1.6,                // 이만큼(필드 폭 %) 넘게 움직이면 걸린다. 손떨림·보정 오차는 봐준다
+  GOAL_Y: 16,                   // 이 위로 올라오면 우승 (y 는 위가 작다)
+  STALE_MS: 40000
+};
+// ★9-02 새 노드를 안 만든다 — quiz 노드를 같이 쓰고 g:'mg' 로 구분한다.
+//   새 경로는 RTDB 규칙 배포(대표 구글 로그인)가 필요한데, 그게 안 되면 게임이 조용히 죽는다.
+window._sqMgRef = function (sid) { const R = window._rt; return R.ref(R.db, 'squadRooms/' + sid + '/quiz'); };
+window._sqMgNow = function () { return Date.now() + (window._sqQzOff || 0); };
+// 권한은 OX 와 같은 규칙을 쓴다 — 판 열기는 멤버 누구나, 시작·종료는 판을 연 사람.
+window._sqMgCanStart = function () { return window._sqQzCanStart && window._sqQzCanStart(); };
+window._sqMgIsOwner = function () {
+  const v = window._sqMgV, me = (auth.currentUser || {}).uid;
+  return !!(me && v && v.host === me) || (window._sqQzCanHost && window._sqQzCanHost());
+};
+
+// ── 판 열기 / 참석 / 시작 / 종료 ────────────────────────────────────────
+window.sqMugungStart = function () {
+  const s = window._sqDoc, R = window._rt, me = auth.currentUser;
+  if (!s || !R || !me) return;
+  if (!window._sqMgCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
+  const cur = window._sqGameRaw;   // ★어느 게임이든 판이 살아 있으면 못 연다(필드는 하나다)
+  if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_MG.STALE_MS) {
+    showToast(cur.g === 'mg' ? '이미 진행 중이에요' : 'OX 퀴즈가 진행 중이에요'); return;
+  }
+  const stEl = document.getElementById('sq-room-stage'); if (stEl) { try { stEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
+  const node = { g: 'mg', host: me.uid, hostNick: window._mwMyNick || '머피', st: 'lb', t: Date.now(), dl: 0, join: null, out: null, snap: null, win: null };
+  // ★OX 와 같은 함정 — 잔류 노드가 있으면 set 이 규칙에 막힌다. 지우고 쓴다.
+  Promise.resolve(R.remove(window._sqMgRef(s.id)).catch(function () {})).then(function () {
+    return R.set(window._sqMgRef(s.id), node);
+  }).then(function () {
+    window._sqMgArm(s.id);
+    try {
+      const meU = me.uid;
+      (s.memberUids || []).forEach(function (uid) { if (uid !== meU) _sendNotif(uid, 'mugung', { sid: s.id, text: (s.title || '스쿼드').slice(0, 30) }); });
+    } catch (e) {}
+  }).catch(function (e) { console.warn('mugung start', e); showToast('시작하지 못했어요'); });
+  window.track && window.track('game_start', { game: 'mugung' });
+};
+window.sqMugungJoin = function () {
+  const s = window._sqDoc, R = window._rt, me = auth.currentUser;
+  if (!s || !R || !me) return;
+  const v = window._sqMgV; if (!v || v.st !== 'lb') return;
+  R.set(R.ref(R.db, 'squadRooms/' + s.id + '/quiz/join/' + me.uid), { nick: window._mwMyNick || '머피', t: Date.now() })
+    .catch(function (e) { console.warn('mugung join', e); showToast('참석 등록이 안 됐어요'); });
+};
+window.sqMugungBegin = function () {
+  const s = window._sqDoc, R = window._rt;
+  if (!s || !R || !window._sqMgIsOwner()) return;
+  const v = window._sqMgV; if (!v || v.st !== 'lb') return;
+  if (!Object.keys(v.join || {}).length) { showToast('참석하기를 누른 사람이 아직 없어요'); return; }
+  const Z = window.SQ_MG;
+  R.update(window._sqMgRef(s.id), { st: 'go', dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN),
+                                    t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' })
+    .catch(function (e) { console.warn('mugung begin', e); });
+};
+window.sqMugungStop = function () {
+  const s = window._sqDoc, R = window._rt;
+  if (!s || !R || !window._sqMgIsOwner()) return;
+  R.update(window._sqMgRef(s.id), { st: 'end', t: Date.now() }).catch(function () {});
+};
+
+// ── 진행자 = 참석자 uid 순 '내 순번'. 선출하지 않는다(OX 와 같은 규칙) ──
+window._sqMgMyTurn = function () {
+  const v = window._sqMgV, me = (auth.currentUser || {}).uid;
+  if (!v || !me) return -1;
+  const players = window._sqRtLast || {};
+  const line = Object.keys(v.join || {}).filter(function (u) { const p = players[u]; return p && !p.off; }).sort();
+  const i = line.indexOf(me);
+  if (i >= 0) return i;
+  return (v.host === me) ? line.length : -1;
+};
+window._sqMgArm = function (sid) {
+  clearTimeout(window._sqMgT);
+  const v = window._sqMgV; if (!v || (v.st !== 'go' && v.st !== 'st')) return;
+  const turn = window._sqMgMyTurn(); if (turn < 0) return;
+  const back = Math.min(turn, 3) * 1200;
+  const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + 200) + back;
+  window._sqMgT = setTimeout(function () { window._sqMgTick(sid); }, wait);
+};
+// 진행자가 구간을 넘긴다. 같은 데이터로 같은 답이 나오므로 둘이 동시에 써도 결과가 같다.
+window._sqMgTick = function (sid) {
+  const R = window._rt, v = window._sqMgV, Z = window.SQ_MG;
+  if (!R || !v) return;
+  const players = window._sqRtLast || {}, jn = v.join || {}, out = v.out || {};
+  const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
+  if (v.st === 'go') {
+    // 돌아본다 — 지금 위치를 박아둔다. 이게 정지 판정의 기준선이다.
+    const snap = {};
+    alive.forEach(function (u) { const p = players[u]; if (p) snap[u] = { x: +p.x || 0, y: +p.y || 0 }; });
+    R.update(window._sqMgRef(sid), { st: 'st', snap: snap, dl: window._sqMgNow() + Z.STOP_MS, t: Date.now(),
+                                     host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
+    return;
+  }
+  if (v.st !== 'st') return;
+  // 다시 등을 돌린다 — 그 전에 움직인 사람을 걸러낸다.
+  const snap = v.snap || {}, newOut = Object.assign({}, out);
+  let caught = 0;
+  alive.forEach(function (u) {
+    const a = snap[u], p = players[u]; if (!a || !p) return;
+    const dx = (+p.x || 0) - a.x, dy = (+p.y || 0) - a.y;
+    if (Math.sqrt(dx * dx + dy * dy) > Z.MOVE_TOL) { newOut[u] = 1; caught++; }
+  });
+  const still = Object.keys(jn).filter(function (u) { return !newOut[u]; });
+  // 결승선에 닿은 사람이 있으면 거기서 끝
+  let win = null;
+  still.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !win) win = u; });
+  if (win || !still.length) {
+    R.update(window._sqMgRef(sid), { st: 'end', out: newOut, win: win || null, t: Date.now(),
+                                     host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
+    return;
+  }
+  R.update(window._sqMgRef(sid), { st: 'go', out: newOut, snap: null,
+                                   dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN),
+                                   t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' }).catch(function () {});
+};
+
+// ── 구독 ────────────────────────────────────────────────────────────────
+// ★따로 구독하지 않는다 — _sqQuizWatch 하나가 같은 노드를 받아 갈라준다(위 참고).
+//   같은 경로를 두 번 구독하면 콜백이 두 벌 돌고 정리할 곳도 두 곳이 된다.
+window._sqMugungWatch = function () {};
+
+// ── 그리기 ──────────────────────────────────────────────────────────────
+window._sqMgApplyVis = function () {
+  const v = window._sqMgV;
+  const on = !!(v && (v.st === 'go' || v.st === 'st') && (Date.now() - (v.t || 0)) < window.SQ_MG.STALE_MS);
+  if (!on && window._sqQzInField) return;   // ★OX 가 쓰는 중이면 손대지 않는다
+  const jn = (v && v.join) || {}, out = (v && v.out) || {};
+  const me = (auth.currentUser || {}).uid, iAmIn = !!(me && jn[me]);
+  Object.keys(window._sqChars || {}).forEach(function (uid) {
+    const c = window._sqChars[uid]; if (!c || !c.el) return;
+    // ★항상 대입한다 — on 일 때만 대입하면 게임이 끝난 뒤에도 숨은 캐릭터가 안 돌아온다.
+    //   단 OX 가 필드를 쓰는 중이면 그쪽 판단을 존중해 손대지 않는다(위에서 이미 빠져나갔다).
+    c.el.style.display = (on && (!!jn[uid] !== iAmIn)) ? 'none' : '';
+    c.el.classList.toggle('sq-qz-fall', !!(on && out[uid]));   // 걸린 사람 = 쓰러짐(OX 낙사 연출 재사용)
+  });
+};
+window._sqMgHeart = function (uid) {
+  const stage = document.getElementById('sq-room-stage'); if (!stage) return;
+  const c = (window._sqChars || {})[uid]; if (!c || !c.el) return;
+  const h = document.createElement('div'); h.className = 'sq-mg-heart';
+  h.style.left = c.el.style.left; h.style.top = 'calc(' + (c.el.style.top || '50%') + ' - 34px)';
+  stage.appendChild(h);
+  setTimeout(function () { try { h.remove(); } catch (e) {} }, 560);
+};
+window._sqMgPaint = function (sid) {
+  const stage = document.getElementById('sq-room-stage'); if (!stage) return;
+  const v = window._sqMgV, Z = window.SQ_MG;
+  const stale = v && v.st !== 'end' && (Date.now() - (v.t || 0)) > (v.st === 'lb' ? 300000 : Z.STALE_MS);
+  const active = !!(v && !stale && (v.st === 'lb' || v.st === 'go' || v.st === 'st'));
+  const me = (auth.currentUser || {}).uid;
+  const inField = !!(active && (v.st === 'go' || v.st === 'st') && me && (v.join || {})[me]);
+  const showCard = !!(active && (v.st === 'lb' || inField));
+  window._sqMgUiOn = showCard;
+  window._sqMgInField = inField;   // ★OX 와 같은 DOM 을 쓴다 — 서로 지우지 않게
+
+  // 술래·결승선 — 필드에 들어간 사람에게만
+  let sul = document.getElementById('sq-mg-sulle'), goal = document.getElementById('sq-mg-goal');
+  if (inField) {
+    if (!sul) { sul = document.createElement('div'); sul.id = 'sq-mg-sulle'; sul.className = 'sq-mg-sulle'; stage.appendChild(sul); }
+    if (!goal) { goal = document.createElement('div'); goal.id = 'sq-mg-goal'; goal.className = 'sq-mg-goal'; goal.style.top = Z.GOAL_Y + '%'; stage.appendChild(goal); }
+    sul.classList.toggle('front', v.st === 'st');
+    sul.classList.toggle('back', v.st !== 'st');
+    stage.classList.toggle('sq-mg-freeze', v.st === 'st');
+  } else {
+    if (sul) sul.remove(); if (goal) goal.remove();
+    stage.classList.remove('sq-mg-freeze');
+  }
+  const _anyField = inField || !!window._sqQzInField;
+  stage.classList.toggle('sq-qz-big', _anyField);
+  const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', _anyField);
+  // 공지는 둘 중 하나라도 카드를 쓰는 동안 숨긴다. 둘 다 끝나면 되돌린다(안 되돌리면 영영 안 보인다).
+  const _rn = document.getElementById('sq-room-notice');
+  if (_rn) _rn.style.display = (showCard || window._sqQzUiOn) ? 'none' : '';
+
+  // 새로 걸린 사람에게 하트를 날린다 (out 이 늘어난 순간에만)
+  try {
+    const out = (v && v.out) || {}, prev = window._sqMgOutPrev || {};
+    Object.keys(out).forEach(function (u) { if (!prev[u]) window._sqMgHeart(u); });
+    window._sqMgOutPrev = Object.assign({}, out);
+  } catch (e) {}
+
+  let card = document.getElementById('sq-mg-cardwrap');
+  if (!showCard) { if (card) card.remove(); window._sqMgApplyVis(); return; }
+  if (!card && stage.parentNode) { card = document.createElement('div'); card.id = 'sq-mg-cardwrap'; card.style.cssText = 'margin-top:10px'; stage.parentNode.insertBefore(card, stage.nextSibling); }
+  const E = window._escHtml || function (t) { return String(t); };
+  const jn = v.join || {}, out = v.out || {}, players = window._sqRtLast || {};
+  const nick = function (u) { return E(((players[u] || {}).nick) || (jn[u] || {}).nick || '머피'); };
+  const box = 'background:#0b0e17;border:2px solid #2b3350;border-radius:12px;padding:13px 14px;font-family:Galmuri11,sans-serif;color:#fff';
+  if (v.st === 'lb') {
+    const list = Object.keys(jn);
+    card.innerHTML = '<div style="' + box + '">'
+      + '<div style="font-size:13px;font-weight:800;margin-bottom:4px">무궁화꽃이 피었습니다</div>'
+      + '<div style="font-size:11px;color:#8a93a8;line-height:1.6;margin-bottom:9px">헬창형이 등을 돌리면 움직이고, 돌아보면 멈추세요.<br>움직이다 걸리면 <b style="color:#FF4D7E">하트</b>를 맞습니다. 맨 위 점선까지 먼저 가면 이겨요.</div>'
+      + '<div style="font-size:11.5px;margin-bottom:9px">참석 ' + list.length + '명 · ' + (list.map(nick).join(', ') || '아직 없어요') + '</div>'
+      + '<div style="display:flex;gap:7px">'
+      + (jn[me] ? '<div style="flex:1;text-align:center;background:#F5C24B;color:#3a2a00;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800">참석 완료</div>'
+                : '<button onclick="window.sqMugungJoin()" style="flex:1;background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">참석하기</button>')
+      + (window._sqMgIsOwner() ? '<button onclick="window.sqMugungBegin()" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + list.length + '명)</button>' : '')
+      + '</div></div>';
+    window._sqMgApplyVis(); return;
+  }
+  const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
+  const iOut = !!out[me];
+  card.innerHTML = '<div style="' + box + '">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+    +   '<div style="font-size:14px;font-weight:800;color:' + (v.st === 'st' ? '#FF4D7E' : '#3dde7c') + '">'
+    +     (v.st === 'st' ? '돌아봤다! 멈춰!' : '무궁화꽃이 피었습니다~') + '</div>'
+    +   (window._sqMgIsOwner() ? '<button onclick="window.sqMugungStop()" style="background:rgba(255,77,126,.15);border:1px solid rgba(255,77,126,.5);color:#FF4D7E;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">게임 종료</button>' : '')
+    + '</div>'
+    + '<div style="font-size:11.5px;color:#8a93a8;line-height:1.6">'
+    +   (iOut ? '<b style="color:#FF4D7E">하트 맞고 탈락했어요</b> · 다음 판에 다시 도전!' : '남은 사람 ' + alive.length + '명 · ' + alive.map(nick).join(', '))
+    + '</div></div>';
+  window._sqMgApplyVis();
+
+  if (v.st === 'end') {
+    const md = document.getElementById('sq-mg-endmodal');
+    if (!md) {
+      const d = document.createElement('div'); d.id = 'sq-mg-endmodal';
+      d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(5,7,12,.86);display:flex;align-items:center;justify-content:center;padding:24px';
+      d.innerHTML = '<div style="' + box + ';max-width:320px;width:100%;text-align:center">'
+        + '<div style="font-size:15px;font-weight:800;margin-bottom:10px">무궁화꽃이 피었습니다</div>'
+        + (v.win ? '<div style="font-size:22px;font-weight:800;color:#F5C24B;margin-bottom:6px">' + nick(v.win) + '</div><div style="font-size:12px;color:#8a93a8">먼저 결승선에 닿았어요</div>'
+                 : '<div style="font-size:13px;color:#8a93a8">전원 탈락! 헬창형 승리</div>')
+        + '<div style="display:flex;gap:7px;margin-top:14px">'
+        + (window._sqMgCanStart() ? '<button onclick="window.sqMugungClose();window.sqMugungStart()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">한 판 더</button>' : '')
+        + '<button onclick="window.sqMugungClose()" style="flex:1;background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">닫기</button>'
+        + '</div></div>';
+      document.body.appendChild(d);
+    }
+  }
+};
+window.sqMugungClose = function () {
+  const s = window._sqDoc, R = window._rt, v = window._sqMgV;
+  if (s && R && v && v.st === 'end' && window._sqMgIsOwner()) { try { R.remove(window._sqMgRef(s.id)); } catch (e) {} }
+  const md = document.getElementById('sq-mg-endmodal'); if (md) md.remove();
+  window._sqMgOutPrev = null;
+  window._sqMgPaint(s && s.id);
+};
 window._sqRtLeave = function (sid, hard) {
   const u = auth.currentUser;
   // OX 퀴즈: 구독 정리. 내가 진행자인데 판이 살아 있으면 종료로 바꿔 남은 사람 화면을 풀어준다
@@ -37269,6 +37560,13 @@ window._sqRtLeave = function (sid, hard) {
     if (u && v && v.host === u.uid && v.st !== 'end' && window._rt && sid) window._rt.remove(window._sqQzRef(sid)).catch(function () {});
   } catch (e) {}
   window._sqQuizUnsub && window._sqQuizUnsub(); window._sqQuizUnsub = null; window._sqQzV = null;
+  // 무궁화꽃도 같이 — 내가 판을 연 사람인데 판이 살아 있으면 지운다(OX 와 같은 이유)
+  try {
+    const mv = window._sqMgV;
+    if (u && mv && mv.host === u.uid && mv.st !== 'end' && window._rt && sid) window._rt.remove(window._sqMgRef(sid)).catch(function () {});
+  } catch (e) {}
+  window._sqMgV = null; window._sqMgOutPrev = null; window._sqGameRaw = null;
+  window._sqMgInField = false; window._sqQzInField = false;   // ★안 지우면 다음에 서로 '상대가 쓰는 중'으로 보고 둘 다 안 그린다
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
   window._sqOnMove = null; window._sqRtSend = null; window._sqOdArmed = null;
