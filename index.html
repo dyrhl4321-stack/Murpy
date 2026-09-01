@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '882';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '883';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36843,7 +36843,9 @@ window.sqQuizStart = function () {
   Promise.resolve(R.remove(window._sqQzRef(s.id)).catch(function () {})).then(function () {
     return R.set(window._sqQzRef(s.id), node);
   }).then(function () {
-    try { R.onDisconnect(window._sqQzRef(s.id)).remove(); } catch (e) {}   // 진행자 연결이 끊기면 판 종료
+    // (9-01 onDisconnect.remove 제거 — 화면 잠금 등 잠깐 끊김에도 판이 통째로 사라지고,
+    //  오프라인 상태의 진행자 타이머가 재접속 때 host·문제 없는 반쪽 노드를 만들었다.
+    //  진행자가 진짜 사라지면 40초 무갱신 숨김 + 다음 시작의 remove-then-set 이 처리한다)
     window._sqQzHostArm(s.id);
     // 9-01 대표: 멤버들에게 "OX 퀴즈 시작" 알림·푸시
     try {
@@ -36862,7 +36864,7 @@ window._sqQzHostArm = function (sid) {
   else if (v.st === 'rv') window._sqQzHostT = setTimeout(function () { window._sqQzNext(sid); }, Z.RV_MS);
 };
 window._sqQzJudge = function (sid) {
-  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'q') return;
+  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'q' || !Array.isArray(v.qs)) return;
   const item = window._sqQzGet(v.qs[v.qi]), players = window._sqRtLast || {};
   const ok = {}, sc = Object.assign({}, v.sc || {});
   Object.keys(players).forEach(function (uid) {
@@ -36871,13 +36873,13 @@ window._sqQzJudge = function (sid) {
     if (side === item.a) { ok[uid] = 1; sc[uid] = (sc[uid] | 0) + 10; }
     else if (!(uid in sc)) sc[uid] = 0;
   });
-  R.update(window._sqQzRef(sid), { st: 'rv', last: { a: item.a, ok: ok }, sc: sc, t: Date.now() })
+  R.update(window._sqQzRef(sid), { st: 'rv', last: { a: item.a, ok: ok }, sc: sc, t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' })
     .catch(function (e) { console.warn('quiz judge', e); });
 };
 window._sqQzNext = function (sid) {
-  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'rv') return;
+  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'rv' || !Array.isArray(v.qs)) return;
   if (v.qi + 1 >= v.qs.length) { R.update(window._sqQzRef(sid), { st: 'end', t: Date.now() }).catch(function () {}); return; }
-  R.update(window._sqQzRef(sid), { st: 'q', qi: v.qi + 1, dl: window._sqQzNow() + window.SQ_QZ.ANS_MS, last: null, t: Date.now() })
+  R.update(window._sqQzRef(sid), { st: 'q', qi: v.qi + 1, dl: window._sqQzNow() + window.SQ_QZ.ANS_MS, last: null, t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' })
     .catch(function (e) { console.warn('quiz next', e); });
 };
 // 구독 — 필드가 열릴 때 걸고, 값이 올 때마다 오버레이를 그린다
@@ -36914,6 +36916,12 @@ window._sqQzPaint = function (sid) {
     if (card && card._qz) { card._qz = 0; window._sqTalkEntry && window._sqTalkEntry(); }   // 공지 카드 복구
   }
   if (!v || stale) return;
+  if (!Array.isArray(v.qs) || !v.qs[v.qi | 0]) {   // 9-01 깨진 노드(qs 없음) — 그리다 터져 UI 전체가 죽었다
+    if (window._sqQzCanHost() && window._rt) { try { window._rt.remove(window._sqQzRef(sid)); } catch (e) {} }
+    if (el) el.remove();
+    if (card && card._qz) { card._qz = 0; window._sqTalkEntry && window._sqTalkEntry(); }
+    return;
+  }
   const E = window._escHtml || function (t) { return String(t); };
   const q = window._sqQzGet(v.qs[v.qi]), num = (v.qi + 1) + '/' + v.qs.length;
   const myUid = (auth.currentUser || {}).uid;
