@@ -48,10 +48,16 @@ DAY_KEYS = [(_now - datetime.timedelta(days=i)).strftime('%Y-%m-%d') for i in ra
 print('장부 조회 대상 %d일: %s' % (DAYS, ', '.join(DAY_KEYS)), flush=True)
 
 # ───────────────────────── OAuth (deploy_firestore_rules.py 와 동일) ─────────────────────────
+# ★★scope 는 반드시 cloud-platform 이다. datastore 로 두면 **로그인 화면에서 막힌다**
+#   (대표 9-02 화면: "액세스 차단됨: 승인 오류"). 이 CID/CSEC 는 firebase-tools 의 공개 상수인데,
+#   그 OAuth 클라이언트에 datastore 범위가 승인돼 있지 않기 때문이다.
+#   같은 폴더의 deploy_firestore_rules.py · deploy_rtdb_rules.py · enable_storage.py 는
+#   처음부터 cloud-platform 이었다 — 이 파일만 달라서 **한 번도 돌아본 적이 없었다.**
+#   cloud-platform 은 datastore 를 포함하므로 Firestore 읽기에 부족하지 않다.
 STATE = secrets.token_urlsafe(12)
 AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
     'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
-    'scope': 'email openid https://www.googleapis.com/auth/datastore',
+    'scope': 'email openid https://www.googleapis.com/auth/cloud-platform',
     'state': STATE, 'access_type': 'offline', 'prompt': 'consent'})
 print('아래 링크를 브라우저에서 열 것 (관리자 계정으로 로그인):', flush=True)
 print(AUTH_URL, flush=True)
