@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '878';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '879';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1580,6 +1580,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .match-row { transition: transform .12s ease, background .12s ease }
   .match-row:active { transform: scale(.985); background: rgba(255,255,255,.07) }
   /* ---------- 스쿼드 워킹 룸 (실시간 멀티) ---------- */
+  .sq-stage.sq-qz-big { aspect-ratio:auto !important; height:54vh; transition:height .25s ease }
   .sq-stage { position:relative; width:100%; aspect-ratio:1376/768; background-size:cover; background-position:center;
     image-rendering:pixelated; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350; overflow:hidden; cursor:pointer; touch-action:manipulation }
   .sq-char { position:absolute; transform:translate(-50%,-100%); display:flex; flex-direction:column; align-items:center;
@@ -21350,6 +21351,7 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'bamboo_match_accept') {
             showToast('매칭됐어요! ' + (n.fromNickname || '상대') + '님과 프로필이 공개됐어요');
           }
+          else if (n.type === 'oxquiz') showToast('OX 퀴즈가 시작됐어요! 스쿼드 필드로 모이세요');
           else showToast('새 알림이 도착했어요');
         });
       }
@@ -28076,6 +28078,17 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:11px;color:#444">${time}</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'oxquiz') {
+        const _qsid = String(n.sid || '').replace(/[^A-Za-z0-9_-]/g, '');
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1};cursor:pointer" onclick="window.markFirebaseNotifRead('${n.id}');window.openSquadDetail&&window.openSquadDetail('${_qsid}')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.6);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B;font-weight:900;font-size:13px">OX</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd"><b>${safeNick}</b>님이 OX 퀴즈를 시작했어요! 필드로 모이세요</div>
+            <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#fff;flex-shrink:0"></div>' : ''}
         </div>`;
       }
       if (n.type === 'bamboo_request') {
@@ -34812,6 +34825,7 @@ window._sqRenderDetailInner = function () {
   else if (isHost || _iAmStaff) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
+      <button onclick="window.sqQuizStart&&window.sqQuizStart()" style="${sub};color:#F5C24B">OX 퀴즈</button>
       ${inviteBtn}
       ${isHost ? `<button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>`
                : `<button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>`}
@@ -35852,6 +35866,8 @@ window._sqChatGateApply = function () {
 // 상세에 남는 한 줄 — 공지가 있으면 공지를, 없으면 마지막 대화를 보여준다.
 window._sqTalkEntry = function () {
   const wrap = document.getElementById('sq-chat-wrap'); if (!wrap) return;
+  const _qv = window._sqQzV;   // 9-01 OX 퀴즈 진행 중엔 이 카드 자리에 문제가 떠 있다(대표: 게임할 때 공지는 숨기자)
+  if (wrap._qz && _qv && _qv.st !== 'end' && (Date.now() - (_qv.t || 0)) < (window.SQ_QZ || {}).STALE_MS) return;
   const s = window._sqDoc || {};
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const msgs = window._sqChatMsgs || [];
@@ -36489,14 +36505,7 @@ window._sqRoomInit = function (s) {
   window._sqRtJoin && window._sqRtJoin(s.id, s);
   // 구독보다 스테이지가 늦게 준비된 경우를 대비해 마지막 스냅샷으로 한 번 더 그린다
   if (window._sqRtLast) window._sqRenderRemotes(s.id, window._sqRtLast, me);
-  // ★단체 OX 퀴즈 (9-01) — 시작 버튼은 스쿼드장·운영진에게만, 진행 중이면 숨김(_sqQzPaint 가 관리)
-  const qb = document.createElement('button');
-  qb.id = 'sq-qz-startbtn'; qb.textContent = 'OX 퀴즈';
-  qb.style.cssText = 'position:absolute;right:8px;top:8px;z-index:8;background:rgba(5,7,12,.72);color:#F5C24B;'
-    + "border:1px solid rgba(245,194,75,.45);border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'Galmuri11',sans-serif";
-  qb.style.display = 'none';
-  qb.onclick = function (ev) { ev.stopPropagation(); window.sqQuizStart(); };
-  stage.appendChild(qb);
+  // ★단체 OX 퀴즈 (9-01) — 시작 버튼은 아래 액션 줄에(필드 구석 칩은 작아서 묻혔다, 대표)
   window._sqQuizWatch && window._sqQuizWatch(s.id);
 };
 window._sqStaticPlaced = {};
@@ -36813,6 +36822,9 @@ window.sqQuizStart = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
   if (!window._sqQzCanHost()) { showToast('스쿼드장·운영진이 시작할 수 있어요'); return; }
+  const cur = window._sqQzV;
+  if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_QZ.STALE_MS) { showToast('이미 진행 중이에요'); return; }
+  const stEl = document.getElementById('sq-room-stage'); if (stEl) { try { stEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
   const tk = window._sqTypeKey(s.exerciseType), Z = window.SQ_QZ;
   const pick = function (n, len) { const idx = []; while (idx.length < Math.min(n, len)) { const r = Math.floor(Math.random() * len); if (idx.indexOf(r) < 0) idx.push(r); } return idx; };
   const tb = window.SQ_QUIZ_BY_TYPE[tk] || [];
@@ -36824,6 +36836,11 @@ window.sqQuizStart = function () {
   R.set(window._sqQzRef(s.id), node).then(function () {
     try { R.onDisconnect(window._sqQzRef(s.id)).remove(); } catch (e) {}   // 진행자 연결이 끊기면 판 종료
     window._sqQzHostArm(s.id);
+    // 9-01 대표: 멤버들에게 "OX 퀴즈 시작" 알림·푸시
+    try {
+      const meU = (auth.currentUser || {}).uid;
+      (s.memberUids || []).forEach(function (uid) { if (uid !== meU) _sendNotif(uid, 'oxquiz', { sid: s.id, text: (s.title || '스쿼드').slice(0, 30) }); });
+    } catch (e) {}
   }).catch(function (e) { console.warn('quiz start', e); showToast('시작하지 못했어요'); });
   window.track && window.track('game_start', { game: 'oxquiz', type: tk });
 };
@@ -36868,65 +36885,77 @@ window._sqQuizWatch = function (sid) {
 };
 // 그리기 — 스테이지 위 오버레이 한 장(#sq-qz)을 상태에 맞춰 다시 그린다
 window._sqQzPaint = function (sid) {
+  // ★9-01 대표: 퀴즈 UI가 좁은 필드를 다 가렸다 → 문제·타이머·점수·중단은 **필드 밖**(공지 카드 자리)으로.
+  //   게임 중엔 공지(톡 미리보기)가 숨고 그 자리에 문제가 선다(대표 제안). 필드 안엔 O/X 반반 색만 남긴다.
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
   let el = document.getElementById('sq-qz');
+  const card = document.getElementById('sq-chat-wrap');
   const v = window._sqQzV, Z = window.SQ_QZ;
   const stale = v && v.st !== 'end' && (Date.now() - (v.t || 0)) > Z.STALE_MS;
   clearInterval(window._sqQzTick);
-  const startBtn = document.getElementById('sq-qz-startbtn');
-  if (startBtn) startBtn.style.display = (v && !stale && v.st !== 'end') ? 'none' : (window._sqQzCanHost() ? '' : 'none');
-  if (!v || stale) { if (el) el.remove(); return; }
-  if (!el) { el = document.createElement('div'); el.id = 'sq-qz'; el.style.cssText = 'position:absolute;inset:0;z-index:9;pointer-events:none;font-family:\'Galmuri11\',sans-serif'; stage.appendChild(el); }
+  const active = v && !stale && (v.st === 'q' || v.st === 'rv');
+  try { stage.classList.toggle('sq-qz-big', !!active); } catch (e) {}   // 게임 중엔 필드 확대(9-01 대표)
+  if (!v || stale || !active) {
+    if (el && (!v || stale)) el.remove();
+    if (card && card._qz) { card._qz = 0; window._sqTalkEntry && window._sqTalkEntry(); }   // 공지 카드 복구
+  }
+  if (!v || stale) return;
   const E = window._escHtml || function (t) { return String(t); };
   const q = window._sqQzGet(v.qs[v.qi]), num = (v.qi + 1) + '/' + v.qs.length;
+  const myUid = (auth.currentUser || {}).uid;
   const scRows = function (n) {
     const players = window._sqRtLast || {};
     return Object.keys(v.sc || {}).map(function (uid) { return { uid: uid, nick: (players[uid] || {}).nick || '머피', s: v.sc[uid] | 0 }; })
       .sort(function (a, b) { return b.s - a.s; }).slice(0, n);
   };
-  const myUid = (auth.currentUser || {}).uid;
-  const scoreBar = function () {   // 9-01 대표: "점수는 어디에 나오냐" — 진행 중에도 필드 하단에 실시간 점수
-    const rows = scRows(3);
-    if (!rows.length && !(myUid in (v.sc || {}))) return '';
+  const scoreLine = function () {
+    const rows = scRows(3); if (!rows.length) return '';
     const my = (v.sc || {})[myUid];
-    return '<div style="position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;background:rgba(5,7,12,.82);border:1px solid #2b3350;border-radius:9px;padding:5px 10px;font-size:10.5px;white-space:nowrap">'
-      + rows.map(function (r, i) { return '<span style="color:' + (i === 0 ? '#F5C24B' : '#cfd6e6') + '">' + (i + 1) + '위 ' + E(r.nick) + ' ' + r.s + '</span>'; }).join('<span style="color:#3a4258">·</span>')
+    return '<div style="display:flex;gap:6px;align-items:center;font-size:10.5px;margin-top:6px;white-space:nowrap;overflow:hidden">'
+      + rows.map(function (r, i) { return '<span style="color:' + (i === 0 ? '#F5C24B' : '#8a93a8') + '">' + (i + 1) + '위 ' + E(r.nick) + ' ' + r.s + '</span>'; }).join('<span style="color:#3a4258">·</span>')
       + (my != null ? '<span style="color:#3a4258">|</span><span style="color:#7aa8ff">나 ' + (my | 0) + '점</span>' : '')
       + '</div>';
   };
   const stopBtn = window._sqQzCanHost()
-    ? '<button onclick="window.sqQuizStop()" style="position:absolute;right:6px;top:6px;pointer-events:auto;background:rgba(5,7,12,.8);color:#ff8a8e;border:1px solid rgba(229,72,77,.5);border-radius:8px;padding:4px 9px;font-size:10.5px;cursor:pointer;font-family:inherit;z-index:3">중단</button>'
+    ? '<button onclick="window.sqQuizStop()" style="position:absolute;right:10px;top:9px;background:none;border:none;color:rgba(255,255,255,.4);font-size:11px;cursor:pointer;font-family:inherit;padding:2px 4px">중단</button>'
     : '';
-  if (v.st === 'q') {
-    el.innerHTML = '<div style="position:absolute;inset:0;box-shadow:inset 0 0 0 3px rgba(245,194,75,.85)"></div>'
-      + '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,.18);border-right:2px dashed rgba(255,255,255,.5)"></div>'
-      + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,.18)"></div>'
-      + '<div style="position:absolute;left:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(61,126,255,.55);font-family:\'Galmuri14\',sans-serif">O</div>'
-      + '<div style="position:absolute;right:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(229,72,77,.55);font-family:\'Galmuri14\',sans-serif">X</div>'
-      + '<div style="position:absolute;left:50%;top:13%;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.92);border:2px solid #F5C24B;border-radius:12px;padding:10px 12px;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.5)">'
-      +   '<div style="font-size:10.5px;color:#F5C24B;letter-spacing:1px">OX 퀴즈 ' + num + ' · 캐릭터를 옮겨 답하세요</div>'
-      +   '<div style="font-size:15px;color:#fff;margin-top:4px;line-height:1.45;font-family:\'Galmuri14\',sans-serif">' + E(q.q) + '</div>'
-      +   '<div id="sq-qz-timer" style="margin-top:6px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden"><i style="display:block;height:100%;background:#F5C24B;width:100%"></i></div>'
-      + '</div>' + scoreBar() + stopBtn;
-    const bar = el.querySelector('#sq-qz-timer i');
-    window._sqQzTick = setInterval(function () {
-      const left = (v.dl - window._sqQzNow()) / Z.ANS_MS;
-      if (bar) bar.style.width = Math.max(0, Math.min(1, left)) * 100 + '%';
-      if (left <= 0) clearInterval(window._sqQzTick);
-    }, 200);
-  } else if (v.st === 'rv') {
-    const okN = Object.keys((v.last || {}).ok || {}).length;
-    const item = q;
-    el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,' + (item.a === 'O' ? '.34' : '.06') + ')"></div>'
-      + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,' + (item.a === 'X' ? '.34' : '.06') + ')"></div>'
-      + '<div style="position:absolute;left:50%;top:13%;transform:translateX(-50%);width:92%;box-sizing:border-box;background:rgba(5,7,12,.92);box-shadow:0 6px 18px rgba(0,0,0,.5);border:2px solid ' + (item.a === 'O' ? '#3D7EFF' : '#e5484d') + ';border-radius:12px;padding:10px 12px;text-align:center">'
-      +   '<div style="font-size:19px;color:#fff;font-family:\'Galmuri14\',sans-serif">정답은 <b style="color:' + (item.a === 'O' ? '#7aa8ff' : '#ff8a8e') + '">' + item.a + '</b>!</div>'
-      +   '<div style="font-size:11.5px;color:#cfd6e6;margin-top:4px;line-height:1.5">' + E(item.w || '') + '</div>'
-      +   '<div style="font-size:11px;color:#F5C24B;margin-top:5px">맞춘 사람 ' + okN + '명 · +10점</div>'
-      + '</div>' + scoreBar() + stopBtn;
+  if (v.st === 'q' || v.st === 'rv') {
+    // 필드: 반반 색 + 구석 글자만 (pointer-events 없음 — 캐릭터·걷기 안 가림)
+    if (!el) { el = document.createElement('div'); el.id = 'sq-qz'; el.style.cssText = 'position:absolute;inset:0;z-index:9;pointer-events:none;font-family:\'Galmuri11\',sans-serif'; stage.appendChild(el); }
+    const oa = v.st === 'rv' ? (v.last.a === 'O' ? '.32' : '.05') : '.16';
+    const xa = v.st === 'rv' ? (v.last.a === 'X' ? '.32' : '.05') : '.16';
+    el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,' + oa + ');border-right:2px dashed rgba(255,255,255,.45)"></div>'
+      + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,' + xa + ')"></div>'
+      + '<div style="position:absolute;left:5%;top:4%;font-size:34px;font-weight:900;color:rgba(61,126,255,.6);font-family:\'Galmuri14\',sans-serif">O</div>'
+      + '<div style="position:absolute;right:5%;top:4%;font-size:34px;font-weight:900;color:rgba(229,72,77,.6);font-family:\'Galmuri14\',sans-serif">X</div>';
+    if (card) {
+      card._qz = 1;
+      if (v.st === 'q') {
+        card.innerHTML = '<div style="position:relative;background:rgba(5,7,12,.92);border:1px solid #2b3350;border-radius:13px;padding:11px 13px">'
+          + stopBtn
+          + '<div style="font-size:10.5px;color:#F5C24B">OX 퀴즈 ' + num + ' · 캐릭터를 O/X 쪽으로 옮기세요</div>'
+          + '<div style="font-size:13.5px;color:#fff;margin-top:4px;line-height:1.5;font-family:\'Galmuri14\',sans-serif">' + E(q.q) + '</div>'
+          + '<div id="sq-qz-timer" style="margin-top:8px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden"><i style="display:block;height:100%;background:#F5C24B;width:100%"></i></div>'
+          + scoreLine() + '</div>';
+        const bar = card.querySelector('#sq-qz-timer i');
+        window._sqQzTick = setInterval(function () {
+          const left = (v.dl - window._sqQzNow()) / Z.ANS_MS;
+          if (bar) bar.style.width = Math.max(0, Math.min(1, left)) * 100 + '%';
+          if (left <= 0) clearInterval(window._sqQzTick);
+        }, 200);
+      } else {
+        const okN = Object.keys((v.last || {}).ok || {}).length;
+        card.innerHTML = '<div style="position:relative;background:rgba(5,7,12,.92);border:1px solid ' + (v.last.a === 'O' ? '#3D7EFF' : '#e5484d') + ';border-radius:13px;padding:11px 13px">'
+          + stopBtn
+          + '<div style="font-size:15px;color:#fff;font-family:\'Galmuri14\',sans-serif">정답은 <b style="color:' + (v.last.a === 'O' ? '#7aa8ff' : '#ff8a8e') + '">' + v.last.a + '</b>! <span style="font-size:11px;color:#F5C24B">맞춘 사람 ' + okN + '명 · +10점</span></div>'
+          + '<div style="font-size:11.5px;color:#cfd6e6;margin-top:4px;line-height:1.5">' + E(q.w || '') + '</div>'
+          + scoreLine() + '</div>';
+      }
+    }
   } else if (v.st === 'end') {
+    if (!el) { el = document.createElement('div'); el.id = 'sq-qz'; el.style.cssText = 'position:absolute;inset:0;z-index:9;pointer-events:none;font-family:\'Galmuri11\',sans-serif'; stage.appendChild(el); }
     const rows = scRows(8);
-    el.innerHTML = '<div style="position:absolute;inset:0;background:rgba(5,7,12,.72);pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px">'
+    el.innerHTML = '<div style="position:absolute;inset:0;background:rgba(5,7,12,.72);pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px;overflow:auto">'
       + '<div style="font-size:16px;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">머피 운동회 결과</div>'
       + (rows.length ? rows.map(function (r, i) {
           return '<div style="display:flex;gap:10px;align-items:center;width:82%;max-width:280px;background:rgba(255,255,255,' + (i < 3 ? '.1' : '.04') + ');border-radius:9px;padding:7px 12px">'
