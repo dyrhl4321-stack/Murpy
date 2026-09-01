@@ -49,7 +49,7 @@ print('장부 조회 대상 %d일: %s' % (DAYS, ', '.join(DAY_KEYS)), flush=True
 
 # ───────────────────────── OAuth (deploy_firestore_rules.py 와 동일) ─────────────────────────
 STATE = secrets.token_urlsafe(12)
-AUTH_URL = 'https://accounts.google.com/o/oauth2/auth?' + urllib.parse.urlencode({
+AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
     'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
     'scope': 'email openid https://www.googleapis.com/auth/datastore',
     'state': STATE, 'access_type': 'offline', 'prompt': 'consent'})

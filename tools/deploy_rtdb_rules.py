@@ -23,7 +23,7 @@ RULES = io.open(os.path.join(HERE, '..', 'database.rules.json'), encoding='utf-8
 json.loads(RULES)                       # 깨진 걸 올리면 DB 가 잠긴다. 반드시 먼저.
 STATE = secrets.token_urlsafe(12)
 print('아래 링크를 브라우저에서 열 것:', flush=True)
-print('https://accounts.google.com/o/oauth2/auth?' + urllib.parse.urlencode({
+print('https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
     'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
     'scope': 'email openid https://www.googleapis.com/auth/cloud-platform',
     'state': STATE, 'access_type': 'offline', 'prompt': 'consent'}), flush=True)

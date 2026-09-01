@@ -45,7 +45,7 @@ for name, o, c in (('중괄호', '{', '}'), ('괄호', '(', ')'), ('대괄호', 
 print('%s %d자 · 규칙 %d줄 · 대상 %s' % (RULE_FILE, len(RULES), RULES.count('allow '), RELEASE), flush=True)
 
 STATE = secrets.token_urlsafe(12)
-AUTH_URL = 'https://accounts.google.com/o/oauth2/auth?' + urllib.parse.urlencode({
+AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
     'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
     'scope': 'email openid https://www.googleapis.com/auth/cloud-platform',
     'state': STATE, 'access_type': 'offline', 'prompt': 'consent'})
