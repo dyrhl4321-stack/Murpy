@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '904';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '905';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -335,6 +335,13 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .tab-btn svg { opacity: 0.6; transition: opacity 0.2s; flex-shrink: 0; }
   .tab-btn span { line-height: 1; }
   .tab-btn.active { color: var(--accent); font-weight: 700; background: var(--accent-dim); }
+  /* 명예의 전당 '게임' 탭 안의 종목 줄. 새 문법을 만들지 않고 .tab-bar/.tab-btn 을 그대로 쓰되,
+     윗줄(주탭)보다 한 단계 조용하게 — 배경 상자를 없애고 칸을 내용 폭에 맞춘다.
+     ★선택 표시는 **테두리+글자색**이다. 반투명 색면(틴트 칩)은 금지 규칙. */
+  #hof-subtabs { background: transparent; padding: 0; margin-top: 9px; gap: 7px; flex-wrap: wrap; }
+  #hof-subtabs .tab-btn { flex: 0 1 auto; padding: 6px 13px; font-size: 11.5px; border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.11); background: none; color: var(--text-tertiary); }
+  #hof-subtabs .tab-btn.on { border-color: var(--accent); color: var(--accent); font-weight: 800; }
   .tab-btn.active svg { opacity: 1; stroke: var(--accent); }
 
   /* PRO features list */
@@ -3118,6 +3125,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   </div>
   <div style="padding:10px 16px 0">
     <div class="tab-bar" id="hof-tabs"></div>
+    <!-- '게임' 탭을 골랐을 때만 뜨는 종목 줄(덤벨 피하기 · 홀인 머피 …) -->
+    <div class="tab-bar" id="hof-subtabs" style="display:none"></div>
   </div>
   <div class="panel-body" id="hof-list"></div>
 </div>
@@ -18485,25 +18494,50 @@ window.loadHof = async function (force) {
   return window._hofCache;
 };
 window._hofTab = 'feed';
+// ★'게임' 탭 하나 안에서 고르는 종목들 (대표 9-02: "게임탭으로 하나로 묶고 그 안에서 세부로").
+//   순서 = 화면에 보이는 순서. **새 게임을 붙이면 여기 한 줄만 추가하면 된다** —
+//   HOF_KINDS 에 항목을 넣고 그 키를 여기에 적으면 탭이 저절로 생긴다.
+//   HOF_KINDS 의 키는 건드리지 않았다(_hofRank·rows·주간팝업이 전부 이 키로 돈다).
+window.HOF_GAMES = ['dodge', 'golf'];
+window._hofGame = 'dodge';                 // '게임' 탭을 다시 눌렀을 때 돌아올 종목
 window.hofTab = function (kind) { window._hofTab = kind; window.loadHofPanel(); };
+window.hofGameTab = function (k) {
+  if (window.HOF_GAMES.indexOf(k) < 0) k = window.HOF_GAMES[0];
+  window._hofGame = k; window.hofTab(k);
+};
 window.loadHofPanel = async function () {
   const listEl = document.getElementById('hof-list'); if (!listEl) return;
   const tabsEl = document.getElementById('hof-tabs');
   const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
   // 탭 줄은 데이터를 기다리지 않고 먼저 그린다(빈 화면이 덜 어색하다)
   if (tabsEl) {
-    tabsEl.innerHTML = Object.keys(window.HOF_KINDS).map(function (k) {
-      const on = k === window._hofTab;
-      const sel = on ? 'background:var(--accent);color:#fff;font-weight:800' : '';
+    const GK = window.HOF_GAMES, gameOn = GK.indexOf(window._hofTab) >= 0;
+    const selCss = 'background:var(--accent);color:#fff;font-weight:800';
+    // 게임 종목들은 주탭에서 빼고 '게임' 한 칸으로 대신한다.
+    tabsEl.innerHTML = Object.keys(window.HOF_KINDS).filter(function (k) {
+      return GK.indexOf(k) < 0;
+    }).map(function (k) {
+      const sel = k === window._hofTab ? selCss : '';
       return `<button class="tab-btn" onclick="window.hofTab('${k}')" style="${sel}"><span>${window.HOF_KINDS[k].label}</span></button>`;
-    }).join('');
+    }).join('')
+      + `<button class="tab-btn" onclick="window.hofGameTab('${window._hofGame}')" style="${gameOn ? selCss : ''}"><span>게임</span></button>`;
+    // 종목 줄 — '게임'을 고른 동안만 보인다. 접었다 폈다 하지 않고 통째로 숨긴다(빈 줄이 남으면 흔들린다).
+    const subEl = document.getElementById('hof-subtabs');
+    if (subEl) {
+      subEl.style.display = gameOn ? 'flex' : 'none';
+      subEl.innerHTML = !gameOn ? '' : GK.map(function (k) {
+        const d = window.HOF_KINDS[k] || {};
+        return `<button class="tab-btn${k === window._hofTab ? ' on' : ''}" onclick="window.hofGameTab('${k}')"><span>${d.game || d.label || k}</span></button>`;
+      }).join('');
+    }
   }
   listEl.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">불러오는 중…</div>';
   const data = await window.loadHof();
   const mEl = document.getElementById('hof-month');
   // 스쿼드장(누적)·게임(최고점)은 월 개념이 없다 — '이번 달'이라고 적으면 거짓말이 된다
   const _kd = window.HOF_KINDS[window._hofTab] || {};
-  if (mEl) mEl.textContent = _kd.game ? _kd.game
+  // 게임은 종목 이름을 서브탭이 이미 보여준다 → 여기엔 '무엇을 세는지'를 적는다(월이 아니다).
+  if (mEl) mEl.textContent = _kd.game ? '최고점'
          : (window._hofTab === 'host' ? '누적' : data.month.replace('-', '년 ') + '월');
   const kind = window._hofTab, def = window.HOF_KINDS[kind], rows = data.rows[kind] || [];
   const myUid = (window.currentUser || {}).uid || '';
