@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '881';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '882';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36839,7 +36839,10 @@ window.sqQuizStart = function () {
   for (let i = qs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = qs[i]; qs[i] = qs[j]; qs[j] = t; }
   const node = { host: me.uid, hostNick: window._mwMyNick || '머피', st: 'q', qi: 0, qs: qs,
     dl: window._sqQzNow() + Z.ANS_MS, sc: {}, last: null, t: Date.now() };
-  R.set(window._sqQzRef(s.id), node).then(function () {
+  // ★9-01 잔류 노드(host 없는 st:end 등)가 있으면 set 이 규칙에 막힌다 → 지우고 쓴다(삭제는 규칙이 허용)
+  Promise.resolve(R.remove(window._sqQzRef(s.id)).catch(function () {})).then(function () {
+    return R.set(window._sqQzRef(s.id), node);
+  }).then(function () {
     try { R.onDisconnect(window._sqQzRef(s.id)).remove(); } catch (e) {}   // 진행자 연결이 끊기면 판 종료
     window._sqQzHostArm(s.id);
     // 9-01 대표: 멤버들에게 "OX 퀴즈 시작" 알림·푸시
@@ -37011,7 +37014,8 @@ window._sqRtLeave = function (sid, hard) {
   // OX 퀴즈: 구독 정리. 내가 진행자인데 판이 살아 있으면 종료로 바꿔 남은 사람 화면을 풀어준다
   try {
     const v = window._sqQzV;
-    if (u && v && v.host === u.uid && v.st !== 'end' && window._rt && sid) window._rt.update(window._sqQzRef(sid), { st: 'end', t: Date.now() });
+    // ★9-01 update 는 없는 경로를 새로 만든다 — host 없는 st:end 잔류물이 생겨 다음 시작이 규칙에 막혔다 → remove 로
+    if (u && v && v.host === u.uid && v.st !== 'end' && window._rt && sid) window._rt.remove(window._sqQzRef(sid)).catch(function () {});
   } catch (e) {}
   window._sqQuizUnsub && window._sqQuizUnsub(); window._sqQuizUnsub = null; window._sqQzV = null;
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
