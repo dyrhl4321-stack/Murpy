@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '874';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '875';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36489,6 +36489,15 @@ window._sqRoomInit = function (s) {
   window._sqRtJoin && window._sqRtJoin(s.id, s);
   // 구독보다 스테이지가 늦게 준비된 경우를 대비해 마지막 스냅샷으로 한 번 더 그린다
   if (window._sqRtLast) window._sqRenderRemotes(s.id, window._sqRtLast, me);
+  // ★단체 OX 퀴즈 (9-01) — 시작 버튼은 스쿼드장·운영진에게만, 진행 중이면 숨김(_sqQzPaint 가 관리)
+  const qb = document.createElement('button');
+  qb.id = 'sq-qz-startbtn'; qb.textContent = 'OX 퀴즈';
+  qb.style.cssText = 'position:absolute;right:8px;top:8px;z-index:8;background:rgba(5,7,12,.72);color:#F5C24B;'
+    + "border:1px solid rgba(245,194,75,.45);border-radius:9px;padding:6px 11px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:'Galmuri11',sans-serif";
+  qb.style.display = 'none';
+  qb.onclick = function (ev) { ev.stopPropagation(); window.sqQuizStart(); };
+  stage.appendChild(qb);
+  window._sqQuizWatch && window._sqQuizWatch(s.id);
 };
 window._sqStaticPlaced = {};
 // 폴백으로 놓았던 캐릭터만 골라 치운다(실시간으로 들어온 사람은 건드리지 않는다)
@@ -36655,8 +36664,276 @@ window._sqRtJoin = function (sid, sArg) {
 //   지금까지 _sqClose 가 이걸 부르면서 노드를 지웠다 — 스쿼드 상세를 닫기만 해도
 //   남들 화면에서 내 캐릭터가 증발했다. 그래서 필드가 늘 비어 보였다.
 //   기본은 **구독만 끊는다.** 진짜로 뺄 때(스쿼드 종료·탈퇴)만 hard 로 부른다.
+// ===== 스쿼드 단체 OX 퀴즈 "머피 운동회" (2026-09-01 대표 승인 설계) =====
+// 필드가 반반(왼쪽 O·오른쪽 X)으로 갈라지고, 제한시간 안에 캐릭터를 옮겨 답한다.
+// 동기화 = squadRooms/{sid}/quiz 노드 하나. 스쿼드장(운영진) 폰이 심판(판정·진행)을 맡는다.
+// 보상 없음(경제 무관) · 판이 끝나면 다음 시작이 덮어쓴다.
+window.SQ_QZ = { N: 10, ANS_MS: 15000, RV_MS: 4500, STALE_MS: 40000, COMMON: 6 };
+// 문제 은행 — a: 정답('O'|'X'), w: 한 줄 해설. ★사실관계가 확실한 것만 넣는다.
+window.SQ_QUIZ_COMMON = [
+  { q: '근육통이 있어야만 근육이 성장한다', a: 'X', w: '근성장의 필수 조건이 아니에요. 통증 없이도 자랍니다' },
+  { q: '단백질은 한 번에 흡수되는 양에 한계가 있어 나눠 먹는 게 유리하다', a: 'O', w: '한 끼 몰아먹기보다 나눠 섭취가 합성에 유리해요' },
+  { q: '유산소 운동은 근손실을 무조건 일으킨다', a: 'X', w: '적정 강도·양이면 근손실 걱정은 과장이에요' },
+  { q: '스쿼트에서 무릎이 발끝을 절대 넘으면 안 된다', a: 'X', w: '체형·가동범위에 따라 자연스럽게 넘을 수 있어요' },
+  { q: '크레아틴은 연구가 가장 많이 된 보충제 중 하나다', a: 'O', w: '효과·안전성 근거가 가장 탄탄한 편이에요' },
+  { q: '땀을 많이 흘릴수록 지방이 많이 탄 것이다', a: 'X', w: '땀은 체온 조절이지 지방 연소량이 아니에요' },
+  { q: '근육은 운동 중이 아니라 쉬는 동안 자란다', a: 'O', w: '자극은 운동, 성장은 회복(수면·영양)에서 일어나요' },
+  { q: '공복 유산소가 하루 총 지방 감량에 확실히 유리하다', a: 'X', w: '하루 전체 칼로리가 같으면 차이가 거의 없어요' },
+  { q: '여성이 웨이트를 하면 쉽게 우락부락해진다', a: 'X', w: '호르몬 특성상 그렇게 쉽게 커지지 않아요' },
+  { q: '물은 운동 전·중·후 모두 마시는 게 좋다', a: 'O', w: '탈수는 수행능력을 바로 떨어뜨려요' },
+  { q: '단백질 보충제는 식품 단백질보다 근성장에 훨씬 우월하다', a: 'X', w: '총량이 같으면 큰 차이 없어요. 편의성 도구일 뿐' },
+  { q: '수면 부족은 근성장과 회복을 방해한다', a: 'O', w: '성장호르몬 분비·회복 모두 수면에 크게 좌우돼요' },
+  { q: '부위별 지방만 골라 빼는 운동이 가능하다', a: 'X', w: '뱃살만 빼주는 운동은 없어요. 감량은 전신에서' },
+  { q: '무게보다 자세가 먼저다', a: 'O', w: '자세가 무너진 고중량은 부상 지름길이에요' },
+  { q: '운동 전 정적 스트레칭을 길게 하면 순간 근력이 떨어질 수 있다', a: 'O', w: '본운동 전엔 동적 웜업이 권장돼요' },
+  { q: '근육 1kg 은 지방 1kg 보다 무겁다', a: 'X', w: '1kg 은 1kg. 부피가 다를 뿐이에요' },
+  { q: 'BMI 는 근육량이 많은 사람에겐 비만을 과대평가할 수 있다', a: 'O', w: '근육질도 BMI 상 과체중으로 나올 수 있어요' },
+  { q: '스트렝스 3대 운동은 스쿼트·벤치프레스·데드리프트다', a: 'O', w: '파워리프팅 3종목 그대로예요' },
+  { q: '운동 직후 30분 안에 단백질을 못 먹으면 그날 운동은 헛것이다', a: 'X', w: '기회의 창은 생각보다 넓어요. 하루 총량이 중요' },
+  { q: '카페인은 운동 수행능력을 올릴 수 있다', a: 'O', w: '지구력·집중에 효과가 입증된 대표 성분이에요' },
+  { q: '치팅데이는 살이 절대 안 찌는 날이다', a: 'X', w: '그날 칼로리도 칼로리예요' },
+  { q: '근력 운동은 뼈 건강(골밀도)에도 도움이 된다', a: 'O', w: '저항 자극은 골밀도 유지에 좋아요' },
+  { q: '나이가 들면 근육은 절대 늘지 않는다', a: 'X', w: '고령에도 저항운동으로 근육은 늘어요' },
+  { q: '유연성이 좋을수록 모든 운동을 잘한다', a: 'X', w: '종목마다 필요한 만큼이 달라요. 과유연도 문제' },
+  { q: '몸무게가 그대로여도 몸매는 달라질 수 있다', a: 'O', w: '근육이 늘고 지방이 줄면 체중은 같아도 라인이 달라요' },
+  { q: '웜업 세트는 본 세트 무게를 올리기 전 낮은 무게로 하는 것이다', a: 'O', w: '관절·신경계를 깨우는 준비 세트예요' },
+  { q: '땀복을 입고 뛰면 지방이 더 빨리 빠진다', a: 'X', w: '수분만 빠져요. 체중계 숫자의 착시입니다' },
+  { q: '분할 운동만이 정답이고 무분할은 초보용이다', a: 'X', w: '빈도·회복에 맞으면 무분할도 훌륭한 방식이에요' },
+  { q: '단백질 권장량은 운동하는 사람이 일반인보다 많다', a: 'O', w: '근성장엔 체중당 더 많은 단백질이 권장돼요' },
+  { q: '운동 후 음주는 회복을 방해한다', a: 'O', w: '단백질 합성과 수면 질을 떨어뜨려요' }
+];
+window.SQ_QUIZ_BY_TYPE = {
+  gym: [
+    { q: '데드리프트는 등 운동이기도 하다', a: 'O', w: '후면 사슬 전체를 쓰는 전신성 운동이에요' },
+    { q: '벤치프레스 때 견갑골은 뒤로 모아 고정하는 게 좋다', a: 'O', w: '어깨 보호와 힘 전달의 기본이에요' },
+    { q: '랫풀다운은 주로 가슴 운동이다', a: 'X', w: '광배근, 등 운동이에요' },
+    { q: '고중량 저반복은 근력, 중중량 중반복은 근비대에 상대적으로 유리하다', a: 'O', w: '목적에 따라 반복수를 설계해요' },
+    { q: '스쿼트에서 시선을 심하게 위로 꺾는 게 정석이다', a: 'X', w: '목은 중립이 안전해요' },
+    { q: '머신 운동은 프리웨이트보다 항상 열등하다', a: 'X', w: '고립·안전·재활엔 머신이 좋을 때가 많아요' },
+    { q: '벨트는 복압을 이용해 허리를 지지해 준다', a: 'O', w: '복압 형성을 돕는 도구예요' },
+    { q: 'OO킥백은 이두 운동이다', a: 'X', w: '킥백은 삼두(팔 뒤) 운동이에요' }
+  ],
+  running: [
+    { q: '러닝 케이던스(분당 걸음수)는 대략 170~180 이 흔히 권장된다', a: 'O', w: '오버스트라이드를 줄이는 기준으로 쓰여요' },
+    { q: '뒤꿈치 착지는 무조건 부상을 부른다', a: 'X', w: '착지 위치보다 착지점이 몸 중심에서 얼마나 먼지가 중요해요' },
+    { q: '마라톤 풀코스는 42.195km 다', a: 'O', w: '하프는 21.0975km' },
+    { q: '러닝화는 밑창이 다 닳을 때까지 오래 신을수록 좋다', a: 'X', w: '쿠션 수명(대략 500~800km)이 있어요' },
+    { q: 'LSD 훈련은 길고 느리게 달리는 지구력 훈련이다', a: 'O', w: 'Long Slow Distance' },
+    { q: '인터벌 훈련은 빠르게-천천히를 반복하는 것이다', a: 'O', w: '스피드·심폐를 끌어올리는 대표 훈련' },
+    { q: '달리기 전 밥을 배불리 먹으면 기록이 좋아진다', a: 'X', w: '소화 부담으로 오히려 힘들어요' },
+    { q: '오르막 달리기는 평지보다 무릎 충격이 크다', a: 'X', w: '충격은 내리막이 커요. 오르막은 심폐가 힘든 것' }
+  ],
+  golf: [
+    { q: '파(Par)는 홀의 기준 타수를 뜻한다', a: 'O', w: '기준보다 1타 적으면 버디' },
+    { q: '버디는 기준 타수보다 1타 많은 것이다', a: 'X', w: '1타 적은 게 버디, 많은 건 보기' },
+    { q: '드라이버는 퍼터보다 멀리 보내는 클럽이다', a: 'O', w: '티샷용 최장타 클럽이에요' },
+    { q: '홀인원은 한 번의 샷으로 홀에 넣는 것이다', a: 'O', w: '티샷이 바로 컵인' },
+    { q: '그린 위에서는 보통 퍼터를 쓴다', a: 'O', w: '굴려서 컵을 노려요' },
+    { q: '골프공이 물에 빠지면 벌타 없이 다시 친다', a: 'X', w: '페널티(벌타)가 붙어요' },
+    { q: '스윙은 팔 힘만으로 하는 게 정석이다', a: 'X', w: '몸통 회전이 스윙의 중심이에요' },
+    { q: '아이언은 드라이버보다 짧은 거리를 정확히 보낼 때 쓴다', a: 'O', w: '거리별로 클럽을 골라요' }
+  ],
+  tennis: [
+    { q: '테니스 게임 스코어는 0-15-30-40 순으로 부른다', a: 'O', w: '0은 러브(love)' },
+    { q: '듀스는 40-40 동점 상황이다', a: 'O', w: '두 포인트 연속으로 따야 게임을 가져가요' },
+    { q: '서브는 한 포인트에 한 번만 넣을 수 있다', a: 'X', w: '퍼스트 폴트면 세컨드 서브가 있어요' },
+    { q: '발리는 공이 바운드되기 전에 치는 기술이다', a: 'O', w: '네트 앞 기술이에요' },
+    { q: '타이브레이크는 보통 7점을 먼저 얻으면 이긴다', a: 'O', w: '2점 차 이상이어야 해요' },
+    { q: '복식 코트는 단식 코트보다 좁다', a: 'X', w: '복식이 양옆 앨리만큼 넓어요' },
+    { q: '레트(let)는 서브가 네트를 맞고 서비스 박스에 들어간 경우 다시 넣는 것이다', a: 'O', w: '카운트 없이 다시' },
+    { q: '포핸드는 라켓 든 손 반대쪽에서 치는 스트로크다', a: 'X', w: '같은 쪽이 포핸드, 반대쪽이 백핸드' }
+  ],
+  climbing: [
+    { q: '볼더링은 로프 없이 낮은 벽을 오르는 종목이다', a: 'O', w: '매트 위에서 짧고 어려운 문제를 풀어요' },
+    { q: '초크는 손의 땀을 잡아 그립을 좋게 한다', a: 'O', w: '탄산마그네슘이에요' },
+    { q: '클라이밍은 팔 힘이 전부다', a: 'X', w: '발 기술과 무게중심이 절반 이상이에요' },
+    { q: '홀드 색깔은 보통 같은 문제(루트)를 표시한다', a: 'O', w: '같은 색을 따라 올라가요' },
+    { q: '완등은 마지막 홀드를 두 손으로 안정적으로 잡아야 인정되는 게 보통이다', a: 'O', w: '탑 홀드 양손 컨트롤' },
+    { q: '다이노는 천천히 정적으로 이동하는 기술이다', a: 'X', w: '점프하듯 날아가 잡는 동적 기술이에요' },
+    { q: '암벽화는 발이 아플 정도로 무조건 작게 신어야 한다', a: 'X', w: '과한 다운사이징은 부상 원인이에요' },
+    { q: '벽에 몸을 붙일수록 팔 부담이 줄어드는 경우가 많다', a: 'O', w: '무게중심을 벽 쪽으로' }
+  ],
+  hyrox: [
+    { q: '하이록스는 러닝과 기능성 운동을 번갈아 하는 경기다', a: 'O', w: '1km 러닝 × 8 + 스테이션 8개' },
+    { q: '하이록스의 러닝 총거리는 8km 다', a: 'O', w: '1km 씩 8번 달려요' },
+    { q: '월볼은 하이록스 마지막 스테이션이다', a: 'O', w: '대미를 장식하는 마지막 관문' },
+    { q: '슬레드 푸시는 썰매를 끌어당기는 종목이다', a: 'X', w: '푸시는 밀기, 풀이 당기기예요' },
+    { q: '버피 브로드 점프는 하이록스 스테이션 중 하나다', a: 'O', w: '80m 를 버피+멀리뛰기로 이동해요' },
+    { q: '하이록스는 페어(2인)로도 출전할 수 있다', a: 'O', w: '더블스 부문이 있어요' },
+    { q: '로잉 머신은 하체를 쓰지 않는 운동이다', a: 'X', w: '드라이브의 시작은 다리예요' },
+    { q: '파머스 캐리는 양손에 무게를 들고 걷는 종목이다', a: 'O', w: '케틀벨 캐리 200m' }
+  ],
+  hiking: [
+    { q: '등산은 내려올 때 무릎 부담이 더 크다', a: 'O', w: '하산 충격이 커서 스틱·보폭 조절이 좋아요' },
+    { q: '등산 스틱은 짐만 될 뿐 도움이 안 된다', a: 'X', w: '하중 분산과 균형에 확실히 도움돼요' },
+    { q: '산에서는 해가 지기 전에 하산 계획을 세워야 한다', a: 'O', w: '일몰 후 산길은 위험도가 급등해요' },
+    { q: '면 소재 옷은 땀에 젖어도 잘 마르므로 등산에 최적이다', a: 'X', w: '면은 안 말라요. 기능성 소재가 안전' },
+    { q: '등산 전 스트레칭과 가벼운 워밍업은 도움이 된다', a: 'O', w: '경사 보행 전 준비운동은 기본' },
+    { q: '물은 목이 마를 때만 한 번에 몰아 마시는 게 좋다', a: 'X', w: '조금씩 자주가 원칙이에요' },
+    { q: '우리나라에서 가장 높은 산은 한라산이다', a: 'O', w: '1,947m. 남한 기준 최고봉' },
+    { q: '내리막에서는 뛰어 내려가는 게 무릎에 안전하다', a: 'X', w: '충격이 배가돼요. 보폭을 줄여 천천히' }
+  ],
+  yoga: [
+    { q: '요가의 다운독은 엉덩이를 높이 들어 몸으로 산 모양을 만드는 자세다', a: 'O', w: '아래를 향한 개 자세' },
+    { q: '요가는 유연성만 기르는 운동이다', a: 'X', w: '근력·균형·호흡까지 함께 써요' },
+    { q: '호흡은 요가 수련의 핵심 요소다', a: 'O', w: '동작과 호흡을 맞추는 게 기본이에요' },
+    { q: '통증이 느껴져도 참고 더 깊게 늘리는 게 정석이다', a: 'X', w: '통증은 멈추라는 신호예요' },
+    { q: '사바아사나는 누워서 쉬는 이완 자세다', a: 'O', w: '수련 마지막의 송장 자세' },
+    { q: '요가 매트는 미끄럼 방지에 도움을 준다', a: 'O', w: '그립이 부상 예방의 시작' },
+    { q: '몸이 뻣뻣한 사람은 요가를 할 수 없다', a: 'X', w: '뻣뻣할수록 얻는 게 많아요' },
+    { q: '빈야사는 호흡에 맞춰 동작을 이어가는 방식이다', a: 'O', w: '플로우 스타일이에요' }
+  ],
+  dance: [
+    { q: '춤 연습 전 웜업은 부상 예방에 도움이 된다', a: 'O', w: '관절·근육을 깨우고 시작해요' },
+    { q: '박자 감각은 타고나는 것이라 연습으로 늘지 않는다', a: 'X', w: '카운트 연습으로 충분히 늘어요' },
+    { q: '거울을 보며 연습하면 동작 교정에 도움이 된다', a: 'O', w: '내 몸을 눈으로 확인하는 게 빨라요' },
+    { q: '안무의 8카운트는 동작을 세는 기본 단위다', a: 'O', w: '원에잇! 하는 그거예요' },
+    { q: '춤은 유산소 효과가 거의 없다', a: 'X', w: '강도 높은 안무는 훌륭한 유산소예요' },
+    { q: '프리스타일은 정해진 안무 없이 즉흥으로 추는 것이다', a: 'O', w: '음악에 몸을 맡기는 것' },
+    { q: '아이솔레이션은 몸 전체를 한 번에 크게 움직이는 기술이다', a: 'X', w: '한 부위만 분리해 움직이는 기술이에요' },
+    { q: '스트레칭은 춤 연습 후 정리운동으로도 좋다', a: 'O', w: '쿨다운으로 회복을 도와요' }
+  ]
+};
+window._sqQzRef = function (sid) { const R = window._rt; return R.ref(R.db, 'squadRooms/' + sid + '/quiz'); };
+window._sqQzNow = function () { return Date.now() + (window._sqQzOff || 0); };
+window._sqQzGet = function (it) { const bank = it.c === 'c' ? window.SQ_QUIZ_COMMON : (window.SQ_QUIZ_BY_TYPE[it.c] || window.SQ_QUIZ_COMMON); return bank[it.i] || window.SQ_QUIZ_COMMON[0]; };
+window._sqQzCanHost = function () {
+  const s = window._sqDoc, me = (auth.currentUser || {}).uid; if (!s || !me) return false;
+  const m = (window._sqMembers || {})[me];
+  return me === s.hostUid || !!(m && m.staff);
+};
+// 시작 — 문제 뽑기(공통 6 + 종목 4) 후 노드를 통째로 새로 쓴다
+window.sqQuizStart = function () {
+  const s = window._sqDoc, R = window._rt, me = auth.currentUser;
+  if (!s || !R || !me) return;
+  if (!window._sqQzCanHost()) { showToast('스쿼드장·운영진이 시작할 수 있어요'); return; }
+  const tk = window._sqTypeKey(s.exerciseType), Z = window.SQ_QZ;
+  const pick = function (n, len) { const idx = []; while (idx.length < Math.min(n, len)) { const r = Math.floor(Math.random() * len); if (idx.indexOf(r) < 0) idx.push(r); } return idx; };
+  const tb = window.SQ_QUIZ_BY_TYPE[tk] || [];
+  const qs = pick(Z.COMMON, window.SQ_QUIZ_COMMON.length).map(function (i) { return { c: 'c', i: i }; })
+    .concat(pick(Z.N - Z.COMMON, tb.length).map(function (i) { return { c: tk, i: i }; }));
+  for (let i = qs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = qs[i]; qs[i] = qs[j]; qs[j] = t; }
+  const node = { host: me.uid, hostNick: window._mwMyNick || '머피', st: 'q', qi: 0, qs: qs,
+    dl: window._sqQzNow() + Z.ANS_MS, sc: {}, last: null, t: Date.now() };
+  R.set(window._sqQzRef(s.id), node).then(function () {
+    try { R.onDisconnect(window._sqQzRef(s.id)).remove(); } catch (e) {}   // 진행자 연결이 끊기면 판 종료
+    window._sqQzHostArm(s.id);
+  }).catch(function (e) { console.warn('quiz start', e); showToast('시작하지 못했어요'); });
+  window.track && window.track('game_start', { game: 'oxquiz', type: tk });
+};
+// 진행자 타이머 — 마감되면 판정하고, 잠깐 보여준 뒤 다음 문제/종료
+window._sqQzHostArm = function (sid) {
+  clearTimeout(window._sqQzHostT);
+  const v = window._sqQzV; if (!v || v.host !== (auth.currentUser || {}).uid) return;
+  const Z = window.SQ_QZ, now = window._sqQzNow();
+  if (v.st === 'q') window._sqQzHostT = setTimeout(function () { window._sqQzJudge(sid); }, Math.max(120, v.dl - now + 250));
+  else if (v.st === 'rv') window._sqQzHostT = setTimeout(function () { window._sqQzNext(sid); }, Z.RV_MS);
+};
+window._sqQzJudge = function (sid) {
+  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'q') return;
+  const item = window._sqQzGet(v.qs[v.qi]), players = window._sqRtLast || {};
+  const ok = {}, sc = Object.assign({}, v.sc || {});
+  Object.keys(players).forEach(function (uid) {
+    const p = players[uid]; if (!p || !Number.isFinite(+p.x)) return;
+    const side = +p.x < 50 ? 'O' : 'X';
+    if (side === item.a) { ok[uid] = 1; sc[uid] = (sc[uid] | 0) + 10; }
+    else if (!(uid in sc)) sc[uid] = 0;
+  });
+  R.update(window._sqQzRef(sid), { st: 'rv', last: { a: item.a, ok: ok }, sc: sc, t: Date.now() })
+    .catch(function (e) { console.warn('quiz judge', e); });
+};
+window._sqQzNext = function (sid) {
+  const R = window._rt, v = window._sqQzV; if (!R || !v || v.st !== 'rv') return;
+  if (v.qi + 1 >= v.qs.length) { R.update(window._sqQzRef(sid), { st: 'end', t: Date.now() }).catch(function () {}); return; }
+  R.update(window._sqQzRef(sid), { st: 'q', qi: v.qi + 1, dl: window._sqQzNow() + window.SQ_QZ.ANS_MS, last: null, t: Date.now() })
+    .catch(function (e) { console.warn('quiz next', e); });
+};
+// 구독 — 필드가 열릴 때 걸고, 값이 올 때마다 오버레이를 그린다
+window._sqQuizWatch = function (sid) {
+  const R = window._rt; if (!R) return;
+  try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._sqQzOff = sn.val() || 0; }); } catch (e) {}
+  window._sqQuizUnsub && window._sqQuizUnsub();
+  const un = R.onValue(window._sqQzRef(sid), function (snap) {
+    window._sqQzV = snap.val();
+    window._sqQzPaint(sid);
+    window._sqQzHostArm(sid);
+  }, function (e) { console.warn('quiz watch', e); });
+  window._sqQuizUnsub = function () { try { un(); } catch (e) {} clearTimeout(window._sqQzHostT); clearInterval(window._sqQzTick); };
+};
+// 그리기 — 스테이지 위 오버레이 한 장(#sq-qz)을 상태에 맞춰 다시 그린다
+window._sqQzPaint = function (sid) {
+  const stage = document.getElementById('sq-room-stage'); if (!stage) return;
+  let el = document.getElementById('sq-qz');
+  const v = window._sqQzV, Z = window.SQ_QZ;
+  const stale = v && v.st !== 'end' && (Date.now() - (v.t || 0)) > Z.STALE_MS;
+  clearInterval(window._sqQzTick);
+  const startBtn = document.getElementById('sq-qz-startbtn');
+  if (startBtn) startBtn.style.display = (v && !stale && v.st !== 'end') ? 'none' : (window._sqQzCanHost() ? '' : 'none');
+  if (!v || stale) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'sq-qz'; el.style.cssText = 'position:absolute;inset:0;z-index:9;pointer-events:none;font-family:\'Galmuri11\',sans-serif'; stage.appendChild(el); }
+  const E = window._escHtml || function (t) { return String(t); };
+  const q = window._sqQzGet(v.qs[v.qi]), num = (v.qi + 1) + '/' + v.qs.length;
+  const scRows = function (n) {
+    const players = window._sqRtLast || {};
+    return Object.keys(v.sc || {}).map(function (uid) { return { uid: uid, nick: (players[uid] || {}).nick || '머피', s: v.sc[uid] | 0 }; })
+      .sort(function (a, b) { return b.s - a.s; }).slice(0, n);
+  };
+  if (v.st === 'q') {
+    el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,.18);border-right:2px dashed rgba(255,255,255,.5)"></div>'
+      + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,.18)"></div>'
+      + '<div style="position:absolute;left:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(61,126,255,.55);font-family:\'Galmuri14\',sans-serif">O</div>'
+      + '<div style="position:absolute;right:6%;bottom:8%;font-size:64px;font-weight:900;color:rgba(229,72,77,.55);font-family:\'Galmuri14\',sans-serif">X</div>'
+      + '<div style="position:absolute;left:50%;top:6px;transform:translateX(-50%);width:92%;background:rgba(5,7,12,.86);border:2px solid #2b3350;border-radius:12px;padding:9px 12px;text-align:center">'
+      +   '<div style="font-size:10.5px;color:#8a93a8">OX 퀴즈 ' + num + ' · 캐릭터를 옮겨 답하세요</div>'
+      +   '<div style="font-size:13.5px;color:#fff;margin-top:3px;line-height:1.45;font-family:\'Galmuri14\',sans-serif">' + E(q.q) + '</div>'
+      +   '<div id="sq-qz-timer" style="margin-top:6px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden"><i style="display:block;height:100%;background:#F5C24B;width:100%"></i></div>'
+      + '</div>';
+    const bar = el.querySelector('#sq-qz-timer i');
+    window._sqQzTick = setInterval(function () {
+      const left = (v.dl - window._sqQzNow()) / Z.ANS_MS;
+      if (bar) bar.style.width = Math.max(0, Math.min(1, left)) * 100 + '%';
+      if (left <= 0) clearInterval(window._sqQzTick);
+    }, 200);
+  } else if (v.st === 'rv') {
+    const okN = Object.keys((v.last || {}).ok || {}).length;
+    const item = q;
+    el.innerHTML = '<div style="position:absolute;left:0;top:0;bottom:0;width:50%;background:rgba(61,126,255,' + (item.a === 'O' ? '.34' : '.06') + ')"></div>'
+      + '<div style="position:absolute;right:0;top:0;bottom:0;width:50%;background:rgba(229,72,77,' + (item.a === 'X' ? '.34' : '.06') + ')"></div>'
+      + '<div style="position:absolute;left:50%;top:6px;transform:translateX(-50%);width:92%;background:rgba(5,7,12,.9);border:2px solid ' + (item.a === 'O' ? '#3D7EFF' : '#e5484d') + ';border-radius:12px;padding:10px 12px;text-align:center">'
+      +   '<div style="font-size:19px;color:#fff;font-family:\'Galmuri14\',sans-serif">정답은 <b style="color:' + (item.a === 'O' ? '#7aa8ff' : '#ff8a8e') + '">' + item.a + '</b>!</div>'
+      +   '<div style="font-size:11.5px;color:#cfd6e6;margin-top:4px;line-height:1.5">' + E(item.w || '') + '</div>'
+      +   '<div style="font-size:11px;color:#F5C24B;margin-top:5px">맞춘 사람 ' + okN + '명 · +10점</div>'
+      + '</div>';
+  } else if (v.st === 'end') {
+    const rows = scRows(8);
+    el.innerHTML = '<div style="position:absolute;inset:0;background:rgba(5,7,12,.72);pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px">'
+      + '<div style="font-size:16px;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">머피 운동회 결과</div>'
+      + (rows.length ? rows.map(function (r, i) {
+          return '<div style="display:flex;gap:10px;align-items:center;width:82%;max-width:280px;background:rgba(255,255,255,' + (i < 3 ? '.1' : '.04') + ');border-radius:9px;padding:7px 12px">'
+            + '<b style="width:22px;color:' + (i === 0 ? '#F5C24B' : '#8a93a8') + '">' + (i + 1) + '</b>'
+            + '<span style="flex:1;color:#fff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(r.nick) + '</span>'
+            + '<b style="color:#7aa8ff">' + r.s + '점</b></div>';
+        }).join('') : '<div style="color:#8a93a8;font-size:12px">참가자가 없었어요</div>')
+      + (window._sqQzCanHost() ? '<button onclick="window.sqQuizStart()" style="margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:11px;padding:11px 22px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">한 판 더</button>' : '')
+      + '<button onclick="window._sqQzClose()" style="background:none;border:none;color:#8a93a8;font-size:12px;cursor:pointer;margin-top:4px;font-family:inherit">닫기</button>'
+      + '</div>';
+  }
+};
+window._sqQzClose = function () {
+  const s = window._sqDoc, R = window._rt;
+  const v = window._sqQzV;
+  if (s && R && v && v.st === 'end' && window._sqQzCanHost()) { try { R.remove(window._sqQzRef(s.id)); } catch (e) {} }
+  const el = document.getElementById('sq-qz'); if (el) el.remove();
+  window._sqQzPaint(s && s.id);
+};
 window._sqRtLeave = function (sid, hard) {
   const u = auth.currentUser;
+  // OX 퀴즈: 구독 정리. 내가 진행자인데 판이 살아 있으면 종료로 바꿔 남은 사람 화면을 풀어준다
+  try {
+    const v = window._sqQzV;
+    if (u && v && v.host === u.uid && v.st !== 'end' && window._rt && sid) window._rt.update(window._sqQzRef(sid), { st: 'end', t: Date.now() });
+  } catch (e) {}
+  window._sqQuizUnsub && window._sqQuizUnsub(); window._sqQuizUnsub = null; window._sqQzV = null;
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
   window._sqOnMove = null; window._sqRtSend = null; window._sqOdArmed = null;
