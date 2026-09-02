@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '937';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '938';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -145,6 +145,17 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   }
   html, body { background: #0a0a0a; }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* ★더블탭 확대 + 이미지 선택영역 전역 제거 (대표 9-02: "방꾸미기뿐만 아니라 게임 에셋들도
+     전부 더블탭하면 확대 + 이미지 선택영역 생김 — 전부 찾아서 없애줘").
+     · img/canvas = 길게 눌러도 저장 팝업·파란 선택 상자가 안 뜬다
+     · touch-action:manipulation = 더블탭 확대만 끈다(스크롤·핀치는 그대로) — 페이지·패널·버튼에.
+     ※viewport meta 는 건드리지 않는다(8-14 사고 기록) */
+  img, canvas { -webkit-user-drag: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .page, .panel, button, .tab-btn, .mw-fieldchip { touch-action: manipulation; }
+  #page-char, #mw-jam, #dodge-screen, #golf-screen, #tennis-screen, #mw-redit-room
+    { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+  /* 입력창은 선택·복사가 돼야 한다 — 위 금지에서 제외 */
+  #page-char input, #page-char textarea, #mw-jam input { -webkit-user-select: text; user-select: text; }
   body { background: #0a0a0a; color: #fff; font-family: 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', sans-serif; max-width: 390px; margin: 0 auto; min-height: 100vh; position: relative; overflow-x: hidden; }
 
   /* 페이지 전환 애니메이션 */
@@ -1103,8 +1114,11 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   #bamboo-compose-full.bw-open #bamboo-title { font-size:17px !important; font-weight:700; padding:10px 0 !important }
   #bamboo-compose-full.bw-open #bamboo-input { flex:1; min-height:40vh !important; height:auto !important;
     font-size:15px !important; line-height:1.65 !important; resize:none }
-  #bamboo-compose-full.bw-open > div:has(#bamboo-input) { flex:1; display:flex }
-  #bamboo-compose-full.bw-open > div:has(#bamboo-input) > div:last-child { flex:1; display:flex; flex-direction:column }
+  /* ★:has() 를 버렸다 (9-02) — 미지원 브라우저에선 이 두 줄이 통째로 죽어서 본문이 62px 로
+     쪼그라들고, 본문처럼 보이는 빈 공간을 누르면 바로 밑 취소 버튼이 눌렸다("원래 페이지로
+     돌아가" 제보의 정체). 마크업에 클래스를 박아 어떤 브라우저에서든 같은 레이아웃이 나온다. */
+  #bamboo-compose-full.bw-open .bw-fields-row { flex:1; display:flex }
+  #bamboo-compose-full.bw-open .bw-fields-col { flex:1; display:flex; flex-direction:column }
   #mw-artgal { position:fixed; inset:0; z-index:40030; background:rgba(5,7,12,.9);
     display:flex; align-items:center; justify-content:center; padding:18px 14px;
     font-family:'Galmuri11',sans-serif }
@@ -1451,6 +1465,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      폴라로이드가 두 겹으로 어긋났던 그 함정과 같다. */
   .mw-artrug > img { position:absolute; inset:0; width:100%; height:100%; display:block;
     image-rendering:pixelated; pointer-events:none }
+  /* ★픽셀 그림은 어디서든 뭉개지 않는다 (유저 9-02: "고퀄로 그렸는데 왜 뭉개지는 거야").
+     카펫만 pixelated 였고 **액자·목록·경매·크게보기는 빠져 있었다** — 브라우저가 부드럽게
+     축소해서 32px 도트가 죽처럼 번졌다. 굽는 쪽(mwArtImg)은 처음부터 정수배 NEAREST 라 문제없다. */
+  img.mw-arttap, #mw-artbig img,
+  img[alt="같이 그린 그림"], img[alt="같이 낙서"], img[alt="경매 물건"], img[alt="같이 그린 도화지 카펫"]
+  { image-rendering: pixelated }
   .mw-artrug:active > img { filter:brightness(.9) }
   #mw-artbig { position:fixed; inset:0; z-index:40030; display:flex; align-items:center;
     justify-content:center; padding:26px; background:rgba(0,0,0,.86) }
@@ -2240,11 +2260,15 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     </button>
     <div id="bamboo-compose-full" style="display:none">
       <div id="bamboo-compose-cats" style="display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 0 11px;margin-bottom:11px;border-bottom:1px solid rgba(255,255,255,0.06)"></div>
-      <div style="display:flex;align-items:flex-start;gap:10px">
+      <div class="bw-fields-row" style="display:flex;align-items:flex-start;gap:10px">
         <div style="width:28px;height:28px;border-radius:50%;background:none;border:1px solid rgba(255,255,255,0.13);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:4px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
         </div>
-        <div style="flex:1;min-width:0">
+        <!-- ★칸을 잘못 눌러도 글이 날아가지 않게: 이 영역 빈 데를 누르면 본문에 포커스.
+             (유저 9-02: "제목 쓰고 본문 누르면 원래 페이지로 돌아가" — 본문이 안 늘어난 상태에서
+              본문처럼 보이는 빈 자리를 누르면 바로 밑 취소 버튼이 눌렸다) -->
+        <div class="bw-fields-col" style="flex:1;min-width:0"
+          onclick="if(event.target===this){var t=document.getElementById('bamboo-input');if(t)t.focus();}">
           <!-- 제목은 선택. 안 쓰면 본문 첫 줄이 제목이 된다(_bambooTitle) -->
           <input id="bamboo-title" maxlength="40" autocomplete="off" placeholder="제목 (안 써도 돼요)"
             style="width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,0.09);color:#fff;font-size:15px;font-weight:700;letter-spacing:-0.3px;padding:0 0 9px;outline:none;font-family:inherit;box-sizing:border-box">
@@ -3646,7 +3670,13 @@ window.collapseBambooCompose = function () {
   if (Date.now() - (window._bwOpenedAt || 0) < 600) return;   // 여는 탭이 닫기로 새는 것 방지
   const t = document.getElementById('bamboo-compose-trigger');
   const f = document.getElementById('bamboo-compose-full');
-  const ta = document.getElementById('bamboo-input'); if (ta) ta.value = '';
+  const ta = document.getElementById('bamboo-input');
+  // ★쓰던 글이 있으면 묻는다 (9-02) — 잘못 눌린 취소·닫기가 글을 통째로 날리지 않게.
+  //   (전송 뒤에는 postBamboo 가 먼저 비우고 부르므로 안 묻는다)
+  const ti0 = document.getElementById('bamboo-title');
+  if (((ta && ta.value.trim()) || (ti0 && ti0.value.trim()))
+      && !confirm('쓰던 글을 버릴까요?')) return;
+  if (ta) ta.value = '';
   const ti = document.getElementById('bamboo-title'); if (ti) ti.value = '';
   if (window.clearBambooPhoto) window.clearBambooPhoto();   // 접을 때 붙인 사진도 비운다
   if (f) { f.style.display = 'none'; f.classList.remove('bw-open'); }
@@ -7055,7 +7085,7 @@ window._reditArtCard = function (a, owner) {
   const go = owner
     ? `window.mwArtOpenFrom('${owner}','${a.id}')`
     : `window.mwArtBig('${a.id}')`;
-  return `<button onclick="${go}"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px" draggable="false"></span><span>${who}</span>${tag}</button>`;
+  return `<button onclick="${go}"><span class="thumb"><img src="${window.mwArtImg(a.px, 'frame', a.id)}" style="height:44px;image-rendering:pixelated" draggable="false"></span><span>${who}</span>${tag}</button>`;
 };
 
 // 칩 목록. 개수가 0인 분류는 아예 안 만든다.
@@ -19009,7 +19039,7 @@ window._tennisFrame = function (ts) {
   } else if (r === 'miss') {
     try { window.sfx && window.sfx.play('miss'); } catch (e) {}
     window._tennisShake();
-    window._tennisHint('놓쳤어요! 링 안에서 탭하세요', 900);
+    window._tennisHint('놓쳤어요! 공이 발 앞에 왔을 때 치세요', 900);
   } else if (r === 'hit') {
     // 홀드 자동 스윙(틱 안에서 났다) — 탭 스윙과 같은 버스트·소리를 여기서
     try { window.sfx && window.sfx.play('hit', 0.5); } catch (e) {}
@@ -19041,9 +19071,10 @@ window._tennisGuide = function (s) {
   el.style.display = '';
   if (!s.toMe) { el.textContent = '누른 쪽으로 날아가요'; return; }
   const d = Math.abs(s.by - mid);
-  if (d < 8) el.textContent = '지금 탭!';
-  else if (Math.abs(s.mx - s.bx) > T.REACH) el.textContent = '손가락을 대면 그쪽으로 달려가요';
-  else el.textContent = '공이 오면 탭! 누른 자리가 코스가 돼요';
+  // ★용어를 쓰지 않는다 (유저 9-02: "파란 원일 때 탭하라는 게 무슨 말인지 모르겠음")
+  if (d < 8) el.textContent = '지금 화면을 탁! 치세요';
+  else if (Math.abs(s.mx - s.bx) > T.REACH) el.textContent = '손가락을 대고 있으면 공 쪽으로 달려가요';
+  else el.textContent = '공이 캐릭터 앞까지 오면 화면을 치세요';
 };
 window._tennisTap = function (clientX, clientY) {
   const s = window._tennisS; if (!s || s.over) return;
@@ -19078,7 +19109,7 @@ window._tennisTap = function (clientX, clientY) {
     window._tennisHud(s);
   } else if (j.result === 'early') {
     try { window.sfx && window.sfx.play('swing'); } catch (err) {}
-    window._tennisHint('아직! 링이 파랗게 되면 탭', 650);
+    window._tennisHint('아직 멀어요! 공이 더 오면 치세요', 650);
   } else if (j.result === 'late') {
     try { window.sfx && window.sfx.play('swing'); } catch (err) {}
     window._tennisHint('늦었어요', 650);
@@ -23850,9 +23881,10 @@ window.sqEnterChoice = async function (sid, asGuest) {
   const img = s ? window._sqImgSrc(s) : '';
   let el = document.getElementById('sq-enter'); if (el) el.remove();
   el = document.createElement('div'); el.id = 'sq-enter';
-  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:24px';
+  // ★guest-nick 과 같은 스크롤 처리 (9-02) — 키보드·짧은 폰에서 버튼이 밀려나가도 긁어 내려갈 수 있게
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;justify-content:center;padding:24px;overflow-y:auto;-webkit-overflow-scrolling:touch';
   el.innerHTML = `
-    <div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden">
+    <div style="width:100%;max-width:340px;margin:auto;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;overflow:hidden">
       ${img ? `<div style="height:118px;background:url('${img}') center/cover;position:relative">
         <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,16,22,.15),#0d1016)"></div></div>` : ''}
       <div style="padding:${img ? '2px' : '24px'} 20px 22px;text-align:center">
@@ -27875,9 +27907,13 @@ window.guestAskNick = async function () {
     }
   }).catch(function () {});
   el = document.createElement('div'); el.id = 'guest-nick';
-  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:26px';
+  // ★스크롤이 돼야 한다 (유저 9-02: "공용방 초대에서 수락하고 싶은데 아래로 스크롤이 안 됨").
+  //   닉네임 입력이 자동 포커스라 키보드가 화면을 줄이는데, 가운데 정렬 + 스크롤 없음이라
+  //   아래 버튼이 밀려나가고 긁어도 안 내려갔다. overlay 에 overflow-y:auto, 카드에 margin:auto —
+  //   (flex 가운데 정렬 + overflow 는 위가 잘리는 고전 함정이라 margin:auto 방식을 쓴다)
+  el.style.cssText = 'position:fixed;inset:0;z-index:40020;background:rgba(0,0,0,.86);display:flex;justify-content:center;padding:26px;overflow-y:auto;-webkit-overflow-scrolling:touch';
   el.innerHTML = `
-    <div style="width:100%;max-width:340px;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px;text-align:center">
+    <div style="width:100%;max-width:340px;margin:auto;background:#0d1016;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:24px 22px;text-align:center">
       <div style="font-size:18px;font-weight:800;margin-bottom:7px">반가워요!</div>
       <div style="font-size:12.5px;color:rgba(255,255,255,.5);line-height:1.65;margin-bottom:18px">
         오늘은 <b style="color:#cfd6e6">이름만</b> 정하면 바로 시작해요<br>가입은 나중에 하셔도 돼요</div>
