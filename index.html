@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '910';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '911';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1603,12 +1603,17 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* ── 9-02 무궁화꽃이 피었습니다 ── */
   /* 술래 = 흑빡이교관(대표 직접 생성 9-02). 시트 423x896 의 한 칸(141x224)만 보여준다.
      12칸 전부 일정해서 1열(정지 포즈)을 그대로 쓴다. */
-  .sq-mg-sulle { position:absolute; left:50%; top:12%; width:60px; height:96px; margin-left:-30px;
+  .sq-mg-sulle { position:absolute; left:50%; top:14%; width:32px; height:51px; margin-left:-16px;
     background-image:url('char/game/walk_npc_gyogwan.png?v=1'); background-repeat:no-repeat;
-    background-size:180px 384px; image-rendering:pixelated; z-index:7; pointer-events:none;
-    transition:filter .18s ease }
-  .sq-mg-sulle.back  { background-position:0 -96px }   /* 2행1열 = 뒷모습 */
+    background-size:96px 204px; image-rendering:pixelated; z-index:7; pointer-events:none;
+    transition:filter .18s ease }   /* 9-02 대표: 너무 커서 96→51px, 플레이어(46px)와 비슷하게 */
+  .sq-mg-sulle.back  { background-position:0 -51px }   /* 2행1열 = 뒷모습 */
   .sq-mg-sulle.front { background-position:0 0 }       /* 1행1열 = 정면 */
+  /* 걸린 캐릭터 = 옆으로 넘어져 **누운 채 남는다**(OX 낙사는 화면 밖으로 사라져 하트 눈이 안 보인다) */
+  .sq-char.sq-mg-down { animation:sqMgDown .55s cubic-bezier(.4,0,.8,.4) forwards; transform-origin:50% 100% }
+  @keyframes sqMgDown { 0% { transform:translate(-50%,-100%) rotate(0deg) }
+    70% { transform:translate(-50%,-100%) rotate(86deg) }
+    100% { transform:translate(-50%,-100%) rotate(80deg); filter:saturate(.65) brightness(.9) } }
   .sq-mg-sulle.front { filter:drop-shadow(0 0 6px rgba(255,90,140,.85)) }
   /* 결승선 — 술래 발치. 여기 닿으면 이긴다 */
   .sq-mg-goal { position:absolute; left:0; right:0; z-index:6; pointer-events:none;
@@ -35490,8 +35495,7 @@ window._sqRenderDetailInner = function () {
   else if (isHost || _iAmStaff) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
-      <button onclick="window.sqQuizStart&&window.sqQuizStart()" style="${sub};color:#F5C24B">OX 퀴즈</button>
-      <button onclick="window.sqMugungStart&&window.sqMugungStart()" style="${sub};color:#FF4D7E">무궁화꽃</button>
+      <button onclick="window.sqGamePicker&&window.sqGamePicker()" style="${sub};color:#F5C24B">스쿼드 운동회</button>
       ${inviteBtn}
       ${isHost ? `<button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>`
                : `<button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>`}
@@ -35501,10 +35505,7 @@ window._sqRenderDetailInner = function () {
   //   권한만 넓히고 길을 안 내주면 아무도 못 쓴다([[feedback_murpy_no_center_tab]] 과 같은 실수).
   else if (joined) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
-      <button onclick="window.sqQuizStart&&window.sqQuizStart()" style="${sub};color:#F5C24B">OX 퀴즈</button>
-      <button onclick="window.sqMugungStart&&window.sqMugungStart()" style="${sub};color:#FF4D7E">무궁화꽃</button>
-    </div>
-    <div style="display:flex;gap:8px">
+      <button onclick="window.sqGamePicker&&window.sqGamePicker()" style="${sub};color:#F5C24B">스쿼드 운동회</button>
       <button onclick="window.sqOpenCode&&window.sqOpenCode('${s.id}')" style="${sub}">코드 입력</button>
       ${inviteBtn}
       <button onclick="window.leaveSquad('${s.id}')" style="${sub};flex:0.6;color:rgba(255,255,255,.5)">나가기</button>
@@ -37849,30 +37850,9 @@ window._sqQzPaint = function (sid) {
   if (v.st === 'lb') {
     if (el) el.remove();   // 로비엔 필드 오버레이 없음 — 카드만
     if (card) {
-      const jn = v.join || {}, players = window._sqRtLast || {};
-      const meU = (auth.currentUser || {}).uid;
-      // 9-01 대표: 크아/겟앰프드 로비처럼 — 필드의 전원이 나열되고, 참석 누른 사람에게 READY 뱃지
-      const allU = Object.keys(players).filter(function (uid) { return players[uid] && Number.isFinite(+players[uid].x); });
-      Object.keys(jn).forEach(function (uid) { if (allU.indexOf(uid) < 0) allU.push(uid); });
-      const roster = allU.map(function (uid) {
-        const ch = (players[uid] || {}).character;
-        const nick = (jn[uid] || {}).nick || (players[uid] || {}).nick || '머피';
-        const rdy = !!jn[uid];
-        return '<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;opacity:' + (rdy ? '1' : '.45') + '">'
-          + '<div style="height:44px;display:flex;align-items:flex-end">' + (window.mwMiniCharHtml ? window.mwMiniCharHtml(ch, 42) : '') + '</div>'
-          + (rdy ? '<span style="position:absolute;top:-2px;left:50%;transform:translateX(-50%) rotate(-7deg);background:#F5C24B;color:#3a2a00;font-size:8.5px;font-weight:900;padding:1px 5px;border-radius:4px;letter-spacing:.5px">READY</span>' : '')
-          + '<span style="font-size:9.5px;color:#cfd6e6;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(nick) + '</span></div>';
-      }).join('');
-      card.innerHTML = '<div id="sq-qz-card" style="position:relative;background:rgba(5,7,12,.92);border:1px solid #F5C24B;border-radius:13px;padding:12px 13px">'
-        + stopBtn
-        + '<div style="font-size:13px;color:#F5C24B;font-family:\'Galmuri14\',sans-serif;padding-right:76px">머피 OX 퀴즈 · 참가 접수 중</div>'
-        + '<div style="font-size:11px;color:#8a93a8;margin-top:3px">참석하기를 누른 사람만 문제를 풉니다</div>'
-        + '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:9px;min-height:46px">' + (roster || '<span style="font-size:11px;color:#4a5266;align-self:center">필드에 아무도 없어요</span>') + '</div>'
-        + '<div style="display:flex;gap:8px;margin-top:10px">'
-        +   (jn[meU] ? '<button disabled style="flex:1;background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:700;font-family:inherit">참석 완료</button>'
-                     : '<button onclick="window.sqQuizJoin()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">참석하기</button>')
-        +   (window._sqQzIsOwner() ? '<button onclick="window.sqQuizBegin()" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + Object.keys(jn).length + '명)</button>' : '')
-        + '</div></div>';
+      // 9-02 로비 카드는 무궁화꽃과 **같은 함수**를 쓴다(_sqLobbyCard)
+      card.innerHTML = window._sqLobbyCard({ id: 'sq-qz-card', title: '머피 OX 퀴즈', desc: '참석하기를 누른 사람만 문제를 풉니다',
+        jn: v.join || {}, joinFn: 'window.sqQuizJoin()', beginFn: 'window.sqQuizBegin()', isOwner: window._sqQzIsOwner(), stopBtn: stopBtn });
       window._sqQzTick = setInterval(function () {
         if (!document.getElementById('sq-qz-card')) { clearInterval(window._sqQzTick); window._sqQzPaint(sid); }
       }, 300);
@@ -37991,6 +37971,67 @@ window._sqQzClose = function () {
   const el = document.getElementById('sq-qz'); if (el) el.remove();
   window._sqQzPaint(s && s.id);
 };
+// ═══ 스쿼드 운동회 공통 — 로비(참가 접수) 카드. 두 게임이 **같은 코드**를 쓴다(대표 9-02) ═══
+// 9-01 대표: 크아/겟앰프드 로비처럼 — 필드의 전원이 나열되고, 참석 누른 사람에게 READY 뱃지
+window._sqLobbyCard = function (o) {
+  const E = window._escHtml || function (t) { return String(t); };
+  const jn = o.jn || {}, players = window._sqRtLast || {};
+  const meU = (auth.currentUser || {}).uid;
+  const allU = Object.keys(players).filter(function (uid) { return players[uid] && Number.isFinite(+players[uid].x); });
+  Object.keys(jn).forEach(function (uid) { if (allU.indexOf(uid) < 0) allU.push(uid); });
+  const roster = allU.map(function (uid) {
+    const ch = (players[uid] || {}).character;
+    const nick = (jn[uid] || {}).nick || (players[uid] || {}).nick || '머피';
+    const rdy = !!jn[uid];
+    return '<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;width:58px;opacity:' + (rdy ? '1' : '.45') + '">'
+      + '<div style="height:44px;display:flex;align-items:flex-end">' + (window.mwMiniCharHtml ? window.mwMiniCharHtml(ch, 42) : '') + '</div>'
+      + (rdy ? '<span style="position:absolute;top:-2px;left:50%;transform:translateX(-50%) rotate(-7deg);background:#F5C24B;color:#3a2a00;font-size:8.5px;font-weight:900;padding:1px 5px;border-radius:4px;letter-spacing:.5px">READY</span>' : '')
+      + '<span style="font-size:9.5px;color:#cfd6e6;max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(nick) + '</span></div>';
+  }).join('');
+  return '<div id="' + o.id + '" style="position:relative;background:rgba(5,7,12,.92);border:1px solid #F5C24B;border-radius:13px;padding:12px 13px">'
+    + (o.stopBtn || '')
+    + '<div style="font-size:13px;color:#F5C24B;font-family:\'Galmuri14\',sans-serif;padding-right:76px">' + o.title + ' · 참가 접수 중</div>'
+    + '<div style="font-size:11px;color:#8a93a8;margin-top:3px">' + o.desc + '</div>'
+    + '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:9px;min-height:46px">' + (roster || '<span style="font-size:11px;color:#4a5266;align-self:center">필드에 아무도 없어요</span>') + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:10px">'
+    +   (jn[meU] ? '<button disabled style="flex:1;background:rgba(255,255,255,.07);color:rgba(255,255,255,.5);border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:700;font-family:inherit">참석 완료</button>'
+                 : '<button onclick="' + o.joinFn + '" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">참석하기</button>')
+    +   (o.isOwner ? '<button onclick="' + o.beginFn + '" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + Object.keys(jn).length + '명)</button>' : '')
+    + '</div></div>';
+};
+// ═══ 스쿼드 운동회 — 게임 목록. 여기 한 줄 추가하면 선택창에 자동으로 뜬다 ═══
+window.SQ_GAMES = [
+  { id: 'oxquiz', name: '머피 OX 퀴즈', thumb: 'char/game/title_oxquiz.png?v=1',
+    desc: '운동 상식 O·X. 맞는 쪽 코트로 뛰어가세요. 뒤로 갈수록 어려워지고, 틀리면 떨어져요.',
+    start: 'window.sqQuizStart()' },
+  { id: 'mugung', name: '무궁화꽃이 피었습니다', thumb: 'char/game/title_mugung.png?v=1',
+    desc: '교관이 돌아보면 멈추세요. 움직이다 걸리면 하트 맞고 쓰러져요. 결승선에 먼저 닿으면 승리.',
+    start: 'window.sqMugungStart()' },
+];
+// [스쿼드 운동회] 버튼 → 게임 선택 시트 (썸네일·설명·시작)
+window.sqGamePicker = function () {
+  if (!window._sqQzCanStart || !window._sqQzCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
+  const old = document.getElementById('sq-game-picker'); if (old) old.remove();
+  const d = document.createElement('div'); d.id = 'sq-game-picker';
+  d.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(5,7,12,.82);display:flex;align-items:flex-end;justify-content:center';
+  d.onclick = function (e) { if (e.target === d) d.remove(); };
+  const cards = window.SQ_GAMES.map(function (g) {
+    return '<div style="display:flex;gap:12px;align-items:stretch;background:#0b0e17;border:2px solid #2b3350;border-radius:14px;overflow:hidden">'
+      + '<img src="' + g.thumb + '" alt="" style="width:96px;height:128px;object-fit:cover;image-rendering:pixelated;flex-shrink:0">'
+      + '<div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:11px 12px 11px 0">'
+      +   '<div><div style="font-size:14px;font-weight:800;color:#fff;font-family:\'Galmuri14\',sans-serif">' + g.name + '</div>'
+      +   '<div style="font-size:11px;color:#8a93a8;line-height:1.55;margin-top:5px">' + g.desc + '</div></div>'
+      +   '<button onclick="document.getElementById(\'sq-game-picker\').remove();' + g.start + '" style="align-self:flex-end;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px">시작</button>'
+      + '</div></div>';
+  }).join('');
+  d.innerHTML = '<div style="width:100%;max-width:440px;background:#05070c;border-top:2px solid #2b3350;border-radius:18px 18px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));font-family:Galmuri11,sans-serif">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+    +   '<div style="font-size:15px;font-weight:800;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">스쿼드 운동회</div>'
+    +   '<button onclick="document.getElementById(\'sq-game-picker\').remove()" style="background:none;border:none;color:#8a93a8;font-size:13px;cursor:pointer;font-family:inherit;padding:4px 6px">닫기</button>'
+    + '</div>'
+    + '<div style="display:flex;flex-direction:column;gap:10px">' + cards + '</div></div>';
+  document.body.appendChild(d);
+};
 // ═══════════════ 무궁화꽃이 피었습니다 (스쿼드 게임 2 · 9-02) ═══════════════
 // OX 퀴즈가 깔아둔 것을 그대로 쓴다 — 필드·위치동기화(_sqRtLast)·참석자명단·진행자승계·낙사연출.
 // 새로 만드는 건 판정 하나다.
@@ -38102,7 +38143,8 @@ window._sqMgScan = function () {
 };
 window._sqMgArm = function (sid) {
   clearTimeout(window._sqMgT); clearInterval(window._sqMgScanT);
-  const v = window._sqMgV; if (!v || (v.st !== 'go' && v.st !== 'st')) return;
+  const v = window._sqMgV; if (!v || v.st !== 'lb') clearInterval(window._sqMgTick);
+  if (!v || (v.st !== 'go' && v.st !== 'st')) return;
   if (v.st === 'st') { window._sqMgScan(); window._sqMgScanT = setInterval(window._sqMgScan, 200); }
   else window._sqMgCaught = {};
   const turn = window._sqMgMyTurn(); if (turn < 0) return;
@@ -38172,6 +38214,13 @@ window._sqMgTick = function (sid) {
 window._sqMugungWatch = function () {};
 
 // ── 그리기 ──────────────────────────────────────────────────────────────
+// ★캐릭터는 위치 스냅샷마다 다시 그려진다(_sqRenderRemotes). 그 뒤에 다시 안 붙이면
+//   '하트 맞고도 가만히 서 있는' 상태가 된다(대표 9-02 폰 확인). OX 가 쓰는 래퍼와 같은 방식.
+if (!window._sqRenderRemotesMgWrapped) {
+  window._sqRenderRemotesMgWrapped = 1;
+  const _origRR2 = window._sqRenderRemotes;
+  window._sqRenderRemotes = function (a, b, c) { _origRR2(a, b, c); try { window._sqMgApplyVis(); } catch (e) {} };
+}
 window._sqMgApplyVis = function () {
   const v = window._sqMgV;
   const on = !!(v && (v.st === 'go' || v.st === 'st') && (Date.now() - (v.t || 0)) < window.SQ_MG.STALE_MS);
@@ -38184,10 +38233,10 @@ window._sqMgApplyVis = function () {
     //   단 OX 가 필드를 쓰는 중이면 그쪽 판단을 존중해 손대지 않는다(위에서 이미 빠져나갔다).
     c.el.style.display = (on && (!!jn[uid] !== iAmIn)) ? 'none' : '';
     const hit = !!(on && out[uid]);
-    c.el.classList.toggle('sq-qz-fall', hit);   // 걸린 사람 = 쓰러짐(OX 낙사 연출 재사용)
-    // 매혹 — 쓰러진 채 하트 눈. 하트가 날아가 닿는 시점(0.45초)에 맞춰 늦게 붙인다
+    c.el.classList.toggle('sq-mg-down', hit);   // 걸린 사람 = 옆으로 넘어져 누움
+    // 매혹 — 누운 채 하트 눈. 하트가 날아가 닿는 시점(0.45초)에 맞춰 늦게 붙인다
     let ch = c.el.querySelector('.sq-mg-charm');
-    if (hit && !ch) { setTimeout(function () { if (c.el.classList.contains('sq-qz-fall') && !c.el.querySelector('.sq-mg-charm')) { const d = document.createElement('div'); d.className = 'sq-mg-charm'; c.el.appendChild(d); } }, 450); }
+    if (hit && !ch && !c._mgCharmT) { c._mgCharmT = setTimeout(function () { c._mgCharmT = null; if (c.el.classList.contains('sq-mg-down') && !c.el.querySelector('.sq-mg-charm')) { const d = document.createElement('div'); d.className = 'sq-mg-charm'; c.el.appendChild(d); } }, 450); }
     else if (!hit && ch) ch.remove();
   });
 };
@@ -38259,16 +38308,11 @@ window._sqMgPaint = function (sid) {
   const nick = function (u) { return E(((players[u] || {}).nick) || (jn[u] || {}).nick || '머피'); };
   const box = 'background:#0b0e17;border:2px solid #2b3350;border-radius:12px;padding:13px 14px;font-family:Galmuri11,sans-serif;color:#fff';
   if (v.st === 'lb') {
-    const list = Object.keys(jn);
-    card.innerHTML = '<div style="' + box + '">'
-      + '<div style="font-size:13px;font-weight:800;margin-bottom:4px">무궁화꽃이 피었습니다</div>'
-      + '<div style="font-size:11px;color:#8a93a8;line-height:1.6;margin-bottom:9px">헬창형이 등을 돌리면 움직이고, 돌아보면 멈추세요.<br>움직이다 걸리면 <b style="color:#FF4D7E">하트</b>를 맞습니다. 맨 위 점선까지 먼저 가면 이겨요.</div>'
-      + '<div style="font-size:11.5px;margin-bottom:9px">참석 ' + list.length + '명 · ' + (list.map(nick).join(', ') || '아직 없어요') + '</div>'
-      + '<div style="display:flex;gap:7px">'
-      + (jn[me] ? '<div style="flex:1;text-align:center;background:#F5C24B;color:#3a2a00;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800">참석 완료</div>'
-                : '<button onclick="window.sqMugungJoin()" style="flex:1;background:rgba(255,255,255,.1);color:#fff;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">참석하기</button>')
-      + (window._sqMgIsOwner() ? '<button onclick="window.sqMugungBegin()" style="flex:1;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:11px 0;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">시작 (' + list.length + '명)</button>' : '')
-      + '</div></div>';
+    const stopBtn = window._sqMgIsOwner() ? '<button onclick="window.sqMugungStop()" style="position:absolute;top:10px;right:10px;background:rgba(255,77,126,.15);border:1px solid rgba(255,77,126,.5);color:#FF4D7E;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">게임 종료</button>' : '';
+    card.innerHTML = window._sqLobbyCard({ id: 'sq-mg-card', title: '무궁화꽃이 피었습니다', desc: '교관이 돌아보면 멈추세요. 움직이다 걸리면 하트 맞고 쓰러져요',
+      jn: jn, joinFn: 'window.sqMugungJoin()', beginFn: 'window.sqMugungBegin()', isOwner: window._sqMgIsOwner(), stopBtn: stopBtn });
+    clearInterval(window._sqMgTick);
+    window._sqMgTick = setInterval(function () { if (!document.getElementById('sq-mg-card')) { clearInterval(window._sqMgTick); window._sqMgPaint(sid); } }, 300);
     window._sqMgApplyVis(); return;
   }
   const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
