@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '938';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '939';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -4533,6 +4533,14 @@ window._mwFurnZ = function (f) {
 //   한 장으로 구우면 두 겹이 어긋날 일 자체가 없다.
 // ★빈 칸은 판(.jam-wrap)과 같은 #f4f1ea 로 채운다. 그린 그대로가 방에 깔린다.
 window.MW_JAM_N = 32;
+// ★저장된 그림(px 문자열)의 픽셀 하나 읽기 — base36 한 글자(0~9,a~z = 0~35).
+//   9-02 색 확장(7~34번) 때 필요해졌다: 예전 인코딩은 '픽셀당 숫자 한 글자'였는데
+//   10 이상을 String() 으로 붙이면 두 글자가 돼 **뒤 픽셀이 전부 밀려 그림이 깨진다.**
+//   옛 그림(0~6)은 base36 으로 읽어도 같은 값이라 완전 호환이다.
+window._mwPxV = function (px, i) {
+  const c = px.charCodeAt(i);
+  return c >= 97 ? c - 87 : c - 48;               // 'a'(97)→10 … 'z'→35 / '0'~'9' 그대로
+};
 // ★번호가 곧 저장 형식이다 — 0~6 은 옛 그림이 쓰고 있으니 **절대 순서를 바꾸거나 빼지 말 것.**
 //   새 색은 뒤에 덧붙이기만 한다(9-02 유저 요청: "색상 좀 더, 그림판처럼").
 window.MW_JAM_PAL = ['', '#14161E', '#F2F5FA', '#E4472E', '#F5C24B', '#4ADE80', '#3D7EFF',
@@ -4593,7 +4601,7 @@ window.mwArtImg = function (px, kind, key) {
   x.fillStyle = '#f4f1ea';
   x.fillRect(padX, padY, D, D);
   for (let i = 0; i < N * N; i++) {
-    const c = PAL[px.charCodeAt(i) - 48];
+    const c = PAL[window._mwPxV(px, i)];
     if (!c) continue;
     x.fillStyle = c;
     x.fillRect(padX + (i % N) * S, padY + ((i / N) | 0) * S, S, S);
@@ -24532,8 +24540,8 @@ window.mwJamPlace = async function (kind) {
   if (!J) { showToast('낙서판이 닫혔어요 · 다시 열어 주세요'); return; }
   if (!me) { window.memberGate && window.memberGate('방에 남기려면 로그인이 필요해요'); return; }
   if (!window.mwJamIsHost()) { showToast('방 주인만 놓을 수 있어요'); return; }
-  const px = J.px.map(function (v) { return String(v || 0); }).join('');
-  if (!/[1-6]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
+  const px = J.px.map(function (v) { return (v || 0).toString(36); }).join('');
+  if (!/[^0]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
   // 서명 = **걸 때 방에 있던 사람들**. 누가 어느 칸을 찍었는지는 안 남긴다(규칙을 고쳐야 한다).
   let by = [];
   try {
@@ -24675,8 +24683,8 @@ window.mwJamSaveArt = async function () {
   const J = window._mwJam, R = window._rt, me = auth.currentUser;
   if (!J || !me) return;
   if (!window.mwJamIsHost()) { showToast('방 주인만 저장할 수 있어요'); return; }
-  const px = J.px.map(function (v) { return String(v || 0); }).join('');
-  if (!/[1-6]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
+  const px = J.px.map(function (v) { return (v || 0).toString(36); }).join('');
+  if (!/[^0]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
   // 서명 = 저장할 때 방에 있던 사람들. **uid 도 같이** 남긴다 — 나중에 '공짜로 가져가기'
   // 판정이 uid 로 이뤄지기 때문이다(닉네임은 바뀔 수 있어 기준이 못 된다).
   let by = [], byUids = [];
@@ -25258,7 +25266,7 @@ window._mwArtCoPick = async function () {
       if (n.taken === true) continue;
       const aid = n.artId, px = String(n.px || '');
       // 그림이 안 실려 왔으면 다시 볼 것도 없다 — 표시만 하고 넘어간다
-      if (!aid || !/[1-6]/.test(px)) { try { await updateDoc(d.ref, { taken: true }); } catch (e) {} continue; }
+      if (!aid || !/[^0]/.test(px)) { try { await updateDoc(d.ref, { taken: true }); } catch (e) {} continue; }   // ★[1-6]→[^0] (9-02): 새 색(7~34)만 쓴 그림 사본이 버려지지 않게
       try { await updateDoc(d.ref, { taken: true }); } catch (e) { continue; }
       if (window.mwArtHave(aid)) continue;          // 이미 가져다 놨으면 그만
       window._myArt = [{ id: aid, px: px,
@@ -25507,7 +25515,7 @@ window._mwArtCardImg = function (art) {
   x.fillStyle = '#f4f1ea'; x.fillRect(px0, py0, size, size);
   const PAL = window.MW_JAM_PAL;
   for (let i = 0; i < 1024; i++) {
-    const c = PAL[art.px[i]]; if (!c) continue;
+    const c = PAL[window._mwPxV(art.px, i)]; if (!c) continue;
     x.fillStyle = c;
     x.fillRect(px0 + (i % 32) * cell, py0 + ((i / 32) | 0) * cell, cell + 0.5, cell + 0.5);
   }
