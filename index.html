@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '962';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '963';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -39070,9 +39070,11 @@ window.sfx = (function () {
     voice: voice, preload: preload,
     voiceBusy: function (ch) { const x = chans[ch]; return !!(x && !x._done); },
     // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
-    bgm: function (name) { if (!name || muted) { bgStop(); return; } if (bg.name === name) return; bgStart(name); },
+    // ★bg.want = 마지막으로 요청된 곡. 음소거 중에도 기억해 둔다 — 브금을 켜는 호출은 게임 상태가
+    //   **바뀌는 순간**에만 나가서, 소리를 껐다 켜면 다음 판까지 브금이 안 돌아왔다(대표 9-02).
+    bgm: function (name) { bg.want = name || null; if (!name || muted) { bgStop(); return; } if (bg.name === name) return; bgStart(name); },
     bgmFor: function (type) { const t = String(type || ''); if (/gym|hyrox|climb|헬스|하이록스|클라이밍/.test(t)) return 'power'; if (/yoga|hik|요가|하이킹|등산/.test(t)) return 'calm'; return 'run'; },
-    mute: function (v) { muted = !!v; if (muted) bgStop(); try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
+    mute: function (v) { muted = !!v; if (muted) bgStop(); else if (bg.want) bgStart(bg.want); try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
     isMuted: function () { return muted; },
     names: Object.keys(S)
   };
