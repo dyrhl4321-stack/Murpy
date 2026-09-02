@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '927';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '928';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -3186,6 +3186,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <div id="tennis-pane-recs" class="dodge-pane" style="display:none;flex-direction:column;align-items:center;gap:14px;width:100%">
       <div style="font-size:17px;font-weight:900;color:#fff;letter-spacing:-.3px">내 기록</div>
       <div id="tennis-rec-list" style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto"></div>
+      <div id="tennis-rec-share" style="display:none;width:100%;max-width:300px"></div>
       <button class="dodge-cta ghost" onclick="window.tennisOpen()" style="width:100%;max-width:280px;padding:12px;font-size:13px;font-weight:700">뒤로</button>
     </div>
     <div id="tennis-pane-howto" class="dodge-pane" style="display:none;flex-direction:column;align-items:center;gap:18px;width:100%">
@@ -18853,12 +18854,12 @@ window.tennisRecs = async function () {
     window._tennisRecs = recs;
   }
   if (!recs.length) { box.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,.4);font-size:12.5px;text-align:center">아직 기록이 없어요</div>'; return; }
-  box.innerHTML = recs.map(function (r) {
+  box.innerHTML = recs.map(function (r, i) {
     const d = new Date(r.at || 0), lv = (window.TENNIS_LV[r.lv] || {}).name || '중';
     return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,.07)">'
       + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:19px;color:#fff;min-width:54px">' + (r.n || 0) + '</div>'
       + '<div style="flex:1;font-size:11px;color:rgba(255,255,255,.55)">' + lv + ' · 득점 ' + (r.pts || 0) + ' · 랠리 ' + (r.rally || 0) + ' · ' + (d.getMonth() + 1) + '/' + d.getDate() + '</div>'
-      + '</div>';
+      + '<button onclick="window.tennisShareRec(' + i + ')" style="background:none;border:1px solid rgba(255,255,255,.2);color:#cfd6e6;font-family:inherit;font-size:11px;padding:5px 9px;cursor:pointer">공유</button></div>';
   }).join('');
 };
 window._tennisPaintStart = function () {
@@ -19169,6 +19170,63 @@ window.tennisClose = function () {
   const el = document.getElementById('tennis-screen'); if (el) el.style.display = 'none';
   try { document.documentElement.style.overflow = ''; document.body.style.overflow = ''; } catch (e) {}
 };
+// 공유 카드 — 골프 _golfCardImg 와 같은 문법(타이틀 그림 배경 + 어두운 그라디언트 + 점수)
+window._tennisCardImg = function (score, s, cb) {
+  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+  const im = new Image();
+  const draw = function (ok) {
+    x.fillStyle = '#0d1a2e'; x.fillRect(0, 0, W, H);
+    if (ok) { const r = Math.max(W / im.width, H / im.height); x.drawImage(im, (W - im.width * r) / 2, 0, im.width * r, im.height * r); }
+    const g = x.createLinearGradient(0, H * 0.45, 0, H); g.addColorStop(0, 'rgba(5,7,12,0)'); g.addColorStop(1, 'rgba(5,7,12,.92)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.textAlign = 'center'; x.fillStyle = '#fff';
+    const nick = window.dodgeNickGet ? window.dodgeNickGet() : (window._mwMyNick || '머피');
+    x.font = '42px Galmuri11, sans-serif'; x.fillText(nick, W / 2, H - 470);
+    x.font = '150px Galmuri14, sans-serif'; const sw = x.measureText(String(score)).width; x.fillText(String(score), W / 2, H - 300);
+    x.fillStyle = '#F5C24B'; x.font = '48px Galmuri14, sans-serif'; x.fillText('점', W / 2 + sw / 2 + 40, H - 300);
+    x.fillStyle = '#cfd6e6'; x.font = '40px Galmuri11, sans-serif';
+    const lv = (window.TENNIS_LV[s.lv] || {}).name || '중';
+    x.fillText('득점 ' + (s.pts || 0) + ' · 최장 랠리 ' + (s.bestRally || 0) + ' · 난이도 ' + lv, W / 2, H - 220);
+    x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '36px Galmuri11, sans-serif'; x.fillText('머피 테니스 · murpy.app', W / 2, H - 110);
+    cb(cv.toDataURL('image/jpeg', 0.9));
+  };
+  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/tennis_title.png?v=6';
+};
+window.tennisMakeLink = function () { return 'https://murpy.app/?tn=1'; };
+window.tennisShareIG = function () {
+  const url = window.tennisMakeLink();
+  const go = function () { showToast('링크도 복사했어요 · 스토리에 붙여넣으세요'); window.mwShareSheet && window.mwShareSheet(); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(go, go);
+    else { const ta = document.createElement('textarea'); ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); go(); }
+  } catch (e) { go(); }
+};
+window._tennisShowShare = function (score, st, hostId) {
+  const host = document.getElementById(hostId || 'tennis-share'); if (!host) return;
+  const B = window._MW_BRAND || {};
+  host.style.display = 'none';
+  window._tennisCardImg(score, st, function (data) {
+    window._mwStampData = data;
+    window._mwShareMeta = { title: '머피 테니스 ' + score + '점!', desc: '머피월드 테니스장에서 랠리 한 판 어때요', btn: '나도 치러 가기', link: window.tennisMakeLink() };
+    host.innerHTML = '<div class="mw-share-lbl" style="text-align:center;margin:6px 3px 9px">내 기록 자랑하기</div>'
+      + '<div class="mw-share">'
+      + '<button class="mw-sbtn" onclick="window.tennisShareIG()" aria-label="인스타그램에 공유">' + (B.ig || '') + '<span>인스타그램</span></button>'
+      + '<button class="mw-sbtn mw-kk" onclick="window.mwShareKakao(this)" aria-label="카카오톡으로 공유">' + (B.kk || '') + '<span>카카오톡</span><i class="mw-sbtn-spin" aria-hidden="true"></i></button>'
+      + '<button class="mw-sbtn sv" onclick="window.mwSaveStamp()" aria-label="사진 저장">' + (B.sv || '') + '<span>저장</span></button>'
+      + '</div>';
+    host.style.display = '';
+    window._mwKakaoPrep && window._mwKakaoPrep();
+  });
+};
+// 링크로 들어오면 테니스가 바로 열린다 (?tn=1) — 골프 _golfLinkBoot 의 단순판
+window._tennisLinkBoot = function () {
+  try {
+    if (new URLSearchParams(location.search).get('tn') !== '1') return;
+    history.replaceState(null, '', location.pathname);
+    window.dismissLanding && window.dismissLanding();
+    setTimeout(function () { window.tennisOpen && window.tennisOpen(); }, 400);
+  } catch (e) {}
+};
+window.addEventListener('load', function () { setTimeout(window._tennisLinkBoot, 0); });
 window._tennisEnd = function (s) {
   cancelAnimationFrame(window._tennisRaf); window._tennisRaf = 0;
   const score = window.tennisScore(s);
@@ -19184,6 +19242,7 @@ window._tennisEnd = function (s) {
       + (isBest ? '<br><span style="color:#3D7EFF;font-weight:800">자기 최고 기록!</span>' : '');
   }
   if (ov) ov.style.display = 'flex';
+  window._tennisShowShare(score, s, 'tennis-share');
   window._tennisSave(s, score);
 };
 // 저장 모양은 덤벨·골프와 **똑같이** users/{uid}.games.<key> 다. 명예의 전당이 이 모양만 읽는다.
@@ -19204,6 +19263,10 @@ window._tennisSave = async function (s, score) {
     window._hofCache = null;                        // 랭킹 캐시를 비워야 새 점수가 바로 보인다
     window.track && window.track('game_end', { game: 'tennis', score: score, lv: s.lv });
   } catch (e) { console.warn('tennisSave', e); }
+};
+window.tennisShareRec = function (i) {
+  const r = (window._tennisRecs || [])[i]; if (!r) return;
+  window._tennisShowShare(r.n || 0, { pts: r.pts || 0, bestRally: r.rally || 0, lv: r.lv || 'mid' }, 'tennis-rec-share');
 };
 window._tennisLoadBest = async function () {
   try {
@@ -25395,6 +25458,36 @@ window.mwAucBidFrom = async function (owner, id) {
 };
 
 // ---- 공유 ---- (머피룸 초대 카드와 **같은 방식**이다 — .mw-share 와 mwShareKakao 재사용)
+// ★공유용 카드 — 그림만 띡 올리지 않는다 (대표 9-02: "누가누가 같이 그린 그림이다 라는 게
+//   같이 저장돼 있으면 좋겠음. 지금은 어디서 그린 건지도 안 보임").
+//   그림(NEAREST 확대) + 그린 사람들 + '머피월드 같이 낙서 · murpy.app' 을 한 장에 박는다.
+window._mwArtCardImg = function (art) {
+  const W = 1080, H = 1350, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  x.imageSmoothingEnabled = false;
+  x.fillStyle = '#0d1120'; x.fillRect(0, 0, W, H);
+  // 미색 캔버스 판(낙서판 그대로) + 픽셀 테두리
+  const size = 864, px0 = (W - size) / 2, py0 = 130, cell = size / 32;
+  x.fillStyle = '#05070c'; x.fillRect(px0 - 14, py0 - 14, size + 28, size + 28);
+  x.fillStyle = '#f4f1ea'; x.fillRect(px0, py0, size, size);
+  const PAL = window.MW_JAM_PAL;
+  for (let i = 0; i < 1024; i++) {
+    const c = PAL[art.px[i]]; if (!c) continue;
+    x.fillStyle = c;
+    x.fillRect(px0 + (i % 32) * cell, py0 + ((i / 32) | 0) * cell, cell + 0.5, cell + 0.5);
+  }
+  x.textAlign = 'center';
+  const by = (art.by || []).filter(Boolean);
+  const who = by.length ? by.join(' · ') : '머피';
+  x.fillStyle = '#fff'; x.font = '52px Galmuri14, sans-serif';
+  x.fillText(who, W / 2, py0 + size + 120);
+  x.fillStyle = '#cfd6e6'; x.font = '40px Galmuri11, sans-serif';
+  x.fillText(by.length > 1 ? '님들이 같이 그린 그림' : '님이 그린 그림', W / 2, py0 + size + 185);
+  x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '36px Galmuri11, sans-serif';
+  x.fillText('머피월드 같이 낙서 · murpy.app', W / 2, H - 78);
+  return cv.toDataURL('image/jpeg', 0.92);
+};
 window.mwArtShare = function (id) {
   const art = window.mwArtEnsure(id); if (!art) return;
   const nick = (art.by || []).join('·') || '머피';
@@ -25402,7 +25495,7 @@ window.mwArtShare = function (id) {
   // ★★새 문법을 만들지 않는다 — 덤벨 피하기·머피룸 초대가 쓰는 **.mw-share/.mw-sbtn 그대로**다
   //   (대표 8-26: "머피룸 초대랑 덤벨 피하기처럼 인스타·카톡·저장하기 뜨게 해야 함").
   //   예전엔 mwShareKakao 를 바로 불러서 카톡 말고는 길이 없었다.
-  window._mwStampData = window.mwArtImg(art.px, 'frame', art.id);
+  window._mwStampData = window._mwArtCardImg(art);
   window._mwShareMeta = {
     title: nick + '님이 같이 그린 그림',
     desc: '머피월드에서 같이 그렸어요',
@@ -25433,9 +25526,19 @@ window.mwArtShare = function (id) {
   window._mwKakaoPrep && window._mwKakaoPrep();
 };
 // 인스타는 파일 공유만 받는다. 덤벨 피하기(dodgeShareIG)와 같은 길이다.
+// ★링크는 클립보드로 (대표 9-02: "초대링크도 복사 안 되고") — 스토리엔 글자를 못 실어
+//   보내니, 붙여넣을 수 있게 미리 복사해 준다. golfShareIG 와 같은 방식.
 window.mwArtShareIG = function () {
-  if (window.mwShareSheet) return window.mwShareSheet();
-  window.mwSaveStamp && window.mwSaveStamp();
+  const url = (window._mwShareMeta || {}).link || 'https://murpy.app/';
+  const go = function () {
+    showToast('그림 링크도 복사했어요 · 스토리에 붙여넣으세요');
+    if (window.mwShareSheet) return window.mwShareSheet();
+    window.mwSaveStamp && window.mwSaveStamp();
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(go, go);
+    else { const ta = document.createElement('textarea'); ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); go(); }
+  } catch (e) { go(); }
 };
 // ---- 크게 보기 ----
 window.mwArtBig = function (id) {
