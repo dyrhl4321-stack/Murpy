@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '935';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '936';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38369,8 +38369,9 @@ window._sqQzPaint = function (sid) {
     const key = v ? (v.st + ':' + (v.qi | 0)) : null, prev = window._sqQzPrevKey;
     if (key !== prev) {
       window._sqQzPrevKey = key;
-      if (inField && v.st === 'q') window.sfx.play(prev === 'lb:0' ? 'start' : 'tick');
-      if (inField && v.st === 'rv') { const ok = ((v.last || {}).ok || {})[_meS]; window.sfx.play(ok ? 'correct' : 'wrong'); }
+      const hearQ = inField || showCard || active;   // 9-02 참석자만 → 이 화면 보는 모두
+      if (hearQ && v.st === 'q') window.sfx.play(prev === 'lb:0' ? 'start' : 'tick');
+      if (hearQ && v.st === 'rv') { const ok = ((v.last || {}).ok || {})[_meS]; window.sfx.play(inField ? (ok ? 'correct' : 'wrong') : 'correct'); }
       if (v && v.st === 'end' && (v.join || {})[_meS]) {
         const sc = v.sc || {}, mine = sc[_meS] | 0, top = Math.max.apply(null, Object.keys(sc).map(function (u) { return sc[u] | 0; }).concat([0]));
         window.sfx.play(mine > 0 && mine >= top ? 'win' : 'lose');
@@ -38470,7 +38471,7 @@ window._sqQzPaint = function (sid) {
           if (bar) bar.style.width = Math.max(0, Math.min(1, left)) * 100 + '%';
           // 9-02 마지막 3초 — 초마다 틱. 필드에 들어간 사람만(구경꾼 화면에서 울리면 이상하다)
           const secLeft = Math.ceil((v.dl - window._sqQzNow()) / 1000);
-          if (window._sqQzInField && secLeft <= 3 && secLeft >= 1 && window._sqQzLastTick !== secLeft + ':' + v.qi) { window._sqQzLastTick = secLeft + ':' + v.qi; window.sfx.play('tick'); }
+          if (window._sqQzUiOn && secLeft <= 3 && secLeft >= 1 && window._sqQzLastTick !== secLeft + ':' + v.qi) { window._sqQzLastTick = secLeft + ':' + v.qi; window.sfx.play('tick'); }
         }, 200);
       } else {
         const okN = Object.keys((v.last || {}).ok || {}).length;
@@ -39089,8 +39090,11 @@ window._sqMgPaint = function (sid) {
     if (key !== window._sqMgPrevKey) {
       window._sqMgPrevKey = key; window._sqMgPrevSt = st;
       if (st === 'lb' && prev !== 'lb') window.sfx.preload();
-      if (inField && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go_' + (v.vi | 0)); }
-      if (inField && st === 'st') window.sfx.play('turn');
+      // 9-02 대표: "같은 폰인데 계정마다 소리가 다르다" → 참석자에게만 내던 걸 **이 화면을 보는 모두**에게.
+      //   스쿼드장이 시작만 하고 참석 안 하면 아무 소리도 못 들었다.
+      const hear = inField || showCard || active;
+      if (hear && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go_' + (v.vi | 0)); }
+      if (hear && st === 'st') window.sfx.play('turn');
       if (st === 'ov' && (v.join || {})[me]) { setTimeout(function () { if (v.win === me) { window.sfx.play('win'); } else if (v.win || (v.out || {})[me]) window.sfx.play('lose'); }, 900); }
     }
   } catch (e) {}
@@ -39131,7 +39135,7 @@ window._sqMgPaint = function (sid) {
     Object.keys(out).forEach(function (u) { if (!prev[u]) { window._sqMgHeart(u); newly++;
       if (u === me) { try { const p = window._sqMyPos; if (p) { p.dir = 'down'; p.moving = false; window._sqOnMove && window._sqOnMove(); } } catch (e) {}
         setTimeout(function () { stage.classList.remove('sq-mg-hitme'); void stage.offsetWidth; stage.classList.add('sq-mg-hitme'); }, 400); } } });
-    if (newly && inField) { window.sfx.play('heart'); setTimeout(function () { window.sfx.play('fall'); }, 460); }
+    if (newly && (inField || showCard || active)) { window.sfx.play('heart'); setTimeout(function () { window.sfx.play('fall'); }, 460); }
     window._sqMgOutPrev = Object.assign({}, out);
   } catch (e) {}
 
