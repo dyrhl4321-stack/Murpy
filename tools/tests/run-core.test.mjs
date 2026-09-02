@@ -176,10 +176,11 @@ ok('치킨의 유혹', () => {
   assert(slowGain < normGain * 0.7, `슬로우가 안 걸린다 (${slowGain.toFixed(3)} vs ${normGain.toFixed(3)})`);
 });
 
-// ── 14) 득근 타임: 6연속에 터지고, 도는 동안 장애물에 안 죽고 더 빠르다 ──
+// ── 14) 득근 타임: N연속(난이도별)에 터지고, 도는 동안 장애물에 안 죽고 더 빠르다 ──
 ok('득근 타임: 발동·무적·가속', () => {
   const s = w.runNew('mid', 1); s.nextAt = 1e9;
-  s.protRun = R.PUMP_N - 1;
+  const pn = w.RUN_LV.mid.pumpN || R.PUMP_N;
+  s.protRun = pn - 1;
   s.items = [{ t: 'pr', x: s.d + 2, y: 6 }];
   assert.strictEqual(w.runTick(s, 16), 'pump');
   assert(s.pump > 0); assert.strictEqual(s.protRun, 0);
@@ -198,6 +199,31 @@ ok('아치 프로틴 도달 가능', () => {
   const maxY = Math.max(0, ...s.items.map(it => it.y));
   const holdApex = apex(true);
   assert(maxY - R.ITEM_R < holdApex + R.CH, `아치 꼭대기(${maxY})가 홀드 점프(${holdApex.toFixed(1)}+키)로도 안 닿는다`);
+});
+
+// ── 16) 난이도별 득근: 상은 더 많이 먹어야 발동 + 더 짧게 (쉬운 점수 방지) ─────
+ok('난이도별 득근 발동·지속', () => {
+  assert(w.RUN_LV.hard.pumpN > w.RUN_LV.mid.pumpN, '상이 중보다 발동 개수가 많아야 한다');
+  assert(w.RUN_LV.hard.pumpMs < w.RUN_LV.mid.pumpMs, '상이 중보다 득근이 짧아야 한다');
+  // 상: pumpN-1 먹고 하나 더 = 발동, pump = hard.pumpMs
+  const s = w.runNew('hard', 1); s.nextAt = 1e9;
+  s.protRun = w.RUN_LV.hard.pumpN - 1;
+  s.items = [{ t: 'pr', x: s.d + 2, y: 6 }];
+  assert.strictEqual(w.runTick(s, 16), 'pump');
+  assert.strictEqual(s.pump, w.RUN_LV.hard.pumpMs);
+});
+
+// ── 17) 상 난이도 전용 빌런(킥보드·강아지)이 스폰 종류에 있고 스펙이 온전하다 ────
+ok('상 빌런 킥보드·강아지', () => {
+  assert(w.RUN_LV.hard.types.includes('k') && w.RUN_LV.hard.types.includes('d'), '상 types 에 k·d 가 없다');
+  assert(!w.RUN_LV.mid.types.includes('k'), '중에 킥보드가 새어 들어갔다');
+  for (const t of ['k', 'd']) {
+    const o = w.RUN_OBS[t];
+    assert(o && o.w > 0 && o.y1 > o.y0 - 0.001, `${t} 스펙 불완전`);
+  }
+  // 킥보드는 자전거보다 빠르고(더 부담), 강아지는 낮다
+  assert(w.RUN_OBS.k.spd > w.RUN_OBS.b.spd, '킥보드가 자전거보다 느리다');
+  assert(w.RUN_OBS.d.y1 <= w.RUN_OBS.h.y1, '강아지가 허들보다 높다(짧은 점프여야)');
 });
 
 console.log(`\n머피런 코어 ${pass}개 전부 통과`);
