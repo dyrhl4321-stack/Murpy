@@ -39,6 +39,11 @@ def graft(base_path, face_path, out_path):
     print("graft -> %s   컷라인 %s" % (os.path.basename(out_path), " ".join(rep)))
 
 if __name__ == "__main__":
-    graft(os.path.join(M, "char", "walk.png"),
-          os.path.join(M, "char", "faces", "jaejin_src.png"),
-          os.path.join(M, "char", "faces", "jaejin.png"))
+    # 9-02 커마권 정형화 — 고객마다 경로를 인자로. 인자 없이 돌리면 재진(1호) 그대로.
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default=os.path.join(M, "char", "walk.png"))
+    ap.add_argument("--face", default=os.path.join(M, "char", "faces", "jaejin_src.png"))
+    ap.add_argument("--out", default=os.path.join(M, "char", "faces", "jaejin.png"))
+    a = ap.parse_args()
+    graft(a.base, a.face, a.out)
