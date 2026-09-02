@@ -150,4 +150,54 @@ ok('마주 오는 장애물 이동', () => {
   assert.strictEqual(s.obs[1].x, hx, '허들이 움직였다');
 });
 
+// ── 12) 프로틴: 먹으면 +1·점수 보너스·아이템 소멸 ──────────────────────────
+ok('프로틴 먹기', () => {
+  const s = w.runNew('mid', 1); s.nextAt = 1e9;
+  s.items = [{ t: 'pr', x: s.d + 2, y: 6 }];
+  assert.strictEqual(w.runTick(s, 16), 'prot');
+  assert.strictEqual(s.prot, 1);
+  assert.strictEqual(s.items.length, 0, '먹은 프로틴이 남아 있다');
+  const base = Math.round(s.d * R.M_PER_U * w.RUN_LV.mid.mul);
+  assert.strictEqual(w.runScore(s), base + R.PROT_PT, '프로틴 보너스가 점수에 없다');
+});
+
+// ── 13) 치킨: 감점 + 슬로우 + 연속 게이지 리셋, 점수는 0 아래로 안 내려간다 ──
+ok('치킨의 유혹', () => {
+  const s = w.runNew('mid', 1); s.nextAt = 1e9;
+  s.protRun = 4;
+  s.items = [{ t: 'ck', x: s.d + 2, y: 5 }];
+  assert.strictEqual(w.runTick(s, 16), 'chick');
+  assert(s.slow > 0, '치킨을 먹었는데 안 느려진다');
+  assert.strictEqual(s.protRun, 0, '치킨이 연속 게이지를 안 끊는다');
+  assert.strictEqual(w.runScore(s), 0, '초반 치킨인데 점수가 음수다');
+  // 슬로우 동안 실제로 덜 나아간다
+  const d0 = s.d; w.runTick(s, 16); const slowGain = s.d - d0;
+  s.slow = 0; const d1 = s.d; w.runTick(s, 16); const normGain = s.d - d1;
+  assert(slowGain < normGain * 0.7, `슬로우가 안 걸린다 (${slowGain.toFixed(3)} vs ${normGain.toFixed(3)})`);
+});
+
+// ── 14) 득근 타임: 6연속에 터지고, 도는 동안 장애물에 안 죽고 더 빠르다 ──
+ok('득근 타임: 발동·무적·가속', () => {
+  const s = w.runNew('mid', 1); s.nextAt = 1e9;
+  s.protRun = R.PUMP_N - 1;
+  s.items = [{ t: 'pr', x: s.d + 2, y: 6 }];
+  assert.strictEqual(w.runTick(s, 16), 'pump');
+  assert(s.pump > 0); assert.strictEqual(s.protRun, 0);
+  s.obs = [{ t: 'h', x: s.d + 1 }];
+  const r = w.runTick(s, 16);
+  assert(r !== 'crash' && !s.over, '득근 타임인데 허들에 죽었다');
+  const d0 = s.d; w.runTick(s, 16); const pumpGain = s.d - d0;
+  s.pump = 0; s.obs = []; const d1 = s.d; w.runTick(s, 16); const normGain = s.d - d1;
+  assert(pumpGain > normGain * 1.2, `득근 가속이 없다 (${pumpGain.toFixed(3)} vs ${normGain.toFixed(3)})`);
+});
+
+// ── 15) 아치 프로틴은 점프 궤적으로 전부 닿는 높이다 ───────────────────────
+ok('아치 프로틴 도달 가능', () => {
+  const s = w.runNew('mid', 5);
+  for (let i = 0; i < 30; i++) w._runSpawn(s);
+  const maxY = Math.max(0, ...s.items.map(it => it.y));
+  const holdApex = apex(true);
+  assert(maxY - R.ITEM_R < holdApex + R.CH, `아치 꼭대기(${maxY})가 홀드 점프(${holdApex.toFixed(1)}+키)로도 안 닿는다`);
+});
+
 console.log(`\n머피런 코어 ${pass}개 전부 통과`);
