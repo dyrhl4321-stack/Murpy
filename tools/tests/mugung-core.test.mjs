@@ -18,6 +18,8 @@ for (const [re, name] of [
   [/window\.SQ_MG = \{[\s\S]*?\n\};/, 'SQ_MG'],
   [/window\._sqMgJudge = function[\s\S]*?\n\};/, '_sqMgJudge'],
 ]) new Function('window', grab(re, name))(w);
+const auth = { currentUser: { uid: 'a' } };
+new Function('window', 'auth', grab(/window\._sqMgClaimGoal = function[\s\S]*?\n\};/, '_sqMgClaimGoal'))(w, auth);
 
 const Z = w.SQ_MG;
 const J = (v, players, caught) => w._sqMgJudge(v, players, caught);
@@ -172,4 +174,42 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   assert.strictEqual(r.win, 'a', '걷고 있었어도 이미 넘었으면 승리');
 }
 
-console.log('mugung-core: 18개 항목 전부 통과');
+// ── 19) ★내 기기에서 선을 넘는 프레임에 즉시 go→ov 를 청구한다 ─────────
+{
+  let written = null, calls = 0;
+  const cur = { g: 'mg', st: 'go', join: { a: {}, b: {} }, out: null, host: 'b', t: 10, dl: 20 };
+  w._sqMgV = cur; w._sqMgGoalSent = null;
+  w._sqMgRef = sid => sid; w._sqMgNow = () => 1000;
+  w._rt = { runTransaction: (ref, fn) => { calls++; written = fn({ ...cur }); return Promise.resolve(); } };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y, moving: true }), true, '선을 넘은 프레임에 청구하지 않았다');
+  assert.strictEqual(calls, 1, '결승 트랜잭션이 실행되지 않았다');
+  assert.strictEqual(written.st, 'ov');
+  assert.strictEqual(written.win, 'a');
+  assert.strictEqual(written.dl, 1000 + Z.OVER_MS);
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), true);
+  assert.strictEqual(calls, 1, '같은 구간에서 결승 트랜잭션을 중복 실행했다');
+}
+
+// ── 20) 돌아본 뒤(st)나 선 앞에서는 로컬 결승을 허용하지 않는다 ─────────
+{
+  let calls = 0;
+  w._rt = { runTransaction: () => { calls++; return Promise.resolve(); } };
+  w._sqMgGoalSent = null; w._sqMgV = { g: 'mg', st: 'st', join: { a: {} }, t: 11, dl: 21 };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), false);
+  w._sqMgV = { g: 'mg', st: 'go', join: { a: {} }, t: 12, dl: 22 };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y + 0.1 }), false);
+  assert.strictEqual(calls, 0, '부정한 결승 트랜잭션이 실행됐다');
+}
+
+// ── 21) 참가자가 아니거나 이미 탈락했으면 결승을 청구하지 않는다 ────────
+{
+  let calls = 0;
+  w._rt = { runTransaction: () => { calls++; return Promise.resolve(); } };
+  w._sqMgGoalSent = null; w._sqMgV = { g: 'mg', st: 'go', join: { b: {} }, t: 13, dl: 23 };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y }), false);
+  w._sqMgV = { g: 'mg', st: 'go', join: { a: {} }, out: { a: 1 }, t: 14, dl: 24 };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y }), false);
+  assert.strictEqual(calls, 0);
+}
+
+console.log('mugung-core: 21개 항목 전부 통과');

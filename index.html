@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '958';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '959';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -6176,7 +6176,7 @@ window.mwDinoSetName = function (idx, v) {
   showToast(nm ? ('이제 ' + nm + ' 이에요') : '이름을 지웠어요');
 };
 window._mwNameModal = function (cur, whatName, saveJs) {
-  var old = document.getElementById('mw-petname-modal'); if (old) { old.remove(); return; }
+  var old = document.getElementById('mw-petname-modal'); if (old) { window._mwModalKbClose(old); old.remove(); return; }
   var el = document.createElement('div');
   el.id = 'mw-petname-modal';
   // 말풍선 상자와 같은 이유로 **위쪽 고정**이다(키보드가 밀어 올리지 못하게).
@@ -10910,6 +10910,8 @@ window._mwWorldReveal = function () {
 
 function openPanel(id) {
   const _p = document.getElementById(id);
+  if (!_p) return;
+  const _wasOpen = _p.classList.contains('open');
   _p.classList.add('open');
   // ★유저 피드백 #21 — "받은 좋아요에서 상대 프로필을 눌러도 무반응"의 정체.
   //   .panel 은 전부 z-index:100 이라 **DOM 순서**로 겹침이 결정된다. user-profile-panel(1701줄)이
@@ -10921,8 +10923,10 @@ function openPanel(id) {
   // ★패널이 열려도 배경(홈 피드 등)이 그대로 스크롤됐다. 패널은 fixed 라 안 가려질 것 같지만,
   //   모바일에서 아래가 조금 벌어지면 그 틈으로 뒷화면이 움직이는 게 보인다.
   //   여러 패널이 겹쳐 열릴 수 있으므로 **몇 개 열렸는지 세어** 마지막 하나가 닫힐 때만 푼다.
-  window._panelDepth = (window._panelDepth || 0) + 1;
-  if (window._panelDepth === 1 && typeof lockBodyScroll === 'function') lockBodyScroll();
+  if (!_wasOpen) {
+    window._panelDepth = (window._panelDepth || 0) + 1;
+    if (window._panelDepth === 1 && typeof lockBodyScroll === 'function') lockBodyScroll();
+  }
   if (id==='mypage-panel') { window._pushSettingPaint && window._pushSettingPaint(); }
   if (id==='notif-panel') { if (window.loadNotificationsFirestore) window.loadNotificationsFirestore(); else renderNotifs(); }
   if (id==='interest-panel') { window._loadInterestPanel && window._loadInterestPanel(); }
@@ -13243,6 +13247,7 @@ window._scrollRescue = function () {
     const bw = document.getElementById('bamboo-compose-full');
     if (bw && bw.classList.contains('bw-open')) return;                   // 대숲 작성창
     if (document.querySelector('.modal-overlay.open')) return;            // 시트 모달
+    if (document.querySelector('[data-mw-scroll-lock="1"]')) return;     // 동적 입력 모달
     const cm = document.getElementById('crop-modal');
     if (cm && cm.style.display && cm.style.display !== 'none') return;    // 크롭 모달
     if (document.body.classList.contains('mw-jam-kb')
@@ -14842,7 +14847,7 @@ import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, runTransaction as rtRunTransaction, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
@@ -15018,7 +15023,7 @@ window._SQUAD_RT_OFF = true;
 window._rtProbeAt = Date.now();
 try {
   const rtdb = getDatabase(app, 'https://murpyprototype-default-rtdb.asia-southeast1.firebasedatabase.app');
-  window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove, get: rtGet,
+  window._rt = { db: rtdb, ref: rtRef, set: rtSet, update: rtUpdate, runTransaction: rtRunTransaction, onValue: rtOnValue, onDisconnect: rtOnDisconnect, remove: rtRemove, get: rtGet,
     // 같이 낙서는 **바뀐 칸만** 받는다. onValue 로 전체를 받으면 칸 하나 찍을 때마다 최대 10KB 가 오간다.
     onChildAdded: rtOnChildAdded, onChildChanged: rtOnChildChanged, onChildRemoved: rtOnChildRemoved,
     // 방 대화 — push 로 줄을 쌓고, query+limitToLast 로 **마지막 60줄만** 받는다.
@@ -20281,6 +20286,7 @@ window.mwSetTitle = async function (t) {
 //   (스쿼드·머피룸이 쓰는 것과 같은 규칙).
 window._mwModalKbOpen = function (el) {
   if (!el) return;
+  el.dataset.mwScrollLock = '1';
   el._ownedLock = (typeof _bodyLocked !== 'undefined') ? !_bodyLocked : true;
   if (el._ownedLock) { try { lockBodyScroll(); } catch (e) {} }
 };
@@ -20288,10 +20294,11 @@ window._mwModalKbClose = function (el) {
   if (!el) return;
   if (el._ownedLock) { try { unlockBodyScroll(); } catch (e) {} }
   el._ownedLock = false;
+  delete el.dataset.mwScrollLock;
 };
 
 window.mwBubbleEdit = function () {
-  const old = document.getElementById('mw-bubble-modal'); if (old) { old.remove(); return; }
+  const old = document.getElementById('mw-bubble-modal'); if (old) { window._mwModalKbClose(old); old.remove(); return; }
   const el = document.createElement('div'); el.id = 'mw-bubble-modal';
   el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(5,7,12,.7)';
   el.innerHTML = `<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">
@@ -38925,25 +38932,50 @@ window.sfx = (function () {
   for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=2';   // v2 = Algenib 쉰 목소리 60대(9-02 '너무 잘생겼다')
   const bufs = {};
   const chans = {};
-  const voice = function (name, vol, ch) {
-    if (muted) return; const url = VOICES[name]; if (!url) return;
-    const c = A(); if (!c) return;
-    const go = function (b) {
-      // 9-02 대표: "나레이션이 멘트 하다가 다음 멘트로 바로 넘어가서 별로" → 끊지 않는다. 바쁘면 이번 대사는 건너뛴다(voiceBusy 로 확인).
+  const voiceWait = {};
+  const playVoiceBuffer = function (b, vol, ch) {
+    const c = A(); if (muted || !c || !b) return;
+    const start = function () {
+      // 같은 채널이 아직 말하고 있으면 새 대사는 겹치지 않고 버린다.
       if (ch && chans[ch] && !chans[ch]._done) return;
       const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination);
       src._done = false; src.onended = function () { src._done = true; }; src.start();
       if (ch) chans[ch] = src;
     };
-    if (bufs[name]) { go(bufs[name]); return; }
-    if (bufs[name] === null) return;                                    // 받는 중
-    bufs[name] = null;
-    fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (ab) { return c.decodeAudioData(ab); })
-      .then(function (b) { bufs[name] = b; go(b); }).catch(function (e) { delete bufs[name]; console.warn('voice', name, e); });
+    // 상태 콜백은 사용자 탭보다 늦게 온다. iOS가 아직 resume 중이면 시작음을 버리지 말고
+    // 실제 running 이 된 뒤 한 번만 재생한다.
+    if (c.state === 'suspended') {
+      try { const p = c.resume(); if (p && p.then) { p.then(start).catch(function () {}); return; } } catch (e) {}
+    }
+    start();
   };
-  const preload = function () { Object.keys(VOICES).forEach(function (n) { if (bufs[n] === undefined) { const c = A(); if (!c) return; bufs[n] = null; fetch(VOICES[n]).then(function (r) { return r.arrayBuffer(); }).then(function (ab) { return c.decodeAudioData(ab); }).then(function (b) { bufs[n] = b; }).catch(function () { delete bufs[n]; }); } }); };
+  const loadVoice = function (name) {
+    const url = VOICES[name]; if (!url) return Promise.reject(new Error('unknown voice'));
+    if (bufs[name] && !bufs[name].then) return Promise.resolve(bufs[name]);
+    if (bufs[name] && bufs[name].then) return bufs[name];
+    const c = A(); if (!c) return Promise.reject(new Error('audio unavailable'));
+    const p = fetch(url).then(function (r) { if (!r.ok) throw new Error('voice ' + r.status); return r.arrayBuffer(); })
+      .then(function (ab) { return c.decodeAudioData(ab); })
+      .then(function (b) {
+        bufs[name] = b;
+        const q = voiceWait[name]; delete voiceWait[name];
+        if (q && !muted) playVoiceBuffer(b, q.vol, q.ch);
+        return b;
+      }).catch(function (e) { delete bufs[name]; delete voiceWait[name]; throw e; });
+    bufs[name] = p;
+    return p;
+  };
+  const voice = function (name, vol, ch) {
+    if (muted || !VOICES[name]) return;
+    if (bufs[name] && !bufs[name].then) { playVoiceBuffer(bufs[name], vol, ch); return; }
+    // preload 중 호출되던 대사를 예전에는 그대로 버렸다. 가장 최근 요청 하나를 보관해
+    // 디코드가 끝나는 즉시 재생한다(스쿼드 시작 음성이 기기마다 간헐적으로 빠지던 원인).
+    voiceWait[name] = { vol: vol, ch: ch };
+    loadVoice(name).catch(function (e) { console.warn('voice', name, e); });
+  };
+  const preload = function (prefix) { Object.keys(VOICES).forEach(function (n) { if ((!prefix || n.indexOf(prefix) === 0) && bufs[n] === undefined) loadVoice(n).catch(function () {}); }); };
   return {
-    play: function (name, arg) { if (muted) return; try { const c = A(); if (c && c.state === 'suspended') c.resume(); const f = S[name]; if (f) f(arg); } catch (e) {} },
+    play: function (name, arg) { if (muted) return; try { const c = A(), f = S[name]; if (!c || !f) return; if (c.state === 'suspended') { const p = c.resume(); if (p && p.then) { p.then(function () { f(arg); }).catch(function () {}); return; } } f(arg); } catch (e) {} },
     voice: voice, preload: preload,
     voiceBusy: function (ch) { const x = chans[ch]; return !!(x && !x._done); },
     // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
@@ -39124,6 +39156,7 @@ window._sqMgIsOwner = function () {
 window.sqMugungStart = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
+  window.sfx && window.sfx.preload('mugung_go_');
   if (!window._sqMgCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
   const cur = window._sqGameRaw;   // ★어느 게임이든 판이 살아 있으면 못 연다(필드는 하나다)
   if (cur && cur.st !== 'end' && (Date.now() - (cur.t || 0)) < window.SQ_MG.STALE_MS) {
@@ -39239,7 +39272,10 @@ window._sqMgArm = function (sid) {
   }
   const turn = window._sqMgMyTurn(); if (turn < 0) return;
   const back = Math.min(turn, 3) * 1200;
-  const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + 200) + back;
+  // go 의 dl 자체에 대표가 원한 350ms 박자가 이미 들어 있다. 여기서 200ms를 다시 더하면
+  // 음성이 끝난 뒤 체감 공백이 550ms가 되므로, 타이머 오차만 흡수하는 30ms만 둔다.
+  const settle = v.st === 'go' ? 30 : 200;
+  const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + settle) + back;
   window._sqMgT = setTimeout(function () { window._sqMgTick(sid); }, wait);
 };
 // ★판정은 순수 함수로 뺀다 — RTDB 없이 테스트할 수 있어야 아침에 틀린 채로 켜지지 않는다.
@@ -39283,6 +39319,27 @@ window._sqMgJudge = function (v, players, caught) {
   still.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !win) win = u; });
   if (win || !still.length) return { next: 'end', out: newOut, win: win || null };
   return { next: 'go', out: newOut };
+};
+// 내 캐릭터가 등 돌린 구간(go)에 결승선을 넘으면, 위치를 서버에 보냈다가 진행자 화면으로
+// 되돌아오는 왕복을 기다리지 않고 이 기기에서 즉시 승리를 청구한다. 트랜잭션이라 먼저 도착한
+// 한 명만 go→ov 를 바꾸며, 이미 돌아본(st) 뒤에는 절대 통과시키지 않는다.
+window._sqMgClaimGoal = function (sid, p) {
+  const R = window._rt, v = window._sqMgV, me = (auth.currentUser || {}).uid, Z = window.SQ_MG;
+  if (!R || !R.runTransaction || !sid || !v || v.st !== 'go' || !me || !(v.join || {})[me]
+      || (v.out || {})[me] || !p || !(+p.y <= Z.GOAL_Y)) return false;
+  const key = String(v.t || '') + ':' + String(v.dl || '');
+  if (window._sqMgGoalSent === key) return true;
+  window._sqMgGoalSent = key;
+  R.runTransaction(window._sqMgRef(sid), function (cur) {
+    if (!cur || cur.g !== 'mg' || cur.st !== 'go' || !(cur.join || {})[me] || (cur.out || {})[me]) return;
+    cur.st = 'ov'; cur.win = me; cur.out = cur.out || null;
+    cur.dl = window._sqMgNow() + Z.OVER_MS; cur.t = Date.now();
+    return cur;
+  }).catch(function (e) {
+    if (window._sqMgGoalSent === key) window._sqMgGoalSent = null;
+    console.warn('mugung goal', e);
+  });
+  return true;
 };
 // 진행자가 구간을 넘긴다. 같은 데이터로 같은 답이 나오므로 둘이 동시에 써도 결과가 같다.
 window._sqMgTick = function (sid) {
@@ -39369,6 +39426,7 @@ window._sqMgJoyOn = function (stage) {
     c.el.classList.add('walking');
     window._sqPlace(c, x, y, 0.06);
     p.x = x; p.y = y; p.dir = dir; p.moving = true;
+    if (window._sqMgClaimGoal(window._sqCurId, p)) { stop(); return; }
     if (now - lastSend > 110) { lastSend = now; window._sqOnMove && window._sqOnMove(); }   // 서버엔 0.1초마다
   }, 50);
   stage._mgJoy = { off: function () {
@@ -39496,7 +39554,7 @@ window._sqMgPaint = function (sid) {
     const st = v ? v.st : null, key = v ? (v.st + ':' + (v.dl | 0)) : null, prev = window._sqMgPrevSt;
     if (key !== window._sqMgPrevKey) {
       window._sqMgPrevKey = key; window._sqMgPrevSt = st;
-      if (st === 'lb' && prev !== 'lb') window.sfx.preload();
+      if (st === 'lb' && prev !== 'lb') window.sfx.preload('mugung_go_');
       // 9-02 대표: "같은 폰인데 계정마다 소리가 다르다" → 참석자에게만 내던 걸 **이 화면을 보는 모두**에게.
       //   스쿼드장이 시작만 하고 참석 안 하면 아무 소리도 못 들었다.
       const hear = inField || showCard || active;
@@ -39550,7 +39608,11 @@ window._sqMgPaint = function (sid) {
   } catch (e) {}
 
   let card = document.getElementById('sq-mg-cardwrap');
-  if (!showCard) { if (card) card.remove(); window._sqMgApplyVis(); return; }
+  if (!showCard) {
+    clearInterval(window._sqMgUiTick); window._sqMgUiTick = null;
+    if (card) card.remove();
+    window._sqMgApplyVis(); return;
+  }
   if (!card && stage.parentNode) { card = document.createElement('div'); card.id = 'sq-mg-cardwrap'; card.style.cssText = 'margin-top:10px'; stage.parentNode.insertBefore(card, stage.nextSibling); }
   const E = window._escHtml || function (t) { return String(t); };
   const jn = v.join || {}, out = v.out || {}, players = window._sqRtLast || {};
@@ -39567,17 +39629,34 @@ window._sqMgPaint = function (sid) {
   }
   const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
   const iOut = !!out[me];
-  card.innerHTML = '<div style="' + box + '">'
-    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
-    +   '<div style="font-size:14px;font-weight:800;color:' + (v.st === 'go' ? '#3dde7c' : (v.st === 'ov' && v.win ? '#F5C24B' : '#FF4D7E')) + '">'
-    +     (v.st === 'go' ? '무궁화꽃이 피었습니다~ (지금 움직이세요)'
-         : v.st === 'st' ? '돌아봤다! 멈춰! (움직이면 하트)'
-         : (v.win ? nick(v.win) + ' 결승선 통과!' : '전원 하트 맞음 — 교관 승리')) + '</div>'
-    +   (window._sqMgIsOwner() ? '<button onclick="window.sqMugungStop()" style="background:rgba(255,77,126,.15);border:1px solid rgba(255,77,126,.5);color:#FF4D7E;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">게임 종료</button>' : '')
+  const stopIn = window._sqMgIsOwner()
+    ? '<button onclick="window.sqMugungStop()" style="flex-shrink:0;margin-left:8px;background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.55);border-radius:6px;color:#ff8a8e;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:4px 8px">게임 종료</button>'
+    : '';
+  const moving = v.st === 'go', stopped = v.st === 'st';
+  const accent = moving ? '#3dde7c' : (stopped ? '#ff8a8e' : '#F5C24B');
+  const title = moving ? '지금 움직이세요' : stopped ? '멈춰!' : (v.win ? nick(v.win) + ' 결승선 통과!' : '교관 승리');
+  const hint = iOut ? '<b style="color:#ff8a8e">하트 맞고 탈락했어요</b> · 다음 판에 다시 도전!'
+    : moving ? '교관이 등을 돌렸어요 · 결승선을 향해 움직이세요'
+    : stopped ? '교관이 보고 있어요 · 손을 떼고 그대로 멈추세요'
+    : (v.win ? '먼저 결승선에 닿았어요' : '전원이 하트에 맞았어요');
+  card.innerHTML = '<div id="sq-mg-card" style="position:relative;' + box + ';padding:11px 13px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between">'
+    +   '<div style="min-width:0;font-size:10.5px;color:' + accent + '">무궁화꽃 · 남은 사람 ' + alive.length + '명</div>' + stopIn
     + '</div>'
-    + '<div style="font-size:11.5px;color:#8a93a8;line-height:1.6">'
-    +   (iOut ? '<b style="color:#FF4D7E">하트 맞고 탈락했어요</b> · 다음 판에 다시 도전!' : '남은 사람 ' + alive.length + '명 · ' + alive.map(nick).join(', '))
-    + '</div></div>';
+    + '<div style="font-size:15px;color:#fff;margin-top:4px;line-height:1.45;font-family:\'Galmuri14\',sans-serif">' + title + '</div>'
+    + '<div style="font-size:11.5px;color:#8a93a8;margin-top:3px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + hint + '</div>'
+    + ((moving || stopped) ? '<div id="sq-mg-timer" style="margin-top:8px;height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden"><i style="display:block;height:100%;background:' + accent + ';width:100%"></i></div>' : '')
+    + '</div>';
+  clearInterval(window._sqMgUiTick);
+  if (moving || stopped) {
+    const total = moving ? Math.max(1, (window.SQ_MG.VOICE_DUR[v.vi | 0] || 1) * 1000 + 350) : window.SQ_MG.STOP_MS;
+    const bar = card.querySelector('#sq-mg-timer i');
+    window._sqMgUiTick = setInterval(function () {
+      if (!document.getElementById('sq-mg-card')) { clearInterval(window._sqMgUiTick); return; }
+      const left = ((v.dl || 0) - window._sqMgNow()) / total;
+      if (bar) bar.style.width = Math.max(0, Math.min(1, left)) * 100 + '%';
+    }, 100);
+  }
   window._sqMgApplyVis();
 
   if (v.st === 'end') {   // ('ov' 에선 팝업 없음 — 필드의 이펙트를 보여주는 구간)
@@ -39618,9 +39697,10 @@ window._sqRtLeave = function (sid, hard) {
     const mv = window._sqMgV;
     if (u && mv && mv.host === u.uid && mv.st !== 'end' && window._rt && sid) window._rt.remove(window._sqMgRef(sid)).catch(function () {});
   } catch (e) {}
-  window._sqMgV = null; window._sqMgOutPrev = null; window._sqGameRaw = null;
+  window._sqMgV = null; window._sqMgOutPrev = null; window._sqMgGoalSent = null; window._sqGameRaw = null;
   window._sqMgInField = false; window._sqQzInField = false;   // ★안 지우면 다음에 서로 '상대가 쓰는 중'으로 보고 둘 다 안 그린다
   window._sqMgJoyOff && window._sqMgJoyOff();
+  clearInterval(window._sqMgUiTick); window._sqMgUiTick = null;
   try { window.sfx && window.sfx.bgm(null); } catch (e) {}
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
