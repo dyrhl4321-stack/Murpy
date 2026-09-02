@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '944';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '945';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10997,6 +10997,7 @@ function closePanel(id) {
 
   window._murpyPageShown = function (name, opts) {
     if (!validPage(name)) return;
+    if (window._scrollRescue) window._scrollRescue();   // 잠금만 남은 화면 전환을 여기서 구한다
     opts = opts || {};
     currentPage = name;
     const y = Math.max(0, Number(opts.restoreY) || 0);
@@ -11053,10 +11054,20 @@ function closePanel(id) {
       if (window.closePanel) window.closePanel(panels[panels.length - 1].id);
       return true;
     }
+    // ★대숲 작성창(9-02) — 여기 없어서 **작성창을 연 채 뒤로가기를 누르면 페이지만 넘어가고
+    //   작성창이 걸어 둔 몸통 잠금(position:fixed)이 남아** 앱 전체 스크롤이 죽었다.
+    //   collapse 가 쓰던 글 확인창을 띄우면(취소=계속 쓰기) 그것대로 이 뒤로가기를 소비한다.
+    const bw = document.getElementById('bamboo-compose-full');
+    if (bw && bw.classList.contains('bw-open') && visible(bw)) {
+      if (window.collapseBambooCompose) window.collapseBambooCompose();
+      return true;
+    }
     const dodge = document.getElementById('dodge-screen');
     if (visible(dodge) && window.dodgeClose) { window.dodgeClose(); return true; }
     const golf = document.getElementById('golf-screen');
     if (visible(golf) && window.golfClose) { window.golfClose(); return true; }
+    const tennis = document.getElementById('tennis-screen');
+    if (visible(tennis) && window.tennisClose) { window.tennisClose(); return true; }
     if (document.getElementById('sq-detail') && window._sqClose) { window._sqClose(); return true; }
     return false;
   }
@@ -13220,6 +13231,27 @@ function unlockBodyScroll() {
   window.scrollTo(0, _cropSavedScrollY);
 }
 window._isBodyLocked = function () { return _bodyLocked; };
+// ★스크롤 잠금 구조대 (9-02 대표: "스크롤 잠금 버그가 다양한 곳에서") —
+//   잠그는 길이 여러 갈래(패널 depth·크롭 모달·대숲 작성창·키보드 실드)라 어느 하나가
+//   해제를 빼먹으면 앱 전체 스크롤이 죽는다. 메인 탭을 오갈 때마다: 잠금이 걸려 있는데
+//   잠금 주인이 화면에 하나도 없으면 강제로 푼다. 주인이 하나라도 보이면 손대지 않는다.
+window._scrollRescue = function () {
+  try {
+    if (!_bodyLocked) return;
+    if (document.querySelector('.panel.open')) return;                    // 패널
+    const bw = document.getElementById('bamboo-compose-full');
+    if (bw && bw.classList.contains('bw-open')) return;                   // 대숲 작성창
+    if (document.querySelector('.modal-overlay.open')) return;            // 시트 모달
+    const cm = document.getElementById('crop-modal');
+    if (cm && cm.style.display && cm.style.display !== 'none') return;    // 크롭 모달
+    if (document.body.classList.contains('mw-jam-kb')
+      || document.body.classList.contains('mw-kb')
+      || document.body.classList.contains('sq-quick-kb')) return;         // 키보드 실드
+    if (document.getElementById('sq-detail')) return;                     // 스쿼드 상세
+    window._panelDepth = 0;               // depth 가 새서 남았어도 주인이 없으니 같이 정리
+    unlockBodyScroll();
+  } catch (e) {}
+};
 
 // ===== 사진 촬영시각 읽기 (유저 피드백 #18) =====
 // ★왜: 머피캠 필름바에 늘 **지금 시각**이 찍혔다. 바로 찍은 사진은 맞지만
@@ -15054,6 +15086,9 @@ window.updateUI = function(user) {
           el.style.display = '';
         }
       });
+      // ★closeModal 을 안 거치는 일괄 정리라, 로그인 화면(_FULL_MODALS)이 걸어둔
+      //   overflow:hidden 이 남을 수 있다 — 여기서 같이 푼다(9-02 스크롤 잠금 전수점검)
+      try { _lockBodyScroll(false); } catch (e) {}
     } else {
       window._setHeaderAvatar('');
       const delBtnOut = document.getElementById('delete-account-btn');
@@ -15114,6 +15149,10 @@ function updateUI(user) { window.updateUI(user); }
 window.openNicknameModal = function(defaultName = '') {
   // 모든 패널 숨기기 (closePanel 대신 직접 처리)
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('open'));
+  // ★closePanel 을 안 거치므로 잠금 카운트도 같이 비운다(9-02) —
+  //   안 비우면 _panelDepth 가 남아 이후 모든 잠금 해제가 거부돼 스크롤이 영영 죽는다.
+  window._panelDepth = 0;
+  try { unlockBodyScroll(); } catch (e) {}
   const modal = document.getElementById('nickname-modal');
   modal.style.display = 'flex';
   document.getElementById('nickname-input').value = defaultName;
@@ -38852,7 +38891,9 @@ window.sfx = (function () {
     if (s.alive !== false) s._sfxDead = 0;
   });
   wrap('_golfEnd',   function () { S().play('win'); S().bgm(null); });
-  wrap('_tennisEnd', function (s) { S().play(s && s.won ? 'win' : 'lose'); S().bgm(null); });
+  // ★테니스에 s.won 은 없다(점수제). 승/패음은 _tennisEnd 본문이 최고기록 여부로 직접 낸다
+  //   — 여기서는 브금만 끈다(중복 재생 방지, 게임 세션 확인 9-02).
+  wrap('_tennisEnd', function () { S().bgm(null); });
 })();
 // ═══ 스쿼드 운동회 공통 — 로비(참가 접수) 카드. 두 게임이 **같은 코드**를 쓴다(대표 9-02) ═══
 // 9-01 대표: 크아/겟앰프드 로비처럼 — 필드의 전원이 나열되고, 참석 누른 사람에게 READY 뱃지
