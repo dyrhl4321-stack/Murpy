@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '946';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '947';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -14840,7 +14840,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -30164,7 +30164,71 @@ window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto, isBam
   const user = auth.currentUser || window.currentUser;
   if (!user) return;
   // ★8-29: 마지막 80줄만 구독. 예전엔 방을 열 때마다 대화 전체(수천 건 가능)를 받았다. 순서는 그대로(asc).
+  // ★9-02: 80줄보다 오래된 대화는 볼 길이 없었다 → '이전 대화 보기'로 60줄씩 위로 이어 붙인다.
+  //   지난 페이지는 한 번 읽고 마는 getDocs(구독 아님) — 옛 대화가 실시간으로 바뀔 일은 없다.
   const msgsQ = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'asc'), fsLimitToLast(80));
+  window._chatOlder = []; window._chatOlderCursor = null;
+  window._chatOlderDone = false; window._chatOlderBusy = false; window._chatRenderedOnce = false;
+  const esc = t => (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const pPhoto = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 56) : (partnerPhoto || _ph);
+  // 이전 페이지를 붙일 때(keepScroll)는 보던 자리가 튀지 않게 아래쪽과의 거리를 보존한다.
+  window._chatRerender = function (keepScroll) {
+    const el = document.getElementById('chat-messages'); if (!el) return;
+    const uid = (auth.currentUser || window.currentUser)?.uid;
+    const rows = (window._chatOlder || []).concat(window._chatLiveRows || []);
+    let lastDay = '';
+    const html = rows.map((m, i) => {
+      const isMe = m.senderId === uid;
+      const dt = m.createdAt ? new Date(m.createdAt.seconds*1000) : null;
+      const timeStr = dt ? dt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
+      let sep = '';
+      if (dt) {
+        const dayKey = dt.toLocaleDateString('ko-KR', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
+        if (dayKey !== lastDay) { sep = `<div class="chat-date-sep">${dayKey}</div>`; lastDay = dayKey; }
+      }
+      const next = rows[i+1];
+      const lastOfGroup = !next || next.senderId !== m.senderId;
+      const avatarHtml = isMe ? '' : (lastOfGroup
+        ? `<img src="${pPhoto}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;align-self:flex-end">`
+        : `<div style="width:28px;flex-shrink:0"></div>`);
+      return `${sep}<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};gap:8px;align-items:flex-end;margin-bottom:${lastOfGroup?'8px':'2px'}">
+        ${avatarHtml}
+        <div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:3px;max-width:72%">
+          <div class="chat-bubble ${isMe?'chat-me':'chat-other'}">${esc(m.text)}</div>
+          ${lastOfGroup && timeStr ? `<span style="font-size:10px;color:rgba(255,255,255,0.28);padding:0 5px">${timeStr}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    // 틴트 칩 금지 — background:none + 테두리 + 글자색 (대표 지적 3회)
+    const older = window._chatOlderDone ? '' :
+      '<div style="text-align:center;padding:2px 0 12px"><button id="chat-older-btn" onclick="window._chatLoadOlder()" '
+      + 'style="background:none;border:1px solid rgba(255,255,255,0.16);border-radius:14px;padding:6px 14px;'
+      + 'color:rgba(255,255,255,0.55);font-size:12px;cursor:pointer;font-family:inherit">이전 대화 보기</button></div>';
+    const prevH = el.scrollHeight, prevTop = el.scrollTop;
+    const nearBottom = prevH - prevTop - el.clientHeight < 120;
+    el.innerHTML = older + html;
+    if (keepScroll) el.scrollTop = el.scrollHeight - (prevH - prevTop);
+    else if (nearBottom || !window._chatRenderedOnce) el.scrollTop = el.scrollHeight;
+    window._chatRenderedOnce = true;
+  };
+  window._chatLoadOlder = async function () {
+    if (window._chatOlderBusy || window._chatOlderDone) return;
+    const cur = window._chatOlderCursor; if (!cur) return;
+    window._chatOlderBusy = true;
+    const b = document.getElementById('chat-older-btn');
+    if (b) { b.textContent = '불러오는 중…'; b.disabled = true; }
+    try {
+      const qs = await getDocs(query(collection(db, 'chats', chatId, 'messages'),
+        orderBy('createdAt', 'asc'), endBefore(cur), fsLimitToLast(60)));
+      if (qs.docs.length) {
+        window._chatOlderCursor = qs.docs[0];
+        window._chatOlder = qs.docs.map(d => d.data()).concat(window._chatOlder || []);
+      }
+      if (qs.docs.length < 60) window._chatOlderDone = true;   // 이게 처음까지 전부다
+      window._chatRerender(true);
+    } catch (e) { console.warn('chat older', e); showToast('이전 대화를 불러오지 못했어요'); }
+    window._chatOlderBusy = false;
+  };
   window._chatUnsubscribe = onSnapshot(msgsQ, snap => {
     if (snap.empty) {
       messagesEl.innerHTML = `<div style="text-align:center;padding:16px 0 8px">
@@ -30178,37 +30242,11 @@ window.openChatFirestore = (chatId, partnerUid, partnerName, partnerPhoto, isBam
       </div>`;
       return;
     }
-    const uid = (auth.currentUser || window.currentUser)?.uid;
-    const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const pPhoto = (partnerPhoto && window._cdnImg) ? window._cdnImg(partnerPhoto, 56) : (partnerPhoto || _ph);
-    const docs = snap.docs;
-    let lastDay = '';
-    messagesEl.innerHTML = docs.map((d, i) => {
-      const m = d.data();
-      const isMe = m.senderId === uid;
-      const dt = m.createdAt ? new Date(m.createdAt.seconds*1000) : null;
-      const timeStr = dt ? dt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '';
-      // 날짜 구분선
-      let sep = '';
-      if (dt) {
-        const dayKey = dt.toLocaleDateString('ko-KR', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
-        if (dayKey !== lastDay) { sep = `<div class="chat-date-sep">${dayKey}</div>`; lastDay = dayKey; }
-      }
-      // 그룹화: 같은 사람 연속 메시지면 마지막에만 시간/아바타
-      const next = docs[i+1]?.data();
-      const lastOfGroup = !next || next.senderId !== m.senderId;
-      const avatarHtml = isMe ? '' : (lastOfGroup
-        ? `<img src="${pPhoto}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;align-self:flex-end">`
-        : `<div style="width:28px;flex-shrink:0"></div>`);
-      return `${sep}<div style="display:flex;justify-content:${isMe?'flex-end':'flex-start'};gap:8px;align-items:flex-end;margin-bottom:${lastOfGroup?'8px':'2px'}">
-        ${avatarHtml}
-        <div style="display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};gap:3px;max-width:72%">
-          <div class="chat-bubble ${isMe?'chat-me':'chat-other'}">${esc(m.text)}</div>
-          ${lastOfGroup && timeStr ? `<span style="font-size:10px;color:rgba(255,255,255,0.28);padding:0 5px">${timeStr}</span>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    // 처음 온 실시간 창(80줄)의 맨 앞이 '이전 페이지'의 커서다. 80줄이 안 되면 이게 전부.
+    if (!(window._chatOlder || []).length) window._chatOlderCursor = snap.docs[0] || null;
+    if (snap.docs.length < 80 && !(window._chatOlder || []).length) window._chatOlderDone = true;
+    window._chatLiveRows = snap.docs.map(d => d.data());
+    window._chatRerender(false);
   });
   window._openChatPartnerProfile = () => {
     if (window._isBambooChat) { showToast('익명 대화 중이에요. 매칭 후 프로필을 볼 수 있어요'); return; }
