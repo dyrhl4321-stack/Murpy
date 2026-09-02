@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '942';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '943';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -22400,6 +22400,7 @@ window.startNotifListener = (uid) => {
       const badge = document.getElementById('notif-badge');
       if (badge) { badge.textContent = unread; badge.style.display = unread > 0 ? 'flex' : 'none'; }
       if (!_notifFirst) {
+        let _artKick = false;   // 그림 알림(art_*)이 왔으면 아래에서 처리기를 바로 돌린다
         snap.docChanges().forEach(ch => {
           // 채팅 알림은 setDoc으로 덮어쓰기 → 'modified'도 처리
           const isChatUpdate = ch.type === 'modified' && ch.doc.data().type === 'chat';
@@ -22440,8 +22441,18 @@ window.startNotifListener = (uid) => {
           }
           else if (n.type === 'oxquiz') showToast('OX 퀴즈가 시작됐어요! 스쿼드 필드로 모이세요');
           else if (n.type === 'mugung') showToast('무궁화꽃이 피었습니다! 스쿼드 필드로 모이세요');
+          // ★그림 알림은 토스트만 하고 버리면 안 된다(9-02 "경매 반영 지연").
+          //   art_co(같이 그린 사본)·art_sold(대금)·art_won(낙찰) 처리기는 **앱 시작 때
+          //   한 번만** 돌아서, 켜 둔 채로 받으면 껐다 켜야 반영됐다. 여기서 바로 돌린다 —
+          //   각 처리기가 taken/paid 플래그로 중복을 막고 안내도 스스로 띄우므로 토스트는 생략.
+          else if (n.type === 'art_co' || n.type === 'art_sold' || n.type === 'art_won') { _artKick = true; }
           else showToast('새 알림이 도착했어요');
         });
+        if (_artKick) setTimeout(function () {
+          try { window._mwArtCoPick && window._mwArtCoPick(); } catch (e) {}
+          try { window._mwArtSettle && window._mwArtSettle(); } catch (e) {}
+          try { window._mwArtWonCheck && window._mwArtWonCheck(); } catch (e) {}
+        }, 400);
       }
       // ★유저 피드백 #21 — 대숲 '저에요'도 받은 좋아요에 포함되므로 하트를 다시 센다
       if (snap.docChanges().some(ch => ch.doc.data().type === 'bamboo_request')) {
