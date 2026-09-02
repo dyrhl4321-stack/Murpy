@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '956';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '957';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -151,6 +151,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      · touch-action:manipulation = 더블탭 확대만 끈다(스크롤·핀치는 그대로) — 페이지·패널·버튼에.
      ※viewport meta 는 건드리지 않는다(8-14 사고 기록) */
   img, canvas { -webkit-user-drag: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  html, body { touch-action: manipulation; }   /* ★전역 — 더블탭 확대만 끔, 핀치는 산다(9-02 아이폰 재보고) */
   .page, .panel, button, .tab-btn, .mw-fieldchip { touch-action: manipulation; }
   #page-char, #mw-jam, #dodge-screen, #golf-screen, #tennis-screen, #mw-redit-room
     { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
@@ -19312,6 +19313,30 @@ window._tennisLinkBoot = function () {
   } catch (e) {}
 };
 window.addEventListener('load', function () { setTimeout(window._tennisLinkBoot, 0); });
+
+// ═══ 아이폰 더블탭 확대 차단 (9-02) ═══
+(function () {
+  const IDS = ['dodge-screen', 'golf-screen', 'tennis-screen', 'page-char', 'mw-redit-room', 'mw-jam', 'sq-detail'];
+  let last = 0;
+  document.addEventListener('touchend', function (e) {
+    const now = Date.now();
+    const fast = now - last < 350;
+    last = now;
+    if (!fast || !e.cancelable) return;
+    let el = e.target;
+    while (el && el !== document.documentElement) {
+      if (el.id && IDS.indexOf(el.id) >= 0) {
+        e.preventDefault();                             // 두 번째 빠른 탭 = 확대 시도 — 여기서 끊는다
+        // preventDefault 는 이 탭의 클릭까지 삼킨다. 버튼 연타(다시하기 등)가 죽지 않게 직접 쏜다.
+        // 게임 조작 자체는 pointerdown 기반이라 클릭과 무관하게 이미 들어갔다.
+        const t = e.target && e.target.closest ? e.target.closest('button,[onclick],a') : null;
+        if (t) { try { t.click(); } catch (err) {} }
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, { passive: false, capture: true });
+})();
 
 // ═══ 앱 설치 배너 (9-02) ═══
 // 유저 제보: "설치했는데 구글 탭처럼 위에 주소가 뜬다"(S25) — 스샷 확인 결과 카톡 인앱 등에서
