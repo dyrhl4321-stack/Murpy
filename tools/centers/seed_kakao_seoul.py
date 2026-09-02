@@ -119,10 +119,13 @@ existing = []
 legacy_fix = []   # nameKey/createdBy 가 없는 옛 문서 → --write 때 백필(앱 검색·핵심 집합 쿼리가 이 두 필드를 본다)
 for d in fs_list():
     f = d.get('fields', {})
-    existing.append({'name': fv(f.get('name')), 'lat': fv(f.get('lat')) or 0, 'lng': fv(f.get('lng')) or 0, 'kakaoId': fv(f.get('kakaoId'))})
+    _mk = [x.get('stringValue') for x in ((f.get('mergedKakaoIds') or {}).get('arrayValue', {}).get('values') or [])]
+    existing.append({'name': fv(f.get('name')), 'lat': fv(f.get('lat')) or 0, 'lng': fv(f.get('lng')) or 0, 'kakaoId': fv(f.get('kakaoId')), 'mergedKakaoIds': _mk})
     if fv(f.get('kakaoId')) is None and (not fv(f.get('nameKey')) or not fv(f.get('createdBy'))):
         legacy_fix.append((d['name'], str(fv(f.get('name')) or ''), fv(f.get('createdBy'))))
 have_k = set(x['kakaoId'] for x in existing if x['kakaoId'])
+# ★병합 도구(merge_duplicates.py)가 지운 문서의 kakaoId — 안 넣으면 재시딩 때 지운 곳이 되살아난다
+for x in existing: have_k.update(x.get('mergedKakaoIds') or [])
 have_n = set(norm(x['name']) for x in existing)
 
 def dup(d):
