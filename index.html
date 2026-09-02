@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '955';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '956';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38834,6 +38834,12 @@ window.sfx = (function () {
   };
   // ── 버튼음 ──
   S.cheer = function () { tone({ f: 520, f2: 1040, type: 'sine', dur: 0.42, vol: 0.16 }); tone({ f: 660, f2: 1320, type: 'triangle', dur: 0.42, vol: 0.1, delay: 0.03 }); noise({ dur: 0.35, vol: 0.09, lp: 3500, delay: 0.05 }); seq([784, 988, 1175], 0.07, 0.16); };   // 예에~ 환호
+  // ── 골프 (9-02 대표: 브금만 있고 효과음이 없어 노잼) ──
+  S.crow   = function () { tone({ f: 900, f2: 500, type: 'sawtooth', dur: 0.16, vol: 0.13 }); noise({ dur: 0.14, vol: 0.08, lp: 2500 }); tone({ f: 820, f2: 430, type: 'sawtooth', dur: 0.2, vol: 0.12, delay: 0.2 }); };   // 까악 까악
+  S.splash = function () { noise({ dur: 0.35, vol: 0.16, lp: 1800, sweep: true }); tone({ f: 380, f2: 120, type: 'sine', dur: 0.3, vol: 0.12 }); };   // 풍덩
+  S.thud   = function () { tone({ f: 140, f2: 60, type: 'triangle', dur: 0.22, vol: 0.2 }); noise({ dur: 0.12, vol: 0.1, lp: 700 }); };   // 벙커·OB 퍽
+  S.lip    = function () { tone({ f: 2400, f2: 2000, type: 'sine', dur: 0.09, vol: 0.12 }); tone({ f: 1800, type: 'sine', dur: 0.12, vol: 0.08, delay: 0.09 }); };   // 컵 스침 팅
+  S.holein = function () { tone({ f: 1200, f2: 600, type: 'sine', dur: 0.12, vol: 0.14 }); seq([784, 988, 1175, 1568], 0.08, 0.16); tone({ f: 1568, delay: 0.34, dur: 0.5, vol: 0.16 }); };   // 또르륵 + 팡파레
   S.btn  = function () { tone({ f: 660, f2: 880, type: 'square', dur: 0.06, vol: 0.09 }); };
   S.back = function () { tone({ f: 520, f2: 330, type: 'square', dur: 0.08, vol: 0.09 }); };
   // ── BGM: 8비트 칩튠 시퀀서 (파일 없음). 음표는 MIDI 번호, 0 = 쉼표. 16분음표 단위 ──
@@ -38954,6 +38960,19 @@ window.sfx = (function () {
     if (s.alive !== false) s._sfxDead = 0;
   });
   wrap('_golfEnd',   function () { S().play('win'); S().bgm(null); });
+  // 골프 샷 — 스윙 소리 + 세기에 따라 타격음 높이 (골프공 쳤을 때)
+  (function () {
+    const f = window.golfShot; if (typeof f !== 'function' || f._sfxShot) return;
+    const w = function (s, power, acc, club) { const ok = f.apply(this, arguments); if (ok) { S().play('swing'); setTimeout(function () { S().play('hit', Math.max(0, Math.min(1, +power || 0))); }, 90); } return ok; };
+    w._sfxShot = 1; window.golfShot = w;
+  })();
+  // 골프 틱 — 반환 이벤트마다 소리: 착지·홀인·연못·OB·벙커·까마귀·컵 스침 (두더지는 그쪽 본문이 이미 냄)
+  (function () {
+    const f = window.golfTick; if (typeof f !== 'function' || f._sfxTick) return;
+    const M = { land: 'bounce', in: 'holein', water: 'splash', ob: 'thud', bunker: 'thud', crow: 'crow', lip: 'lip' };
+    const w = function () { const r = f.apply(this, arguments); if (r && M[r]) S().play(M[r]); return r; };
+    w._sfxTick = 1; window.golfTick = w;
+  })();
   // ★테니스에 s.won 은 없다(점수제). 승/패음은 _tennisEnd 본문이 최고기록 여부로 직접 낸다
   //   — 여기서는 브금만 끈다(중복 재생 방지, 게임 세션 확인 9-02).
   wrap('_tennisEnd', function () { S().bgm(null); });
