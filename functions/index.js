@@ -318,7 +318,7 @@ const EARN_CAPS = {
   first_post:   { max: 500,  perDay: 1 },     // 창립 선물 500 / 출시 후 100
   visit:        { max: 2,    perDay: 2 },   // 8-30 방 구경 1→2
   like:         { max: 1,    perDay: 2 },
-  checkin:      { max: 5,    perDay: 3 },     // 체크인 2 + 처음 센터 3
+  checkin:      { max: 17,   perDay: 3 },     // 체크인 2 + 처음 센터 15 (9-02 원정 보상 인상 — 앱 CREDIT_NEW_CENTER 와 함께 움직인다)
   dogam:        { max: 120,  perDay: 1 },     // 도장 랠리 10+30+80
   squad_host:   { max: 10,   perDay: 3 },
   squad_attend: { max: 2,    perDay: 3 },
