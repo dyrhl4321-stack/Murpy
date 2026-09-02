@@ -17,6 +17,7 @@ const w = {};
 for (const [re, name] of [
   [/window\.SQ_MG = \{[\s\S]*?\n\};/, 'SQ_MG'],
   [/window\._sqMgJudge = function[\s\S]*?\n\};/, '_sqMgJudge'],
+  [/window\._sqMgPickGo = function[\s\S]*?\n\};/, '_sqMgPickGo'],
 ]) new Function('window', grab(re, name))(w);
 const auth = { currentUser: { uid: 'a' } };
 new Function('window', 'auth', grab(/window\._sqMgClaimGoal = function[\s\S]*?\n\};/, '_sqMgClaimGoal'))(w, auth);
@@ -226,4 +227,12 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   clearTimeout(w2._sqMgT); clearInterval(w2._sqMgScanT);
 }
 
-console.log('mugung-core: 22개 항목 전부 통과');
+// ── 23) 마지막 음절 뒤에 별도 공백을 붙이지 않는다 ──────────────────────
+{
+  for (let i = 0; i < 30; i++) {
+    const g = w._sqMgPickGo();
+    assert.strictEqual(g.ms, Math.round(Z.VOICE_DUR[g.vi] * 1000), '음성 뒤 불필요한 대기 시간이 붙었다');
+  }
+}
+
+console.log('mugung-core: 23개 항목 전부 통과');
