@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '947';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '948';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38501,7 +38501,7 @@ window._sqQuizWatch = function (sid) {
     const _isMg = !!(_raw && _raw.g === 'mg');
     window._sqMgV = _isMg ? _raw : null;
     window._sqQzV = _isMg ? null : _raw;
-    try { window._sqMgPaint(sid); window._sqMgArm(sid); } catch (e) { console.warn('mugung paint', e); }
+    try { window._sqMgPaint(sid); window._sqMgArm(sid); window._sqMgWatchdog(sid); } catch (e) { console.warn('mugung paint', e); }
     try { window._sqQzPaint(sid); }
     catch (e) { window._sqQzErr = String((e && e.message) || e).slice(0, 80) + ' @v' + (window._SW_V || ''); console.warn('quiz paint', e); try { window._sqRtSend && window._sqRtSend(); } catch (e2) {} }
     window._sqQzHostArm(sid);
@@ -39112,10 +39112,24 @@ window._sqMgMyTurn = function () {
   const v = window._sqMgV, me = (auth.currentUser || {}).uid;
   if (!v || !me) return -1;
   const players = window._sqRtLast || {};
-  const line = Object.keys(v.join || {}).filter(function (u) { const p = players[u]; return p && !p.off; }).sort();
+  // ★9-02 대표: "멘트 끝나고도 안 돌아본다" — 참석만 하고 위치를 아직 안 보낸 사람, 잠깐 백그라운드로 가 off 가 찍힌 사람은
+  //   **자기 자신도** 명단에서 빠져 아무도 안 썼다. 나는 항상 살아 있다(내 화면이 돌고 있으니까).
+  const line = Object.keys(v.join || {}).filter(function (u) { if (u === me) return true; const p = players[u]; return p && !p.off; }).sort();
   const i = line.indexOf(me);
   if (i >= 0) return i;
   return (v.host === me) ? line.length : -1;
+};
+// ★마지막 보루 — 마감(dl)이 지났는데 3초 넘게 아무도 안 넘기면, 이 화면을 보는 사람 누구든(참석 안 했어도) 넘긴다.
+//   같은 데이터로 같은 답이라 여럿이 써도 결과가 같다.
+window._sqMgWatchdog = function (sid) {
+  clearTimeout(window._sqMgWdT);
+  const v = window._sqMgV; if (!v || (v.st !== 'go' && v.st !== 'st' && v.st !== 'ov')) return;
+  const late = (v.dl || 0) - window._sqMgNow() + 3200 + Math.random() * 800;
+  window._sqMgWdT = setTimeout(function () {
+    const vv = window._sqMgV; if (!vv || vv !== v) return;      // 그 사이 판이 넘어갔으면 할 일 없음
+    if (vv.st === 'ov') { const R = window._rt; if (R) R.update(window._sqMgRef(sid), { st: 'end', t: Date.now(), host: vv.host, hostNick: vv.hostNick || '머피' }).catch(function () {}); return; }
+    window._sqMgTick(sid);
+  }, Math.max(500, late));
 };
 // ★정지 구간을 0.2초마다 훑는다 — 짧은 걸음은 구간 중간에 끝나서 마지막에만 재면 놓친다.
 //   모든 기기가 각자 훑지만 **쓰는 사람은 진행자 한 명뿐**이라 결과가 갈리지 않는다.
@@ -39135,6 +39149,7 @@ window._sqMgScan = function () {
 window._sqMgArm = function (sid) {
   clearTimeout(window._sqMgT); clearInterval(window._sqMgScanT);
   const v = window._sqMgV; if (!v || v.st !== 'lb') clearInterval(window._sqMgLobbyT);
+  if (!v) clearTimeout(window._sqMgWdT);
   if (v && v.st === 'ov') {   // 결과 구간이 끝나면 진행자가 'end' 로 넘긴다(승계 규칙 동일)
     const turn = window._sqMgMyTurn(); if (turn < 0) return;
     const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + 200) + Math.min(turn, 3) * 1200;
