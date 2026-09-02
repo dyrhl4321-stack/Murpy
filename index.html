@@ -3280,7 +3280,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     </div>
     <div id="run-pane-howto" class="dodge-pane" style="display:none;flex-direction:column;align-items:center;gap:18px;width:100%">
       <div style="font-size:17px;font-weight:900;color:#fff;letter-spacing:-.3px">이렇게 하면 돼요</div>
-      <div style="font-size:13.5px;color:#cfd6e6;line-height:1.9">캐릭터는 알아서 달려요 · <b style="color:#fff">탭 = 점프</b> · <b style="color:#3D7EFF">길게 = 더 높이</b><br>프로틴은 먹고, 트랙 위 <b style="color:#fff">치킨은 참으세요</b> (살쪄서 느려져요)<br>프로틴 6연속이면 <b style="color:#F5C24B">득근 타임</b> — 잠깐 무적!</div>
+      <div style="font-size:13.5px;color:#cfd6e6;line-height:1.9">캐릭터는 알아서 달려요 · <b style="color:#fff">탭 = 점프</b> · <b style="color:#3D7EFF">길게 = 더 높이</b></div>
+      <div style="display:flex;justify-content:center;gap:20px;margin:2px 0 2px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><img src="char/game/protein.png" alt="프로틴" style="width:34px;height:34px;image-rendering:pixelated"><span style="font-size:11px;color:#7aa8ff;font-weight:700">프로틴 먹기</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><img src="char/game/chicken.png" alt="치킨" style="width:34px;height:34px;image-rendering:pixelated"><span style="font-size:11px;color:#ff8a8e;font-weight:700">치킨 참기</span></div>
+      </div>
+      <div style="font-size:13px;color:#cfd6e6;line-height:1.8">트랙 위 <b style="color:#ff8a8e">치킨</b>은 살쪄서 느려져요 · 프로틴 모으면 <b style="color:#F5C24B">득근 타임</b>(잠깐 무적!)</div>
       <div style="width:100%;max-width:280px">
         <div style="font-size:11.5px;color:rgba(255,255,255,.45);margin-bottom:7px;font-weight:700">난이도</div>
         <div id="run-lv-row" style="display:flex;gap:7px"></div>
@@ -19568,9 +19573,11 @@ window.RUN = {
   JUMP_V: 1.75, G: 0.12, G_HOLD: 0.072,   // 점프 초속 · 중력 · (누른 채 상승 중) 약한 중력
   M_PER_U: 0.2,                           // 1u = 0.2m — 초속 6~7m 러너 체감
   FIRST_GAP: 170,                         // 첫 장애물까지 워밍업 거리
-  // ── 헬창식 쿠키런 (대표 9-03): 프로틴 = 점수, 치킨 = 유혹(감점+살쪄서 느려짐), 6연속 = 득근 타임 ──
+  // ── 헬창식 쿠키런 (대표 9-03): 프로틴 = 점수, 치킨 = 유혹(감점+살쪄서 느려짐), 연속 = 득근 타임 ──
+  //   ★득근 타임은 무적+가속이라 길면 점수가 너무 쉽게 오른다(대표 9-03) → 지속을 짧게,
+  //     발동 개수·지속은 난이도별(RUN_LV.pumpN/pumpMs)로 나눈다. 아래는 폴백 기본값.
   PROT_PT: 5, CHICK_PT: 10,               // 프로틴 +5점 · 치킨 -10점
-  PUMP_N: 6, PUMP_MS: 2600, PUMP_V: 1.35, // 프로틴 6연속 → 2.6초 펌핑(무적·1.35배속)
+  PUMP_N: 6, PUMP_MS: 1500, PUMP_V: 1.35, // 폴백: 6연속 → 1.5초 펌핑(무적·1.35배속)
   CHICK_MS: 1100, CHICK_V: 0.55,          // 치킨 먹으면 1.1초 절반 속도
   ITEM_R: 3.4,                            // 아이템 판정 반경(u)
   MAX_SCORE: 99999
@@ -19584,14 +19591,18 @@ window.RUN_OBS = {
   //   약 19u 라 w 9 + 몸 8 = 17u 가 상한선. 14 로 뒀다가 계산해 보니 초반엔 못 넘는 판이었다.
   p: { w: 9,  y0: 0,  y1: 2,  spd: 0    },   // 물웅덩이 — 길게 눌러 멀리
   g: { w: 6,  y0: 18, y1: 26, spd: 0.22 },   // 비둘기 — 뛰지 말고 밑으로
-  b: { w: 11, y0: 0,  y1: 11, spd: 0.5  }    // 자전거 — 빠르게 마주 온다, 높은 점프
+  b: { w: 11, y0: 0,  y1: 11, spd: 0.5  },   // 자전거 — 빠르게 마주 온다, 높은 점프
+  // ── 상 난이도 전용 빌런 (대표 9-03: "한강에 자전거 말고 다른 빌런도") ──
+  k: { w: 10, y0: 0,  y1: 12, spd: 0.72 },   // 전동킥보드 — 자전거보다 빠르고 높다(제일 부담)
+  d: { w: 6,  y0: 0,  y1: 5,  spd: 0.34 }    // 강아지 — 낮게 마주 달려온다, 짧은 점프
 };
 // 난이도 — 시작 속도·상한·가속(u/틱, /ms)·장애물 간격 배율·종류·부활·점수 배율
 window.RUN_LV = {
-  // 9-03 대표 "속도감" → 전 난이도 상향 (v0 +20%, 상한 +18%)
-  easy: { name: '하', v0: 0.55, vmax: 0.92, acc: 0.0000042, gap: 1.35, types: 'hp',   revive: 1, mul: 0.7 },
-  mid:  { name: '중', v0: 0.66, vmax: 1.10, acc: 0.0000055, gap: 1.0,  types: 'hpgb', revive: 0, mul: 1.0 },
-  hard: { name: '상', v0: 0.78, vmax: 1.30, acc: 0.0000070, gap: 0.8,  types: 'hpgb', revive: 0, mul: 1.6 }
+  // 9-03 대표 "속도감" → 전 난이도 상향. pumpN/pumpMs = 득근 타임 발동 개수·지속(난이도별).
+  //   ★상은 무적+가속에 점수배율 1.6 이라 득근이 길면 너무 쉽게 벌린다(대표) → 더 많이 먹어야 발동 + 더 짧게.
+  easy: { name: '하', v0: 0.55, vmax: 0.92, acc: 0.0000042, gap: 1.35, types: 'hp',     revive: 1, mul: 0.7, pumpN: 6, pumpMs: 2000 },
+  mid:  { name: '중', v0: 0.66, vmax: 1.10, acc: 0.0000055, gap: 1.0,  types: 'hpgb',   revive: 0, mul: 1.0, pumpN: 6, pumpMs: 1500 },
+  hard: { name: '상', v0: 0.78, vmax: 1.30, acc: 0.0000070, gap: 0.8,  types: 'hpgbkd', revive: 0, mul: 1.6, pumpN: 8, pumpMs: 1100 }
 };
 // 시드 난수(mulberry32) — 테스트가 같은 시드로 같은 판을 그대로 재현한다
 window._runRng = function (seed) {
@@ -19620,7 +19631,7 @@ window.runNew = function (lvKey, seed) {
 window._runSpawn = function (s) {
   const lv = window.RUN_LV[s.lv] || window.RUN_LV.mid;
   let t = lv.types[Math.floor(s.rnd() * lv.types.length)];
-  if (s.nSpawn < 2 && (t === 'g' || t === 'b')) t = 'h';   // 처음 둘은 지상 장애물로 배운다
+  if (s.nSpawn < 2 && (t === 'g' || t === 'b' || t === 'k')) t = 'h';   // 처음 둘은 쉬운 지상 장애물로 배운다(공중·고속 빌런 제외)
   s.obs.push({ t: t, x: s.nextAt });
   s.nSpawn += 1;
   // 빨라질수록 간격도 벌린다 — 반응 시간(거리/속도)이 일정해야 난이도가 속도만 따라 폭주하지 않는다
@@ -19695,7 +19706,7 @@ window.runTick = function (s, dt) {
       s.items.splice(i, 1);
       if (it.t === 'pr') {
         s.prot += 1; s.protRun += 1; s.last = 'prot';
-        if (s.protRun >= R.PUMP_N) { s.protRun = 0; s.pump = R.PUMP_MS; s.last = 'pump'; }
+        if (s.protRun >= (lv.pumpN || R.PUMP_N)) { s.protRun = 0; s.pump = (lv.pumpMs || R.PUMP_MS); s.last = 'pump'; }
       } else {
         s.chick += 1; s.slow = R.CHICK_MS; s.protRun = 0; s.last = 'chick';
       }
@@ -19842,7 +19853,9 @@ window._RUN_OB_IMG = {
   h: { src: 'char/game/run_hurdle.png?v=1', wu: 12,   hu: 8.6 },
   p: { src: 'char/game/run_puddle.png?v=1', wu: 10,   hu: 3 },
   g: { src: 'char/game/run_pigeon.png?v=1', wu: 8.5,  hu: 7 },
-  b: { src: 'char/game/run_bike.png?v=1',   wu: 12.5, hu: 11.6 }
+  b: { src: 'char/game/run_bike.png?v=1',   wu: 12.5, hu: 11.6 },
+  k: { src: 'char/game/run_scooter.png?v=1', wu: 12,  hu: 12.5 },
+  d: { src: 'char/game/run_dog.png?v=1',    wu: 8,   hu: 5.6 }
 };
 window._runPaint = function (s) {
   const e = window._runEls || window._runBuild(); if (!e) return;
@@ -19939,6 +19952,28 @@ window._runPaint = function (s) {
   }
 };
 window._runObSeq = 0;
+// ── 빌런 등장 사운드 = **실제 음원(WAV)** (대표 9-03: 자전거·비둘기·강아지 등은 게임효과음 말고 실사).
+//   [[feedback_murpy_sfx_real_vs_chiptune]] — 합성으로 흉내내면 반려. 파일 있으면 재생, 없으면 무음.
+//   아이템(프로틴·치킨·득근)은 반대로 칩튠 효과음(window.sfx)이라 여기 없다.
+window._RUN_SND = { b: 'run_bell', k: 'run_scooter', g: 'run_pigeon', d: 'run_dog' };
+window._runSndBuf = {};   // key → AudioBuffer | null(로딩중) | false(파일 없음=무음)
+window._runSndPlay = function (key) {
+  const file = window._RUN_SND[key]; if (!file) return;
+  try {
+    if (window.sfx && window.sfx.isMuted && window.sfx.isMuted()) return;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    if (!window._runAC) window._runAC = new AC();
+    const c = window._runAC; if (c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+    const buf = window._runSndBuf[key];
+    if (buf === null || buf === false) return;                         // 로딩 중이거나 파일 없음
+    if (buf) { const src = c.createBufferSource(); src.buffer = buf; const g = c.createGain(); g.gain.value = 0.85; src.connect(g); g.connect(c.destination); src.start(); return; }
+    window._runSndBuf[key] = null;                                     // 처음 = 받아서 디코드(그동안 무음)
+    fetch('char/game/' + file + '.wav?v=1').then(function (r) { if (!r.ok) throw 0; return r.arrayBuffer(); })
+      .then(function (ab) { return c.decodeAudioData(ab); })
+      .then(function (b) { window._runSndBuf[key] = b; })
+      .catch(function () { window._runSndBuf[key] = false; });         // 없으면 영구 무음(칩튠으로 안 때운다)
+  } catch (e) {}
+};
 window._runHud = function (s) {
   const R = window.RUN;
   const m = document.getElementById('run-m'); if (m) m.textContent = window.runMeters(s);
@@ -19948,8 +19983,9 @@ window._runHud = function (s) {
   if (gg) {
     if (s.pump > 0) gg.innerHTML = '<b style="color:#F5C24B;font-size:11px;letter-spacing:.5px">득근!</b>';
     else {
+      const pn = (window.RUN_LV[s.lv] || {}).pumpN || R.PUMP_N;
       let h = '';
-      for (let i = 0; i < R.PUMP_N; i++) h += '<i class="run-gdot' + (i < s.protRun ? ' on' : '') + '"></i>';
+      for (let i = 0; i < pn; i++) h += '<i class="run-gdot' + (i < s.protRun ? ' on' : '') + '"></i>';
       gg.innerHTML = h;
     }
   }
@@ -20008,6 +20044,11 @@ window._runFrame = function (ts) {
   } else if (r === 'mile') {
     try { window.sfx && window.sfx.play('point'); } catch (e) {}
     window._runFx(window.runMeters(s) + 'm!', 'blue');
+  }
+  // 빌런은 **소리를 내며 등장한다**(대표 9-03: 자전거 따릉따릉 하면서 옴). 화면에 들어오는 순간 1회.
+  for (let i = 0; i < s.obs.length; i++) {
+    const o = s.obs[i];
+    if (!o._cued && window._RUN_SND[o.t] && (o.x - s.d) < 96) { o._cued = 1; window._runSndPlay(o.t); }
   }
   window._runPaint(s);
   window._runHud(s);
@@ -20196,7 +20237,7 @@ window.runFieldBtn = function (key) {
   if (key !== 'running') { if (b) b.remove(); return; }
   if (!window._runPreloaded) {
     window._runPreloaded = 1;
-    ['run_title.png?v=2', 'run_bg.jpg?v=1', 'run_track.png?v=1', 'run_hurdle.png?v=1', 'run_puddle.png?v=1', 'run_pigeon.png?v=1', 'run_bike.png?v=1', 'protein.png', 'chicken.png'].forEach(function (f) {
+    ['run_title.png?v=2', 'run_bg.jpg?v=1', 'run_track.png?v=1', 'run_hurdle.png?v=1', 'run_puddle.png?v=1', 'run_pigeon.png?v=1', 'run_bike.png?v=1', 'run_scooter.png?v=1', 'run_dog.png?v=1', 'protein.png', 'chicken.png'].forEach(function (f) {
       const im = new Image(); im.src = 'char/game/' + f;
     });
   }
