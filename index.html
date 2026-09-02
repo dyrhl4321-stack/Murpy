@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '957';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '958';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38032,9 +38032,14 @@ window._sqRtJoin = function (sid, sArg) {
     const hasSaved = !!(old && old.t && Number.isFinite(+old.x) && Number.isFinite(+old.y));
     if (hasSaved) {
       const oldDir = (!old.poseV && old.dir === 'up') ? 'down' : (old.dir || 'down');
-      window._sqMyPos = { x: +old.x, y: +old.y, dir: oldDir, moving: false };
+      // ★저장 위치는 평소 걷기 박스 안으로 눌러서 복원한다 — 무궁화꽃 중에 나갔다 오면 트랙 위
+      //   y(≈26)가 저장돼 있어 충돌맵 위에서 등장했다. 이 시점엔 게임 플래그가 아직 안 와서
+      //   박스는 항상 평소 크기. 바로 아래 send() 가 눌린 값을 RTDB 에 다시 올린다.
+      const B0 = window._sqWalkBox();
+      const q0 = window._sqAvoid(Math.max(B0.x0, Math.min(B0.x1, +old.x)), Math.max(B0.y0, Math.min(B0.y1, +old.y)), B0);
+      window._sqMyPos = { x: q0.x, y: q0.y, dir: oldDir, moving: false };
       const c = window._sqCharEl(u.uid, window._mwMyNick || old.nick || '머피', window.getMyCharacter ? window.getMyCharacter() : old.character, oldDir, window._myTitle || old.title, (window._seasonState || {}).auraOn || old.aura || '');
-      if (c) window._sqPlace(c, +old.x, +old.y, 0);
+      if (c) window._sqPlace(c, q0.x, q0.y, 0);
       send();
       return;
     }
@@ -38169,7 +38174,7 @@ window.SQ_QUIZ_BY_TYPE = {
     { d: 1, q: '스쿼트에서 시선을 심하게 위로 꺾는 게 정석이다', a: 'X', w: '목은 중립이 안전해요' },
     { d: 1, q: '머신 운동은 프리웨이트보다 항상 열등하다', a: 'X', w: '고립·안전·재활엔 머신이 좋을 때가 많아요' },
     { d: 1, q: '벨트는 복압을 이용해 허리를 지지해 준다', a: 'O', w: '복압 형성을 돕는 도구예요' },
-    { d: 1, q: 'OO킥백은 이두 운동이다', a: 'X', w: '킥백은 삼두(팔 뒤) 운동이에요' },
+    { d: 1, q: '덤벨킥백은 이두 운동이다', a: 'X', w: '킥백은 삼두(팔 뒤) 운동이에요' },
     // ── 9-02 추가: 어려움(d:2) ──
     { d: 2, q: '데드리프트에서 바는 몸에서 멀어질수록 허리 부담이 커진다', a: 'O', w: '몸에 붙여 끌어야 지렛대가 짧아져요' },
     { d: 2, q: '오버헤드 프레스는 어깨보다 가슴 운동에 가깝다', a: 'X', w: '삼각근 전면·측면이 주동근이에요' },
@@ -39454,7 +39459,23 @@ window._sqMgPaint = function (sid) {
   const inField = !!(active && (v.st === 'go' || v.st === 'st' || v.st === 'ov') && me && (v.join || {})[me]);
   const showCard = !!(active && (v.st === 'lb' || inField));
   window._sqMgUiOn = showCard;
+  const wasInField = !!window._sqMgInField;
   window._sqMgInField = inField;   // ★OX 와 같은 DOM 을 쓴다 — 서로 지우지 않게
+  // ★게임이 끝나 걷기 박스가 평소 크기(y0≈55)로 돌아오는 순간, 트랙 위에 있던 내 캐릭터를
+  //   박스 안으로 걸려 내린다. 안 내리면 결승선 y(≈26)에 선 채 평소 필드가 돌아와
+  //   충돌맵 위(하늘)에 떠 있고, RTDB 에도 그 위치가 남아 남들 화면에서도 위에서 등장한다.
+  try {
+    if (wasInField && !inField && me) {
+      const p = window._sqMyPos, B = window._sqWalkBox();   // 플래그를 내린 뒤라 평소 박스다
+      if (p && (p.x < B.x0 || p.x > B.x1 || p.y < B.y0 || p.y > B.y1)) {
+        const q = window._sqAvoid(Math.max(B.x0, Math.min(B.x1, p.x)), Math.max(B.y0, Math.min(B.y1, p.y)), B);
+        p.x = q.x; p.y = q.y; p.dir = 'down'; p.moving = false;
+        const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'down', window._myTitle, (window._seasonState || {}).auraOn || '');
+        if (c) { c.el.classList.add('walking'); window._sqPlace(c, q.x, q.y, 0.7); setTimeout(function () { c.el.classList.remove('walking'); }, 750); }
+        window._sqOnMove && window._sqOnMove();
+      }
+    }
+  } catch (e) {}
   // ★첫 출발(로비→go) 때 참석자 전원을 **출발선에 일렬로** 세운다(대표 9-02: 시작점이 제각각).
   //   RTDB players 는 본인만 쓸 수 있으니 각자 자기 캐릭터를 옮기고 보낸다. uid 순이라 모두 같은 줄을 계산한다.
   try {
@@ -39628,6 +39649,11 @@ window._sqRenderRemotes = function (sid, all, myUid) {
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
   const seen = window._sqRtSeen || (window._sqRtSeen = {});
   const now = Date.now();
+  // ★게임(무궁화꽃)이 안 도는데 평소 걷기 박스 밖 위치가 온 노드는 박스 안으로 눌러 그린다 —
+  //   게임 중에 앱을 닫은 사람의 RTDB 노드엔 트랙 위 y(≈26)가 그대로 남아, 다음에 필드를 여는
+  //   모두에게 충돌맵 위에서 등장했다. 게임 중엔 손대지 않는다(참가자는 진짜로 트랙 위에 있다).
+  const _gr = window._sqGameRaw;
+  const gameLive = !!(_gr && _gr.st && _gr.st !== 'end' && now - (_gr.t || 0) < 300000);
   Object.keys(all).forEach(uid => {
     if (uid === myUid) return;
     const p = all[uid] || {};
@@ -39647,7 +39673,12 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     // users/{uid} 실시간 구독값을 최우선으로 써야 명단과 필드가 같은 최신 복장으로 보인다.
     const c = window._sqCharEl(uid, window._sqNickOf(uid, p.nick), window.mwCharLive(uid) || p.character, dir, p.title, p.aura);
     if (!c) return;
-    const x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
+    let x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
+    if (!gameLive) {
+      const B = window._sqWalkBox();
+      const q = window._sqAvoid(Math.max(B.x0, Math.min(B.x1, x)), Math.max(B.y0, Math.min(B.y1, y)), B);
+      x = q.x; y = q.y;
+    }
     if (first && !p.off) {   // 지금 들어오는 멤버만 하단 입장 연출; 남아 있던 캐릭터는 제자리에
       window._sqPlace(c, x, 108, 0);
       requestAnimationFrame(() => requestAnimationFrame(() => { c.el.classList.add('walking'); window._sqPlace(c, x, y, 0.9); }));
