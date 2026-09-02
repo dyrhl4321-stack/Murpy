@@ -148,4 +148,12 @@ assert.strictEqual(J({ st: 'end', join: join3 }, {}), null);
   assert(!r.out.a, '가만히 있었는데 걸렸다 — 이게 제일 나쁜 버그다');
 }
 
-console.log('mugung-core: 15개 항목 전부 통과');
+// ── 16) ★결승선에 실제로 닿을 수 있는가 ────────────────────────────────
+//   9-02에 GOAL_Y 를 16 으로 뒀는데 캐릭터 이동 범위가 y 55~92 라 **닿을 방법이 없었다.**
+//   아무도 못 이기고 전원 탈락으로만 끝나는 게임이 될 뻔했다. 숫자를 바꿀 때 여기서 걸린다.
+assert(typeof Z.WALK_TOP === 'number', 'WALK_TOP 이 없다 — 이동 범위를 안 넓히면 결승선에 못 닿는다');
+assert(Z.WALK_TOP <= Z.GOAL_Y,
+  `결승선에 닿을 수 없다: 올라갈 수 있는 최고점 y=${Z.WALK_TOP} 인데 우승 조건은 y<=${Z.GOAL_Y}`);
+assert(Z.GOAL_Y < 55, '결승선이 평소 이동범위(y>=55) 안에 있으면 시작하자마자 이긴다');
+
+console.log('mugung-core: 16개 항목 전부 통과');
