@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '913';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '914';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10185,17 +10185,17 @@ window.mwPortal = function () {
 #dodge-pane-recs.in > *:nth-child(4){animation-delay:.28s}
 /* ===== 골프 스윙 — dodge 셀렉터 병기 + 골프 전용 (8-29) ===== */
 #golf-start-screen.in{animation:dodgeScreenIn .34s ease both}
-#golf-art-bg.in{animation:dodgeArtIn 1.5s cubic-bezier(.2,.8,.2,1) both}
-#golf-pane-title.in > *{animation:dodgePaneIn .5s ease both}
+#golf-art-bg.in,#tennis-art-bg.in{animation:dodgeArtIn 1.5s cubic-bezier(.2,.8,.2,1) both}
+#golf-pane-title.in > *,#tennis-pane-title.in > *{animation:dodgePaneIn .5s ease both}
 #golf-pane-title.in > *:nth-child(1){animation-delay:.55s}#golf-pane-title.in > *:nth-child(2){animation-delay:.7s}
 #golf-pane-title.in > *:nth-child(3){animation-delay:.8s}#golf-pane-title.in > *:nth-child(4){animation-delay:.92s}#golf-pane-title.in > *:nth-child(5){animation-delay:1.05s}
-#golf-pane-howto.in > *,#golf-pane-char.in > *,#golf-pane-recs.in > *{animation:dodgePaneIn .5s ease both}
+#golf-pane-howto.in > *,#golf-pane-char.in > *,#golf-pane-recs.in > *,#tennis-pane-howto.in > *,#tennis-pane-recs.in > *{animation:dodgePaneIn .5s ease both}
 #golf-pane-howto.in > *:nth-child(1),#golf-pane-char.in > *:nth-child(1),#golf-pane-recs.in > *:nth-child(1){animation-delay:.04s}
 #golf-pane-howto.in > *:nth-child(2),#golf-pane-char.in > *:nth-child(2),#golf-pane-recs.in > *:nth-child(2){animation-delay:.12s}
 #golf-pane-howto.in > *:nth-child(3),#golf-pane-char.in > *:nth-child(3),#golf-pane-recs.in > *:nth-child(3){animation-delay:.2s}
 #golf-pane-howto.in > *:nth-child(4),#golf-pane-char.in > *:nth-child(4){animation-delay:.28s}
 #golf-pane-howto.in > *:nth-child(5){animation-delay:.36s}
-#golf-pane-title.in > .dodge-cta,#golf-pane-howto.in > .dodge-cta,#golf-pane-char.in > .dodge-cta{animation:dodgePaneIn .5s ease both, dodgeCta 1.6s ease-in-out 1.2s infinite}
+#golf-pane-title.in > .dodge-cta,#golf-pane-howto.in > .dodge-cta,#golf-pane-char.in > .dodge-cta,#tennis-pane-title.in > .dodge-cta,#tennis-pane-howto.in > .dodge-cta{animation:dodgePaneIn .5s ease both, dodgeCta 1.6s ease-in-out 1.2s infinite}
 .golf-ico{width:44px;height:44px;margin:0 auto 6px;image-rendering:pixelated;background:center/contain no-repeat}
 /* ===== 머피 테니스 ===== 코트는 이미 있는 머피월드 필드 그림을 그대로 쓴다. */
 .tennis-court{position:absolute;inset:0;background:url('char/fields/field_tennis.png?v=3') center/cover no-repeat;image-rendering:pixelated}
@@ -18723,7 +18723,12 @@ window.tennisPickLv = function (k) {
 // 시작화면 pane 전환 — 골프 _golfShowPane 과 같은 단순 토글
 window._tennisShowPane = function (id) {
   ['tennis-pane-title', 'tennis-pane-howto', 'tennis-pane-recs'].forEach(function (k) {
-    const el = document.getElementById(k); if (el) el.style.display = (k === id) ? 'flex' : 'none';
+    const el = document.getElementById(k); if (!el) return;
+    if (k === id) {
+      // ★.in 이 등장 애니메이션(dodgePaneIn·dodgeCta)을 켠다. void offsetWidth 로 리플로를
+      //   강제해야 같은 pane 을 다시 열 때도 애니메이션이 처음부터 돈다(골프와 같은 수법).
+      el.style.display = 'flex'; el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+    } else { el.style.display = 'none'; el.classList.remove('in'); }
   });
 };
 // 타이틀·상대 그림 확인 — 골프 _golfCheckArt 와 같은 방식.
@@ -18734,11 +18739,14 @@ window._tennisCheckArt = function () {
   im.onload = function () {
     window._tennisArt = true;
     const a = document.getElementById('tennis-art-bg');
-    if (a) { a.style.backgroundImage = "url('char/game/tennis_title.png?v=1')"; a.style.display = ''; }
+    if (a) {
+      a.style.backgroundImage = "url('char/game/tennis_title.png?v=2')";
+      a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
+    }
     window._tennisPaintStart();
   };
   im.onerror = function () { window._tennisArt = false; window._tennisPaintStart(); };
-  im.src = 'char/game/tennis_title.png?v=1';
+  im.src = 'char/game/tennis_title.png?v=2';
   const rb = new Image();
   rb.onload = function () { window._tennisRabbit = true; };
   rb.onerror = function () { window._tennisRabbit = false; };
@@ -18966,6 +18974,8 @@ window.tennisOpen = function () {
   document.getElementById('tennis-hud').style.display = 'none';
   const ss = document.getElementById('tennis-start-screen'); if (ss) ss.style.display = 'flex';
   window._tennisShowPane('tennis-pane-title');
+  const ab = document.getElementById('tennis-art-bg');
+  if (ab && window._tennisArt) { ab.classList.remove('in'); void ab.offsetWidth; ab.classList.add('in'); }
   window._tennisCheckArt();
   window._tennisLoadBest();
   window._tennisPaintStart();

@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
-"""테니스 타이틀 합성 — AI 배경(글자 없음) + Galmuri14 로 직접 그린 제목.
+"""테니스 타이틀 합성 — AI 배경(글자 없음) + 제미나이 레터링 낱말 두 줄 조립.
 
     python tools/make_tennis_title.py
 
-★왜 이렇게 하나 (9-02): 제미나이가 '머피 테니스' 철자를 네 번 연속 틀렸다
-  (테느스 ×3, 며표 테니스 ×1). 한글 철자를 못 믿는다.
-  그래서 배경은 AI 로 받고(char/game/tennis_title.raw.png = 글자 없는 판),
-  제목은 앱이 머피월드 전체에 실제로 쓰는 픽셀 폰트 Galmuri14 로 얹는다.
-  획 테두리·그림자·글자별 튀는 배치로 게임 타이틀 느낌을 낸다.
+★내력 (9-02)
+  1차: 제미나이에게 통째로 → '머피 테니스' 철자를 다섯 번 틀림(테느스 ×3, 며표, 태니스).
+  2차: 앱 폰트(Galmuri14) → 대표: "글씨가 좀 별론데, 제미나이로 뽑으면 이쁘던데".
+  3차(지금): **골프 타이틀의 '홀인 머피'에서 '머피'를 색 마스크로 추출**(철자·레터링 보장) +
+       '테니스'는 그것을 레퍼런스로 낱말만 생성한 뒤(철자 눈으로 검수) **형태학 팽창으로 획을
+       머피와 같은 두께로** 맞췄다. 두 줄로 쌓아 남은 무게 차이도 안 보이게 했다.
+       레터링은 제미나이 그대로, 철자는 사람이 보증한다.
 
-폰트 준비(최초 1회 — 앱이 쓰는 그 CDN):
-    curl -sL -o tools/galmuri14.woff2 https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/Galmuri14.woff2
-    python -c "from fontTools.ttLib import TTFont; f=TTFont('tools/galmuri14.woff2'); f.flavor=None; f.save('tools/galmuri14.ttf')"
+재료(전부 gitignore — 로컬 + 드라이브 백업에만 있다):
+  char/game/tennis_title.raw.png        글자 없는 배경 (제미나이)
+  char/game/tennis_word_murpy.raw.png   '머피'  (golf_title 추출)
+  char/game/tennis_word_tennis.raw.png  '테니스' (제미나이 생성 + 획 팽창)
 """
 import os, sys
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -22,39 +25,50 @@ except Exception:
     pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BG = os.path.join(HERE, '..', 'char', 'game', 'tennis_title.raw.png')   # 글자 없는 배경
-OUT = os.path.join(HERE, '..', 'char', 'game', 'tennis_title.png')
-FONT = os.path.join(HERE, 'galmuri14.ttf')
+G = lambda n: os.path.join(HERE, '..', 'char', 'game', n)
 
-bg = Image.open(BG).convert('RGBA')
-W, H = bg.size                       # 720x1290
 
-TITLE = '머피 테니스'
-NAVY = (31, 42, 68, 255)             # 진한 남색 테두리(덤벨·골프 제목과 같은 계열)
-WHITE = (255, 255, 255, 255)
+def despeck(im, min_px=30):
+    """외딴 잡티 제거 — min_px 미만짜리 연결 조각을 지운다(팽창·추출 과정의 부스러기)."""
+    im = im.convert('RGBA')
+    w, h = im.size
+    a = im.getchannel('A').load()
+    seen = [[False] * w for _ in range(h)]
+    px = im.load()
+    for y in range(h):
+        for x in range(w):
+            if seen[y][x] or a[x, y] <= 10:
+                continue
+            stack = [(x, y)]; comp = []
+            seen[y][x] = True
+            while stack:
+                cx, cy = stack.pop(); comp.append((cx, cy))
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and a[nx, ny] > 10:
+                        seen[ny][nx] = True; stack.append((nx, ny))
+            if len(comp) < min_px:
+                for cx, cy in comp:
+                    px[cx, cy] = (0, 0, 0, 0)
+    return im
 
-font = ImageFont.truetype(FONT, 104)
 
-# 글자마다 따로 그려서 살짝 아래위로 튀게 — 일렬로 쭉 쓰면 문서 제목처럼 굳는다
-layer = Image.new('RGBA', (W, 300), (0, 0, 0, 0))
-d = ImageDraw.Draw(layer)
-bounce = [0, 10, 0, -8, 6, -4]       # '머 피 (공백) 테 니 스'
-widths = []
-for ch in TITLE:
-    bb = d.textbbox((0, 0), ch, font=font, stroke_width=8)
-    widths.append(bb[2] - bb[0] if ch != ' ' else 34)
-x = (W - sum(widths)) // 2
-for i, ch in enumerate(TITLE):
-    if ch == ' ':
-        x += widths[i]
-        continue
-    y = 80 + bounce[i]
-    # 그림자 → 테두리 → 본체
-    d.text((x + 6, y + 10), ch, font=font, fill=(15, 20, 35, 160), stroke_width=8, stroke_fill=(15, 20, 35, 160))
-    d.text((x, y), ch, font=font, fill=WHITE, stroke_width=8, stroke_fill=NAVY)
-    x += widths[i]
+bg = Image.open(G('tennis_title.raw.png')).convert('RGBA')
+W, H = bg.size                                    # 720x1290
 
-# 제목 밴드 위치 = 덤벨·골프와 같은 위쪽 1/3 지점
-bg.alpha_composite(layer, (0, int(H * 0.135)))
-bg.convert('RGB').save(OUT)
-print('저장:', OUT, bg.size)
+mu = despeck(Image.open(G('tennis_word_murpy.raw.png')))
+te = despeck(Image.open(G('tennis_word_tennis.raw.png')))
+mu = mu.crop(mu.getbbox())
+te = te.crop(te.getbbox())
+
+# 두 줄 — 위 '머피', 아래 '테니스'. 나란히 쓰면 낱말 간 무게 차이가 도드라진다.
+CAP = 148
+mu2 = mu.resize((round(mu.size[0] * CAP / mu.size[1]), CAP), Image.LANCZOS)
+te2 = te.resize((round(te.size[0] * CAP / te.size[1]), CAP), Image.LANCZOS)
+
+y = int(H * 0.085)
+bg.alpha_composite(mu2, ((W - mu2.size[0]) // 2, y))
+bg.alpha_composite(te2, ((W - te2.size[0]) // 2, y + CAP + 18))
+
+bg.convert('RGB').save(G('tennis_title.png'))
+print('저장:', G('tennis_title.png'), bg.size)
