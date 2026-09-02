@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '918';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '919';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10210,6 +10210,16 @@ window.mwPortal = function () {
 .tennis-ring{position:absolute;border:2px solid rgba(255,255,255,.6);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:2}
 .tennis-ring.hot{border-color:#3D7EFF;border-width:3px;box-shadow:0 0 12px rgba(61,126,255,.55)}
 .tennis-ch{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:4;image-rendering:pixelated}
+/* 상대 토끼 모션 (대표 9-02: "상대방 캐릭터도 모션이, 정면+좌우방향 시트") */
+.tn-op-flip{width:46px;height:58px}
+.tn-op-flip.left{transform:scaleX(-1)}
+.tn-op-spr{width:100%;height:100%;background:center bottom/contain no-repeat;image-rendering:pixelated}
+#tennis-op.bob .tn-op-spr{animation:tnOpBob 1.15s ease-in-out infinite}
+#tennis-op.hop .tn-op-spr{animation:tnOpHop .3s ease-in-out infinite}
+#tennis-op.swing .tn-op-spr{animation:tnOpSwing .26s ease-out}
+@keyframes tnOpBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes tnOpHop{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes tnOpSwing{0%{transform:rotate(0) scale(1)}45%{transform:rotate(-17deg) scale(1.18)}100%{transform:rotate(0) scale(1)}}
 .tennis-flash{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0;background:radial-gradient(circle at 50% 78%,rgba(61,126,255,.45),transparent 62%)}
 /* 탭 파문 — 어떤 탭이든 '눌렸다'는 것부터 보여준다. 이게 없으면 헛스윙이 무반응으로 느껴진다.
    지속 노드가 아니라 탭 순간 하나 만들고 애니메이션 끝나면 지운다(테니스는 노드를 재사용하므로 전이가 산다). */
@@ -18770,6 +18780,10 @@ window._tennisCheckArt = function () {
   rb.onload = function () { window._tennisRabbit = true; };
   rb.onerror = function () { window._tennisRabbit = false; };
   rb.src = 'char/game/tennis_rabbit.png?v=1';
+  const rs = new Image();
+  rs.onload = function () { window._tennisRabbitSide = true; };
+  rs.onerror = function () { window._tennisRabbitSide = false; };
+  rs.src = 'char/game/tennis_rabbit_side.png?v=1';
 };
 window.tennisRecs = async function () {
   window._tennisShowPane('tennis-pane-recs');
@@ -18833,7 +18847,13 @@ window._tennisBuild = function () {
   // 상대 = 타이틀 그림의 그 흰 토끼 (대표 9-02: "상대방 캐릭터도 에셋으로").
   // 그림이 안 내려오면 기본 몸통에 색을 돌려 폴백 — 상대가 안 보이는 것보다 낫다.
   if (window._tennisRabbit) {
-    e.op.innerHTML = '<div style="width:46px;height:58px;background:url(\'char/game/tennis_rabbit.png?v=1\') center bottom/contain no-repeat;image-rendering:pixelated"></div>';
+    // 겹이 셋: 바깥(#tennis-op)=자리, .tn-op-flip=좌우 미러, .tn-op-spr=모션 애니메이션.
+    // flip 과 애니메이션을 같은 요소에 두면 transform 이 서로를 덮는다.
+    e.op.innerHTML = '<div class="tn-op-flip"><div class="tn-op-spr"></div></div>';
+    e.opFlip = e.op.querySelector('.tn-op-flip');
+    e.opSpr = e.op.querySelector('.tn-op-spr');
+    e.opSpr.style.backgroundImage = "url('char/game/tennis_rabbit.png?v=1')";
+    e.op.classList.add('bob');
   } else {
     try { if (window._charRenderTo) window._charRenderTo(e.op, 52, { body: 'human' }); } catch (err) {}
     e.op.style.filter = 'hue-rotate(150deg) saturate(1.15)';
@@ -18850,6 +18870,21 @@ window._tennisPaint = function (s) {
   e.sh.style.left = px(s.bx) + 'px'; e.sh.style.top = py(s.by + 1.4) + 'px';
   e.me.style.left = px(s.mx) + 'px'; e.me.style.top = py(T.MY_BASE) + 'px';
   e.op.style.left = px(s.ox) + 'px'; e.op.style.top = py(T.OP_BASE) + 'px';
+  // 상대 모션 — 움직이면 옆모습으로 깡총깡총(방향은 미러), 서면 정면 숨쉬기
+  if (e.opSpr) {
+    const dxo = s.ox - (e._lastOx == null ? s.ox : e._lastOx); e._lastOx = s.ox;
+    const moving = Math.abs(dxo) > 0.05;
+    const wantSide = !!(moving && window._tennisRabbitSide);
+    if (e._opSide !== wantSide) {
+      e._opSide = wantSide;
+      e.opSpr.style.backgroundImage = wantSide
+        ? "url('char/game/tennis_rabbit_side.png?v=1')"
+        : "url('char/game/tennis_rabbit.png?v=1')";
+    }
+    if (moving) e.opFlip.classList.toggle('left', dxo < 0);   // 옆모습 원본은 오른쪽을 본다
+    if (moving) { e.op.classList.add('hop'); e.op.classList.remove('bob'); }
+    else { e.op.classList.add('bob'); e.op.classList.remove('hop'); }
+  }
   // 타이밍 링 — ★공식이 아니라 **실제 공 위치**로 좁힌다. 링과 판정이 어긋나면
   //   유저는 "판정이 이상하다"고 느낀다(골프 예측선에서 배운 것).
   const mid = (T.ZONE_Y0 + T.ZONE_Y1) / 2;
@@ -18905,7 +18940,12 @@ window._tennisFrame = function (ts) {
   const wasToMe = s.toMe;
   const r = window.tennisTick(s, dt);
   // 상대가 받아친 순간(공이 상대→나로 뒤집힘) = 바운드 소리
-  if (!wasToMe && s.toMe && !s.over) { try { window.sfx && window.sfx.play('bounce'); } catch (e) {} }
+  if (!wasToMe && s.toMe && !s.over) {
+    try { window.sfx && window.sfx.play('bounce'); } catch (e) {}
+    // 받아치는 순간 스윙 런지
+    const els = window._tennisEls;
+    if (els && els.op) { els.op.classList.remove('swing'); void els.op.offsetWidth; els.op.classList.add('swing'); setTimeout(function () { els.op.classList.remove('swing'); }, 300); }
+  }
   if (r === 'point') {
     try { window.sfx && window.sfx.play('point'); } catch (e) {}
     window._tennisFlash();
