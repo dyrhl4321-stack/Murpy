@@ -212,4 +212,18 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   assert.strictEqual(calls, 0);
 }
 
-console.log('mugung-core: 21개 항목 전부 통과');
+// ── 22) ★_sqMgArm 이 go 에서 던지지 않고 돌아보기 타이머를 건다 ──────────
+//   9-02 turn 을 선언(const)보다 **먼저 쓰는** 자리(결승선 감시)가 있었다(TDZ). go 마다
+//   ReferenceError 가 났고 감싼 try 가 삼켜 — 타이머가 아예 안 걸려 항상 워치독(3~4초 지연)으로만
+//   돌아봤고, 즉시 승리 감시도 죽어 있었다. 함수를 실제로 불러 봐야 잡히는 종류다.
+{
+  const w2 = { SQ_MG: Z, _sqMgV: { st: 'go', join: { a: {} }, dl: 0 }, _sqMgMyTurn: () => 0,
+               _sqMgNow: () => 0, _sqMgTick: () => {}, _sqMgScan: () => {}, _sqRtLast: {}, _rt: null };
+  new Function('window', grab(/window\._sqMgArm = function[\s\S]*?\n\};/, '_sqMgArm'))(w2);
+  assert.doesNotThrow(() => w2._sqMgArm('t'), 'go 에서 _sqMgArm 이 던졌다 — 돌아보기 타이머가 안 걸린다');
+  assert(w2._sqMgT, 'go 인데 돌아보기 타이머(_sqMgT)가 안 걸렸다');
+  assert(w2._sqMgScanT, 'go 인데 진행자(순번 0)의 결승선 감시가 안 걸렸다');
+  clearTimeout(w2._sqMgT); clearInterval(w2._sqMgScanT);
+}
+
+console.log('mugung-core: 22개 항목 전부 통과');
