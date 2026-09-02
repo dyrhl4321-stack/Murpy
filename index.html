@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '945';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '946';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38837,11 +38837,18 @@ window.sfx = (function () {
   // 대사 — 제미나이 TTS 로 뽑은 WAV. 이름 → 파일. 처음 한 번 받아 디코드해 둔다.
   // 9-02 대표: 대사는 '무궁화꽃이 피었습니다' 하나. 빠름/보통/느림 3벌 — **외치는 길이가 곧 등 돌린 시간**이다.
   const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=2', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=2', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=2' };
+  // 훈수충 아재 대사 10개 (9-02, _DODGE_NAG 순서와 같다) — 말풍선이 바뀔 때 그 대사가 나온다
+  for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=1';
   const bufs = {};
-  const voice = function (name, vol) {
+  const chans = {};
+  const voice = function (name, vol, ch) {
     if (muted) return; const url = VOICES[name]; if (!url) return;
     const c = A(); if (!c) return;
-    const go = function (b) { const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination); src.start(); };
+    const go = function (b) {
+      if (ch) { try { chans[ch] && chans[ch].stop(); } catch (e) {} }   // 같은 채널(예: 훈수)이면 앞 대사를 끊는다
+      const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination); src.start();
+      if (ch) chans[ch] = src;
+    };
     if (bufs[name]) { go(bufs[name]); return; }
     if (bufs[name] === null) return;                                    // 받는 중
     bufs[name] = null;
@@ -38887,6 +38894,11 @@ window.sfx = (function () {
     if (!s) return;
     const hit = s.hit, was = s._sfxHit; s._sfxHit = hit;
     if (hit && hit !== was) { S().play(hit === 'dumbbell' ? 'fall' : hit === 'uncle' ? 'miss' : 'correct'); }
+    // 훈수충 아재 — 화면에 있는 동안 말풍선이 바뀌는 그 타이밍(2.6초)에 그 대사를 읽는다(성우 톤, 9-02)
+    if (s.uncle && window._DODGE_NAG) {
+      const idx = Math.floor(s.t / 2600) % window._DODGE_NAG.length;
+      if (s._sfxNag !== idx) { s._sfxNag = idx; S().voice('nag_' + idx, 0.95, 'nag'); }
+    } else s._sfxNag = -1;
     if (s.alive === false && !s._sfxDead) { s._sfxDead = 1; S().play('lose'); S().bgm(null); }
     if (s.alive !== false) s._sfxDead = 0;
   });
