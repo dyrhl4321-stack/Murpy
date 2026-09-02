@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '940';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '941';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38950,7 +38950,20 @@ window._sqMgArm = function (sid) {
   }
   if (!v || (v.st !== 'go' && v.st !== 'st')) return;
   if (v.st === 'st') { window._sqMgScan(); window._sqMgScanT = setInterval(window._sqMgScan, 200); }
-  else window._sqMgCaught = {};
+  else {
+    window._sqMgCaught = {};
+    // ★등 돌린 동안에도 결승선을 본다 — 넘는 즉시 끝(대표 9-02: 돌아보기 전에 선 넘었는데 죽었다고 판정).
+    //   쓰는 사람은 진행자(순번 0)만. 승계 규칙은 그대로.
+    if (turn === 0) window._sqMgScanT = setInterval(function () {
+      const vv = window._sqMgV, R = window._rt; if (!R || !vv || vv.st !== 'go') { clearInterval(window._sqMgScanT); return; }
+      const players = window._sqRtLast || {}, out = vv.out || {};
+      let win = null;
+      Object.keys(vv.join || {}).forEach(function (u) { if (out[u] || win) return; const p = players[u]; if (p && (+p.y || 99) <= window.SQ_MG.GOAL_Y) win = u; });
+      if (!win) return;
+      clearInterval(window._sqMgScanT); clearTimeout(window._sqMgT);
+      R.update(window._sqMgRef(sid), { st: 'ov', out: out, win: win, dl: window._sqMgNow() + window.SQ_MG.OVER_MS, t: Date.now(), host: vv.host, hostNick: vv.hostNick || '머피' }).catch(function () {});
+    }, 200);
+  }
   const turn = window._sqMgMyTurn(); if (turn < 0) return;
   const back = Math.min(turn, 3) * 1200;
   const wait = Math.max(120, (v.dl || 0) - window._sqMgNow() + 200) + back;
@@ -38965,6 +38978,10 @@ window._sqMgJudge = function (v, players, caught) {
   caught = caught || {};
   const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
   if (v.st === 'go') {
+    // ★돌아보기 **전에** 결승선을 넘은 사람이 있으면 그 사람 승리다 — 걷고 있었어도 이미 통과한 것(대표 9-02).
+    let goalWin = null;
+    alive.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !goalWin) goalWin = u; });
+    if (goalWin) return { next: 'end', out: Object.assign({}, out), win: goalWin };
     // 돌아본다 — 지금 위치를 박아둔다. 이게 정지 판정의 기준선이다.
     // ★이 순간 이미 걷고 있던 사람은 여기서부터 걸린 것으로 본다(돌아봤는데 움직이고 있었다).
     const snap = {}, movingNow = {};
@@ -39170,6 +39187,21 @@ window._sqMgPaint = function (sid) {
   const showCard = !!(active && (v.st === 'lb' || inField));
   window._sqMgUiOn = showCard;
   window._sqMgInField = inField;   // ★OX 와 같은 DOM 을 쓴다 — 서로 지우지 않게
+  // ★첫 출발(로비→go) 때 참석자 전원을 **출발선에 일렬로** 세운다(대표 9-02: 시작점이 제각각).
+  //   RTDB players 는 본인만 쓸 수 있으니 각자 자기 캐릭터를 옮기고 보낸다. uid 순이라 모두 같은 줄을 계산한다.
+  try {
+    if (v && v.st === 'go' && window._sqMgPrevSt === 'lb' && me && (v.join || {})[me]) {
+      const line = Object.keys(v.join).sort(), n = line.length, i = line.indexOf(me);
+      const W = window._sqWalkBox();
+      const x = n <= 1 ? 50 : (W.x0 + 6) + (W.x1 - W.x0 - 12) * (i / (n - 1));
+      const y = Math.min(W.y1, 88);
+      const p = window._sqMyPos || (window._sqMyPos = { x: 50, y: 78, dir: 'up' });
+      p.x = x; p.y = y; p.dir = 'up'; p.moving = false;
+      const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, 'up', window._myTitle, (window._seasonState || {}).auraOn || '');
+      if (c) { window._sqPlace(c, x, y, 0.3); c.el.classList.remove('walking'); }
+      window._sqOnMove && window._sqOnMove();
+    }
+  } catch (e) {}
   // 소리 — 상태가 바뀌는 순간에만. 필드에 들어간 사람에게만(구경꾼 화면에서 목소리가 나면 이상하다)
   try {
     const st = v ? v.st : null, key = v ? (v.st + ':' + (v.dl | 0)) : null, prev = window._sqMgPrevSt;

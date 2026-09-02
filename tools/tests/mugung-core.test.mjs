@@ -164,4 +164,12 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   assert.strictEqual(defs, 1, `window.${fn} 대입이 ${defs}곳 — 함수 하나만 있어야 한다(타이머 번호로 덮이면 게임이 멈춘다)`);
 }
 
-console.log('mugung-core: 17개 항목 전부 통과');
+// ── 18) ★돌아보기 전에 결승선을 넘었으면 걷고 있었어도 승리 ─────────────
+//   9-02 대표: "돌아보기 전에 선 넘었는데 죽었다고 판정". 결승선 판정이 정지 구간 끝에서만 돌아서였다.
+{
+  const r = J({ st: 'go', join: { a: {}, b: {} } }, { a: { x: 50, y: Z.GOAL_Y - 1, moving: true }, b: { x: 40, y: 60, moving: true } });
+  assert.strictEqual(r.next, 'end', '돌아보는 순간 결승선 넘은 사람이 있으면 끝나야 한다');
+  assert.strictEqual(r.win, 'a', '걷고 있었어도 이미 넘었으면 승리');
+}
+
+console.log('mugung-core: 18개 항목 전부 통과');
