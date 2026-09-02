@@ -8,7 +8,8 @@ from PIL import Image
 import numpy as np
 import colorsys, io, os
 
-M = r"C:\Users\allys\Murpy"
+# 9-03 옛 컴퓨터 절대경로(allys)로 박혀 있어 이 기계에서 못 돌았다 → 파일 위치에서 유도
+M = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(M, "char", "skin")
 os.makedirs(OUT, exist_ok=True)
 
@@ -111,15 +112,24 @@ def bake(src, pre, hair=False):
         o[..., 3] = np.where(alpha >= 128, 255, 0)
         Image.fromarray(o.astype(np.uint8), "RGBA").save(os.path.join(OUT, pre + "_" + name + ".png"))
 
-for src, pre in [(os.path.join(M, "char", "walk.png"), "walk"),
-                 (os.path.join(M, "char", "walk_female.png"), "walk_female"),
-                 (os.path.join(M, "char", "faces", "jaejin.png"), "face_jaejin")]:
-    bake(src, pre)
-
-# 헤어 본 시트. 모자 조합 시트(__hat_*)는 모자가 이마를 덮으므로 건드리지 않는다.
-HAIRS = ["hair_m_basic", "hair_ivyleague", "hair_m_semileaf",
-         "hair_f_basic", "hair_f_bob_bang", "hair_f_long", "hair_f_ponytail"]
-for h in HAIRS:
-    bake(os.path.join(M, "char", "items", h + ".png"), h, hair=True)
-log.close()
-print("ok")
+# 9-03 import 만 해도 전체 굽기가 돌던 것을 막았다(face_pipeline 이 bake 를 가져다 쓴다).
+#   인자 없이 돌리면 예전 그대로 전체 굽기, --src/--pre 면 그 시트 하나만.
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--src"); ap.add_argument("--pre"); ap.add_argument("--hair", action="store_true")
+    a = ap.parse_args()
+    if a.src and a.pre:
+        bake(a.src, a.pre, hair=a.hair)
+    else:
+        for src, pre in [(os.path.join(M, "char", "walk.png"), "walk"),
+                         (os.path.join(M, "char", "walk_female.png"), "walk_female"),
+                         (os.path.join(M, "char", "faces", "jaejin.png"), "face_jaejin")]:
+            bake(src, pre)
+        # 헤어 본 시트. 모자 조합 시트(__hat_*)는 모자가 이마를 덮으므로 건드리지 않는다.
+        HAIRS = ["hair_m_basic", "hair_ivyleague", "hair_m_semileaf",
+                 "hair_f_basic", "hair_f_bob_bang", "hair_f_long", "hair_f_ponytail"]
+        for h in HAIRS:
+            bake(os.path.join(M, "char", "items", h + ".png"), h, hair=True)
+    log.close()
+    print("ok")
