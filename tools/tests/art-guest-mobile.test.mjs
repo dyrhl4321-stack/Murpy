@@ -22,16 +22,22 @@ assert(!/b\.onclick\s*=\s*function/.test(big[0]),
   '전파 차단 코드가 공유·가져오기·사기·값 매기기 onclick을 덮어쓴다');
 assert(/addEventListener\('click',[\s\S]*?stopPropagation/.test(big[0]),
   '원래 버튼 액션을 보존한 채 배경 닫기만 막지 않는다');
-assert(/mwArtShare/.test(big[0]) && /mwArtTake/.test(big[0]) && /mwArtPrice/.test(big[0]),
-  '공유·가져오기/사기·값 매기기 액션 중 하나가 빠졌다');
+// ★값 매기기(mwArtPrice)는 8-25 에 경매(mwAucOpen·mwAucBid)로 대체됐다 — 테스트가 옛 이름을 보고 있었다(9-03 수리)
+assert(/mwArtShare/.test(big[0]) && /mwArtTake/.test(big[0]) && /mwAucOpen|mwAucBid/.test(big[0]),
+  '공유·가져오기/사기·경매 액션 중 하나가 빠졌다');
 
 const joy = src.match(/const onS = \(e\) => \{ if \(e\.target\.closest\([\s\S]*?e\.preventDefault\(\); \};/);
 assert(joy, '방 조이스틱 시작 함수를 찾지 못했다');
 assert(/\.mw-arttap/.test(joy[0]) && /\.mw-artrug/.test(joy[0]),
   '폰에서 액자·카펫 탭보다 조이스틱이 먼저 작동한다');
 
-assert(/\.mw-artrug::before[\s\S]*?scaleY\(\.52\) rotate\(45deg\)/.test(src),
-  '도화지 카펫에 바닥 원근·두께 면이 없다');
+// ★입체 원근면(::before 마름모)은 8-26 에 **일부러 제거**됐다 — CSS 로 뭘 얹으면 구운 러그 위에
+//   흰 액자가 한 겹 더 씌워 보인다(폴라로이드 두 겹 함정과 동일). 새 불변식으로 교체(9-03):
+//   래퍼는 장식 없이 absolute 만, 그림은 자식 img 가 꽉 채우고 pixelated 여야 한다.
+assert(/\.mw-artrug \{ position:absolute;[^}]*\}/.test(src) && !/\.mw-artrug \{[^}]*(background|border|box-shadow)/.test(src),
+  '도화지 카펫 래퍼 CSS 에 장식이 얹혀 있다 — 러그가 액자처럼 보인다');
+assert(/\.mw-artrug > img \{[^}]*inset:0[^}]*pixelated/.test(src.replace(/\n/g, ' ')) || /\.mw-artrug > img \{[\s\S]{0,200}?pixelated/.test(src),
+  '카펫 그림이 래퍼를 꽉 채우는 pixelated img 가 아니다');
 assert(/def\.art === 'rug'[\s\S]*?<div class="\$\{cls\}" data-idx/.test(src),
   '도화지 카펫을 입체 바닥 래퍼로 렌더하지 않는다');
 assert(/closest\('\[data-idx\]'\)/.test(src) && /querySelector\('\[data-idx=/.test(src),

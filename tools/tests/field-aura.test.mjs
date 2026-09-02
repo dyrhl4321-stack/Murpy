@@ -152,7 +152,8 @@ assert(!/margin-top/.test(sqNick),
 // 16) '안 씀' 버튼이 아우라도 봐야 한다 (아우라만 켠 히든 캐릭터에서 안 눌리던 버그)
 assert(/const auraOn = \(slot === 'acc'\) && !!\(\(window\._seasonState \|\| \{\}\)\.auraOn\)/.test(src),
   "'안 씀' 판정이 아우라를 안 본다");
-assert(/const off = isMask \? !window\._charDraft\.mask : \(!window\._charDraft\[slot\] && !auraOn\)/.test(src),
+// ★식이 자라도(9-03: intentionalBald 대머리 분기 추가) 핵심만 본다 — 아우라 조건이 식 안에 있는가
+assert(/const off = isMask \? !window\._charDraft\.mask : [^\n]{0,80}!window\._charDraft\[slot\] && !auraOn/.test(src),
   "'안 씀' 착용중 표시가 아우라를 안 본다");
 
 // 17) '안 씀' 이 아우라까지 벗겨야 한다 (둘 다 켰을 때 하나만 벗던 버그)

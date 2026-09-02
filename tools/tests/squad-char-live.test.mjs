@@ -52,7 +52,9 @@ assert(/_sqCharLiveWatch\(Object\.keys\(mem\)\.filter/.test(detail), '상세 명
 assert(/status !== 'left'/.test(detail), '이미 나간 멤버까지 users 실시간 구독을 유지한다');
 const close = grab(/window\._sqClose = function[\s\S]*?\n\};/, '_sqClose');
 assert(/_sqCharLiveStop/.test(close), '상세를 닫을 때 users 구독을 해제하지 않는다');
-const remotes = grab(/window\._sqRenderRemotes = function[\s\S]*?\n\};/, '_sqRenderRemotes');
+// ★9-02 에 재적용 래퍼(_sqWrapRenderRemotes 안의 들여쓴 재대입)가 원본보다 **위에** 생겨서,
+//   앵커 없는 정규식이 래퍼를 먼저 잡아 테스트가 깨져 있었다(9-03) → 줄 시작(^…m) 원본만 잡는다.
+const remotes = grab(/^window\._sqRenderRemotes = function[\s\S]*?\n\};/m, '_sqRenderRemotes');
 assert(/mwCharLive\(uid\) \|\| p\.character/.test(remotes), '필드가 users 최신 캐릭터보다 RTDB 과거 캐릭터를 우선한다');
 
 console.log('squad-char-live.test.mjs: 명단·필드 최신 캐릭터 구독 및 해제 통과 OK');

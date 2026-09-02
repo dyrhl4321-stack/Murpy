@@ -75,8 +75,13 @@ assert(/el\.style\.top = '0px'/.test(quick[0]) && !/el\.style\.top = \(vv\.offse
   'visualViewport 팬 값을 공동룸 top에 더해 화면 전체를 위아래로 움직인다');
 has(/onpointerdown="window\._mwKbStart&&window\._mwKbStart\(\)"/,
   '입력 포커스보다 먼저 문서 스크롤 잠금을 시작하지 않는다');
-has(/enterkeyhint="send"[\s\S]*?event\.key===\\'Enter\\'[\s\S]*?event\.preventDefault\(\);window\.mwRoomSay\(\)/,
+// ★인라인 onkeydown 은 공용 헬퍼 _mwEnterSend 로 리팩토링됐다(한글 조합 IME 대응 포함) — 9-03 수리
+has(/id="mw-party-input"[^>]*enterkeyhint="send"/,
+  '입력칸에 enterkeyhint=send 가 없다 — 모바일 키보드에 전송 키가 안 뜬다');
+has(/_mwEnterSend\(document\.getElementById\('mw-party-input'\), window\.mwRoomSay\)/,
   '모바일 키보드의 전송 키로 한 번에 말하기가 되지 않는다');
+has(/window\._mwEnterSend = function[\s\S]{0,600}?e\.preventDefault\(\); fn\(\);/,
+  '_mwEnterSend 가 Enter 를 preventDefault 하고 전송하지 않는다');
 has(/id="mw-quick-send" onpointerdown="event\.preventDefault\(\)"/,
   '키보드가 열린 채 말하기 버튼을 누르면 먼저 포커스가 풀린다');
 // ★★2026-08-26 대표 결정으로 **뒤집혔다.**
@@ -102,7 +107,10 @@ assert(/MW_ROOM_MSG_MS\s*=\s*9000/.test(src),
   '공동룸 필드 말풍선 시간이 스쿼드와 같은 9초가 아니다');
 assert(/_mwRl\.msg\s*=\s*null[\s\S]*?_mwRlSend\(\)/.test(say[0]),
   '9초 뒤 필드 말풍선 데이터를 지워 다른 참가자 화면에서도 제거하지 않는다');
-assert(/R\.push\(R\.ref\(R\.db, 'roomLive\/' \+ ow \+ '\/chat'\)/.test(say[0]),
+// ★저장은 mwRoomSayText(펫 명령·말풍선·전송 단일 창구)로 옮겨졌다 — 위임 + 실제 push 존재를 본다(9-03 수리)
+assert(/mwRoomSayText\(t\)/.test(say[0]),
+  '한마디 전송이 단일 창구(mwRoomSayText)를 거치지 않는다');
+assert(/R\.push\(R\.ref\(R\.db, 'roomLive\/' \+ ow \+ '\/chat'\)/.test(src),
   '필드 말풍선과 별개로 머피룸 톡 기록을 저장하지 않는다');
 has(/body\.mw-party #mw-party-chat[\s\S]*?padding-bottom:calc\(78px \+ env\(safe-area-inset-bottom, 0px\)\)/,
   '머피룸 톡/참가자 하단 영역이 폰 하단 내비게이션 위로 올라오지 않았다');
