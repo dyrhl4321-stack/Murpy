@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '954';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '955';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17366,7 +17366,7 @@ window._dodgePaint = function (s) {
       }
       // 훈수 말풍선 — 3.2초마다 한 마디. 글자가 바뀔 때만 건드린다
       if (nagEl) {
-        const nag = window._DODGE_NAG[Math.floor(s.t / 2600) % window._DODGE_NAG.length];
+        const nag = window._DODGE_NAG[Math.floor(s.t / 4400) % window._DODGE_NAG.length];   // 9-02 2.6→4.4초: 목소리(2~5.7초)가 다음 말풍선과 안 겹치게(대표 지시)
         if (nagEl._t !== nag) { nagEl.textContent = nag; nagEl._t = nag; }
         nagEl.style.display = '';
         nagEl.style.left = px(s.uncle.x).toFixed(1) + 'px';
@@ -38886,15 +38886,17 @@ window.sfx = (function () {
   // 9-02 대표: 대사는 '무궁화꽃이 피었습니다' 하나. 빠름/보통/느림 3벌 — **외치는 길이가 곧 등 돌린 시간**이다.
   const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=2', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=2', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=2' };
   // 훈수충 아재 대사 10개 (9-02, _DODGE_NAG 순서와 같다) — 말풍선이 바뀔 때 그 대사가 나온다
-  for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=1';
+  for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=2';   // v2 = Algenib 쉰 목소리 60대(9-02 '너무 잘생겼다')
   const bufs = {};
   const chans = {};
   const voice = function (name, vol, ch) {
     if (muted) return; const url = VOICES[name]; if (!url) return;
     const c = A(); if (!c) return;
     const go = function (b) {
-      if (ch) { try { chans[ch] && chans[ch].stop(); } catch (e) {} }   // 같은 채널(예: 훈수)이면 앞 대사를 끊는다
-      const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination); src.start();
+      // 9-02 대표: "나레이션이 멘트 하다가 다음 멘트로 바로 넘어가서 별로" → 끊지 않는다. 바쁘면 이번 대사는 건너뛴다(voiceBusy 로 확인).
+      if (ch && chans[ch] && !chans[ch]._done) return;
+      const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination);
+      src._done = false; src.onended = function () { src._done = true; }; src.start();
       if (ch) chans[ch] = src;
     };
     if (bufs[name]) { go(bufs[name]); return; }
@@ -38907,6 +38909,7 @@ window.sfx = (function () {
   return {
     play: function (name, arg) { if (muted) return; try { const c = A(); if (c && c.state === 'suspended') c.resume(); const f = S[name]; if (f) f(arg); } catch (e) {} },
     voice: voice, preload: preload,
+    voiceBusy: function (ch) { const x = chans[ch]; return !!(x && !x._done); },
     // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
     bgm: function (name) { if (!name || muted) { bgStop(); return; } if (bg.name === name) return; bgStart(name); },
     bgmFor: function (type) { const t = String(type || ''); if (/gym|hyrox|climb|헬스|하이록스|클라이밍/.test(t)) return 'power'; if (/yoga|hik|요가|하이킹|등산/.test(t)) return 'calm'; return 'run'; },
@@ -38944,8 +38947,8 @@ window.sfx = (function () {
     if (hit && hit !== was) { S().play(hit === 'dumbbell' ? 'fall' : hit === 'uncle' ? 'miss' : 'correct'); }
     // 훈수충 아재 — 화면에 있는 동안 말풍선이 바뀌는 그 타이밍(2.6초)에 그 대사를 읽는다(성우 톤, 9-02)
     if (s.uncle && window._DODGE_NAG) {
-      const idx = Math.floor(s.t / 2600) % window._DODGE_NAG.length;
-      if (s._sfxNag !== idx) { s._sfxNag = idx; S().voice('nag_' + idx, 0.95, 'nag'); }
+      const idx = Math.floor(s.t / 4400) % window._DODGE_NAG.length;
+      if (s._sfxNag !== idx) { s._sfxNag = idx; if (!S().voiceBusy('nag')) S().voice('nag_' + idx, 0.95, 'nag'); }
     } else s._sfxNag = -1;
     if (s.alive === false && !s._sfxDead) { s._sfxDead = 1; S().play('lose'); S().bgm(null); }
     if (s.alive !== false) s._sfxDead = 0;
