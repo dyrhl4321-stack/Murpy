@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '926';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '927';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1379,7 +1379,13 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   #mw-jam .jam-grid { position:absolute; inset:0; pointer-events:none; opacity:.13;
     background-image:repeating-linear-gradient(to right,#05070c 0 1px,transparent 1px calc(100%/32)),
                      repeating-linear-gradient(to bottom,#05070c 0 1px,transparent 1px calc(100%/32)) }
-  #mw-jam .jam-pal { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; padding:14px 16px 0 }
+  #mw-jam .jam-pal { display:grid; grid-template-columns:repeat(9,1fr); gap:5px; padding:10px 16px 0 }
+  /* 도구줄 — 그림판처럼 펜/채우기/스포이드/지우개/되돌리기. 틴트 칩 금지 규칙대로
+     배경 없이 테두리+글자색, 켜진 도구만 파란 테두리. */
+  #mw-jam .jam-tools { display:flex; gap:6px; padding:10px 16px 0; flex-shrink:0 }
+  #mw-jam .jam-tl { flex:1; background:#141a28; border:3px solid #05070c; color:#cfd6e6; cursor:pointer;
+    font-family:'Galmuri11',sans-serif; font-size:10px; padding:7px 0 }
+  #mw-jam .jam-tl.on { border-color:#3D7EFF; color:#7aa8ff }
   #mw-jam .jam-sw { aspect-ratio:1; border:3px solid #05070c; cursor:pointer; padding:0;
     box-shadow:inset -2px -2px 0 rgba(0,0,0,.28), inset 2px 2px 0 rgba(255,255,255,.24) }
   #mw-jam .jam-sw.on { box-shadow:0 0 0 3px #3D7EFF, inset -2px -2px 0 rgba(0,0,0,.28) }
@@ -4495,7 +4501,18 @@ window._mwFurnZ = function (f) {
 //   한 장으로 구우면 두 겹이 어긋날 일 자체가 없다.
 // ★빈 칸은 판(.jam-wrap)과 같은 #f4f1ea 로 채운다. 그린 그대로가 방에 깔린다.
 window.MW_JAM_N = 32;
-window.MW_JAM_PAL = ['', '#14161E', '#F2F5FA', '#E4472E', '#F5C24B', '#4ADE80', '#3D7EFF'];
+// ★번호가 곧 저장 형식이다 — 0~6 은 옛 그림이 쓰고 있으니 **절대 순서를 바꾸거나 빼지 말 것.**
+//   새 색은 뒤에 덧붙이기만 한다(9-02 유저 요청: "색상 좀 더, 그림판처럼").
+window.MW_JAM_PAL = ['', '#14161E', '#F2F5FA', '#E4472E', '#F5C24B', '#4ADE80', '#3D7EFF',
+  // 7~ : 빨강·주황·노랑
+  '#8E1B1B', '#FF6B5A', '#FFB3A7', '#E07B1F', '#FFA94D', '#FFE08A', '#FFF3C4',
+  // 14~ : 초록·청록
+  '#1F6E3C', '#8FE38F', '#CBF3D2', '#0F766E', '#2DD4BF', '#A5F3FC',
+  // 20~ : 파랑·보라
+  '#1D4ED8', '#7AA8FF', '#C7D8FF', '#5B21B6', '#8B5CF6', '#D8B4FE',
+  // 26~ : 분홍·갈색(피부)·회색
+  '#BE185D', '#F472B6', '#FBCFE8', '#6B3F23', '#A0663A', '#D9A066', '#F2CCA2',
+  '#6B7280', '#AEB6C4'];
 window._mwArtCache = {};
 window.mwArtImg = function (px, kind, key) {
   // ★'r2' = 굽는 방식 버전. 카펫을 러그로 다시 구웠으므로(8-26) 올려야 옛 이미지가 안 남는다
@@ -24151,17 +24168,25 @@ window.mwJamShow = async function (asHost) {
   const host = window.mwJamIsHost();
   const PAL = window.MW_JAM_PAL;
   let pal = '';
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i < PAL.length; i++) {
     pal += '<button class="jam-sw' + (i === 1 ? ' on' : '') + '" data-c="' + i
          + '" style="background:' + PAL[i] + '" aria-label="색 ' + i + '"></button>';
   }
-  pal += '<button class="jam-sw era" data-c="0" aria-label="지우개">지우개</button>';
+  const tools =
+      '<div class="jam-tools">'
+    + '<button class="jam-tl on" data-t="pen">펜</button>'
+    + '<button class="jam-tl" data-t="fill">채우기</button>'
+    + '<button class="jam-tl" data-t="pick">스포이드</button>'
+    + '<button class="jam-tl" data-t="era">지우개</button>'
+    + '<button class="jam-tl" data-t="undo">되돌리기</button>'
+    + '</div>';
   const el = document.createElement('div'); el.id = 'mw-jam';
   el.innerHTML =
       '<div class="jam-head"><b>같이 낙서</b>'
     + (host ? '<button class="jam-x" onclick="window.mwJamX()">접기</button>' : '')
     + '</div>'
     + '<div class="jam-wrap"><canvas width="32" height="32"></canvas><div class="jam-grid"></div></div>'
+    + tools
     + '<div class="jam-pal">' + pal + '</div>'
     // ★색 밑에 대화. 그리면서 이야기할 수 있게 (대표 8-25).
     // ★★8-26 — 입력줄을 **목록보다 위**로 올린다 (대표: "그림 그리면서 채팅이 안 쳐진다").
@@ -24195,14 +24220,37 @@ window.mwJamShow = async function (asHost) {
 
   const wrap = el.querySelector('.jam-wrap'), cv = wrap.querySelector('canvas');
   const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
-  window._mwJam = { px: new Array(1024).fill(0), color: 1, pend: {}, timer: 0, owner: ow, subs: [], ctx: ctx };
+  window._mwJam = { px: new Array(1024).fill(0), color: 1, tool: 'pen', undo: [], stroke: null,
+                    pend: {}, timer: 0, owner: ow, subs: [], ctx: ctx };
 
+  const setTool = function (t) {
+    const J = window._mwJam; if (!J) return;
+    J.tool = t;
+    el.querySelectorAll('.jam-tl').forEach(function (n) {
+      n.classList.toggle('on', n.dataset.t === (t === 'era' ? 'era' : t));
+    });
+  };
   el.querySelector('.jam-pal').addEventListener('click', function (e) {
     const b = e.target && e.target.closest ? e.target.closest('.jam-sw') : null;
     if (!b || !window._mwJam) return;
     window._mwJam.color = +b.dataset.c;
     el.querySelectorAll('.jam-sw').forEach(function (n) { n.classList.remove('on'); });
     b.classList.add('on');
+    // 색을 고르면 지우개·스포이드에서 자동으로 그리기로 돌아온다(그림판과 같은 감각)
+    if (window._mwJam.tool === 'era' || window._mwJam.tool === 'pick') setTool('pen');
+  });
+  el.querySelector('.jam-tools').addEventListener('click', function (e) {
+    const b = e.target && e.target.closest ? e.target.closest('.jam-tl') : null;
+    if (!b || !window._mwJam) return;
+    const t = b.dataset.t, J = window._mwJam;
+    if (t === 'undo') { window._mwJamUndo(); return; }
+    if (t === 'era') {
+      // 지우개 = 색 0 으로 그리는 펜. 색칩 선택 표시는 끈다(무색이니까)
+      J.color = 0; setTool('era');
+      el.querySelectorAll('.jam-sw').forEach(function (n) { n.classList.remove('on'); });
+      return;
+    }
+    setTool(t);
   });
 
   // 찍기 — .jam-wrap 에 touch-action:none 이 이미 걸려 있어서 끌어도 화면이 안 스크롤된다
@@ -24214,12 +24262,36 @@ window.mwJamShow = async function (asHost) {
     return (cx < 0 || cy < 0 || cx > 31 || cy > 31) ? -1 : cy * 32 + cx;
   };
   wrap.addEventListener('pointerdown', function (e) {
+    const J = window._mwJam; if (!J) return;
+    const i = cellAt(e);
+    if (J.tool === 'pick') {                          // 스포이드 — 찍은 칸의 색을 집는다
+      if (i < 0) return;
+      const v = J.px[i];
+      J.color = v;
+      el.querySelectorAll('.jam-sw').forEach(function (n) { n.classList.toggle('on', +n.dataset.c === v && v > 0); });
+      setTool(v === 0 ? 'era' : 'pen');               // 빈 칸을 찍으면 지우개가 된다
+      return;
+    }
     down = true; try { wrap.setPointerCapture(e.pointerId); } catch (x) {}
-    window._mwJamPut(cellAt(e));
+    J.stroke = {};                                    // 되돌리기용 — 이 획이 바꾼 칸의 원래 값
+    if (J.tool === 'fill') { window._mwJamFill(i); return; }
+    window._mwJamPut(i);
   });
-  wrap.addEventListener('pointermove', function (e) { if (down) window._mwJamPut(cellAt(e)); });
-  wrap.addEventListener('pointerup', function () { down = false; });
-  wrap.addEventListener('pointercancel', function () { down = false; });
+  wrap.addEventListener('pointermove', function (e) {
+    const J = window._mwJam;
+    if (down && J && J.tool !== 'fill') window._mwJamPut(cellAt(e));
+  });
+  const strokeEnd = function () {
+    const J = window._mwJam;
+    down = false;
+    if (J && J.stroke && Object.keys(J.stroke).length) {
+      J.undo.push(J.stroke);
+      if (J.undo.length > 30) J.undo.shift();         // 30획까지 기억
+    }
+    if (J) J.stroke = null;
+  };
+  wrap.addEventListener('pointerup', strokeEnd);
+  wrap.addEventListener('pointercancel', strokeEnd);
 
   window._mwJamSub();
 };
@@ -24228,11 +24300,41 @@ window.mwJamShow = async function (asHost) {
 window._mwJamPut = function (i) {
   const J = window._mwJam; if (!J || i < 0) return;
   if (J.px[i] === J.color) return;
+  if (J.stroke && !(i in J.stroke)) J.stroke[i] = J.px[i];   // 되돌리기용 원래 값
   J.px[i] = J.color;
   window._mwJamPaint(i);
   J.pend[i] = J.color;
   // ★80ms 로 모아 보낸다. 획마다 왕복하면 손가락보다 느리게 보이고, 안 모으면 요청이 폭주한다.
   if (!J.timer) J.timer = setTimeout(window._mwJamFlush, 80);
+};
+// 채우기 — 같은 색으로 이어진 영역을 현재 색으로 (그림판 페인트통)
+window._mwJamFill = function (i) {
+  const J = window._mwJam; if (!J || i < 0) return;
+  const from = J.px[i]; if (from === J.color) return;
+  const q = [i], seen = {};
+  while (q.length) {
+    const k = q.pop();
+    if (k < 0 || k > 1023 || seen[k] || J.px[k] !== from) continue;
+    seen[k] = 1;
+    window._mwJamPut(k);
+    const x = k % 32;
+    if (x > 0) q.push(k - 1);
+    if (x < 31) q.push(k + 1);
+    q.push(k - 32); q.push(k + 32);
+  }
+};
+// 되돌리기 — 마지막 내 획이 바꾼 칸을 원래 값으로. (그 사이 남이 그 칸을 또 칠했다면
+// 그 위를 덮게 된다 — 여럿이 그리는 판의 한계로 받아들인다)
+window._mwJamUndo = function () {
+  const J = window._mwJam; if (!J || !J.undo.length) return;
+  const st = J.undo.pop(), keep = J.color;
+  Object.keys(st).forEach(function (k) {
+    J.color = st[k];
+    const cur = J.stroke; J.stroke = null;            // 되돌리기는 기록하지 않는다
+    window._mwJamPut(+k);
+    J.stroke = cur;
+  });
+  J.color = keep;
 };
 window._mwJamFlush = function () {
   const J = window._mwJam, R = window._rt; if (!J) return;
