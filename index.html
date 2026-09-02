@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '911';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '912';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -3147,6 +3147,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
       <div id="tennis-title-txt" style="font-size:24px;font-weight:900;color:#fff;letter-spacing:-.5px">머피 테니스</div>
       <div id="tennis-best" style="font-size:16px;font-weight:800;color:#fff;min-height:20px;text-shadow:0 2px 6px rgba(0,0,0,.85)"></div>
       <button class="dodge-cta" onclick="window.tennisHowto()" style="width:100%;max-width:280px;padding:17px;font-size:17px">눌러서 시작</button>
+      <button class="dodge-cta ghost" onclick="window.tennisRecs()" style="width:100%;max-width:280px;padding:12px;font-size:13px;font-weight:700">내 기록 보기</button>
+    </div>
+    <div id="tennis-pane-recs" class="dodge-pane" style="display:none;flex-direction:column;align-items:center;gap:14px;width:100%">
+      <div style="font-size:17px;font-weight:900;color:#fff;letter-spacing:-.3px">내 기록</div>
+      <div id="tennis-rec-list" style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:8px;max-height:38vh;overflow-y:auto"></div>
+      <button class="dodge-cta ghost" onclick="window.tennisOpen()" style="width:100%;max-width:280px;padding:12px;font-size:13px;font-weight:700">뒤로</button>
     </div>
     <div id="tennis-pane-howto" class="dodge-pane" style="display:none;flex-direction:column;align-items:center;gap:18px;width:100%">
       <div style="font-size:17px;font-weight:900;color:#fff;letter-spacing:-.3px">이렇게 하면 돼요</div>
@@ -10197,6 +10203,10 @@ window.mwPortal = function () {
 .tennis-ring.hot{border-color:#3D7EFF;border-width:3px;box-shadow:0 0 12px rgba(61,126,255,.55)}
 .tennis-ch{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:4;image-rendering:pixelated}
 .tennis-flash{position:absolute;inset:0;pointer-events:none;z-index:6;opacity:0;background:radial-gradient(circle at 50% 78%,rgba(61,126,255,.45),transparent 62%)}
+/* 탭 파문 — 어떤 탭이든 '눌렸다'는 것부터 보여준다. 이게 없으면 헛스윙이 무반응으로 느껴진다.
+   지속 노드가 아니라 탭 순간 하나 만들고 애니메이션 끝나면 지운다(테니스는 노드를 재사용하므로 전이가 산다). */
+.tennis-tapfx{position:absolute;width:14px;height:14px;border:2px solid rgba(255,255,255,.9);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:7;animation:tnTap .3s ease-out forwards}
+@keyframes tnTap{0%{opacity:.95;width:10px;height:10px}100%{opacity:0;width:44px;height:44px}}
 .tennis-flash.on{animation:tnFlash .32s ease}
 @keyframes tnFlash{0%{opacity:.9}100%{opacity:0}}
 .tennis-life{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e8ff4a;margin-left:4px}
@@ -18563,7 +18573,7 @@ window.TENNIS = {
   ZONE_Y0: 74, ZONE_Y1: 90,          // 임팩트 존 — 내 코트의 가로 띠. 여기 있을 때 탭해야 맞는다
   SIDE_MIN: 8, SIDE_MAX: 92,         // 코트 좌우 라인. 밖으로 치면 아웃
   REACH: 9,                          // 캐릭터가 공에 닿는 거리
-  MY_V: 0.75, OP_V: 0.55,            // 좌우 이동 속도(단위/틱)
+  MY_V: 0.95, OP_V: 0.55,            // 좌우 이동 속도(단위/틱). ★9-02 수동 이동으로 바꾸며 0.75→0.95
   V_MAX: 2.2,                        // 공 속도 상한 — 없으면 랠리가 길어질수록 볼 수 없게 빨라진다
   WOBBLE: 18,                        // 급하게 받았을 때 코스가 밀리는 최대 폭
   LIVES: 3,
@@ -18584,6 +18594,7 @@ window.tennisNew = function (lvKey) {
     //   — 준비할 틈이 없다(하네스로 찍어서 확인, 9-02).
     bx: 50, by: T.OP_BASE + 4, vy: lv.ballV, vx: 0,      // 공
     mx: 50, ox: 50,                                 // 내 캐릭터 x · 상대 x
+    mtx: null,                                      // ★이동 목표(손가락 x). null = 손 뗌 = 정지
     toMe: true,                                     // 공이 내 쪽으로 오는 중인가
     rally: 0, bestRally: 0, pts: 0,
     lives: T.LIVES, over: false, last: '', t: 0
@@ -18656,8 +18667,19 @@ window.tennisTick = function (s, dt) {
   if (s.bx < T.SIDE_MIN || s.bx > T.SIDE_MAX) {
     s.vx = -s.vx; s.bx = Math.max(T.SIDE_MIN, Math.min(T.SIDE_MAX, s.bx));
   }
-  // 내 캐릭터는 공 쪽으로 저절로 간다 — 이동은 조작하지 않는다
-  const md = s.bx - s.mx; s.mx += Math.max(-T.MY_V, Math.min(T.MY_V, md)) * k;
+  // ★수동 이동 (대표 9-02: "자동이동이 아니라 수동이동으로 하는 게 맞지 않나")
+  //   처음엔 공을 저절로 쫓아가게 했는데 "왜 캐릭터가 자동으로 움직이냐"가 첫 반응이었다.
+  //   손가락을 대고 있는 동안만 그 x 를 향해 달리고, 떼면 선다. 이제 발이 실력이다.
+  if (s.mtx != null) { const md = s.mtx - s.mx; s.mx += Math.max(-T.MY_V, Math.min(T.MY_V, md)) * k; }
+  // 손가락을 대고 있는 채로 공이 오면 존 가운데 근처에서 자동으로 받아친다.
+  //   perfect 를 좋게 못 받으므로(가운데 지나기 전 0.45 시점) 코스가 흔들린다 —
+  //   누르고만 있어도 랠리는 이어지지만, 제대로 치려면 그 순간에 탭해야 한다.
+  if (s.toMe && s.mtx != null) {
+    const aj = window._tennisJudge(s, s.mtx);
+    if ((aj.result === 'hit' || aj.result === 'out') && aj.perfect >= 0.45) {
+      window._tennisHit(s, aj);            // _tennisHit 이 코스를 라인 안으로 눌러 담는다(홀드는 아웃 없음)
+    }
+  }
   // 상대도 공 쪽으로 간다. 느리면 못 따라가고 그게 내 득점이 된다
   const od = s.bx - s.ox; s.ox += Math.max(-lv.opV, Math.min(lv.opV, od)) * k;
   if (s.toMe) {
@@ -18690,6 +18712,53 @@ window.tennisPickLv = function (k) {
   try { localStorage.setItem('tennis_lv', k); } catch (e) {}
   window._tennisPaintStart();
 };
+// 시작화면 pane 전환 — 골프 _golfShowPane 과 같은 단순 토글
+window._tennisShowPane = function (id) {
+  ['tennis-pane-title', 'tennis-pane-howto', 'tennis-pane-recs'].forEach(function (k) {
+    const el = document.getElementById(k); if (el) el.style.display = (k === id) ? 'flex' : 'none';
+  });
+};
+// 타이틀·상대 그림 확인 — 골프 _golfCheckArt 와 같은 방식.
+// 그림이 있으면 배경으로 깔고 글자 제목은 숨긴다. 없으면 글자로 떨어진다(안 죽는다).
+window._tennisCheckArt = function () {
+  if (window._tennisArt != null) return;
+  const im = new Image();
+  im.onload = function () {
+    window._tennisArt = true;
+    const a = document.getElementById('tennis-art-bg');
+    if (a) { a.style.backgroundImage = "url('char/game/tennis_title.png?v=1')"; a.style.display = ''; }
+    window._tennisPaintStart();
+  };
+  im.onerror = function () { window._tennisArt = false; window._tennisPaintStart(); };
+  im.src = 'char/game/tennis_title.png?v=1';
+  const rb = new Image();
+  rb.onload = function () { window._tennisRabbit = true; };
+  rb.onerror = function () { window._tennisRabbit = false; };
+  rb.src = 'char/game/tennis_rabbit.png?v=1';
+};
+window.tennisRecs = async function () {
+  window._tennisShowPane('tennis-pane-recs');
+  const box = document.getElementById('tennis-rec-list'); if (!box) return;
+  let recs = window._tennisRecs;
+  if (!recs) {
+    try {
+      const user = (typeof auth !== 'undefined' && auth.currentUser) || window.currentUser;
+      if (user && !user.isAnonymous) {
+        const sn = await getDoc(doc(db, 'users', user.uid));
+        recs = (((sn.exists() && sn.data().games) || {}).tennis || {}).recent || [];
+      } else recs = [];
+    } catch (e) { recs = []; }
+    window._tennisRecs = recs;
+  }
+  if (!recs.length) { box.innerHTML = '<div style="padding:20px;color:rgba(255,255,255,.4);font-size:12.5px;text-align:center">아직 기록이 없어요</div>'; return; }
+  box.innerHTML = recs.map(function (r) {
+    const d = new Date(r.at || 0), lv = (window.TENNIS_LV[r.lv] || {}).name || '중';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,.07)">'
+      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:19px;color:#fff;min-width:54px">' + (r.n || 0) + '</div>'
+      + '<div style="flex:1;font-size:11px;color:rgba(255,255,255,.55)">' + lv + ' · 득점 ' + (r.pts || 0) + ' · 랠리 ' + (r.rally || 0) + ' · ' + (d.getMonth() + 1) + '/' + d.getDate() + '</div>'
+      + '</div>';
+  }).join('');
+};
 window._tennisPaintStart = function () {
   const row = document.getElementById('tennis-lv-row'), desc = document.getElementById('tennis-lv-desc');
   if (row) row.innerHTML = Object.keys(window.TENNIS_LV).map(function (k) {
@@ -18701,6 +18770,8 @@ window._tennisPaintStart = function () {
     : '보통 · 랠리가 길어질수록 빨라져요 · 점수 ×1';
   const best = document.getElementById('tennis-best');
   if (best) best.textContent = window._tennisBest > 0 ? ('내 최고 ' + window._tennisBest + '점') : '';
+  // 제목은 타이틀 그림 안에 크게 박혀 있다(골프·덤벨과 같은 방식) → 그림이 있으면 글자는 숨긴다
+  const tt = document.getElementById('tennis-title-txt'); if (tt) tt.style.display = window._tennisArt ? 'none' : '';
 };
 // 그리는 노드는 **한 번만 만들고 자리만 옮긴다.**
 // 매 프레임 innerHTML 로 갈아치우면 _charRenderTo 가 그린 캐릭터가 깜빡인다.
@@ -18720,15 +18791,18 @@ window._tennisBuild = function () {
     op: document.getElementById('tennis-op'),
     me: document.getElementById('tennis-me')
   };
-  // ★캐릭터는 _charRenderTo 하나로만 그린다 — 새 렌더 경로를 만들면 조합 규칙이 빠져 그 화면만 깨진다.
+  // ★내 캐릭터는 _charRenderTo 하나로만 그린다 — 새 렌더 경로를 만들면 조합 규칙이 빠져 깨진다.
   try {
-    if (window._charRenderTo) {
-      window._charRenderTo(e.me, 52);
-      window._charRenderTo(e.op, 52, { body: 'human' });
-    }
+    if (window._charRenderTo) window._charRenderTo(e.me, 52);
   } catch (err) { console.warn('테니스 캐릭터 렌더', err); }
-  // 상대는 색만 돌려 구분한다(새 시트를 만들지 않는다)
-  e.op.style.filter = 'hue-rotate(150deg) saturate(1.15)';
+  // 상대 = 타이틀 그림의 그 흰 토끼 (대표 9-02: "상대방 캐릭터도 에셋으로").
+  // 그림이 안 내려오면 기본 몸통에 색을 돌려 폴백 — 상대가 안 보이는 것보다 낫다.
+  if (window._tennisRabbit) {
+    e.op.innerHTML = '<div style="width:46px;height:58px;background:url(\'char/game/tennis_rabbit.png?v=1\') center bottom/contain no-repeat;image-rendering:pixelated"></div>';
+  } else {
+    try { if (window._charRenderTo) window._charRenderTo(e.op, 52, { body: 'human' }); } catch (err) {}
+    e.op.style.filter = 'hue-rotate(150deg) saturate(1.15)';
+  }
   window._tennisEls = e;
   return e;
 };
@@ -18780,42 +18854,98 @@ window._tennisFrame = function (ts) {
   const dt = Math.max(1, Math.min(48, ts - prev));
   const r = window.tennisTick(s, dt);
   if (r === 'point') { window._tennisFlash(); }
-  else if (r === 'miss') { try { window.showToast && window.showToast('놓쳤어요'); } catch (e) {} }
+  else if (r === 'miss') { window._tennisHint('놓쳤어요! 링 안에서 탭하세요', 900); }
   window._tennisPaint(s);
   window._tennisHud(s);
+  window._tennisGuide(s);
   if (s.over) { window._tennisEnd(s); window._tennisRaf = 0; return; }
   window._tennisRaf = requestAnimationFrame(window._tennisFrame);
 };
-window._tennisTap = function (clientX) {
+// 안내 문구. ms 동안 보여주고 스스로 닫는다. 프레임 가이드(_tennisGuide)는
+// _tennisHintUntil 이 지난 뒤에만 문구를 덮는다 — 탭 반응이 가이드에 지워지지 않게.
+window._tennisHint = function (text, ms) {
+  const el = document.getElementById('tennis-hint'); if (!el) return;
+  el.style.display = ''; el.textContent = text;
+  window._tennisHintUntil = Date.now() + (ms || 600);
+};
+// 첫 랠리 가이드 — "조작감이 뭘 어떻게 해야 할지 모르겠음"(대표 9-02).
+// 설명 화면은 읽고 잊는다. **치는 순간의 화면**이 직접 말해줘야 한다.
+// 첫 득점이나 첫 실점이 나올 때까지만 떠들고, 그 다음엔 조용해진다.
+window._tennisGuide = function (s) {
+  if (Date.now() < (window._tennisHintUntil || 0)) return;   // 탭 반응이 우선
+  const el = document.getElementById('tennis-hint'); if (!el) return;
+  const T = window.TENNIS;
+  const learning = s.pts === 0 && s.lives === T.LIVES;       // 아직 아무 일도 안 일어난 첫 랠리
+  if (!learning) { if (!window._tennisHintUntil || Date.now() > window._tennisHintUntil) el.style.display = 'none'; return; }
+  const mid = (T.ZONE_Y0 + T.ZONE_Y1) / 2;
+  el.style.display = '';
+  if (!s.toMe) { el.textContent = '누른 쪽으로 날아가요'; return; }
+  const d = Math.abs(s.by - mid);
+  if (d < 8) el.textContent = '지금 탭!';
+  else if (Math.abs(s.mx - s.bx) > T.REACH) el.textContent = '손가락을 대면 그쪽으로 달려가요';
+  else el.textContent = '공이 오면 탭! 누른 자리가 코스가 돼요';
+};
+window._tennisTap = function (clientX, clientY) {
   const s = window._tennisS; if (!s || s.over) return;
   const e = window._tennisEls; if (!e) return;
   const r = e.host.getBoundingClientRect();
   const tapX = Math.max(0, Math.min(100, (clientX - r.left) / r.width * 100));
+  // ①어떤 탭이든 파문부터 — '눌렸다'는 확인이 없으면 헛스윙이 무반응으로 느껴진다
+  try {
+    const fx = document.createElement('div'); fx.className = 'tennis-tapfx';
+    fx.style.left = (clientX - r.left) + 'px'; fx.style.top = ((clientY || 0) - r.top) + 'px';
+    e.host.appendChild(fx);
+    fx.addEventListener('animationend', function () { fx.remove(); });
+    setTimeout(function () { fx.remove(); }, 500);
+  } catch (err) {}
   const j = window._tennisJudge(s, tapX);
+  // ②헛스윙에도 **이유를 말해준다** — 조용한 실패는 아무것도 가르치지 못한다
   if (j.result === 'hit') {
     window._tennisHit(s, j);
-    const hint = document.getElementById('tennis-hint');
-    if (hint && j.perfect > 0.75) { hint.style.display = ''; hint.textContent = '나이스!'; setTimeout(function () { hint.style.display = 'none'; }, 420); }
+    if (j.perfect > 0.75) window._tennisHint('나이스!', 450);
   } else if (j.result === 'out') {
     s.lives -= 1; s.rally = 0;
-    try { window.showToast && window.showToast('아웃!'); } catch (err) {}
+    window._tennisHint('아웃! 라인 안쪽을 노리세요', 900);
     if (s.lives <= 0) { s.over = true; window._tennisEnd(s); } else { window._tennisServe(s); }
     window._tennisHud(s);
+  } else if (j.result === 'early') {
+    window._tennisHint('아직! 링이 파랗게 되면 탭', 650);
+  } else if (j.result === 'late') {
+    window._tennisHint('늦었어요', 650);
+  } else if (j.result === 'reach') {
+    window._tennisHint('공이 너무 멀어요', 650);
   }
-  // early / late / reach 는 헛스윙이다 — 공은 계속 간다. 놓치면 틱이 실점으로 처리한다.
+  // 헛스윙이면 공은 계속 간다 — 놓치면 틱이 실점으로 처리한다.
 };
 window._tennisBindInput = function () {
   const el = document.getElementById('tennis-screen');
   if (!el || el._tnBound) return;
   el._tnBound = 1;
-  el.addEventListener('pointerdown', function (ev) {
-    // 버튼(나가기 등) 위에서는 스윙하지 않는다
-    if (ev.target && ev.target.closest && ev.target.closest('button')) return;
+  const toX = function (clientX) {
+    const e = window._tennisEls; if (!e) return null;
+    const r = e.host.getBoundingClientRect();
+    return Math.max(0, Math.min(100, (clientX - r.left) / r.width * 100));
+  };
+  const gameOn = function (ev) {
+    if (ev.target && ev.target.closest && ev.target.closest('button')) return false;
     const ss = document.getElementById('tennis-start-screen');
     const ov = document.getElementById('tennis-over');
-    if ((ss && ss.style.display !== 'none') || (ov && ov.style.display !== 'none')) return;
-    window._tennisTap(ev.clientX);
+    return !((ss && ss.style.display !== 'none') || (ov && ov.style.display !== 'none'));
+  };
+  el.addEventListener('pointerdown', function (ev) {
+    if (!gameOn(ev)) return;
+    const s = window._tennisS; if (!s || s.over) return;
+    window._tennisTap(ev.clientX, ev.clientY);      // 존에 공이 있으면 스윙
+    s.mtx = toX(ev.clientX);                        // 아니면(또는 스윙 후에도) 그쪽으로 달린다
   });
+  el.addEventListener('pointermove', function (ev) {
+    const s = window._tennisS; if (!s || s.over || s.mtx == null) return;
+    s.mtx = toX(ev.clientX);                        // 드래그하면 목표를 따라간다
+  });
+  const up = function () { const s = window._tennisS; if (s) s.mtx = null; };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', up);
 };
 window.tennisOpen = function () {
   const el = document.getElementById('tennis-screen'); if (!el) return;
@@ -18827,15 +18957,14 @@ window.tennisOpen = function () {
   document.getElementById('tennis-over').style.display = 'none';
   document.getElementById('tennis-hud').style.display = 'none';
   const ss = document.getElementById('tennis-start-screen'); if (ss) ss.style.display = 'flex';
-  const pt = document.getElementById('tennis-pane-title'); if (pt) pt.style.display = 'flex';
-  const ph = document.getElementById('tennis-pane-howto'); if (ph) ph.style.display = 'none';
+  window._tennisShowPane('tennis-pane-title');
+  window._tennisCheckArt();
   window._tennisLoadBest();
   window._tennisPaintStart();
   window._tennisBindInput();
 };
 window.tennisHowto = function () {
-  const pt = document.getElementById('tennis-pane-title'); if (pt) pt.style.display = 'none';
-  const ph = document.getElementById('tennis-pane-howto'); if (ph) ph.style.display = 'flex';
+  window._tennisShowPane('tennis-pane-howto');
   window._tennisPaintStart();
 };
 window.tennisGo = function () {

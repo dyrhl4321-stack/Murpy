@@ -170,4 +170,27 @@ const sc0 = w.tennisNew('mid');
 assert.strictEqual(w.tennisScore(sc0), 0, '아무것도 안 했는데 점수가 있다');
 ok();
 
+// 19) ★수동 이동 (9-02 대표: "자동이동이 아니라 수동이동으로") — 손을 떼면(mtx null) 안 움직인다
+const still = ready(); still.by = T.NET_Y + 2; still.bx = 20; still.mx = 80; still.mtx = null;
+w.tennisTick(still, 16);
+assert.strictEqual(still.mx, 80, '손을 뗐는데 캐릭터가 움직였다(자동 이동이 남아 있다)');
+ok();
+
+// 20) 손가락을 대면(mtx) 그쪽으로 달린다 — 속도는 MY_V 를 넘지 않는다
+const mv = ready(); mv.by = T.NET_Y + 2; mv.mx = 20; mv.mtx = 90;
+w.tennisTick(mv, 16);
+assert(mv.mx > 20, '이동 목표를 줬는데 안 움직인다');
+assert(mv.mx - 20 <= T.MY_V + 1e-9, '한 틱에 MY_V 보다 많이 움직였다: ' + (mv.mx - 20));
+for (let i = 0; i < 900 && Math.abs(mv.mx - 90) > 0.5; i++) w.tennisTick(mv, 16);
+assert(Math.abs(mv.mx - 90) < 2, '목표까지 도착하지 못했다: ' + mv.mx);
+ok();
+
+// 21) 손가락을 대고 있으면 존에서 자동으로 받아친다(홀드 랠리) — 코스는 라인 안으로
+const hold = ready(); hold.by = MID - HALF - 2; hold.mtx = 50; hold.mx = 50; hold.bx = 50; hold.vx = 0;
+let swung = false;
+for (let i = 0; i < 200; i++) { w.tennisTick(hold, 16); if (!hold.toMe) { swung = true; break; } }
+assert(swung, '손가락을 대고 있는데 자동 스윙이 안 나갔다');
+assert(hold.rally >= 1, '자동 스윙인데 랠리가 안 올랐다');
+ok();
+
 console.log('테니스 코어 테스트 ' + n + '묶음 통과');
