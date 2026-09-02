@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '916';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '917';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -37803,6 +37803,7 @@ window.sqQuizJoin = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
   const v = window._sqQzV; if (!v || v.st !== 'lb') return;
+  window.sfx.play('ready');
   R.set(R.ref(R.db, 'squadRooms/' + s.id + '/quiz/join/' + me.uid), { nick: window._mwMyNick || '머피', t: Date.now() })
     .catch(function (e) { console.warn('quiz join', e); showToast('참석 등록이 안 됐어요'); });
 };
@@ -37983,6 +37984,20 @@ window._sqQzPaint = function (sid) {
   const showCard = !!(active && (v.st === 'lb' || inField));
   window._sqQzUiOn = showCard;
   window._sqQzInField = inField;   // ★9-02 무궁화꽃과 같은 DOM 을 쓴다 — 서로 지우지 않게 플래그를 남긴다
+  // 소리 — 상태·문제 번호가 바뀌는 순간에만, 필드에 들어간 사람에게만
+  try {
+    const _meS = (auth.currentUser || {}).uid;
+    const key = v ? (v.st + ':' + (v.qi | 0)) : null, prev = window._sqQzPrevKey;
+    if (key !== prev) {
+      window._sqQzPrevKey = key;
+      if (inField && v.st === 'q') window.sfx.play(prev === 'lb:0' ? 'start' : 'tick');
+      if (inField && v.st === 'rv') { const ok = ((v.last || {}).ok || {})[_meS]; window.sfx.play(ok ? 'correct' : 'wrong'); }
+      if (v && v.st === 'end' && (v.join || {})[_meS]) {
+        const sc = v.sc || {}, mine = sc[_meS] | 0, top = Math.max.apply(null, Object.keys(sc).map(function (u) { return sc[u] | 0; }).concat([0]));
+        window.sfx.play(mine > 0 && mine >= top ? 'win' : 'lose');
+      }
+    }
+  } catch (e) {}
   try {   // 9-01 대표: CSS 색칠 대신 전용 OX 경기장 필드로 통째로 교체
     if (inField) { if (!stage._qzBg) { stage._qzBg = stage.style.backgroundImage || '1'; stage.style.backgroundImage = "url('char/fields/field_oxquiz_tall.png?v=3')"; } }
     else if (stage._qzBg) { stage.style.backgroundImage = stage._qzBg === '1' ? '' : stage._qzBg; stage._qzBg = null;
@@ -38160,6 +38175,93 @@ window._sqQzClose = function () {
   const el = document.getElementById('sq-qz'); if (el) el.remove();
   window._sqQzPaint(s && s.id);
 };
+// ═══ 공용 효과음 window.sfx (9-02) — 파일 없이 WebAudio 로 합성. 모든 게임이 이름만 부른다 ═══
+//   sfx.play('hit', 0.8)  /  sfx.voice('mugung_go')  /  sfx.mute(true|false)  /  sfx.names
+//   ★iOS 는 첫 사용자 터치 전엔 소리를 못 낸다 — 아래 unlock 이 첫 터치에서 깨운다.
+window.sfx = (function () {
+  let ctx = null, muted = false;
+  try { muted = localStorage.getItem('murpy_mute') === '1'; } catch (e) {}
+  const A = function () {
+    if (!ctx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); }
+    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+    return ctx;
+  };
+  const unlock = function () { try { A(); } catch (e) {} };
+  document.addEventListener('touchstart', unlock, { once: true, passive: true });
+  document.addEventListener('click', unlock, { once: true });
+  // 한 음 — f 에서 f2 로 미끄러지며 dur 초. type = square(칩튠)·triangle(부드럽게)·sawtooth(거칠게)·sine
+  const tone = function (o) {
+    const c = A(); if (!c) return;
+    const t0 = c.currentTime + (o.delay || 0), dur = o.dur || 0.12, vol = o.vol == null ? 0.16 : o.vol;
+    const osc = c.createOscillator(), g = c.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(o.f || 440, t0);
+    if (o.f2) osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.f2), t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + (o.attack || 0.006));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(g); g.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  };
+  // 잡음 — 휘두름·털썩 같은 것. lp = 저역 통과 컷오프, sweep = 컷오프를 내려 '휙' 느낌
+  const noise = function (o) {
+    const c = A(); if (!c) return;
+    const dur = o.dur || 0.15, t0 = c.currentTime + (o.delay || 0), vol = o.vol == null ? 0.12 : o.vol;
+    const buf = c.createBuffer(1, Math.ceil(c.sampleRate * dur), c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(o.lp || 2500, t0);
+    if (o.sweep) f.frequency.exponentialRampToValueAtTime(200, t0 + dur);
+    const g = c.createGain(); g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f); f.connect(g); g.connect(c.destination); src.start(t0); src.stop(t0 + dur + 0.02);
+  };
+  const seq = function (fs, gap, dur, type) { fs.forEach(function (f, i) { tone({ f: f, delay: i * gap, dur: dur || 0.11, type: type || 'square' }); }); };
+  const S = {
+    // ── 공용 ──
+    tap:     function () { tone({ f: 880, dur: 0.05, vol: 0.08 }); },
+    start:   function () { seq([523, 659, 784], 0.09, 0.14); tone({ f: 1047, delay: 0.27, dur: 0.24 }); },
+    ready:   function () { tone({ f: 988, dur: 0.07, vol: 0.12 }); tone({ f: 1319, delay: 0.07, dur: 0.1, vol: 0.12 }); },
+    correct: function () { tone({ f: 784, dur: 0.1 }); tone({ f: 1047, delay: 0.1, dur: 0.2 }); },
+    wrong:   function () { tone({ f: 196, type: 'sawtooth', f2: 130, dur: 0.3, vol: 0.14 }); },
+    win:     function () { seq([523, 659, 784, 1047], 0.1, 0.16); tone({ f: 1319, delay: 0.42, dur: 0.45, vol: 0.18 }); },
+    lose:    function () { seq([392, 349, 311], 0.16, 0.2, 'triangle'); tone({ f: 262, delay: 0.48, dur: 0.5, type: 'triangle', vol: 0.16 }); },
+    tick:    function () { tone({ f: 1200, type: 'sine', dur: 0.03, vol: 0.06 }); },
+    // ── 무궁화꽃 ──
+    turn:    function () { noise({ dur: 0.12, vol: 0.1, lp: 3000, sweep: true }); tone({ f: 180, f2: 90, type: 'square', dur: 0.18, vol: 0.18, delay: 0.04 }); },
+    heart:   function () { tone({ f: 1100, f2: 1900, type: 'sine', dur: 0.16, vol: 0.14 }); tone({ f: 1500, f2: 2600, type: 'sine', delay: 0.11, dur: 0.22, vol: 0.11 }); },
+    fall:    function () { tone({ f: 420, f2: 110, type: 'triangle', dur: 0.36, vol: 0.18 }); noise({ dur: 0.1, vol: 0.14, lp: 900, delay: 0.3 }); },
+    // ── 테니스 (옆 세션 요청) ──
+    swing:   function () { noise({ dur: 0.16, vol: 0.12, lp: 1400, sweep: true }); },
+    hit:     function (p) { const k = Math.max(0, Math.min(1, +p || 0)); tone({ f: 520 + k * 520, f2: 260, type: 'square', dur: 0.09, vol: 0.2 }); noise({ dur: 0.05, vol: 0.06, lp: 4000 }); },
+    bounce:  function () { tone({ f: 300, f2: 170, type: 'triangle', dur: 0.08, vol: 0.14 }); },
+    point:   function () { seq([659, 880, 1319], 0.09, 0.14); },
+    miss:    function () { tone({ f: 330, f2: 170, type: 'sawtooth', dur: 0.3, vol: 0.13 }); },
+    out:     function () { tone({ f: 2200, type: 'square', dur: 0.11, vol: 0.11 }); tone({ f: 2200, type: 'square', delay: 0.16, dur: 0.11, vol: 0.11 }); },
+    // ── 골프 ──
+    mole:    function () { tone({ f: 480, f2: 960, type: 'square', dur: 0.12, vol: 0.15 }); },
+  };
+  // 대사 — 제미나이 TTS 로 뽑은 WAV. 이름 → 파일. 처음 한 번 받아 디코드해 둔다.
+  const VOICES = { mugung_go: 'char/game/voice_mugung_go.wav?v=1', mugung_catch: 'char/game/voice_mugung_catch.wav?v=1', mugung_win: 'char/game/voice_mugung_win.wav?v=1' };
+  const bufs = {};
+  const voice = function (name, vol) {
+    if (muted) return; const url = VOICES[name]; if (!url) return;
+    const c = A(); if (!c) return;
+    const go = function (b) { const src = c.createBufferSource(); src.buffer = b; const g = c.createGain(); g.gain.value = vol == null ? 0.9 : vol; src.connect(g); g.connect(c.destination); src.start(); };
+    if (bufs[name]) { go(bufs[name]); return; }
+    if (bufs[name] === null) return;                                    // 받는 중
+    bufs[name] = null;
+    fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (ab) { return c.decodeAudioData(ab); })
+      .then(function (b) { bufs[name] = b; go(b); }).catch(function (e) { delete bufs[name]; console.warn('voice', name, e); });
+  };
+  const preload = function () { Object.keys(VOICES).forEach(function (n) { if (bufs[n] === undefined) { const c = A(); if (!c) return; bufs[n] = null; fetch(VOICES[n]).then(function (r) { return r.arrayBuffer(); }).then(function (ab) { return c.decodeAudioData(ab); }).then(function (b) { bufs[n] = b; }).catch(function () { delete bufs[n]; }); } }); };
+  return {
+    play: function (name, arg) { if (muted) return; try { const f = S[name]; if (f) f(arg); } catch (e) {} },
+    voice: voice, preload: preload,
+    mute: function (v) { muted = !!v; try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
+    isMuted: function () { return muted; },
+    names: Object.keys(S)
+  };
+})();
 // ═══ 스쿼드 운동회 공통 — 로비(참가 접수) 카드. 두 게임이 **같은 코드**를 쓴다(대표 9-02) ═══
 // 9-01 대표: 크아/겟앰프드 로비처럼 — 필드의 전원이 나열되고, 참석 누른 사람에게 READY 뱃지
 window._sqLobbyCard = function (o) {
@@ -38216,7 +38318,10 @@ window.sqGamePicker = function () {
   d.innerHTML = '<div style="width:100%;max-width:440px;background:#05070c;border-top:2px solid #2b3350;border-radius:18px 18px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));font-family:Galmuri11,sans-serif">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
     +   '<div style="font-size:15px;font-weight:800;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">스쿼드 운동회</div>'
-    +   '<button onclick="document.getElementById(\'sq-game-picker\').remove()" style="background:none;border:none;color:#8a93a8;font-size:13px;cursor:pointer;font-family:inherit;padding:4px 6px">닫기</button>'
+    +   '<div style="display:flex;gap:4px">'
+    +     '<button id="sq-sfx-tg" onclick="window.sfx.mute(!window.sfx.isMuted());this.textContent=window.sfx.isMuted()?\'소리 켜기\':\'소리 끄기\';if(!window.sfx.isMuted())window.sfx.play(\'tap\')" style="background:none;border:1px solid #2b3350;color:#8a93a8;font-size:11px;cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:7px">' + (window.sfx.isMuted() ? '소리 켜기' : '소리 끄기') + '</button>'
+    +     '<button onclick="document.getElementById(\'sq-game-picker\').remove()" style="background:none;border:none;color:#8a93a8;font-size:13px;cursor:pointer;font-family:inherit;padding:4px 6px">닫기</button>'
+    +   '</div>'
     + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:10px">' + cards + '</div></div>';
   document.body.appendChild(d);
@@ -38286,6 +38391,7 @@ window.sqMugungJoin = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
   const v = window._sqMgV; if (!v || v.st !== 'lb') return;
+  window.sfx.play('ready');
   R.set(R.ref(R.db, 'squadRooms/' + s.id + '/quiz/join/' + me.uid), { nick: window._mwMyNick || '머피', t: Date.now() })
     .catch(function (e) { console.warn('mugung join', e); showToast('참석 등록이 안 됐어요'); });
 };
@@ -38540,6 +38646,17 @@ window._sqMgPaint = function (sid) {
   const showCard = !!(active && (v.st === 'lb' || inField));
   window._sqMgUiOn = showCard;
   window._sqMgInField = inField;   // ★OX 와 같은 DOM 을 쓴다 — 서로 지우지 않게
+  // 소리 — 상태가 바뀌는 순간에만. 필드에 들어간 사람에게만(구경꾼 화면에서 목소리가 나면 이상하다)
+  try {
+    const st = v ? v.st : null, prev = window._sqMgPrevSt;
+    if (st !== prev) {
+      window._sqMgPrevSt = st;
+      if (st === 'lb' && prev !== 'lb') window.sfx.preload();
+      if (inField && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go'); }
+      if (inField && st === 'st') window.sfx.play('turn');
+      if (st === 'end' && (v.join || {})[me]) { if (v.win === me) { window.sfx.play('win'); window.sfx.voice('mugung_win'); } else if (v.win || (v.out || {})[me]) window.sfx.play('lose'); }
+    }
+  } catch (e) {}
 
   // 필드 그림 교체 — OX 와 같은 방식(원본은 stage._mgBg 에 보관하고 끝나면 되돌린다)
   try {
@@ -38573,7 +38690,9 @@ window._sqMgPaint = function (sid) {
   // 새로 걸린 사람에게 하트를 날린다 (out 이 늘어난 순간에만)
   try {
     const out = (v && v.out) || {}, prev = window._sqMgOutPrev || {};
-    Object.keys(out).forEach(function (u) { if (!prev[u]) window._sqMgHeart(u); });
+    let newly = 0;
+    Object.keys(out).forEach(function (u) { if (!prev[u]) { window._sqMgHeart(u); newly++; if (u === me) window.sfx.voice('mugung_catch', 1); } });
+    if (newly && inField) { window.sfx.play('heart'); setTimeout(function () { window.sfx.play('fall'); }, 460); }
     window._sqMgOutPrev = Object.assign({}, out);
   } catch (e) {}
 
