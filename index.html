@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '939';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '940';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -19267,6 +19267,39 @@ window._tennisLinkBoot = function () {
   } catch (e) {}
 };
 window.addEventListener('load', function () { setTimeout(window._tennisLinkBoot, 0); });
+
+// ═══ 앱 설치 배너 (9-02) ═══
+// 유저 제보: "설치했는데 구글 탭처럼 위에 주소가 뜬다"(S25) — 스샷 확인 결과 카톡 인앱 등에서
+// '홈 화면에 추가'로 만든 **커스텀탭 바로가기**였다(× murpy.app ⋮ 헤더). manifest 는 정상.
+// 코드로 그 바로가기를 고칠 수는 없고, **진짜 설치로 유도**한다: 크롬이 beforeinstallprompt 를
+// 주면(=설치 가능 + 아직 미설치) 배너를 띄우고, [설치]가 크롬 설치 프롬프트를 연다.
+// 홈화면 앱(standalone)에서는 이 이벤트 자체가 안 온다 — 이미 잘 설치한 사람에겐 안 보인다.
+window._pwaPrompt = null;
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  window._pwaPrompt = e;
+  try { if (Date.now() - (+localStorage.getItem('pwa_nudge_at') || 0) < 7 * 864e5) return; } catch (err) {}
+  if (document.getElementById('pwa-nudge')) return;
+  const el = document.createElement('div');
+  el.id = 'pwa-nudge';
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:9500;'
+    + 'background:#10151f;border:1px solid rgba(61,126,255,.35);border-radius:14px;padding:12px 14px;'
+    + 'display:flex;align-items:center;gap:10px;max-width:366px;margin:0 auto;box-shadow:0 8px 30px rgba(0,0,0,.5)';
+  el.innerHTML =
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:800;color:#fff">앱으로 설치하기</div>'
+    + '<div style="font-size:11.5px;color:rgba(255,255,255,.5);margin-top:2px">주소창 없이 전체화면으로 쓸 수 있어요</div></div>'
+    + '<button onclick="window._pwaInstall()" style="flex-shrink:0;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit">설치</button>'
+    + '<button onclick="window._pwaNudgeOff()" aria-label="닫기" style="flex-shrink:0;background:none;border:none;color:rgba(255,255,255,.4);font-size:16px;cursor:pointer;padding:4px">&times;</button>';
+  document.body.appendChild(el);
+});
+window._pwaInstall = function () {
+  const p = window._pwaPrompt; window._pwaNudgeOff();
+  if (p && p.prompt) { try { p.prompt(); } catch (e) {} window._pwaPrompt = null; }
+};
+window._pwaNudgeOff = function () {
+  const el = document.getElementById('pwa-nudge'); if (el) el.remove();
+  try { localStorage.setItem('pwa_nudge_at', String(Date.now())); } catch (e) {}
+};
 window._tennisEnd = function (s) {
   cancelAnimationFrame(window._tennisRaf); window._tennisRaf = 0;
   const score = window.tennisScore(s);
