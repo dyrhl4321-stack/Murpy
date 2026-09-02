@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '933';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '934';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -21115,7 +21115,8 @@ window.ensureCreditsInit = async (uid) => {
       // 장착 칭호·말풍선·닉네임 로드 → 오버월드 라벨 갱신
       window._myTitle = (typeof d.title === 'string') ? d.title : '';
       window._myRoomMsg = (typeof d.roomMsg === 'string') ? d.roomMsg : '';
-      if (d.nickname) window._mwMyNick = d.nickname;
+      if (d.nickname) { const _was = window._mwMyNick; window._mwMyNick = d.nickname;
+        if (!_was && window._sqRtSend) { try { window._sqRtSend(); } catch (e) {} } }   // 9-02 닉 없이 보낸 위치 노드를 진짜 이름으로 덮는다
       if (window._charApplyPos && document.getElementById('charworld-avatar')) window._charApplyPos();
       // 이 시점까지 못 받은 활동(로드 전 완료·부분 카운트로 놓친 임계값·다른 기기 적립)을 다시 판정한다.
       // mwSeasonCheck는 idempotent(이미 inv/box에 있는 id는 건너뜀)라 매 앱 오픈마다 실행해도 안전하다.
@@ -37809,7 +37810,7 @@ window._sqRtJoin = function (sid, sArg) {
     if (!isMember()) return;                                  // 구경꾼은 읽기만
     const p = window._sqMyPos || { x: 50, y: 78, dir: 'down' };
     try { R.set(meRef, { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, dir: p.dir || 'down',
-      moving: !!p.moving, nick: window._mwMyNick || '머피',
+      moving: !!p.moving, nick: window._mwMyNick || (window.currentUser || {}).nickname || '',   // ★빈값으로 — '머피'로 박히면 그리는 쪽이 진짜 이름을 못 찾는다(9-02 이빈 사례)
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       character: window.getMyCharacter ? window.getMyCharacter() : null,
@@ -38317,6 +38318,7 @@ window._sqQzNext = function (sid) {
 // 구독 — 필드가 열릴 때 걸고, 값이 올 때마다 오버레이를 그린다
 window._sqQuizWatch = function (sid) {
   const R = window._rt; if (!R) return;
+  window._sqWrapRenderRemotes && window._sqWrapRenderRemotes();   // ★원본이 정의된 뒤인 지금 감싼다
   try { R.onValue(R.ref(R.db, '.info/serverTimeOffset'), function (sn) { window._sqQzOff = sn.val() || 0; }); } catch (e) {}
   window._sqQuizUnsub && window._sqQuizUnsub();
   const un = R.onValue(window._sqQzRef(sid), function (snap) {
@@ -38542,11 +38544,18 @@ window._sqQzApplyVis = function () {
   });
 };
 // 위치 스냅샷이 올 때마다(새 캐릭터 생성 포함) 참가자 필터를 다시 건다
-if (!window._sqRenderRemotesQzWrapped) {
-  window._sqRenderRemotesQzWrapped = 1;
+// ★9-02 이 래퍼는 원본(_sqRenderRemotes, 아래쪽 정의)보다 **위에 있어 죽어 있었다** — 모듈은 위→아래로 도니
+//   감쌀 대상이 없는 채로 감쌌고, 아래 원본이 다시 덮어썼다. 필드가 열릴 때(_sqQuizWatch) 감싼다.
+window._sqWrapRenderRemotes = function () {
+  if (window._sqRenderRemotesWrapped || typeof window._sqRenderRemotes !== 'function') return;
+  window._sqRenderRemotesWrapped = 1;
   const _origRR = window._sqRenderRemotes;
-  window._sqRenderRemotes = function (a, b, c) { _origRR(a, b, c); try { window._sqQzApplyVis(); } catch (e) {} };
-}
+  window._sqRenderRemotes = function (a, b, c) {
+    _origRR(a, b, c);
+    try { window._sqQzApplyVis && window._sqQzApplyVis(); } catch (e) {}
+    try { window._sqMgApplyVis && window._sqMgApplyVis(); } catch (e) {}
+  };
+};
 window._sqQzClose = function () {
   const s = window._sqDoc, R = window._rt;
   const v = window._sqQzV;
@@ -38566,9 +38575,16 @@ window.sfx = (function () {
     if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
     return ctx;
   };
-  const unlock = function () { try { A(); } catch (e) {} };
-  document.addEventListener('touchstart', unlock, { once: true, passive: true });
-  document.addEventListener('click', unlock, { once: true });
+  // ★아이폰 무음 스위치: WebAudio 는 무음 모드에서 소리가 안 난다(어떤 기기는 나고 어떤 기기는 안 나던 이유).
+  //   첫 터치에 **무음 <audio> 를 한 번 재생**하면 오디오 세션이 '재생' 모드로 바뀌어 스위치를 무시한다(알려진 우회).
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=';
+  let unlocked = false;
+  const unlock = function () {
+    if (unlocked) return; unlocked = true;
+    try { A(); } catch (e) {}
+    try { const a = document.createElement('audio'); a.setAttribute('playsinline', ''); a.src = SILENT; a.volume = 0.01; const p = a.play(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+  };
+  ['touchstart', 'touchend', 'click', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlock, { once: true, passive: true }); });
   // 한 음 — f 에서 f2 로 미끄러지며 dur 초. type = square(칩튠)·triangle(부드럽게)·sawtooth(거칠게)·sine
   const tone = function (o) {
     const c = A(); if (!c) return;
@@ -38636,7 +38652,7 @@ window.sfx = (function () {
   };
   const preload = function () { Object.keys(VOICES).forEach(function (n) { if (bufs[n] === undefined) { const c = A(); if (!c) return; bufs[n] = null; fetch(VOICES[n]).then(function (r) { return r.arrayBuffer(); }).then(function (ab) { return c.decodeAudioData(ab); }).then(function (b) { bufs[n] = b; }).catch(function () { delete bufs[n]; }); } }); };
   return {
-    play: function (name, arg) { if (muted) return; try { const f = S[name]; if (f) f(arg); } catch (e) {} },
+    play: function (name, arg) { if (muted) return; try { const c = A(); if (c && c.state === 'suspended') c.resume(); const f = S[name]; if (f) f(arg); } catch (e) {} },
     voice: voice, preload: preload,
     mute: function (v) { muted = !!v; try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
     isMuted: function () { return muted; },
@@ -38999,13 +39015,7 @@ window._sqMgJoyOff = function () {
 window._sqMugungWatch = function () {};
 
 // ── 그리기 ──────────────────────────────────────────────────────────────
-// ★캐릭터는 위치 스냅샷마다 다시 그려진다(_sqRenderRemotes). 그 뒤에 다시 안 붙이면
-//   '하트 맞고도 가만히 서 있는' 상태가 된다(대표 9-02 폰 확인). OX 가 쓰는 래퍼와 같은 방식.
-if (!window._sqRenderRemotesMgWrapped) {
-  window._sqRenderRemotesMgWrapped = 1;
-  const _origRR2 = window._sqRenderRemotes;
-  window._sqRenderRemotes = function (a, b, c) { _origRR2(a, b, c); try { window._sqMgApplyVis(); } catch (e) {} };
-}
+// (재적용 래퍼는 _sqWrapRenderRemotes 하나로 합쳤다 — 필드 열릴 때 감싼다)
 window._sqMgApplyVis = function () {
   const v = window._sqMgV;
   const on = !!(v && (v.st === 'go' || v.st === 'st' || v.st === 'ov') && (Date.now() - (v.t || 0)) < window.SQ_MG.STALE_MS);
@@ -39198,6 +39208,24 @@ window._sqRtLeave = function (sid, hard) {
   window._sqOnMove = null; window._sqRtSend = null; window._sqOdArmed = null;
   clearTimeout(window._sqMoveT);
 };
+// 필드 캐릭터 이름표 — 보내온 닉이 없거나 기본값('머피')이면 멤버 문서 → users 문서 순으로 진짜 이름을 찾는다.
+//   (9-02 이빈: 앱이 닉네임을 못 읽은 시점에 위치를 보내 '머피'가 박혔다. 보내는 쪽만 고치면 이미 박힌 노드는 못 고친다)
+window._sqNickCache = window._sqNickCache || {};
+window._sqNickOf = function (uid, sent) {
+  if (sent && sent !== '머피') return sent;
+  const m = (window._sqMembers || {})[uid];
+  if (m && m.nickname && m.nickname !== '머피') return m.nickname;
+  const c = window._sqNickCache[uid];
+  if (c) return c;
+  if (c === undefined) {                       // 한 번만 찾아본다. 찾으면 다음 그리기 때 반영된다
+    window._sqNickCache[uid] = null;
+    try { getDoc(doc(db, 'users', uid)).then(function (u) {
+      const n = (u.exists() && u.data().nickname) || '';
+      if (n) { window._sqNickCache[uid] = n; const ch = (window._sqChars || {})[uid]; if (ch && ch.el) { ch.nick = null; const e = ch.el.querySelector('.sq-nick'); if (e) e.textContent = n; } }
+    }).catch(function () {}); } catch (e) {}
+  }
+  return sent || '머피';
+};
 window._sqRenderRemotes = function (sid, all, myUid) {
   const stage = document.getElementById('sq-room-stage'); if (!stage) return;
   const seen = window._sqRtSeen || (window._sqRtSeen = {});
@@ -39219,7 +39247,7 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     const dir = (!p.poseV && p.dir === 'up') ? 'down' : (p.dir || 'down');
     // RTDB 의 character 는 마지막 입장/이동 때 저장된 값이라 오래될 수 있다.
     // users/{uid} 실시간 구독값을 최우선으로 써야 명단과 필드가 같은 최신 복장으로 보인다.
-    const c = window._sqCharEl(uid, p.nick, window.mwCharLive(uid) || p.character, dir, p.title, p.aura);
+    const c = window._sqCharEl(uid, window._sqNickOf(uid, p.nick), window.mwCharLive(uid) || p.character, dir, p.title, p.aura);
     if (!c) return;
     const x = Math.max(0, Math.min(100, +p.x || 50)), y = Math.max(0, Math.min(110, +p.y || 78));
     if (first && !p.off) {   // 지금 들어오는 멤버만 하단 입장 연출; 남아 있던 캐릭터는 제자리에
