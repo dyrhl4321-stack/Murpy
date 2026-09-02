@@ -11,7 +11,7 @@ const w = {};
 for (const [re, name] of [
   [/window\.GOLF = \{[\s\S]*?\n\};/, 'GOLF'], [/window\.GOLF_LV = \{[\s\S]*?\n\};/, 'GOLF_LV'], [/window\.GOLF_HOLES = \[[\s\S]*?\n\];/, 'GOLF_HOLES'],
   [/window\.GOLF_CHARS = \{[\s\S]*?\n\};/, 'GOLF_CHARS'], [/window\._golfRnd = function[\s\S]*?\n\};/, '_golfRnd'], [/window\.golfHoleScore = function[\s\S]*?\n\};/, 'golfHoleScore'],
-  [/window\._golfWindFor = function[\s\S]*?\n\};/, '_golfWindFor'], [/window\._golfVillainsFor = function[\s\S]*?\n\};/, '_golfVillainsFor'], [/window\._golfMoleUp = function[\s\S]*?\n\};/, '_golfMoleUp'],
+  [/window\._golfWindFor = function[\s\S]*?\n\};/, '_golfWindFor'], [/window\.GOLF_MOLE_SPOTS = \[[\s\S]*?\];/, 'GOLF_MOLE_SPOTS'], [/window\._golfVillainsFor = function[\s\S]*?\n\};/, '_golfVillainsFor'], [/window\._golfMoleUp = function[\s\S]*?\n\};/, '_golfMoleUp'],
   [/window\.golfNew = function[\s\S]*?\n\};/, 'golfNew'], [/window\.GOLF_CLUBS = \{[\s\S]*?\n\};/, 'GOLF_CLUBS'],
   [/window\.GOLF\.G = [^\n]*\n(?:window\.GOLF\.[A-Z_]+ = [^\n]*\n)+/, 'GOLF 추가 상수'],
   [/window\._golfAimAngle = function[\s\S]*?\n\};/, '_golfAimAngle'], [/window\._golfSuggestClub = function[\s\S]*?\n\};/, '_golfSuggestClub'],
