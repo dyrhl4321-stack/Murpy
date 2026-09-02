@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '943';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '944';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38464,6 +38464,8 @@ window._sqQzPaint = function (sid) {
     if (key !== prev) {
       window._sqQzPrevKey = key;
       const hearQ = inField || showCard || active;   // 9-02 참석자만 → 이 화면 보는 모두
+      if ((v.st === 'q' || v.st === 'rv') && hearQ) window.sfx.bgm(window.sfx.bgmFor((window._sqDoc || {}).exerciseType));
+      else if (v.st === 'end' || !v.st) window.sfx.bgm(null);
       if (hearQ && v.st === 'q') window.sfx.play(prev === 'lb:0' ? 'start' : 'tick');
       if (hearQ && v.st === 'rv') { const ok = ((v.last || {}).ok || {})[_meS]; window.sfx.play(inField ? (ok ? 'correct' : 'wrong') : 'correct'); }
       if (v && v.st === 'end' && (v.join || {})[_meS]) {
@@ -38744,9 +38746,58 @@ window.sfx = (function () {
     // ── 골프 ──
     mole:    function () { tone({ f: 480, f2: 960, type: 'square', dur: 0.12, vol: 0.15 }); },
   };
+  // ── 버튼음 ──
+  S.btn  = function () { tone({ f: 660, f2: 880, type: 'square', dur: 0.06, vol: 0.09 }); };
+  S.back = function () { tone({ f: 520, f2: 330, type: 'square', dur: 0.08, vol: 0.09 }); };
+  // ── BGM: 8비트 칩튠 시퀀서 (파일 없음). 음표는 MIDI 번호, 0 = 쉼표. 16분음표 단위 ──
+  const N = function (m) { return 440 * Math.pow(2, (m - 69) / 12); };
+  const TRACKS = {
+    title: { bpm: 150, lead: 'square', bass: 'triangle', vol: 0.055,
+      mel: [72,0,76,0,79,0,76,0, 72,0,76,0,81,0,79,0, 71,0,74,0,77,0,74,0, 71,0,74,0,79,0,77,0, 69,0,72,0,76,0,72,0, 69,0,72,0,77,0,76,0, 74,74,0,74,76,0,77,0, 79,0,0,0,0,0,0,0],
+      bas: [48,0,48,0,55,0,55,0, 48,0,48,0,55,0,55,0, 47,0,47,0,55,0,55,0, 47,0,47,0,55,0,55,0, 45,0,45,0,52,0,52,0, 45,0,45,0,52,0,52,0, 50,0,50,0,55,0,55,0, 55,0,0,0,55,0,0,0] },
+    power: { bpm: 140, lead: 'square', bass: 'sawtooth', vol: 0.05,
+      mel: [64,0,64,67,0,64,0,62, 64,0,64,67,0,69,0,67, 62,0,62,65,0,62,0,60, 62,0,62,65,0,67,0,65, 64,0,64,67,0,64,0,62, 64,0,64,67,0,69,0,71, 72,0,0,71,0,69,0,67, 64,0,0,0,62,0,0,0],
+      bas: [40,40,0,40,0,40,43,0, 40,40,0,40,0,40,43,0, 38,38,0,38,0,38,41,0, 38,38,0,38,0,38,41,0, 40,40,0,40,0,40,43,0, 40,40,0,40,0,40,43,0, 36,36,0,36,0,36,40,0, 40,0,0,0,40,0,0,0] },
+    run:   { bpm: 168, lead: 'square', bass: 'triangle', vol: 0.05,
+      mel: [67,0,69,0,71,0,74,0, 71,0,69,0,67,0,0,0, 66,0,67,0,69,0,71,0, 69,0,67,0,66,0,0,0, 67,0,69,0,71,0,74,0, 76,0,74,0,71,0,69,0, 67,0,0,0,66,0,0,0, 67,0,0,0,0,0,0,0],
+      bas: [43,0,43,0,50,0,50,0, 43,0,43,0,50,0,50,0, 42,0,42,0,50,0,50,0, 42,0,42,0,50,0,50,0, 43,0,43,0,50,0,50,0, 40,0,40,0,47,0,47,0, 43,0,43,0,42,0,42,0, 43,0,0,0,43,0,0,0] },
+    calm:  { bpm: 96, lead: 'triangle', bass: 'sine', vol: 0.045,
+      mel: [64,0,0,0,67,0,0,0, 71,0,0,0,69,0,0,0, 67,0,0,0,64,0,0,0, 62,0,0,0,0,0,0,0, 60,0,0,0,64,0,0,0, 67,0,0,0,66,0,0,0, 64,0,0,0,62,0,0,0, 60,0,0,0,0,0,0,0],
+      bas: [48,0,0,0,0,0,0,0, 43,0,0,0,0,0,0,0, 45,0,0,0,0,0,0,0, 47,0,0,0,0,0,0,0, 48,0,0,0,0,0,0,0, 43,0,0,0,0,0,0,0, 45,0,0,0,0,0,0,0, 48,0,0,0,0,0,0,0] },
+  };
+  TRACKS.field = TRACKS.run;
+  const bg = { name: null, timer: null, step: 0, next: 0, gain: null };
+  const bgStop = function () {
+    if (bg.timer) { clearInterval(bg.timer); bg.timer = null; }
+    if (bg.gain) { try { const c = A(); bg.gain.gain.setTargetAtTime(0.0001, c.currentTime, 0.15); const g = bg.gain; setTimeout(function () { try { g.disconnect(); } catch (e) {} }, 500); } catch (e) {} bg.gain = null; }
+    bg.name = null;
+  };
+  const bgStart = function (name) {
+    const T = TRACKS[name]; const c = A(); if (!T || !c) return;
+    if (c.state === 'suspended') { try { c.resume(); } catch (e) {} }
+    bgStop(); bg.name = name; bg.step = 0; bg.next = c.currentTime + 0.05;
+    const g = c.createGain(); g.gain.value = 0.0001; g.connect(c.destination); bg.gain = g;
+    g.gain.setTargetAtTime(T.vol, c.currentTime, 0.4);
+    const stepDur = 60 / T.bpm / 4, len = T.mel.length;
+    const note = function (m, type, t0, dur, vol) {
+      if (!m) return;
+      const o = c.createOscillator(), e = c.createGain(); o.type = type; o.frequency.value = N(m);
+      e.gain.setValueAtTime(0.0001, t0); e.gain.linearRampToValueAtTime(vol, t0 + 0.005); e.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(e); e.connect(g); o.start(t0); o.stop(t0 + dur + 0.02);
+    };
+    bg.timer = setInterval(function () {
+      if (bg.name !== name || document.hidden) return;
+      while (bg.next < c.currentTime + 0.12) {
+        const i = bg.step % len;
+        note(T.mel[i], T.lead, bg.next, stepDur * 0.9, 1);
+        note(T.bas[i], T.bass, bg.next, stepDur * 1.6, 0.7);
+        bg.next += stepDur; bg.step++;
+      }
+    }, 40);
+  };
   // 대사 — 제미나이 TTS 로 뽑은 WAV. 이름 → 파일. 처음 한 번 받아 디코드해 둔다.
   // 9-02 대표: 대사는 '무궁화꽃이 피었습니다' 하나. 빠름/보통/느림 3벌 — **외치는 길이가 곧 등 돌린 시간**이다.
-  const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=1', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=1', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=1' };
+  const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=2', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=2', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=2' };
   const bufs = {};
   const voice = function (name, vol) {
     if (muted) return; const url = VOICES[name]; if (!url) return;
@@ -38762,10 +38813,46 @@ window.sfx = (function () {
   return {
     play: function (name, arg) { if (muted) return; try { const c = A(); if (c && c.state === 'suspended') c.resume(); const f = S[name]; if (f) f(arg); } catch (e) {} },
     voice: voice, preload: preload,
-    mute: function (v) { muted = !!v; try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
+    // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
+    bgm: function (name) { if (!name || muted) { bgStop(); return; } if (bg.name === name) return; bgStart(name); },
+    bgmFor: function (type) { const t = String(type || ''); if (/gym|hyrox|climb|헬스|하이록스|클라이밍/.test(t)) return 'power'; if (/yoga|hik|요가|하이킹|등산/.test(t)) return 'calm'; return 'run'; },
+    mute: function (v) { muted = !!v; if (muted) bgStop(); try { localStorage.setItem('murpy_mute', muted ? '1' : '0'); } catch (e) {} },
     isMuted: function () { return muted; },
     names: Object.keys(S)
   };
+})();
+
+// ═══ 1인 게임(덤벨피하기·골프·테니스) 브금·버튼음 훅 (9-02 대표: 시작화면 브금 + 시작/뒤로 버튼음) ═══
+//   게임 함수 안을 고치지 않고 **바깥에서 감싼다** — 게임 코드는 다른 세션 구역이라 안 건드린다.
+//   각 함수가 이 시점(모듈 위쪽)에 이미 정의돼 있어야 한다 — 없으면 건너뛴다(아래 wrap 이 확인).
+(function () {
+  const wrap = function (name, before, after) {
+    const f = window[name]; if (typeof f !== 'function' || f._sfxWrapped) return;
+    const w = function () { try { before && before.apply(this, arguments); } catch (e) {} const r = f.apply(this, arguments); try { after && after.apply(this, arguments); } catch (e) {} return r; };
+    w._sfxWrapped = 1; window[name] = w;
+  };
+  const S = function () { return window.sfx; };
+  // 시작화면 = title 브금 · 시작 = 인게임 브금 · 나가기 = 끄기
+  wrap('dodgeOpen',  function () { S().play('btn'); S().bgm('title'); });
+  wrap('dodgeGo',    function () { S().play('start'); S().bgm('power'); });
+  wrap('dodgeClose', function () { S().play('back'); S().bgm(null); });
+  wrap('golfOpen',   function () { S().play('btn'); S().bgm('title'); });
+  wrap('golfGo',     function () { S().play('start'); S().bgm('calm'); });
+  wrap('golfClose',  function () { S().play('back'); S().bgm(null); });
+  wrap('tennisOpen', function () { S().play('btn'); S().bgm('title'); });
+  wrap('tennisGo',   function () { S().play('start'); S().bgm('run'); });
+  wrap('tennisClose',function () { S().play('back'); S().bgm(null); });
+  ['dodgeHowto', 'golfHowto', 'tennisHowto', 'dodgeRecs', 'golfRecs', 'tennisRecs', 'golfChars', 'tennisPickLv'].forEach(function (n) { wrap(n, function () { S().play('btn'); }); });
+  // 덤벨피하기 효과음 — 틱 함수 결과로 판정: 덤벨에 맞으면 fall, 아이템 먹으면 correct, 훈수충이면 miss, 죽으면 lose
+  wrap('dodgeTick', null, function (s) {
+    if (!s) return;
+    const hit = s.hit, was = s._sfxHit; s._sfxHit = hit;
+    if (hit && hit !== was) { S().play(hit === 'dumbbell' ? 'fall' : hit === 'uncle' ? 'miss' : 'correct'); }
+    if (s.alive === false && !s._sfxDead) { s._sfxDead = 1; S().play('lose'); S().bgm(null); }
+    if (s.alive !== false) s._sfxDead = 0;
+  });
+  wrap('_golfEnd',   function () { S().play('win'); S().bgm(null); });
+  wrap('_tennisEnd', function (s) { S().play(s && s.won ? 'win' : 'lose'); S().bgm(null); });
 })();
 // ═══ 스쿼드 운동회 공통 — 로비(참가 접수) 카드. 두 게임이 **같은 코드**를 쓴다(대표 9-02) ═══
 // 9-01 대표: 크아/겟앰프드 로비처럼 — 필드의 전원이 나열되고, 참석 누른 사람에게 READY 뱃지
@@ -38808,16 +38895,17 @@ window.SQ_GAMES = [
 window.sqGamePicker = function () {
   if (!window._sqQzCanStart || !window._sqQzCanStart()) { showToast('스쿼드 멤버만 게임을 열 수 있어요'); return; }
   const old = document.getElementById('sq-game-picker'); if (old) old.remove();
+  window.sfx.play('btn'); window.sfx.bgm('title');   // 9-02 시작화면 브금
   const d = document.createElement('div'); d.id = 'sq-game-picker';
   d.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(5,7,12,.82);display:flex;align-items:flex-end;justify-content:center';
-  d.onclick = function (e) { if (e.target === d) d.remove(); };
+  d.onclick = function (e) { if (e.target === d) { window.sfx.play('back'); window.sfx.bgm(null); d.remove(); } };
   const cards = window.SQ_GAMES.map(function (g) {
     return '<div style="display:flex;gap:12px;align-items:stretch;background:#0b0e17;border:2px solid #2b3350;border-radius:14px;overflow:hidden">'
       + '<img src="' + g.thumb + '" alt="" style="width:96px;height:128px;object-fit:cover;image-rendering:pixelated;flex-shrink:0">'
       + '<div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:11px 12px 11px 0">'
       +   '<div><div style="font-size:14px;font-weight:800;color:#fff;font-family:\'Galmuri14\',sans-serif">' + g.name + '</div>'
       +   '<div style="font-size:11px;color:#8a93a8;line-height:1.55;margin-top:5px">' + g.desc + '</div></div>'
-      +   '<button onclick="document.getElementById(\'sq-game-picker\').remove();' + g.start + '" style="align-self:flex-end;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px">시작</button>'
+      +   '<button onclick="window.sfx.play(\'btn\');window.sfx.bgm(null);document.getElementById(\'sq-game-picker\').remove();' + g.start + '" style="align-self:flex-end;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px">시작</button>'
       + '</div></div>';
   }).join('');
   d.innerHTML = '<div style="width:100%;max-width:440px;background:#05070c;border-top:2px solid #2b3350;border-radius:18px 18px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));font-family:Galmuri11,sans-serif">'
@@ -38825,7 +38913,7 @@ window.sqGamePicker = function () {
     +   '<div style="font-size:15px;font-weight:800;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">스쿼드 운동회</div>'
     +   '<div style="display:flex;gap:4px">'
     +     '<button id="sq-sfx-tg" onclick="window.sfx.mute(!window.sfx.isMuted());this.textContent=window.sfx.isMuted()?\'소리 켜기\':\'소리 끄기\';if(!window.sfx.isMuted())window.sfx.play(\'tap\')" style="background:none;border:1px solid #2b3350;color:#8a93a8;font-size:11px;cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:7px">' + (window.sfx.isMuted() ? '소리 켜기' : '소리 끄기') + '</button>'
-    +     '<button onclick="document.getElementById(\'sq-game-picker\').remove()" style="background:none;border:none;color:#8a93a8;font-size:13px;cursor:pointer;font-family:inherit;padding:4px 6px">닫기</button>'
+    +     '<button onclick="window.sfx.play(\'back\');window.sfx.bgm(null);document.getElementById(\'sq-game-picker\').remove()" style="background:none;border:none;color:#8a93a8;font-size:13px;cursor:pointer;font-family:inherit;padding:4px 6px">닫기</button>'
     +   '</div>'
     + '</div>'
     + '<div style="display:flex;flex-direction:column;gap:10px">' + cards + '</div></div>';
@@ -38839,7 +38927,7 @@ window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y"
 window.SQ_MG = {
   GO_MIN: 1400, GO_MAX: 3400,   // (예비) 목소리가 없을 때 등 보이는 시간
   // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 돌아본다 — 진짜 놀이와 같다. [빠름, 보통, 느림] 초
-  VOICE_DUR: [2.27, 6.63, 7.94],
+  VOICE_DUR: [2.4, 6.72, 5.59],
   VOICE_W:   [0.45, 0.35, 0.20],  // 고를 확률 — 빠른 판이 자주 나와야 긴장이 산다
   STOP_MS: 2000,                // 돌아본 채 노려보는 시간
   MOVE_TOL: 1.6,                // 이만큼(필드 폭 %) 넘게 움직이면 걸린다. 손떨림·보정 오차는 봐준다
@@ -39228,6 +39316,9 @@ window._sqMgPaint = function (sid) {
       // 9-02 대표: "같은 폰인데 계정마다 소리가 다르다" → 참석자에게만 내던 걸 **이 화면을 보는 모두**에게.
       //   스쿼드장이 시작만 하고 참석 안 하면 아무 소리도 못 들었다.
       const hear = inField || showCard || active;
+      // 9-02 필드 브금 — 게임이 도는 동안(go/st) 종목별 곡. 끝나거나 나가면 끈다.
+      if ((st === 'go' || st === 'st') && hear) window.sfx.bgm(window.sfx.bgmFor((window._sqDoc || {}).exerciseType));
+      else if (st === 'ov' || st === 'end' || !st) window.sfx.bgm(null);
       if (hear && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go_' + (v.vi | 0)); }
       if (hear && st === 'st') window.sfx.play('turn');
       if (st === 'ov' && (v.join || {})[me]) { setTimeout(function () { if (v.win === me) { window.sfx.play('win'); } else if (v.win || (v.out || {})[me]) window.sfx.play('lose'); }, 900); }
@@ -39346,6 +39437,7 @@ window._sqRtLeave = function (sid, hard) {
   window._sqMgV = null; window._sqMgOutPrev = null; window._sqGameRaw = null;
   window._sqMgInField = false; window._sqQzInField = false;   // ★안 지우면 다음에 서로 '상대가 쓰는 중'으로 보고 둘 다 안 그린다
   window._sqMgJoyOff && window._sqMgJoyOff();
+  try { window.sfx && window.sfx.bgm(null); } catch (e) {}
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
   window._sqOnMove = null; window._sqRtSend = null; window._sqOdArmed = null;
