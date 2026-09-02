@@ -18416,6 +18416,140 @@ window._golfLinkBoot = function () {
 };
 window.addEventListener('load', function () { setTimeout(window._golfLinkBoot, 0); });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ===== 머피 테니스 (2026-09-02) — 덤벨 피하기·홀인 머피 뼈대 재사용, 규칙만 테니스 =====
+// 설계 = docs/superpowers/specs/2026-09-02-murpy-tennis-design.md
+//
+// ★왜 이 게임인가: 머피월드에 tennis 필드가 **이미 있는데 게임만 없었다**
+//   (gym → 덤벨 피하기, golf → 홀인 머피, tennis → 비어 있음). 그 칸을 채운다.
+//
+// ★조작은 탭 하나다. 그런데 **탭한 x 가 받아칠 코스**다 — 캐릭터 좌우 이동은 자동이고,
+//   플레이어가 정하는 것은 "언제(타이밍)"와 "어디로(코스)" 둘뿐이다.
+//   덤벨 피하기 = 반사신경(회피), 홀인 머피 = 정확도(게이지), 테니스 = 리듬 + 수 싸움.
+//   장르를 겹치지 않게 하려고 좌우 이동 조작을 일부러 뺐다.
+//
+// 좌표: 코트 0~100 × 0~100. 위가 상대, 아래가 나, 네트 y=50.
+// ═══════════════════════════════════════════════════════════════════════════
+window.TENNIS = {
+  NET_Y: 50, MY_BASE: 88, OP_BASE: 12,
+  ZONE_Y0: 78, ZONE_Y1: 94,          // 임팩트 존 — 내 코트의 가로 띠. 여기 있을 때 탭해야 맞는다
+  SIDE_MIN: 8, SIDE_MAX: 92,         // 코트 좌우 라인. 밖으로 치면 아웃
+  REACH: 9,                          // 캐릭터가 공에 닿는 거리
+  MY_V: 0.75, OP_V: 0.55,            // 좌우 이동 속도(단위/틱)
+  V_MAX: 2.2,                        // 공 속도 상한 — 없으면 랠리가 길어질수록 볼 수 없게 빨라진다
+  WOBBLE: 18,                        // 급하게 받았을 때 코스가 밀리는 최대 폭
+  LIVES: 3,
+  PT_SCORE: 100, RALLY_SCORE: 10, MAX_SCORE: 99999
+};
+// 난이도 — 대표 8-30: "난이도마다 차별점이 확실해야 한다"
+//   zone = 임팩트 존 배율(클수록 관대) · out = 코스 흔들림 완화(클수록 관대) · mul = 점수 배율
+window.TENNIS_LV = {
+  easy: { name: '하', opV: 0.40, ballV: 0.75, acc: 0.012, zone: 1.5, out: 1.4, mul: 0.7 },
+  mid:  { name: '중', opV: 0.55, ballV: 0.90, acc: 0.020, zone: 1.0, out: 1.0, mul: 1.0 },
+  hard: { name: '상', opV: 0.78, ballV: 1.10, acc: 0.030, zone: 0.7, out: 0.75, mul: 2.5 }
+};
+window.tennisNew = function (lvKey) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[lvKey] || window.TENNIS_LV.mid;
+  return {
+    lv: window.TENNIS_LV[lvKey] ? lvKey : 'mid',
+    bx: 50, by: T.NET_Y, vy: lv.ballV, vx: 0,      // 공
+    mx: 50, ox: 50,                                 // 내 캐릭터 x · 상대 x
+    toMe: true,                                     // 공이 내 쪽으로 오는 중인가
+    rally: 0, bestRally: 0, pts: 0,
+    lives: T.LIVES, over: false, last: '', t: 0
+  };
+};
+// 탭 판정. ★상태를 바꾸지 않는다(순수) — 테스트가 이것을 검증한다.
+//   반환 result: 'hit' 맞음 · 'out' 라인 밖 · 'early' 아직 멀다 · 'late' 지나갔다
+//               · 'reach' 캐릭터가 못 닿는다 · 'idle' 내 차례가 아니다
+window._tennisJudge = function (s, tapX) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  if (!s.toMe || s.over) return { result: 'idle' };
+  const mid = (T.ZONE_Y0 + T.ZONE_Y1) / 2;
+  const half = (T.ZONE_Y1 - T.ZONE_Y0) / 2 * lv.zone;
+  if (s.by < mid - half) return { result: 'early' };
+  if (s.by > mid + half) return { result: 'late' };
+  if (Math.abs(s.mx - s.bx) > T.REACH) return { result: 'reach' };
+  const perfect = Math.max(0, 1 - Math.abs(s.by - mid) / half);
+  // ★급하게 받으면 원하는 곳으로 못 보낸다 — 공이 **온 쪽**으로 밀린다.
+  //   난수를 쓰지 않는다: 같은 상황이면 늘 같은 결과여야 유저가 배울 수 있다.
+  //   (골프에서 배운 것 — 예측과 실제가 어긋나면 유저는 "판정이 이상하다"고 느낀다.)
+  const wob = (1 - perfect) * T.WOBBLE / lv.out;
+  const course = tapX + (s.bx - 50) / 50 * wob;
+  if (course < T.SIDE_MIN || course > T.SIDE_MAX) {
+    return { result: 'out', course: course, perfect: perfect, wobble: wob };
+  }
+  return { result: 'hit', course: course, perfect: perfect, wobble: wob };
+};
+window.tennisScore = function (s) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  return Math.min(T.MAX_SCORE, Math.round((s.pts * T.PT_SCORE + s.bestRally * T.RALLY_SCORE) * lv.mul));
+};
+// 내가 받아친다 — 판정이 정한 코스로 상대 코트에 보낸다.
+window._tennisHit = function (s, j) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  s.rally += 1; if (s.rally > s.bestRally) s.bestRally = s.rally;
+  s.toMe = false; s.by = T.MY_BASE - 4;
+  s.vy = Math.min(T.V_MAX, lv.ballV + s.rally * lv.acc);
+  const course = Math.max(T.SIDE_MIN, Math.min(T.SIDE_MAX, j.course));
+  s.vx = (course - s.bx) / ((T.MY_BASE - T.OP_BASE) / s.vy);
+  s.last = 'hit';
+  return s.last;
+};
+// 상대가 받아친다 — **내가 있는 반대쪽**을 노린다. 난수 없이 내 위치만 보고 정한다.
+//   그래서 유저가 "내가 왼쪽에 있으면 오른쪽으로 온다"를 배울 수 있다.
+window._tennisReturn = function (s) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  s.rally += 1; if (s.rally > s.bestRally) s.bestRally = s.rally;
+  const target = s.mx < 50 ? T.SIDE_MAX - 6 : T.SIDE_MIN + 6;
+  s.toMe = true; s.by = T.OP_BASE + 6;
+  s.vy = Math.min(T.V_MAX, lv.ballV + s.rally * lv.acc);
+  s.vx = (target - s.bx) / ((T.MY_BASE - T.OP_BASE) / s.vy);
+  return s.last;
+};
+// 서브 — 한 점이 끝나면 늘 내가 받는 자리에서 다시 시작한다(랠리 게임이라 서브권을 나누지 않는다).
+window._tennisServe = function (s) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  s.toMe = true; s.by = T.NET_Y; s.bx = 50; s.vx = 0;
+  s.vy = lv.ballV; s.ox = 50;
+  return s.last;
+};
+// 한 틱. 반환 = s.last ('' | 'miss' | 'point' | 'over')
+window.tennisTick = function (s, dt) {
+  const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
+  if (s.over) return s.last;
+  s.t += dt; const k = dt / 16;
+  s.last = '';
+  // 공
+  s.by += s.vy * k * (s.toMe ? 1 : -1);
+  s.bx += s.vx * k;
+  if (s.bx < T.SIDE_MIN || s.bx > T.SIDE_MAX) {
+    s.vx = -s.vx; s.bx = Math.max(T.SIDE_MIN, Math.min(T.SIDE_MAX, s.bx));
+  }
+  // 내 캐릭터는 공 쪽으로 저절로 간다 — 이동은 조작하지 않는다
+  const md = s.bx - s.mx; s.mx += Math.max(-T.MY_V, Math.min(T.MY_V, md)) * k;
+  // 상대도 공 쪽으로 간다. 느리면 못 따라가고 그게 내 득점이 된다
+  const od = s.bx - s.ox; s.ox += Math.max(-lv.opV, Math.min(lv.opV, od)) * k;
+  if (s.toMe) {
+    if (s.by > T.MY_BASE + 8) {          // 안 치고 베이스라인을 넘겼다 = 실점
+      s.lives -= 1; s.rally = 0; s.last = 'miss';
+      if (s.lives <= 0) { s.over = true; s.last = 'over'; return s.last; }
+      window._tennisServe(s); s.last = 'miss';
+    }
+  } else {
+    if (s.by < T.OP_BASE + 6) {          // 상대 코트 도달
+      if (Math.abs(s.ox - s.bx) <= T.REACH) {
+        window._tennisReturn(s);
+      } else {                            // 상대가 못 닿았다 = 내 득점
+        s.pts += 1; if (s.rally > s.bestRally) s.bestRally = s.rally;
+        s.rally = 0; window._tennisServe(s); s.last = 'point';
+      }
+    }
+  }
+  return s.last;
+};
+// ===== 머피 테니스 코어 끝 =====
+
 window.HOF_KINDS = {
   feed:    { label: '인증',    unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).feed || 0; } },
   checkin: { label: '체크인',  unit: '회', get: function (u, m) { return ((u.monthly || {})[m] || {}).checkin || 0; } },
