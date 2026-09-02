@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '966';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '967';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18255,7 +18255,9 @@ window._golfPredict = function (s, power, club) {
   const key = [s.x.toFixed(2), s.y.toFixed(2), power.toFixed(3), club, (s.aim || 0).toFixed(1), s.inBunker ? 1 : 0, s.ch, s.wind.x.toFixed(4), s.wind.y.toFixed(4)].join('|');
   const c = window._golfPredCache; if (c && c.key === key) return c.val;
   // 8-31 바람 뺀 곧은 궤적(대표: 휘어진 궤적이 헷갈림) — 바람은 HUD 화살표로
-  const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0 });
+  // ★_predict = 이건 조준선용 가짜 샷이다. golfShot/golfTick 효과음 wrap 이 이 플래그를 보고
+  //   소리를 건너뛴다 — 안 그러면 게이지 도는 매 프레임 예측이 스윙·타격·착지음을 울린다(대표 9-03).
+  const t = Object.assign({}, s, { wind: { x: 0, y: 0 }, crow: null, mole: null, strokes: s.strokes.slice(), mulligan: 99, t: 0, moving: false, z: 0, vz: 0, _predict: true });
   // 8-30 바람 포함 — 예측선이 휘어질 걸 미리 보여줘야 '휜다'가 아니라 '읽힌다'
   const ch = window.GOLF_CHARS[s.ch];
   const pts = []; let land = null;
@@ -39964,14 +39966,14 @@ window.sfx = (function () {
   // 골프 샷 — 스윙 소리 + 세기에 따라 타격음 높이 (골프공 쳤을 때)
   (function () {
     const f = window.golfShot; if (typeof f !== 'function' || f._sfxShot) return;
-    const w = function (s, power, acc, club) { const ok = f.apply(this, arguments); if (ok) { S().play('swing'); setTimeout(function () { S().play('hit', Math.max(0, Math.min(1, +power || 0))); }, 90); } return ok; };
+    const w = function (s, power, acc, club) { const ok = f.apply(this, arguments); if (ok && !(s && s._predict)) { S().play('swing'); setTimeout(function () { S().play('hit', Math.max(0, Math.min(1, +power || 0))); }, 90); } return ok; };
     w._sfxShot = 1; window.golfShot = w;
   })();
   // 골프 틱 — 반환 이벤트마다 소리: 착지·홀인·연못·OB·벙커·까마귀·컵 스침 (두더지는 그쪽 본문이 이미 냄)
   (function () {
     const f = window.golfTick; if (typeof f !== 'function' || f._sfxTick) return;
     const M = { land: 'bounce', in: 'holein', water: 'splash', ob: 'thud', bunker: 'thud', crow: 'crow', lip: 'lip' };
-    const w = function () { const r = f.apply(this, arguments); if (r && M[r]) S().play(M[r]); return r; };
+    const w = function (s) { const r = f.apply(this, arguments); if (r && M[r] && !(s && s._predict)) S().play(M[r]); return r; };
     w._sfxTick = 1; window.golfTick = w;
   })();
   // ★테니스에 s.won 은 없다(점수제). 승/패음은 _tennisEnd 본문이 최고기록 여부로 직접 낸다
