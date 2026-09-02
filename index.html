@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '924';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '925';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1067,6 +1067,15 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      그 위로 올려야 방이 안 덮인다. 크기·위치는 위 body.mw-party 규칙이 이미 정해 뒀다 —
      여기서 또 정하면 '평소'와 '칠 때'가 달라지고, 그 차이가 곧 움직임이다. */
   body.mw-kb #page-char { z-index:890 }
+  /* ★9-02 대표: "공용룸에서 채팅 치면 키보드 상단이 타이핑 화면을 덮고, 한마디 박스가 필드 안으로 씹혀 들어감"
+     #page-char 는 키보드가 뜨면 보이는 높이(vv.height)로 줄어드는데 그 안의 방(#charworld-room)은
+     정사각형(aspect-ratio 1:1, 폰 폭만큼 ≈390px)이라 안 줄어든다 → 대화 상자(flex:1)가 0 으로 찌부러져
+     입력줄이 밖으로 밀리고, _mwPartyKbFix 가 그걸 끌어올리면 **필드 위에 올라앉는다**(= 씹혀 들어감).
+     정답은 같다 — 치는 동안 방을 낮게 접는다. 배경은 cover 로(100%/100% 그대로면 찌그러진다), 명단·탭은 숨김.
+     방이 낮아지면 입력줄이 제자리에서 보이므로 lift 가 0 이 되고 아무것도 안 움직인다. */
+  body.mw-kb #charworld-room { max-height:148px !important; background-size:cover !important }
+  body.mw-kb #mw-party-tabs, body.mw-kb #mw-party-members, body.mw-kb #mw-party-waiters, body.mw-kb #mw-party-who { display:none !important }
+  body.mw-kb #mw-party-chat { flex:1 1 auto !important; min-height:0 !important; position:relative; z-index:5; background:#05070c }
   /* 키보드가 열린 동안 입력줄은 줄어든 page-char의 맨 아래, 즉 키보드 바로 위에 붙는다.
      필드/명단 flex 계산에 맡기면 짧아진 화면 밖으로 잘려 placeholder와 말하기가 안 보였다. */
   /* ★★★8-26 — 입력줄을 **제자리에 둔다.** 칠 때 자리를 옮기지 않는다.
@@ -1355,6 +1364,14 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     overflow-y:auto; overscroll-behavior:contain; font-family:'Galmuri11',sans-serif }
   #mw-jam .jam-wrap, #mw-jam .jam-pal, #mw-jam .jam-row,
   #mw-jam .jam-hint, #mw-jam .jam-foot { flex-shrink:0 }
+  /* ★9-02 대표: "그림 그리고 있을 때 채팅 치면 키보드가 다 가려버림"
+     위 flex-shrink:0 다섯 개(캔버스 320px 포함)가 자리를 다 먹어서, 키보드로 높이가 반이 되면
+     입력줄이 키보드 밑으로 밀렸다 — 8-14 스쿼드 톡과 같은 병([[feedback_murpy_keyboard_flex_shrink]]).
+     정답은 계산식이 아니라 **치는 동안 안 보는 것을 접는 것**: 캔버스를 작게, 팔레트·안내·버튼줄은 숨김.
+     (body.mw-jam-kb 는 _mwJamKbStart 가 이미 붙인다 — JS 는 손대지 않았다) */
+  body.mw-jam-kb #mw-jam .jam-wrap { max-width:112px }
+  body.mw-jam-kb #mw-jam .jam-pal, body.mw-jam-kb #mw-jam .jam-hint, body.mw-jam-kb #mw-jam .jam-foot { display:none }
+  body.mw-jam-kb #mw-jam .jam-head { padding:8px 16px 6px }
   #mw-jam .jam-wrap { position:relative; width:100%; max-width:320px; margin:0 auto; aspect-ratio:1;
     background:#f4f1ea; border:3px solid #05070c; box-shadow:0 0 0 3px #2b3350; touch-action:none }
   #mw-jam canvas { display:block; width:100%; height:100%; image-rendering:pixelated }
@@ -1637,9 +1654,9 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* 내가 걸린 순간 — 화면 테두리가 붉게 한 번 번쩍. 작은 폰에서도 '맞았다'가 확실히 보인다 */
   .sq-stage.sq-mg-hitme { animation:sqMgHitMe .6s ease-out }
   @keyframes sqMgHitMe { 0% { box-shadow:inset 0 0 0 0 rgba(255,77,126,0) } 25% { box-shadow:inset 0 0 0 18px rgba(255,77,126,.7) } 100% { box-shadow:inset 0 0 0 0 rgba(255,77,126,0) } }
-  /* 매혹 — 걸린 캐릭터 눈 위에 하트 눈(fx_charm_eyes.png). 쓰러진 채 하트 눈 = 하트 맞고 매혹당함 */
-  .sq-mg-charm { position:absolute; left:50%; top:9px; width:22px; height:10px; margin-left:-11px; z-index:3; pointer-events:none;
-    background:url('char/game/fx_charm_eyes.png?v=1') center/contain no-repeat; image-rendering:pixelated;
+  /* 매혹 — 걸린 캐릭터의 **각 눈 위에** 하트 하나씩(fx_heart.png). 위치는 몸통별 실측표(SQ_MG_EYES)로 잡는다 */
+  .sq-mg-charm { position:absolute; width:11px; height:11px; margin:-5px 0 0 -5px; z-index:3; pointer-events:none;
+    background:url('char/game/fx_heart.png?v=1') center/contain no-repeat; image-rendering:pixelated;
     animation:sqMgCharm .9s ease-in-out infinite }
   @keyframes sqMgCharm { 0%,100% { transform:scale(1) } 50% { transform:scale(1.25) } }
   /* 정지 구간엔 화면 테두리가 붉게 — 폰을 안 보고 있어도 '지금 멈춰야 한다'가 보인다 */
@@ -38211,10 +38228,14 @@ window._sqQzPaint = function (sid) {
     md.innerHTML = '<div style="width:100%;max-width:330px;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 18px 50px rgba(0,0,0,.6);border-radius:16px;padding:22px 18px;display:flex;flex-direction:column;align-items:center;gap:7px;max-height:80vh;overflow:auto">'
       + '<div style="font-size:18px;color:#F5C24B;font-family:\'Galmuri14\',sans-serif;margin-bottom:4px">머피 OX 퀴즈 결과</div>'
       + (rows.length ? rows.map(function (r, i) {
-          return '<div style="display:flex;gap:10px;align-items:center;width:100%;background:rgba(255,255,255,' + (i < 3 ? '.1' : '.04') + ');border-radius:10px;padding:' + (i === 0 ? '12px 14px' : '8px 14px') + '">'
-            + '<b style="width:24px;color:' + (i === 0 ? '#F5C24B' : '#8a93a8') + ';font-size:' + (i === 0 ? '17px' : '13px') + '">' + (i + 1) + '</b>'
-            + '<span style="flex:1;color:#fff;font-size:' + (i === 0 ? '15px' : '13px') + ';font-weight:' + (i === 0 ? '800' : '400') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(r.nick) + '</span>'
-            + '<b style="color:#7aa8ff;font-size:' + (i === 0 ? '16px' : '13px') + '">' + r.s + '점</b></div>';
+          // ★9-02 대표: 점수가 같으면 **공동 순위**. 1·2·3 으로 줄 세우지 않는다(같은 점수인데 2등이 되면 억울하다).
+          //   앞사람과 점수가 같으면 앞사람 순위를 물려받는다 → 10·10·5 = 1·1·3
+          const rk = (i > 0 && rows[i - 1].s === r.s) ? rows[i - 1]._rk : (i + 1); r._rk = rk;
+          const top = rk === 1;
+          return '<div style="display:flex;gap:10px;align-items:center;width:100%;background:rgba(255,255,255,' + (rk <= 3 ? '.1' : '.04') + ');border-radius:10px;padding:' + (top ? '12px 14px' : '8px 14px') + '">'
+            + '<b style="width:24px;color:' + (top ? '#F5C24B' : '#8a93a8') + ';font-size:' + (top ? '17px' : '13px') + '">' + rk + '</b>'
+            + '<span style="flex:1;color:#fff;font-size:' + (top ? '15px' : '13px') + ';font-weight:' + (top ? '800' : '400') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(r.nick) + (top && rows.filter(function (x) { return x.s === r.s; }).length > 1 ? ' <span style="font-size:10px;color:#F5C24B">공동 1위</span>' : '') + '</span>'
+            + '<b style="color:#7aa8ff;font-size:' + (top ? '16px' : '13px') + '">' + r.s + '점</b></div>';
         }).join('') : '<div style="color:#8a93a8;font-size:12px;padding:10px 0">참가자가 없었어요</div>')
       + (window._sqQzCanStart() ? '<button onclick="window.sqQuizStart()" style="margin-top:12px;width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px 0;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">한 판 더</button>' : '')
       + '<button onclick="window._sqQzClose()" style="background:none;border:none;color:#8a93a8;font-size:12.5px;cursor:pointer;margin-top:4px;font-family:inherit;padding:6px">닫기</button>'
@@ -38338,7 +38359,8 @@ window.sfx = (function () {
     mole:    function () { tone({ f: 480, f2: 960, type: 'square', dur: 0.12, vol: 0.15 }); },
   };
   // 대사 — 제미나이 TTS 로 뽑은 WAV. 이름 → 파일. 처음 한 번 받아 디코드해 둔다.
-  const VOICES = { mugung_go: 'char/game/voice_mugung_go.wav?v=1', mugung_catch: 'char/game/voice_mugung_catch.wav?v=1', mugung_win: 'char/game/voice_mugung_win.wav?v=1' };
+  // 9-02 대표: 대사는 '무궁화꽃이 피었습니다' 하나. 빠름/보통/느림 3벌 — **외치는 길이가 곧 등 돌린 시간**이다.
+  const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=1', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=1', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=1' };
   const bufs = {};
   const voice = function (name, vol) {
     if (muted) return; const url = VOICES[name]; if (!url) return;
@@ -38426,8 +38448,13 @@ window.sqGamePicker = function () {
 // ═══════════════ 무궁화꽃이 피었습니다 (스쿼드 게임 2 · 9-02) ═══════════════
 // OX 퀴즈가 깔아둔 것을 그대로 쓴다 — 필드·위치동기화(_sqRtLast)·참석자명단·진행자승계·낙사연출.
 // 새로 만드는 건 판정 하나다.
+// 몸통별 눈 위치(정면 셀 대비 비율). 9-02 시트에서 실측 + 눈 검수. 새 몸통을 추가하면 여기도 한 줄.
+window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
 window.SQ_MG = {
-  GO_MIN: 1400, GO_MAX: 3400,   // 술래가 등 보이는 시간(랜덤) — 예측 못 하게
+  GO_MIN: 1400, GO_MAX: 3400,   // (예비) 목소리가 없을 때 등 보이는 시간
+  // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 돌아본다 — 진짜 놀이와 같다. [빠름, 보통, 느림] 초
+  VOICE_DUR: [2.27, 6.63, 7.94],
+  VOICE_W:   [0.45, 0.35, 0.20],  // 고를 확률 — 빠른 판이 자주 나와야 긴장이 산다
   STOP_MS: 2000,                // 돌아본 채 노려보는 시간
   MOVE_TOL: 1.6,                // 이만큼(필드 폭 %) 넘게 움직이면 걸린다. 손떨림·보정 오차는 봐준다
   GOAL_Y: 26,                   // 이 위로 올라오면 우승 (y 는 위가 작다). 필드 그림의 트랙 상단 라인과 맞췄다
@@ -38453,6 +38480,12 @@ window.SQ_MG = {
 })();
 window._sqMgRef = function (sid) { const R = window._rt; return R.ref(R.db, 'squadRooms/' + sid + '/quiz'); };
 window._sqMgNow = function () { return Date.now() + (window._sqQzOff || 0); };
+// 이번 판에 외칠 목소리를 고른다 → { vi, ms }. 진행자가 고르고 RTDB 에 vi 를 실어 보내 모두 같은 걸 듣는다.
+window._sqMgPickGo = function () {
+  const Z = window.SQ_MG, w = Z.VOICE_W; let r = Math.random(), vi = 0;
+  for (let i = 0; i < w.length; i++) { if (r < w[i]) { vi = i; break; } r -= w[i]; }
+  return { vi: vi, ms: Math.round(Z.VOICE_DUR[vi] * 1000) + 350 };   // 350 = 마지막 음절 뒤 한 박자
+};
 // 권한은 OX 와 같은 규칙을 쓴다 — 판 열기는 멤버 누구나, 시작·종료는 판을 연 사람.
 window._sqMgCanStart = function () { return window._sqQzCanStart && window._sqQzCanStart(); };
 window._sqMgIsOwner = function () {
@@ -38498,8 +38531,8 @@ window.sqMugungBegin = function () {
   if (!s || !R || !window._sqMgIsOwner()) return;
   const v = window._sqMgV; if (!v || v.st !== 'lb') return;
   if (!Object.keys(v.join || {}).length) { showToast('참석하기를 누른 사람이 아직 없어요'); return; }
-  const Z = window.SQ_MG;
-  R.update(window._sqMgRef(s.id), { st: 'go', dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN),
+  const g = window._sqMgPickGo();
+  R.update(window._sqMgRef(s.id), { st: 'go', vi: g.vi, dl: window._sqMgNow() + g.ms,
                                     t: Date.now(), host: v.host, hostNick: v.hostNick || '머피' })
     .catch(function (e) { console.warn('mugung begin', e); });
 };
@@ -38606,8 +38639,9 @@ window._sqMgTick = function (sid) {
     // ★바로 끝내지 않는다 — 'ov' 로 2.5초 결과를 보여준 뒤 'end'. 안 그러면 팝업이 하트·눕기를 덮는다.
     R.update(window._sqMgRef(sid), Object.assign({ st: 'ov', out: r.out, win: r.win, dl: window._sqMgNow() + Z.OVER_MS }, base)).catch(function () {});
   } else {
-    R.update(window._sqMgRef(sid), Object.assign({ st: 'go', out: r.out, snap: null,
-      dl: window._sqMgNow() + Z.GO_MIN + Math.random() * (Z.GO_MAX - Z.GO_MIN) }, base)).catch(function () {});
+    const g = window._sqMgPickGo();
+    R.update(window._sqMgRef(sid), Object.assign({ st: 'go', vi: g.vi, out: r.out, snap: null,
+      dl: window._sqMgNow() + g.ms }, base)).catch(function () {});
   }
 };
 
@@ -38730,10 +38764,22 @@ window._sqMgApplyVis = function () {
       c.el.classList.remove('walking');
     }
     c.el.classList.toggle('sq-mg-down', hit);   // 걸린 사람 = 옆으로 넘어져 누움
-    // 매혹 — 누운 채 하트 눈. 하트가 날아가 닿는 시점(0.45초)에 맞춰 늦게 붙인다
-    let ch = c.el.querySelector('.sq-mg-charm');
-    if (hit && !ch && !c._mgCharmT) { c._mgCharmT = setTimeout(function () { c._mgCharmT = null; if (c.el.classList.contains('sq-mg-down') && !c.el.querySelector('.sq-mg-charm')) { const d = document.createElement('div'); d.className = 'sq-mg-charm'; c.el.appendChild(d); } }, 450); }
-    else if (!hit && ch) ch.remove();
+    // 매혹 — 누운 채 **각 눈 위에** 하트. 하트가 날아가 닿는 시점(0.45초)에 맞춰 늦게 붙인다.
+    //   미니 캐릭터 안쪽(position:relative 상자)에 붙여야 좌표가 셀 기준으로 맞는다. 재렌더되면 다시 붙는다.
+    const inner = c.el.querySelector('.sq-body > div');
+    const had = inner && inner.querySelector('.sq-mg-charm');
+    if (hit && inner && !had && !c._mgCharmT) {
+      c._mgCharmT = setTimeout(function () {
+        c._mgCharmT = null;
+        const inn = c.el.querySelector('.sq-body > div'); if (!inn || !c.el.classList.contains('sq-mg-down') || inn.querySelector('.sq-mg-charm')) return;
+        const pl = (window._sqRtLast || {})[uid] || {};
+        const cfg = (uid === me && window.getMyCharacter) ? window.getMyCharacter() : pl.character;
+        const eye = window.SQ_MG_EYES[(cfg && cfg.body) || 'human'] || window.SQ_MG_EYES.human;
+        const W = inn.offsetWidth || 29, H = inn.offsetHeight || 46;
+        eye.x.forEach(function (fx) { const d = document.createElement('div'); d.className = 'sq-mg-charm';
+          d.style.left = (fx * W).toFixed(1) + 'px'; d.style.top = (eye.y * H).toFixed(1) + 'px'; inn.appendChild(d); });
+      }, 450);
+    } else if (!hit && had) inner.querySelectorAll('.sq-mg-charm').forEach(function (d) { d.remove(); });
   });
 };
 window._sqMgHeart = function (uid) {
@@ -38763,13 +38809,13 @@ window._sqMgPaint = function (sid) {
   window._sqMgInField = inField;   // ★OX 와 같은 DOM 을 쓴다 — 서로 지우지 않게
   // 소리 — 상태가 바뀌는 순간에만. 필드에 들어간 사람에게만(구경꾼 화면에서 목소리가 나면 이상하다)
   try {
-    const st = v ? v.st : null, prev = window._sqMgPrevSt;
-    if (st !== prev) {
-      window._sqMgPrevSt = st;
+    const st = v ? v.st : null, key = v ? (v.st + ':' + (v.dl | 0)) : null, prev = window._sqMgPrevSt;
+    if (key !== window._sqMgPrevKey) {
+      window._sqMgPrevKey = key; window._sqMgPrevSt = st;
       if (st === 'lb' && prev !== 'lb') window.sfx.preload();
-      if (inField && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go'); }
+      if (inField && st === 'go') { if (prev === 'lb') window.sfx.play('start'); window.sfx.voice('mugung_go_' + (v.vi | 0)); }
       if (inField && st === 'st') window.sfx.play('turn');
-      if (st === 'ov' && (v.join || {})[me]) { setTimeout(function () { if (v.win === me) { window.sfx.play('win'); window.sfx.voice('mugung_win'); } else if (v.win || (v.out || {})[me]) window.sfx.play('lose'); }, 900); }
+      if (st === 'ov' && (v.join || {})[me]) { setTimeout(function () { if (v.win === me) { window.sfx.play('win'); } else if (v.win || (v.out || {})[me]) window.sfx.play('lose'); }, 900); }
     }
   } catch (e) {}
 
@@ -38808,7 +38854,7 @@ window._sqMgPaint = function (sid) {
     let newly = 0;
     Object.keys(out).forEach(function (u) { if (!prev[u]) { window._sqMgHeart(u); newly++;
       if (u === me) { try { const p = window._sqMyPos; if (p) { p.dir = 'down'; p.moving = false; window._sqOnMove && window._sqOnMove(); } } catch (e) {}
-        window.sfx.voice('mugung_catch', 1); setTimeout(function () { stage.classList.remove('sq-mg-hitme'); void stage.offsetWidth; stage.classList.add('sq-mg-hitme'); }, 400); } } });
+        setTimeout(function () { stage.classList.remove('sq-mg-hitme'); void stage.offsetWidth; stage.classList.add('sq-mg-hitme'); }, 400); } } });
     if (newly && inField) { window.sfx.play('heart'); setTimeout(function () { window.sfx.play('fall'); }, 460); }
     window._sqMgOutPrev = Object.assign({}, out);
   } catch (e) {}

@@ -17,6 +17,7 @@ ap.add_argument('text'); ap.add_argument('out')
 ap.add_argument('--voice', default='Fenrir')
 ap.add_argument('--style', default='')
 ap.add_argument('--model', default='gemini-2.5-flash-preview-tts')
+ap.add_argument('--pitch', type=float, default=1.0, help='1.0=그대로. 0.8 이면 파형을 늘려 더 낮고 굵고 느리게(교관용). 대표 9-02: "존나 굵빵해야"')
 a = ap.parse_args()
 
 KEY = os.environ.get('GEMINI_API_KEY', '').strip()
@@ -42,8 +43,18 @@ mime = part.get('mimeType', ''); pcm = base64.b64decode(part['data'])
 rate = 24000
 for kv in mime.split(';'):
     if kv.strip().startswith('rate='): rate = int(kv.split('=')[1])
+# 피치 다운 — 파형을 1/pitch 배로 늘린다(선형 보간). 낮아지면서 조금 느려진다 — 교관 목소리엔 그게 맞다.
+if a.pitch and abs(a.pitch - 1.0) > 1e-3:
+    import array
+    src = array.array('h'); src.frombytes(pcm)
+    n = len(src); m = int(n / a.pitch); out = array.array('h', [0]) * m
+    for i in range(m):
+        x = i * a.pitch; j = int(x); f = x - j
+        if j + 1 < n: out[i] = int(src[j] * (1 - f) + src[j + 1] * f)
+        elif j < n: out[i] = src[j]
+    pcm = out.tobytes()
 # PCM → WAV
 wav = b'RIFF' + struct.pack('<I', 36 + len(pcm)) + b'WAVE' + b'fmt ' + struct.pack('<IHHIIHH', 16, 1, 1, rate, rate * 2, 2, 16) + b'data' + struct.pack('<I', len(pcm)) + pcm
 os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
 open(a.out, 'wb').write(wav)
-print('저장 %s  (%s, %d Hz, %.2f초, %s 목소리)' % (a.out, mime.split(';')[0], rate, len(pcm) / 2 / rate, a.voice))
+print('저장 %s  (%s, %d Hz, %.2f초, %s 목소리, pitch %.2f)' % (a.out, mime.split(';')[0], rate, len(pcm) / 2 / rate, a.voice, a.pitch))
