@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '953';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '954';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -24392,6 +24392,7 @@ window.mwJamShow = async function (asHost) {
           // ★저장이 **먼저**다 (대표 8-25). 방에 얹지 않아도 목록에 남아야, 나중에 고르고
           //   손님이 가져가고 팔 수도 있다. 깔기/걸기는 그 다음 선택지다.
           + '<button class="go" onclick="window.mwJamSaveArt()">저장</button>'
+          + '<button class="go" style="color:#F5C24B" onclick="window.mwJamSellNow()">경매</button>'
           + '<button class="go" onclick="window.mwJamPlace(\'rug\')">카펫</button>'
           + '<button class="go" onclick="window.mwJamPlace(\'frame\')">액자</button>'
         : '<button onclick="window.mwJamX()">닫기</button>') + '</div>';
@@ -24758,9 +24759,11 @@ window._mwVisitArtWatch = function (ownerUid) {
 window.mwJamSaveArt = async function () {
   const J = window._mwJam, R = window._rt, me = auth.currentUser;
   if (!J || !me) return;
-  if (!window.mwJamIsHost()) { showToast('방 주인만 저장할 수 있어요'); return; }
+  if (!window.mwJamIsHost()) { showToast('방 주인만 저장할 수 있어요'); return null; }
   const px = J.px.map(function (v) { return (v || 0).toString(36); }).join('');
-  if (!/[^0]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return; }
+  if (!/[^0]/.test(px)) { showToast('아직 아무것도 안 그렸어요'); return null; }
+  // 9-02 같은 그림을 두 번 저장하지 않는다 — [경매] 가 저장을 먼저 부르는데, 방금 [저장] 을 눌렀을 수 있다
+  if (J.savedPx === px && J.savedId && window.mwArtHave && window.mwArtHave(J.savedId)) return J.savedId;
   // 서명 = 저장할 때 방에 있던 사람들. **uid 도 같이** 남긴다 — 나중에 '공짜로 가져가기'
   // 판정이 uid 로 이뤄지기 때문이다(닉네임은 바뀔 수 있어 기준이 못 된다).
   let by = [], byUids = [];
@@ -24786,6 +24789,7 @@ window.mwJamSaveArt = async function () {
   const art = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
                 px: px, by: by.slice(0, 6), byUids: byUids.slice(0, 6), at: Date.now(), price: 0 };
   window._myArt = [art].concat(window._myArt || []).slice(0, window.MW_ART_MAX);
+  J.savedPx = px; J.savedId = art.id;
   const ok = await window._mwSaveArt(window._myArt);
   showToast(ok === false ? '목록에 담았어요 · 곧 저장돼요' : '그림 목록에 저장했어요');
   // ★★같이 그린 사람 목록에도 **각자 사본**이 들어간다 (대표 8-28: "뚱이 마조리카랑
@@ -24805,6 +24809,16 @@ window.mwJamSaveArt = async function () {
   } catch (e) { console.warn('art co send', e); }
   if (navigator.vibrate) navigator.vibrate([8, 45, 8]);
   window.mwArtChip && window.mwArtChip(window._curField);
+  return art.id;
+};
+// ★9-02 대표: "같이 그린 그림 바로바로 경매에" — 저장 → 낙서판만 내리고(판은 남는다) → 경매 시작가 창.
+//   예전엔 저장 → 닫기 → 그림 목록 → 그림 고르기 → 경매 올리기, 다섯 단계였다.
+window.mwJamSellNow = async function () {
+  if (!window.mwJamIsHost || !window.mwJamIsHost()) { showToast('방 주인만 올릴 수 있어요'); return; }
+  window.sfx && window.sfx.play('btn');
+  const id = await window.mwJamSaveArt(); if (!id) return;
+  window.mwJamClose();                                 // 내 화면에서만 내린다 — 다른 사람 판은 그대로
+  setTimeout(function () { try { window.mwAucOpen(id); } catch (e) { console.warn('jam→auc', e); showToast('경매 창을 열지 못했어요 · 그림 목록에서 올려주세요'); } }, 160);
 };
 
 // ---- 목록 ----
