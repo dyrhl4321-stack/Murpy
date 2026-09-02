@@ -139,13 +139,20 @@ const hy = hit.by; w.tennisTick(hit, 16);
 assert(hit.by < hy, '상대 쪽으로 가야 하는데 y 가 안 줄었다');
 ok();
 
-// 15) 랠리가 길어지면 공이 빨라지되 상한을 넘지 않는다
+// 15) 랠리가 길어지면 빨라지되 상한이 있다. ★9-02 규칙 변경: perfect 는 상한을 30% 더 연다
+//     (대표: "나이스샷 쳤을 땐 진짜 빠르게 상대방한테로") — 정타는 상대가 못 쫓아가는 게 맞다.
 const fast = ready(); fast.rally = 200;
 w._tennisHit(fast, w._tennisJudge(fast, 50));
-assert(fast.vy <= T.V_MAX + 1e-9, '공 속도가 상한을 넘었다: ' + fast.vy);
+assert(fast.vy <= T.V_MAX * 1.3 + 1e-9, '공 속도가 (열린) 상한을 넘었다: ' + fast.vy);
 const slow = ready(); slow.rally = 0;
 const slowJ = w._tennisJudge(slow, 50); w._tennisHit(slow, slowJ);
 assert(slow.vy < fast.vy, '랠리가 길수록 빨라져야 한다');
+// 정타가 흘려친 것보다 빠르다
+const edgeHit = ready(); edgeHit.by = MID + HALF * 0.8;
+const ej = w._tennisJudge(edgeHit, 50); w._tennisHit(edgeHit, ej);
+const cleanHit = ready();
+const cj = w._tennisJudge(cleanHit, 50); w._tennisHit(cleanHit, cj);
+assert(cleanHit.vy > edgeHit.vy, '정타(perfect 1)가 흘려친 것보다 빨라야 한다: ' + cleanHit.vy + ' vs ' + edgeHit.vy);
 ok();
 
 // 16) 상대는 **내가 있는 반대쪽**으로 보낸다

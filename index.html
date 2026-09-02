@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '919';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '920';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18661,7 +18661,10 @@ window._tennisHit = function (s, j) {
   const T = window.TENNIS, lv = window.TENNIS_LV[s.lv] || window.TENNIS_LV.mid;
   s.rally += 1; if (s.rally > s.bestRally) s.bestRally = s.rally;
   s.toMe = false; s.by = T.MY_BASE - 4;
-  s.vy = Math.min(T.V_MAX, lv.ballV + s.rally * lv.acc);
+  // ★perfect 일수록 빠르다 (대표 9-02: "나이스샷 쳤을 땐 진짜 빠르게 상대방한테로").
+  //   상한도 perfect 만큼 더 열어준다 — 정타는 상대가 못 쫓아가는 게 맞다.
+  const pf = (j && j.perfect) || 0;
+  s.vy = Math.min(T.V_MAX * (1 + 0.3 * pf), (lv.ballV + s.rally * lv.acc) * (1 + 0.55 * pf));
   const course = Math.max(T.SIDE_MIN, Math.min(T.SIDE_MAX, j.course));
   s.vx = (course - s.bx) / ((T.MY_BASE - T.OP_BASE) / s.vy);
   s.last = 'hit';
@@ -18704,8 +18707,11 @@ window.tennisTick = function (s, dt) {
   // 손가락을 대고 있는 채로 공이 오면 존 가운데 근처에서 자동으로 받아친다.
   //   perfect 를 좋게 못 받으므로(가운데 지나기 전 0.45 시점) 코스가 흔들린다 —
   //   누르고만 있어도 랠리는 이어지지만, 제대로 치려면 그 순간에 탭해야 한다.
+  // ★홀드 자동 스윙은 조준하지 않는다 — **공이 온 자리 그대로(정면)** 되돌린다.
+  //   전엔 손가락 x 로 쳐서, 이동하려는 손가락이 조준까지 뺏었다("어디로 보낼지 설정할 수 없다").
+  //   랠리 유지는 홀드로, 득점(코스 찌르기)은 탭으로 — 역할이 갈린다.
   if (s.toMe && s.mtx != null) {
-    const aj = window._tennisJudge(s, s.mtx);
+    const aj = window._tennisJudge(s, s.bx);
     if ((aj.result === 'hit' || aj.result === 'out') && aj.perfect >= 0.45) {
       window._tennisHit(s, aj);            // _tennisHit 이 코스를 라인 안으로 눌러 담는다(홀드는 아웃 없음)
     }
@@ -18769,21 +18775,21 @@ window._tennisCheckArt = function () {
     window._tennisArt = true;
     const a = document.getElementById('tennis-art-bg');
     if (a) {
-      a.style.backgroundImage = "url('char/game/tennis_title.png?v=3')";
+      a.style.backgroundImage = "url('char/game/tennis_title.png?v=4')";
       a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
     }
     window._tennisPaintStart();
   };
   im.onerror = function () { window._tennisArt = false; window._tennisPaintStart(); };
-  im.src = 'char/game/tennis_title.png?v=3';
+  im.src = 'char/game/tennis_title.png?v=4';
   const rb = new Image();
   rb.onload = function () { window._tennisRabbit = true; };
   rb.onerror = function () { window._tennisRabbit = false; };
-  rb.src = 'char/game/tennis_rabbit.png?v=1';
+  rb.src = 'char/game/tennis_rabbit.png?v=2';
   const rs = new Image();
   rs.onload = function () { window._tennisRabbitSide = true; };
   rs.onerror = function () { window._tennisRabbitSide = false; };
-  rs.src = 'char/game/tennis_rabbit_side.png?v=1';
+  rs.src = 'char/game/tennis_rabbit_side.png?v=2';
 };
 window.tennisRecs = async function () {
   window._tennisShowPane('tennis-pane-recs');
@@ -18852,7 +18858,7 @@ window._tennisBuild = function () {
     e.op.innerHTML = '<div class="tn-op-flip"><div class="tn-op-spr"></div></div>';
     e.opFlip = e.op.querySelector('.tn-op-flip');
     e.opSpr = e.op.querySelector('.tn-op-spr');
-    e.opSpr.style.backgroundImage = "url('char/game/tennis_rabbit.png?v=1')";
+    e.opSpr.style.backgroundImage = "url('char/game/tennis_rabbit.png?v=2')";
     e.op.classList.add('bob');
   } else {
     try { if (window._charRenderTo) window._charRenderTo(e.op, 52, { body: 'human' }); } catch (err) {}
@@ -18878,8 +18884,8 @@ window._tennisPaint = function (s) {
     if (e._opSide !== wantSide) {
       e._opSide = wantSide;
       e.opSpr.style.backgroundImage = wantSide
-        ? "url('char/game/tennis_rabbit_side.png?v=1')"
-        : "url('char/game/tennis_rabbit.png?v=1')";
+        ? "url('char/game/tennis_rabbit_side.png?v=2')"
+        : "url('char/game/tennis_rabbit.png?v=2')";
     }
     if (moving) e.opFlip.classList.toggle('left', dxo < 0);   // 옆모습 원본은 오른쪽을 본다
     if (moving) { e.op.classList.add('hop'); e.op.classList.remove('bob'); }
@@ -19048,20 +19054,28 @@ window._tennisBindInput = function () {
     const ov = document.getElementById('tennis-over');
     return !((ss && ss.style.display !== 'none') || (ov && ov.style.display !== 'none'));
   };
+  // ★두 손가락 (대표 9-02): 첫 손가락 = 이동(드래그), 둘째 손가락 탭 = 조준 스윙.
+  //   이동 손가락을 pointerId 로 기억해서, 다른 손가락의 탭·떼기가 이동을 끊지 않게 한다.
   el.addEventListener('pointerdown', function (ev) {
     if (!gameOn(ev)) return;
     const s = window._tennisS; if (!s || s.over) return;
-    window._tennisTap(ev.clientX, ev.clientY);      // 존에 공이 있으면 스윙
-    s.mtx = toX(ev.clientX);                        // 아니면(또는 스윙 후에도) 그쪽으로 달린다
+    window._tennisTap(ev.clientX, ev.clientY);      // 존에 공이 있으면 이 손가락 자리로 스윙
+    if (window._tennisMovePid == null) {            // 이동 담당이 없으면 이 손가락이 맡는다
+      window._tennisMovePid = ev.pointerId;
+      s.mtx = toX(ev.clientX);
+    }
   });
   el.addEventListener('pointermove', function (ev) {
-    const s = window._tennisS; if (!s || s.over || s.mtx == null) return;
-    s.mtx = toX(ev.clientX);                        // 드래그하면 목표를 따라간다
+    const s = window._tennisS; if (!s || s.over) return;
+    if (ev.pointerId === window._tennisMovePid && s.mtx != null) s.mtx = toX(ev.clientX);
   });
-  const up = function () { const s = window._tennisS; if (s) s.mtx = null; };
+  const up = function (ev) {
+    if (ev.pointerId !== window._tennisMovePid) return;   // 스윙 손가락 떼기는 이동을 안 끊는다
+    window._tennisMovePid = null;
+    const s = window._tennisS; if (s) s.mtx = null;
+  };
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
-  el.addEventListener('pointerleave', up);
 };
 window.tennisOpen = function () {
   const el = document.getElementById('tennis-screen'); if (!el) return;
@@ -19096,6 +19110,7 @@ window.tennisGo = function () {
   window._tennisBuild();
   window._tennisPaint(window._tennisS);
   window._tennisHud(window._tennisS);
+  window._tennisMovePid = null;
   try { window.sfx && window.sfx.play('start'); } catch (e) {}
   window._tennisTs = 0;
   cancelAnimationFrame(window._tennisRaf);
