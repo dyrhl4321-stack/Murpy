@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '936';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '937';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -38589,7 +38589,16 @@ window.sfx = (function () {
     try { A(); } catch (e) {}
     try { const a = document.createElement('audio'); a.setAttribute('playsinline', ''); a.src = SILENT; a.volume = 0.01; const p = a.play(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
   };
-  ['touchstart', 'touchend', 'click', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlock, { once: true, passive: true }); });
+  // ★홈 화면에 추가한 앱(iOS PWA 독립 모드)은 첫 제스처에서 resume 이 안 먹는 경우가 있다 —
+  //   한 번만 걸지 말고, 컨텍스트가 running 이 될 때까지 제스처마다 다시 시도한다(전부 되면 스스로 뗀다).
+  const evs = ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'];
+  const tryUnlock = function () {
+    unlock();
+    try { if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (e) {}
+    if (ctx && ctx.state === 'running') evs.forEach(function (ev) { document.removeEventListener(ev, tryUnlock, true); });
+  };
+  evs.forEach(function (ev) { document.addEventListener(ev, tryUnlock, { passive: true, capture: true }); });
+  document.addEventListener('visibilitychange', function () { try { if (!document.hidden && ctx && ctx.state === 'suspended') ctx.resume(); } catch (e) {} });
   // 한 음 — f 에서 f2 로 미끄러지며 dur 초. type = square(칩튠)·triangle(부드럽게)·sawtooth(거칠게)·sine
   const tone = function (o) {
     const c = A(); if (!c) return;
