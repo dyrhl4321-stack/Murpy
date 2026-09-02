@@ -328,6 +328,8 @@ const EARN_CAPS = {
   streak7:      { max: 5,    perDay: 1 },
   admin:        { max: 2000, perDay: 50 },
   gift:         { max: 2000, perDay: 50 },
+  refund:       { max: 100,  perDay: 5 },   // 실패 환불 전용(매칭 100·대숲 1·저에요 10) — C2 잠금 뒤 클라가 못 올리므로 서버로 받는다
+
   other:        { max: 20,   perDay: 5 },
 };
 exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {

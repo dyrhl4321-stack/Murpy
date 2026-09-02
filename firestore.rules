@@ -43,16 +43,18 @@ service cloud.firestore {
       allow create: if isAdmin() || (isOwner(userId)
                     && (!('credits' in request.resource.data) || request.resource.data.credits <= 500));
       allow delete: if isAdmin();
-      // ★크레딧 증가폭 제한 (2026-08-25).
-      //   지금까지 본인은 자기 문서의 **아무 필드나** 쓸 수 있었다. 브라우저 콘솔 한 줄이면
-      //   자기 머피를 100만으로 만들 수 있었다는 뜻이다(경제가 클라이언트 신뢰에 100% 의존).
-      //   한 번에 1000 초과 증가를 거부한다. 반복하면 뚫리므로 **근본 해결이 아니다** —
-      //   진짜 해결은 크레딧 지급을 Cloud Functions 로 옮기는 것이다(CLAUDE.md '공개 런칭 전 필수').
-      //   1000 으로 잡은 이유: 도감 보너스처럼 한 번에 여러 건을 몰아 주는 지급이 있어서
-      //   너무 좁게 잡으면 정상 적립이 막힌다. 좁히려면 그 지급들을 먼저 쪼개야 한다.
+      // ★C2 마지막 잠금 (2026-09-02) — 클라는 credits 를 **못 올린다**(감소만).
+      //   지급은 전부 Cloud Functions(earn, Admin SDK 라 규칙을 안 거친다)로 이관 완료(8-31 v863),
+      //   앱의 클라 폴백 12곳도 같은 날 제거했다. 장부(ledger) 3일 분포 확인 뒤 잠근다.
+      //   유일한 예외 = 지갑 초기화: credits 필드가 **아직 없는** 문서에 가입 선물(30) 이하로
+      //   처음 넣는 것. 한 번 생기면 그 뒤로는 감소만 된다.
+      //   (예전 규칙은 '한 번에 +1000까지 허용' — 반복하면 뚫리는 임시 방벽이었다.)
       allow update: if isAdmin() || (isOwner(userId) && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits'])
-          || request.resource.data.credits <= resource.data.credits + 1000
+          || (!('credits' in resource.data) && request.resource.data.credits is int
+              && request.resource.data.credits <= 30)
+          || (request.resource.data.credits is int
+              && request.resource.data.credits <= resource.data.credits)
       ));
 
       // 머피월드 방명록 (싸이월드식) — 작성자=본인 서명, 삭제=방주인/작성자

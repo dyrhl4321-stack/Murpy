@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '952';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '953';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -20982,12 +20982,13 @@ window.grantBetaGift = async function () {
     //             30이 100에 먹혀 130이 아니라 100이 된다(대표 8-18: "총 130으로 시작").
     const next = window.BETA_GIFT_ON ? Math.max(d.credits | 0, gift) : (d.credits | 0) + gift;
     const diff = next - (d.credits | 0);
-    const sv = (diff > 0 && window.serverEarn) ? await window.serverEarn('first_post', diff, BETA_GRANT_KEY) : { live: false };
-    if (sv.live) { await updateDoc(ref, { [BETA_GRANT_KEY]: true, betaGrantPending: false }); }
-    else {
-      await updateDoc(ref, { credits: next, [BETA_GRANT_KEY]: true, betaGrantPending: false });
-      window._creditState.credits = next;
+    if (diff > 0) {
+      const sv = window.serverEarn ? await window.serverEarn('first_post', diff, BETA_GRANT_KEY) : { live: false };
+      // C2 잠금(9-02): 서버 없이는 지급 없음 — 플래그도 안 남겨 다음에 재시도.
+      // sv.ok=false(중복)는 이미 받은 것이므로 플래그만 남기고 지나간다.
+      if (!sv.live) return false;
     }
+    await updateDoc(ref, { [BETA_GRANT_KEY]: true, betaGrantPending: false });
     window.track && window.track('first_verify', { gift: gift });
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
@@ -21064,9 +21065,12 @@ window.ensureCreditsInit = async (uid) => {
       //   ※그 뒤 아래 베타 선물이 한 번 더 300까지 채운다(베타 중일 때).
       if (!_anon && d.creditsMigrated !== true && d.credits < CREDIT_WELCOME) {
         try {
-          await updateDoc(ref, { credits: CREDIT_WELCOME, creditsMigrated: true });
-          window.earnLog && window.earnLog('welcome', CREDIT_WELCOME, 'welcome');
-          d.credits = CREDIT_WELCOME;
+          // C2 잠금(9-02): 채우기도 서버로 — 규칙이 클라 증가를 거부한다. 실패하면 다음에 재시도.
+          const _svw = window.serverEarn ? await window.serverEarn('welcome', CREDIT_WELCOME - (d.credits | 0), 'welcome_migr') : { live: false };
+          if (_svw.live) {
+            await updateDoc(ref, { creditsMigrated: true });
+            d.credits = (d.credits | 0) + (_svw.granted | 0);
+          }
         } catch (e) {}
       } else if (!_anon && d.creditsMigrated !== true) {
         try { await updateDoc(ref, { creditsMigrated: true }); } catch (e) {}
@@ -21274,11 +21278,8 @@ window.grantDailyCreditOnVerify = async (uid) => {
   const gain = CREDIT_DAILY + bonus;
   try {
     const sv = window.serverEarn ? await window.serverEarn('daily', gain, 'daily_' + today) : { live: false };
-    if (sv.live) { await updateDoc(doc(db, 'users', uid), { creditsLastEarned: today, streak: newStreak }); }
-    else {
-      await updateDoc(doc(db, 'users', uid), { credits: increment(gain), creditsLastEarned: today, streak: newStreak });
-      window._creditState.credits += gain;
-    }
+    if (!sv.live) return 0;                        // C2 잠금(9-02): 서버 없이는 지급 없음 — 다음에 재시도
+    await updateDoc(doc(db, 'users', uid), { creditsLastEarned: today, streak: newStreak });
     window._creditState.lastEarned = today;
     window._creditState.streak = newStreak;
     if (bonus && window.showToast) showToast(newStreak + '일 연속! 보너스 +' + bonus + '머피');
@@ -21313,11 +21314,8 @@ window.mwBirthdayCheck = async function (data) {
   if (String(data.bdayGift || '') === year) return;      // 올해 이미 받음
   try {
     const sv = window.serverEarn ? await window.serverEarn('birthday', CREDIT_BIRTHDAY, 'bday_' + year) : { live: false };
-    if (sv.live) { await updateDoc(doc(db, 'users', uid), { bdayGift: year }); }
-    else {
-      await updateDoc(doc(db, 'users', uid), { credits: increment(CREDIT_BIRTHDAY), bdayGift: year });
-      if (window._creditState) window._creditState.credits += CREDIT_BIRTHDAY;
-    }
+    if (!sv.live) return;                          // C2 잠금(9-02): 서버 없이는 지급 없음 — 다음 접속 때 재시도
+    await updateDoc(doc(db, 'users', uid), { bdayGift: year });
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
     if (window._cachedProfile) window._cachedProfile.bdayGift = year;
@@ -21332,22 +21330,12 @@ window.earnCredit = async function (amount, reason, kind, key) {
   const uid = window.currentUser && window.currentUser.uid;
   if (!uid || !amount) return false;
   const sv = window.serverEarn ? await window.serverEarn(kind || 'other', amount, key || '') : { live: false };
-  if (sv.live) {
-    if (!sv.ok) return false;                       // 서버가 상한/중복으로 거절
-    if (reason && window.murpyMini) window.murpyMini(sv.granted, reason);
-    else if (reason && window.showToast) showToast(reason + ' +' + sv.granted + '머피');
-    return true;
-  }
-  try {
-    await updateDoc(doc(db, 'users', uid), { credits: increment(amount) });
-    window._creditState.credits += amount;
-    if (window.renderCreditUI) window.renderCreditUI();
-    if (window.mwUpdateCoin) window.mwUpdateCoin();
-    // ★사유를 보여주는 게 핵심이다. 토스트는 스쳐 지나가서 왜 받았는지가 안 남았다(대표 지적).
-    if (reason && window.murpyMini) window.murpyMini(amount, reason);
-    else if (reason && window.showToast) showToast(reason + ' +' + amount + '머피');
-    return true;
-  } catch (e) { return false; }
+  // ★C2 잠금(9-02): 클라 폴백 제거 — 서버가 못 받으면 안 준다. 규칙도 증가를 거부하므로
+  //   폴백을 남겨 두면 '됐다고 표시되고 실제로는 실패'가 된다. 다음 기회에 다시 시도된다.
+  if (!sv.live || !sv.ok) return false;
+  if (reason && window.murpyMini) window.murpyMini(sv.granted, reason);
+  else if (reason && window.showToast) showToast(reason + ' +' + sv.granted + '머피');
+  return true;
 };
 
 // ★소셜 보상은 **행동한 사람이 그 자리에서 받는다** (대표 결정 2026-08-05).
@@ -21398,10 +21386,7 @@ window.mwEarnSocial = async function (kind, reason, once) {   // kind: 'visit' |
     });
     if (!paid) return false;
     const sv = window.serverEarn ? await window.serverEarn(kind, amount, key || (kind + '_' + day + '_' + Date.now())) : { live: false };
-    if (!sv.live) {
-      try { await updateDoc(doc(db, 'users', uid), { credits: increment(amount) }); } catch (e) { return false; }
-      window._creditState.credits += amount;
-    } else if (!sv.ok) return false;
+    if (!sv.live || !sv.ok) return false;          // C2 잠금(9-02): 서버 없이는 지급 없음
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
     // ★토스트로만 띄우면 왜 받았는지가 안 남는다(대표 지적). 축하 연출을 작게 재사용한다.
@@ -21495,12 +21480,9 @@ window.matchSpend = async (uid) => {
 // ★8-31 공용 환불 — 차감 후 본 작업이 실패했을 때 머피를 돌려준다(대숲 글 1·저에요 3 등)
 window.creditRefund = async (uid, n) => {
   if (!window.creditsEnforcedFor(uid) || !(n > 0)) return;
-  await runTransaction(db, async tx => {
-    const ref = doc(db, 'users', uid); const snap = await tx.get(ref);
-    const d = snap.exists() ? snap.data() : {};
-    tx.update(ref, { credits: (typeof d.credits === 'number' ? d.credits : 0) + n });
-  });
-  window._creditState.credits = (window._creditState.credits | 0) + n; window.renderCreditUI && window.renderCreditUI();
+  // C2 잠금(9-02): 클라가 credits 를 못 올린다 — 환불도 서버(earn 'refund', 하루 5회·건당 100 상한)로 받는다.
+  const sv = window.serverEarn ? await window.serverEarn('refund', n, 'rf_' + Date.now().toString(36)) : { live: false };
+  if (!sv.live || !sv.ok) console.warn('refund fail', n, sv.why || '');
 };
 // ★8-31 환불 — 차감 후 likes 쓰기가 실패하면 무료 횟수/머피를 그대로 돌려준다(전엔 돈만 나갔다)
 window.matchRefund = async (uid, r) => {
@@ -21510,12 +21492,13 @@ window.matchRefund = async (uid, r) => {
     const snap = await tx.get(ref);
     const d = snap.exists() ? snap.data() : {};
     const day = _matchDayKey();
-    const upd = {};
-    if (d.mfDay === day && (d.mfN | 0) > 0) { upd.mfN = (d.mfN | 0) - 1; }
-    if (!r.free && r.cost) upd.credits = (typeof d.credits === 'number' ? d.credits : 0) + r.cost;
-    if (Object.keys(upd).length) tx.update(ref, upd);
+    // 무료 횟수 복원은 credits 가 아니라 그대로 클라에서. 머피 환불은 아래 서버로(C2 잠금 9-02).
+    if (d.mfDay === day && (d.mfN | 0) > 0) tx.update(ref, { mfN: (d.mfN | 0) - 1 });
   });
-  if (!r.free && r.cost) { window._creditState.credits = (window._creditState.credits | 0) + r.cost; window.renderCreditUI && window.renderCreditUI(); }
+  if (!r.free && r.cost) {
+    const sv = window.serverEarn ? await window.serverEarn('refund', r.cost, 'rfm_' + Date.now().toString(36)) : { live: false };
+    if (!sv.live || !sv.ok) console.warn('match refund fail', r.cost, sv.why || '');
+  }
 };
 window.matchCostDesc = async (uid) => {
   const q = await window.matchQuota(uid);
@@ -31200,12 +31183,14 @@ window._mwDogamBonusCheck = async function () {
   const total = due.reduce((s, d) => s + d.amount, 0);
   const flags = { ...claimed }; due.forEach(d => { flags[d.key] = true; });
   try {
+    // C2 잠금(9-02): 서버 없이는 지급 없음. 플래그도 안 남겨 다음에 재시도(하루 1회 상한이라
+    // 같은 날 두 구간을 연달아 넘으면 두 번째는 다음 날 들어온다 — 지연이지 소실이 아니다).
     const sv = window.serverEarn ? await window.serverEarn('dogam', total, 'dogam_' + Object.keys(flags || {}).join('_')) : { live: false };
-    if (sv.live) await updateDoc(doc(db, 'users', user.uid), { dogamBonus: flags });
-    else await updateDoc(doc(db, 'users', user.uid), { credits: increment(total), dogamBonus: flags });
+    if (!sv.live || !sv.ok) { console.warn('dogam bonus 서버 거절', sv.why || ''); return; }
+    await updateDoc(doc(db, 'users', user.uid), { dogamBonus: flags });
   }
   catch(e) { console.warn('dogam bonus fail', e); return; }
-  if (window._creditState) window._creditState.credits = (window._creditState.credits || 0) + total;
+  // 잔액은 serverEarn 이 이미 맞췄다 — 여기서 또 더하면 화면 잔액이 이중 가산된다
   if (window.mwUpdateCoin) try { window.mwUpdateCoin(); } catch(e){}
   if (window.celebrateMurpy) window.celebrateMurpy(undefined, { amount: total, title: '센터 도감 ' + due[due.length-1].n + '곳 달성!' });
 };
@@ -39782,15 +39767,12 @@ window.sqComplete = async function (sid) {
     const reward = !s.hostRewarded && checkedIn.length >= 1;
     await updateDoc(doc(db,'squads',sid), { status:'completed', endedAt: serverTimestamp(), hostRewarded: s.hostRewarded || reward });
     for (const u of checkedIn) { try { await updateDoc(doc(db,'squads',sid,'members',u), { status:'completed' }); } catch(e) {} }
-    let _hostSv = { live: false };
+    // C2 잠금(9-02): 지급은 서버로만. 잔액은 serverEarn 이 맞춘다.
+    let _hostSv = { live: false, ok: false };
     if (reward && window.serverEarn) _hostSv = await window.serverEarn('squad_host', CREDIT_SQUAD_HOST, 'host_' + sid);
-    try { await updateDoc(doc(db,'users',me), (reward && !_hostSv.live)
-      ? { 'hostStats.completed': increment(1), credits: increment(CREDIT_SQUAD_HOST) }
-      : { 'hostStats.completed': increment(1) }); } catch(e) {}
+    try { await updateDoc(doc(db,'users',me), { 'hostStats.completed': increment(1) }); } catch(e) {}
     window.sqChatSys(sid, '오늘 스쿼드 완료! 다들 오운완');
-    if (reward) {
-      // 로컬 잔액 — 서버 지급(live)이면 serverEarn 이 이미 맞췄다
-      if (!_hostSv.live) window._creditState.credits += CREDIT_SQUAD_HOST;
+    if (reward && _hostSv.live && _hostSv.ok) {
       if (window.renderCreditUI) window.renderCreditUI();
       window.mwUpdateCoin && window.mwUpdateCoin();
       if (window.murpyMini) window.murpyMini(CREDIT_SQUAD_HOST, '스쿼드 완주');
@@ -40230,12 +40212,10 @@ async function bpAttend(sid, otherUid) {
         tx.update(mRef, { bumpAttendRewardKey: bumpAttendRewardKey, lastBumpAt: serverTimestamp() });
         return CREDIT_SQUAD_BUMP_ATTEND;                 // 지급은 트랜잭션 밖에서(서버 우선)
       });
-      if (got) {
-        const sv = window.serverEarn ? await window.serverEarn('bump_attend', got, 'ba_' + bumpAttendRewardKey) : { live: false };
-        if (!sv.live) { try { await updateDoc(meRef, { credits: increment(got) }); } catch (e) {} }
-      }
       if (!got) return 0;
-      window._creditState.credits += got;
+      // C2 잠금(9-02): 서버로만 지급 — 잔액도 serverEarn 이 맞춘다(여기서 더하면 이중 가산)
+      const sv = window.serverEarn ? await window.serverEarn('bump_attend', got, 'ba_' + bumpAttendRewardKey) : { live: false };
+      if (!sv.live || !sv.ok) return 0;
       if (window.renderCreditUI) window.renderCreditUI();
       if (window.mwUpdateCoin) window.mwUpdateCoin();
       bpAttendCredit = got;
@@ -40363,11 +40343,9 @@ async function bpEarn(stacked, first) {
       return amount;
     });
     if (got) {
+      // C2 잠금(9-02): 서버로만 지급 — 잔액도 serverEarn 이 맞춘다(여기서 더하면 이중 가산)
       const sv = window.serverEarn ? await window.serverEarn('bump', got, 'bump_' + day + '_' + (window._bpEarnN | 0)) : { live: false };
-      if (!sv.live) { try { await updateDoc(doc(db, 'users', user.uid), { credits: increment(got) }); } catch (e) {} }
-    }
-    if (got) {
-      window._creditState.credits += got;
+      if (!sv.live || !sv.ok) return 0;
       if (window.renderCreditUI) window.renderCreditUI();
       if (window.mwUpdateCoin) window.mwUpdateCoin();
     }
