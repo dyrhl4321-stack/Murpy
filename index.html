@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '915';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '916';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -10215,6 +10215,18 @@ window.mwPortal = function () {
    지속 노드가 아니라 탭 순간 하나 만들고 애니메이션 끝나면 지운다(테니스는 노드를 재사용하므로 전이가 산다). */
 .tennis-tapfx{position:absolute;width:14px;height:14px;border:2px solid rgba(255,255,255,.9);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:7;animation:tnTap .3s ease-out forwards}
 @keyframes tnTap{0%{opacity:.95;width:10px;height:10px}100%{opacity:0;width:44px;height:44px}}
+/* 임팩트 버스트 — 공을 맞힌 순간 라켓 자리에서 하얗게 터진다 */
+.tennis-burst{position:absolute;border:3px solid #fff;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:6;animation:tnBurst .28s ease-out forwards}
+.tennis-burst.gold{border-color:#3D7EFF;box-shadow:0 0 14px rgba(61,126,255,.7)}
+@keyframes tnBurst{0%{opacity:1;width:8px;height:8px;border-width:5px}100%{opacity:0;width:64px;height:64px;border-width:1px}}
+/* 점수 팝 — 숫자가 떠오르며 사라진다. 골드는 코인 전용이라 흰색/파랑만 쓴다 */
+.tennis-pop{position:absolute;transform:translate(-50%,-50%);pointer-events:none;z-index:8;font-family:'Galmuri14',sans-serif;font-weight:800;color:#fff;text-shadow:0 2px 5px rgba(0,0,0,.8);animation:tnPop .8s ease-out forwards;white-space:nowrap}
+.tennis-pop.blue{color:#7aa8ff}
+.tennis-pop.red{color:#ff8a8e}
+@keyframes tnPop{0%{opacity:0;transform:translate(-50%,-30%) scale(.7)}18%{opacity:1;transform:translate(-50%,-60%) scale(1.12)}100%{opacity:0;transform:translate(-50%,-150%) scale(1)}}
+/* 실점 흔들림 — 화면이 아니라 필드만 흔든다(HUD·버튼은 제자리) */
+.tennis-shake{animation:tnShake .3s ease-in-out}
+@keyframes tnShake{0%,100%{transform:translate(0,0)}25%{transform:translate(-7px,2px)}50%{transform:translate(6px,-2px)}75%{transform:translate(-4px,1px)}}
 .tennis-flash.on{animation:tnFlash .32s ease}
 @keyframes tnFlash{0%{opacity:.9}100%{opacity:0}}
 .tennis-life{display:inline-block;width:9px;height:9px;border-radius:50%;background:#e8ff4a;margin-left:4px}
@@ -18857,6 +18869,21 @@ window._tennisHud = function (s) {
     li.innerHTML = h;
   }
 };
+// 좌표는 코트 논리(0~100). 일회성 노드 — 애니메이션 끝나면 스스로 사라진다.
+window._tennisFx = function (cls, lx, ly, text, ms) {
+  const e = window._tennisEls; if (!e) return;
+  const W = e.host.clientWidth || 360, H = e.host.clientHeight || 640;
+  const el = document.createElement('div');
+  el.className = cls;
+  el.style.left = (lx / 100 * W) + 'px'; el.style.top = (ly / 100 * H) + 'px';
+  if (text != null) { el.textContent = text; el.style.fontSize = '17px'; }
+  e.host.appendChild(el);
+  setTimeout(function () { el.remove(); }, ms || 900);
+};
+window._tennisShake = function () {
+  const f = document.getElementById('tennis-field'); if (!f) return;
+  f.classList.remove('tennis-shake'); void f.offsetWidth; f.classList.add('tennis-shake');
+};
 window._tennisFlash = function () {
   const f = document.getElementById('tennis-flash'); if (!f) return;
   f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
@@ -18869,8 +18896,17 @@ window._tennisFrame = function (ts) {
   // dt 를 묶는다 — 탭을 백그라운드에 두었다 돌아오면 한 프레임에 몇 초가 흘러 공이 순간이동한다
   const dt = Math.max(1, Math.min(48, ts - prev));
   const r = window.tennisTick(s, dt);
-  if (r === 'point') { window._tennisFlash(); }
-  else if (r === 'miss') { window._tennisHint('놓쳤어요! 링 안에서 탭하세요', 900); }
+  if (r === 'point') {
+    window._tennisFlash();
+    // 득점은 상대 코트 쪽에서 크게 — 무엇으로 얼마 벌었는지 보인다
+    window._tennisFx('tennis-pop blue', s.ox, window.TENNIS.OP_BASE + 8, '+' + window.TENNIS.PT_SCORE, 950);
+  } else if (r === 'miss') {
+    window._tennisShake();
+    window._tennisHint('놓쳤어요! 링 안에서 탭하세요', 900);
+  } else if (r === 'hit') {
+    // 홀드 자동 스윙(틱 안에서 났다) — 탭 스윙과 같은 버스트를 여기서 보여준다
+    window._tennisFx('tennis-burst', s.bx, window.TENNIS.MY_BASE - 6, null, 400);
+  }
   window._tennisPaint(s);
   window._tennisHud(s);
   window._tennisGuide(s);
@@ -18917,10 +18953,16 @@ window._tennisTap = function (clientX, clientY) {
   const j = window._tennisJudge(s, tapX);
   // ②헛스윙에도 **이유를 말해준다** — 조용한 실패는 아무것도 가르치지 못한다
   if (j.result === 'hit') {
+    const bx = s.bx, by = s.by;                       // 치기 전 위치에서 터뜨린다
     window._tennisHit(s, j);
-    if (j.perfect > 0.75) window._tennisHint('나이스!', 450);
+    window._tennisFx(j.perfect > 0.75 ? 'tennis-burst gold' : 'tennis-burst', bx, by, null, 400);
+    if (j.perfect > 0.75) {
+      window._tennisFx('tennis-pop blue', bx, by - 4, '나이스!', 900);
+    }
   } else if (j.result === 'out') {
     s.lives -= 1; s.rally = 0;
+    window._tennisShake();
+    window._tennisFx('tennis-pop red', s.bx, s.by - 4, '아웃!', 900);
     window._tennisHint('아웃! 라인 안쪽을 노리세요', 900);
     if (s.lives <= 0) { s.over = true; window._tennisEnd(s); } else { window._tennisServe(s); }
     window._tennisHud(s);
