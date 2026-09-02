@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '912';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '913';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1603,11 +1603,19 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* ── 9-02 무궁화꽃이 피었습니다 ── */
   /* 술래 = 흑빡이교관(대표 직접 생성 9-02). 시트 423x896 의 한 칸(141x224)만 보여준다.
      12칸 전부 일정해서 1열(정지 포즈)을 그대로 쓴다. */
-  .sq-mg-sulle { position:absolute; left:50%; top:14%; width:32px; height:51px; margin-left:-16px;
+  .sq-mg-sulle { position:absolute; left:50%; top:13%; width:45px; height:72px; margin-left:-22px;
     background-image:url('char/game/walk_npc_gyogwan.png?v=1'); background-repeat:no-repeat;
-    background-size:96px 204px; image-rendering:pixelated; z-index:7; pointer-events:none;
-    transition:filter .18s ease }   /* 9-02 대표: 너무 커서 96→51px, 플레이어(46px)와 비슷하게 */
-  .sq-mg-sulle.back  { background-position:0 -51px }   /* 2행1열 = 뒷모습 */
+    background-size:135px 288px; image-rendering:pixelated; z-index:7; pointer-events:none;
+    transition:filter .18s ease }   /* 9-02 대표: 96px 은 너무 크고 51px 은 작다 → 72px */
+  .sq-mg-sulle.back  { background-position:0 -72px }   /* 2행1열 = 뒷모습 */
+  /* 게임 중엔 필드를 세로로 더 길게 — 뛰어갈 거리가 있어야 긴장이 생긴다(대표 9-02) */
+  .sq-stage.sq-mg-tall { height:76vh !important }
+  /* 드래그 조이스틱 — 잡은 자리에 링이 뜨고, 미는 방향만 밝아진다(머피월드 방과 같은 조작감) */
+  .sq-mg-joy { position:absolute; width:96px; height:96px; margin:-48px 0 0 -48px; border-radius:50%; z-index:20; pointer-events:none;
+    border:2px solid rgba(255,255,255,.35); background:radial-gradient(circle, rgba(255,255,255,.10), rgba(255,255,255,.02) 70%); display:none }
+  .sq-mg-joy.show { display:block }
+  .sq-mg-joy .kn { position:absolute; left:50%; top:50%; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%;
+    background:rgba(255,255,255,.55); box-shadow:0 0 10px rgba(255,255,255,.35) }
   .sq-mg-sulle.front { background-position:0 0 }       /* 1행1열 = 정면 */
   /* 걸린 캐릭터 = 옆으로 넘어져 **누운 채 남는다**(OX 낙사는 화면 밖으로 사라져 하트 눈이 안 보인다) */
   .sq-char.sq-mg-down { animation:sqMgDown .55s cubic-bezier(.4,0,.8,.4) forwards; transform-origin:50% 100% }
@@ -38272,7 +38280,7 @@ window._sqMgScan = function () {
 };
 window._sqMgArm = function (sid) {
   clearTimeout(window._sqMgT); clearInterval(window._sqMgScanT);
-  const v = window._sqMgV; if (!v || v.st !== 'lb') clearInterval(window._sqMgTick);
+  const v = window._sqMgV; if (!v || v.st !== 'lb') clearInterval(window._sqMgLobbyT);
   if (!v || (v.st !== 'go' && v.st !== 'st')) return;
   if (v.st === 'st') { window._sqMgScan(); window._sqMgScanT = setInterval(window._sqMgScan, 200); }
   else window._sqMgCaught = {};
@@ -38337,6 +38345,92 @@ window._sqMgTick = function (sid) {
   }
 };
 
+// ── 조이스틱 (게임 중에만) ───────────────────────────────────────────────
+// 탭 이동은 목적지까지 한 번에 미끄러진다 — 중간에 못 멈추고 너무 빠르다(대표: "순간이동처럼").
+// 게임 중엔 필드를 잡고 미는 동안만 조금씩 간다. 놓으면 그 자리에 선다. 머피월드 방 조이스틱과 같은 조작감.
+window.SQ_MG.SPEED_Y = 11;    // 초당 y%  — 출발(78)→결승(26) 이 약 5초. 돌아보는 간격(1.4~3.4초) 두세 번을 견뎌야 한다
+window.SQ_MG.SPEED_X = 20;    // 초당 x%  — 필드가 가로로 넓어 같은 시간에 더 간다
+window._sqMgJoyOn = function (stage) {
+  if (stage._mgJoy) return;
+  const me = (auth.currentUser || {}).uid; if (!me) return;
+  let ring = document.getElementById('sq-mg-joy');
+  if (!ring) { ring = document.createElement('div'); ring.id = 'sq-mg-joy'; ring.className = 'sq-mg-joy'; ring.innerHTML = '<div class="kn"></div>'; stage.appendChild(ring); }
+  const kn = ring.querySelector('.kn');
+  let act = false, ox = 0, oy = 0, dx = 0, dy = 0, lastSend = 0;
+  const canMove = function () {
+    const v = window._sqMgV; if (!v || !window._sqMgInField) return false;
+    if ((v.out || {})[me]) return false;                       // 걸린 사람은 못 움직인다
+    return v.st === 'go' || v.st === 'st';                     // st 에서도 움직일 수는 있다 — 걸리는 게 게임이다
+  };
+  const place = function (cx, cy) {
+    const r = stage.getBoundingClientRect();
+    ring.style.left = Math.max(48, Math.min(r.width - 48, cx - r.left)) + 'px';
+    ring.style.top = Math.max(48, Math.min(r.height - 48, cy - r.top)) + 'px';
+  };
+  const onS = function (e) {
+    if (!canMove()) return;
+    const t = e.touches ? e.touches[0] : e; act = true; ox = t.clientX; oy = t.clientY; dx = dy = 0;
+    place(ox, oy); ring.classList.add('show'); kn.style.transform = '';
+    if (e.cancelable) e.preventDefault();
+  };
+  const onM = function (e) {
+    if (!act) return; const t = e.touches ? e.touches[0] : e;
+    let vx = t.clientX - ox, vy = t.clientY - oy; const len = Math.hypot(vx, vy);
+    if (len < 6) { dx = dy = 0; kn.style.transform = ''; return; }
+    const cl = Math.min(len, 40); vx = vx / len; vy = vy / len;
+    dx = vx * (cl / 40); dy = vy * (cl / 40);                  // 살짝 밀면 천천히, 끝까지 밀면 최고 속도
+    kn.style.transform = 'translate(' + (vx * cl) + 'px,' + (vy * cl) + 'px)';
+    if (e.cancelable) e.preventDefault();
+  };
+  const stop = function () {
+    act = false; dx = dy = 0; ring.classList.remove('show');
+    const p = window._sqMyPos; if (p && p.moving) { p.moving = false; const c = (window._sqChars || {})[me]; if (c) c.el.classList.remove('walking'); window._sqOnMove && window._sqOnMove(); }
+  };
+  const onE = function (e) { if (!act) return; stop(); if (e && e.cancelable) e.preventDefault(); };
+  stage.addEventListener('touchstart', onS, { passive: false });
+  stage.addEventListener('touchmove', onM, { passive: false });
+  stage.addEventListener('touchend', onE, { passive: false });
+  stage.addEventListener('touchcancel', onE, { passive: false });
+  stage.addEventListener('mousedown', onS);
+  const mm = function (e) { if (act) onM(e); }, mu = function (e) { if (act) onE(e); };
+  window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu);
+  // 프레임 루프 — 누르고 있는 동안만 조금씩 간다
+  let last = performance.now();
+  const loop = setInterval(function () {
+    const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (!act || (!dx && !dy)) return;
+    if (!canMove()) { stop(); return; }
+    const p = window._sqMyPos || (window._sqMyPos = { x: 50, y: 78, dir: 'down' });
+    const W = window._sqWalkBox(), Z = window.SQ_MG;
+    let x = Math.max(W.x0, Math.min(W.x1, p.x + dx * Z.SPEED_X * dt));
+    let y = Math.max(W.y0, Math.min(W.y1, p.y + dy * Z.SPEED_Y * dt));
+    const dir = Math.abs(dx) * 0.9 > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    const c = window._sqCharEl(me, window._mwMyNick || '머피', window.getMyCharacter ? window.getMyCharacter() : null, dir, window._myTitle, (window._seasonState || {}).auraOn || '');
+    if (!c) return;
+    c.el.classList.add('walking');
+    window._sqPlace(c, x, y, 0.06);
+    p.x = x; p.y = y; p.dir = dir; p.moving = true;
+    if (now - lastSend > 110) { lastSend = now; window._sqOnMove && window._sqOnMove(); }   // 서버엔 0.1초마다
+  }, 50);
+  stage._mgJoy = { off: function () {
+    clearInterval(loop); stop();
+    stage.removeEventListener('touchstart', onS); stage.removeEventListener('touchmove', onM);
+    stage.removeEventListener('touchend', onE); stage.removeEventListener('touchcancel', onE);
+    stage.removeEventListener('mousedown', onS); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu);
+    try { ring.remove(); } catch (e) {}
+  } };
+};
+window._sqMgJoyOff = function () {
+  const stage = document.getElementById('sq-room-stage');
+  if (stage && stage._mgJoy) { stage._mgJoy.off(); stage._mgJoy = null; }
+};
+// 게임 중엔 탭 이동을 끈다 — 조이스틱과 겹치면 탭 한 번에 목적지로 날아간다
+(function () {
+  const orig = window._sqWalkTo;
+  if (!orig || orig._mgWrapped) return;
+  const w = function (x, y) { if (window._sqMgInField) return; return orig(x, y); };
+  w._mgWrapped = 1; window._sqWalkTo = w;
+})();
 // ── 구독 ────────────────────────────────────────────────────────────────
 // ★따로 구독하지 않는다 — _sqQuizWatch 하나가 같은 노드를 받아 갈라준다(위 참고).
 //   같은 경로를 두 번 구독하면 콜백이 두 벌 돌고 정리할 곳도 두 곳이 된다.
@@ -38417,6 +38511,8 @@ window._sqMgPaint = function (sid) {
   }
   const _anyField = inField || !!window._sqQzInField;
   stage.classList.toggle('sq-qz-big', _anyField);
+  stage.classList.toggle('sq-mg-tall', inField);   // 무궁화꽃만 더 길게
+  if (inField) window._sqMgJoyOn(stage); else window._sqMgJoyOff();
   const det = document.getElementById('sq-detail'); if (det) det.classList.toggle('sq-qz-focus', _anyField);
   // 공지는 둘 중 하나라도 카드를 쓰는 동안 숨긴다. 둘 다 끝나면 되돌린다(안 되돌리면 영영 안 보인다).
   const _rn = document.getElementById('sq-room-notice');
@@ -38440,8 +38536,9 @@ window._sqMgPaint = function (sid) {
     const stopBtn = window._sqMgIsOwner() ? '<button onclick="window.sqMugungStop()" style="position:absolute;top:10px;right:10px;background:rgba(255,77,126,.15);border:1px solid rgba(255,77,126,.5);color:#FF4D7E;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">게임 종료</button>' : '';
     card.innerHTML = window._sqLobbyCard({ id: 'sq-mg-card', title: '무궁화꽃이 피었습니다', desc: '교관이 돌아보면 멈추세요. 움직이다 걸리면 하트 맞고 쓰러져요',
       jn: jn, joinFn: 'window.sqMugungJoin()', beginFn: 'window.sqMugungBegin()', isOwner: window._sqMgIsOwner(), stopBtn: stopBtn });
-    clearInterval(window._sqMgTick);
-    window._sqMgTick = setInterval(function () { if (!document.getElementById('sq-mg-card')) { clearInterval(window._sqMgTick); window._sqMgPaint(sid); } }, 300);
+    // ★타이머 이름을 판정 함수(_sqMgTick)와 다르게 — 같게 지었다가 함수가 덮여 돌아보기가 영영 안 불렸다
+    clearInterval(window._sqMgLobbyT);
+    window._sqMgLobbyT = setInterval(function () { if (!document.getElementById('sq-mg-card')) { clearInterval(window._sqMgLobbyT); window._sqMgPaint(sid); } }, 300);
     window._sqMgApplyVis(); return;
   }
   const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
@@ -38497,6 +38594,7 @@ window._sqRtLeave = function (sid, hard) {
   } catch (e) {}
   window._sqMgV = null; window._sqMgOutPrev = null; window._sqGameRaw = null;
   window._sqMgInField = false; window._sqQzInField = false;   // ★안 지우면 다음에 서로 '상대가 쓰는 중'으로 보고 둘 다 안 그린다
+  window._sqMgJoyOff && window._sqMgJoyOff();
   if (hard && window._rt && u && sid) { try { window._rt.remove(window._rt.ref(window._rt.db, 'squadRooms/' + sid + '/players/' + u.uid)); } catch(e) {} }
   window._sqRtUnsub && window._sqRtUnsub(); window._sqRtUnsub = null;
   window._sqOnMove = null; window._sqRtSend = null; window._sqOdArmed = null;

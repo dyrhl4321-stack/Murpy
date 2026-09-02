@@ -156,4 +156,12 @@ assert(Z.WALK_TOP <= Z.GOAL_Y,
   `결승선에 닿을 수 없다: 올라갈 수 있는 최고점 y=${Z.WALK_TOP} 인데 우승 조건은 y<=${Z.GOAL_Y}`);
 assert(Z.GOAL_Y < 55, '결승선이 평소 이동범위(y>=55) 안에 있으면 시작하자마자 이긴다');
 
-console.log('mugung-core: 16개 항목 전부 통과');
+// ── 17) ★함수 이름을 타이머 번호로 덮어쓰지 않는가 ─────────────────────
+//   9-02 로비 타이머를 `window._sqMgTick = setInterval(...)` 로 잡았는데 판정 함수 이름도 _sqMgTick 이었다.
+//   함수가 숫자로 덮여 '돌아보기'가 영영 안 불렸다(대표: "무궁화꽃이 피었습니다~ 여기서 안 바뀜").
+for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPaint', '_sqMgApplyVis']) {
+  const defs = (src.match(new RegExp('window\.' + fn + ' = ', 'g')) || []).length;
+  assert.strictEqual(defs, 1, `window.${fn} 대입이 ${defs}곳 — 함수 하나만 있어야 한다(타이머 번호로 덮이면 게임이 멈춘다)`);
+}
+
+console.log('mugung-core: 17개 항목 전부 통과');
