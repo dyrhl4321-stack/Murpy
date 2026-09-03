@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '976';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '977';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18001,6 +18001,7 @@ window.GOLF_MOLE_SPOTS = [[-9, 7], [9, 7], [-4, 13], [4, 13], [0, 10]];
 window._golfVillainsFor = function (s) {
   const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid, H = window.GOLF_HOLES[s.hole];
   s.crow = (lv.crow && H && s.hole >= (lv.crowFrom || 0)) ? { x: window._golfRnd(s) * 60 + 20, y: window.GOLF.CROW_Y + (window._golfRnd(s) * 10 - 5), dir: window._golfRnd(s) < 0.5 ? -1 : 1, hit: 0 } : null;
+  s._sfxCrowNext = 0; // 새 홀의 까마귀는 4~8초 뒤 첫 울음을 새로 예약한다
   // ★_golfRnd 호출 횟수를 바꾸지 말 것 — 씨앗이 밀려 같은 홀이 다른 코스가 된다. 예전과 똑같이 2번.
   if (lv.mole && H && s.hole >= (lv.moleFrom || 0)) {
     const SP = window.GOLF_MOLE_SPOTS, mi = Math.floor(window._golfRnd(s) * SP.length) % SP.length;
@@ -18584,7 +18585,7 @@ window._golfFrame = function (ts) {
   else if (r === 'ob') showToast('코스 밖 · 벌타 1');
   else if (r === 'bunker') showToast('벙커 · 다음 샷이 약해져요');
   else if (r === 'crow') showToast('까마귀가 공을 쳐냈어요!');
-  else if (r === 'mole') { try { window.sfx && window.sfx.play('mole'); } catch (e) {} showToast('두더지!'); }
+  else if (r === 'mole') showToast('두더지!');
   else if (r === 'lip') showToast('컵을 스치고 지나갔어요');
   if (r && r !== 'land') s.last = '';
   if (r === 'land') s.last = '';
@@ -39857,13 +39858,51 @@ window.sfx = (function () {
     point:   function () { seq([659, 880, 1319], 0.09, 0.14); },
     miss:    function () { tone({ f: 330, f2: 170, type: 'sawtooth', dur: 0.3, vol: 0.13 }); },
     out:     function () { tone({ f: 2200, type: 'square', dur: 0.11, vol: 0.11 }); tone({ f: 2200, type: 'square', delay: 0.16, dur: 0.11, vol: 0.11 }); },
-    // ── 골프 ──
-    mole:    function () { tone({ f: 480, f2: 960, type: 'square', dur: 0.12, vol: 0.15 }); },
   };
   // ── 버튼음 ──
   S.cheer = function () { tone({ f: 520, f2: 1040, type: 'sine', dur: 0.42, vol: 0.16 }); tone({ f: 660, f2: 1320, type: 'triangle', dur: 0.42, vol: 0.1, delay: 0.03 }); noise({ dur: 0.35, vol: 0.09, lp: 3500, delay: 0.05 }); seq([784, 988, 1175], 0.07, 0.16); };   // 예에~ 환호
-  // ── 골프 (9-02 대표: 브금만 있고 효과음이 없어 노잼) ──
-  S.crow   = function () { tone({ f: 900, f2: 500, type: 'sawtooth', dur: 0.16, vol: 0.13 }); noise({ dur: 0.14, vol: 0.08, lp: 2500 }); tone({ f: 820, f2: 430, type: 'sawtooth', dur: 0.2, vol: 0.12, delay: 0.2 }); };   // 까악 까악
+  // ── 골프 생물음 — 등장할 때와 공을 건드릴 때가 명확히 구분되도록 실음원 파일을 쓴다 ──
+  const FX_FILES = {
+    crowAmbient: 'char/game/sfx/golf_crow_ambient.wav?v=1',
+    crowHit:     'char/game/sfx/golf_crow_hit.wav?v=1',
+    moleDig:     'char/game/sfx/golf_mole_dig.wav?v=1',
+    moleHit:     'char/game/sfx/golf_mole_hit.wav?v=1'
+  };
+  const fxBufs = {};
+  const playFxBuffer = function (b, vol) {
+    const c = A(); if (muted || !c || !b || document.hidden) return;
+    const start = function () {
+      if (muted || document.hidden) return;
+      const src = c.createBufferSource(), g = c.createGain(); src.buffer = b; g.gain.value = vol == null ? 0.7 : vol;
+      src.connect(g); g.connect(c.destination); src.start();
+    };
+    if (c.state === 'suspended' || c.state === 'interrupted') {
+      const at = Date.now();
+      try { const p = c.resume(); if (p && p.then) { p.then(function () { if (Date.now() - at < 600) start(); }).catch(function () {}); return; } } catch (e) {}
+    }
+    start();
+  };
+  const loadFx = function (name) {
+    const url = FX_FILES[name]; if (!url) return Promise.reject(new Error('unknown fx'));
+    if (fxBufs[name] && !fxBufs[name].then) return Promise.resolve(fxBufs[name]);
+    if (fxBufs[name] && fxBufs[name].then) return fxBufs[name];
+    const c = A(); if (!c) return Promise.reject(new Error('audio unavailable'));
+    const p = fetch(url).then(function (r) { if (!r.ok) throw new Error('fx ' + r.status); return r.arrayBuffer(); })
+      .then(function (ab) { return c.decodeAudioData(ab); })
+      .then(function (b) { fxBufs[name] = b; return b; })
+      .catch(function (e) { delete fxBufs[name]; throw e; });
+    fxBufs[name] = p; return p;
+  };
+  const playFx = function (name, vol) {
+    if (muted || document.hidden || !FX_FILES[name]) return;
+    if (fxBufs[name] && !fxBufs[name].then) { playFxBuffer(fxBufs[name], vol); return; }
+    loadFx(name).then(function (b) { if (!muted && !document.hidden) playFxBuffer(b, vol); }).catch(function (e) { console.warn('fx', name, e); });
+  };
+  const preloadFx = function () { Object.keys(FX_FILES).forEach(function (n) { if (fxBufs[n] === undefined) loadFx(n).catch(function () {}); }); };
+  S.crowAmbient = function () { playFx('crowAmbient', 0.42); }; // 까마귀가 보일 때 가끔 들리는 실제 까악까악
+  S.crowHit     = function () { playFx('crowHit', 0.72); };     // 까마귀가 공을 쳐냈을 때
+  S.moleDig     = function () { playFx('moleDig', 0.52); };     // 두더지가 솟을 때 흙 파는 소리
+  S.moleHit     = function () { playFx('moleHit', 0.72); };     // 두더지가 공을 쳤을 때 짧은 뽁
   S.splash = function () { noise({ dur: 0.35, vol: 0.16, lp: 1800, sweep: true }); tone({ f: 380, f2: 120, type: 'sine', dur: 0.3, vol: 0.12 }); };   // 풍덩
   S.thud   = function () { tone({ f: 140, f2: 60, type: 'triangle', dur: 0.22, vol: 0.2 }); noise({ dur: 0.12, vol: 0.1, lp: 700 }); };   // 벙커·OB 퍽
   S.lip    = function () { tone({ f: 2400, f2: 2000, type: 'sine', dur: 0.09, vol: 0.12 }); tone({ f: 1800, type: 'sine', dur: 0.12, vol: 0.08, delay: 0.09 }); };   // 컵 스침 팅
@@ -39921,10 +39960,11 @@ window.sfx = (function () {
     }, 40);
   };
   // 대사 — 제미나이 TTS 로 뽑은 WAV. 이름 → 파일. 처음 한 번 받아 디코드해 둔다.
-  // 9-02 대표: 대사는 '무궁화꽃이 피었습니다' 하나. 빠름/보통/느림 3벌 — **외치는 길이가 곧 등 돌린 시간**이다.
-  const VOICES = { mugung_go_0: 'char/game/voice_mugung_go_fast.wav?v=2', mugung_go_1: 'char/game/voice_mugung_go_mid.wav?v=2', mugung_go_2: 'char/game/voice_mugung_go_slow.wav?v=2' };
+  // 같은 Algenib 아저씨로 빠름·노래식·느림·가짜뜸·가속·감속 7벌. **말한 길이가 곧 등 돌린 시간**이다.
+  const VOICES = {};
+  for (let i = 0; i < 7; i++) VOICES['mugung_go_' + i] = 'char/game/voice_mugung_go_' + i + '.wav?v=3';
   // 훈수충 아재 대사 10개 (9-02, _DODGE_NAG 순서와 같다) — 말풍선이 바뀔 때 그 대사가 나온다
-  for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=2';   // v2 = Algenib 쉰 목소리 60대(9-02 '너무 잘생겼다')
+  for (let i = 0; i < 10; i++) VOICES['nag_' + i] = 'char/game/voice/nag_0' + i + '.wav?v=3';   // v3 = 같은 Algenib 60대 후반, 거칠고 눌린 콧소리
   const bufs = {};
   const chans = {};
   const voiceWait = {};
@@ -39978,7 +40018,7 @@ window.sfx = (function () {
     // ★document.hidden 이면 버린다 + suspended 복구 대기는 600ms 안에 끝날 때만 재생 —
     //   백그라운드에서 줄 선 효과음이 복귀 순간 몰아서 터지던 것(대표 9-03). playVoiceBuffer 와 같은 규칙.
     play: function (name, arg) { if (muted || document.hidden) return; try { const c = A(), f = S[name]; if (!c || !f) return; if (c.state === 'suspended' || c.state === 'interrupted') { const at = Date.now(); const p = c.resume(); if (p && p.then) { p.then(function () { if (Date.now() - at < 600 && !document.hidden) f(arg); }).catch(function () {}); return; } } f(arg); } catch (e) {} },
-    voice: voice, preload: preload,
+    voice: voice, preload: preload, preloadFx: preloadFx,
     voiceBusy: function (ch) { const x = chans[ch]; return !!(x && !x._done); },
     // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
     // ★bg.want = 마지막으로 요청된 곡. 음소거 중에도 기억해 둔다 — 브금을 켜는 호출은 게임 상태가
@@ -40005,8 +40045,8 @@ window.sfx = (function () {
   wrap('dodgeOpen',  function () { S().play('btn'); S().bgm('title'); });
   wrap('dodgeGo',    function () { S().play('start'); S().bgm('power'); });
   wrap('dodgeClose', function () { S().play('back'); S().bgm(null); });
-  wrap('golfOpen',   function () { S().play('btn'); S().bgm('title'); });
-  wrap('golfGo',     function () { S().play('start'); S().bgm('calm'); });
+  wrap('golfOpen',   function () { S().preloadFx(); S().play('btn'); S().bgm('title'); });
+  wrap('golfGo',     function () { S().preloadFx(); S().play('start'); S().bgm('calm'); });
   wrap('golfClose',  function () { S().play('back'); S().bgm(null); });
   wrap('tennisOpen', function () { S().play('btn'); S().bgm('title'); });
   wrap('tennisGo',   function () { S().play('start'); S().bgm('run'); });
@@ -40037,11 +40077,23 @@ window.sfx = (function () {
     const w = function (s, power, acc, club) { const ok = f.apply(this, arguments); if (ok && !(s && s._predict)) { S().play('swing'); setTimeout(function () { S().play('hit', Math.max(0, Math.min(1, +power || 0))); }, 90); } return ok; };
     w._sfxShot = 1; window.golfShot = w;
   })();
-  // 골프 틱 — 반환 이벤트마다 소리: 착지·홀인·연못·OB·벙커·까마귀·컵 스침 (두더지는 그쪽 본문이 이미 냄)
+  // 골프 틱 — 까마귀/두더지는 등장 소리와 공 충돌 소리를 따로 낸다.
   (function () {
     const f = window.golfTick; if (typeof f !== 'function' || f._sfxTick) return;
-    const M = { land: 'bounce', in: 'holein', water: 'splash', ob: 'thud', bunker: 'thud', crow: 'crow', lip: 'lip' };
-    const w = function (s) { const r = f.apply(this, arguments); if (r && M[r] && !(s && s._predict)) S().play(M[r]); return r; };
+    const M = { land: 'bounce', in: 'holein', water: 'splash', ob: 'thud', bunker: 'thud', crow: 'crowHit', mole: 'moleHit', lip: 'lip' };
+    const w = function (s) {
+      const wasMoleUp = !!(s && s.mole && s.mole.up), r = f.apply(this, arguments);
+      if (!s || s._predict) return r;
+      if (r && M[r]) S().play(M[r]);
+      const moleUp = !!(s.mole && s.mole.up);
+      if (moleUp && !wasMoleUp) S().play('moleDig');
+      // 까마귀가 화면에 있는 동안 첫 4~8초, 이후 8~16초 간격으로 자연스러운 울음만 배경처럼 낸다.
+      if (s.crow) {
+        if (!s._sfxCrowNext) s._sfxCrowNext = s.t + 4000 + Math.random() * 4000;
+        else if (s.t >= s._sfxCrowNext) { S().play('crowAmbient'); s._sfxCrowNext = s.t + 8000 + Math.random() * 8000; }
+      } else s._sfxCrowNext = 0;
+      return r;
+    };
     w._sfxTick = 1; window.golfTick = w;
   })();
   // ★테니스에 s.won 은 없다(점수제). 승/패음은 _tennisEnd 본문이 최고기록 여부로 직접 낸다
@@ -40120,9 +40172,9 @@ window.sqGamePicker = function () {
 window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
 window.SQ_MG = {
   GO_MIN: 1400, GO_MAX: 3400,   // (예비) 목소리가 없을 때 등 보이는 시간
-  // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 돌아본다 — 진짜 놀이와 같다. [빠름, 보통, 느림] 초
-  VOICE_DUR: [2.4, 6.72, 5.59],
-  VOICE_W:   [0.45, 0.35, 0.20],  // 고를 확률 — 빠른 판이 자주 나와야 긴장이 산다
+  // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 즉시 돌아본다 — 7가지 변화구의 실제 WAV 길이(초).
+  VOICE_DUR: [2.88, 5.52, 6.04, 3.84, 3.81, 4.67, 4.21],
+  VOICE_W:   [0.19, 0.15, 0.10, 0.17, 0.12, 0.14, 0.13], // 빠름·노래식·느림·가짜뜸 2종·가속·감속
   STOP_MS: 2000,                // 돌아본 채 노려보는 시간
   MOVE_TOL: 1.6,                // 이만큼(필드 폭 %) 넘게 움직이면 걸린다. 손떨림·보정 오차는 봐준다
   GOAL_Y: 26,                   // 이 위로 올라오면 우승 (y 는 위가 작다). 필드 그림의 트랙 상단 라인과 맞췄다

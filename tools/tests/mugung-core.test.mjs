@@ -23,6 +23,9 @@ const auth = { currentUser: { uid: 'a' } };
 new Function('window', 'auth', grab(/window\._sqMgClaimGoal = function[\s\S]*?\n\};/, '_sqMgClaimGoal'))(w, auth);
 
 const Z = w.SQ_MG;
+assert.strictEqual(Z.VOICE_DUR.length, 7, '무궁화 음성 패턴은 7개여야 한다');
+assert.strictEqual(Z.VOICE_W.length, Z.VOICE_DUR.length, '음성 길이와 선택 확률 개수가 다르다');
+assert(Math.abs(Z.VOICE_W.reduce((a, b) => a + b, 0) - 1) < 1e-9, '음성 선택 확률 합이 1이 아니다');
 const J = (v, players, caught) => w._sqMgJudge(v, players, caught);
 const join3 = { a: { nick: 'A' }, b: { nick: 'B' }, c: { nick: 'C' } };
 
