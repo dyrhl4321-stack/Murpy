@@ -32282,6 +32282,70 @@ window.mwWorldPanel = function (kind) {
 // v7: 지도는 **정사각 원본 그대로**(1024², 크롭 없음 — 세로 크롭이 좌우 랜드마크를 잘랐다)
 //   + 정직교 탑다운(포켓몬식) — 길이 수평·수직뿐이라 4방향 걷기와 맞는다(대표 9-03).
 window._MW_FM_CENTER = { x: 49, y: 52 };   // 맵 정중앙 세로길 위(캐릭터 출발점) — 대표 9-03 "중앙에 서야"
+// ★지도 위 걷기용 간이 충돌맵 24x24 (대표 9-03: "건물을 뚫고 가면 안 되고 입구까지 길로") —
+//   벽 = 강·강변 수림(다리 11~12열만 통과)·헬스장 건물·집 마당·테니스 코트·골프 헤지·공사장.
+//   각 노드는 door(도착 타일) = 그 장소의 입구다. BFS 최단경로를 따라 걷는다.
+window._MW_FM_GRID = [
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "................######..",
+  "................######..",
+  "................######..",
+  "................######..",
+  "........................",
+  "........................",
+  ".########.....#########.",
+  ".########.....#########.",
+  ".########.....#########.",
+  ".########.....#########.",
+  ".########.....#########.",
+  ".####.###.....#########.",
+  "........................",
+  ".#######........#######.",
+  ".#######........#######.",
+  ".#######........#######.",
+  ".#######........#######.",
+  ".#######........#######.",
+  "................#######.",
+  "........................"];
+window._MW_FM_DOORS = {
+  running: { c: 11, r: 5 },   // 트랙 START 앞(다리 길에서 진입)
+  gym:     { c: 18, r: 8 },   // 건물 아래 주차장 앞
+  home:    { c: 5,  r: 15 },  // 마당 문
+  tennis:  { c: 19, r: 16 },  // 코트 남쪽 펜스 문(그림 실측 — 아래 길에서 진입)
+  golf:    { c: 4,  r: 22 },  // 헤지 남쪽 나무 아치 게이트(그림 실측)
+  park:    { c: 11, r: 19 }   // 분수 광장
+};
+// 지도 충돌맵 BFS — 최단경로 타일 목록을 준다(펫 길찾기와 같은 방식, 24x24=576칸이라 싸다)
+window._mwFmFind = function (c0, r0, c1, r1) {
+  const G = window._MW_FM_GRID, N = 24;
+  const ok = function (c, r) { return c >= 0 && r >= 0 && c < N && r < N && G[r].charAt(c) !== '#'; };
+  if (!ok(c0, r0) || !ok(c1, r1)) return null;
+  const prev = new Int16Array(N * N).fill(-1);
+  const s = r0 * N + c0, g = r1 * N + c1;
+  prev[s] = -2;
+  const q = [s]; let head = 0, found = false;
+  const D = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  while (head < q.length) {
+    const cur = q[head++];
+    if (cur === g) { found = true; break; }
+    const cy = (cur / N) | 0, cx = cur % N;
+    for (let i = 0; i < 4; i++) {
+      const nx = cx + D[i][0], ny = cy + D[i][1];
+      if (!ok(nx, ny)) continue;
+      const id = ny * N + nx;
+      if (prev[id] !== -1) continue;
+      prev[id] = cur; q.push(id);
+    }
+  }
+  if (!found) return null;
+  const path = []; let cur = g;
+  while (cur !== s) { path.push(cur); cur = prev[cur]; }
+  path.push(s); path.reverse();
+  return path.map(function (id) { return { c: id % N, r: (id / N) | 0 }; });
+};
 // x/y = 터치 영역 왼쪽 위(%), h = 터치 영역 높이(px, 랜드마크를 덮는다). 이름표는 영역 발치에 붙는다.
 window._MW_FM_ORDER = [
   { k: 'running',  x: 4,  y: 19, h: 52 },    // 강변 러닝 트랙(START 라인)
@@ -32309,9 +32373,14 @@ window._mwFieldWorldMap = function (body) {
     document.head.appendChild(st);
   }
   // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
-  const W = Math.min(body.clientWidth || 340, 360);
+  // ★폭은 패널 padding 을 뺀 실사용 폭으로 — clientWidth 그대로 쓰면 지도가 옆으로 넘쳐
+  //   패널 전체가 좌우로 끌렸다(대표 9-03 "전체가 다 드래그됨").
+  const _cs = getComputedStyle(body);
+  const W = Math.min(Math.floor((body.clientWidth || 340) - (parseFloat(_cs.paddingLeft) || 0) - (parseFloat(_cs.paddingRight) || 0)), 360);
   const H = W;
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=5\')">'
+  body.style.overflowX = 'hidden';
+  body.style.touchAction = 'pan-y';
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=6\')">'
     + window._MW_FM_ORDER.map(function (n) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
@@ -32529,17 +32598,39 @@ window._mwFmGo = function (k) {
   const A = { l: from.x - w / 2, t: from.y - h + 14 };
   const B = { l: to.x - w / 2, t: to.y - h + 14 };
   const render = function (face) { mk.innerHTML = window._mwFmCharHtml(face); };
-  // ★구간 순서 = 세로 이동이 더 길면 **세로 먼저**(러닝존·헬스장은 중앙 세로길을 타고 올라가야
-  //   한다 — 가로 먼저 가면 집 마당을 가로질렀다, 대표 9-03), 아니면 가로 먼저(같은 줄 이동).
-  const legs = [];
-  const hor = { face: B.l > A.l ? 'right' : 'left', d: Math.abs(B.l - A.l) };
-  const ver = { face: B.t > A.t ? 'down' : 'up', d: Math.abs(B.t - A.t) };
-  if (ver.d > hor.d) {
-    if (ver.d > 4) legs.push({ face: ver.face, l: A.l, t: B.t, d: ver.d });
-    if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: B.t, d: hor.d });
+  // ★ㄱ자 두 구간은 마당·코트를 관통했다(대표 9-03: "다 뚫고 지나가네") →
+  //   지도 충돌맵(_MW_FM_GRID) 위 BFS 최단경로를 따라 **길로만** 걷는다. 도착지는 그 장소의 입구(door).
+  const mapEl = document.getElementById('mw-fm-map');
+  const N = 24, tile = (mapEl ? mapEl.clientWidth : 340) / N;
+  const cellPx = function (c, r) { return { l: (c + 0.5) * tile - w / 2, t: (r + 0.5) * tile - h + 14 }; };
+  const c0 = Math.max(0, Math.min(N - 1, Math.floor(window._MW_FM_CENTER.x / 100 * N)));
+  const r0 = Math.max(0, Math.min(N - 1, Math.floor(window._MW_FM_CENTER.y / 100 * N)));
+  const door = window._MW_FM_DOORS[k] || null;
+  let legs = [];
+  const cells = door ? window._mwFmFind(c0, r0, door.c, door.r) : null;
+  if (cells && cells.length > 1) {
+    // 연속 같은 방향을 한 구간으로 묶는다 — 구간마다 몸을 돌린다(총총총)
+    for (let i = 1; i < cells.length; i++) {
+      const dc = cells[i].c - cells[i - 1].c, dr = cells[i].r - cells[i - 1].r;
+      const face = dc > 0 ? 'right' : dc < 0 ? 'left' : dr > 0 ? 'down' : 'up';
+      const p = cellPx(cells[i].c, cells[i].r);
+      const last = legs[legs.length - 1];
+      if (last && last.face === face) { last.l = p.l; last.t = p.t; last.n++; }
+      else legs.push({ face: face, l: p.l, t: p.t, n: 1 });
+    }
+    legs.forEach(function (g) { g.d = g.n * tile; });
+    const s0 = cellPx(c0, r0); A.l = s0.l; A.t = s0.t;   // 출발도 타일 중심에 맞춘다
   } else {
-    if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: A.t, d: hor.d });
-    if (ver.d > 4) legs.push({ face: ver.face, l: B.l, t: B.t, d: ver.d });
+    // 경로를 못 찾으면(충돌맵 구멍) 예전 ㄱ자로 폴백 — 멈춰버리는 것보단 낫다
+    const hor = { face: B.l > A.l ? 'right' : 'left', d: Math.abs(B.l - A.l) };
+    const ver = { face: B.t > A.t ? 'down' : 'up', d: Math.abs(B.t - A.t) };
+    if (ver.d > hor.d) {
+      if (ver.d > 4) legs.push({ face: ver.face, l: A.l, t: B.t, d: ver.d });
+      if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: B.t, d: hor.d });
+    } else {
+      if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: A.t, d: hor.d });
+      if (ver.d > 4) legs.push({ face: ver.face, l: B.l, t: B.t, d: ver.d });
+    }
   }
   mk.style.transition = 'none'; mk.style.left = A.l + 'px'; mk.style.top = A.t + 'px';
   mk.classList.add('walk');
