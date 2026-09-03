@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '982';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '983';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -34217,8 +34217,10 @@ window.loadHomeTrending = async () => {
 
     const card = (o) => {
       // o.inner = 사진 대신 직접 그리는 배경(캐릭터 카드 등)
+      // zoom은 원본 사진 안쪽에 여백이 있는 카드만 살짝 확대한다. 다른 인기 카드 구도에는 영향 없음.
+      const zoom = o.zoom ? `;display:block;object-position:center;transform:scale(${Number(o.zoom) || 1});transform-origin:center` : '';
       const bg = o.inner ? o.inner : (o.img
-        ? `<img src="${cdn(o.img, 400)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover${o.blur ? ';' + window.MW_BLUR_CSS : ''}">`
+        ? `<img src="${cdn(o.img, 400)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover${o.blur ? ';' + window.MW_BLUR_CSS : zoom}">`
         : `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#1b1c22,#101116)"></div>`);
       return `<button onclick="${o.click}" aria-label="${esc(o.aria || o.title)}" style="flex:none;width:152px;height:162px;position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--border-subtle);background:#111;padding:0;text-align:left;cursor:pointer;font-family:inherit;transition:transform .15s ease" onmouseenter="this.style.transform='translateY(-3px)'" onmouseleave="this.style.transform='none'">
         ${bg}
@@ -34270,7 +34272,9 @@ window.loadHomeTrending = async () => {
           //   goPage('squad') 는 없는 페이지라 화면이 통째로 검게 나온다(대표 8-11 제보).
           click: `window.openSquadDetail && window.openSquadDetail('${s.id}')`, color: BLUE, icon: icoCrew, label: '인기 스쿼드',
           img: s.img || '',
-          inner: _sqField ? `<div style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat url('${_sqField}');image-rendering:pixelated"></div>` : '',
+          // 와이드 필드 원본의 바깥 여백까지 보이면 카드 안에서 작아 보인다. 테두리 밖으로 6% 넘겨 확실히 채운다.
+          inner: _sqField ? `<div style="position:absolute;inset:-6%;background-color:#0e0f14;background-image:url('${_sqField}');background-position:center;background-size:cover;background-repeat:no-repeat;image-rendering:pixelated"></div>` : '',
+          zoom: 1.08,
           title: _title,
           meta: `${s.location ? mPin + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.location) + '</span><span style="opacity:.45;flex-shrink:0">·</span>' : ''}<span style="flex-shrink:0">${n}명</span>`
         }));
