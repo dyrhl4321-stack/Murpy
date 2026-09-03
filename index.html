@@ -32398,10 +32398,14 @@ window._mwFieldWorldMap = function (body) {
     // ★하단 = **동네 게시판** (대표 9-03: "복합적·종합적으로 꽉 차게 — 카드·그림·외치기, 나중엔
     //   업체·스쿼드 광고까지"). 슬롯식 카드 구조라 광고 카드는 나중에 같은 프레임으로 꽂힌다.
     + '<div id="mw-fm-board" style="width:' + W + 'px;margin:10px auto 0;display:flex;flex-direction:column;gap:8px;font-family:\'Galmuri11\',sans-serif">'
-    //   [슬롯1] 전광판 티커
-    + '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;box-sizing:border-box;background:#0a0d14;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden">'
-    +   '<span style="flex-shrink:0;font-size:9px;color:#4a5266;letter-spacing:1px;line-height:1.4">동네<br>소식</span>'
-    +   '<span id="mw-fm-news-line" style="flex:1;min-width:0;font-size:11.5px;color:#F5C24B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="mw-blink">▌</span></span></div>'
+    //   [슬롯1] 동네 소식 = 히어로 카드 캐러셀 (스쿼드 탭 히어로 카드 문법 — 광고 배너가 그대로 꽂히는 포맷)
+    + '<div id="mw-fm-hero" style="position:relative;height:112px;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;background:#0e1320">'
+    +   '<div id="mw-fm-hero-bg" style="position:absolute;inset:0;background:#0e1320 center/cover no-repeat;image-rendering:pixelated;transition:opacity .45s"></div>'
+    +   '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.05) 20%,rgba(5,7,12,.82) 100%)"></div>'
+    +   '<div style="position:absolute;left:12px;right:12px;bottom:9px">'
+    +     '<div id="mw-fm-hero-t" style="font-size:15px;color:#fff;letter-spacing:.5px;font-family:\'Galmuri14\',sans-serif;text-shadow:0 2px 5px rgba(0,0,0,.8)"></div>'
+    +     '<div id="mw-fm-hero-s" style="font-size:10.5px;color:#cfd6e6;margin-top:3px;text-shadow:0 1px 4px rgba(0,0,0,.8)"></div></div>'
+    +   '<div id="mw-fm-hero-dots" style="position:absolute;right:10px;top:8px;display:flex;gap:4px"></div></div>'
     //   [슬롯2] 광장 외치기 — 자유시장 확성기. 전역 실시간(RTDB plaza/shout)
     + '<div style="padding:10px 12px 9px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350">'
     +   '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">'
@@ -32454,26 +32458,43 @@ window._mwFmPlace = function (k, immediate, face) {
 };
 // (v2 자동 산책 공원 제거 — 공원은 _FIELDS.park 진짜 필드가 됐고 지도 노드로 들어간다)
 // ── 동네 전광판: 하단 여백에 도는 소식 롤링. 무거운 조회는 안 한다(체크인 60초 캐시 재사용). ──
+// 동네 소식 = 히어로 카드 캐러셀. 슬라이드 = {img, t(제목), s(부제)} — **광고 배너도 같은 모양으로
+// 이 배열에 꽂으면 된다**(업체 이미지 + 문구, 대표 9-03). 배경은 기존 필드 아트 재사용.
 window._mwFmNews = async function () {
-  const el = document.getElementById('mw-fm-news-line'); if (!el) return;
-  const lines = ['공원이 열렸어요 — 펫이랑 산책하러 가보세요'];
+  const bg = document.getElementById('mw-fm-hero-bg'); if (!bg) return;
+  const slides = [];
   try {
     const rows = await mwTodayCheckins();
     if (rows && rows.length) {
-      lines.unshift('오늘 헬스장 도장 ' + rows.length + '개 — 동네가 움직이고 있어요');
       const last = rows[rows.length - 1];
-      if (last && last.centerName) lines.push('방금 도장: ' + String(last.centerName).slice(0, 14));
+      slides.push({ img: 'char/fields/field_gym.png?v=3', t: '오늘 도장 ' + rows.length + '개',
+                    s: (last && last.centerName) ? '최근: ' + String(last.centerName).slice(0, 16) : '오늘도 머피들이 도장을 찍었어요' });
     }
   } catch (e) {}
-  lines.push('오늘 운동 인증하면 5머피');
+  slides.push({ img: 'char/fields/field_park.png?v=1', t: '우리 동네 공원 오픈', s: '펫이랑 산책하러 가보세요' });
+  slides.push({ img: 'char/fields/field_running.png?v=1', t: '운동 인증하면 5머피', s: '오늘의 첫 인증을 남겨보세요' });
+  const dots = document.getElementById('mw-fm-hero-dots');
+  if (dots) dots.innerHTML = slides.map(function (_, i) {
+    return '<span data-i="' + i + '" style="width:6px;height:6px;background:rgba(255,255,255,.35)"></span>'; }).join('');
   let i = 0;
   const show = function () {
-    const cur = document.getElementById('mw-fm-news-line');
-    if (!cur) { clearInterval(t); return; }
-    cur.textContent = lines[i % lines.length]; i++;
+    const b = document.getElementById('mw-fm-hero-bg');
+    if (!b) { clearInterval(t); return; }
+    const sl = slides[i % slides.length];
+    b.style.opacity = '0';
+    setTimeout(function () {
+      const b2 = document.getElementById('mw-fm-hero-bg'); if (!b2) return;
+      b2.style.backgroundImage = "url('" + sl.img + "')";
+      b2.style.opacity = '1';
+      const tt = document.getElementById('mw-fm-hero-t'); if (tt) tt.textContent = sl.t;
+      const ss = document.getElementById('mw-fm-hero-s'); if (ss) ss.textContent = sl.s;
+      const dd = document.getElementById('mw-fm-hero-dots');
+      if (dd) Array.prototype.forEach.call(dd.children, function (d, j) { d.style.background = j === (i % slides.length) ? '#F5C24B' : 'rgba(255,255,255,.35)'; });
+    }, 220);
+    i++;
   };
   show();
-  const t = setInterval(show, 3800);
+  const t = setInterval(show, 4200);
 };
 // ── 광장 외치기: 전역 실시간 확성기(RTDB plaza/shout) — 자유시장 그 감성(대표 9-03).
 //   규칙: 본인 uid 메시지 생성만·수정삭제 불가·60자(9-03 배포). 도배는 20초 쿨다운 + 금칙어.
@@ -32573,12 +32594,15 @@ window._mwFmParade = async function () {
     const snap = await window._usersAll(60000);
     const byId = {}; snap.docs.forEach(function (d) { byId[d.id] = d.data(); });
     const E = window._escHtml || function (t) { return String(t); };
+    const J = window._escJs || function (t) { return String(t); };
     box.innerHTML = uids.slice(0, 10).map(function (u) {
       const d = byId[u] || {};
       const ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(d.character, 46) : '');
-      return '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px;width:56px;padding:6px 2px 5px;background:#0a0d14;border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350">'
-        + '<div style="height:46px;display:flex;align-items:flex-end">' + ch + '</div>'
-        + '<span style="font-size:9px;color:#cfd6e6;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + E(String(d.nickname || '머피').slice(0, 8)) + '</span></div>';
+      // ★카드 탭 = 프로필 열기 (대표 9-03) — 보기는 무료, 마음에 들면 '같이 운동해요' 신청(과금 퍼널)
+      return '<div onclick="window.openUserProfile&&openUserProfile(\'' + J(u) + '\',\'' + J(String(d.nickname || '머피')) + '\',\'' + J(String(d.photoURL || '')) + '\')"'
+        + ' style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px;width:56px;padding:6px 2px 5px;background:#0a0d14;border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;cursor:pointer">'
+        + '<div style="height:46px;display:flex;align-items:flex-end;pointer-events:none">' + ch + '</div>'
+        + '<span style="font-size:9px;color:#cfd6e6;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none">' + E(String(d.nickname || '머피').slice(0, 8)) + '</span></div>';
     }).join('');
   } catch (e) { console.warn('parade', e); box.innerHTML = ''; }
 };
