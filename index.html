@@ -1276,6 +1276,9 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .mw-plus:active { transform:translateY(2px); box-shadow:inset 0 1px 2px rgba(0,0,0,.35); }
   /* 메인 월드 UI(지도/도감/카메라): 사각 픽셀 입체 버튼 — 서브 UI(라운드)와 위계 구분 */
   .mw-wb-tabs { display:flex; gap:8px; padding:10px 16px 11px; }
+  /* ★오픈월드(공원) 모드 — 게임에 들어온 화면(대표 9-03): 상단 MURPY WORLD 로고+머피 잔액만 남기고
+     허브 탭(지도·도감·카메라 등)은 숨긴다. 나가기는 필드 이동 칩이 담당한다. */
+  body.mw-open .mw-wb-tabs { display:none; }
   .mw-wb-tabbtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;
     font-family:'Galmuri11',sans-serif; font-size:13px; color:#fff; cursor:pointer; padding:13px 8px;
     background:#1b2233; border:3px solid #05070c; border-radius:0;
@@ -5374,7 +5377,8 @@ window._mwPetSpots = function (p, want) {
       var any = false, k;
       for (k = 0; k < sides.length; k++) {
         var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
-        if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
+        var _gN = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;   // ★공원은 24타일 — 16 하드코딩이 경계 밖 펫을 끊었다(9-03)
+        if (stc < 0 || str_ < 0 || stc >= _gN || str_ >= _gN) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
         // ★★8-26 — "옆으로 밥 먹을 때 밥그릇이 사라진 것처럼 보임"(대표).
         //   ①**너무 파고들었다.** 0.58칸이면 몸이 그릇을 통째로 덮는다 -> 0.40 으로 줄여
@@ -5503,7 +5507,10 @@ window._mwPetPick = function (p) {
 window._mwPetPath = function (c0, r0, c1, r1) {
   if (!window._mwCritterWalkable) return null;
   if (c0 === c1 && r0 === r1) return null;
-  var N = 16, start = r0 * N + c0, goal = r1 * N + c1;
+  // ★N 을 필드 grid 에서 읽는다 — 16 고정이라 공원(24타일)에서 16칸 경계 너머를 "길 없음"으로
+  //   보고 펫이 따라오다 멈췄다(대표 9-03). 24x24 도 576칸 BFS — 여전히 싸다.
+  var N = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;
+  var start = r0 * N + c0, goal = r1 * N + c1;
   if (c1 < 0 || r1 < 0 || c1 >= N || r1 >= N) return null;
   var prev = new Int16Array(N * N); prev.fill(-1);
   prev[start] = -2;
@@ -5862,8 +5869,9 @@ window._mwPetSync = function () {
         + (window.mwTodayKey ? window.mwTodayKey() : '') + '|' + (window._mwPetSpawnN || 0));
       var _rng = window._mwPetRng(_seed);
       var _tc = null, _tr = null, _try;
+      var _gN2 = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;   // ★공원 24타일 — 16 고정이면 좌상단 사분면에만 흩어진다
       for (_try = 0; _try < 40; _try++) {
-        var _c = Math.floor(_rng() * 16), _r = Math.floor(_rng() * 16);
+        var _c = Math.floor(_rng() * _gN2), _r = Math.floor(_rng() * _gN2);
         // ★_mwCritterWalkable 이 없으면 **아무 데나 놓지 않는다.** 예전엔 함수가 없을 때
         //   그냥 통과시켜서 가구 위에 앉았다. 못 재면 옛 방식(입구 옆)으로 떨어지는 게 맞다.
         if (!window._mwCritterWalkable) { _tc = null; break; }
@@ -7926,6 +7934,9 @@ window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
+  // ★오픈월드(공원) 모드 — 허브 탭 숨김 + 하단 외치기 채팅바 (대표 9-03)
+  document.body.classList.toggle('mw-open', key === 'park');
+  window._mwParkBar && window._mwParkBar(key === 'park');
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
   const _fu = document.getElementById('mw-furn');
@@ -32440,6 +32451,47 @@ window._mwFmShoutSend = function () {
     window._mwShoutAt = now; inp.value = '';
     try { window.sfx && window.sfx.play('btn'); } catch (e) {}
   } catch (e) { console.warn('shout send', e); showToast('외치지 못했어요'); }
+};
+// ── 공원 채팅바: 오픈월드 안에서 광장 외치기 — 말은 내 머리 위 말풍선 + plaza/shout 로 전역 전파 ──
+window._mwParkBar = function (on) {
+  let bar = document.getElementById('mw-park-bar');
+  if (!on) { if (bar) bar.remove(); return; }
+  if (bar) return;
+  bar = document.createElement('div');
+  bar.id = 'mw-park-bar';
+  bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:950;'
+    + "max-width:366px;margin:0 auto;display:flex;gap:5px;font-family:'Galmuri11',sans-serif";
+  bar.innerHTML =
+      '<input id="mw-park-in" maxlength="60" placeholder="광장에 외쳐보세요" autocomplete="off"'
+    + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(5,7,12,.88);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;outline:none;font-family:inherit;border-radius:0">'
+    + '<button onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="window._mwParkSay()"'
+    + ' style="flex-shrink:0;height:34px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">외치기</button>';
+  document.body.appendChild(bar);
+  const inp = document.getElementById('mw-park-in');
+  if (inp && window._mwEnterSend) window._mwEnterSend(inp, window._mwParkSay);
+};
+window._mwParkSay = function () {
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('광장에서 외치려면') : requireLogin('로그인이 필요해요'); return; }
+  const inp = document.getElementById('mw-park-in'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 60); if (!t) return;
+  const bad = (window.FILTER_WORDS || []).some(function (w) { return t.toLowerCase().includes(String(w).toLowerCase()); });
+  if (bad) { showToast('연락처·외부 메신저는 외칠 수 없어요'); return; }
+  const now = Date.now();
+  if (now - (window._mwShoutAt || 0) < 20000) { showToast('외치기는 20초에 한 번이에요'); return; }
+  const R = window._rt;
+  try {
+    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/shout'), {
+      uid: auth.currentUser.uid, nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: now });
+  } catch (e) { console.warn('park shout', e); }
+  window._mwShoutAt = now; inp.value = '';
+  // 내 머리 위 말풍선 — 파티 말풍선 통로(_mwRl.msg)를 그대로 쓴다(전 필드 공용 표시 경로)
+  window._mwRl = window._mwRl || {};
+  window._mwRl.msg = { text: t, t: now };
+  window._charApplyPos && window._charApplyPos();
+  setTimeout(function () {
+    if (window._mwRl && window._mwRl.msg && window._mwRl.msg.t === now) { window._mwRl.msg = null; window._charApplyPos && window._charApplyPos(); }
+  }, window.MW_ROOM_MSG_MS || 9000);
+  try { window.sfx && window.sfx.play('btn'); } catch (e) {}
 };
 // ── 오늘 운동한 머피들: 체크인 캐시 + users 캐시로 미니 캐릭터 카드 (새 쿼리 없음) ──
 window._mwFmParade = async function () {
