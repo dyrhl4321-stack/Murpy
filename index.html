@@ -32269,15 +32269,16 @@ window.mwWorldPanel = function (kind) {
 //   수정 요청도 "지도 한 장 재생성"으로 받는다 — 장당 $0.04.
 // v7: 지도는 **정사각 원본 그대로**(1024², 크롭 없음 — 세로 크롭이 좌우 랜드마크를 잘랐다)
 //   + 정직교 탑다운(포켓몬식) — 길이 수평·수직뿐이라 4방향 걷기와 맞는다(대표 9-03).
-window._MW_FM_CENTER = { x: 49, y: 70 };   // 중앙 교차로(캐릭터 출발점) — v7 지도 실측
+window._MW_FM_CENTER = { x: 49, y: 38 };   // 트랙 아래 교차로(캐릭터 출발점) — v8: 공원이 하단을 차지해 위로 올림
 // x/y = 터치 영역 왼쪽 위(%), h = 터치 영역 높이(px, 랜드마크를 덮는다). 이름표는 영역 발치에 붙는다.
 window._MW_FM_ORDER = [
   { k: 'running',  x: 4,  y: 19, h: 52 },    // 강변 러닝 트랙(START 라인)
   { k: 'gym',      x: 64, y: 11, h: 90 },    // 헬스장 건물+주차장
   { k: 'home',     x: 3,  y: 33, h: 100 },   // 울타리 마당 집
   { k: 'tennis',   x: 60, y: 45, h: 85 },    // 테니스 코트
-  { k: 'golf',     x: 3,  y: 73, h: 70 },    // 퍼팅 그린
-  { k: 'climbing', x: 59, y: 72, h: 82, lock: 1, name: '클라이밍' },   // 공사장 암벽
+  { k: 'golf',     x: 2,  y: 70, h: 85 },    // 퍼팅 그린(헤지 두른 그린)
+  { k: 'park',     x: 33, y: 69, h: 95 },    // ★공원(분수+벤치) — 오픈월드 시작점(대표 9-03)
+  { k: 'climbing', x: 62, y: 69, h: 100, lock: 1, name: '클라이밍' },   // 공사장 암벽
 ];
 window._mwFieldWorldMap = function (body) {
   if (!document.getElementById('mw-fm-css')) {
@@ -32298,7 +32299,7 @@ window._mwFieldWorldMap = function (body) {
   // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
   const W = Math.min(body.clientWidth || 340, 360);
   const H = W;
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=4\')">'
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=5\')">'
     + window._MW_FM_ORDER.map(function (n) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
@@ -32313,16 +32314,14 @@ window._mwFieldWorldMap = function (body) {
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
     + '<div id="mw-fm-char"></div></div>'
-    // ★하단 여백 = **공원 입구 포탈** (대표 9-03 확정). 자동 인형극(v2 공원)은 반려 —
-    //   공원은 이제 진짜 필드(_FIELDS.park)다: 직접 들어가 조이스틱으로 걷고 펫이 따라온다.
-    + '<button id="mw-fm-portal" onclick="try{window.sfx&&window.sfx.play(\'btn\')}catch(e){};document.getElementById(\'mw-wpanel\').remove();window.charSetField(\'park\')"'
-    + ' style="display:flex;align-items:center;gap:12px;width:' + W + 'px;margin:10px auto 0;padding:13px 15px;cursor:pointer;text-align:left;'
-    + "font-family:'Galmuri11',sans-serif;background:linear-gradient(180deg,#17251a,#0e1a12);border:3px solid #05070c;box-shadow:0 0 0 2px #2b5138;color:#fff\">"
-    + '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#5ad477" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3l5 6h-3l4 5h-4v3h-4v-3H6l4-5H7z"/><path d="M10 20h4"/></svg>'
-    + '<span style="flex:1;min-width:0"><span style="display:block;font-size:13px;letter-spacing:1px">우리 동네 공원</span>'
-    + '<span style="display:block;font-size:10.5px;color:#8fbf9c;margin-top:3px">펫이랑 산책하러 가기</span></span>'
-    + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5ad477" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>'
-    + '</button>';
+    // ★하단 여백 = **동네 전광판** (대표 9-03: "빈 검은 공간에 뭘 넣나"). 공원은 지도 노드가 됐으니
+    //   여기엔 동네가 살아있다는 신호를 흘린다 — 오늘 체크인 수·소식·팁 롤링.
+    + '<div id="mw-fm-news" style="display:flex;align-items:center;gap:10px;width:' + W + 'px;margin:10px auto 0;padding:11px 13px;box-sizing:border-box;'
+    + "font-family:'Galmuri11',sans-serif;background:#0a0d14;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden\">"
+    + '<span style="flex-shrink:0;font-size:9.5px;color:#4a5266;letter-spacing:1px">동네<br>소식</span>'
+    + '<span id="mw-fm-news-line" style="flex:1;min-width:0;font-size:11.5px;color:#F5C24B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+    + '<span class="mw-blink">▌</span></span></div>';
+  window._mwFmNews();
   // 노드 실측 좌표(픽셀)와 중앙 광장 좌표를 잡아두고, 캐릭터를 **중앙**에 세운다
   requestAnimationFrame(function () {
     const map = document.getElementById('mw-fm-map'); if (!map) return;
@@ -32352,7 +32351,29 @@ window._mwFmPlace = function (k, immediate, face) {
   mk.style.left = (p.x - w / 2) + 'px';
   mk.style.top = (p.y - h + 14) + 'px';   // 발이 지점 중앙 근처에 닿게
 };
-// (v2 자동 산책 공원 제거 — 공원은 _FIELDS.park 진짜 필드가 됐다. 입구는 지도 아래 포탈 버튼)
+// (v2 자동 산책 공원 제거 — 공원은 _FIELDS.park 진짜 필드가 됐고 지도 노드로 들어간다)
+// ── 동네 전광판: 하단 여백에 도는 소식 롤링. 무거운 조회는 안 한다(체크인 60초 캐시 재사용). ──
+window._mwFmNews = async function () {
+  const el = document.getElementById('mw-fm-news-line'); if (!el) return;
+  const lines = ['공원이 열렸어요 — 펫이랑 산책하러 가보세요'];
+  try {
+    const rows = await mwTodayCheckins();
+    if (rows && rows.length) {
+      lines.unshift('오늘 헬스장 도장 ' + rows.length + '개 — 동네가 움직이고 있어요');
+      const last = rows[rows.length - 1];
+      if (last && last.centerName) lines.push('방금 도장: ' + String(last.centerName).slice(0, 14));
+    }
+  } catch (e) {}
+  lines.push('오늘 운동 인증하면 5머피');
+  let i = 0;
+  const show = function () {
+    const cur = document.getElementById('mw-fm-news-line');
+    if (!cur) { clearInterval(t); return; }
+    cur.textContent = lines[i % lines.length]; i++;
+  };
+  show();
+  const t = setInterval(show, 3800);
+};
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
   const panel = document.getElementById('mw-wpanel');
