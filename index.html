@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '982';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '985';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18586,6 +18586,7 @@ window._golfMoleClock = function (s, dt, r) {
     s._addrWarn = 1;
     showToast('빨리 치세요! 두더지가 노려요');
     window._golfFx = { kind: 'puff', x: s.x, y: s.y + 3, at: s.t };   // 발치에서 흙 튐(경고)
+    try { window.sfx && window.sfx.play('moleDig'); } catch (e) {}    // 두더지가 솟는 흙파기(실사 파일음)
   }
   if (s._addrT > G.MOLE_CLOCK_HIT) {
     s._addrT = 0; s._addrWarn = 0;
@@ -18597,7 +18598,7 @@ window._golfMoleClock = function (s, dt, r) {
     if (s.mole) { s.mole.x = s.x; s.mole.y = s.y; s.mole.up = true; }   // 두더지가 공 자리에서 솟은 척
     window._golfFx = { kind: 'puff', x: s.x, y: s.y, at: s.t };
     showToast('두더지가 공을 쳐냈어요!');
-    try { window.sfx && window.sfx.play('mole'); } catch (e) {}
+    try { window.sfx && window.sfx.play('moleHit'); } catch (e) {}   // 실사 파일음(옛 칩튠 'mole' 금지 — sfx-core)
     if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
   }
 };
@@ -32222,15 +32223,16 @@ window.mwWorldPanel = function (kind) {
 // 누르면 캐릭터가 걸어간 뒤 지도가 그쪽으로 **확대되며** 필드가 열린다(액자+오브젝트 겸용은 난잡).
 // ★배치: 강(지도 상단 5~28%) 위에 건물을 놓지 않는다 — v2 에서 집·헬스장이 강에 떠 보였다(대표 지적).
 //   러닝존만 강변(다리 옆)이다 — 한강 러닝이니까.
-window._MW_FM_CENTER = { x: 47, y: 51 };   // 중앙 광장(캐릭터 출발점) — v4 지도 실측
+window._MW_FM_CENTER = { x: 47, y: 50 };   // 중앙 광장(캐릭터 출발점) — v5 지도 실측
+// v5 지도 실측 배치. h = 오브젝트 표시 높이(px) — 건물은 크게, 팻말은 작게(대표 9-03: "헬스장 너무 작아").
+// x 가 있으면 side 대신 그 left% 에 둔다(테니스 팻말 = 코트 입구 옆).
 window._MW_FM_ORDER = [
-  // v4 지도(부지 포함) 실측 배치 — 각 오브젝트가 자기 부지 위에 앉는다(풀숲 뜬금 금지, 대표 9-03)
-  { k: 'running',  side: 'l', y: 17 },   // 강변 조깅 트랙 산책로 초입(다리 서쪽)
-  { k: 'gym',      side: 'r', y: 21 },   // 우상 주차선 그려진 아스팔트 부지 위
-  { k: 'home',     side: 'l', y: 42 },   // 좌중 울타리 마당 위
-  { k: 'tennis',   side: 'r', y: 40 },   // 우중 테니스 코트 **옆**(코트는 지도에 그려져 있다 — 팻말이 입구)
-  { k: 'golf',     side: 'l', y: 71 },   // 좌하 퍼팅 그린 옆
-  { k: 'climbing', side: 'r', y: 71, lock: 1, name: '클라이밍' },   // 우하 자갈 공사 부지 위
+  { k: 'running',  side: 'l', y: 15, h: 86 },   // 강변 트랙 위 = 한강 다리 밑 통로(다리 서쪽)
+  { k: 'gym',      side: 'r', y: 14, h: 92 },   // 주차선 아스팔트 부지 위
+  { k: 'home',     side: 'l', y: 40, h: 84 },   // 울타리 마당 위
+  { k: 'tennis',   x: 50,     y: 42, h: 62 },   // 코트 입구 옆(광장→코트 길목) — 코트는 지도에 그려져 있다
+  { k: 'golf',     side: 'l', y: 63, h: 62 },   // 퍼팅 그린 옆
+  { k: 'climbing', side: 'r', y: 68, h: 78, lock: 1, name: '클라이밍' },   // 자갈 공사 부지 위
 ];
 window._mwFieldWorldMap = function (body) {
   if (!document.getElementById('mw-fm-css')) {
@@ -32254,12 +32256,12 @@ window._mwFieldWorldMap = function (body) {
   // 지도 원본 720x1120 비율을 유지한다 — 비율이 틀어지면 길 끝과 노드 좌표가 어긋난다
   const W = Math.min(body.clientWidth || 340, 360);
   const H = Math.round(W * 1120 / 720);
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=1\')">'
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=2\')">'
     + window._MW_FM_ORDER.map(function (n) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
-        const pos = (n.side === 'l' ? 'left:3%' : 'right:3%') + ';top:' + n.y + '%';
-        const obj = '<img class="mw-fmobj" src="char/fields/map_' + n.k + '.png?v=1" alt="">';
+        const pos = (n.x != null ? 'left:' + n.x + '%' : (n.side === 'l' ? 'left:3%' : 'right:3%')) + ';top:' + n.y + '%';
+        const obj = '<img class="mw-fmobj" src="char/fields/map_' + n.k + '.png?v=2" alt="" style="height:' + (n.h || 72) + 'px">';
         if (n.lock || !f) {
           return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">' + obj
             + '<span class="mw-fmname">' + (n.name || n.k) + ' · 곧 열려요</span></div>';
@@ -34217,8 +34219,10 @@ window.loadHomeTrending = async () => {
 
     const card = (o) => {
       // o.inner = 사진 대신 직접 그리는 배경(캐릭터 카드 등)
+      // zoom은 원본 사진 안쪽에 여백이 있는 카드만 살짝 확대한다. 다른 인기 카드 구도에는 영향 없음.
+      const zoom = o.zoom ? `;display:block;object-position:center;transform:scale(${Number(o.zoom) || 1});transform-origin:center` : '';
       const bg = o.inner ? o.inner : (o.img
-        ? `<img src="${cdn(o.img, 400)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover${o.blur ? ';' + window.MW_BLUR_CSS : ''}">`
+        ? `<img src="${cdn(o.img, 400)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover${o.blur ? ';' + window.MW_BLUR_CSS : zoom}">`
         : `<div style="position:absolute;inset:0;background:linear-gradient(160deg,#1b1c22,#101116)"></div>`);
       return `<button onclick="${o.click}" aria-label="${esc(o.aria || o.title)}" style="flex:none;width:152px;height:162px;position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--border-subtle);background:#111;padding:0;text-align:left;cursor:pointer;font-family:inherit;transition:transform .15s ease" onmouseenter="this.style.transform='translateY(-3px)'" onmouseleave="this.style.transform='none'">
         ${bg}
@@ -34270,7 +34274,9 @@ window.loadHomeTrending = async () => {
           //   goPage('squad') 는 없는 페이지라 화면이 통째로 검게 나온다(대표 8-11 제보).
           click: `window.openSquadDetail && window.openSquadDetail('${s.id}')`, color: BLUE, icon: icoCrew, label: '인기 스쿼드',
           img: s.img || '',
-          inner: _sqField ? `<div style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat url('${_sqField}');image-rendering:pixelated"></div>` : '',
+          // 와이드 필드 원본의 바깥 여백까지 보이면 카드 안에서 작아 보인다. 테두리 밖으로 6% 넘겨 확실히 채운다.
+          inner: _sqField ? `<div style="position:absolute;inset:-6%;background-color:#0e0f14;background-image:url('${_sqField}');background-position:center;background-size:cover;background-repeat:no-repeat;image-rendering:pixelated"></div>` : '',
+          zoom: 1.08,
           title: _title,
           meta: `${s.location ? mPin + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.location) + '</span><span style="opacity:.45;flex-shrink:0">·</span>' : ''}<span style="flex-shrink:0">${n}명</span>`
         }));
