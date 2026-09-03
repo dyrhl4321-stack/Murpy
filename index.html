@@ -5810,7 +5810,8 @@ window._mwPetUnstick = function (p) {
 // ===== 방에 붙이기 =====
 window._mwPetSync = function () {
   var room = document.getElementById('charworld-room');
-  var list = (window._curField === 'home') ? window._mwPetsData() : [];
+  // ★펫이 사는 필드 = 내 방 + 공원(9-03 산책). 다른 필드에선 빈 목록 → 걷어진다.
+  var list = (window._curField === 'home' || window._curField === 'park') ? window._mwPetsData() : [];
   var clear = function () {
     window._mwPets.forEach(function (p) { clearTimeout(p._t); if (p.el) p.el.remove(); });
     window._mwPets = [];
@@ -5825,7 +5826,7 @@ window._mwPetSync = function () {
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
     // ★목록이 비어 있어도 재시도한다 — 문서가 아직 안 왔을 뿐일 수 있다(8-30).
     //   home 필드가 아닐 때만 진짜로 그만둔다.
-    if (room && (!room.clientWidth || (!list.length && window._curField === 'home'))) {
+    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || window._curField === 'park')))) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -7844,8 +7845,26 @@ window._FIELDS = {
     "################","################","################","################",
     "#####......#####","#..............#","#..............#","##............##",
     "##............##","##............##","##............##","###..........###",
-    "###..........###","###..........###","######....######","################"] }
+    "###..........###","###..........###","######....######","################"] },
+  // 공원 (9-03, 오픈월드 광장 1단계) — 산책로. 위 2줄 나무 / 연못(2~6열·3~5행) / 상단 벤치(10~12열·2~3행)
+  // / 우측 나무·가로등(14열) / 아래 화단(양끝 13~14행)은 벽. 아래 진입로에서 시작한다.
+  park: { name: '공원', src: "char/fields/field_park.png?v=1", grid: 16, start: { tc: 7, tr: 12 }, map: [
+    "################","################","##........###.##","#######...###.##",
+    "#######.......##","#######.......##","##............##","##............##",
+    "##............##","##............##","##............##","##............##",
+    "#..............#","###..........###","###..........###","################"] }
 };
+// ★공원에서는 펫이 **산책 모드** — '따라와'(follow)를 자동으로 걸고 계속 갱신한다.
+//   부름은 2분이면 저절로 풀리는 구조(MW_PET_CALL_MS)라, 공원에 있는 동안 4초마다 되건다.
+//   집에서 '따라와' 했을 때의 그 걸음(위로 가면 위로, 아래로 가면 아래로)이 그대로 온다(대표 9-03).
+setInterval(function () {
+  if (window._curField !== 'park') return;
+  (window._mwPets || []).forEach(function (p) {
+    var c = window._mwPetCallOf ? window._mwPetCallOf(p) : null;
+    if (!c || c.k !== 'follow') { p.call = { k: 'follow', uid: '', t: Date.now() }; try { window._mwPetStep && window._mwPetStep(p); } catch (e) {} }
+    else { c.t = Date.now(); }
+  });
+}, 4000);
 window._curField = 'home';
 // 필드 전환(간단): 배경 교체 + 시작위치로 리셋
 // ★필드를 옮길 때 **오브젝트가 배경보다 먼저 떠서** 그쪽으로 시선이 쏠렸다
@@ -32252,16 +32271,7 @@ window._mwFieldWorldMap = function (body) {
       .mw-fmnode.lock .mw-fmname{color:#8a93a8}
       #mw-fm-char{position:absolute;z-index:5;pointer-events:none}
       #mw-fm-char.walk{animation:mwFmBob .22s steps(2) infinite}
-      @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-      #mw-fm-park{position:relative;margin:10px auto 0;overflow:hidden;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;
-        background:linear-gradient(180deg,#87b558 0 14px,#7cab4f 14px);image-rendering:pixelated}
-      .mw-fm-pet{position:absolute;bottom:6px;width:64px;height:64px;background-repeat:no-repeat;image-rendering:pixelated;
-        cursor:pointer;-webkit-tap-highlight-color:transparent;animation:mwFmPetBob .5s steps(2) infinite}
-      .mw-fm-pet.hop{animation:mwFmHop .45s steps(4) 1}
-      /* ★bob·hop 은 transform 을 쓰지 않는다 — 좌우 반전(scaleX)이 transform 이라 서로 덮는다 */
-      @keyframes mwFmPetBob{0%,100%{bottom:6px}50%{bottom:9px}}
-      @keyframes mwFmHop{0%,100%{bottom:6px}40%{bottom:22px}}
-      .mw-fm-park-cap{position:absolute;left:7px;top:5px;font-size:9.5px;color:rgba(5,7,12,.55);letter-spacing:1px;pointer-events:none}`;
+      @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`;
     document.head.appendChild(st);
   }
   // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
@@ -32282,10 +32292,16 @@ window._mwFieldWorldMap = function (body) {
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
     + '<div id="mw-fm-char"></div></div>'
-    // ★하단 여백 = "우리 동네 공원" (대표 9-03: "여백이 아깝다, WOW 되는 UX") —
-    //   내가 키우는 펫들이 지도 밑 잔디에서 실제로 산책한다. 펫이 없으면 키우기 티저 한 줄.
-    + '<div id="mw-fm-park" style="width:' + W + 'px;height:88px"><span class="mw-fm-park-cap">우리 동네 공원</span></div>';
-  window._mwFmPark();
+    // ★하단 여백 = **공원 입구 포탈** (대표 9-03 확정). 자동 인형극(v2 공원)은 반려 —
+    //   공원은 이제 진짜 필드(_FIELDS.park)다: 직접 들어가 조이스틱으로 걷고 펫이 따라온다.
+    + '<button id="mw-fm-portal" onclick="try{window.sfx&&window.sfx.play(\'btn\')}catch(e){};document.getElementById(\'mw-wpanel\').remove();window.charSetField(\'park\')"'
+    + ' style="display:flex;align-items:center;gap:12px;width:' + W + 'px;margin:10px auto 0;padding:13px 15px;cursor:pointer;text-align:left;'
+    + "font-family:'Galmuri11',sans-serif;background:linear-gradient(180deg,#17251a,#0e1a12);border:3px solid #05070c;box-shadow:0 0 0 2px #2b5138;color:#fff\">"
+    + '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#5ad477" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 3l5 6h-3l4 5h-4v3h-4v-3H6l4-5H7z"/><path d="M10 20h4"/></svg>'
+    + '<span style="flex:1;min-width:0"><span style="display:block;font-size:13px;letter-spacing:1px">우리 동네 공원</span>'
+    + '<span style="display:block;font-size:10.5px;color:#8fbf9c;margin-top:3px">펫이랑 산책하러 가기</span></span>'
+    + '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5ad477" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>'
+    + '</button>';
   // 노드 실측 좌표(픽셀)와 중앙 광장 좌표를 잡아두고, 캐릭터를 **중앙**에 세운다
   requestAnimationFrame(function () {
     const map = document.getElementById('mw-fm-map'); if (!map) return;
@@ -32315,74 +32331,7 @@ window._mwFmPlace = function (k, immediate, face) {
   mk.style.left = (p.x - w / 2) + 'px';
   mk.style.top = (p.y - h + 14) + 'px';   // 발이 지점 중앙 근처에 닿게
 };
-// ── 우리 동네 공원: **내 캐릭터가 산책하고 펫들이 졸졸 따라온다** (대표 9-03 v2)
-//   v1(펫만 정면 프레임으로 큼직하게 둥둥)은 "이상하다" 반려 — 축척을 지도 캐릭터 기준으로 맞추고
-//   (캐릭터 46px·펫 32px 1배 정수배), 펫은 시트의 진짜 옆모습 걷기 프레임(행: 아래0/위1/좌2/우3,
-//   행별 프레임 수 = PET_META.pets[id].f)으로 걷는다. transition 이 아니라 틱 적분으로 움직여서
-//   걸음·방향·프레임이 항상 일치한다.
-window._mwFmPark = function () {
-  const park = document.getElementById('mw-fm-park'); if (!park) return;
-  const W = park.clientWidth || 340, GROUND = 6;
-  const pets = (Array.isArray(window._myPets) ? window._myPets : []).filter(function (p) { return p && p.id && window._mwPetDef && window._mwPetDef(p.id); }).slice(0, 4);
-  // 리더 = 내 캐릭터 (지도 위 마커와 같은 46px 미니 렌더, 옆모습으로 걷는다)
-  const me = document.createElement('div');
-  me.style.cssText = 'position:absolute;bottom:' + GROUND + 'px;width:29px;height:46px;pointer-events:none';
-  park.appendChild(me);
-  const L = { el: me, x: W * 0.35, tx: W * 0.6, dir: 'right', moving: true, wait: 0, drawn: '' };
-  const petSt = pets.map(function (p, i) {
-    const el = document.createElement('div');
-    el.className = 'mw-fm-pet';
-    el.style.width = '32px'; el.style.height = '32px';
-    el.style.backgroundImage = "url('char/pets/" + p.id + ".png')";
-    el.style.backgroundSize = (window.PET_META.cols * 32) + 'px ' + (window.PET_META.rows * 32) + 'px';
-    el.onclick = function () {
-      el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop');
-      setTimeout(function () { el.classList.remove('hop'); }, 500);   // 안 떼면 걷기 흔들림이 영영 멈춘다
-      try { window.sfx && window.sfx.play('tap'); } catch (e) {}
-    };
-    park.appendChild(el);
-    return { el: el, def: window._mwPetDef(p.id), id: p.id, x: L.x - 40 * (i + 1), dir: 'right', moving: false, fr: 0 };
-  });
-  if (!pets.length) {
-    park.insertAdjacentHTML('beforeend',
-      '<div style="position:absolute;right:9px;top:5px;pointer-events:none;font-size:10px;color:rgba(5,7,12,.55)">펫을 키우면 같이 산책해요</div>');
-  }
-  const DIRI = { down: 0, up: 1, left: 2, right: 3 };
-  const drawMe = function () {
-    const key = L.dir + (L.moving ? 'w' : 's');
-    if (L.drawn !== key) { L.drawn = key; me.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(window.getMyCharacter && window.getMyCharacter(), 46, L.moving ? L.dir : 'down') : ''; }
-    me.style.left = L.x + 'px';
-    me.style.animation = L.moving ? 'mwFmPetBob .3s steps(2) infinite' : 'none';
-  };
-  let frTick = 0;
-  const tick = setInterval(function () {
-    if (!document.getElementById('mw-fm-park')) { clearInterval(tick); return; }
-    frTick++;
-    // 리더: 목적지로 걷고, 도착하면 잠시 쉬었다 새 목적지
-    if (L.moving) {
-      const d = L.tx - L.x;
-      if (Math.abs(d) < 3) { L.moving = false; L.wait = frTick + 12 + Math.floor(Math.random() * 30); }
-      else { L.x += Math.sign(d) * 3.4; L.dir = d > 0 ? 'right' : 'left'; }
-    } else if (frTick >= L.wait) {
-      L.tx = 10 + Math.random() * (W - 50); L.moving = true;
-    }
-    drawMe();
-    // 펫: 리더 뒤를 간격 두고 따라온다 (리더가 보는 방향의 반대쪽으로 줄을 선다)
-    const back = L.dir === 'right' ? -1 : 1;
-    petSt.forEach(function (s, i) {
-      const want = L.x + back * 38 * (i + 1);
-      const d = want - s.x;
-      s.moving = Math.abs(d) > 4;
-      if (s.moving) { s.x += Math.sign(d) * Math.min(4.2, Math.abs(d)); s.dir = d > 0 ? 'right' : 'left'; }
-      const row = (s.moving ? window.PET_META.rowMap.walk : window.PET_META.rowMap.stand) + DIRI[s.dir];
-      const n = (s.def.f && s.def.f[row]) || 4;
-      if (s.moving && frTick % 2 === 0) s.fr = (s.fr + 1) % n;
-      if (!s.moving) s.fr = 0;
-      s.el.style.backgroundPosition = (-s.fr * 32) + 'px ' + (-row * 32) + 'px';
-      s.el.style.left = s.x + 'px';
-    });
-  }, 120);
-};
+// (v2 자동 산책 공원 제거 — 공원은 _FIELDS.park 진짜 필드가 됐다. 입구는 지도 아래 포탈 버튼)
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
   const panel = document.getElementById('mw-wpanel');
