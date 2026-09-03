@@ -17940,7 +17940,11 @@ window.GOLF = {
   //   ★9-02 2차: 4.0 은 "너무 크다"(대표) → 3.3. 그림에서 흙둔덕 테두리를 잘라내
   //     같은 반지름이어도 두더지가 더 커 보이게 된 것도 겹쳤다.
   MOLE_R: 3.3, MOLE_UP: 1500, MOLE_CYCLE: 3600, MOLE_BOUNCE: 0.55,
-  MOLE_V: 0.05, MOLE_RANGE: 4   // 어슬렁 속도(단위/틱) · 제 구멍 기준 좌우 이동 폭
+  MOLE_V: 0.05, MOLE_RANGE: 4,   // 어슬렁 속도(단위/틱) · 제 구멍 기준 좌우 이동 폭
+  // ★9-03 상 난이도 샷클락 두더지 — 어드레스에서 오래 끌면 두더지가 대기 중인 공을 툭 쳐서 굴려버린다.
+  //   빨리 치면 절대 안 나온다(느린 사람만 걸린다). 치기 전 경고 1회. 이중 방해(비행 중 방해 + 이 샷클락).
+  MOLE_CLOCK_WARN: 4200, MOLE_CLOCK_HIT: 6400,   // 어드레스 경과(ms): 경고 → 툭
+  MOLE_KICK: 26                                   // 툭 쳐서 굴리는 세기(멀리 보내되 드라이버보다는 약하게)
 };
 // 난이도 — 바람 세기(단위/틱²), 컵 배율, 페어웨이 마찰 보정, 점수 배율
 window.GOLF_LV = {
@@ -17948,7 +17952,7 @@ window.GOLF_LV = {
   //   중 = 적당히 즐길 만큼(약한 바람·느린 까마귀)  상 = 너무너무 어렵게(돌풍·좁은 페어웨이·큰 장애물·빠른 까마귀·두더지·작은 컵·5타 상한)
   easy: { name: '하', wind: 0,     cup: 1.5,  fric: 0.975, mul: 0.7, crow: false, mole: false, crowV: 0,    roughX: 6,  obsMul: 0.8, gust: false, maxStrokes: 6, accW: 1.4, accSpd: 2.0 },
   mid:  { name: '중', wind: 0.0005, cup: 1.0,  fric: null,  mul: 1.0, crow: true,  mole: true,  moleFrom: 1, crowV: 0.3,  crowFrom: 1, accW: 1.0, accSpd: 1.4,  roughX: 8,  obsMul: 1.0, gust: false, maxStrokes: 6 },
-  hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5, accW: 0.6, accSpd: 0.8 }
+  hard: { name: '상', wind: 0.0025, cup: 0.8,  fric: null,  mul: 2.5, crow: true,  mole: true,  crowV: 0.85, roughX: 14, obsMul: 1.35, gust: true, maxStrokes: 5, accW: 0.6, accSpd: 0.8, moleClock: true }
 };
 // 홀 — 장애물은 타원(cx, cy, rx, ry). tree 는 원(TREE_R).
 // 8-31 3홀 연못 y 50→62: 드라이버 첫 착지(48)가 연못 한가운데라 절대 못 넘던 것. 이제 드라이버는 넘고(48) 아이언은 빠진다(58)
@@ -18546,6 +18550,7 @@ window._golfGaugeFire = function (v) {
   const off = Math.abs(v) <= az ? 0 : (Math.abs(v) - az) * (v > 0 ? 1 : -1);
   const acc = Math.max(-1, Math.min(1, off / 0.4 + (off ? (v > 0 ? az : -az) : 0)));   // golfShot 이 accZone 을 다시 빼므로 그만큼 더해 준다
   window._golfGauge = { phase: 'idle', v: 0, dirn: 1, power: 0 };
+  s._addrT = 0; s._addrWarn = 0;   // 샷을 쳤으니 샷클락 두더지 타이머 리셋
   if (window.golfShot(s, st.power, acc, s.club)) {
     const me = document.getElementById('golf-me'); if (me) { me.classList.remove('swing'); void me.offsetWidth; me.classList.add('swing'); }
     window._golfTrail = [];
@@ -18570,6 +18575,32 @@ window.golfGo = function () {
   cancelAnimationFrame(window._golfRaf); window._golfRaf = requestAnimationFrame(window._golfFrame);
   window.track && window.track('game_start', { game: 'golf', lv: window._golfLv, ch: window._golfS.ch });
 };
+// 상 난이도 샷클락 두더지 — 어드레스(공 정지·게이지 idle)에서 오래 끌면 경고 후 두더지가 공을 툭 쳐 굴린다.
+window._golfMoleClock = function (s, dt, r) {
+  const G = window.GOLF, lv = window.GOLF_LV[s.lv] || {};
+  const idle = window._golfGauge && window._golfGauge.phase === 'idle';
+  const addressing = lv.moleClock && !s.moving && !s.done && idle;
+  if (!addressing) { s._addrT = 0; s._addrWarn = 0; return; }
+  s._addrT = (s._addrT || 0) + dt;
+  if (s._addrT > G.MOLE_CLOCK_WARN && !s._addrWarn) {
+    s._addrWarn = 1;
+    showToast('빨리 치세요! 두더지가 노려요');
+    window._golfFx = { kind: 'puff', x: s.x, y: s.y + 3, at: s.t };   // 발치에서 흙 튐(경고)
+  }
+  if (s._addrT > G.MOLE_CLOCK_HIT) {
+    s._addrT = 0; s._addrWarn = 0;
+    // 툭! 공을 반쯤 뒤·옆으로 굴린다(멀리 보내되 스코어는 안 올린다 — 두더지 짓이지 내 샷이 아니다).
+    const ang = Math.PI * (0.75 + Math.random() * 0.5);   // 대체로 뒤/옆 방향
+    const kick = G.MOLE_KICK * (0.8 + Math.random() * 0.4);
+    s.dir = ang; s.vx = Math.cos(ang) * kick / 20; s.vy = Math.sin(ang) * kick / 20;
+    s.z = 0; s.vz = 0; s.curve = 0; s.moving = true;
+    if (s.mole) { s.mole.x = s.x; s.mole.y = s.y; s.mole.up = true; }   // 두더지가 공 자리에서 솟은 척
+    window._golfFx = { kind: 'puff', x: s.x, y: s.y, at: s.t };
+    showToast('두더지가 공을 쳐냈어요!');
+    try { window.sfx && window.sfx.play('mole'); } catch (e) {}
+    if (navigator.vibrate) navigator.vibrate([10, 40, 10]);
+  }
+};
 window._golfFrame = function (ts) {
   const s = window._golfS; if (!s) return;
   const dt = Math.min(50, ts - (window._golfLast || ts)); window._golfLast = ts;
@@ -18578,6 +18609,9 @@ window._golfFrame = function (ts) {
   if (s.moving) { const n = Math.ceil(window.GOLF.SPEED); for (let i = 0; i < n; i++) { const rr = window.golfTick(s, dt * window.GOLF.SPEED / n); if (rr && rr !== 'land') r = rr; else if (rr === 'land' && !r) r = rr; if (!s.moving) break; } }
   else r = window.golfTick(s, dt);
   window._golfGaugeTick(dt);
+  // ★상 난이도 샷클락 두더지 (대표 9-03): 어드레스에서 오래 끌면 두더지가 대기 중인 공을 툭 쳐서 굴린다.
+  //   프레임 루프에만 둔다 — 예측(_golfPredict → golfTick)엔 절대 안 걸린다. 빨리 치면 못 나온다.
+  window._golfMoleClock(s, dt, r);
   if (s.moving && s.z > 0 && (window._golfTrail || []).length < 40 && (s.t % 48) < dt) window._golfTrail.push({ x: s.x, y: s.y, z: s.z });
   if (r === 'land') { window._golfFx = { kind: 'puff', x: s.x, y: s.y, at: s.t }; }
   if (r === 'in' && s.hole !== before) { window._golfFx = { kind: 'burst', x: window.GOLF_HOLES[before].x, y: window.GOLF_HOLES[before].y, at: s.t }; showToast(s.strokes[before] === 1 ? '홀인원!!' : (s.strokes[before] === 2 ? '버디! 2타' : (s.strokes[before] + '타로 홀인'))); if (navigator.vibrate) navigator.vibrate([20, 40, 20, 40, 40]); }
@@ -18592,7 +18626,7 @@ window._golfFrame = function (ts) {
   // 멈추면 카메라가 공 뒤로 옮겨간다(홀이 바뀌었으면 새 티로)
   // ★공이 날아가는 동안에도 카메라가 공을 따라간다(대표 8-30: "필드가 그대로니까 공이 어디쯤 갔는지 모르겠다").
   //   공은 늘 화면 아래 중앙, 필드·깃발·장애물이 흘러 내려온다. 홀이 바뀌면 새 티로 즉시.
-  if (s.hole !== before) { window._golfCamSet(s, true); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
+  if (s.hole !== before) { window._golfCamSet(s, true); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; s._addrT = 0; s._addrWarn = 0; }
   else if (s.moving) { /* 8-30 비행 중 카메라 정지 — 공이 필드를 가로질러 가는 게 보여야 앞뒤·높이가 읽힌다 */ }
   else if (wasMoving) { window._golfCamSet(s, false); window._golfApplyBg(s); window._golfTrail = []; window._golfFace = 'up'; }
   window._golfCamStep(); window._golfApplyBg(s);
