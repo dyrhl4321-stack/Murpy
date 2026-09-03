@@ -40329,16 +40329,25 @@ window._sqMgArm = function (sid) {
   if (v.st === 'st') { window._sqMgScan(); window._sqMgScanT = setInterval(window._sqMgScan, 200); }
   else {
     window._sqMgCaught = {};
-    // ★등 돌린 동안에도 결승선을 본다 — 넘는 즉시 끝(대표 9-02: 돌아보기 전에 선 넘었는데 죽었다고 판정).
-    //   쓰는 사람은 진행자(순번 0)만. 승계 규칙은 그대로.
+    // ★등 돌린 동안에도 결승선을 본다 — 넘는 즉시 **완주 순위(fin)만** 기록하고 계속(대표 9-03 등수제).
+    //   쓰는 사람은 진행자(순번 0)만. claimGoal 과 같은 fin 트랜잭션이라 두 경로가 안 어긋난다.
+    //   전원이 완주/탈락이 되면 그때 ov 로 넘긴다(승계 규칙 그대로).
     if (turn === 0) window._sqMgScanT = setInterval(function () {
-      const vv = window._sqMgV, R = window._rt; if (!R || !vv || vv.st !== 'go') { clearInterval(window._sqMgScanT); return; }
-      const players = window._sqRtLast || {}, out = vv.out || {};
-      let win = null;
-      Object.keys(vv.join || {}).forEach(function (u) { if (out[u] || win) return; const p = players[u]; if (p && (+p.y || 99) <= window.SQ_MG.GOAL_Y) win = u; });
-      if (!win) return;
-      clearInterval(window._sqMgScanT); clearTimeout(window._sqMgT);
-      R.update(window._sqMgRef(sid), { st: 'ov', out: out, win: win, dl: window._sqMgNow() + window.SQ_MG.OVER_MS, t: Date.now(), host: vv.host, hostNick: vv.hostNick || '머피' }).catch(function () {});
+      const vv = window._sqMgV, R = window._rt, Z = window.SQ_MG; if (!R || !vv || vv.st !== 'go') { clearInterval(window._sqMgScanT); return; }
+      const players = window._sqRtLast || {};
+      R.runTransaction(window._sqMgRef(sid), function (cur) {
+        if (!cur || cur.g !== 'mg' || cur.st !== 'go') return;
+        const jn = cur.join || {}, out = cur.out || {}; cur.fin = cur.fin || {};
+        const cross = Object.keys(jn).filter(function (u) { return !out[u] && !cur.fin[u] && (function () { const p = players[u]; return p && (+p.y || 99) <= Z.GOAL_Y; })(); });
+        if (!cross.length) return;   // 새로 들어온 완주자 없음 → 트랜잭션 취소
+        cross.sort(function (a, b) { const ya = +((players[a] || {}).y) || 99, yb = +((players[b] || {}).y) || 99; return (ya - yb) || (a < b ? -1 : 1); });
+        let m = 0; Object.keys(cur.fin).forEach(function (u) { if (cur.fin[u] > m) m = cur.fin[u]; });
+        cross.forEach(function (u) { m += 1; cur.fin[u] = m; });
+        const act = Object.keys(jn).filter(function (u) { return !out[u] && !cur.fin[u]; });
+        if (!act.length) { let w = null; Object.keys(cur.fin).forEach(function (u) { if (cur.fin[u] === 1) w = u; }); cur.st = 'ov'; cur.win = w; cur.dl = window._sqMgNow() + Z.OVER_MS; }
+        cur.t = Date.now(); cur.host = vv.host; cur.hostNick = vv.hostNick || '머피';
+        return cur;
+      }).catch(function () {});
     }, 200);
   }
   if (turn < 0) return;
@@ -40352,61 +40361,68 @@ window._sqMgArm = function (sid) {
 //   (tools/tests/mugung-core.test.mjs 가 이 함수만 뽑아서 검증한다)
 //   상태와 위치만 받아서 '다음에 뭘 써야 하나' 를 돌려준다. 쓰기는 _sqMgTick 이 한다.
 // caught = 정지 구간 동안 훑으며 모은 '걷고 있던 사람' (없으면 마지막 순간만 본다)
+// ★9-03 대표: 한 명 통과 즉시 종료 → **전원이 완주(fin) 또는 탈락(out)할 때까지 지속하고 완주 순서로 등수**.
+//   fin = {uid: 순위(1,2,3…)}. out = {uid:1}(하트 맞고 탈락). 반환은 out·fin 전체 맵으로 통일한다
+//   (claimGoal 트랜잭션·arm turn0 감시·이 judge 가 모두 같은 fin 규칙을 써야 서로 안 어긋난다).
 window._sqMgJudge = function (v, players, caught) {
-  const Z = window.SQ_MG, jn = (v && v.join) || {}, out = (v && v.out) || {};
+  const Z = window.SQ_MG, jn = (v && v.join) || {};
+  const out = Object.assign({}, (v && v.out) || {});
+  const fin = Object.assign({}, (v && v.fin) || {});
   caught = caught || {};
-  const alive = Object.keys(jn).filter(function (u) { return !out[u]; });
+  const active = function () { return Object.keys(jn).filter(function (u) { return !out[u] && !fin[u]; }); };
+  const winnerOf = function () { let w = null; Object.keys(fin).forEach(function (u) { if (fin[u] === 1) w = u; }); return w; };
+  // 결승선을 넘은 active 를 완주 순서에 추가. 순서 = 더 깊이 든 사람(작은 y) 먼저, 동률은 uid(결정적 → 두 진행자 동시 판정 결과 동일).
+  const recordFin = function (cands) {
+    cands = cands.filter(function (u) { return !fin[u]; });
+    cands.sort(function (a, b) { const ya = +((players[a] || {}).y) || 99, yb = +((players[b] || {}).y) || 99; return (ya - yb) || (a < b ? -1 : 1); });
+    let m = 0; Object.keys(fin).forEach(function (u) { if (fin[u] > m) m = fin[u]; });
+    cands.forEach(function (u) { m += 1; fin[u] = m; });
+  };
   if (v.st === 'go') {
-    // ★돌아보기 **전에** 결승선을 넘은 사람이 있으면 그 사람 승리다 — 걷고 있었어도 이미 통과한 것(대표 9-02).
-    let goalWin = null;
-    alive.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !goalWin) goalWin = u; });
-    if (goalWin) return { next: 'end', out: Object.assign({}, out), win: goalWin };
-    // 돌아본다 — 지금 위치를 박아둔다. 이게 정지 판정의 기준선이다.
-    // ★이 순간 이미 걷고 있던 사람은 여기서부터 걸린 것으로 본다(돌아봤는데 움직이고 있었다).
+    // 돌아보기 전에 결승선을 넘은 사람은 걷고 있었어도 완주(대표 9-02). 단 끝내지 않고 등수만 기록하고 계속(대표 9-03).
+    recordFin(active().filter(function (u) { const p = players[u]; return p && (+p.y || 99) <= Z.GOAL_Y; }));
+    const act = active();
+    if (!act.length) return { next: 'end', out: out, fin: fin, win: winnerOf() };   // 전원 완주/탈락
     const snap = {}, movingNow = {};
-    alive.forEach(function (u) {
-      const p = players[u]; if (!p) return;
-      snap[u] = { x: +p.x || 0, y: +p.y || 0 };
-      if (p.moving) movingNow[u] = 1;
-    });
-    return { next: 'st', snap: snap, movingNow: movingNow };
+    act.forEach(function (u) { const p = players[u]; if (!p) return; snap[u] = { x: +p.x || 0, y: +p.y || 0 }; if (p.moving) movingNow[u] = 1; });
+    return { next: 'st', snap: snap, movingNow: movingNow, out: out, fin: fin };
   }
   if (v.st !== 'st') return null;   // 'ov' 도 여기서 걸러진다 — 결과 구간엔 판정하지 않는다
-  // 등을 다시 돌리기 전에 움직인 사람을 걸러낸다.
-  const snap = v.snap || {}, newOut = Object.assign({}, out);
-  alive.forEach(function (u) {
+  const snap = v.snap || {};
+  active().forEach(function (u) {
     const p = players[u]; if (!p) return;
     // ★걷고 있으면 걸린다 — 탭 이동이라 위치는 탭하는 순간 목적지로 확정된다.
-    //   위치만 보면 '캐릭터는 걸어가는데 안 걸리는' 상태가 된다.
-    if (caught[u] || p.moving) { newOut[u] = 1; return; }
+    if (caught[u] || p.moving) { out[u] = 1; return; }
     const a = snap[u]; if (!a) return;
     const dx = (+p.x || 0) - a.x, dy = (+p.y || 0) - a.y;
-    if (Math.sqrt(dx * dx + dy * dy) > Z.MOVE_TOL) newOut[u] = 1;   // 안전망(순간이동 등)
+    if (Math.sqrt(dx * dx + dy * dy) > Z.MOVE_TOL) out[u] = 1;   // 안전망(순간이동 등)
   });
-  const still = Object.keys(jn).filter(function (u) { return !newOut[u]; });
-  // 결승선에 닿은 사람이 있으면 거기서 끝. ★움직여서 걸린 사람은 결승선에 있어도 진다.
-  let win = null;
-  still.forEach(function (u) { const p = players[u]; if (p && (+p.y || 99) <= Z.GOAL_Y && !win) win = u; });
-  if (win || !still.length) return { next: 'end', out: newOut, win: win || null };
-  return { next: 'go', out: newOut };
+  // 걸리지 않고 결승선에 있는 사람은 완주 기록(움직여 걸린 사람은 위에서 out 되어 제외된다)
+  recordFin(active().filter(function (u) { const p = players[u]; return p && (+p.y || 99) <= Z.GOAL_Y; }));
+  const act = active();
+  if (!act.length) return { next: 'end', out: out, fin: fin, win: winnerOf() };
+  return { next: 'go', out: out, fin: fin };
 };
 // 내 캐릭터가 등 돌린 구간(go)에 결승선을 넘으면, 위치를 서버에 보냈다가 진행자 화면으로
 // 되돌아오는 왕복을 기다리지 않고 이 기기에서 즉시 승리를 청구한다. 트랜잭션이라 먼저 도착한
 // 한 명만 go→ov 를 바꾸며, 이미 돌아본(st) 뒤에는 절대 통과시키지 않는다.
 window._sqMgClaimGoal = function (sid, p) {
   const R = window._rt, v = window._sqMgV, me = (auth.currentUser || {}).uid, Z = window.SQ_MG;
-  if (!R || !R.runTransaction || !sid || !v || v.st !== 'go' || !me || !(v.join || {})[me]
-      || (v.out || {})[me] || !p || !(+p.y <= Z.GOAL_Y)) return false;
-  const key = String(v.t || '') + ':' + String(v.dl || '');
-  if (window._sqMgGoalSent === key) return true;
-  window._sqMgGoalSent = key;
+  // ★9-03 등수제: 통과해도 끝내지 않고 **내 완주 순위(fin)만** 즉시 청구한다(왕복 대기 없이).
+  //   go·st 어느 구간이든 결승선에 있으면 완주. 이미 걸렸거나(out) 이미 완주(fin)면 청구 안 함.
+  if (!R || !R.runTransaction || !sid || !v || (v.st !== 'go' && v.st !== 'st') || !me || !(v.join || {})[me]
+      || (v.out || {})[me] || (v.fin || {})[me] || !p || !(+p.y <= Z.GOAL_Y)) return false;
+  if (window._sqMgGoalSent === me) return true;   // 한 판에 한 번만 완주 청구(구간 넘어가도 유지)
+  window._sqMgGoalSent = me;
   R.runTransaction(window._sqMgRef(sid), function (cur) {
-    if (!cur || cur.g !== 'mg' || cur.st !== 'go' || !(cur.join || {})[me] || (cur.out || {})[me]) return;
-    cur.st = 'ov'; cur.win = me; cur.out = cur.out || null;
-    cur.dl = window._sqMgNow() + Z.OVER_MS; cur.t = Date.now();
+    if (!cur || cur.g !== 'mg' || (cur.st !== 'go' && cur.st !== 'st') || !(cur.join || {})[me] || (cur.out || {})[me] || (cur.fin || {})[me]) return;
+    cur.fin = cur.fin || {};
+    let m = 0; Object.keys(cur.fin).forEach(function (u) { if (cur.fin[u] > m) m = cur.fin[u]; });
+    cur.fin[me] = m + 1;   // 도착 순서 = 현재 최대 순위 + 1 (트랜잭션이라 먼저 도착한 순서대로 부여된다)
+    cur.t = Date.now();
     return cur;
   }).catch(function (e) {
-    if (window._sqMgGoalSent === key) window._sqMgGoalSent = null;
+    if (window._sqMgGoalSent === me) window._sqMgGoalSent = null;
     console.warn('mugung goal', e);
   });
   return true;
