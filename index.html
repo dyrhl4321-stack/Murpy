@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '972';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '973';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -39795,6 +39795,10 @@ window.sfx = (function () {
     };
     bg.timer = setInterval(function () {
       if (bg.name !== name || document.hidden) return;
+      // ★백그라운드에 있던 만큼 **건너뛴다** (대표 9-03: "한동안 안 들리다가 우다다다").
+      //   숨김 동안 currentTime 은 계속 가는데 bg.next 는 멈춰 있어서, 돌아오는 순간
+      //   밀린 음표 수백 개가 전부 과거 시각으로 예약돼 즉시 한꺼번에 터졌다.
+      if (bg.next < c.currentTime) { bg.next = c.currentTime + 0.05; }
       while (bg.next < c.currentTime + 0.12) {
         const i = bg.step % len;
         note(T.mel[i], T.lead, bg.next, stepDur * 0.9, 1);
@@ -39812,7 +39816,9 @@ window.sfx = (function () {
   const chans = {};
   const voiceWait = {};
   const playVoiceBuffer = function (b, vol, ch) {
-    const c = A(); if (muted || !c || !b) return;
+    // ★화면이 숨겨져 있으면 버린다 — 스쿼드 필드를 백그라운드에 두면 RTDB 갱신마다 소리가
+    //   suspended 컨텍스트에 줄을 서고, 나중에 앱을 열면 한꺼번에 터졌다(대표 9-03).
+    const c = A(); if (muted || !c || !b || document.hidden) return;
     const start = function () {
       // 같은 채널이 아직 말하고 있으면 새 대사는 겹치지 않고 버린다.
       if (ch && chans[ch] && !chans[ch]._done) return;
@@ -39822,8 +39828,11 @@ window.sfx = (function () {
     };
     // 상태 콜백은 사용자 탭보다 늦게 온다. iOS가 아직 resume 중이면 시작음을 버리지 말고
     // 실제 running 이 된 뒤 한 번만 재생한다.
+    // ★단 600ms 안에 resume 이 안 되면 버린다 — 제스처 없는 resume 은 영영 pending 으로
+    //   남았다가 다음 탭 때 밀린 소리를 전부 쏟아낸다(우다다다의 두 번째 갈래).
     if (c.state === 'suspended') {
-      try { const p = c.resume(); if (p && p.then) { p.then(start).catch(function () {}); return; } } catch (e) {}
+      const at = Date.now();
+      try { const p = c.resume(); if (p && p.then) { p.then(function () { if (Date.now() - at < 600 && !document.hidden) start(); }).catch(function () {}); return; } } catch (e) {}
     }
     start();
   };
@@ -39853,7 +39862,9 @@ window.sfx = (function () {
   };
   const preload = function (prefix) { Object.keys(VOICES).forEach(function (n) { if ((!prefix || n.indexOf(prefix) === 0) && bufs[n] === undefined) loadVoice(n).catch(function () {}); }); };
   return {
-    play: function (name, arg) { if (muted) return; try { const c = A(), f = S[name]; if (!c || !f) return; if (c.state === 'suspended') { const p = c.resume(); if (p && p.then) { p.then(function () { f(arg); }).catch(function () {}); return; } } f(arg); } catch (e) {} },
+    // ★document.hidden 이면 버린다 + suspended 복구 대기는 600ms 안에 끝날 때만 재생 —
+    //   백그라운드에서 줄 선 효과음이 복귀 순간 몰아서 터지던 것(대표 9-03). playVoiceBuffer 와 같은 규칙.
+    play: function (name, arg) { if (muted || document.hidden) return; try { const c = A(), f = S[name]; if (!c || !f) return; if (c.state === 'suspended') { const at = Date.now(); const p = c.resume(); if (p && p.then) { p.then(function () { if (Date.now() - at < 600 && !document.hidden) f(arg); }).catch(function () {}); return; } } f(arg); } catch (e) {} },
     voice: voice, preload: preload,
     voiceBusy: function (ch) { const x = chans[ch]; return !!(x && !x._done); },
     // bgm('title') 켜기 / bgm(null) 끄기. 같은 곡이면 그대로. 종목 → 곡: sfx.bgmFor(exerciseType)
