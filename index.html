@@ -32227,15 +32227,17 @@ window.mwWorldPanel = function (kind) {
 //   ("골프 빼고 안 달라붙는다") → **랜드마크까지 지도 한 장에 같이 생성**(주간·단일 팔레트).
 //   앱은 각 랜드마크 위에 **투명 터치 영역 + 이름표**만 얹는다. map_*.png 오브젝트는 폐기.
 //   수정 요청도 "지도 한 장 재생성"으로 받는다 — 장당 $0.04.
-window._MW_FM_CENTER = { x: 47, y: 56 };   // 중앙 광장(캐릭터 출발점) — v6 지도 실측
+// v7: 지도는 **정사각 원본 그대로**(1024², 크롭 없음 — 세로 크롭이 좌우 랜드마크를 잘랐다)
+//   + 정직교 탑다운(포켓몬식) — 길이 수평·수직뿐이라 4방향 걷기와 맞는다(대표 9-03).
+window._MW_FM_CENTER = { x: 49, y: 70 };   // 중앙 교차로(캐릭터 출발점) — v7 지도 실측
 // x/y = 터치 영역 왼쪽 위(%), h = 터치 영역 높이(px, 랜드마크를 덮는다). 이름표는 영역 발치에 붙는다.
 window._MW_FM_ORDER = [
-  { k: 'running',  x: 2,  y: 22, h: 60 },    // 강변 러닝 트랙(START 라인 구간)
-  { k: 'gym',      x: 58, y: 12, h: 100 },   // 헬스장 건물+주차장
-  { k: 'home',     x: 0,  y: 40, h: 110 },   // 울타리 마당 집
-  { k: 'tennis',   x: 64, y: 47, h: 90 },    // 테니스 코트
-  { k: 'golf',     x: 0,  y: 66, h: 100 },   // 퍼팅 그린
-  { k: 'climbing', x: 60, y: 63, h: 130, lock: 1, name: '클라이밍' },   // 공사장 암벽
+  { k: 'running',  x: 4,  y: 19, h: 52 },    // 강변 러닝 트랙(START 라인)
+  { k: 'gym',      x: 64, y: 11, h: 90 },    // 헬스장 건물+주차장
+  { k: 'home',     x: 3,  y: 33, h: 100 },   // 울타리 마당 집
+  { k: 'tennis',   x: 60, y: 45, h: 85 },    // 테니스 코트
+  { k: 'golf',     x: 3,  y: 73, h: 70 },    // 퍼팅 그린
+  { k: 'climbing', x: 59, y: 72, h: 82, lock: 1, name: '클라이밍' },   // 공사장 암벽
 ];
 window._mwFieldWorldMap = function (body) {
   if (!document.getElementById('mw-fm-css')) {
@@ -32253,10 +32255,10 @@ window._mwFieldWorldMap = function (body) {
       @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`;
     document.head.appendChild(st);
   }
-  // 지도 원본 720x1120 비율을 유지한다 — 비율이 틀어지면 길 끝과 노드 좌표가 어긋난다
+  // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
   const W = Math.min(body.clientWidth || 340, 360);
-  const H = Math.round(W * 1120 / 720);
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=3\')">'
+  const H = W;
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=4\')">'
     + window._MW_FM_ORDER.map(function (n) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
@@ -32304,16 +32306,19 @@ window._mwFmGo = function (k) {
   if (!mk || !from || !to) { try { window.charSetField(k); } catch (e) {} if (panel) panel.remove(); return; }
   window._mwFmBusy = 1;
   try { window.sfx && window.sfx.play('btn'); } catch (e) {}
-  const face = Math.abs(to.x - from.x) > Math.abs(to.y - from.y)
-    ? (to.x > from.x ? 'right' : 'left') : (to.y > from.y ? 'down' : 'up');
-  const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  const dur = Math.max(0.45, Math.min(1.3, dist / 260));
-  window._mwFmPlace('__center', true, face);   // 중앙에서 그쪽으로 돌아선다
+  // ★대각선으로 걷지 않는다 (대표 9-03: "우리 캐릭터는 4방향") — 지도도 정직교(v7)라
+  //   ㄱ자(가로 먼저 → 세로)로 두 구간에 나눠 걷는다. 구간마다 바라보는 방향을 바꾼다.
+  const h = 46, w = Math.round(h * 141 / 224);
+  const A = { l: from.x - w / 2, t: from.y - h + 14 };
+  const B = { l: to.x - w / 2, t: to.y - h + 14 };
+  const render = function (face) { mk.innerHTML = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), h, face) : ''; };
+  const legs = [];
+  if (Math.abs(B.l - A.l) > 4) legs.push({ face: B.l > A.l ? 'right' : 'left', l: B.l, t: A.t, d: Math.abs(B.l - A.l) });
+  if (Math.abs(B.t - A.t) > 4) legs.push({ face: B.t > A.t ? 'down' : 'up', l: B.l, t: B.t, d: Math.abs(B.t - A.t) });
+  mk.style.transition = 'none'; mk.style.left = A.l + 'px'; mk.style.top = A.t + 'px';
   mk.classList.add('walk');
-  requestAnimationFrame(function () {
-    mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
-    window._mwFmPlace(k, false, face);
-    setTimeout(function () {
+  const step = function (i) {
+    if (i >= legs.length) {
       mk.classList.remove('walk');
       // ★도착하면 지도가 그 장소 쪽으로 **확대되며** 들어간다 (대표 9-03: "해당 에셋을 확대하는 느낌").
       const map = document.getElementById('mw-fm-map');
@@ -32328,8 +32333,18 @@ window._mwFmGo = function (k) {
         try { window.charSetField(k); } catch (e) {}
         const p2 = document.getElementById('mw-wpanel'); if (p2) p2.remove();
       }, 480);
-    }, dur * 1000 + 120);
-  });
+      return;
+    }
+    const g = legs[i];
+    render(g.face);
+    const dur = Math.max(0.3, Math.min(1.0, g.d / 220));
+    requestAnimationFrame(function () {
+      mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
+      mk.style.left = g.l + 'px'; mk.style.top = g.t + 'px';
+      setTimeout(function () { step(i + 1); }, dur * 1000 + 60);
+    });
+  };
+  step(0);
 };
 // ---------- 지도: 지금 운동 중인 머피들 (오늘 체크인 · 센터별) ----------
 // ★★캐릭터 설정이 비었거나 반쪽이면 기본 옷을 입혀서 돌려준다 (대표 8-14:
