@@ -21,6 +21,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RULES = io.open(os.path.join(HERE, '..', 'database.rules.json'), encoding='utf-8').read()
 
 json.loads(RULES)                       # 깨진 걸 올리면 DB 가 잠긴다. 반드시 먼저.
+
+# ★9-03 지름길 — 8-29 부터 이 PC 의 firebase CLI 가 로그인돼 있다(문서 첫 줄은 그 전 얘기).
+#   그 refresh_token 을 빌리면 클릭 없이 끝난다. 실패하면 아래 원래 OAuth 클릭 흐름으로.
+def _cli_token():
+    cfg = json.load(io.open(os.path.expanduser('~/.config/configstore/firebase-tools.json'), encoding='utf-8'))
+    return json.loads(urllib.request.urlopen(urllib.request.Request(
+        'https://oauth2.googleapis.com/token',
+        urllib.parse.urlencode({'client_id': CID, 'client_secret': CSEC,
+                                'refresh_token': cfg['tokens']['refresh_token'],
+                                'grant_type': 'refresh_token'}).encode())).read())['access_token']
+
 STATE = secrets.token_urlsafe(12)
 print('아래 링크를 브라우저에서 열 것:', flush=True)
 print('https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
@@ -48,17 +59,25 @@ class H(http.server.BaseHTTPRequestHandler):
                           'padding:40px;text-align:center"><h2>' + msg + '</h2>').encode('utf-8'))
 
 
-srv = http.server.HTTPServer(('127.0.0.1', 9005), H)
-srv.timeout = 300
-while 'code' not in got:
-    srv.handle_request()
+tok = None
+try:
+    tok = _cli_token()
+    print('firebase CLI 토큰으로 진행(클릭 불필요)', flush=True)
+except Exception as e:
+    print('CLI 토큰 실패(' + str(e)[:80] + ') — 브라우저 로그인으로 진행', flush=True)
 
-tok = json.loads(urllib.request.urlopen(urllib.request.Request(
-    'https://oauth2.googleapis.com/token',
-    urllib.parse.urlencode({'code': got['code'], 'client_id': CID, 'client_secret': CSEC,
-                            'redirect_uri': REDIRECT,
-                            'grant_type': 'authorization_code'}).encode())).read())['access_token']
-print('토큰 받음', flush=True)
+if not tok:
+    srv = http.server.HTTPServer(('127.0.0.1', 9005), H)
+    srv.timeout = 300
+    while 'code' not in got:
+        srv.handle_request()
+
+    tok = json.loads(urllib.request.urlopen(urllib.request.Request(
+        'https://oauth2.googleapis.com/token',
+        urllib.parse.urlencode({'code': got['code'], 'client_id': CID, 'client_secret': CSEC,
+                                'redirect_uri': REDIRECT,
+                                'grant_type': 'authorization_code'}).encode())).read())['access_token']
+    print('토큰 받음', flush=True)
 
 put = urllib.request.Request(DB + '/.settings/rules.json', data=RULES.encode('utf-8'), method='PUT',
                              headers={'Authorization': 'Bearer ' + tok,
