@@ -32164,12 +32164,7 @@ window.mwWorldPanel = function (kind) {
     <div class="mw-wpanel-body" id="mw-wpanel-body"></div>`;
   const body=document.getElementById('mw-wpanel-body');
   if (kind==='field') {
-    const F={home:'집',gym:'헬스장',running:'러닝존',tennis:'테니스',golf:'골프'};
-    body.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;padding-top:6px">'
-      + Object.keys(F).map(k=>`
-        <button class="mw-panel" style="padding:20px 10px;cursor:pointer;font-family:inherit;color:#fff;font-size:13.5px;border:3px solid #05070c;${window._curField===k?'box-shadow:0 0 0 3px #3D7EFF':''}"
-          onclick="window.charSetField('${k}');document.getElementById('mw-wpanel').remove()">${F[k]}${window._curField===k?'<div style=\'font-size:10px;color:#3D7EFF;margin-top:6px\'>현재 위치</div>':''}</button>`).join('')
-      + '</div><div style="font-size:11.5px;color:#4a5266;text-align:center;margin-top:16px">클라이밍 … 곧 열려요</div>';
+    window._mwFieldWorldMap(body);
   } else if (kind==='map') {
     body.innerHTML = '<div id="mw-realmap" style="position:relative;height:225px;background:#e8e5df;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;margin-bottom:13px"></div>'
       + '<div id="mw-map-root"><div class="mw-panel" style="text-align:center;padding:26px;color:#8a93a8"><span class="mw-blink">▌</span> 머피들 찾는 중…</div></div>';
@@ -32178,6 +32173,107 @@ window.mwWorldPanel = function (kind) {
     body.innerHTML = '<div id="mw-dogam-root"></div>';
     window.mwRenderDogam && window.mwRenderDogam();
   }
+};
+// ---------- 필드 이동 = 세계지도 (대표 9-03: "각 필드 썸네일 + 바람의나라 세계지도 UX") ----------
+// 지그재그 길 위에 필드 노드(실제 필드 배경 썸네일)가 놓이고, 현재 필드 위에 내 캐릭터가 서 있다.
+// 목적지를 누르면 캐릭터가 길을 따라 **걸어간 뒤** 필드가 바뀐다.
+// ★노드 크기는 전부 같다 — 예전 UI 는 선택된 버튼에만 '현재 위치' 줄이 붙어 높이가 튀었다(대표 지적).
+//   현재 표시는 파란 테두리 + 서 있는 캐릭터로만 한다(레이아웃 불변).
+window._MW_FM_ORDER = [
+  { k: 'home',     side: 'l', y: 14 },
+  { k: 'gym',      side: 'r', y: 104 },
+  { k: 'running',  side: 'l', y: 194 },
+  { k: 'tennis',   side: 'r', y: 284 },
+  { k: 'golf',     side: 'l', y: 374 },
+  { k: 'climbing', side: 'r', y: 464, lock: 1, name: '클라이밍' },
+];
+window._mwFieldWorldMap = function (body) {
+  if (!document.getElementById('mw-fm-css')) {
+    const st = document.createElement('style'); st.id = 'mw-fm-css';
+    st.textContent = `
+      .mw-fmnode{position:absolute;width:46%;padding:0;background:none;border:none;cursor:pointer;font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent}
+      .mw-fmthumb{position:relative;display:block;height:76px;background-color:#0e1320;background-size:cover;background-position:center;image-rendering:pixelated;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden}
+      .mw-fmthumb::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,0) 55%,rgba(5,7,12,.42) 100%)}
+      .mw-fmnode:active .mw-fmthumb{filter:brightness(1.15)}
+      .mw-fmnode.cur .mw-fmthumb{box-shadow:0 0 0 2px #3D7EFF,0 0 16px rgba(61,126,255,.5)}
+      .mw-fmname{display:block;margin-top:6px;font-size:11px;color:#cfd6e6;text-align:center;letter-spacing:1px}
+      .mw-fmnode.cur .mw-fmname{color:#7aa8ff}
+      .mw-fmnode.lock{cursor:default}
+      .mw-fmnode.lock .mw-fmthumb{background-image:none!important;filter:none}
+      .mw-fmnode.lock .mw-fmname{color:#4a5266}
+      #mw-fm-char{position:absolute;z-index:5;pointer-events:none;filter:drop-shadow(0 3px 3px rgba(0,0,0,.6))}
+      #mw-fm-char.walk{animation:mwFmBob .22s steps(2) infinite}
+      @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`;
+    document.head.appendChild(st);
+  }
+  const H = 570;
+  body.innerHTML = '<div id="mw-fm-map" style="position:relative;height:' + H + 'px;margin-top:2px">'
+    + '<svg id="mw-fm-path" style="position:absolute;inset:0;pointer-events:none" width="100%" height="' + H + '"></svg>'
+    + window._MW_FM_ORDER.map(function (n) {
+        const f = window._FIELDS[n.k];
+        const cur = window._curField === n.k;
+        const pos = (n.side === 'l' ? 'left:4%' : 'right:4%') + ';top:' + n.y + 'px';
+        if (n.lock || !f) {
+          return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">'
+            + '<span class="mw-fmthumb" style="display:flex;align-items:center;justify-content:center">'
+            + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5266" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>'
+            + '<span class="mw-fmname">' + (n.name || n.k) + ' · 곧 열려요</span></div>';
+        }
+        return '<button class="mw-fmnode' + (cur ? ' cur' : '') + '" data-k="' + n.k + '" style="' + pos + '"'
+          + ' onclick="window._mwFmGo(\'' + n.k + '\')">'
+          + '<span class="mw-fmthumb" style="background-image:url(\'' + f.src + '\')"></span>'
+          + '<span class="mw-fmname">' + f.name + '</span></button>';
+      }).join('')
+    + '<div id="mw-fm-char"></div></div>';
+  // 길(점선)과 캐릭터는 레이아웃이 잡힌 뒤 실측 좌표로 그린다
+  requestAnimationFrame(function () {
+    const map = document.getElementById('mw-fm-map'); if (!map) return;
+    const pts = window._MW_FM_ORDER.map(function (n) {
+      const el = map.querySelector('[data-k="' + n.k + '"]'); if (!el) return null;
+      return { k: n.k, x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + 38, el: el };
+    }).filter(Boolean);
+    const svg = document.getElementById('mw-fm-path');
+    if (svg) svg.innerHTML = '<polyline points="' + pts.map(function (p) { return p.x + ',' + p.y; }).join(' ')
+      + '" fill="none" stroke="#2b3350" stroke-width="3" stroke-dasharray="4 8" stroke-linecap="round"/>';
+    window._mwFmPts = pts;
+    window._mwFmPlace(window._curField || 'home', true);
+  });
+};
+// 캐릭터를 노드 위에 세운다. face 는 걷는 방향(없으면 정면).
+window._mwFmPlace = function (k, immediate, face) {
+  const mk = document.getElementById('mw-fm-char'); if (!mk || !window._mwFmPts) return;
+  const p = window._mwFmPts.find(function (x) { return x.k === k; }); if (!p) return;
+  const h = 46, w = Math.round(h * 141 / 224);
+  mk.innerHTML = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), h, face) : '';
+  if (immediate) mk.style.transition = 'none';
+  mk.style.left = (p.x - w / 2) + 'px';
+  mk.style.top = (p.y - h + 14) + 'px';   // 발이 썸네일 중앙 근처에 닿게 — 필드에 '서 있는' 그림
+};
+window._mwFmGo = function (k) {
+  if (window._mwFmBusy) return;
+  const panel = document.getElementById('mw-wpanel');
+  if (k === window._curField) { if (panel) panel.remove(); return; }
+  const mk = document.getElementById('mw-fm-char');
+  const from = (window._mwFmPts || []).find(function (x) { return x.k === window._curField; });
+  const to = (window._mwFmPts || []).find(function (x) { return x.k === k; });
+  if (!mk || !from || !to) { try { window.charSetField(k); } catch (e) {} if (panel) panel.remove(); return; }
+  window._mwFmBusy = 1;
+  try { window.sfx && window.sfx.play('btn'); } catch (e) {}
+  const face = to.x > from.x ? 'right' : (to.x < from.x ? 'left' : (to.y > from.y ? 'down' : 'up'));
+  const dist = Math.hypot(to.x - from.x, to.y - from.y);
+  const dur = Math.max(0.45, Math.min(1.3, dist / 260));
+  window._mwFmPlace(window._curField, true, face);   // 방향부터 돌아선다
+  mk.classList.add('walk');
+  requestAnimationFrame(function () {
+    mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
+    window._mwFmPlace(k, false, face);
+    setTimeout(function () {
+      window._mwFmBusy = 0;
+      mk.classList.remove('walk');
+      try { window.charSetField(k); } catch (e) {}
+      const p2 = document.getElementById('mw-wpanel'); if (p2) p2.remove();
+    }, dur * 1000 + 120);
+  });
 };
 // ---------- 지도: 지금 운동 중인 머피들 (오늘 체크인 · 센터별) ----------
 // ★★캐릭터 설정이 비었거나 반쪽이면 기본 옷을 입혀서 돌려준다 (대표 8-14:
