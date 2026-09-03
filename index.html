@@ -32183,30 +32183,33 @@ window.mwWorldPanel = function (kind) {
 // v2(대표 9-03): 진짜 지도 배경(char/fields/worldmap.png — 한강·다리·중앙 광장·방사형 길,
 // 제미나이 생성) 위에 **캐릭터가 중앙**, 장소가 사방으로 펼쳐진다. 길은 그림에 이미 있어
 // SVG 점선은 뺐다. 좌표(%)는 그림의 길 끝 공터에 실측으로 맞춘 값 — 그림을 다시 뽑으면 여기도 손볼 것.
+// v3(대표 9-03): 필드 스크린샷 액자 대신 **장소 외관 오브젝트**(집 건물·헬스장 건물·러닝 게이트·
+// 팻말들, 제미나이 생성 char/fields/map_*.png)를 지도에 세운다. 오브젝트가 곧 버튼이고,
+// 누르면 캐릭터가 걸어간 뒤 지도가 그쪽으로 **확대되며** 필드가 열린다(액자+오브젝트 겸용은 난잡).
+// ★배치: 강(지도 상단 5~28%) 위에 건물을 놓지 않는다 — v2 에서 집·헬스장이 강에 떠 보였다(대표 지적).
+//   러닝존만 강변(다리 옆)이다 — 한강 러닝이니까.
 window._MW_FM_CENTER = { x: 47, y: 49 };   // 중앙 광장(캐릭터 출발점)
 window._MW_FM_ORDER = [
-  { k: 'home',     side: 'l', y: 15 },   // 좌상 다리 건너
-  { k: 'gym',      side: 'r', y: 14 },   // 우상 큰 공터
-  { k: 'running',  side: 'l', y: 42 },   // 좌중(한강 아래 러닝 코스)
-  { k: 'tennis',   side: 'r', y: 42 },   // 우중
-  { k: 'golf',     side: 'l', y: 70 },   // 좌하
-  { k: 'climbing', side: 'r', y: 70, lock: 1, name: '클라이밍' },   // 우하(잠금)
+  { k: 'running',  side: 'l', y: 20 },   // 좌상 다리 옆 = 한강 러닝 게이트
+  { k: 'gym',      side: 'r', y: 18 },   // 우상 큰 공터(강 남쪽 뭍)
+  { k: 'home',     side: 'l', y: 44 },   // 좌중 공터
+  { k: 'tennis',   side: 'r', y: 44 },   // 우중 공터
+  { k: 'golf',     side: 'l', y: 72 },   // 좌하 공터
+  { k: 'climbing', side: 'r', y: 72, lock: 1, name: '클라이밍' },   // 우하(잠금·공사중 암벽)
 ];
 window._mwFieldWorldMap = function (body) {
   if (!document.getElementById('mw-fm-css')) {
     const st = document.createElement('style'); st.id = 'mw-fm-css';
     st.textContent = `
       #mw-fm-map{position:relative;margin-top:2px;background:#0e1320 center/cover no-repeat;image-rendering:pixelated;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden}
-      .mw-fmnode{position:absolute;width:40%;padding:0;background:none;border:none;cursor:pointer;font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent}
-      .mw-fmthumb{position:relative;display:block;height:70px;background-color:#0e1320;background-size:cover;background-position:center;image-rendering:pixelated;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 4px 10px rgba(0,0,0,.35);overflow:hidden}
-      .mw-fmthumb::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,0) 60%,rgba(5,7,12,.38) 100%)}
-      .mw-fmnode:active .mw-fmthumb{filter:brightness(1.15)}
-      .mw-fmnode.cur .mw-fmthumb{box-shadow:0 0 0 2px #3D7EFF,0 0 16px rgba(61,126,255,.55)}
-      .mw-fmname{display:inline-block;margin-top:5px;padding:2px 7px;font-size:10.5px;color:#fff;letter-spacing:1px;background:rgba(5,7,12,.68);border:1px solid rgba(255,255,255,.14)}
-      .mw-fmnode .mw-fmname{position:relative;left:50%;transform:translateX(-50%)}
+      .mw-fmnode{position:absolute;width:34%;padding:0;background:none;border:none;cursor:pointer;font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center}
+      .mw-fmobj{display:block;height:72px;width:auto;max-width:100%;margin:0 auto;image-rendering:pixelated;filter:drop-shadow(0 4px 5px rgba(0,0,0,.45))}
+      .mw-fmnode:active .mw-fmobj{filter:drop-shadow(0 4px 5px rgba(0,0,0,.45)) brightness(1.15)}
+      .mw-fmnode.cur .mw-fmobj{filter:drop-shadow(0 4px 5px rgba(0,0,0,.45)) drop-shadow(0 0 9px rgba(61,126,255,.85))}
+      .mw-fmname{display:inline-block;margin-top:4px;padding:2px 7px;font-size:10.5px;color:#fff;letter-spacing:1px;background:rgba(5,7,12,.68);border:1px solid rgba(255,255,255,.14)}
       .mw-fmnode.cur .mw-fmname{color:#7aa8ff;border-color:rgba(61,126,255,.5)}
       .mw-fmnode.lock{cursor:default}
-      .mw-fmnode.lock .mw-fmthumb{background-image:none!important;filter:none}
+      .mw-fmnode.lock .mw-fmobj{filter:grayscale(.35) drop-shadow(0 4px 5px rgba(0,0,0,.45))}
       .mw-fmnode.lock .mw-fmname{color:#8a93a8}
       #mw-fm-char{position:absolute;z-index:5;pointer-events:none;filter:drop-shadow(0 3px 3px rgba(0,0,0,.6))}
       #mw-fm-char.walk{animation:mwFmBob .22s steps(2) infinite}
@@ -32221,15 +32224,13 @@ window._mwFieldWorldMap = function (body) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
         const pos = (n.side === 'l' ? 'left:3%' : 'right:3%') + ';top:' + n.y + '%';
+        const obj = '<img class="mw-fmobj" src="char/fields/map_' + n.k + '.png?v=1" alt="">';
         if (n.lock || !f) {
-          return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">'
-            + '<span class="mw-fmthumb" style="display:flex;align-items:center;justify-content:center">'
-            + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5266" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>'
+          return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">' + obj
             + '<span class="mw-fmname">' + (n.name || n.k) + ' · 곧 열려요</span></div>';
         }
         return '<button class="mw-fmnode' + (cur ? ' cur' : '') + '" data-k="' + n.k + '" style="' + pos + '"'
-          + ' onclick="window._mwFmGo(\'' + n.k + '\')">'
-          + '<span class="mw-fmthumb" style="background-image:url(\'' + f.src + '\')"></span>'
+          + ' onclick="window._mwFmGo(\'' + n.k + '\')">' + obj
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
     + '<div id="mw-fm-char"></div></div>';
@@ -32275,10 +32276,20 @@ window._mwFmGo = function (k) {
     mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
     window._mwFmPlace(k, false, face);
     setTimeout(function () {
-      window._mwFmBusy = 0;
       mk.classList.remove('walk');
-      try { window.charSetField(k); } catch (e) {}
-      const p2 = document.getElementById('mw-wpanel'); if (p2) p2.remove();
+      // ★도착하면 지도가 그 장소 쪽으로 **확대되며** 들어간다 (대표 9-03: "해당 에셋을 확대하는 느낌").
+      const map = document.getElementById('mw-fm-map');
+      if (map) {
+        map.style.transformOrigin = to.x + 'px ' + to.y + 'px';
+        map.style.transition = 'transform .5s cubic-bezier(.5,0,.9,.6), opacity .5s ease-in';
+        map.style.transform = 'scale(2.3)';
+        map.style.opacity = '.15';
+      }
+      setTimeout(function () {
+        window._mwFmBusy = 0;
+        try { window.charSetField(k); } catch (e) {}
+        const p2 = document.getElementById('mw-wpanel'); if (p2) p2.remove();
+      }, 480);
     }, dur * 1000 + 120);
   });
 };
