@@ -32250,9 +32250,18 @@ window._mwFieldWorldMap = function (body) {
       .mw-fmnode.cur .mw-fmname{color:#7aa8ff;border-color:rgba(61,126,255,.5);box-shadow:0 0 9px rgba(61,126,255,.55)}
       .mw-fmnode.lock{cursor:default}
       .mw-fmnode.lock .mw-fmname{color:#8a93a8}
-      #mw-fm-char{position:absolute;z-index:5;pointer-events:none;filter:drop-shadow(0 3px 3px rgba(0,0,0,.6))}
+      #mw-fm-char{position:absolute;z-index:5;pointer-events:none}
       #mw-fm-char.walk{animation:mwFmBob .22s steps(2) infinite}
-      @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`;
+      @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+      #mw-fm-park{position:relative;margin:10px auto 0;overflow:hidden;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;
+        background:linear-gradient(180deg,#87b558 0 14px,#7cab4f 14px);image-rendering:pixelated}
+      .mw-fm-pet{position:absolute;bottom:6px;width:64px;height:64px;background-repeat:no-repeat;image-rendering:pixelated;
+        cursor:pointer;-webkit-tap-highlight-color:transparent;animation:mwFmPetBob .5s steps(2) infinite}
+      .mw-fm-pet.hop{animation:mwFmHop .45s steps(4) 1}
+      /* ★bob·hop 은 transform 을 쓰지 않는다 — 좌우 반전(scaleX)이 transform 이라 서로 덮는다 */
+      @keyframes mwFmPetBob{0%,100%{bottom:6px}50%{bottom:9px}}
+      @keyframes mwFmHop{0%,100%{bottom:6px}40%{bottom:22px}}
+      .mw-fm-park-cap{position:absolute;left:7px;top:5px;font-size:9.5px;color:rgba(5,7,12,.55);letter-spacing:1px;pointer-events:none}`;
     document.head.appendChild(st);
   }
   // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
@@ -32272,7 +32281,11 @@ window._mwFieldWorldMap = function (body) {
           + ' onclick="window._mwFmGo(\'' + n.k + '\')">'
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
-    + '<div id="mw-fm-char"></div></div>';
+    + '<div id="mw-fm-char"></div></div>'
+    // ★하단 여백 = "우리 동네 공원" (대표 9-03: "여백이 아깝다, WOW 되는 UX") —
+    //   내가 키우는 펫들이 지도 밑 잔디에서 실제로 산책한다. 펫이 없으면 키우기 티저 한 줄.
+    + '<div id="mw-fm-park" style="width:' + W + 'px;height:88px"><span class="mw-fm-park-cap">우리 동네 공원</span></div>';
+  window._mwFmPark();
   // 노드 실측 좌표(픽셀)와 중앙 광장 좌표를 잡아두고, 캐릭터를 **중앙**에 세운다
   requestAnimationFrame(function () {
     const map = document.getElementById('mw-fm-map'); if (!map) return;
@@ -32286,15 +32299,61 @@ window._mwFieldWorldMap = function (body) {
     window._mwFmPlace('__center', true);
   });
 };
+// 마커 내용 = 미니 캐릭터 + **발밑 그림자**. 그림자를 filter(drop-shadow)로 걸었더니
+// 이동 중 잔상이 처음 자리에 남았다(대표 9-03) — 마커 안 요소로 넣어 같이 움직이게 한다.
+window._mwFmCharHtml = function (face) {
+  const ch = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), 46, face) : '';
+  return '<i style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:22px;height:6px;background:rgba(0,0,0,.32);border-radius:50%"></i>' + ch;
+};
 // 캐릭터를 지점 위에 세운다. face 는 걷는 방향(없으면 정면).
 window._mwFmPlace = function (k, immediate, face) {
   const mk = document.getElementById('mw-fm-char'); if (!mk || !window._mwFmPts) return;
   const p = window._mwFmPts.find(function (x) { return x.k === k; }); if (!p) return;
   const h = 46, w = Math.round(h * 141 / 224);
-  mk.innerHTML = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), h, face) : '';
+  mk.innerHTML = window._mwFmCharHtml(face);
   if (immediate) mk.style.transition = 'none';
   mk.style.left = (p.x - w / 2) + 'px';
   mk.style.top = (p.y - h + 14) + 'px';   // 발이 지점 중앙 근처에 닿게
+};
+// ── 우리 동네 공원: 내 펫들이 잔디에서 산책 (시트 = char/pets/{id}.png, 셀 32px → 2배 64px 정수배) ──
+window._mwFmPark = function () {
+  const park = document.getElementById('mw-fm-park'); if (!park) return;
+  const pets = (Array.isArray(window._myPets) ? window._myPets : []).filter(function (p) { return p && p.id && window._mwPetDef && window._mwPetDef(p.id); }).slice(0, 6);
+  if (!pets.length) {
+    park.insertAdjacentHTML('beforeend',
+      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-size:11px;color:rgba(5,7,12,.6)">펫을 키우면 여기서 산책해요</div>');
+    return;
+  }
+  const W = park.clientWidth || 340;
+  const st = pets.map(function (p, i) {
+    const el = document.createElement('div');
+    el.className = 'mw-fm-pet';
+    el.style.backgroundImage = "url('char/pets/" + p.id + ".png')";
+    el.style.backgroundSize = (6 * 64) + 'px ' + (30 * 64) + 'px';   // 시트 6열x30행, 첫 칸(정면)만 쓴다
+    el.style.backgroundPosition = '0 0';
+    const x = 12 + Math.random() * (W - 88);
+    el.style.left = x + 'px';
+    el.onclick = function () {   // 콕 찌르면 폴짝 — 방 펫과 같은 반응 언어
+      el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop');
+      try { window.sfx && window.sfx.play('tap'); } catch (e) {}
+    };
+    park.appendChild(el);
+    return { el: el, x: x, next: 0 };
+  });
+  const tick = setInterval(function () {
+    if (!document.getElementById('mw-fm-park')) { clearInterval(tick); return; }
+    const now = Date.now();
+    st.forEach(function (s) {
+      if (now < s.next) return;
+      const to = 12 + Math.random() * (W - 88);
+      const dur = Math.max(1.2, Math.abs(to - s.x) / 40);
+      s.el.style.transform = 'scaleX(' + (to < s.x ? -1 : 1) + ')';   // 가는 쪽을 본다(정면 프레임 반전)
+      s.el.style.transition = 'left ' + dur + 's linear';
+      s.el.style.left = to + 'px';
+      s.x = to;
+      s.next = now + dur * 1000 + 800 + Math.random() * 2600;   // 도착 후 한숨 돌리고 다음 산책
+    });
+  }, 500);
 };
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
@@ -32311,7 +32370,7 @@ window._mwFmGo = function (k) {
   const h = 46, w = Math.round(h * 141 / 224);
   const A = { l: from.x - w / 2, t: from.y - h + 14 };
   const B = { l: to.x - w / 2, t: to.y - h + 14 };
-  const render = function (face) { mk.innerHTML = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), h, face) : ''; };
+  const render = function (face) { mk.innerHTML = window._mwFmCharHtml(face); };
   const legs = [];
   if (Math.abs(B.l - A.l) > 4) legs.push({ face: B.l > A.l ? 'right' : 'left', l: B.l, t: A.t, d: Math.abs(B.l - A.l) });
   if (Math.abs(B.t - A.t) > 4) legs.push({ face: B.t > A.t ? 'down' : 'up', l: B.l, t: B.t, d: Math.abs(B.t - A.t) });
