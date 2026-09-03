@@ -32315,45 +32315,73 @@ window._mwFmPlace = function (k, immediate, face) {
   mk.style.left = (p.x - w / 2) + 'px';
   mk.style.top = (p.y - h + 14) + 'px';   // 발이 지점 중앙 근처에 닿게
 };
-// ── 우리 동네 공원: 내 펫들이 잔디에서 산책 (시트 = char/pets/{id}.png, 셀 32px → 2배 64px 정수배) ──
+// ── 우리 동네 공원: **내 캐릭터가 산책하고 펫들이 졸졸 따라온다** (대표 9-03 v2)
+//   v1(펫만 정면 프레임으로 큼직하게 둥둥)은 "이상하다" 반려 — 축척을 지도 캐릭터 기준으로 맞추고
+//   (캐릭터 46px·펫 32px 1배 정수배), 펫은 시트의 진짜 옆모습 걷기 프레임(행: 아래0/위1/좌2/우3,
+//   행별 프레임 수 = PET_META.pets[id].f)으로 걷는다. transition 이 아니라 틱 적분으로 움직여서
+//   걸음·방향·프레임이 항상 일치한다.
 window._mwFmPark = function () {
   const park = document.getElementById('mw-fm-park'); if (!park) return;
-  const pets = (Array.isArray(window._myPets) ? window._myPets : []).filter(function (p) { return p && p.id && window._mwPetDef && window._mwPetDef(p.id); }).slice(0, 6);
-  if (!pets.length) {
-    park.insertAdjacentHTML('beforeend',
-      '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;font-size:11px;color:rgba(5,7,12,.6)">펫을 키우면 여기서 산책해요</div>');
-    return;
-  }
-  const W = park.clientWidth || 340;
-  const st = pets.map(function (p, i) {
+  const W = park.clientWidth || 340, GROUND = 6;
+  const pets = (Array.isArray(window._myPets) ? window._myPets : []).filter(function (p) { return p && p.id && window._mwPetDef && window._mwPetDef(p.id); }).slice(0, 4);
+  // 리더 = 내 캐릭터 (지도 위 마커와 같은 46px 미니 렌더, 옆모습으로 걷는다)
+  const me = document.createElement('div');
+  me.style.cssText = 'position:absolute;bottom:' + GROUND + 'px;width:29px;height:46px;pointer-events:none';
+  park.appendChild(me);
+  const L = { el: me, x: W * 0.35, tx: W * 0.6, dir: 'right', moving: true, wait: 0, drawn: '' };
+  const petSt = pets.map(function (p, i) {
     const el = document.createElement('div');
     el.className = 'mw-fm-pet';
+    el.style.width = '32px'; el.style.height = '32px';
     el.style.backgroundImage = "url('char/pets/" + p.id + ".png')";
-    el.style.backgroundSize = (6 * 64) + 'px ' + (30 * 64) + 'px';   // 시트 6열x30행, 첫 칸(정면)만 쓴다
-    el.style.backgroundPosition = '0 0';
-    const x = 12 + Math.random() * (W - 88);
-    el.style.left = x + 'px';
-    el.onclick = function () {   // 콕 찌르면 폴짝 — 방 펫과 같은 반응 언어
+    el.style.backgroundSize = (window.PET_META.cols * 32) + 'px ' + (window.PET_META.rows * 32) + 'px';
+    el.onclick = function () {
       el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop');
+      setTimeout(function () { el.classList.remove('hop'); }, 500);   // 안 떼면 걷기 흔들림이 영영 멈춘다
       try { window.sfx && window.sfx.play('tap'); } catch (e) {}
     };
     park.appendChild(el);
-    return { el: el, x: x, next: 0 };
+    return { el: el, def: window._mwPetDef(p.id), id: p.id, x: L.x - 40 * (i + 1), dir: 'right', moving: false, fr: 0 };
   });
+  if (!pets.length) {
+    park.insertAdjacentHTML('beforeend',
+      '<div style="position:absolute;right:9px;top:5px;pointer-events:none;font-size:10px;color:rgba(5,7,12,.55)">펫을 키우면 같이 산책해요</div>');
+  }
+  const DIRI = { down: 0, up: 1, left: 2, right: 3 };
+  const drawMe = function () {
+    const key = L.dir + (L.moving ? 'w' : 's');
+    if (L.drawn !== key) { L.drawn = key; me.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(window.getMyCharacter && window.getMyCharacter(), 46, L.moving ? L.dir : 'down') : ''; }
+    me.style.left = L.x + 'px';
+    me.style.animation = L.moving ? 'mwFmPetBob .3s steps(2) infinite' : 'none';
+  };
+  let frTick = 0;
   const tick = setInterval(function () {
     if (!document.getElementById('mw-fm-park')) { clearInterval(tick); return; }
-    const now = Date.now();
-    st.forEach(function (s) {
-      if (now < s.next) return;
-      const to = 12 + Math.random() * (W - 88);
-      const dur = Math.max(1.2, Math.abs(to - s.x) / 40);
-      s.el.style.transform = 'scaleX(' + (to < s.x ? -1 : 1) + ')';   // 가는 쪽을 본다(정면 프레임 반전)
-      s.el.style.transition = 'left ' + dur + 's linear';
-      s.el.style.left = to + 'px';
-      s.x = to;
-      s.next = now + dur * 1000 + 800 + Math.random() * 2600;   // 도착 후 한숨 돌리고 다음 산책
+    frTick++;
+    // 리더: 목적지로 걷고, 도착하면 잠시 쉬었다 새 목적지
+    if (L.moving) {
+      const d = L.tx - L.x;
+      if (Math.abs(d) < 3) { L.moving = false; L.wait = frTick + 12 + Math.floor(Math.random() * 30); }
+      else { L.x += Math.sign(d) * 3.4; L.dir = d > 0 ? 'right' : 'left'; }
+    } else if (frTick >= L.wait) {
+      L.tx = 10 + Math.random() * (W - 50); L.moving = true;
+    }
+    drawMe();
+    // 펫: 리더 뒤를 간격 두고 따라온다 (리더가 보는 방향의 반대쪽으로 줄을 선다)
+    const back = L.dir === 'right' ? -1 : 1;
+    petSt.forEach(function (s, i) {
+      const want = L.x + back * 38 * (i + 1);
+      const d = want - s.x;
+      s.moving = Math.abs(d) > 4;
+      if (s.moving) { s.x += Math.sign(d) * Math.min(4.2, Math.abs(d)); s.dir = d > 0 ? 'right' : 'left'; }
+      const row = (s.moving ? window.PET_META.rowMap.walk : window.PET_META.rowMap.stand) + DIRI[s.dir];
+      const n = (s.def.f && s.def.f[row]) || 4;
+      if (s.moving && frTick % 2 === 0) s.fr = (s.fr + 1) % n;
+      if (!s.moving) s.fr = 0;
+      s.el.style.backgroundPosition = (-s.fr * 32) + 'px ' + (-row * 32) + 'px';
+      s.el.style.left = s.x + 'px';
     });
-  }, 500);
+  }, 120);
 };
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
@@ -32371,9 +32399,18 @@ window._mwFmGo = function (k) {
   const A = { l: from.x - w / 2, t: from.y - h + 14 };
   const B = { l: to.x - w / 2, t: to.y - h + 14 };
   const render = function (face) { mk.innerHTML = window._mwFmCharHtml(face); };
+  // ★구간 순서 = 세로 이동이 더 길면 **세로 먼저**(러닝존·헬스장은 중앙 세로길을 타고 올라가야
+  //   한다 — 가로 먼저 가면 집 마당을 가로질렀다, 대표 9-03), 아니면 가로 먼저(같은 줄 이동).
   const legs = [];
-  if (Math.abs(B.l - A.l) > 4) legs.push({ face: B.l > A.l ? 'right' : 'left', l: B.l, t: A.t, d: Math.abs(B.l - A.l) });
-  if (Math.abs(B.t - A.t) > 4) legs.push({ face: B.t > A.t ? 'down' : 'up', l: B.l, t: B.t, d: Math.abs(B.t - A.t) });
+  const hor = { face: B.l > A.l ? 'right' : 'left', d: Math.abs(B.l - A.l) };
+  const ver = { face: B.t > A.t ? 'down' : 'up', d: Math.abs(B.t - A.t) };
+  if (ver.d > hor.d) {
+    if (ver.d > 4) legs.push({ face: ver.face, l: A.l, t: B.t, d: ver.d });
+    if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: B.t, d: hor.d });
+  } else {
+    if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: A.t, d: hor.d });
+    if (ver.d > 4) legs.push({ face: ver.face, l: B.l, t: B.t, d: ver.d });
+  }
   mk.style.transition = 'none'; mk.style.left = A.l + 'px'; mk.style.top = A.t + 'px';
   mk.classList.add('walk');
   const step = function (i) {
