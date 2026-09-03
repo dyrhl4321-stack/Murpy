@@ -72,30 +72,61 @@ const join3 = { a: { nick: 'A' }, b: { nick: 'B' }, c: { nick: 'C' } };
   assert(r.out.a, '대각선으로 빠져나갔다 (x·y 를 따로 보면 이렇게 샌다)');
 }
 
-// ── 6) 결승선에 닿으면 이긴다 ───────────────────────────────────────────
+// ── 6) 결승선에 닿으면 완주(fin) 기록 — 혼자면 그걸로 끝(전원 완주/탈락) ──
+{
+  const snap = { a: { x: 50, y: Z.GOAL_Y - 1 } };
+  const r = J({ st: 'st', join: { a: {} }, snap }, { a: { x: 50, y: Z.GOAL_Y - 1 } });
+  assert.strictEqual(r.fin.a, 1, '결승선에 닿았는데 완주 기록이 없다');
+  assert.strictEqual(r.next, 'end', '남은 사람이 없으면 끝');
+  assert.strictEqual(r.win, 'a', '1등이 우승자');
+}
+
+// ── 6b) ★한 명 완주해도 남은 사람이 있으면 계속된다 (대표 9-03 핵심) ────
 {
   const snap = { a: { x: 50, y: Z.GOAL_Y - 1 }, b: { x: 40, y: 60 } };
   const r = J({ st: 'st', join: { a: {}, b: {} }, snap },
               { a: { x: 50, y: Z.GOAL_Y - 1 }, b: { x: 40, y: 60 } });
-  assert.strictEqual(r.next, 'end');
-  assert.strictEqual(r.win, 'a');
+  assert.strictEqual(r.fin.a, 1, 'a 가 완주로 기록돼야 한다');
+  assert.strictEqual(r.next, 'go', 'b 가 남았으니 게임이 계속돼야 한다(한 명 통과로 안 끝난다)');
+  assert(!r.out.b && !r.fin.b, 'b 는 아직 진행 중');
 }
 
-// ── 7) ★결승선에 있어도 움직이다 걸리면 진다 (판정 순서가 중요) ─────────
+// ── 7) ★결승선에 있어도 움직이다 걸리면 탈락(완주 아님) — 판정 순서 ────
 {
   const snap = { a: { x: 50, y: 60 }, b: { x: 40, y: 60 } };
   const r = J({ st: 'st', join: { a: {}, b: {} }, snap },
               { a: { x: 50, y: Z.GOAL_Y - 1 }, b: { x: 40, y: 60 } });   // a 가 정지 중에 결승선까지 뛰었다
   assert(r.out.a, '정지 구간에 뛰어서 결승선에 갔는데 안 걸렸다');
-  assert.notStrictEqual(r.win, 'a', '걸린 사람이 우승했다');
+  assert(!r.fin.a, '걸린 사람이 완주로 기록됐다');
 }
 
-// ── 8) 전원 탈락이면 술래 승리로 끝난다 ─────────────────────────────────
+// ── 8) 전원 탈락이면 완주자 없이 끝난다(교관 승리) ──────────────────────
 {
   const snap = { a: { x: 50, y: 70 } };
   const r = J({ st: 'st', join: { a: {} }, snap }, { a: { x: 50 + Z.MOVE_TOL * 3, y: 70 } });
   assert.strictEqual(r.next, 'end');
   assert.strictEqual(r.win, null, '전원 탈락인데 우승자가 있다');
+  assert.deepStrictEqual(r.fin, {}, '완주자가 없어야 한다');
+}
+
+// ── 8b) ★완주 순서대로 등수 — 먼저 결승선에 깊이 든(작은 y) 사람이 1등 ──
+{
+  const snap = { a: { x: 50, y: Z.GOAL_Y - 1 }, b: { x: 40, y: Z.GOAL_Y - 4 } };
+  const r = J({ st: 'st', join: { a: {}, b: {} }, snap },
+              { a: { x: 50, y: Z.GOAL_Y - 1 }, b: { x: 40, y: Z.GOAL_Y - 4 } });
+  assert.strictEqual(r.next, 'end');
+  assert.strictEqual(r.fin.b, 1, '더 깊이 든 b 가 1등');
+  assert.strictEqual(r.fin.a, 2, 'a 가 2등');
+}
+
+// ── 8c) 기존 완주자 순위는 유지되고 새 완주자는 그 뒤에 붙는다 ──────────
+{
+  const snap = { b: { x: 40, y: Z.GOAL_Y - 1 } };   // a 는 이미 완주(fin=1). b 는 안 움직이고 결승선에 있다
+  const r = J({ st: 'st', join: { a: {}, b: {} }, fin: { a: 1 }, snap },
+              { b: { x: 40, y: Z.GOAL_Y - 1 } });
+  assert.strictEqual(r.fin.a, 1, '기존 1등 순위가 바뀌면 안 된다');
+  assert.strictEqual(r.fin.b, 2, '새 완주자는 2등');
+  assert.strictEqual(r.next, 'end');
 }
 
 // ── 9) 위치가 안 온 사람(접속 끊김)은 걸지 않는다 ───────────────────────
@@ -170,42 +201,52 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   assert.strictEqual(defs, 1, `window.${fn} 대입이 ${defs}곳 — 함수 하나만 있어야 한다(타이머 번호로 덮이면 게임이 멈춘다)`);
 }
 
-// ── 18) ★돌아보기 전에 결승선을 넘었으면 걷고 있었어도 승리 ─────────────
-//   9-02 대표: "돌아보기 전에 선 넘었는데 죽었다고 판정". 결승선 판정이 정지 구간 끝에서만 돌아서였다.
+// ── 18) ★돌아보기 전에 결승선을 넘었으면 걷고 있었어도 완주 기록(끝은 아님) ─
+//   9-02: "돌아보기 전에 선 넘었는데 죽었다고 판정" 방지. 9-03: 넘어도 즉시 끝내지 않고 fin 기록하고 계속.
 {
   const r = J({ st: 'go', join: { a: {}, b: {} } }, { a: { x: 50, y: Z.GOAL_Y - 1, moving: true }, b: { x: 40, y: 60, moving: true } });
-  assert.strictEqual(r.next, 'end', '돌아보는 순간 결승선 넘은 사람이 있으면 끝나야 한다');
-  assert.strictEqual(r.win, 'a', '걷고 있었어도 이미 넘었으면 승리');
+  assert.strictEqual(r.fin.a, 1, '걷고 있었어도 이미 넘었으면 완주로 기록');
+  assert.strictEqual(r.next, 'st', 'b 가 남았으니 돌아보기(st)로 이어진다');
+  assert(r.snap && r.snap.b && !r.snap.a, '완주자(a)는 스냅샷에서 빠지고 남은 b 만 찍힌다');
 }
 
-// ── 19) ★내 기기에서 선을 넘는 프레임에 즉시 go→ov 를 청구한다 ─────────
+// ── 19) ★내 기기에서 선을 넘는 프레임에 즉시 완주 순위(fin)를 청구한다 ──
 {
   let written = null, calls = 0;
-  const cur = { g: 'mg', st: 'go', join: { a: {}, b: {} }, out: null, host: 'b', t: 10, dl: 20 };
+  const cur = { g: 'mg', st: 'go', join: { a: {}, b: {} }, out: null, fin: null, host: 'b', t: 10, dl: 20 };
   w._sqMgV = cur; w._sqMgGoalSent = null;
   w._sqMgRef = sid => sid; w._sqMgNow = () => 1000;
   w._rt = { runTransaction: (ref, fn) => { calls++; written = fn({ ...cur }); return Promise.resolve(); } };
   assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y, moving: true }), true, '선을 넘은 프레임에 청구하지 않았다');
-  assert.strictEqual(calls, 1, '결승 트랜잭션이 실행되지 않았다');
-  assert.strictEqual(written.st, 'ov');
-  assert.strictEqual(written.win, 'a');
-  assert.strictEqual(written.dl, 1000 + Z.OVER_MS);
+  assert.strictEqual(calls, 1, '완주 트랜잭션이 실행되지 않았다');
+  assert.strictEqual(written.fin.a, 1, '내 완주 순위가 1등으로 기록돼야 한다');
+  assert(written.st !== 'ov', '완주 청구가 판을 즉시 끝내면 안 된다(남은 사람 대기)');
   assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), true);
-  assert.strictEqual(calls, 1, '같은 구간에서 결승 트랜잭션을 중복 실행했다');
+  assert.strictEqual(calls, 1, '한 판에 완주 트랜잭션을 중복 실행했다');
 }
 
-// ── 20) 돌아본 뒤(st)나 선 앞에서는 로컬 결승을 허용하지 않는다 ─────────
+// ── 19b) 이미 완주자가 있으면 내 순위는 그 다음 ────────────────────────
+{
+  let written = null;
+  const cur = { g: 'mg', st: 'st', join: { a: {}, b: {} }, fin: { b: 1 }, host: 'b', t: 10, dl: 20 };
+  w._sqMgV = cur; w._sqMgGoalSent = null; w._sqMgRef = sid => sid; w._sqMgNow = () => 1000;
+  w._rt = { runTransaction: (ref, fn) => { written = fn({ ...cur, fin: { b: 1 } }); return Promise.resolve(); } };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), true, 'st 구간에서도 완주 청구는 된다');
+  assert.strictEqual(written.fin.a, 2, '앞선 완주자 다음 순위여야 한다');
+}
+
+// ── 20) 완주(fin)했거나 선 앞이면 청구하지 않는다 ──────────────────────
 {
   let calls = 0;
   w._rt = { runTransaction: () => { calls++; return Promise.resolve(); } };
-  w._sqMgGoalSent = null; w._sqMgV = { g: 'mg', st: 'st', join: { a: {} }, t: 11, dl: 21 };
-  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), false);
+  w._sqMgGoalSent = null; w._sqMgV = { g: 'mg', st: 'go', join: { a: {} }, fin: { a: 1 }, t: 11, dl: 21 };
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y - 1 }), false, '이미 완주했는데 또 청구했다');
   w._sqMgV = { g: 'mg', st: 'go', join: { a: {} }, t: 12, dl: 22 };
-  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y + 0.1 }), false);
-  assert.strictEqual(calls, 0, '부정한 결승 트랜잭션이 실행됐다');
+  assert.strictEqual(w._sqMgClaimGoal('room', { y: Z.GOAL_Y + 0.1 }), false, '선 앞인데 청구했다');
+  assert.strictEqual(calls, 0, '부정한 완주 트랜잭션이 실행됐다');
 }
 
-// ── 21) 참가자가 아니거나 이미 탈락했으면 결승을 청구하지 않는다 ────────
+// ── 21) 참가자가 아니거나 이미 탈락했으면 완주를 청구하지 않는다 ────────
 {
   let calls = 0;
   w._rt = { runTransaction: () => { calls++; return Promise.resolve(); } };
@@ -238,4 +279,4 @@ for (const fn of ['_sqMgTick', '_sqMgArm', '_sqMgScan', '_sqMgJudge', '_sqMgPain
   }
 }
 
-console.log('mugung-core: 23개 항목 전부 통과');
+console.log('mugung-core: 27개 항목 전부 통과 (등수제 개편 반영)');
