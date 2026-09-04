@@ -24,6 +24,7 @@ ap.add_argument('--nukki', action='store_true'); ap.add_argument('--greenness', 
 # ★대표 9-04 강명령: 에셋·그림카드는 항상 **가장 높은 모델(나노바나나 Pro)** 로 뽑는다.
 #   덤벨피하기 타이틀(역대 최고 퀄)이 Pro 였다. 실패(404/미지원) 시 --model gemini-2.5-flash-image 폴백.
 ap.add_argument('--model', default='gemini-3-pro-image-preview')
+ap.add_argument('--size', default='', help="출력 해상도 힌트: 1K/2K/4K (Pro 전용, 고화질 픽셀은 2K)")
 ap.add_argument('--from-raw', action='store_true', help='생성하지 않고 out 옆 .raw.png 로 누끼·규격만 다시')
 ap.add_argument('--tol', type=int, default=48, help='배경색 허용 거리(0~441)')
 ap.add_argument('--ref', action='append', default=[], help='레퍼런스 이미지(여러 개 가능) — 캐릭터·화풍을 그대로 따르게')
@@ -56,6 +57,7 @@ else:
         parts.append({'inlineData': {'mimeType': mime, 'data': base64.b64encode(open(rp, 'rb').read()).decode()}})
     parts.append({'text': prompt})
     body = {'contents': [{'parts': parts}], 'generationConfig': {'responseModalities': ['IMAGE']}}
+    if a.size: body['generationConfig']['imageConfig'] = {'imageSize': a.size}
     req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s' % (a.model, KEY),
                                  data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
     try: r = json.loads(urllib.request.urlopen(req, timeout=120).read().decode())

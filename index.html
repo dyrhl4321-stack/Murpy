@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1021';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1022';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -28295,14 +28295,35 @@ window._mwKbEnd = function (immediate) {
 //   -> 조합 중이면 **막지 않고 표시만 해 뒀다가, 조합이 끝나는 순간 보낸다.**
 window._mwEnterSend = function (inp, fn) {
   if (!inp || inp._entSend) return; inp._entSend = 1;
+  // ★카톡식 채팅 UX (대표 9-04) — 앱의 모든 채팅 입력칸에 한 번에 적용된다.
+  //   ① enterkeyhint='send' → 아이폰 키보드 리턴키가 **전송(파란 Send)** 으로 바뀐다.
+  //      키보드 위 '이전/다음/완료' 바를 헤매지 않고 그 자리에서 바로 보낸다.
+  //   ② 보낸 뒤 **포커스를 유지**한다 — 키보드가 안 내려가 연속으로 칠 수 있다(카톡과 같음).
+  //   ③ 오타 교정·자동 대문자·철자검사를 끈다(채팅에선 방해만 된다).
+  try {
+    inp.setAttribute('enterkeyhint', 'send');
+    inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('autocorrect', 'off');
+    inp.setAttribute('autocapitalize', 'off');
+    inp.setAttribute('spellcheck', 'false');
+  } catch (e) {}
+  var send = function () {
+    var wasFocus = document.activeElement === inp;
+    try { fn(); } catch (e) { console.warn('enterSend', e); }
+    // 전송 함수가 렌더를 다시 그려 포커스를 놓치는 경우가 있어 한 박자 뒤 되돌린다
+    if (wasFocus) setTimeout(function () {
+      var el = document.getElementById(inp.id) || inp;
+      if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e2) { try { el.focus(); } catch (e3) {} } }
+    }, 0);
+  };
   var pend = false;
   inp.addEventListener('compositionend', function () {
-    if (!pend) return; pend = false; setTimeout(fn, 0);
+    if (!pend) return; pend = false; setTimeout(send, 0);
   });
   inp.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' && e.keyCode !== 13) return;
     if (e.isComposing || e.keyCode === 229) { pend = true; return; }
-    e.preventDefault(); fn();
+    e.preventDefault(); send();
   });
 };
 // ★★필드 입력줄이 아이폰 키보드 윗줄 바(이전/다음/완료)에 덮이던 것 (대표 8-28).
@@ -32843,16 +32864,16 @@ window._mwParkAmbient = function (on) {
 // 퀘스트 = 진짜 앱 기능 심부름(체크인·인증·대숲·매칭) + 소액 머피. 보상은 서버 키(pq_<id>_<일>)로
 // 하루 1회 중복 차단. 목소리는 파일 있으면 재생(승인 전 파일 미배포 — 표준 절차).
 window._MW_NPCS = [
-  { k: 'keeper',  name: '관리인 박씨', img: 'char/npc/npc_keeper.png?v=1',  x: 52,   y: 47, h: 3.6,
+  { k: 'keeper',  name: '관리인 박씨', img: 'char/npc/npc_keeper.png?v=1',  x: 40.6, y: 50.0, h: 3.6,
     hi: '어서 오게, 우리 공원 좋지?', idle: '오늘 부탁은 다 끝났네. 내일 또 들르라고!',
     q: { id: 'checkin', text: '공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!', go: '체크인 하러 가기', done: '오, 도장 찍고 왔구먼! 부지런한 게 최고야.' } },
-  { k: 'trainer', name: '강 코치', img: 'char/npc/npc_trainer.png?v=1', x: 64.5, y: 46, h: 3.6,
+  { k: 'trainer', name: '강 코치', img: 'char/npc/npc_trainer.png?v=1', x: 71.9, y: 50.0, h: 3.6,
     hi: '오! 운동하러 왔구나?', idle: '오늘 몫은 끝! 내일 또 보자고.',
     q: { id: 'cert', text: '오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!', go: '인증하러 가기', done: '그래, 그 기세야! 꾸준한 놈이 이긴다.' } },
-  { k: 'grandma', name: '순이 할매', img: 'char/npc/npc_grandma.png?v=1', x: 10, y: 46, h: 3.4,
+  { k: 'grandma', name: '순이 할매', img: 'char/npc/npc_grandma.png?v=1', x: 19.8, y: 62.5, h: 3.4,
     hi: '아이고, 젊은이 왔는가.', idle: '오늘 할 일은 다 했네. 살펴 가시게.',
     q: { id: 'bamboo', text: '속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.', go: '대숲 가기', done: '잘했네. 마음도 근육처럼 풀어줘야 해.' } },
-  { k: 'kid', name: '민준이', img: 'char/npc/npc_kid.png?v=1', x: 71, y: 81, h: 2.7,
+  { k: 'kid', name: '민준이', img: 'char/npc/npc_kid.png?v=1', x: 67.7, y: 77.1, h: 2.7,
     hi: '형아! 누나! 나랑 놀자!', idle: '내일 또 놀러 와! 약속!',
     q: { id: 'match', text: '오늘의 머피들 봤어? 매칭 탭에서 새 친구 구경하고 와!', go: '매칭 구경 가기', done: '우와, 친구 많아지겠다!' } },
 ];
