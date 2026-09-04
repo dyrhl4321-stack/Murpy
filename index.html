@@ -3797,11 +3797,28 @@ window._CHAR_BODIES = {
             defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
             owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
             desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
+  // 2호(2026-09-04) — 새 파이프라인(Pro 2K 생성 + tools/face_grid.py 칸 단위 규격화)으로 뽑았다.
+  // ownerEmail 로 지정한다: 이 계정 uid 를 모르는 채로 등록해도 이메일로 주인을 가린다.
+  paesuhyun: { name: '패수현', skinBase: 'face_paesuhyun', src: "char/faces/paesuhyun.png?v=1", cw: 141, ch: 224,
+            wearable: true, fixedHair: true, kin: 'human', tag: '커마',
+            defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
+            ownerEmail: 'dyrhl4321@gmail.com',
+            desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
   ddungddung: { name: '돼쫀토', src: "char/ddungddung.png?v=2", cw: 145, ch: 224, code: 'DDUNGDDUNG', limited: true, tag: '한정', desc: '개발자가 눈찢어진 토끼상을 좋아해서 만든 캐릭터.' },
   // 히든 3종(고정 캐릭터). 해금=users.hiddenChars, 소유 판정은 mwHasHidden. 실제 발동/연출은 mwEvalHidden/mwHiddenReveal.
   cult:   { name: '요일교 교주',   src: "char/hidden_cult.png?v=1",   cw: 135, ch: 224, hidden: true, limited: true, tag: '히든' },
   somm:   { name: '헬스장 소믈리에', src: "char/hidden_somm.png?v=1",   cw: 133, ch: 224, hidden: true, limited: true, tag: '히든' },
   zombie: { name: '작심삼일 좀비',  src: "char/hidden_zombie.png?v=2", cw: 142, ch: 224, hidden: true, limited: true, tag: '히든' }
+};
+// 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
+// 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
+// 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
+window._charBodyIsMine = function (b) {
+  if (!b || (!b.owner && !b.ownerEmail)) return false;
+  const u = window.currentUser || {};
+  if (b.owner && b.owner === (u.uid || '')) return true;
+  if (b.ownerEmail && u.email && b.ownerEmail.toLowerCase() === String(u.email).toLowerCase()) return true;
+  return false;
 };
 // 성별(가입 시 설정) → 오버월드 몸통. '비공개'·미설정은 기본 남성 몸통.
 // ★몸통은 유저가 고르는 게 아니라 가입 성별로 정해진다(대표 확정). 관리자만 로스터에서 둘 다 쓴다.
@@ -8883,7 +8900,7 @@ window.charRenderRoster = function () {
     const b = window._CHAR_BODIES[key];
     // ★얼굴 커마 캐릭터는 **주인에게만** 보인다. 남에게는 목록에 아예 없다.
     //   단 관리자(대표)는 전부 보인다 — 커마권이 늘어나도 실기기에서 확인할 수 있어야 한다.
-    if (b.owner) return _isAdm || b.owner === ((window.currentUser || {}).uid || '');
+    if (b.owner || b.ownerEmail) return _isAdm || window._charBodyIsMine(b);
     if (!b.gender) return true;                 // 성별 무관(헬토리·히든)
     return _bothGenders || key === _myBody;
   }).map(key => {
@@ -18236,8 +18253,7 @@ window._golfOwnedBodies = function () {
 // 몸통 보유 판정 — 꾸미기 로스터(mwRenderRoster)와 **같은 기준**: 커마는 주인, 히든은 mwHasHidden, 코드/퀘스트는 wardrobe.
 window._charBodyOwned = function (key) {
   const b = (window._CHAR_BODIES || {})[key]; if (!b) return false;
-  const me = (window.currentUser || {}).uid || '';
-  if (b.owner) return b.owner === me;
+  if (b.owner || b.ownerEmail) return window._charBodyIsMine(b);
   if (b.hidden) return !!(window.mwHasHidden && window.mwHasHidden(key));
   const owned = (window._charState && window._charState.wardrobe) || [];
   const isQuest = (window.QUEST_CHARS || []).some(function (c) { return c.id === key; });
@@ -40227,7 +40243,7 @@ window.sqGamePicker = function () {
 // OX 퀴즈가 깔아둔 것을 그대로 쓴다 — 필드·위치동기화(_sqRtLast)·참석자명단·진행자승계·낙사연출.
 // 새로 만드는 건 판정 하나다.
 // 몸통별 눈 위치(정면 셀 대비 비율). 9-02 시트에서 실측 + 눈 검수. 새 몸통을 추가하면 여기도 한 줄.
-window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
+window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "paesuhyun": {"y": 0.363, "x": [0.345, 0.641]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
 window.SQ_MG = {
   GO_MIN: 1400, GO_MAX: 3400,   // (예비) 목소리가 없을 때 등 보이는 시간
   // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 즉시 돌아본다 — 7가지 변화구의 실제 WAV 길이(초).
