@@ -47,6 +47,47 @@ def _dilate(m, n=1):
     return m
 
 
+def skin_mask(cell):
+    """피부(얼굴·목)만 — 금발(r-g 가 작다)이 안 걸리도록 g < r*0.80 을 쓴다."""
+    r, g, b, al = (cell[..., i].astype(int) for i in range(4))
+    return (al > 128) & (r > 150) & (r > b + 50) & (g < r * 0.80) & (g > b)
+
+
+def shoulder_y(cell, around, span=25):
+    """★이음선 = 목-어깨 경계. 피부 폭이 가장 좁은 곳(목)에서 아래로 내려가다
+    폭이 확 넓어지는 첫 행 = 어깨가 시작되는 곳.
+
+    ★왜 여기서 자르나(9-04): 목 한가운데(실루엣 최소폭)에서 자르면 AI 턱 외곽선과
+      base 목 그림자가 겹쳐 검은 띠 두 겹 = '목 잘림'이 된다. 목은 AI 가 통째로 주고
+      어깨부터 base 가 받으면 이음선이 안 보인다.
+    얼굴이 없는 칸(뒤통수)은 None — 호출부에서 다른 칸의 값을 쓴다."""
+    w = skin_mask(cell).sum(1)
+    lo, hi = max(1, around - span), min(cell.shape[0] - 1, around + span)
+    seg = w[lo:hi].astype(int)
+    if (seg > 0).sum() < 3:
+        return None
+    ymin = lo + int(np.where(seg > 0, seg, 9999).argmin())
+    wmin = int(w[ymin])
+    for y in range(ymin + 1, hi):
+        if w[y] > max(wmin * 1.8, wmin + 10):
+            return y
+    return None
+
+
+def fit_head(acell, ai_y, base_y):
+    """AI 머리를 세로로 눌러/늘려 AI 의 목-어깨 경계가 base 의 그것에 오게 한다.
+    ★안 하면 AI 얼굴이 base 보다 길어 이음선에서 턱이 잘린다(9-04 '목 잘림')."""
+    if not ai_y or ai_y == base_y:
+        return acell
+    h = acell.shape[0]
+    nh = max(2, int(round(h * base_y / float(ai_y))))
+    im = Image.fromarray(acell, 'RGBA').resize((acell.shape[1], nh), Image.LANCZOS)
+    out = np.zeros_like(acell)
+    n = min(nh, h)
+    out[:n] = np.array(im)[:n]
+    return out
+
+
 def _erode(m, n=1):
     for _ in range(n):
         e = m.copy()
@@ -127,13 +168,17 @@ def hair_mask_below(acell, bcell, ny, tol=60, min_seed=25):
     return mask
 
 
-def merge_cell(b, a):
-    ny = neck_y(b)
+def merge_cell(b, a, ai_sh=None, base_sh=None):
+    """머리 크기 맞춤은 목-어깨 경계 기준, 자르기는 base 목선 기준.
+    ★자르기를 어깨선까지 내리면 AI 가 그린 제 옷깃까지 따라와 굵은 검은 띠가 된다.
+      base 목선에서 자르면 목 아래 그림자는 base 것이 쓰여 원본과 똑같이 보인다(9-04 비교 확정)."""
+    cut = neck_y(b)
+    a = fit_head(a, ai_sh, base_sh)                      # AI 목-어깨 경계 → base 의 그것에 맞춤
     out = b.copy()
-    out[:ny] = a[:ny]                                    # 목선 위 = AI 얼굴+머리
-    hm = hair_mask_below(a, b, ny)                       # 목선 아래로 내려온 머리카락
+    out[:cut] = a[:cut]                                  # 이음선 위 = AI 얼굴+머리
+    hm = hair_mask_below(a, b, cut)                      # 이음선 아래로 내려온 머리카락
     out[hm] = a[hm]
-    return out, ny, int(hm.sum())
+    return out, cut, int(hm.sum())
 
 
 def merge(base_path, ai_path, out_path):
@@ -141,14 +186,30 @@ def merge(base_path, ai_path, out_path):
     ai = np.array(Image.open(ai_path).convert('RGBA'))
     if base.shape != ai.shape:
         raise SystemExit('시트 규격이 다르다: %s vs %s' % (base.shape, ai.shape))
+    # 얼굴이 보이는 칸들에서 AI 목 위치를 모아 중앙값을 쓴다 — 뒤통수 칸은 목이 안 보여
+    # 혼자 탐지가 안 되므로, 시트 전체가 같은 비율이라는 점을 이용해 같은 값을 적용한다.
+    fa, fb = [], []
+    for r in range(ROWS):
+        for c in range(COLS):
+            sy, sx = r * CH, c * CW
+            bc, ac = base[sy:sy + CH, sx:sx + CW], ai[sy:sy + CH, sx:sx + CW]
+            nb = neck_y(bc)
+            ya, yb = shoulder_y(ac, nb), shoulder_y(bc, nb)
+            if ya: fa.append(ya)
+            if yb: fb.append(yb)
+    ai_sh = int(np.median(fa)) if fa else None
+    base_sh = int(np.median(fb)) if fb else None
+    print('  목-어깨 경계  AI y=%s (%d칸) · base y=%s (%d칸)' % (ai_sh, len(fa), base_sh, len(fb)))
+
     out = base.copy()
     for r in range(ROWS):
         for c in range(COLS):
             sy, sx = r * CH, c * CW
-            cell, ny, hn = merge_cell(base[sy:sy + CH, sx:sx + CW], ai[sy:sy + CH, sx:sx + CW])
+            cell, cut, hn = merge_cell(base[sy:sy + CH, sx:sx + CW],
+                                       ai[sy:sy + CH, sx:sx + CW], ai_sh, base_sh)
             out[sy:sy + CH, sx:sx + CW] = cell
             if c == 1:
-                print('  행%d 목선 y=%d · 목아래 머리 %d px' % (r, ny, hn))
+                print('  행%d 이음선 y=%d · 아래 머리 %d px' % (r, cut, hn))
     Image.fromarray(out, 'RGBA').save(out_path)
     print('합성 →', out_path)
     return out_path
