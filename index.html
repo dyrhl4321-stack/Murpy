@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1009';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1010';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1284,10 +1284,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      room.clientWidth 기준 상대값이라 방이 커져도 수학은 그대로다. 필드 지분 100%, UI는 오버레이만. */
   body.mw-open #page-char .mw-stage { position:fixed; inset:0; max-width:none !important; margin:0 !important;
     z-index:60; overflow:hidden; background:#0e0f14; }
-  body.mw-open #charworld-room { width:min(230vw,230vh) !important; border-radius:0 !important;
+  body.mw-open #charworld-room { width:max(102vw,102vh) !important; border-radius:0 !important;
     border:none !important; box-shadow:none !important; transition:transform .15s linear; will-change:transform; }
   body.mw-open #charworld-hub-panel, body.mw-open #mw-field-bar { display:none !important; }
-  body.mw-open .bottom-nav { z-index:70; }   /* 파티 모드와 같은 문법 — 스테이지(60) 위 */
+  /* ★공원에선 하단 글로벌 탭바도 숨긴다(대표 9-04: 채팅창을 가림 + 몰입) — 단 머피월드 페이지가
+     떠 있을 때만(:has). 다른 탭으로 튕겨간 상태에서도 숨으면 앱 이동이 통째로 막힌다. */
+  body.mw-open:has(#page-char.active) .bottom-nav { display:none; }
   body.mw-open.mw-kb #charworld-room { max-height:none !important; }   /* 키보드 축소 규칙은 방 전용 */
   .mw-wb-tabbtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;
     font-family:'Galmuri11',sans-serif; font-size:13px; color:#fff; cursor:pointer; padding:13px 8px;
@@ -7893,6 +7895,18 @@ window._FIELDS = {
     "####..............######",
     "########################"] }
 };
+// ★9-04 오픈월드 줌아웃(대표: "맵을 존나 멀리서 내다봐야 함, 캐릭터가 쪼꼬매지면서 맵이 넓게").
+//   공원을 48타일로 — 캐릭터(타일×3.3)가 절반 크기가 된다. 충돌맵은 24칸 원본을
+//   2배 업스케일(한 칸→2×2)해서 걷는 영역은 그대로다. 시작 칸도 ×2.
+(function () {
+  const p = window._FIELDS.park;
+  p.grid = 48;
+  p.start = { tc: p.start.tc * 2, tr: p.start.tr * 2 };
+  p.map = p.map.reduce(function (out, row) {
+    const r2 = row.split('').map(function (ch) { return ch + ch; }).join('');
+    out.push(r2, r2); return out;
+  }, []);
+})();
 // ★공원에서는 펫이 **산책 모드** — '따라와'(follow)를 자동으로 걸고 계속 갱신한다.
 //   부름은 2분이면 저절로 풀리는 구조(MW_PET_CALL_MS)라, 공원에 있는 동안 4초마다 되건다.
 //   집에서 '따라와' 했을 때의 그 걸음(위로 가면 위로, 아래로 가면 아래로)이 그대로 온다(대표 9-03).
@@ -32414,7 +32428,7 @@ window._mwFieldWorldMap = function (body) {
   const H = W;
   body.style.overflowX = 'hidden';
   body.style.touchAction = 'pan-y';
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=13\')">'
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=14\')">'
     // ★지도 위 추가 요소(게이트 등)는 런타임 오버레이가 아니라 **PIL 로컬 합성으로 원판에
     //   박아넣은 단일 PNG** 로 배포한다(9-04 확정) — 런타임 좌표 어긋남·드리프트 원천 차단.
     //   합성 전 반드시 확대 크롭으로 눈 검수(9-03 오버레이 개판 사고의 교훈).
@@ -32438,7 +32452,7 @@ window._mwFieldWorldMap = function (body) {
     + [{x:128,y:585,w:172,h:65},{x:430,y:740,w:160,h:55}].map(function (o) {
         return '<div class="mw-fmover" style="left:' + (o.x / 1024 * 100) + '%;top:' + (o.y / 1024 * 100) + '%;'
           + 'width:' + (o.w / 1024 * 100) + '%;height:' + (o.h / 1024 * 100) + '%;'
-          + 'background-image:url(\'char/fields/worldmap.png?v=13\');'
+          + 'background-image:url(\'char/fields/worldmap.png?v=14\');'
           + 'background-size:' + W + 'px ' + H + 'px;'
           + 'background-position:-' + (o.x / 1024 * W) + 'px -' + (o.y / 1024 * H) + 'px"></div>';
       }).join('')
@@ -32620,7 +32634,7 @@ window._mwParkBar = function (on) {
   (document.getElementById('page-char') || document.body).appendChild(top);
   let bar = document.createElement('div');
   bar.id = 'mw-park-bar';
-  bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:950;'
+  bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:950;'
     + "max-width:366px;margin:0 auto;display:flex;gap:5px;font-family:'Galmuri11',sans-serif";
   bar.innerHTML =
       '<input id="mw-park-in" maxlength="60" placeholder="광장에 외쳐보세요" autocomplete="off"'
