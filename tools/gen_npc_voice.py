@@ -64,10 +64,14 @@ Timing: 대사 앞뒤 무음은 최소화한다. 마지막 음절이 끝나는 �
   원문 외 웃음·기침·감탄사를 추가하지 않는다."""
 
 
-def build_prompt(char_key, line):
+def build_prompt(char_key, line, extra=''):
+    """extra = 그 테이크에만 붙이는 추가 지시(발음 씹힘 교정 등).
+    ★표준: 발음이 씹히면 **속도를 늦추지 말고 Diction 지시를 강화**한다."""
     c = CHARS[char_key]
     return ("한국어 게임 캐릭터 음성 녹음이다. 지시문은 읽지 말고 TRANSCRIPT 한 줄만 정확히 발화한다.\n\n"
-            + c['card'] + "\n" + COMMON_TAIL + "\n\nTRANSCRIPT:\n" + line)
+            + c['card'] + "\n" + COMMON_TAIL
+            + (("\nDiction (추가): " + extra) if extra else '')
+            + "\n\nTRANSCRIPT:\n" + line)
 
 
 def synth(prompt, voice, model, key, timeout=180):
@@ -120,6 +124,7 @@ if __name__ == '__main__':
     ap.add_argument('--out', required=True)
     ap.add_argument('--model', default='gemini-3.1-flash-tts-preview')
     ap.add_argument('--voice', default='', help='캐릭터 기본 voice 를 덮어쓴다(후보 비교용에만)')
+    ap.add_argument('--extra', default='', help='이 테이크에만 붙이는 발음 강화 지시')
     a = ap.parse_args()
 
     key = os.environ.get('GEMINI_API_KEY', '').strip()
