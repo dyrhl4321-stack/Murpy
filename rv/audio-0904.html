@@ -144,6 +144,9 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 
   var rows = Array.prototype.slice.call(document.querySelectorAll('.row'));
   rows.forEach(function (row) {
+    try { bind(row); } catch (e) { console.warn('row bind', e); }   // 한 줄이 죽어도 나머지는 산다
+  });
+  function bind(row) {
     var btn = row.querySelector('.play'), bar = row.querySelector('.bar i');
     var slot = row.getAttribute('data-slot'), cid = row.getAttribute('data-cid');
     if (picks[slot] === cid) row.classList.add('sel');
@@ -166,7 +169,10 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
       cur = au; curRow = row; row.classList.add('playing');
       var p = au.play(); if (p && p.catch) p.catch(function () { stop(); });
     });
-    row.querySelector('.pick').addEventListener('click', function (ev) {
+    var pickBtn = row.querySelector('.pick');
+    if (!pickBtn) return;   // ★대사 행에는 고르기 버튼이 없다 — 없는 걸 찾다 죽으면
+                            //   그 아래 행들의 재생 연결이 통째로 끊긴다(9-04 사고)
+    pickBtn.addEventListener('click', function (ev) {
       ev.stopPropagation();
       rows.forEach(function (r) { if (r.getAttribute('data-slot') === slot) r.classList.remove('sel'); });
       if (picks[slot] === cid) { delete picks[slot]; }
@@ -178,7 +184,7 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
       } catch (e) {}
       render();
     });
-  });
+  }
 
   function text() {
     var order = ['브금', '관리인 박씨', '강 코치', '순이 할매', '민준이'], out = [];
