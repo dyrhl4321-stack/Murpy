@@ -6,6 +6,7 @@ import io, os, html
 REPO = r"C:/Users/dyrhl/Murpy"
 OUT = REPO + "/rv"
 E = html.escape
+AV = "3"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
 
 BGM = [
     # (id, 제목, 작곡/분위기, 내려받음, 파일, 현재적용?)
@@ -54,13 +55,13 @@ NPC = [
 # ★대표가 목소리를 고른 뒤 뽑은 **실제 게임 대사 전문**(승인 전 앱 배포 금지 — 오디오 표준)
 LINES = [
     ("관리인 박씨", "Charon", [
-        ("처음 만났을 때", "어서 오게, 우리 공원 좋지? 공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!", "line_keeper_hi.mp3"),
+        ("처음 만났을 때", "어서 오게. 우리 동네 공원, 마음에 드는가? 공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!", "line_keeper_hi.mp3"),
         ("퀘스트 완료", "오, 도장 찍고 왔구먼! 부지런한 게 최고야.", "line_keeper_done.mp3"),
         ("보상까지 받은 뒤", "오늘 부탁은 다 끝났네. 내일 또 들르라고!", "line_keeper_idle.mp3")]),
     ("강 코치", "Puck (B1 교정본과 같은 세팅)", [
         ("처음 만났을 때", "오! 운동하러 왔구나? 오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!", "line_trainer_hi.mp3"),
         ("퀘스트 완료", "그래, 그 기세야! 꾸준한 놈이 이긴다.", "line_trainer_done.mp3"),
-        ("보상까지 받은 뒤", "오늘 몫은 끝! 내일 또 보자고.", "line_trainer_idle.mp3")]),
+        ("보상까지 받은 뒤", "오늘은 여기까지! 내일 또 보자고.", "line_trainer_idle.mp3")]),
     ("순이 할매", "Sulafat", [
         ("처음 만났을 때", "아이고, 젊은이 왔는가. 속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.", "line_grandma_hi.mp3"),
         ("퀘스트 완료", "잘했네. 마음도 근육처럼 풀어줘야 해.", "line_grandma_done.mp3"),
@@ -76,7 +77,7 @@ def row(slot, cid, main, sub, meta, src, tag="", pick=True):
     badge = ' <b class="tag">%s</b>' % E(tag) if tag else ''
     pickbtn = '<button class="pick" type="button">고르기</button>' if pick else ''
     return ('<div class="row" data-slot="%s" data-cid="%s">'
-            '<button class="play" type="button" aria-label="%s 재생" data-src="a/%s">'
+            '<button class="play" type="button" aria-label="%s 재생" data-src="a/%s?v=' + AV + '">'
             '<span class="ico-play"></span><span class="ico-pause"></span></button>'
             '<div class="info"><div class="ttl">%s%s</div><div class="sub">%s</div>'
             '<div class="bar"><i></i></div></div>'
