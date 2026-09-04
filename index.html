@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1023';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1024';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1303,7 +1303,13 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      그 안에서 스크롤·바운스가 일어나지 않게. 카메라 rAF 는 그대로 돌아 캐릭터는 계속 중앙 */
   body.mw-open.mw-typing #page-char .mw-stage { position:fixed !important; inset:0 !important;
     overscroll-behavior:none; touch-action:none; }
-  body.mw-open.mw-typing { overflow:hidden; overscroll-behavior:none; }
+  /* ★채팅 입력 중엔 **어느 화면이든** 문서 스크롤을 잠근다 — 안 잠그면 아이폰이 화면을 밀어
+     올려 뒤쪽 홈화면이 키보드 위로 비쳐 보인다(대표 9-04, 필드이동 광장 외치기에서 재현).
+     _mwEnterSend 가 포커스 때 이 클래스를 붙인다 = 앱의 모든 채팅에 한 번에 적용. */
+  body.mw-typing { overflow:hidden !important; overscroll-behavior:none; }
+  /* 채팅 로그·라벨은 드래그 선택 금지(입력칸 자체는 제외) — 필드에서 끌면 텍스트가 잡혔다 */
+  #mw-park-bar, #mw-park-bar * { -webkit-user-select:none; user-select:none; }
+  #mw-park-bar input { -webkit-user-select:text !important; user-select:text !important; }
   .mw-wb-tabbtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;
     font-family:'Galmuri11',sans-serif; font-size:13px; color:#fff; cursor:pointer; padding:13px 8px;
     background:#1b2233; border:3px solid #05070c; border-radius:0;
@@ -28321,6 +28327,17 @@ window._mwEnterSend = function (inp, fn) {
       if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e2) { try { el.focus(); } catch (e3) {} } }
     }, 0);
   };
+  // ★어느 채팅이든 치는 동안 문서를 잠근다 — 아이폰이 화면을 밀어 뒤 화면이 비치던 버그(9-04)
+  inp.addEventListener('focus', function () {
+    document.body.classList.add('mw-typing');
+    try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
+  });
+  inp.addEventListener('blur', function () {
+    setTimeout(function () {
+      var a = document.activeElement;
+      if (!a || a.tagName !== 'INPUT') document.body.classList.remove('mw-typing');
+    }, 120);
+  });
   var pend = false;
   inp.addEventListener('compositionend', function () {
     if (!pend) return; pend = false; setTimeout(send, 0);
