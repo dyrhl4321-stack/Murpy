@@ -166,12 +166,15 @@ if __name__ == '__main__':
     ap.add_argument('--src', help='이미 423x896 규격인 소스 (규격화 건너뜀)')
     ap.add_argument('--model', default=None, help='기본 = 설정파일 model (gemini-3-pro-image)')
     ap.add_argument('--no-bake', action='store_true')
-    ap.add_argument('--no-merge', action='store_true', help='base 합성 건너뛰고 생성 시트를 그대로 씀')
+    ap.add_argument('--merge', action='store_true',
+                    help='base 합성까지 한다(얼굴·머리만 이식). 기본은 안 함 — 프롬프트로 base 를 지키게 하고 '
+                         '칸 단위 규격화로 맞추는 쪽이 이음선 없이 깨끗하다(9-04 확정)')
     a = ap.parse_args()
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-    # ★9-04 확정: Pro 모델 직접생성 → 규격화 → base 합성(얼굴·머리만 이식).
+    # ★9-04 확정: Pro 직접생성(프롬프트가 base 옷·얼굴크기를 지키게 조임) → 칸 단위 규격화.
+    #   합성(--merge)은 옵션. 실측: 옷색 L1차 56→12, 좌우 어긋남 9.0px→1.0px.
     out = os.path.join(M, 'char', 'faces', a.id + '.png')
     if a.src:
         import shutil; shutil.copy(a.src, out); print('규격 소스 사용 →', out)
@@ -181,12 +184,21 @@ if __name__ == '__main__':
             if not a.selfies: raise SystemExit('--selfies / --raw / --src 중 하나는 필요하다')
             raw = gen(load_cfg(), a.gender, a.selfies,
                       os.path.join(PRIV, '생성원본', a.id + '.png'), a.model)
-        # 규격화 결과(AI 원본 시트)는 따로 남긴다 — 합성만 다시 돌려보려고 재생성(유료)하지 않도록.
-        regrid(raw, os.path.join(M, 'char', 'faces', a.id + '_ai.png'))
+        # 규격화 결과(AI 원본 시트)는 따로 남긴다 — 뒷단만 다시 돌려보려고 재생성(유료)하지 않도록.
+        # ★칸 단위 규격화: 시트를 통째로 늘이면 AI 가 그린 칸 간격이 base 와 달라 열마다
+        #   최대 13px 어긋난다(9-04 실측). 칸을 각각 base 캐릭터 위치에 앉히면 1px 로 준다.
+        ai_sheet = os.path.join(M, 'char', 'faces', a.id + '_ai.png')
+        base_sheet = os.path.join(M, 'char', 'walk_female.png' if a.gender == '여' else 'walk.png')
+        try:
+            from face_grid import regrid_cells
+            regrid_cells(raw, base_sheet, ai_sheet)
+        except SystemExit as e:
+            print('칸 단위 규격화 실패(%s) → 통짜 규격화로 대체' % e)
+            regrid(raw, ai_sheet)
 
-    if not a.no_merge:
-        # ★대표 요구(9-04): 얼굴+머리카락만 바뀌고 몸·옷·걸음은 base 그대로.
-        #   생성만으로는 옷 색·몸 비율이 드리프트한다(실측: 베이지 탱크톱 → 흰옷).
+    if a.merge:
+        # base 픽셀을 100% 보장해야 할 때만 쓴다(옵션). AI 가 자유롭게 그린 머리를 고정 base 몸에
+        # 끼우는 정합 문제라 옆모습에서 이음선이 남는다 — 기본값은 안 쓰는 쪽이다.
         from face_merge import merge
         merge(os.path.join(M, 'char', 'walk_female.png' if a.gender == '여' else 'walk.png'),
               os.path.join(M, 'char', 'faces', a.id + '_ai.png'), out)
