@@ -34,31 +34,41 @@ def load_cfg():
         s = line.strip()
         if not s: continue
         if s.startswith('['): sec = s.strip('[]'); continue
-        if sec == '시트' and '=' in s:
+        if sec in ('시트', '모델') and '=' in s and not s.startswith('#'):
             k, v = s.split('=', 1); cfg[k.strip()] = v.strip()
-        elif sec == '프롬프트':
+        elif sec == '프롬프트' and not s.startswith('#'):
             cfg['prompt'] = (cfg.get('prompt', '') + '\n' + s).strip()
     for need in ('남', '여', 'prompt'):
         if not cfg.get(need): raise SystemExit('설정에 %s 가 없다' % need)
+    cfg.setdefault('model', 'gemini-3-pro-image')     # ★Pro 필수 (flash 는 개판)
+    cfg.setdefault('aspectRatio', '9:16')             # ★9:16 필수 (안 넣으면 4열)
     return cfg
 
-def gen(cfg, gender, selfies_dir, out_raw, model):
+def gen(cfg, gender, selfies_dir, out_raw, model=None):
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     if not key:
         try: key = io.open(os.path.expanduser('~/.config/murpy/gemini.txt'), encoding='utf-8').read().strip()
         except Exception: pass
     if not key: raise SystemExit('제미나이 키가 없다 (~/.config/murpy/gemini.txt)')
-    selfies = sorted(sum((glob.glob(os.path.join(selfies_dir, e)) for e in ('*.jpg', '*.jpeg', '*.png')), []))[:8]
-    if len(selfies) < 3: raise SystemExit('셀카가 너무 적다(%d장) — 정면 6장 정도 필요' % len(selfies))
+    model = model or cfg.get('model', 'gemini-3-pro-image')
+    # selfies_dir 는 폴더 또는 단일 파일 모두 허용
+    if os.path.isfile(selfies_dir):
+        selfies = [selfies_dir]
+    else:
+        selfies = sorted(sum((glob.glob(os.path.join(selfies_dir, e)) for e in ('*.jpg', '*.jpeg', '*.png')), []))[:8]
+    if len(selfies) < 1: raise SystemExit('셀카가 없다: ' + selfies_dir)
     parts = []
     for p in [cfg[gender]] + selfies:
         mime = 'image/png' if p.lower().endswith('.png') else 'image/jpeg'
         parts.append({'inlineData': {'mimeType': mime, 'data': base64.b64encode(open(p, 'rb').read()).decode()}})
     parts.append({'text': cfg['prompt']})
-    body = {'contents': [{'parts': parts}], 'generationConfig': {'responseModalities': ['IMAGE']}}
+    body = {'contents': [{'parts': parts}],
+            'generationConfig': {'responseModalities': ['IMAGE'],
+                                 'imageConfig': {'aspectRatio': cfg.get('aspectRatio', '9:16'),
+                                                 'imageSize': cfg.get('imageSize', '2K')}}}  # ★2K 필수
     req = urllib.request.Request('https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s' % (model, key),
                                  data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
-    try: r = json.loads(urllib.request.urlopen(req, timeout=180).read().decode())
+    try: r = json.loads(urllib.request.urlopen(req, timeout=300).read().decode())
     except urllib.error.HTTPError as e: raise SystemExit('API %s %s' % (e.code, e.read().decode()[:300]))
     for p in r.get('candidates', [{}])[0].get('content', {}).get('parts', []):
         if 'inlineData' in p:
@@ -90,10 +100,28 @@ def regrid(raw_path, out_src):
         if (c[0] - bg[0]) ** 2 + (c[1] - bg[1]) ** 2 + (c[2] - bg[2]) ** 2 > tol * tol: continue
         px[x, y] = (0, 0, 0, 0)
         stack.append((x + 1, y)); stack.append((x - 1, y)); stack.append((x, y + 1)); stack.append((x, y - 1))
-    img = img.resize((SW, SH), Image.NEAREST)
-    a = np.array(img)
-    a[..., 3] = np.where(a[..., 3] >= 128, 255, 0)
-    Image.fromarray(a, 'RGBA').save(out_src)
+    # ★마젠타 fringe 제거 — 캐릭터 외곽선이 어두운 남보라(예 34,11,38)라 "초록 최소채널" 식 전역
+    #   규칙은 외곽선을 전멸시켜 헤어↔얼굴 사이가 뜬다(9-04 실측 32만 픽셀 오삭제). 그래서
+    #   ①배경색과 실제로 가까운 픽셀(갇힌 마젠타 주머니 포함)과
+    #   ②투명 경계 1~2px 이내이면서 밝은 마젠타 기운(blend fringe)인 픽셀만 지운다.
+    ar = np.array(img); rr, gg, bb2 = ar[..., 0].astype(int), ar[..., 1].astype(int), ar[..., 2].astype(int)
+    d2 = (rr - bg[0]) ** 2 + (gg - bg[1]) ** 2 + (bb2 - bg[2]) ** 2
+    # 갇힌 순마젠타(flood 가 못 간 안쪽). ★거리 90 은 볼 블러시·입술 그늘 같은 얼굴 핑크까지
+    #   집어삼킨다(9-04 실측: 눈밑·입가·볼에 검댕) — 거의 순수 배경색(<45)만 주머니로 본다.
+    pocket = d2 < 45 * 45
+    near = (ar[..., 3] == 0) | pocket
+    for _ in range(2):                                      # 투명 경계·주머니 2px 팽창
+        n = near.copy()
+        n[1:, :] |= near[:-1, :]; n[:-1, :] |= near[1:, :]
+        n[:, 1:] |= near[:, :-1]; n[:, :-1] |= near[:, 1:]
+        near = n
+    fringe = near & (rr > 120) & (rr > gg + 40) & (bb2 > gg + 30)   # 경계의 밝은 핑크 blend 만
+    ar[pocket | fringe, 3] = 0
+    img = Image.fromarray(ar, 'RGBA')
+    bb = img.getbbox()          # ★배경 제거 후 내용(3x4 그리드)만 크롭 → 여백 왜곡 없이 규격 리샘플
+    if bb: img = img.crop(bb)
+    img = img.resize((SW, SH), Image.LANCZOS)   # ★부드러운 축소 = 파츠 붙어 보임(NEAREST 는 뭉툭·끊김)
+    img.save(out_src)                            # 알파 하드 이진화 안 함(LANCZOS 부드러움 유지)
     print('규격화 %dx%d(배경 %s 제거) → %s' % (W, H, str(bg), out_src))
     return out_src
 
@@ -121,25 +149,22 @@ if __name__ == '__main__':
     ap.add_argument('--gender', default='남', choices=['남', '여'])
     ap.add_argument('--selfies', help='정면 셀카 폴더 (생성부터)')
     ap.add_argument('--raw', help='이미 생성된 원본 (규격화부터)')
-    ap.add_argument('--src', help='이미 423x896 규격인 소스 (이식부터)')
-    ap.add_argument('--model', default='gemini-2.5-flash-image')
+    ap.add_argument('--src', help='이미 423x896 규격인 소스 (규격화 건너뜀)')
+    ap.add_argument('--model', default=None, help='기본 = 설정파일 model (gemini-3-pro-image)')
     ap.add_argument('--no-bake', action='store_true')
     a = ap.parse_args()
 
-    src = a.src
-    raw = a.raw
-    if not src:
+    # ★9-04 확정: Pro 모델 직접생성. graft/합성 없음 — 생성 시트를 바로 규격화해 앱 시트로 쓴다.
+    out = os.path.join(M, 'char', 'faces', a.id + '.png')
+    if a.src:
+        import shutil; shutil.copy(a.src, out); print('규격 소스 사용 →', out)
+    else:
+        raw = a.raw
         if not raw:
             if not a.selfies: raise SystemExit('--selfies / --raw / --src 중 하나는 필요하다')
             raw = gen(load_cfg(), a.gender, a.selfies,
                       os.path.join(PRIV, '생성원본', a.id + '.png'), a.model)
-        src = regrid(raw, os.path.join(M, 'char', 'faces', a.id + '_src.png'))
-
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from face_graft import graft
-    base = os.path.join(M, 'char', 'walk_female.png' if a.gender == '여' else 'walk.png')
-    out = os.path.join(M, 'char', 'faces', a.id + '.png')
-    graft(base, src, out)
+        regrid(raw, out)     # 생성 원본(9:16) → 배경제거·크롭·423x896 = 앱 시트
 
     if not a.no_bake:
         r = subprocess.run([sys.executable, os.path.join(M, 'tools', 'skin_bake.py'),
