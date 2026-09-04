@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1025';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1026';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -28327,16 +28327,44 @@ window._mwEnterSend = function (inp, fn) {
       if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e2) { try { el.focus(); } catch (e3) {} } }
     }, 0);
   };
-  // ★어느 채팅이든 치는 동안 문서를 잠근다 — 아이폰이 화면을 밀어 뒤 화면이 비치던 버그(9-04)
+  // ★어느 채팅이든 치는 동안 문서를 잠근다 — 아이폰이 화면을 밀어 뒤 화면이 비치던 버그(9-04).
+  //   ★단, 잠그면 브라우저가 입력칸을 키보드 위로 올려주던 동작까지 막힌다(대표 9-04 재보고) →
+  //     dock 지정된 줄은 우리가 직접 키보드 위로 띄운다(공원 채팅바와 같은 방식).
+  var dockEl = inp.getAttribute('data-dock') ? document.getElementById(inp.getAttribute('data-dock')) : null;
+  var dockSaved = null;
+  var dockFit = function () {
+    if (!dockEl || !window.visualViewport) return;
+    var vv = window.visualViewport;
+    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    dockEl.style.cssText = dockSaved
+      + ';position:fixed;left:12px;right:12px;bottom:' + (kb > 0 ? (kb + 8) : 46) + 'px'
+      + ';z-index:962;margin:0;max-width:366px;margin-left:auto;margin-right:auto';
+  };
   inp.addEventListener('focus', function () {
     document.body.classList.add('mw-typing');
     try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
+    if (dockEl) {
+      if (dockSaved === null) dockSaved = dockEl.getAttribute('style') || '';
+      dockFit();
+      setTimeout(dockFit, 80); setTimeout(dockFit, 320); setTimeout(dockFit, 700);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', dockFit);
+        window.visualViewport.addEventListener('scroll', dockFit);
+      }
+    }
   });
   inp.addEventListener('blur', function () {
     setTimeout(function () {
       var a = document.activeElement;
       if (!a || a.tagName !== 'INPUT') document.body.classList.remove('mw-typing');
     }, 120);
+    if (dockEl && dockSaved !== null) {
+      dockEl.setAttribute('style', dockSaved);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', dockFit);
+        window.visualViewport.removeEventListener('scroll', dockFit);
+      }
+    }
   });
   var pend = false;
   inp.addEventListener('compositionend', function () {
@@ -32584,7 +32612,7 @@ window._mwFieldWorldMap = function (body) {
     +     '<span style="font-size:11px;color:#F5C24B;letter-spacing:1px">광장 외치기</span>'
     +     '<span id="mw-fm-shout-n" style="font-size:9.5px;color:#4a5266"></span></div>'
     +   '<div id="mw-fm-shout-list" style="height:84px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;font-size:11px;line-height:1.45"></div>'
-    +   '<div style="display:flex;gap:5px;margin-top:8px">'
+    +   '<div id="mw-fm-shout-row" style="display:flex;gap:5px;margin-top:8px">'
     +     '<input id="mw-fm-shout-in" maxlength="60" placeholder="광장에 외쳐보세요" autocomplete="off"'
     +       ' style="flex:1;min-width:0;box-sizing:border-box;height:32px;background:rgba(255,255,255,.06);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;outline:none;font-family:inherit;border-radius:0">'
     +     '<button onclick="window._mwFmShoutSend()" style="flex-shrink:0;height:32px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">외치기</button></div></div>'
@@ -32699,6 +32727,8 @@ window._mwFmShoutInit = function () {
   }, function (e) { console.warn('shout', e); });
   window._mwFmShoutUn = function () { try { un(); } catch (e) {} };
   const inp = document.getElementById('mw-fm-shout-in');
+  // data-dock = 키보드가 뜨면 이 줄을 통째로 키보드 바로 위로 띄운다(9-04)
+  if (inp) inp.setAttribute('data-dock', 'mw-fm-shout-row');
   if (inp && window._mwEnterSend) window._mwEnterSend(inp, window._mwFmShoutSend);
 };
 window._mwFmShoutSend = function () {
