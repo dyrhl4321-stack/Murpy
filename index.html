@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1013';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1014';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -32667,6 +32667,7 @@ window._mwParkBar = function (on) {
   //   body 가 아니라 **머피월드 페이지 안**에 붙인다 — 홈 탭으로 나가면 페이지와 함께 숨는다.
   document.querySelectorAll('#mw-park-bar,#mw-park-top,#mw-park-zone').forEach(function (b) { b.remove(); });
   try { if (!on && window._mwParkLogUn) { window._mwParkLogUn(); window._mwParkLogUn = null; } } catch (e) {}
+  try { if (window._mwParkKbUn) { window._mwParkKbUn(); window._mwParkKbUn = null; } } catch (e) {}
   if (!on) return;
   // ★상단바(9-04): MURPY WORLD 로고 + 머피 잔액 + 지도(나가기) — 오픈월드에 남는 유일한 상단 UI
   const top = document.createElement('div');
@@ -32688,7 +32689,8 @@ window._mwParkBar = function (on) {
   //   하단부에 내 입력줄이 붙는다. 문구는 오픈월드 공용 '채팅하기'(필드가 계속 늘어난다).
   let bar = document.createElement('div');
   bar.id = 'mw-park-bar';
-  bar.style.cssText = 'position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:950;'
+  // ★바닥에서 26px 띄운다 — 10px 로 붙였더니 아이폰 라운드 코너·홈 인디케이터에 걸렸다(대표 9-04)
+  bar.style.cssText = 'position:fixed;left:14px;right:14px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:950;'
     + "max-width:366px;margin:0 auto;display:flex;flex-direction:column;font-family:'Galmuri11',sans-serif";
   bar.innerHTML =
       '<div id="mw-park-log" style="height:92px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;'
@@ -32703,6 +32705,21 @@ window._mwParkBar = function (on) {
   const inp = document.getElementById('mw-park-in');
   if (inp && window._mwEnterSend) window._mwEnterSend(inp, window._mwParkSay);
   window._mwParkLogInit();
+  // ★키보드가 뜨면 브라우저가 입력칸을 보이려고 화면을 밀어 필드가 살짝 올라간다(대표 9-04).
+  //   visualViewport 로 키보드 높이를 재서 **채팅바만** 키보드 위로 올리고, 문서 스크롤은 0 으로
+  //   되돌려 필드는 제자리에 둔다. 리스너는 바와 함께 치운다.
+  if (window.visualViewport) {
+    const _vv = window.visualViewport;
+    const _fit = function () {
+      const b = document.getElementById('mw-park-bar'); if (!b) return;
+      const kb = Math.max(0, window.innerHeight - _vv.height - _vv.offsetTop);
+      b.style.bottom = 'calc(' + (26 + kb) + 'px + env(safe-area-inset-bottom))';
+      if (kb > 0) try { window.scrollTo(0, 0); } catch (e) {}
+    };
+    _vv.addEventListener('resize', _fit);
+    _vv.addEventListener('scroll', _fit);
+    window._mwParkKbUn = function () { try { _vv.removeEventListener('resize', _fit); _vv.removeEventListener('scroll', _fit); } catch (e) {} };
+  }
   // ★지역명 진입 배너 — "게임에 들어왔다" 신호(2.4초 떴다 사라짐)
   const bn = document.createElement('div');
   bn.id = 'mw-park-zone';
