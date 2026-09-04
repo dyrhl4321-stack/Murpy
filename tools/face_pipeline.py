@@ -22,7 +22,21 @@ from PIL import Image
 sys.stdout.reconfigure(encoding='utf-8')
 
 M = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRIV = os.path.join(os.path.dirname(M), 'Murpy_private', '제작노하우')
+
+def _priv():
+    """Murpy_private/제작노하우 를 상위로 올라가며 찾는다 — 워크트리(.claude/worktrees/*)에서
+    실행해도 저장소 옆의 진짜 비공개 폴더를 잡도록 설정 파일 존재로 판정한다."""
+    d = M
+    while True:
+        cand = os.path.join(os.path.dirname(d), 'Murpy_private', '제작노하우')
+        if os.path.isfile(os.path.join(cand, '얼굴커마-생성설정.txt')):
+            return cand
+        nd = os.path.dirname(d)
+        if nd == d:
+            return os.path.join(os.path.dirname(M), 'Murpy_private', '제작노하우')
+        d = nd
+
+PRIV = _priv()
 SW, SH = 423, 896   # 시트 규격 (셀 141x224 · 3열 4행)
 
 def load_cfg():
@@ -152,9 +166,12 @@ if __name__ == '__main__':
     ap.add_argument('--src', help='이미 423x896 규격인 소스 (규격화 건너뜀)')
     ap.add_argument('--model', default=None, help='기본 = 설정파일 model (gemini-3-pro-image)')
     ap.add_argument('--no-bake', action='store_true')
+    ap.add_argument('--no-merge', action='store_true', help='base 합성 건너뛰고 생성 시트를 그대로 씀')
     a = ap.parse_args()
 
-    # ★9-04 확정: Pro 모델 직접생성. graft/합성 없음 — 생성 시트를 바로 규격화해 앱 시트로 쓴다.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    # ★9-04 확정: Pro 모델 직접생성 → 규격화 → base 합성(얼굴·머리만 이식).
     out = os.path.join(M, 'char', 'faces', a.id + '.png')
     if a.src:
         import shutil; shutil.copy(a.src, out); print('규격 소스 사용 →', out)
@@ -164,7 +181,17 @@ if __name__ == '__main__':
             if not a.selfies: raise SystemExit('--selfies / --raw / --src 중 하나는 필요하다')
             raw = gen(load_cfg(), a.gender, a.selfies,
                       os.path.join(PRIV, '생성원본', a.id + '.png'), a.model)
-        regrid(raw, out)     # 생성 원본(9:16) → 배경제거·크롭·423x896 = 앱 시트
+        # 규격화 결과(AI 원본 시트)는 따로 남긴다 — 합성만 다시 돌려보려고 재생성(유료)하지 않도록.
+        regrid(raw, os.path.join(M, 'char', 'faces', a.id + '_ai.png'))
+
+    if not a.no_merge:
+        # ★대표 요구(9-04): 얼굴+머리카락만 바뀌고 몸·옷·걸음은 base 그대로.
+        #   생성만으로는 옷 색·몸 비율이 드리프트한다(실측: 베이지 탱크톱 → 흰옷).
+        from face_merge import merge
+        merge(os.path.join(M, 'char', 'walk_female.png' if a.gender == '여' else 'walk.png'),
+              os.path.join(M, 'char', 'faces', a.id + '_ai.png'), out)
+    elif not a.src:
+        import shutil; shutil.copy(os.path.join(M, 'char', 'faces', a.id + '_ai.png'), out)
 
     if not a.no_bake:
         r = subprocess.run([sys.executable, os.path.join(M, 'tools', 'skin_bake.py'),
