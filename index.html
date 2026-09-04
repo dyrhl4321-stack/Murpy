@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1019';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1020';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -7993,6 +7993,9 @@ window.charSetField = function (key) {
   if (key !== 'park') { const _rm = document.getElementById('charworld-room'); if (_rm) _rm.style.transform = ''; }
   // ★오픈월드 마을 브금(9-04, CC0 음원) — 공원에 있는 동안만. 다른 필드는 무음(게임이 각자 켠다)
   try { window.sfx && window.sfx.bgm(key === 'park' ? 'town' : null); } catch (e) {}
+  // ★필드 앰비언트(9-04): "필드가 죽어 있어 저퀄로 보인다"(대표) — 분수 물보라·연못 반짝임·
+  //   꽃잎·구름 그림자를 상시 재생. 좌표는 필드 %라 방 크기와 무관하고 카메라와 같이 흐른다.
+  try { window._mwParkAmbient && window._mwParkAmbient(key === 'park'); } catch (e) {}
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
   const _fu = document.getElementById('mw-furn');
@@ -32780,6 +32783,57 @@ window._mwParkLogInit = function () {
     }).join('') || '<span style="color:#8a93a8;font-size:10.5px">첫 인사를 남겨보세요</span>';
     el.scrollTop = el.scrollHeight;
   });
+};
+// ★필드 앰비언트(9-04) — "필드가 죽어 있어 저퀄"(대표). 분수 물보라·연못 물결/수련잎 둥실·
+//   꽃잎 날림·구름 그림자. 좌표는 필드 %(1024 실측), 캐릭터(z10+) 아래 z4 라 걷기와 안 겹친다.
+window._mwParkAmbient = function (on) {
+  const old = document.getElementById('mw-park-amb'); if (old) old.remove();
+  if (!on) return;
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  if (!document.getElementById('mw-park-amb-css')) {
+    const st = document.createElement('style'); st.id = 'mw-park-amb-css';
+    st.textContent = `
+      #mw-park-amb{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+      #mw-park-amb i{position:absolute;display:block;font-style:normal}
+      @keyframes pkSpray{0%{transform:translate(0,0) scale(1);opacity:0}12%{opacity:.95}100%{transform:translate(var(--dx),-16px) scale(.6);opacity:0}}
+      .pk-spray{width:3px;height:7px;background:#dceeff;border-radius:45%;animation:pkSpray 1.05s ease-out infinite}
+      @keyframes pkRip{0%{transform:scale(.25);opacity:.75}100%{transform:scale(1);opacity:0}}
+      .pk-rip{width:26px;height:11px;border:1.5px solid rgba(225,245,255,.8);border-radius:50%;animation:pkRip 3.2s ease-out infinite}
+      @keyframes pkPad{0%,100%{transform:translate(0,0)}50%{transform:translate(1.5px,-2.5px)}}
+      .pk-pad{width:10px;height:5px;background:rgba(120,190,110,.9);border-radius:50%;box-shadow:0 -1px 0 rgba(60,120,60,.5) inset;animation:pkPad 3.6s ease-in-out infinite}
+      @keyframes pkShim{0%,100%{opacity:0}45%{opacity:.85}}
+      .pk-shim{width:9px;height:2px;background:rgba(230,250,255,.9);animation:pkShim 2.6s ease-in-out infinite}
+      @keyframes pkPetal{0%{transform:translate(0,-4px) rotate(0);opacity:0}8%{opacity:.9}88%{opacity:.75}100%{transform:translate(var(--px),var(--py)) rotate(230deg);opacity:0}}
+      .pk-petal{width:4px;height:3px;border-radius:60% 40% 55% 45%;animation:pkPetal var(--pd) linear infinite}
+      @keyframes pkCloud{0%{left:-45%}100%{left:115%}}
+      .pk-cloud{width:42%;height:20%;background:radial-gradient(ellipse at center,rgba(10,15,40,.085),rgba(10,15,40,0) 68%);animation:pkCloud 80s linear infinite}`;
+    document.head.appendChild(st);
+  }
+  const amb = document.createElement('div'); amb.id = 'mw-park-amb';
+  let h = '';
+  // 분수 물보라(중앙 49.1%, 47.2%) — 좌우로 퍼지는 물방울 8개 + 기둥
+  for (let i = 0; i < 8; i++) {
+    const dx = (i - 3.5) * 2.6;
+    h += '<i class="pk-spray" style="left:calc(49.1% + ' + (i - 3.5) * 1.4 + 'px);top:45.6%;--dx:' + dx + 'px;animation-delay:' + (i * 0.13) + 's"></i>';
+  }
+  // 연못: 물결 링 4 + 수련잎 둥실 4 + 반짝 3
+  [[20,24],[28,30],[33,22],[24,33]].forEach(function (p, i) {
+    h += '<i class="pk-rip" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 0.8) + 's"></i>'; });
+  [[22,26],[30,27],[26,31],[34,25]].forEach(function (p, i) {
+    h += '<i class="pk-pad" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 0.9) + 's"></i>'; });
+  [[19,29],[31,23],[27,34]].forEach(function (p, i) {
+    h += '<i class="pk-shim" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 1.1) + 's"></i>'; });
+  // 꽃잎 6장 — 화단(우상)·벚꽃 톤, 각자 속도·경로
+  const cols = ['#ffc9d8', '#fff2b8', '#ffd9e6', '#f6c9ff', '#ffe1c9', '#ffc9d8'];
+  for (let i = 0; i < 6; i++) {
+    h += '<i class="pk-petal" style="left:' + (12 + i * 14) + '%;top:' + (8 + (i % 3) * 20) + '%;background:' + cols[i]
+      + ';--px:' + (-40 - i * 8) + 'px;--py:' + (90 + i * 14) + 'px;--pd:' + (9 + i * 1.7) + 's;animation-delay:' + i * 1.4 + 's"></i>';
+  }
+  // 구름 그림자 2개(느리게 흘러감)
+  h += '<i class="pk-cloud" style="top:16%;animation-delay:0s"></i>';
+  h += '<i class="pk-cloud" style="top:58%;animation-delay:-38s"></i>';
+  amb.innerHTML = h;
+  room.appendChild(amb);
 };
 window._mwParkSay = function () {
   // ★오픈월드는 '외치기'가 아니라 **일반 채팅**이다(대표 9-04) — 전체 확성기(plaza/shout,
