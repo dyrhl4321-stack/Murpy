@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1011';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1012';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -5884,8 +5884,14 @@ window._mwPetSync = function () {
       var _rng = window._mwPetRng(_seed);
       var _tc = null, _tr = null, _try;
       var _gN2 = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;   // ★공원 24타일 — 16 고정이면 좌상단 사분면에만 흩어진다
+      // ★공원은 **내 캐릭터 옆**에서 시작(대표 9-04) — 48타일 맵 전체에 흩뿌리면 사방에서
+      //   "개판으로" 로드된다. 내 위치 ±3칸 상자 안에서만 고른다(입장 직후 재로드돼도 유지).
+      var _isPark = window._curField === 'park';
+      var _cp = window._charPos || { tc: 23, tr: 43 };
       for (_try = 0; _try < 40; _try++) {
-        var _c = Math.floor(_rng() * _gN2), _r = Math.floor(_rng() * _gN2);
+        var _c, _r;
+        if (_isPark) { _c = _cp.tc + Math.floor(_rng() * 7) - 3; _r = _cp.tr + Math.floor(_rng() * 7) - 5; }
+        else { _c = Math.floor(_rng() * _gN2); _r = Math.floor(_rng() * _gN2); }
         // ★_mwCritterWalkable 이 없으면 **아무 데나 놓지 않는다.** 예전엔 함수가 없을 때
         //   그냥 통과시켜서 가구 위에 앉았다. 못 재면 옛 방식(입구 옆)으로 떨어지는 게 맞다.
         if (!window._mwCritterWalkable) { _tc = null; break; }
@@ -5894,10 +5900,12 @@ window._mwPetSync = function () {
         if (_taken) continue;
         _tc = _c; _tr = _r; break;
       }
+      var _fst = _isPark ? _cp : st;   // 폴백도 공원이면 내 위치 기준(옛 15 클램프는 홈 16그리드용)
+      var _fmx = _gN2 - 1;
       var p = {
         id: d.id, el: el, i: i, dir: 0, anim: 'stand', moving: false, up: false,
-        tc: _tc != null ? _tc : Math.max(0, Math.min(15, (st.tc | 0) + 2 - (i % 3))),
-        tr: _tr != null ? _tr : Math.max(0, Math.min(15, (st.tr | 0) + 1 + Math.floor(i / 3)))
+        tc: _tc != null ? _tc : Math.max(0, Math.min(_fmx, (_fst.tc | 0) + 2 - (i % 3))),
+        tr: _tr != null ? _tr : Math.max(0, Math.min(_fmx, (_fst.tr | 0) + 1 + Math.floor(i / 3)))
       };
       (function (pp) {
         var hit = el.querySelector('.mw-pet-hit');
@@ -32703,7 +32711,7 @@ window._mwParkLogInit = function () {
   const R = window._rt;
   if (!R || !auth.currentUser) { list.innerHTML = '<span style="color:#8a93a8;font-size:10.5px">로그인하면 채팅이 보여요</span>'; return; }
   try { window._mwParkLogUn && window._mwParkLogUn(); } catch (e) {}
-  const q = R.query ? R.query(R.ref(R.db, 'plaza/shout'), R.limitToLast(30)) : R.ref(R.db, 'plaza/shout');
+  const q = R.query ? R.query(R.ref(R.db, 'plaza/chat/park'), R.limitToLast(40)) : R.ref(R.db, 'plaza/chat/park');
   const rows = [];
   const E = window._escHtml || function (t) { return String(t); };
   window._mwParkLogUn = R.onValue(q, function (snap) {
@@ -32718,19 +32726,21 @@ window._mwParkLogInit = function () {
   });
 };
 window._mwParkSay = function () {
-  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('광장에서 외치려면') : requireLogin('로그인이 필요해요'); return; }
+  // ★오픈월드는 '외치기'가 아니라 **일반 채팅**이다(대표 9-04) — 전체 확성기(plaza/shout,
+  //   지도 탭·20초 쿨다운)와 채널을 분리해 plaza/chat/park 에 쓴다(규칙 9-04 배포).
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('채팅하려면') : requireLogin('로그인이 필요해요'); return; }
   const inp = document.getElementById('mw-park-in'); if (!inp) return;
   const t = String(inp.value || '').trim().slice(0, 60); if (!t) return;
   const bad = (window.FILTER_WORDS || []).some(function (w) { return t.toLowerCase().includes(String(w).toLowerCase()); });
-  if (bad) { showToast('연락처·외부 메신저는 외칠 수 없어요'); return; }
+  if (bad) { showToast('연락처·외부 메신저는 보낼 수 없어요'); return; }
   const now = Date.now();
-  if (now - (window._mwShoutAt || 0) < 20000) { showToast('외치기는 20초에 한 번이에요'); return; }
+  if (now - (window._mwParkSayAt || 0) < 2500) { showToast('조금 천천히 보내주세요'); return; }
   const R = window._rt;
   try {
-    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/shout'), {
+    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/chat/park'), {
       uid: auth.currentUser.uid, nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: now });
-  } catch (e) { console.warn('park shout', e); }
-  window._mwShoutAt = now; inp.value = '';
+  } catch (e) { console.warn('park chat', e); }
+  window._mwParkSayAt = now; inp.value = '';
   // 내 머리 위 말풍선 — 파티 말풍선 통로(_mwRl.msg)를 그대로 쓴다(전 필드 공용 표시 경로)
   window._mwRl = window._mwRl || {};
   window._mwRl.msg = { text: t, t: now };
