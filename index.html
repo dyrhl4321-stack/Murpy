@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1012';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1013';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1285,7 +1285,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   body.mw-open #page-char .mw-stage { position:fixed; inset:0; max-width:none !important; margin:0 !important;
     z-index:60; overflow:hidden; background:#0e0f14; }
   body.mw-open #charworld-room { width:max(102vw,102vh) !important; border-radius:0 !important;
-    border:none !important; box-shadow:none !important; transition:transform .15s linear; will-change:transform;
+    border:none !important; box-shadow:none !important; transition:none; will-change:transform;
     image-rendering:pixelated !important; }   /* ★도트를 도트답게 — 줌아웃 확대에서 부드럽게 뭉개지면
     물빠진 'AI 대충' 느낌이 된다(대표 9-04). 픽셀 유지가 바람의나라 질감의 핵심 */
   body.mw-open #charworld-hub-panel, body.mw-open #mw-field-bar { display:none !important; }
@@ -8221,21 +8221,31 @@ window._charApplyPos = function () {
   if (_ui) _ui.classList.toggle('mw-aur-on', !!_myAur);
   window._mwParkCam && window._mwParkCam();   // ★오픈월드면 카메라가 나를 따라온다(9-04)
 };
-// ★오픈월드 카메라 — 커진 필드(방)를 뷰포트 안에서 translate 로 밀어 캐릭터를 화면 중앙에
-//   둔다. 필드 가장자리에선 빈 바깥이 안 보이게 클램프(바람의나라 방식). 이동 transition(.15s)이
-//   걸음 속도와 같아 걸을 때 카메라가 부드럽게 따라온다.
-window._mwParkCam = function () {
+// ★오픈월드 카메라(9-04 v2) — 트랜지션 두 개(캐릭터 left/top vs 방 transform)가 서로 다른
+//   시계로 돌면 미세하게 어긋나 "버퍼링" 출렁임이 된다(대표). 게임 엔진 방식으로:
+//   **매 프레임** 캐릭터의 실제 렌더 위치(트랜지션 중간값 포함, getBoundingClientRect)를 읽어
+//   카메라를 그 자리에 즉시 고정한다 — 캐릭터는 화면에 붙박이고 세상이 흐른다.
+window._mwParkCamTick = function () {
+  window._mwParkCamRAF = 0;
   if (!document.body.classList.contains('mw-open')) return;
   const stage = document.querySelector('#page-char .mw-stage');
   const room = document.getElementById('charworld-room');
-  if (!stage || !room) return;
-  const vw = stage.clientWidth || window.innerWidth, vh = stage.clientHeight || window.innerHeight;
-  const rw = room.clientWidth, rh = room.clientHeight || rw;
-  const t = (window._charTileGeom() || {}).t || 1;
-  const cx = (window._charPos.tc + 0.5) * t, cy = (window._charPos.tr + 0.5) * t;
-  const ox = Math.round(Math.min(0, Math.max(vw - rw, vw / 2 - cx)));
-  const oy = Math.round(Math.min(0, Math.max(vh - rh, vh / 2 - cy)));
-  room.style.transform = 'translate(' + ox + 'px,' + oy + 'px)';
+  const av = document.getElementById('charworld-avatar');
+  if (stage && room && av) {
+    const sr = stage.getBoundingClientRect();
+    const rr = room.getBoundingClientRect();
+    const ar = av.getBoundingClientRect();
+    const relX = ar.left - rr.left + ar.width / 2;
+    const relY = ar.top - rr.top + ar.height * 0.8;
+    const ox = Math.round(Math.min(0, Math.max(sr.width - rr.width, sr.width / 2 - relX)));
+    const oy = Math.round(Math.min(0, Math.max(sr.height - rr.height, sr.height / 2 - relY)));
+    room.style.transform = 'translate3d(' + ox + 'px,' + oy + 'px,0)';
+  }
+  window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
+};
+window._mwParkCam = function () {
+  if (!document.body.classList.contains('mw-open')) return;
+  if (!window._mwParkCamRAF) window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
 };
 window.addEventListener('resize', function () { window._mwParkCam && window._mwParkCam(); });
 window.charMove = function (dx, dy) {
