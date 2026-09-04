@@ -21,7 +21,9 @@ ap.add_argument('out')
 ap.add_argument('--file'); ap.add_argument('--block', type=int)
 ap.add_argument('--w', type=int); ap.add_argument('--h', type=int)
 ap.add_argument('--nukki', action='store_true'); ap.add_argument('--greenness', type=int, default=60)
-ap.add_argument('--model', default='gemini-2.5-flash-image')
+# ★대표 9-04 강명령: 에셋·그림카드는 항상 **가장 높은 모델(나노바나나 Pro)** 로 뽑는다.
+#   덤벨피하기 타이틀(역대 최고 퀄)이 Pro 였다. 실패(404/미지원) 시 --model gemini-2.5-flash-image 폴백.
+ap.add_argument('--model', default='gemini-3-pro-image-preview')
 ap.add_argument('--from-raw', action='store_true', help='생성하지 않고 out 옆 .raw.png 로 누끼·규격만 다시')
 ap.add_argument('--tol', type=int, default=48, help='배경색 허용 거리(0~441)')
 ap.add_argument('--ref', action='append', default=[], help='레퍼런스 이미지(여러 개 가능) — 캐릭터·화풍을 그대로 따르게')
