@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1008';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1009';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1277,8 +1277,18 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* 메인 월드 UI(지도/도감/카메라): 사각 픽셀 입체 버튼 — 서브 UI(라운드)와 위계 구분 */
   .mw-wb-tabs { display:flex; gap:8px; padding:10px 16px 11px; }
   /* ★오픈월드(공원) 모드 — 게임에 들어온 화면(대표 9-03): 상단 MURPY WORLD 로고+머피 잔액만 남기고
-     허브 탭(지도·도감·카메라 등)은 숨긴다. 나가기는 필드 이동 칩이 담당한다. */
+     허브 탭(지도·도감·카메라 등)은 숨긴다. 나가기는 상단 '지도' 버튼이 담당한다. */
   body.mw-open .mw-wb-tabs { display:none; }
+  /* ★9-04 풀스크린 오픈월드: 스테이지=화면 전체 뷰포트(z60), 필드(방)는 230vw 로 커지고
+     카메라(_mwParkCam)가 transform 으로 밀어 캐릭터를 화면 중앙에 둔다. 내부 좌표는 전부
+     room.clientWidth 기준 상대값이라 방이 커져도 수학은 그대로다. 필드 지분 100%, UI는 오버레이만. */
+  body.mw-open #page-char .mw-stage { position:fixed; inset:0; max-width:none !important; margin:0 !important;
+    z-index:60; overflow:hidden; background:#0e0f14; }
+  body.mw-open #charworld-room { width:min(230vw,230vh) !important; border-radius:0 !important;
+    border:none !important; box-shadow:none !important; transition:transform .15s linear; will-change:transform; }
+  body.mw-open #charworld-hub-panel, body.mw-open #mw-field-bar { display:none !important; }
+  body.mw-open .bottom-nav { z-index:70; }   /* 파티 모드와 같은 문법 — 스테이지(60) 위 */
+  body.mw-open.mw-kb #charworld-room { max-height:none !important; }   /* 키보드 축소 규칙은 방 전용 */
   .mw-wb-tabbtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;
     font-family:'Galmuri11',sans-serif; font-size:13px; color:#fff; cursor:pointer; padding:13px 8px;
     background:#1b2233; border:3px solid #05070c; border-radius:0;
@@ -7934,9 +7944,10 @@ window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
-  // ★오픈월드(공원) 모드 — 허브 탭 숨김 + 하단 외치기 채팅바 (대표 9-03)
+  // ★오픈월드(공원) 모드 — 풀스크린 필드+카메라 팔로우+상단 로고바+외치기 채팅바 (대표 9-04)
   document.body.classList.toggle('mw-open', key === 'park');
   window._mwParkBar && window._mwParkBar(key === 'park');
+  if (key !== 'park') { const _rm = document.getElementById('charworld-room'); if (_rm) _rm.style.transform = ''; }
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
   const _fu = document.getElementById('mw-furn');
@@ -8153,7 +8164,25 @@ window._charApplyPos = function () {
   // 아우라를 켜면 이름표를 내린다 — 남의 화면에서 보이는 내 모습과 같아야 한다
   const _ui = document.getElementById('charworld-headui');
   if (_ui) _ui.classList.toggle('mw-aur-on', !!_myAur);
+  window._mwParkCam && window._mwParkCam();   // ★오픈월드면 카메라가 나를 따라온다(9-04)
 };
+// ★오픈월드 카메라 — 커진 필드(방)를 뷰포트 안에서 translate 로 밀어 캐릭터를 화면 중앙에
+//   둔다. 필드 가장자리에선 빈 바깥이 안 보이게 클램프(바람의나라 방식). 이동 transition(.15s)이
+//   걸음 속도와 같아 걸을 때 카메라가 부드럽게 따라온다.
+window._mwParkCam = function () {
+  if (!document.body.classList.contains('mw-open')) return;
+  const stage = document.querySelector('#page-char .mw-stage');
+  const room = document.getElementById('charworld-room');
+  if (!stage || !room) return;
+  const vw = stage.clientWidth || window.innerWidth, vh = stage.clientHeight || window.innerHeight;
+  const rw = room.clientWidth, rh = room.clientHeight || rw;
+  const t = (window._charTileGeom() || {}).t || 1;
+  const cx = (window._charPos.tc + 0.5) * t, cy = (window._charPos.tr + 0.5) * t;
+  const ox = Math.round(Math.min(0, Math.max(vw - rw, vw / 2 - cx)));
+  const oy = Math.round(Math.min(0, Math.max(vh - rh, vh / 2 - cy)));
+  room.style.transform = 'translate(' + ox + 'px,' + oy + 'px)';
+};
+window.addEventListener('resize', function () { window._mwParkCam && window._mwParkCam(); });
 window.charMove = function (dx, dy) {
   if (window._mwPlateBusy) return;   // 합판 컷신 중엔 조작을 막는다(드래그로 구멍을 뚫고 지나간다)
   const prev = window._charPos.face;
@@ -32571,8 +32600,24 @@ window._mwFmShoutSend = function () {
 window._mwParkBar = function (on) {
   // ★중복 생성·타 화면 잔류 방어(대표 9-03): 있던 것 전부 지우고 다시 만들고,
   //   body 가 아니라 **머피월드 페이지 안**에 붙인다 — 홈 탭으로 나가면 페이지와 함께 숨는다.
-  document.querySelectorAll('#mw-park-bar').forEach(function (b) { b.remove(); });
+  document.querySelectorAll('#mw-park-bar,#mw-park-top').forEach(function (b) { b.remove(); });
   if (!on) return;
+  // ★상단바(9-04): MURPY WORLD 로고 + 머피 잔액 + 지도(나가기) — 오픈월드에 남는 유일한 상단 UI
+  const top = document.createElement('div');
+  top.id = 'mw-park-top';
+  top.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:951;display:flex;align-items:center;gap:9px;'
+    + 'padding:calc(9px + env(safe-area-inset-top)) 12px 10px;pointer-events:none;'
+    + "font-family:'Galmuri14',sans-serif;background:linear-gradient(180deg,rgba(5,7,12,.62) 0%,rgba(5,7,12,0) 100%)";
+  top.innerHTML =
+      '<span style="font-size:13.5px;color:#fff;letter-spacing:1.5px;text-shadow:0 2px 5px rgba(0,0,0,.75)">MURPY WORLD</span>'
+    + '<span style="flex:1"></span>'
+    + '<span id="mw-park-credit" style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:#F5C24B;text-shadow:0 1px 3px rgba(0,0,0,.8)">'
+    +   (window.murpyTokenSVG ? window.murpyTokenSVG(16) : '')
+    +   '<b>' + ((window._creditState && window._creditState.ready) ? window._creditState.credits : '—') + '</b></span>'
+    + '<button onclick="window.mwWorldPanel&&mwWorldPanel(\'field\')"'
+    + ' style="pointer-events:auto;height:28px;background:rgba(5,7,12,.72);border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;'
+    + "color:#cfd6e6;padding:0 11px;font-size:10.5px;cursor:pointer;font-family:'Galmuri11',sans-serif;border-radius:0\">지도</button>";
+  (document.getElementById('page-char') || document.body).appendChild(top);
   let bar = document.createElement('div');
   bar.id = 'mw-park-bar';
   bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:950;'
