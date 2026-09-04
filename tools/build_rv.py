@@ -51,16 +51,37 @@ NPC = [
 ]
 
 
-def row(slot, cid, main, sub, meta, src, tag=""):
+# ★대표가 목소리를 고른 뒤 뽑은 **실제 게임 대사 전문**(승인 전 앱 배포 금지 — 오디오 표준)
+LINES = [
+    ("관리인 박씨", "Charon", [
+        ("처음 만났을 때", "어서 오게, 우리 공원 좋지? 공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!", "line_keeper_hi.mp3"),
+        ("퀘스트 완료", "오, 도장 찍고 왔구먼! 부지런한 게 최고야.", "line_keeper_done.mp3"),
+        ("보상까지 받은 뒤", "오늘 부탁은 다 끝났네. 내일 또 들르라고!", "line_keeper_idle.mp3")]),
+    ("강 코치", "Puck (B1 교정본과 같은 세팅)", [
+        ("처음 만났을 때", "오! 운동하러 왔구나? 오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!", "line_trainer_hi.mp3"),
+        ("퀘스트 완료", "그래, 그 기세야! 꾸준한 놈이 이긴다.", "line_trainer_done.mp3"),
+        ("보상까지 받은 뒤", "오늘 몫은 끝! 내일 또 보자고.", "line_trainer_idle.mp3")]),
+    ("순이 할매", "Sulafat", [
+        ("처음 만났을 때", "아이고, 젊은이 왔는가. 속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.", "line_grandma_hi.mp3"),
+        ("퀘스트 완료", "잘했네. 마음도 근육처럼 풀어줘야 해.", "line_grandma_done.mp3"),
+        ("보상까지 받은 뒤", "오늘 할 일은 다 했네. 살펴 가시게.", "line_grandma_idle.mp3")]),
+    ("민준이", "Leda", [
+        ("처음 만났을 때", "형아! 누나! 나랑 놀자! 오늘의 머피들 봤어? 매칭 탭에서 새 친구 구경하고 와!", "line_kid_hi.mp3"),
+        ("퀘스트 완료", "우와, 친구 많아지겠다!", "line_kid_done.mp3"),
+        ("보상까지 받은 뒤", "내일 또 놀러 와! 약속!", "line_kid_idle.mp3")]),
+]
+
+
+def row(slot, cid, main, sub, meta, src, tag="", pick=True):
     badge = ' <b class="tag">%s</b>' % E(tag) if tag else ''
+    pickbtn = '<button class="pick" type="button">고르기</button>' if pick else ''
     return ('<div class="row" data-slot="%s" data-cid="%s">'
             '<button class="play" type="button" aria-label="%s 재생" data-src="a/%s">'
             '<span class="ico-play"></span><span class="ico-pause"></span></button>'
             '<div class="info"><div class="ttl">%s%s</div><div class="sub">%s</div>'
             '<div class="bar"><i></i></div></div>'
-            '<div class="meta">%s</div>'
-            '<button class="pick" type="button">고르기</button>'
-            '</div>') % (E(slot), E(cid), E(main), E(src), E(main), badge, E(sub), E(meta))
+            '<div class="meta">%s</div>%s'
+            '</div>') % (E(slot), E(cid), E(main), E(src), E(main), badge, E(sub), E(meta), pickbtn)
 
 
 bgm_html = "".join(
@@ -79,6 +100,15 @@ for n in NPC:
         '<p class="line">&ldquo;%s&rdquo;</p>%s'
         '<div class="rows">%s</div>'
         '</section>' % (E(n["name"]), E(n["age"]), done, E(n["quest"]), E(n["line"]), note, rows))
+
+lines_html = []
+for who, voice, items in LINES:
+    rows = "".join(
+        row(who + " 대사", str(i), it[0], it[1], "", it[2], pick=False)
+        for i, it in enumerate(items))
+    lines_html.append(
+        '<section class="npc"><header class="nhd"><h3>%s</h3><span class="age">%s</span></header>'
+        '<div class="rows">%s</div></section>' % (E(who), E(voice), rows))
 
 DOC = """<!doctype html>
 <html lang="ko">
@@ -147,6 +177,14 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 .qlab{font-size:10px;color:var(--gold);border:1px solid var(--gold-dim);padding:0 5px;margin-right:7px;vertical-align:1px}
 .line{font-family:'Jua',sans-serif;font-size:15.5px;color:var(--ink);margin:0 0 12px;letter-spacing:.3px}
 .note{font-size:12px;color:var(--gold);margin:0 0 11px;line-height:1.65;padding-left:9px;border-left:2px solid var(--gold-dim)}
+.okbox{margin:26px 0 0;padding:16px 15px;background:var(--panel);box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:9px}
+.ok{background:var(--gold);border:none;color:#171203;font-family:inherit;font-weight:700;font-size:14px;
+  padding:14px;cursor:pointer}
+.ng{background:none;border:1px solid var(--line);color:var(--ink2);font-family:inherit;font-size:12.5px;
+  padding:11px;cursor:pointer}
+.ok:focus-visible,.ng:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.okmsg{font-size:12.5px;color:var(--gold);min-height:1.4em;line-height:1.5}
 .tail{margin:40px 0 0;padding:16px 0 30px;border-top:1px solid var(--line);color:var(--ink3);font-size:12.5px;line-height:1.85}
 .tail b{color:var(--ink2)}
 .dock{position:fixed;left:0;right:0;bottom:0;background:rgba(11,15,25,.96);border-top:1px solid var(--line);
@@ -179,6 +217,16 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
   <h2>NPC 목소리</h2>
   <p class="h2note">고른 목소리로 그 캐릭터의 모든 대사를 같은 화자·같은 마이크 세팅으로 다시 뽑습니다</p>
   __NPC__
+
+  <h2>게임에 넣을 대사 전문</h2>
+  <p class="h2note">대표님이 고르신 목소리로 뽑은 <b>실제 대사 12개</b>입니다 · 들어보시고 아래 버튼만 눌러주세요</p>
+  __LINES__
+
+  <div class="okbox">
+    <button class="ok" id="okall" type="button">전부 좋아요 &mdash; 앱에 넣어주세요</button>
+    <button class="ng" id="okng" type="button">다시 뽑을 게 있어요</button>
+    <div class="okmsg" id="okmsg"></div>
+  </div>
 
   <div class="tail">
     <b>고르실 때 기준</b> &mdash; 브금은 오래 켜두는 화면에 깔립니다. 한 곡당 1분쯤 틀어두고 다른 일 하면서 거슬리는지 보시면 확실합니다. 목소리는 &ldquo;성우처럼 잘생겼나&rdquo;가 아니라 <b>동네에 진짜 있을 법한가</b>로 보시면 됩니다.<br><br>
@@ -273,6 +321,19 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(msg).then(done, fallback);
     else fallback();
   });
+  function verdict(v, msg) {
+    try {
+      fetch(RVDB + encodeURIComponent('대사확인') + '.json',
+            { method: 'PUT', body: JSON.stringify(v) }).catch(function () {});
+    } catch (e) {}
+    document.getElementById('okmsg').textContent = msg;
+  }
+  document.getElementById('okall').addEventListener('click', function () {
+    verdict('OK', '전달했습니다 — 바로 앱에 넣겠습니다.');
+  });
+  document.getElementById('okng').addEventListener('click', function () {
+    verdict('NG', '전달했습니다 — 어느 대사가 이상했는지만 말씀해 주세요.');
+  });
   render();
 })();
 </script>
@@ -280,7 +341,9 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 </html>
 """
 
-DOC = DOC.replace("__BGM__", bgm_html).replace("__NPC__", "".join(npc_html))
+DOC = (DOC.replace("__BGM__", bgm_html)
+          .replace("__NPC__", "".join(npc_html))
+          .replace("__LINES__", "".join(lines_html)))
 io.open(OUT + "/audio-0904.html", "w", encoding="utf-8", newline="\n").write(DOC)
 
 # 무결성 자가검사 — 부분 치환 사고 재발 방지
@@ -292,6 +355,10 @@ for n in NPC:
     for c in n["cands"]:
         if not os.path.exists(OUT + "/a/" + c[3]):
             missing.append(c[3])
-print("rows=%d play=%d pick=%d  (셋 다 같아야 정상)" % (n_rows, n_play, n_pick))
+n_lines = sum(len(x[2]) for x in LINES)
+print("rows=%d play=%d  (같아야 정상) / pick=%d (대사 %d개는 고르기 없음: %d + %d = %d)"
+      % (n_rows, n_play, n_pick, n_lines, n_pick, n_lines, n_pick + n_lines))
+assert n_rows == n_play == n_pick + n_lines, "행/버튼 개수 불일치 — 페이지가 깨졌다"
+
 print("빠진 오디오 파일:", missing if missing else "없음")
 print("bytes:", os.path.getsize(OUT + "/audio-0904.html"))
