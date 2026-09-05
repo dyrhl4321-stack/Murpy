@@ -18,6 +18,10 @@ import io, os, sys, json, base64, struct, array, urllib.request, argparse
 
 sys.stdout.reconfigure(encoding='utf-8')
 
+# ★대표가 9-04 에 고른 목소리 4개는 전부 2.5 Pro TTS 로 뽑은 것이다.
+#   다른 모델로 뽑으면 같은 voice 이름이어도 다른 사람처럼 들린다 — 기본 모델을 여기 박아둔다.
+MODEL = 'gemini-2.5-pro-preview-tts'
+
 # ── 캐릭터 카드 (voice 고정 · 설명 고정 — 파일마다 동일하게 반복해 넣는다) ──
 CHARS = {
     'keeper': {
@@ -39,7 +43,7 @@ Diction: 모든 음절과 받침을 또렷하게. 말끝에 힘이 실린다.
 Performance: 헬스장에서 회원에게 말 걸듯 가깝고 경쾌하게. 소리 지르지는 않는다.""",
     },
     'grandma': {
-        'voice': 'Kore',
+        'voice': 'Sulafat',
         'card': """Character: 70대 한국인 할머니. 은발 쪽머리에 카디건, 손가방을 든 동네 어르신.
 Voice Age: 70대. 나이 든 여성의 가늘고 부드러운 음색, 약간의 떨림.
 Personality: 인자하고 조곤조곤하다. 재촉하지 않고 다독인다.
@@ -74,10 +78,14 @@ def build_prompt(char_key, line, extra=''):
             + "\n\nTRANSCRIPT:\n" + line)
 
 
-def synth(prompt, voice, model, key, timeout=180):
-    body = {'contents': [{'parts': [{'text': prompt}]}],
-            'generationConfig': {'responseModalities': ['AUDIO'],
-                                 'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice}}}}}
+def synth(prompt, voice, model, key, timeout=180, temp=None):
+    """temp = 생성 온도. ★같은 캐릭터의 대사가 파일마다 다른 사람처럼 들리면 낮춘다(0.1~0.3).
+    기본값(1.0)은 연기 폭이 커서 화자가 흔들린다 — 대표 9-04 '민준이 목소리가 계속 달라진다'."""
+    cfg = {'responseModalities': ['AUDIO'],
+           'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voice}}}}
+    if temp is not None:
+        cfg['temperature'] = temp
+    body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': cfg}
     req = urllib.request.Request(
         'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s' % (model, key),
         data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
@@ -122,9 +130,10 @@ if __name__ == '__main__':
     ap.add_argument('--char', required=True, choices=sorted(CHARS.keys()))
     ap.add_argument('--line', required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--model', default='gemini-3.1-flash-tts-preview')
+    ap.add_argument('--model', default=MODEL)
     ap.add_argument('--voice', default='', help='캐릭터 기본 voice 를 덮어쓴다(후보 비교용에만)')
     ap.add_argument('--extra', default='', help='이 테이크에만 붙이는 발음 강화 지시')
+    ap.add_argument('--temp', type=float, default=None, help='생성 온도(0.1~0.3 = 화자 고정)')
     a = ap.parse_args()
 
     key = os.environ.get('GEMINI_API_KEY', '').strip()
@@ -132,7 +141,7 @@ if __name__ == '__main__':
         key = io.open(os.path.expanduser('~/.config/murpy/gemini.txt'), encoding='utf-8').read().strip()
 
     voice = a.voice or CHARS[a.char]['voice']
-    pcm, rate = synth(build_prompt(a.char, a.line), voice, a.model, key)
+    pcm, rate = synth(build_prompt(a.char, a.line, a.extra), voice, a.model, key, temp=a.temp)
     pcm = trim(pcm, rate)
     os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
     open(a.out, 'wb').write(to_wav(pcm, rate))

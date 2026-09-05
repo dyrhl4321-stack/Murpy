@@ -6,7 +6,7 @@ import io, os, html
 REPO = r"C:/Users/dyrhl/Murpy"
 OUT = REPO + "/rv"
 E = html.escape
-AV = "3"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
+AV = "5"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
 
 BGM = [
     # (id, 제목, 작곡/분위기, 내려받음, 파일, 현재적용?)
@@ -60,12 +60,12 @@ LINES = [
         ("보상까지 받은 뒤", "오늘 부탁은 다 끝났네. 내일 또 들르라고!", "line_keeper_idle.mp3")]),
     ("강 코치", "Puck (B1 교정본과 같은 세팅)", [
         ("처음 만났을 때", "오! 운동하러 왔구나? 오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!", "line_trainer_hi.mp3"),
-        ("퀘스트 완료", "그래, 그 기세야! 꾸준한 놈이 이긴다.", "line_trainer_done.mp3"),
-        ("보상까지 받은 뒤", "오늘은 여기까지! 내일 또 보자고.", "line_trainer_idle.mp3")]),
+        ("퀘스트 완료", "그래, 그 기세야! 꾸준한 놈이 이긴다.", "line_trainer_done.mp3", "교정"),
+        ("보상까지 받은 뒤", "오늘은 여기까지! 내일 또 보자고.", "line_trainer_idle.mp3", "교정")]),
     ("순이 할매", "Sulafat", [
         ("처음 만났을 때", "아이고, 젊은이 왔는가. 속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.", "line_grandma_hi.mp3"),
-        ("퀘스트 완료", "잘했네. 마음도 근육처럼 풀어줘야 해.", "line_grandma_done.mp3"),
-        ("보상까지 받은 뒤", "오늘 할 일은 다 했네. 살펴 가시게.", "line_grandma_idle.mp3")]),
+        ("퀘스트 완료", "잘했네. 마음도 근육처럼 풀어줘야 해.", "line_grandma_done.mp3", "교정"),
+        ("보상까지 받은 뒤", "오늘 할 일은 다 했네. 살펴 가시게.", "line_grandma_idle.mp3", "교정")]),
     ("민준이", "Leda", [
         ("처음 만났을 때", "형아! 누나! 나랑 놀자! 오늘의 머피들 봤어? 매칭 탭에서 새 친구 구경하고 와!", "line_kid_hi.mp3"),
         ("퀘스트 완료", "우와, 친구 많아지겠다!", "line_kid_done.mp3"),
@@ -73,16 +73,19 @@ LINES = [
 ]
 
 
-def row(slot, cid, main, sub, meta, src, tag="", pick=True):
+def row(slot, cid, main, sub, meta, src, tag="", pick=True, redo=False):
+    """redo=True 면 '고르기' 대신 '다시' — 그 대사만 다시 뽑아달라는 표시(같은 RTDB 로 회수)."""
     badge = ' <b class="tag">%s</b>' % E(tag) if tag else ''
-    pickbtn = '<button class="pick" type="button">고르기</button>' if pick else ''
-    return ('<div class="row" data-slot="%s" data-cid="%s">'
+    pickbtn = ('<button class="pick redo" type="button">다시</button>' if redo
+               else '<button class="pick" type="button">고르기</button>' if pick else '')
+    return ('<div class="row%s" data-slot="%s" data-cid="%s">'
             '<button class="play" type="button" aria-label="%s 재생" data-src="a/%s?v=' + AV + '">'
             '<span class="ico-play"></span><span class="ico-pause"></span></button>'
             '<div class="info"><div class="ttl">%s%s</div><div class="sub">%s</div>'
             '<div class="bar"><i></i></div></div>'
             '<div class="meta">%s</div>%s'
-            '</div>') % (E(slot), E(cid), E(main), E(src), E(main), badge, E(sub), E(meta), pickbtn)
+            '</div>') % (' redo' if redo else '', E(slot), E(cid), E(main), E(src),
+                         E(main), badge, E(sub), E(meta), pickbtn)
 
 
 bgm_html = "".join(
@@ -105,7 +108,8 @@ for n in NPC:
 lines_html = []
 for who, voice, items in LINES:
     rows = "".join(
-        row(who + " 대사", str(i), it[0], it[1], "", it[2], pick=False)
+        row("다시: " + who + " " + it[0], str(i), it[0], it[1], "", it[2],
+            tag=(it[3] if len(it) > 3 else ""), redo=True)
         for i, it in enumerate(items))
     lines_html.append(
         '<section class="npc"><header class="nhd"><h3>%s</h3><span class="age">%s</span></header>'
@@ -169,6 +173,9 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 .pick:hover{border-color:var(--gold);color:var(--gold)}
 .pick:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .row.sel .pick{background:var(--gold);border-color:var(--gold);color:#171203;font-weight:700}
+.pick.redo:hover{border-color:#FF6B6B;color:#FF6B6B}
+.row.redo.sel{box-shadow:0 0 0 2px #FF6B6B}
+.row.redo.sel .pick{background:#FF6B6B;border-color:#FF6B6B;color:#2A0B0B}
 .npc{margin:22px 0 0;padding:15px 14px 14px;background:rgba(20,26,41,.55);box-shadow:var(--shadow)}
 .nhd{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:7px}
 .nhd h3{font-family:'Jua',sans-serif;font-weight:400;font-size:18px;margin:0;letter-spacing:.3px}
@@ -220,7 +227,9 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
   __NPC__
 
   <h2>게임에 넣을 대사 전문</h2>
-  <p class="h2note">대표님이 고르신 목소리로 뽑은 <b>실제 대사 12개</b>입니다 · 들어보시고 아래 버튼만 눌러주세요</p>
+  <p class="h2note"><b>발음 손본 판</b> &mdash; 12줄을 전부 다시 들어보고 뭉개진 <b>4줄만 새로 뽑았습니다</b>(&lsquo;교정&rsquo; 표시). 멀쩡한 8줄은 손대지 않았습니다 &mdash; 새로 뽑다가 더 나빠지는 게 제일 나쁘니까요.<br>
+  잡아낸 것: 강 코치 &ldquo;<b>꾸준한</b>&rdquo;&rarr;구준한 &middot; &ldquo;<b>보자고</b>&rdquo;&rarr;부자고 / 순이 할매 &ldquo;<b>잘했네</b>&rdquo;&rarr;자렌네 &middot; &ldquo;<b>살펴 가시게</b>&rdquo; 뒤에 &lsquo;게&rsquo;가 한 번 더.<br>
+  그래도 귀에 걸리는 줄이 있으면 그 줄의 <b>다시</b>만 눌러주세요 &mdash; 눌러주신 것만 다시 뽑습니다.</p>
   __LINES__
 
   <div class="okbox">
@@ -231,7 +240,7 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 
   <div class="tail">
     <b>고르실 때 기준</b> &mdash; 브금은 오래 켜두는 화면에 깔립니다. 한 곡당 1분쯤 틀어두고 다른 일 하면서 거슬리는지 보시면 확실합니다. 목소리는 &ldquo;성우처럼 잘생겼나&rdquo;가 아니라 <b>동네에 진짜 있을 법한가</b>로 보시면 됩니다.<br><br>
-    피치 조작(리샘플링)은 쓰지 않았습니다 &mdash; 원본 그대로 뽑고 앞뒤 무음만 정리했습니다. 최신 3.1 TTS는 쓸 수 있는 목소리가 제한적이라(여성·아이 목소리를 거부합니다) 할매와 민준이는 2.5 Pro TTS로 뽑았습니다.
+    피치 조작(리샘플링)은 쓰지 않았습니다 &mdash; 원본 그대로 뽑고 앞뒤 무음만 정리했습니다. 네 명 모두 대표님이 고르신 그 목소리(2.5 Pro TTS)로, 캐릭터마다 같은 설명&middot;같은 마이크 세팅을 그대로 반복해 뽑았습니다.
   </div>
 </div>
 
@@ -302,6 +311,8 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
   function text() {
     var order = ['브금', '관리인 박씨', '강 코치', '순이 할매', '민준이'], out = [];
     order.forEach(function (k) { if (picks[k]) out.push(k + ' ' + picks[k]); });
+    var redo = Object.keys(picks).filter(function (k) { return k.indexOf('다시: ') === 0 && picks[k]; });
+    if (redo.length) out.push('다시 뽑을 대사 ' + redo.map(function (k) { return k.slice(4); }).join(' / '));
     return out.join(', ');
   }
   function render() {
@@ -339,7 +350,7 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
     verdict('OK', '전달했습니다 — 바로 앱에 넣겠습니다.');
   });
   document.getElementById('okng').addEventListener('click', function () {
-    verdict('NG', '전달했습니다 — 어느 대사가 이상했는지만 말씀해 주세요.');
+    verdict('NG', '전달했습니다 — 걸리는 대사 줄의 「다시」를 눌러주시면 그것만 다시 뽑습니다.');
   });
   render();
 })();
@@ -354,18 +365,25 @@ DOC = (DOC.replace("__BGM__", bgm_html)
 io.open(OUT + "/audio-0904.html", "w", encoding="utf-8", newline="\n").write(DOC)
 
 # 무결성 자가검사 — 부분 치환 사고 재발 방지
-n_rows = DOC.count('class="row"')
+n_rows = DOC.count('class="row"') + DOC.count('class="row redo"')
 n_play = DOC.count('class="play"')
-n_pick = DOC.count('class="pick"')
+n_pick = DOC.count('class="pick"') + DOC.count('class="pick redo"')   # 고르기 + 다시
+                                          # ★'class="pick' 로 세면 하단바 class="picks" 까지 걸린다
+n_redo = DOC.count('class="pick redo"')
 missing = [b[4] for b in BGM if not os.path.exists(OUT + "/a/" + b[4])]
 for n in NPC:
     for c in n["cands"]:
         if not os.path.exists(OUT + "/a/" + c[3]):
             missing.append(c[3])
 n_lines = sum(len(x[2]) for x in LINES)
-print("rows=%d play=%d  (같아야 정상) / pick=%d (대사 %d개는 고르기 없음: %d + %d = %d)"
-      % (n_rows, n_play, n_pick, n_lines, n_pick, n_lines, n_pick + n_lines))
-assert n_rows == n_play == n_pick + n_lines, "행/버튼 개수 불일치 — 페이지가 깨졌다"
+for who, voice, items in LINES:
+    for it in items:
+        if not os.path.exists(OUT + "/a/" + it[2]):
+            missing.append(it[2])
+print("rows=%d play=%d pick=%d (같아야 정상) / 그중 '다시' 버튼 %d개 = 대사 %d개"
+      % (n_rows, n_play, n_pick, n_redo, n_lines))
+assert n_rows == n_play == n_pick, "행/버튼 개수 불일치 — 페이지가 깨졌다"
+assert n_redo == n_lines, "대사 행의 '다시' 버튼 개수가 안 맞는다"
 
 print("빠진 오디오 파일:", missing if missing else "없음")
 print("bytes:", os.path.getsize(OUT + "/audio-0904.html"))
