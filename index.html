@@ -3880,6 +3880,14 @@ window._charRegisterFaceBody = function (charId, d, ownerUid) {
   if (r.eyes && window.SQ_MG_EYES) window.SQ_MG_EYES[r.key] = r.eyes;
   return r.key;
 };
+// 착용 중인 몸통이 커마면 그 시트 URL 을 돌려준다. 유저 문서에 복사해 두면
+// ★남이 나를 그릴 때 서브컬렉션까지 읽으러 갈 필요가 없다(피드·오버월드·채팅이 다 빨라진다).
+// 커마가 아니면 null — 저장 쪽에서 필드를 지운다(옛 커마 시트가 남으면 남에게 옛 얼굴로 보인다).
+window._charSheetForBody = function (bodyKey) {
+  if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return null;
+  const b = window._CHAR_BODIES[bodyKey];
+  return (b && b.src) ? b.src : null;
+};
 // 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
 // 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
 // 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
@@ -16742,6 +16750,20 @@ window._mwRefreshIfOpen = function () {
   } catch (e) { console.warn('refresh', e); }
 };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
+// 내 커마 캐릭터를 읽어 몸통 표에 꽂는다. 실패해도 앱은 그냥 돈다(기존 몸통으로 보인다).
+// ★읽기 실패를 삼키는 이유 = 커마는 코스메틱이다. 여기서 던지면 로그인 전체가 멈춘다.
+window._charState.faceChars = {};
+window._charLoadMyFaceChars = async function (uid) {
+  if (!uid) return 0;
+  const snap = await getDocs(collection(db, 'users', uid, 'faceChars'));
+  let n = 0;
+  snap.forEach(function (s) {
+    const d = s.data() || {};
+    window._charState.faceChars[s.id] = d;
+    if (window._charRegisterFaceBody(s.id, d, uid)) n++;
+  });
+  return n;
+};
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
   if (!window._mwDocReady()) {
@@ -16755,7 +16777,16 @@ window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return 
     });
     return null;                       // false(실패) 와 구분한다
   }
-  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
+  try {
+    // ★characterSheet 는 **남이 나를 그릴 때** 쓰는 단 하나의 값이다. 착용과 같은 쓰기에
+    //   묶어야 "내 화면엔 커마인데 피드엔 기본 캐릭터" 같은 어긋남이 안 생긴다.
+    //   커마가 아니면 필드를 지운다 — 남겨두면 옛 얼굴로 계속 보인다.
+    const sheet = window._charSheetForBody(cfg && cfg.body);
+    await updateDoc(doc(db, 'users', window.currentUser.uid),
+      { character: cfg, characterSheet: sheet === null ? deleteField() : sheet, characterUpdatedAt: serverTimestamp() });
+    return true;
+  } catch (e) { console.error('char save', e); return false; }
+};
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
   if (!window._mwDocReady()) {
     window._mwQueueWrite('wardrobe', function () { window._charPersistWardrobe(arr); });
@@ -22229,6 +22260,11 @@ window.ensureCreditsInit = async (uid) => {
       }
       window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
       window._charState.hidden = (d.hiddenChars && typeof d.hiddenChars === 'object') ? d.hiddenChars : {};
+      // ★커마 몸통 주입은 **성별 백필·_charEnsureDefaults 보다 먼저** 와야 한다.
+      //   표에 없으면 _charEnsureDefaults 가 human 으로 폴백해 커마에 헤어를 채워 넣는다
+      //   (fixedHair 라 화면엔 안 보이지만 저장 데이터가 더러워진다).
+      //   ※계획서는 ref.id 라 했지만 이 스코프의 함수 인자 uid 가 같은 값이라 그걸 쓴다.
+      try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('faceChars', e); }
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
       // 기존 유저 성별 몸통 백필. 여캐가 생기기 전에 가입한 여성은 남캐 몸으로 남아 있다.
       // 헬토리·히든을 골라둔 사람은 건드리지 않는다(본인 선택이므로).

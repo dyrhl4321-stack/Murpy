@@ -74,4 +74,11 @@ assert.strictEqual(w._charSkinSrc('face:abc123', 't5'), DOC.sheetUrl, '없는 �
 assert.strictEqual(w._charSkinSrc('human', 't1'), 'char/skin/walk_t1.png?v=4', '기존 피부톤 경로가 바뀌었다');
 assert.strictEqual(w._charSkinSrc('human', 't3'), w._CHAR_BODIES.human.src, '기존 t3 폴백이 깨졌다');
 
-console.log('OK face-body 8항목');
+// 9) 착용 저장 시 남길 characterSheet — 남이 나를 그릴 때 이 URL 하나만 본다
+new Function('window', grab(/window\._charSheetForBody = function[\s\S]*?\n\};/, '_charSheetForBody'))(w);
+assert.strictEqual(w._charSheetForBody('face:abc123'), DOC.sheetUrl, '커마 시트 URL 을 안 남긴다');
+assert.strictEqual(w._charSheetForBody('human'), null, '기본 몸통인데 시트 URL 을 남긴다');
+assert.strictEqual(w._charSheetForBody('heltori'), null, '고정 캐릭터인데 시트 URL 을 남긴다');
+assert.strictEqual(w._charSheetForBody(undefined), null, '몸통이 없는데 시트 URL 을 남긴다');
+
+console.log('OK face-body 12항목');
