@@ -3844,6 +3844,42 @@ window._CHAR_BODIES = {
   somm:   { name: '헬스장 소믈리에', src: "char/hidden_somm.png?v=1",   cw: 133, ch: 224, hidden: true, limited: true, tag: '히든' },
   zombie: { name: '작심삼일 좀비',  src: "char/hidden_zombie.png?v=2", cw: 142, ch: 224, hidden: true, limited: true, tag: '히든' }
 };
+// ===== 얼굴 커마 — 데이터 기반 몸통 (2026-09-05) =====
+// ★위 표는 하드코딩이다. 고객이 한 명 생길 때마다 사람이 이 파일을 고치고 재배포해야 하니
+//   "커마권 쓰면 바로 지급"이 원천적으로 불가능하다. 그래서 커마 몸통만 **문서로** 뺀다:
+//   users/{uid}/faceChars/{charId} → 부팅 때 읽어 이 표에 주입한다(_charLoadMyFaceChars).
+// ★키에 'face:' 를 **강제**한다. 접두사가 없으면 언젠가 charId 가 'human' 이거나 'jaejin' 이어서
+//   기본 몸통을 통째로 덮어쓴다 — 전 유저가 남의 얼굴로 보인다.
+// ★kin:'human' = 목 아래가 base 와 같은 몸이라 human 옷이 그대로 맞는다(_charFits 참고).
+//   fixedHair = 머리카락이 시트에 구워져 있어 헤어·모자 슬롯을 잠근다(두 겹 방지).
+window.FACE_BODY_PREFIX = 'face:';
+window._charFaceBodyDef = function (charId, d, ownerUid) {
+  if (!charId || !d || !d.sheetUrl) return null;   // 시트가 없으면 빈 캐릭터가 된다 — 아예 안 만든다
+  return {
+    key: window.FACE_BODY_PREFIX + charId,
+    def: {
+      name: String(d.name || '내 캐릭터').slice(0, 12),
+      src: d.sheetUrl,
+      skinBase: null,                    // 경로 조립 대신 아래 skinUrls 를 쓴다
+      skinUrls: (d.skinUrls && typeof d.skinUrls === 'object') ? d.skinUrls : null,
+      cw: 141, ch: 224,
+      wearable: true, fixedHair: true, kin: 'human',
+      tag: '커마',
+      defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
+      owner: ownerUid || null, dynamic: true,
+      desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터'
+    },
+    eyes: (d.eyes && typeof d.eyes.y === 'number' && Array.isArray(d.eyes.x) && d.eyes.x.length === 2) ? d.eyes : null
+  };
+};
+window._charRegisterFaceBody = function (charId, d, ownerUid) {
+  const r = window._charFaceBodyDef(charId, d, ownerUid);
+  if (!r) return null;
+  window._CHAR_BODIES[r.key] = r.def;
+  // 눈 좌표가 없으면 넣지 않는다 — 소비처가 SQ_MG_EYES.human 으로 폴백한다(무궁화 하트눈).
+  if (r.eyes && window.SQ_MG_EYES) window.SQ_MG_EYES[r.key] = r.eyes;
+  return r.key;
+};
 // 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
 // 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
 // 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
@@ -4042,7 +4078,11 @@ window.CHAR_SKIN_DEFAULT = 't3';
 window._charSkinSrc = function (bodyKey, skin) {
   const b = window._CHAR_BODIES[bodyKey] || {};
   // 옛 데이터는 skin 에 색상값(#F0C9A0)이 들어 있다 — t1~t7 이 아니면 원본을 쓴다
-  if (!b.skinBase || !skin || window.CHAR_SKINS.indexOf(skin) < 0 || skin === 't3') return b.src;
+  const ok = !!(skin && window.CHAR_SKINS.indexOf(skin) >= 0 && skin !== 't3');
+  // ★동적 커마 몸통은 구운 톤 시트가 Storage 에 있다. 경로를 조립할 수 없으니 URL 표를 본다.
+  //   표에 없는 톤은 원본(b.src)으로 떨어진다 — 깨진 이미지보다 원색이 낫다.
+  if (ok && b.skinUrls) return b.skinUrls[skin] || b.src;
+  if (!b.skinBase || !ok) return b.src;
   return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=4';
 };
 // ★헤어 시트도 톤을 태운다. 헤어는 **이마 피부를 같이 들고 있어서**(추출할 때 머리카락 밑
