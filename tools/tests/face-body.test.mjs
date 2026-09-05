@@ -81,4 +81,32 @@ assert.strictEqual(w._charSheetForBody('human'), null, '기본 몸통인데 시�
 assert.strictEqual(w._charSheetForBody('heltori'), null, '고정 캐릭터인데 시트 URL 을 남긴다');
 assert.strictEqual(w._charSheetForBody(undefined), null, '몸통이 없는데 시트 URL 을 남긴다');
 
-console.log('OK face-body 12항목');
+// 10) 남의 커마 — characterSheet 하나로 임시 몸통을 등록한다
+new Function('window', grab(/window\._charEnsureFaceBody = function[\s\S]*?\n\};/, '_charEnsureFaceBody'))(w);
+const other = w._charEnsureFaceBody('face:zzz', 'https://cdn/other.png');
+assert.strictEqual(other, 'face:zzz', '남의 커마 키를 안 돌려준다');
+assert.strictEqual(w._CHAR_BODIES['face:zzz'].src, 'https://cdn/other.png', '남의 시트가 안 꽂혔다');
+assert.strictEqual(w._CHAR_BODIES['face:zzz'].owner, null, '남의 몸통에 주인이 찍혔다(내 로스터에 뜬다)');
+// 시트가 없으면 기본 몸통으로 폴백 — 빈 화면 금지
+assert.strictEqual(w._charEnsureFaceBody('face:none', null), 'human', '시트 없는 커마가 폴백을 안 한다');
+// 이미 있는 몸통은 덮어쓰지 않는다 — 내 커마를 남의 캐시로 갈아치우면 안 된다
+w._charEnsureFaceBody('face:abc123', 'https://cdn/WRONG.png');
+assert.strictEqual(w._CHAR_BODIES['face:abc123'].src, DOC.sheetUrl, '이미 등록된 커마를 덮어썼다');
+// 커마가 아닌 키는 그대로 통과
+assert.strictEqual(w._charEnsureFaceBody('human', null), 'human');
+assert.strictEqual(w._charEnsureFaceBody('heltori', null), 'heltori');
+
+// 11) users 스냅샷 한 번 훑어 남의 커마를 전부 등록한다
+new Function('window', grab(/window\._charRegisterFaceBodiesFrom = function[\s\S]*?\n\};/, '_charRegisterFaceBodiesFrom'))(w);
+const fakeSnap = { forEach(f) { [
+  { id: 'u1', data: () => ({ character: { body: 'face:aaa' }, characterSheet: 'https://cdn/a.png' }) },
+  { id: 'u2', data: () => ({ character: { body: 'face:bbb' } }) },              // 시트 없음 → 등록 안 됨
+  { id: 'u3', data: () => ({ character: { body: 'human' }, characterSheet: 'https://cdn/x.png' }) },
+  { id: 'u4', data: () => ({}) }                                                 // 캐릭터 없음
+].forEach(f); } };
+assert.strictEqual(w._charRegisterFaceBodiesFrom(fakeSnap), 1, '등록 개수가 1이 아니다');
+assert.strictEqual(w._CHAR_BODIES['face:aaa'].src, 'https://cdn/a.png', '남의 커마가 표에 안 들어갔다');
+assert.strictEqual(w._CHAR_BODIES['face:bbb'], undefined, '시트 없는 커마를 등록했다');
+assert.strictEqual(w._charRegisterFaceBodiesFrom(null), 0, '빈 스냅샷에 터진다');
+
+console.log('OK face-body 23항목');

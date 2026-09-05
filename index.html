@@ -3888,6 +3888,33 @@ window._charSheetForBody = function (bodyKey) {
   const b = window._CHAR_BODIES[bodyKey];
   return (b && b.src) ? b.src : null;
 };
+// 남의 커마 캐릭터를 그리기 **직전에** 부른다. 그 사람 유저 문서의 characterSheet 하나로
+// 임시 몸통을 등록해 두면 _charRenderTo·오버월드·머피캠이 손 안 대고 그대로 그린다.
+// ★owner 를 null 로 둔다 — 남의 몸통이 내 로스터(charRenderRoster)에 뜨면 안 된다.
+// ★이미 있는 키는 절대 덮지 않는다. 내 커마를 남의 캐시로 갈아치우면 내 얼굴이 바뀐다.
+// ★시트가 없으면(구버전 유저·URL 유실) 'human' 으로 폴백한다 — 빈 화면보다 기본 캐릭터가 낫다.
+window._charEnsureFaceBody = function (bodyKey, sheetUrl) {
+  if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return bodyKey || 'human';
+  if (window._CHAR_BODIES[bodyKey]) return bodyKey;
+  if (!sheetUrl) return 'human';
+  const charId = String(bodyKey).slice(window.FACE_BODY_PREFIX.length);
+  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl }, null) || 'human';
+};
+// 남의 커마 몸통을 한 번에 등록한다. users 전체를 읽는 공통 경로(_usersAll)에 걸어 두면
+// ★그리는 자리를 한 곳도 안 고쳐도 된다 — 표에 이미 있으니 기존 렌더가 그대로 그린다.
+// 이미 있는 키는 _charEnsureFaceBody 가 건너뛰므로 5분마다 다시 돌아도 싸다.
+window._charRegisterFaceBodiesFrom = function (snap) {
+  if (!snap || !snap.forEach) return 0;
+  let n = 0;
+  snap.forEach(function (s) {
+    const d = s.data() || {};
+    const key = d.character && d.character.body;
+    if (key && String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && d.characterSheet) {
+      if (window._charEnsureFaceBody(key, d.characterSheet) === key) n++;
+    }
+  });
+  return n;
+};
 // 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
 // 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
 // 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
@@ -23429,10 +23456,14 @@ window.matchBuyMore = async function () {
 window._usersAll = async function (maxAge) {
   const now = Date.now();
   const c = window._usersAllCache;
-  if (c && (now - c.at) < (maxAge || 300000)) return c.snap;
+  // ★남의 커마 몸통 등록은 **반환 지점마다** 지나야 한다. 캐시 히트만 빠지면
+  //   앱을 켜 둔 채로는(새로고침 없이) 새 커마가 영영 기본 캐릭터로 보인다.
+  if (c && (now - c.at) < (maxAge || 300000)) { window._charRegisterFaceBodiesFrom(c.snap); return c.snap; }
   if (window._usersAllPending) return window._usersAllPending;
   window._usersAllPending = getDocs(collection(db, 'users')).then(function (snap) {
-    window._usersAllCache = { snap: snap, at: Date.now() }; window._usersAllPending = null; return snap;
+    window._usersAllCache = { snap: snap, at: Date.now() }; window._usersAllPending = null;
+    window._charRegisterFaceBodiesFrom(snap);   // 남의 커마 몸통을 표에 미리 꽂아 둔다
+    return snap;
   }, function (e) { window._usersAllPending = null; throw e; });
   return window._usersAllPending;
 };
@@ -33305,6 +33336,11 @@ window._charSafe = function (cfg) {
     return Object.assign({}, window.CHAR_DEFAULT || {});
   }
   const c = Object.assign({}, cfg);
+  // ★미등록 커마는 기본 몸통으로 떨어뜨린다. 표에 없는 'face:xxx' 를 그대로 두면
+  //   _charRenderTo 가 human 으로 폴백해 그리기는 하지만, 여기서 데이터도 맞춰야
+  //   _charEnsureDefaults 가 엉뚱한 몸통 기준으로 옷을 벗기지 않는다.
+  //   ★_charEnsureDefaults **앞**이어야 한다 — 뒤로 가면 커마에 헤어가 채워진다.
+  if (c.body) c.body = window._charEnsureFaceBody(c.body, null);
   try { window._charEnsureDefaults && window._charEnsureDefaults(c); } catch (e) {}
   return c;
 };
