@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '988';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1028';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1274,8 +1274,42 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     box-shadow:0 2px 0 rgba(5,6,10,.6), inset 0 1px 0 rgba(255,255,255,.45);
     -webkit-tap-highlight-color:transparent; }
   .mw-plus:active { transform:translateY(2px); box-shadow:inset 0 1px 2px rgba(0,0,0,.35); }
+  /* ★아이폰 꾹 누르면 이미지 확대/저장 메뉴 뜨는 버그(대표 9-04) — 게임·앱 이미지는
+     롱프레스 콜아웃·선택 돋보기를 전부 끈다. 입력칸은 img/canvas 가 아니라 영향 없음 */
+  img, canvas { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  /* ★필드는 div+텍스트(이름표·말풍선)라 위 규칙으로 안 잡힌다 — 꾹 누르면 iOS '찾아보기/확대'
+     선택 메뉴가 뜨고 드래그 선택이 됐다(대표 9-04). 필드 안은 전부 선택 금지(입력창은 필드 밖) */
+  #charworld-room, #charworld-room * { -webkit-touch-callout:none !important; -webkit-user-select:none !important; user-select:none !important; }
   /* 메인 월드 UI(지도/도감/카메라): 사각 픽셀 입체 버튼 — 서브 UI(라운드)와 위계 구분 */
   .mw-wb-tabs { display:flex; gap:8px; padding:10px 16px 11px; }
+  /* ★오픈월드(공원) 모드 — 게임에 들어온 화면(대표 9-03): 상단 MURPY WORLD 로고+머피 잔액만 남기고
+     허브 탭(지도·도감·카메라 등)은 숨긴다. 나가기는 상단 '지도' 버튼이 담당한다. */
+  body.mw-open .mw-wb-tabs { display:none; }
+  /* ★9-04 풀스크린 오픈월드: 스테이지=화면 전체 뷰포트(z60), 필드(방)는 230vw 로 커지고
+     카메라(_mwParkCam)가 transform 으로 밀어 캐릭터를 화면 중앙에 둔다. 내부 좌표는 전부
+     room.clientWidth 기준 상대값이라 방이 커져도 수학은 그대로다. 필드 지분 100%, UI는 오버레이만. */
+  body.mw-open #page-char .mw-stage { position:fixed; inset:0; max-width:none !important; margin:0 !important;
+    z-index:60; overflow:hidden; background:#0e0f14; }
+  body.mw-open #charworld-room { width:max(102vw,102vh) !important; border-radius:0 !important;
+    border:none !important; box-shadow:none !important; transition:none; will-change:transform;
+    image-rendering:pixelated !important; }   /* ★도트를 도트답게 — 줌아웃 확대에서 부드럽게 뭉개지면
+    물빠진 'AI 대충' 느낌이 된다(대표 9-04). 픽셀 유지가 바람의나라 질감의 핵심 */
+  body.mw-open #charworld-hub-panel, body.mw-open #mw-field-bar { display:none !important; }
+  /* ★공원에선 하단 글로벌 탭바도 숨긴다(대표 9-04: 채팅창을 가림 + 몰입) — 단 머피월드 페이지가
+     떠 있을 때만(:has). 다른 탭으로 튕겨간 상태에서도 숨으면 앱 이동이 통째로 막힌다. */
+  body.mw-open:has(#page-char.active) .bottom-nav { display:none; }
+  body.mw-open.mw-kb #charworld-room { max-height:none !important; }   /* 키보드 축소 규칙은 방 전용 */
+  /* ★채팅 치는 동안 게임 필드를 **완전히 고정**한다(대표 9-04) — 스테이지를 화면에 못 박고
+     그 안에서 스크롤·바운스가 일어나지 않게. 카메라 rAF 는 그대로 돌아 캐릭터는 계속 중앙 */
+  body.mw-open.mw-typing #page-char .mw-stage { position:fixed !important; inset:0 !important;
+    overscroll-behavior:none; touch-action:none; }
+  /* ★채팅 입력 중엔 **어느 화면이든** 문서 스크롤을 잠근다 — 안 잠그면 아이폰이 화면을 밀어
+     올려 뒤쪽 홈화면이 키보드 위로 비쳐 보인다(대표 9-04, 필드이동 광장 외치기에서 재현).
+     _mwEnterSend 가 포커스 때 이 클래스를 붙인다 = 앱의 모든 채팅에 한 번에 적용. */
+  body.mw-typing { overflow:hidden !important; overscroll-behavior:none; }
+  /* 채팅 로그·라벨은 드래그 선택 금지(입력칸 자체는 제외) — 필드에서 끌면 텍스트가 잡혔다 */
+  #mw-park-bar, #mw-park-bar * { -webkit-user-select:none; user-select:none; }
+  #mw-park-bar input { -webkit-user-select:text !important; user-select:text !important; }
   .mw-wb-tabbtn { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;
     font-family:'Galmuri11',sans-serif; font-size:13px; color:#fff; cursor:pointer; padding:13px 8px;
     background:#1b2233; border:3px solid #05070c; border-radius:0;
@@ -5391,7 +5425,8 @@ window._mwPetSpots = function (p, want) {
       var any = false, k;
       for (k = 0; k < sides.length; k++) {
         var stc = tc + sides[k].dc, str_ = tr + sides[k].dr;
-        if (stc < 0 || str_ < 0 || stc > 15 || str_ > 15) continue;
+        var _gN = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;   // ★공원은 24타일 — 16 하드코딩이 경계 밖 펫을 끊었다(9-03)
+        if (stc < 0 || str_ < 0 || stc >= _gN || str_ >= _gN) continue;
         if (!window._mwCritterWalkable(stc, str_)) continue;
         // ★★8-26 — "옆으로 밥 먹을 때 밥그릇이 사라진 것처럼 보임"(대표).
         //   ①**너무 파고들었다.** 0.58칸이면 몸이 그릇을 통째로 덮는다 -> 0.40 으로 줄여
@@ -5520,7 +5555,10 @@ window._mwPetPick = function (p) {
 window._mwPetPath = function (c0, r0, c1, r1) {
   if (!window._mwCritterWalkable) return null;
   if (c0 === c1 && r0 === r1) return null;
-  var N = 16, start = r0 * N + c0, goal = r1 * N + c1;
+  // ★N 을 필드 grid 에서 읽는다 — 16 고정이라 공원(24타일)에서 16칸 경계 너머를 "길 없음"으로
+  //   보고 펫이 따라오다 멈췄다(대표 9-03). 24x24 도 576칸 BFS — 여전히 싸다.
+  var N = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;
+  var start = r0 * N + c0, goal = r1 * N + c1;
   if (c1 < 0 || r1 < 0 || c1 >= N || r1 >= N) return null;
   var prev = new Int16Array(N * N); prev.fill(-1);
   prev[start] = -2;
@@ -5827,7 +5865,8 @@ window._mwPetUnstick = function (p) {
 // ===== 방에 붙이기 =====
 window._mwPetSync = function () {
   var room = document.getElementById('charworld-room');
-  var list = (window._curField === 'home') ? window._mwPetsData() : [];
+  // ★펫이 사는 필드 = 내 방 + 공원(9-03 산책). 다른 필드에선 빈 목록 → 걷어진다.
+  var list = (window._curField === 'home' || window._curField === 'park') ? window._mwPetsData() : [];
   var clear = function () {
     window._mwPets.forEach(function (p) { clearTimeout(p._t); if (p.el) p.el.remove(); });
     window._mwPets = [];
@@ -5842,7 +5881,7 @@ window._mwPetSync = function () {
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
     // ★목록이 비어 있어도 재시도한다 — 문서가 아직 안 왔을 뿐일 수 있다(8-30).
     //   home 필드가 아닐 때만 진짜로 그만둔다.
-    if (room && (!room.clientWidth || (!list.length && window._curField === 'home'))) {
+    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || window._curField === 'park')))) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -5878,8 +5917,15 @@ window._mwPetSync = function () {
         + (window.mwTodayKey ? window.mwTodayKey() : '') + '|' + (window._mwPetSpawnN || 0));
       var _rng = window._mwPetRng(_seed);
       var _tc = null, _tr = null, _try;
+      var _gN2 = (window._FIELDS && window._FIELDS[window._curField] || {}).grid || 16;   // ★공원 24타일 — 16 고정이면 좌상단 사분면에만 흩어진다
+      // ★공원은 **내 캐릭터 옆**에서 시작(대표 9-04) — 48타일 맵 전체에 흩뿌리면 사방에서
+      //   "개판으로" 로드된다. 내 위치 ±3칸 상자 안에서만 고른다(입장 직후 재로드돼도 유지).
+      var _isPark = window._curField === 'park';
+      var _cp = window._charPos || { tc: 23, tr: 43 };
       for (_try = 0; _try < 40; _try++) {
-        var _c = Math.floor(_rng() * 16), _r = Math.floor(_rng() * 16);
+        var _c, _r;
+        if (_isPark) { _c = _cp.tc + Math.floor(_rng() * 7) - 3; _r = _cp.tr + Math.floor(_rng() * 7) - 5; }
+        else { _c = Math.floor(_rng() * _gN2); _r = Math.floor(_rng() * _gN2); }
         // ★_mwCritterWalkable 이 없으면 **아무 데나 놓지 않는다.** 예전엔 함수가 없을 때
         //   그냥 통과시켜서 가구 위에 앉았다. 못 재면 옛 방식(입구 옆)으로 떨어지는 게 맞다.
         if (!window._mwCritterWalkable) { _tc = null; break; }
@@ -5888,10 +5934,12 @@ window._mwPetSync = function () {
         if (_taken) continue;
         _tc = _c; _tr = _r; break;
       }
+      var _fst = _isPark ? _cp : st;   // 폴백도 공원이면 내 위치 기준(옛 15 클램프는 홈 16그리드용)
+      var _fmx = _gN2 - 1;
       var p = {
         id: d.id, el: el, i: i, dir: 0, anim: 'stand', moving: false, up: false,
-        tc: _tc != null ? _tc : Math.max(0, Math.min(15, (st.tc | 0) + 2 - (i % 3))),
-        tr: _tr != null ? _tr : Math.max(0, Math.min(15, (st.tr | 0) + 1 + Math.floor(i / 3)))
+        tc: _tc != null ? _tc : Math.max(0, Math.min(_fmx, (_fst.tc | 0) + 2 - (i % 3))),
+        tr: _tr != null ? _tr : Math.max(0, Math.min(_fmx, (_fst.tr | 0) + 1 + Math.floor(i / 3)))
       };
       (function (pp) {
         var hit = el.querySelector('.mw-pet-hit');
@@ -7861,8 +7909,73 @@ window._FIELDS = {
     "################","################","################","################",
     "#####......#####","#..............#","#..............#","##............##",
     "##............##","##............##","##............##","###..........###",
-    "###..........###","###..........###","######....######","################"] }
+    "###..........###","###..........###","######....######","################"] },
+  // ★공원 v2 (9-04, 오픈월드 전용 아트) — 48타일 밀도로 새로 뽑았다(field_park2.png).
+  //   줌아웃하니 옛 소공원 그림은 빈 잔디 바다가 돼 "AI 대충" 느낌(대표) → 연못·분수광장·화단·
+  //   운동존·놀이터·피크닉존·조깅루프+길 네트워크로 꽉 채움. 충돌맵은 그리드 오버레이 실측
+  //   (연못 덱·운동존 매트·피크닉 매트는 걷게 둠, 고립칸 0 BFS 확인). 입구 = 하단 중앙(23,43).
+  park: { name: '공원', src: "char/fields/field_park2.png?v=2", grid: 48, start: { tc: 22, tr: 43 }, map: [
+    "################################################",
+    "################################################",
+    "################################################",
+    "################################################",
+    "####....###.##..###........######..###......####",
+    "####....###.##..###........######..###......####",
+    "####........................................####",
+    "####........................................####",
+    "####........................................####",
+    "####...###########....#.....############....####",
+    "####...###########..........############....####",
+    "####...##########...........############.#..####",
+    "####...##########...........############.#..####",
+    "####...##########...........############.#..####",
+    "####...###########..........############....####",
+    "####...###########..........############....####",
+    "####...##########...........############....####",
+    "####........................................####",
+    "####........................................####",
+    "####..............#.......#.....#######.....####",
+    "####.................####.......#######.....####",
+    "#####................####............##.....####",
+    "#####................####............##.....####",
+    "#####..###...........####............##..#..####",
+    "####...###...........####............##..#..####",
+    "####...###...........................##.....####",
+    "####...###.......##........##........##.....####",
+    "####.............##........##..#............####",
+    "####.....................................#..####",
+    "####.....................................#..####",
+    "####.#########............##.........###.#..####",
+    "####.#########...##.......###........###....####",
+    "####.#########...##.......###........###....####",
+    "####...........................#.########...####",
+    "####........##...................#########..####",
+    "####........##...................#########..####",
+    "####........##...##........##....#########..####",
+    "####.............##........##....########...####",
+    "####........###...###....###.........######.####",
+    "####........###......................######.####",
+    "####........###......................######.####",
+    "####.................................######.####",
+    "####........................................####",
+    "####........................................####",
+    "#####################...########################",
+    "#####################...########################",
+    "#####################...########################",
+    "#####################...########################"
+  ] }
 };
+// ★공원에서는 펫이 **산책 모드** — '따라와'(follow)를 자동으로 걸고 계속 갱신한다.
+//   부름은 2분이면 저절로 풀리는 구조(MW_PET_CALL_MS)라, 공원에 있는 동안 4초마다 되건다.
+//   집에서 '따라와' 했을 때의 그 걸음(위로 가면 위로, 아래로 가면 아래로)이 그대로 온다(대표 9-03).
+setInterval(function () {
+  if (window._curField !== 'park') return;
+  (window._mwPets || []).forEach(function (p) {
+    var c = window._mwPetCallOf ? window._mwPetCallOf(p) : null;
+    if (!c || c.k !== 'follow') { p.call = { k: 'follow', uid: '', t: Date.now() }; try { window._mwPetStep && window._mwPetStep(p); } catch (e) {} }
+    else { c.t = Date.now(); }
+  });
+}, 4000);
 window._curField = 'home';
 // 필드 전환(간단): 배경 교체 + 시작위치로 리셋
 // ★필드를 옮길 때 **오브젝트가 배경보다 먼저 떠서** 그쪽으로 시선이 쏠렸다
@@ -7903,6 +8016,16 @@ window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
+  // ★오픈월드(공원) 모드 — 풀스크린 필드+카메라 팔로우+상단 로고바+외치기 채팅바 (대표 9-04)
+  document.body.classList.toggle('mw-open', key === 'park');
+  window._mwParkBar && window._mwParkBar(key === 'park');
+  if (key !== 'park') { const _rm = document.getElementById('charworld-room'); if (_rm) _rm.style.transform = ''; }
+  // ★오픈월드 마을 브금(9-04, CC0 음원) — 공원에 있는 동안만. 다른 필드는 무음(게임이 각자 켠다)
+  try { window.sfx && window.sfx.bgm(key === 'park' ? 'town' : null); } catch (e) {}
+  // ★필드 앰비언트(9-04): "필드가 죽어 있어 저퀄로 보인다"(대표) — 분수 물보라·연못 반짝임·
+  //   꽃잎·구름 그림자를 상시 재생. 좌표는 필드 %라 방 크기와 무관하고 카메라와 같이 흐른다.
+  try { window._mwParkAmbient && window._mwParkAmbient(key === 'park'); } catch (e) {}
+  try { window._mwParkNpcs && window._mwParkNpcs(key === 'park'); } catch (e) {}   // NPC+퀘스트(9-04)
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
   const _fu = document.getElementById('mw-furn');
@@ -7915,6 +8038,24 @@ window.charSetField = function (key) {
   const st = f.start || { tc: 7, tr: 8 };
   window._charPos = { tc: st.tc, tr: st.tr, face: 'down', frame: 0 };
   window._charApplyPos && window._charApplyPos();
+  // ★공원 입장 시 펫은 **내 캐릭터 옆**에서 시작(대표 9-04) — 이전 필드의 좌표(그리드가 다름)를
+  //   그대로 두면 못 가는 칸·구석에서 로드된다. 시작칸 주변 링에서 걸을 수 있는 칸을 하나씩 준다.
+  if (key === 'park' && window._mwPets && window._mwPets.length) {
+    const _ring = [[1,0],[-1,0],[0,1],[2,0],[-2,0],[1,1],[-1,1],[2,1],[-2,1],[0,2],[1,2],[-1,2],[3,0],[-3,0]];
+    let _ri = 0;
+    window._mwPets.forEach(function (p) {
+      let ok = false;
+      for (; _ri < _ring.length; _ri++) {
+        const c = st.tc + _ring[_ri][0], r = st.tr + _ring[_ri][1];
+        if (window._charWalkable && window._charWalkable(c, r, true)) {
+          p.tc = c; p.tr = r; _ri++; ok = true; break;
+        }
+      }
+      if (!ok) { p.tc = st.tc; p.tr = Math.max(0, st.tr - 1); }
+      p.moving = false; p.anim = 'stand';
+      try { window._mwPetApply && window._mwPetApply(p); } catch (e) {}
+    });
+  }
   if (window.mwRenderFurn) window.mwRenderFurn();   // 내 방이면 가구 렌더(+충돌 오버레이 갱신)
   window._mwFieldReveal && window._mwFieldReveal(key, _tok);   // 배경까지 준비되면 오브젝트를 같이 켠다
   if (key === 'home' && window._mwUnstick) window._mwUnstick();   // 시작칸이 가구에 깔렸으면 밀어냄
@@ -8119,7 +8260,42 @@ window._charApplyPos = function () {
   // 아우라를 켜면 이름표를 내린다 — 남의 화면에서 보이는 내 모습과 같아야 한다
   const _ui = document.getElementById('charworld-headui');
   if (_ui) _ui.classList.toggle('mw-aur-on', !!_myAur);
+  window._mwParkCam && window._mwParkCam();   // ★오픈월드면 카메라가 나를 따라온다(9-04)
 };
+// ★오픈월드 카메라(9-04 v2) — 트랜지션 두 개(캐릭터 left/top vs 방 transform)가 서로 다른
+//   시계로 돌면 미세하게 어긋나 "버퍼링" 출렁임이 된다(대표). 게임 엔진 방식으로:
+//   **매 프레임** 캐릭터의 실제 렌더 위치(트랜지션 중간값 포함, getBoundingClientRect)를 읽어
+//   카메라를 그 자리에 즉시 고정한다 — 캐릭터는 화면에 붙박이고 세상이 흐른다.
+window._mwParkCamTick = function () {
+  window._mwParkCamRAF = 0;
+  if (!document.body.classList.contains('mw-open')) return;
+  const stage = document.querySelector('#page-char .mw-stage');
+  const room = document.getElementById('charworld-room');
+  const av = document.getElementById('charworld-avatar');
+  if (stage && room && av) {
+    const sr = stage.getBoundingClientRect();
+    const rr = room.getBoundingClientRect();
+    const ar = av.getBoundingClientRect();
+    const relX = ar.left - rr.left + ar.width / 2;
+    const relY = ar.top - rr.top + ar.height * 0.8;
+    // ★채팅 중엔 키보드가 화면 아래 절반을 먹는다 — 캐릭터를 **보이는 영역**(키보드 위) 가운데로
+    //   끌어올린다. 안 그러면 내 캐릭터가 키보드에 깔려 안 보인다(대표 9-04).
+    const vv = window.visualViewport;
+    const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+    const typing = document.body.classList.contains('mw-typing');
+    const barH = typing ? 108 : 0;                      // 채팅 로그+입력줄이 먹는 높이
+    const visH = Math.max(160, sr.height - kb - barH);  // 실제로 보이는 세로 공간
+    const ox = Math.round(Math.min(0, Math.max(sr.width - rr.width, sr.width / 2 - relX)));
+    const oy = Math.round(Math.min(0, Math.max(sr.height - rr.height, visH / 2 - relY)));
+    room.style.transform = 'translate3d(' + ox + 'px,' + oy + 'px,0)';
+  }
+  window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
+};
+window._mwParkCam = function () {
+  if (!document.body.classList.contains('mw-open')) return;
+  if (!window._mwParkCamRAF) window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
+};
+window.addEventListener('resize', function () { window._mwParkCam && window._mwParkCam(); });
 window.charMove = function (dx, dy) {
   if (window._mwPlateBusy) return;   // 합판 컷신 중엔 조작을 막는다(드래그로 구멍을 뚫고 지나간다)
   const prev = window._charPos.face;
@@ -10749,6 +10925,7 @@ let chatHistory = [
 
 const WORKOUT_OPTIONS = ["웨이트","크로스핏","러닝","클라이밍","필라테스","요가","수영","자전거","복싱","축구"];
 const FILTER_WORDS = ["@","인스타","카톡","카카오","010","011","DM","디엠","연락처","번호","instagram","kakao","라인","line","텔레그램","telegram","위챗","wechat","snapchat","스냅챗","전화","휴대폰","핸드폰","문자","톡방","오픈채팅"];
+window.FILTER_WORDS = FILTER_WORDS;   // 9-03 광장 외치기(module 블록)가 같은 금칙어를 쓴다
 // 연락처/외부유입 자동 필터 (모듈·일반 스코프 공용)
 window._hasContact = (t) => FILTER_WORDS.some(w => (t || '').toLowerCase().includes(w.toLowerCase()));
 
@@ -18331,9 +18508,9 @@ window._golfCheckArt = function () {
   if (window._golfArt != null) return;
   const im = new Image();
   // ★덤벨 마크업을 복사하면서 #golf-art-bg 에 display:none 이 딸려왔다 — 켜 주지 않으면 타이틀이 검은 화면(대표 8-30)
-  im.onload = function () { window._golfArt = true; const a = document.getElementById('golf-art-bg'); if (a) { a.style.backgroundImage = "url('char/game/golf_title.png?v=6')"; a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in'); } window._golfPaintStart(); };
+  im.onload = function () { window._golfArt = true; const a = document.getElementById('golf-art-bg'); if (a) { a.style.backgroundImage = "url('char/game/golf_title.png?v=8')"; a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in'); } window._golfPaintStart(); };
   im.onerror = function () { window._golfArt = false; window._golfPaintStart(); };
-  im.src = 'char/game/golf_title.png?v=6';
+  im.src = 'char/game/golf_title.png?v=8';
   window._golfObj = {};
   ['ball', 'hole', 'bunker', 'pond', 'tree', 'crow', 'mole'].forEach(function (k) { const o = new Image(); o.onload = function () { window._golfObj[k] = true; }; o.onerror = function () { window._golfObj[k] = false; }; o.src = 'char/game/golf_' + k + '.png?v=3'; });
 };
@@ -18766,7 +18943,7 @@ window._golfCardImg = function (score, s, cb) {
     x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '36px Galmuri11, sans-serif'; x.fillText('홀인 머피 · murpy.app', W / 2, H - 110);
     cb(cv.toDataURL('image/jpeg', 0.9));
   };
-  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/golf_title.png?v=6';
+  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/golf_title.png?v=8';
 };
 window._golfShowShare = function (score, s, hostId) {
   const host = document.getElementById(hostId || 'golf-share'); if (!host) return;
@@ -19044,13 +19221,13 @@ window._tennisCheckArt = function () {
     window._tennisArt = true;
     const a = document.getElementById('tennis-art-bg');
     if (a) {
-      a.style.backgroundImage = "url('char/game/tennis_title.png?v=10')";
+      a.style.backgroundImage = "url('char/game/tennis_title.png?v=12')";
       a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
     }
     window._tennisPaintStart();
   };
   im.onerror = function () { window._tennisArt = false; window._tennisPaintStart(); };
-  im.src = 'char/game/tennis_title.png?v=10';
+  im.src = 'char/game/tennis_title.png?v=12';
   const rb = new Image();
   rb.onload = function () {
     window._tennisRabbit = true;
@@ -19421,7 +19598,7 @@ window._tennisCardImg = function (score, s, cb) {
     x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '36px Galmuri11, sans-serif'; x.fillText('머피 테니스 · murpy.app', W / 2, H - 110);
     cb(cv.toDataURL('image/jpeg', 0.9));
   };
-  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/tennis_title.png?v=10';
+  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/tennis_title.png?v=12';
 };
 window.tennisMakeLink = function () { return 'https://murpy.app/?tn=1'; };
 window.tennisShareIG = function () {
@@ -19821,13 +19998,13 @@ window._runCheckArt = function () {
     window._runArt = true;
     const a = document.getElementById('run-art-bg');
     if (a) {
-      a.style.backgroundImage = "url('char/game/run_title.png?v=5')";
+      a.style.backgroundImage = "url('char/game/run_title.png?v=7')";
       a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
     }
     window._runPaintStart();
   };
   im.onerror = function () { window._runArt = false; window._runPaintStart(); };
-  im.src = 'char/game/run_title.png?v=5';
+  im.src = 'char/game/run_title.png?v=7';
 };
 window.runRecs = async function () {
   window._runShowPane('run-pane-recs');
@@ -20260,7 +20437,7 @@ window._runCardImg = function (score, s, cb) {
     x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '36px Galmuri11, sans-serif'; x.fillText('머피런 · murpy.app', W / 2, H - 110);
     cb(cv.toDataURL('image/jpeg', 0.9));
   };
-  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/run_title.png?v=5';
+  im.onload = function () { draw(true); }; im.onerror = function () { draw(false); }; im.src = 'char/game/run_title.png?v=7';
 };
 window.runMakeLink = function () { return 'https://murpy.app/?rn=1'; };
 window.runShareIG = function () {
@@ -23290,6 +23467,7 @@ window.loadMatchCandidates = async function () {
       }
       const inDeck = new Set(deck);
       window._matchList = picked;
+      try { localStorage.setItem('mwq_match_' + (window._creditToday ? _creditToday() : ''), '1'); } catch (e) {}   // 공원 퀘스트(9-04): 덱 구경 완료
       // 오늘 덱에 안 들어간 사람이 남아 있나 = "내일 새로 골라드릴게요"가 참인가
       window._matchPoolLeft = arr.filter(c => !inDeck.has(c.uid)).length;
       // ★남은 후보를 **버리지 않고 들고 있는다**(8-12). '머피로 더 보기'가 여기서 꺼내 쓴다.
@@ -28151,14 +28329,74 @@ window._mwKbEnd = function (immediate) {
 //   -> 조합 중이면 **막지 않고 표시만 해 뒀다가, 조합이 끝나는 순간 보낸다.**
 window._mwEnterSend = function (inp, fn) {
   if (!inp || inp._entSend) return; inp._entSend = 1;
+  // ★카톡식 채팅 UX (대표 9-04) — 앱의 모든 채팅 입력칸에 한 번에 적용된다.
+  //   ① enterkeyhint='send' → 아이폰 키보드 리턴키가 **전송(파란 Send)** 으로 바뀐다.
+  //      키보드 위 '이전/다음/완료' 바를 헤매지 않고 그 자리에서 바로 보낸다.
+  //   ② 보낸 뒤 **포커스를 유지**한다 — 키보드가 안 내려가 연속으로 칠 수 있다(카톡과 같음).
+  //   ③ 오타 교정·자동 대문자·철자검사를 끈다(채팅에선 방해만 된다).
+  try {
+    inp.setAttribute('enterkeyhint', 'send');
+    inp.setAttribute('autocomplete', 'off');
+    inp.setAttribute('autocorrect', 'off');
+    inp.setAttribute('autocapitalize', 'off');
+    inp.setAttribute('spellcheck', 'false');
+  } catch (e) {}
+  var send = function () {
+    var wasFocus = document.activeElement === inp;
+    try { fn(); } catch (e) { console.warn('enterSend', e); }
+    // 전송 함수가 렌더를 다시 그려 포커스를 놓치는 경우가 있어 한 박자 뒤 되돌린다
+    if (wasFocus) setTimeout(function () {
+      var el = document.getElementById(inp.id) || inp;
+      if (el && document.activeElement !== el) { try { el.focus({ preventScroll: true }); } catch (e2) { try { el.focus(); } catch (e3) {} } }
+    }, 0);
+  };
+  // ★어느 채팅이든 치는 동안 문서를 잠근다 — 아이폰이 화면을 밀어 뒤 화면이 비치던 버그(9-04).
+  //   ★단, 잠그면 브라우저가 입력칸을 키보드 위로 올려주던 동작까지 막힌다(대표 9-04 재보고) →
+  //     dock 지정된 줄은 우리가 직접 키보드 위로 띄운다(공원 채팅바와 같은 방식).
+  var dockEl = inp.getAttribute('data-dock') ? document.getElementById(inp.getAttribute('data-dock')) : null;
+  var dockSaved = null;
+  var dockFit = function () {
+    if (!dockEl || !window.visualViewport) return;
+    var vv = window.visualViewport;
+    var kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    dockEl.style.cssText = dockSaved
+      + ';position:fixed;left:12px;right:12px;bottom:' + (kb > 0 ? (kb + 8) : 46) + 'px'
+      + ';z-index:962;margin:0;max-width:366px;margin-left:auto;margin-right:auto';
+  };
+  inp.addEventListener('focus', function () {
+    document.body.classList.add('mw-typing');
+    try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
+    if (dockEl) {
+      if (dockSaved === null) dockSaved = dockEl.getAttribute('style') || '';
+      dockFit();
+      setTimeout(dockFit, 80); setTimeout(dockFit, 320); setTimeout(dockFit, 700);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', dockFit);
+        window.visualViewport.addEventListener('scroll', dockFit);
+      }
+    }
+  });
+  inp.addEventListener('blur', function () {
+    setTimeout(function () {
+      var a = document.activeElement;
+      if (!a || a.tagName !== 'INPUT') document.body.classList.remove('mw-typing');
+    }, 120);
+    if (dockEl && dockSaved !== null) {
+      dockEl.setAttribute('style', dockSaved);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', dockFit);
+        window.visualViewport.removeEventListener('scroll', dockFit);
+      }
+    }
+  });
   var pend = false;
   inp.addEventListener('compositionend', function () {
-    if (!pend) return; pend = false; setTimeout(fn, 0);
+    if (!pend) return; pend = false; setTimeout(send, 0);
   });
   inp.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter' && e.keyCode !== 13) return;
     if (e.isComposing || e.keyCode === 229) { pend = true; return; }
-    e.preventDefault(); fn();
+    e.preventDefault(); send();
   });
 };
 // ★★필드 입력줄이 아이폰 키보드 윗줄 바(이전/다음/완료)에 덮이던 것 (대표 8-28).
@@ -29919,6 +30157,7 @@ window.postBambooFirestore = async (text, title) => {
       if (userSnap.exists()) { if (userSnap.data().nickname) nickname = userSnap.data().nickname; if (userSnap.data().photoURL) userPhoto = userSnap.data().photoURL; }
     } catch(e) {}
     await addDoc(collection(db, 'bamboo'), { text, title: title || '', photoURL, userId: user.uid, userName: nickname, userPhoto, category: window._composeCat || '자유', likes: 0, likedBy: [], commentCount: 0, createdAt: serverTimestamp() });
+    try { localStorage.setItem('mwq_bamboo_' + (window._creditToday ? _creditToday() : ''), '1'); } catch (e) {}   // 공원 퀘스트(9-04)
     if (window.mwBumpMonthly) window.mwBumpMonthly('bamboo');
     return true;
   } catch(e) {
@@ -32239,75 +32478,648 @@ window.mwWorldPanel = function (kind) {
 // 누르면 캐릭터가 걸어간 뒤 지도가 그쪽으로 **확대되며** 필드가 열린다(액자+오브젝트 겸용은 난잡).
 // ★배치: 강(지도 상단 5~28%) 위에 건물을 놓지 않는다 — v2 에서 집·헬스장이 강에 떠 보였다(대표 지적).
 //   러닝존만 강변(다리 옆)이다 — 한강 러닝이니까.
-window._MW_FM_CENTER = { x: 47, y: 50 };   // 중앙 광장(캐릭터 출발점) — v5 지도 실측
-// v5 지도 실측 배치. h = 오브젝트 표시 높이(px) — 건물은 크게, 팻말은 작게(대표 9-03: "헬스장 너무 작아").
-// x 가 있으면 side 대신 그 left% 에 둔다(테니스 팻말 = 코트 입구 옆).
+// ★v6(대표 9-03 확정 방향): 지도 따로 + 오브젝트 PNG 따로는 톤·조명·연결이 매번 어긋난다
+//   ("골프 빼고 안 달라붙는다") → **랜드마크까지 지도 한 장에 같이 생성**(주간·단일 팔레트).
+//   앱은 각 랜드마크 위에 **투명 터치 영역 + 이름표**만 얹는다. map_*.png 오브젝트는 폐기.
+//   수정 요청도 "지도 한 장 재생성"으로 받는다 — 장당 $0.04.
+// v7: 지도는 **정사각 원본 그대로**(1024², 크롭 없음 — 세로 크롭이 좌우 랜드마크를 잘랐다)
+//   + 정직교 탑다운(포켓몬식) — 길이 수평·수직뿐이라 4방향 걷기와 맞는다(대표 9-03).
+window._MW_FM_CENTER = { x: 48, y: 62 };   // 맵 정중앙 세로길 위(캐릭터 출발점) — 대표 9-03 "중앙에 서야"
+// ★지도 위 걷기용 간이 충돌맵 24x24 (대표 9-03: "건물을 뚫고 가면 안 되고 입구까지 길로") —
+//   벽 = 강·강변 수림(다리 11~12열만 통과)·헬스장 건물·집 마당·테니스 코트·골프 헤지·공사장.
+//   각 노드는 door(도착 타일) = 그 장소의 입구다. BFS 최단경로를 따라 걷는다.
+// v12 지도(9-04, 전체 재생성 — 대표 "덮어두지 말고 다시 생성"): 골프 = 정문 아치 메인(도로변,
+//   아래로 진입) + 뒤로 은은하게 넓어지는 빈 잔디. 헬스장 2층 대형. ★테니스 출입문 = 우측
+//   펜스(대표 "우측으로 들어가니 차라리 우측에 문") + 우측 세로 샛길(c23). 테니스/클라이밍
+//   경계 = 바리케이드 줄+잔디 띠. 게이트 2개(골프·공원) 원샷에 모두 포함(8구역 필수 명시로 성공).
+window._MW_FM_GRID = [
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "........................",
+  "........................",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########.............",
+  "#####.#####..###########",
+  "...............#########",
+  ".............###########",
+  "####.######..###########",
+  "####.######..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########",
+  "###########..###########"];
+window._MW_FM_DOORS = {
+  running: { c: 11, r: 4,  thru: { c: 11, r: 3 } },   // 트랙(다리 아래에서 진입)
+  gym:     { c: 17, r: 10, thru: { c: 17, r: 9 } },   // 대형 건물 정면 입구(아래 도로에서)
+  home:    { c: 5,  r: 12, thru: { c: 5,  r: 10 } },  // 인도→마당 나무문 통과→마당 안
+  tennis:  { c: 14, r: 12, thru: { c: 16, r: 12 } },  // ★좌측 펜스 열린 문(중앙 도로에서 바로 우측 진입 — 대표 9-04 정정)
+  golf:    { c: 4,  r: 14, thru: { c: 4,  r: 15 } },  // ★도로변 정문 아치 통과→잔디(골프장)로
+  park:    { c: 12, r: 18, thru: { c: 12, r: 20 } }   // 목재 아치 통과→자갈길 안쪽까지
+};
+// 지도 충돌맵 BFS — 최단경로 타일 목록을 준다(펫 길찾기와 같은 방식, 24x24=576칸이라 싸다)
+window._mwFmFind = function (c0, r0, c1, r1) {
+  const G = window._MW_FM_GRID, N = 24;
+  const ok = function (c, r) { return c >= 0 && r >= 0 && c < N && r < N && G[r].charAt(c) !== '#'; };
+  if (!ok(c0, r0) || !ok(c1, r1)) return null;
+  const prev = new Int16Array(N * N).fill(-1);
+  const s = r0 * N + c0, g = r1 * N + c1;
+  prev[s] = -2;
+  const q = [s]; let head = 0, found = false;
+  const D = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  while (head < q.length) {
+    const cur = q[head++];
+    if (cur === g) { found = true; break; }
+    const cy = (cur / N) | 0, cx = cur % N;
+    for (let i = 0; i < 4; i++) {
+      const nx = cx + D[i][0], ny = cy + D[i][1];
+      if (!ok(nx, ny)) continue;
+      const id = ny * N + nx;
+      if (prev[id] !== -1) continue;
+      prev[id] = cur; q.push(id);
+    }
+  }
+  if (!found) return null;
+  const path = []; let cur = g;
+  while (cur !== s) { path.push(cur); cur = prev[cur]; }
+  path.push(s); path.reverse();
+  return path.map(function (id) { return { c: id % N, r: (id / N) | 0 }; });
+};
+// x/y = 터치 영역 왼쪽 위(%), h = 터치 영역 높이(px, 랜드마크를 덮는다). 이름표는 영역 발치에 붙는다.
 window._MW_FM_ORDER = [
-  { k: 'running',  side: 'l', y: 17, h: 78 },   // 강변에 낮게 깔리는 곡선 트랙(강 곡선 따라, 대표 9-03)
-  { k: 'gym',      side: 'r', y: 13, h: 96 },   // 주차선 아스팔트 부지 위 — 옥상 덤벨 뺀 v3
-  { k: 'home',     side: 'l', y: 40, h: 84 },   // 울타리 마당 위
-  { k: 'tennis',   x: 50,     y: 42, h: 62 },   // 코트 입구 옆(광장→코트 길목) — 코트는 지도에 그려져 있다
-  { k: 'golf',     side: 'l', y: 63, h: 62 },   // 퍼팅 그린 옆
-  { k: 'climbing', side: 'r', y: 68, h: 78, lock: 1, name: '클라이밍' },   // 자갈 공사 부지 위
+  { k: 'running',  x: 27, y: 12, h: 44 },    // 강변 러닝 트랙(START 라인)
+  { k: 'gym',      x: 56, y: 19, h: 75 },    // 대형 헬스장 건물+주차장
+  { k: 'home',     x: 8,  y: 24, h: 80 },    // 울타리 마당 집
+  { k: 'tennis',   x: 60, y: 46, h: 90 },    // 테니스 코트(우측 문)
+  { k: 'golf',     x: 2,  y: 56, h: 100 },   // ★골프장 정문 아치 + 은은한 잔디
+  { k: 'park',     x: 35, y: 70, h: 56 },    // ★공원 정문 아치+자갈길 — 오픈월드 시작점
+  { k: 'climbing', x: 63, y: 80, h: 65, lock: 1, name: '클라이밍' },   // 공사장 암벽
 ];
 window._mwFieldWorldMap = function (body) {
   if (!document.getElementById('mw-fm-css')) {
     const st = document.createElement('style'); st.id = 'mw-fm-css';
     st.textContent = `
       #mw-fm-map{position:relative;margin-top:2px;background:#0e1320 center/cover no-repeat;image-rendering:pixelated;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden}
-      .mw-fmnode{position:absolute;width:34%;padding:0;background:none;border:none;cursor:pointer;font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent;text-align:center}
-      .mw-fmobj{display:block;height:72px;width:auto;max-width:100%;margin:0 auto;image-rendering:pixelated;filter:drop-shadow(0 4px 5px rgba(0,0,0,.45))}
-      .mw-fmnode:active .mw-fmobj{filter:drop-shadow(0 4px 5px rgba(0,0,0,.45)) brightness(1.15)}
-      .mw-fmnode.cur .mw-fmobj{filter:drop-shadow(0 4px 5px rgba(0,0,0,.45)) drop-shadow(0 0 9px rgba(61,126,255,.85))}
-      .mw-fmname{display:inline-block;margin-top:4px;padding:2px 7px;font-size:10.5px;color:#fff;letter-spacing:1px;background:rgba(5,7,12,.68);border:1px solid rgba(255,255,255,.14)}
-      .mw-fmnode.cur .mw-fmname{color:#7aa8ff;border-color:rgba(61,126,255,.5)}
+      .mw-fmnode{position:absolute;width:34%;padding:0;background:none;border:none;cursor:pointer;font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+      .mw-fmnode:active{filter:brightness(1.2)}
+      .mw-fmname{display:inline-block;padding:2px 7px;font-size:10.5px;color:#fff;letter-spacing:1px;background:rgba(5,7,12,.68);border:1px solid rgba(255,255,255,.14)}
+      .mw-fmnode.cur .mw-fmname{color:#7aa8ff;border-color:rgba(61,126,255,.5);box-shadow:0 0 9px rgba(61,126,255,.55)}
       .mw-fmnode.lock{cursor:default}
-      .mw-fmnode.lock .mw-fmobj{filter:grayscale(.35) drop-shadow(0 4px 5px rgba(0,0,0,.45))}
       .mw-fmnode.lock .mw-fmname{color:#8a93a8}
-      #mw-fm-char{position:absolute;z-index:5;pointer-events:none;filter:drop-shadow(0 3px 3px rgba(0,0,0,.6))}
+      #mw-fm-char{position:absolute;z-index:5;pointer-events:none}
+      .mw-fmover{position:absolute;z-index:6;pointer-events:none;image-rendering:pixelated}
       #mw-fm-char.walk{animation:mwFmBob .22s steps(2) infinite}
       @keyframes mwFmBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}`;
     document.head.appendChild(st);
   }
-  // 지도 원본 720x1120 비율을 유지한다 — 비율이 틀어지면 길 끝과 노드 좌표가 어긋난다
-  const W = Math.min(body.clientWidth || 340, 360);
-  const H = Math.round(W * 1120 / 720);
-  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=2\')">'
+  // 지도 원본 비율(정사각) 유지 — 비율이 틀어지면 랜드마크와 노드 좌표가 어긋난다
+  // ★폭은 패널 padding 을 뺀 실사용 폭으로 — clientWidth 그대로 쓰면 지도가 옆으로 넘쳐
+  //   패널 전체가 좌우로 끌렸다(대표 9-03 "전체가 다 드래그됨").
+  const _cs = getComputedStyle(body);
+  const W = Math.min(Math.floor((body.clientWidth || 340) - (parseFloat(_cs.paddingLeft) || 0) - (parseFloat(_cs.paddingRight) || 0)), 360);
+  const H = W;
+  body.style.overflowX = 'hidden';
+  body.style.touchAction = 'pan-y';
+  body.innerHTML = '<div id="mw-fm-map" style="width:' + W + 'px;height:' + H + 'px;margin:2px auto 0;background-image:url(\'char/fields/worldmap.png?v=14\')">'
+    // ★지도 위 추가 요소(게이트 등)는 런타임 오버레이가 아니라 **PIL 로컬 합성으로 원판에
+    //   박아넣은 단일 PNG** 로 배포한다(9-04 확정) — 런타임 좌표 어긋남·드리프트 원천 차단.
+    //   합성 전 반드시 확대 크롭으로 눈 검수(9-03 오버레이 개판 사고의 교훈).
     + window._MW_FM_ORDER.map(function (n) {
         const f = window._FIELDS[n.k];
         const cur = window._curField === n.k;
-        const pos = (n.x != null ? 'left:' + n.x + '%' : (n.side === 'l' ? 'left:3%' : 'right:3%')) + ';top:' + n.y + '%';
-        const obj = '<img class="mw-fmobj" src="char/fields/map_' + n.k + '.png?v=3" alt="" style="height:' + (n.h || 72) + 'px">';
+        // 랜드마크는 지도에 그려져 있다 — 노드는 그 위를 덮는 **투명 터치 영역**이고 이름표만 발치에 보인다
+        const pos = 'left:' + n.x + '%;top:' + n.y + '%;height:' + (n.h || 90) + 'px';
         if (n.lock || !f) {
-          return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">' + obj
+          return '<div class="mw-fmnode lock" data-k="' + n.k + '" style="' + pos + '">'
             + '<span class="mw-fmname">' + (n.name || n.k) + ' · 곧 열려요</span></div>';
         }
         return '<button class="mw-fmnode' + (cur ? ' cur' : '') + '" data-k="' + n.k + '" style="' + pos + '"'
-          + ' onclick="window._mwFmGo(\'' + n.k + '\')">' + obj
+          + ' onclick="window._mwFmGo(\'' + n.k + '\')">'
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
-    + '<div id="mw-fm-char"></div></div>';
+    + '<div id="mw-fm-char"></div>'
+    // ★아치(캐릭터보다 키 큰 입구)는 캐릭터가 **밑으로** 지나가야 한다(대표 9-04) —
+    //   지도 원본의 아치 상단부(보+간판)를 같은 이미지 배경으로 캐릭터 위(z6)에 얹는다.
+    //   같은 파일을 같은 배율로 잘라 쓰므로 좌표가 어긋날 수 없다. 좌표는 1024 기준.
+    + [{x:128,y:585,w:172,h:65},{x:430,y:740,w:160,h:55}].map(function (o) {
+        return '<div class="mw-fmover" style="left:' + (o.x / 1024 * 100) + '%;top:' + (o.y / 1024 * 100) + '%;'
+          + 'width:' + (o.w / 1024 * 100) + '%;height:' + (o.h / 1024 * 100) + '%;'
+          + 'background-image:url(\'char/fields/worldmap.png?v=14\');'
+          + 'background-size:' + W + 'px ' + H + 'px;'
+          + 'background-position:-' + (o.x / 1024 * W) + 'px -' + (o.y / 1024 * H) + 'px"></div>';
+      }).join('')
+    + '</div>'
+    // ★하단 = **동네 게시판** (대표 9-03: "복합적·종합적으로 꽉 차게 — 카드·그림·외치기, 나중엔
+    //   업체·스쿼드 광고까지"). 슬롯식 카드 구조라 광고 카드는 나중에 같은 프레임으로 꽂힌다.
+    + '<div id="mw-fm-board" style="width:' + W + 'px;margin:10px auto 0;display:flex;flex-direction:column;gap:8px;font-family:\'Galmuri11\',sans-serif">'
+    //   [슬롯1] 동네 소식 = 히어로 카드 캐러셀 (스쿼드 탭 히어로 카드 문법 — 광고 배너가 그대로 꽂히는 포맷)
+    + '<div id="mw-fm-hero" style="position:relative;height:112px;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;overflow:hidden;background:#0e1320">'
+    +   '<div id="mw-fm-hero-bg" style="position:absolute;inset:0;background:#0e1320 center/cover no-repeat;image-rendering:pixelated;transition:opacity .45s"></div>'
+    +   '<div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.05) 20%,rgba(5,7,12,.82) 100%)"></div>'
+    +   '<div style="position:absolute;left:12px;right:12px;bottom:9px">'
+    +     '<div id="mw-fm-hero-t" style="font-size:15px;color:#fff;letter-spacing:.5px;font-family:\'Galmuri14\',sans-serif;text-shadow:0 2px 5px rgba(0,0,0,.8)"></div>'
+    +     '<div id="mw-fm-hero-s" style="font-size:10.5px;color:#cfd6e6;margin-top:3px;text-shadow:0 1px 4px rgba(0,0,0,.8)"></div></div>'
+    +   '<div id="mw-fm-hero-dots" style="position:absolute;right:10px;top:8px;display:flex;gap:4px"></div></div>'
+    //   [슬롯2] 광장 외치기 — 자유시장 확성기. 전역 실시간(RTDB plaza/shout)
+    + '<div style="padding:10px 12px 9px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350">'
+    +   '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">'
+    +     '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F5C24B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l14-6v14L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>'
+    +     '<span style="font-size:11px;color:#F5C24B;letter-spacing:1px">광장 외치기</span>'
+    +     '<span id="mw-fm-shout-n" style="font-size:9.5px;color:#4a5266"></span></div>'
+    +   '<div id="mw-fm-shout-list" style="height:84px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;font-size:11px;line-height:1.45"></div>'
+    +   '<div id="mw-fm-shout-row" style="display:flex;gap:5px;margin-top:8px">'
+    +     '<input id="mw-fm-shout-in" maxlength="60" placeholder="광장에 외쳐보세요" autocomplete="off"'
+    +       ' style="flex:1;min-width:0;box-sizing:border-box;height:32px;background:rgba(255,255,255,.06);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;outline:none;font-family:inherit;border-radius:0">'
+    +     '<button onclick="window._mwFmShoutSend()" style="flex-shrink:0;height:32px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">외치기</button></div></div>'
+    //   [슬롯3] 오늘 운동한 머피들 — 미니 캐릭터 카드 퍼레이드
+    + '<div style="padding:10px 12px 11px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350">'
+    +   '<div style="display:flex;align-items:baseline;gap:7px;margin-bottom:8px">'
+    +     '<span style="font-size:11px;color:#cfd6e6;letter-spacing:1px">오늘 운동한 머피들</span>'
+    +     '<span id="mw-fm-murpys-n" style="font-size:9.5px;color:#F5C24B"></span></div>'
+    +   '<div id="mw-fm-murpys" style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px"><span style="font-size:10.5px;color:#4a5266">불러오는 중…</span></div></div>'
+    + '</div>';
+  window._mwFmNews();
+  window._mwFmShoutInit();
+  window._mwFmParade();
   // 노드 실측 좌표(픽셀)와 중앙 광장 좌표를 잡아두고, 캐릭터를 **중앙**에 세운다
   requestAnimationFrame(function () {
     const map = document.getElementById('mw-fm-map'); if (!map) return;
     const pts = window._MW_FM_ORDER.map(function (n) {
       const el = map.querySelector('[data-k="' + n.k + '"]'); if (!el) return null;
-      return { k: n.k, x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + 35 };
+      // 캐릭터 도착점 = 터치 영역 발치(이름표 조금 위) — 랜드마크 앞마당에 서는 그림
+      return { k: n.k, x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight - 24 };
     }).filter(Boolean);
-    pts.push({ k: '__center', x: map.clientWidth * window._MW_FM_CENTER.x / 100, y: map.clientHeight * window._MW_FM_CENTER.y / 100 });
+    // ★출발 위치 = **지금 있는 필드의 입구** (대표 9-03: "내가 어디 있는지 보여야") —
+    //   방에 있었으면 집 문 앞, 헬스장이면 헬스장 앞에서 출발. 입구 없는 필드만 중앙 광장.
+    const sd = window._MW_FM_DOORS[window._curField];
+    const st24 = map.clientWidth / 24;
+    pts.push(sd
+      ? { k: '__center', x: (sd.c + 0.5) * st24, y: (sd.r + 0.5) * st24 }
+      : { k: '__center', x: map.clientWidth * window._MW_FM_CENTER.x / 100, y: map.clientHeight * window._MW_FM_CENTER.y / 100 });
     window._mwFmPts = pts;
     window._mwFmPlace('__center', true);
   });
+};
+// 마커 내용 = 미니 캐릭터 + **발밑 그림자**. 그림자를 filter(drop-shadow)로 걸었더니
+// 이동 중 잔상이 처음 자리에 남았다(대표 9-03) — 마커 안 요소로 넣어 같이 움직이게 한다.
+window._mwFmCharHtml = function (face) {
+  const ch = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), 46, face) : '';
+  return '<i style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:22px;height:6px;background:rgba(0,0,0,.32);border-radius:50%"></i>' + ch;
 };
 // 캐릭터를 지점 위에 세운다. face 는 걷는 방향(없으면 정면).
 window._mwFmPlace = function (k, immediate, face) {
   const mk = document.getElementById('mw-fm-char'); if (!mk || !window._mwFmPts) return;
   const p = window._mwFmPts.find(function (x) { return x.k === k; }); if (!p) return;
   const h = 46, w = Math.round(h * 141 / 224);
-  mk.innerHTML = (window.mwMiniCharHtml && window.getMyCharacter) ? window.mwMiniCharHtml(window.getMyCharacter(), h, face) : '';
+  mk.innerHTML = window._mwFmCharHtml(face);
   if (immediate) mk.style.transition = 'none';
   mk.style.left = (p.x - w / 2) + 'px';
   mk.style.top = (p.y - h + 14) + 'px';   // 발이 지점 중앙 근처에 닿게
+};
+// (v2 자동 산책 공원 제거 — 공원은 _FIELDS.park 진짜 필드가 됐고 지도 노드로 들어간다)
+// ── 동네 전광판: 하단 여백에 도는 소식 롤링. 무거운 조회는 안 한다(체크인 60초 캐시 재사용). ──
+// 동네 소식 = 히어로 카드 캐러셀. 슬라이드 = {img, t(제목), s(부제)} — **광고 배너도 같은 모양으로
+// 이 배열에 꽂으면 된다**(업체 이미지 + 문구, 대표 9-03). 배경은 기존 필드 아트 재사용.
+window._mwFmNews = async function () {
+  const bg = document.getElementById('mw-fm-hero-bg'); if (!bg) return;
+  const slides = [];
+  try {
+    const rows = await mwTodayCheckins();
+    if (rows && rows.length) {
+      const last = rows[rows.length - 1];
+      slides.push({ img: 'char/banners/hero_checkin.png?v=1', t: '오늘 도장 ' + rows.length + '개',
+                    s: (last && last.centerName) ? '최근: ' + String(last.centerName).slice(0, 16) : '오늘도 머피들이 도장을 찍었어요' });
+    }
+  } catch (e) {}
+  // ★히어로 이미지는 필드 아트 재활용 금지(대표 9-04 "재활용하니까 이상해") — 나노바나나 Pro 전용 배너
+  slides.push({ img: 'char/banners/hero_park.png?v=1', t: '우리 동네 공원 오픈', s: '펫이랑 산책하러 가보세요' });
+  slides.push({ img: 'char/banners/hero_earn.png?v=1', t: '운동 인증하면 5머피', s: '오늘의 첫 인증을 남겨보세요' });
+  const dots = document.getElementById('mw-fm-hero-dots');
+  if (dots) dots.innerHTML = slides.map(function (_, i) {
+    return '<span data-i="' + i + '" style="width:6px;height:6px;background:rgba(255,255,255,.35)"></span>'; }).join('');
+  let i = 0;
+  const show = function () {
+    const b = document.getElementById('mw-fm-hero-bg');
+    if (!b) { clearInterval(t); return; }
+    const sl = slides[i % slides.length];
+    b.style.opacity = '0';
+    setTimeout(function () {
+      const b2 = document.getElementById('mw-fm-hero-bg'); if (!b2) return;
+      b2.style.backgroundImage = "url('" + sl.img + "')";
+      b2.style.opacity = '1';
+      const tt = document.getElementById('mw-fm-hero-t'); if (tt) tt.textContent = sl.t;
+      const ss = document.getElementById('mw-fm-hero-s'); if (ss) ss.textContent = sl.s;
+      const dd = document.getElementById('mw-fm-hero-dots');
+      if (dd) Array.prototype.forEach.call(dd.children, function (d, j) { d.style.background = j === (i % slides.length) ? '#F5C24B' : 'rgba(255,255,255,.35)'; });
+    }, 220);
+    i++;
+  };
+  show();
+  const t = setInterval(show, 4200);
+};
+// ── 광장 외치기: 전역 실시간 확성기(RTDB plaza/shout) — 자유시장 그 감성(대표 9-03).
+//   규칙: 본인 uid 메시지 생성만·수정삭제 불가·60자(9-03 배포). 도배는 20초 쿨다운 + 금칙어.
+window._mwFmShoutInit = function () {
+  const list = document.getElementById('mw-fm-shout-list'); if (!list) return;
+  const R = window._rt;
+  if (!R || !auth.currentUser) { list.innerHTML = '<span style="color:#4a5266;font-size:10.5px">로그인하면 광장의 외침이 들려요</span>'; return; }
+  try { window._mwFmShoutUn && window._mwFmShoutUn(); } catch (e) {}
+  const q = R.query ? R.query(R.ref(R.db, 'plaza/shout'), R.limitToLast(14)) : R.ref(R.db, 'plaza/shout');
+  const un = R.onValue(q, function (snap) {
+    const el = document.getElementById('mw-fm-shout-list');
+    if (!el) { try { un(); } catch (e) {} window._mwFmShoutUn = null; return; }
+    const rows = []; snap.forEach(function (c) { rows.push(c.val() || {}); });
+    const E = window._escHtml || function (t) { return String(t); };
+    el.innerHTML = rows.length
+      ? rows.map(function (r) {
+          return '<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+            + '<b style="color:#F5C24B">' + E(String(r.nick || '머피').slice(0, 12)) + '</b> '
+            + '<span style="color:#cfd6e6">' + E(String(r.text || '').slice(0, 60)) + '</span></div>';
+        }).join('')
+      : '<span style="color:#4a5266;font-size:10.5px">아직 조용하네요 — 첫 외침의 주인공이 되어보세요</span>';
+    el.scrollTop = el.scrollHeight;
+    const n = document.getElementById('mw-fm-shout-n'); if (n) n.textContent = rows.length ? '실시간' : '';
+  }, function (e) { console.warn('shout', e); });
+  window._mwFmShoutUn = function () { try { un(); } catch (e) {} };
+  const inp = document.getElementById('mw-fm-shout-in');
+  // data-dock = 키보드가 뜨면 이 줄을 통째로 키보드 바로 위로 띄운다(9-04)
+  if (inp) inp.setAttribute('data-dock', 'mw-fm-shout-row');
+  if (inp && window._mwEnterSend) window._mwEnterSend(inp, window._mwFmShoutSend);
+};
+window._mwFmShoutSend = function () {
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('광장에서 외치려면') : requireLogin('로그인이 필요해요'); return; }
+  const inp = document.getElementById('mw-fm-shout-in'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 60); if (!t) return;
+  const bad = (window.FILTER_WORDS || []).some(function (w) { return t.toLowerCase().includes(String(w).toLowerCase()); });
+  if (bad) { showToast('연락처·외부 메신저는 외칠 수 없어요'); return; }
+  const now = Date.now();
+  if (now - (window._mwShoutAt || 0) < 20000) { showToast('외치기는 20초에 한 번이에요'); return; }
+  const R = window._rt; if (!R || !auth.currentUser) return;
+  try {
+    R.push(R.ref(R.db, 'plaza/shout'), {
+      uid: auth.currentUser.uid,
+      nick: String(window._mwMyNick || '머피').slice(0, 12),
+      text: t, t: now
+    });
+    window._mwShoutAt = now; inp.value = '';
+    try { window.sfx && window.sfx.play('btn'); } catch (e) {}
+  } catch (e) { console.warn('shout send', e); showToast('외치지 못했어요'); }
+};
+// ── 공원 채팅바: 오픈월드 안에서 광장 외치기 — 말은 내 머리 위 말풍선 + plaza/shout 로 전역 전파 ──
+window._mwParkBar = function (on) {
+  // ★중복 생성·타 화면 잔류 방어(대표 9-03): 있던 것 전부 지우고 다시 만들고,
+  //   body 가 아니라 **머피월드 페이지 안**에 붙인다 — 홈 탭으로 나가면 페이지와 함께 숨는다.
+  document.querySelectorAll('#mw-park-bar,#mw-park-top,#mw-park-zone').forEach(function (b) { b.remove(); });
+  try { if (!on && window._mwParkLogUn) { window._mwParkLogUn(); window._mwParkLogUn = null; } } catch (e) {}
+  try { if (window._mwParkKbUn) { window._mwParkKbUn(); window._mwParkKbUn = null; } } catch (e) {}
+  if (!on) return;
+  // ★상단바(9-04): MURPY WORLD 로고 + 머피 잔액 + 지도(나가기) — 오픈월드에 남는 유일한 상단 UI
+  const top = document.createElement('div');
+  top.id = 'mw-park-top';
+  top.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:951;display:flex;align-items:center;gap:9px;'
+    + 'padding:calc(9px + env(safe-area-inset-top)) 12px 10px;pointer-events:none;'
+    + "font-family:'Galmuri14',sans-serif;background:linear-gradient(180deg,rgba(5,7,12,.62) 0%,rgba(5,7,12,0) 100%)";
+  top.innerHTML =
+      '<span style="font-size:13.5px;color:#fff;letter-spacing:1.5px;text-shadow:0 2px 5px rgba(0,0,0,.75)">MURPY WORLD</span>'
+    + '<span style="flex:1"></span>'
+    + '<span id="mw-park-credit" style="display:flex;align-items:center;gap:4px;font-size:12.5px;color:#F5C24B;text-shadow:0 1px 3px rgba(0,0,0,.8)">'
+    +   (window.murpyTokenSVG ? window.murpyTokenSVG(16) : '')
+    +   '<b>' + ((window._creditState && window._creditState.ready) ? window._creditState.credits : '—') + '</b></span>'
+    + '<button onclick="window.mwWorldPanel&&mwWorldPanel(\'field\')"'
+    + ' style="pointer-events:auto;height:28px;background:rgba(5,7,12,.72);border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;'
+    + "color:#cfd6e6;padding:0 11px;font-size:10.5px;cursor:pointer;font-family:'Galmuri11',sans-serif;border-radius:0\">지도</button>";
+  (document.getElementById('page-char') || document.body).appendChild(top);
+  // ★바람의나라식 채팅(대표 9-04): 필드 위에 반투명 **채팅 로그 박스**가 떠 있고 그 박스
+  //   하단부에 내 입력줄이 붙는다. 문구는 오픈월드 공용 '채팅하기'(필드가 계속 늘어난다).
+  let bar = document.createElement('div');
+  bar.id = 'mw-park-bar';
+  // ★바닥에서 26px 띄운다 — 10px 로 붙였더니 아이폰 라운드 코너·홈 인디케이터에 걸렸다(대표 9-04)
+  bar.style.cssText = 'position:fixed;left:14px;right:14px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:950;'
+    + "max-width:366px;margin:0 auto;display:flex;flex-direction:column;font-family:'Galmuri11',sans-serif";
+  bar.innerHTML =
+      '<div id="mw-park-log" style="height:92px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;'
+    +   'padding:7px 9px;background:rgba(5,7,12,.52);border:2px solid rgba(5,7,12,.85);box-shadow:0 0 0 1px rgba(43,51,80,.55);'
+    +   'font-size:11px;line-height:1.5;color:#e6ebf5;border-radius:0"></div>'
+    + '<div style="display:flex;gap:5px;margin-top:4px">'
+    + '<input id="mw-park-in" maxlength="60" placeholder="채팅하기" autocomplete="off"'
+    + ' style="flex:1;min-width:0;box-sizing:border-box;height:34px;background:rgba(5,7,12,.82);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;outline:none;font-family:inherit;border-radius:0">'
+    + '<button onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="window._mwParkSay()"'
+    + ' style="flex-shrink:0;height:34px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">전송</button></div>';
+  (document.getElementById('page-char') || document.body).appendChild(bar);
+  const inp = document.getElementById('mw-park-in');
+  if (inp && window._mwEnterSend) window._mwEnterSend(inp, window._mwParkSay);
+  window._mwParkLogInit();
+  // ★키보드가 뜨면 브라우저가 입력칸을 보이려고 화면을 밀어 필드가 살짝 올라간다(대표 9-04).
+  //   visualViewport 로 키보드 높이를 재서 **채팅바만** 키보드 위로 올리고, 문서 스크롤은 0 으로
+  //   되돌려 필드는 제자리에 둔다. 리스너는 바와 함께 치운다.
+  if (window.visualViewport) {
+    const _vv = window.visualViewport;
+    const _fit = function () {
+      const b = document.getElementById('mw-park-bar'); if (!b) return;
+      const kb = Math.max(0, window.innerHeight - _vv.height - _vv.offsetTop);
+      // ★키보드가 뜬 '후' 정확한 높이로 정착. 아직 안 떴고(focus 직후 kb=0) 입력 중이면
+      //   선제 부양값(46vh)을 유지한다 — iOS 는 키보드가 올라오는 순간 입력칸이 가려질 것
+      //   같으면 화면 전체를 밀어버리는데, 미리 올려두면 밀 이유가 없어 필드가 안 흔들린다.
+      const typing = document.activeElement && document.activeElement.id === 'mw-park-in';
+      if (kb > 0) b.style.bottom = 'calc(' + (26 + kb) + 'px + env(safe-area-inset-bottom))';
+      else b.style.bottom = typing ? '46vh' : 'calc(26px + env(safe-area-inset-bottom))';
+      try {
+        window.scrollTo(0, 0);
+        if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+      } catch (e) {}
+      // ★그래도 iOS 가 비주얼 뷰포트를 밀어올리면(offsetTop>0) 민 만큼 스테이지를 내려
+      //   화면상 필드를 제자리에 고정한다(이중 보정)
+      const stg = document.querySelector('#page-char .mw-stage');
+      if (stg) stg.style.transform = _vv.offsetTop > 0 ? 'translateY(' + _vv.offsetTop + 'px)' : '';
+    };
+    if (inp) {
+      inp.addEventListener('focus', function () {
+        const b = document.getElementById('mw-park-bar');
+        if (b) b.style.bottom = '46vh';               // 키보드보다 먼저 올려둔다(선제)
+        // ★카톡처럼 — 치는 동안엔 로그를 줄여 **입력줄이 키보드 바로 위**에 오게 한다(대표 9-04)
+        const lg = document.getElementById('mw-park-log');
+        if (lg) { lg.style.transition = 'height .18s'; lg.style.height = '54px'; }
+        document.body.classList.add('mw-typing');
+        setTimeout(_fit, 60); setTimeout(_fit, 300); setTimeout(_fit, 700);
+      });
+      inp.addEventListener('blur', function () {
+        const lg = document.getElementById('mw-park-log');
+        if (lg) lg.style.height = '92px';
+        document.body.classList.remove('mw-typing');
+        setTimeout(_fit, 60);
+      });
+    }
+    _vv.addEventListener('resize', _fit);
+    _vv.addEventListener('scroll', _fit);
+    window._mwParkKbUn = function () { try { _vv.removeEventListener('resize', _fit); _vv.removeEventListener('scroll', _fit); } catch (e) {} };
+  }
+  // ★지역명 진입 배너 — "게임에 들어왔다" 신호(2.4초 떴다 사라짐)
+  const bn = document.createElement('div');
+  bn.id = 'mw-park-zone';
+  bn.textContent = '우리 동네 공원';
+  bn.style.cssText = 'position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:952;pointer-events:none;'
+    + "font-family:'Galmuri14',sans-serif;font-size:19px;color:#fff;letter-spacing:3px;white-space:nowrap;"
+    + 'text-shadow:0 3px 8px rgba(0,0,0,.85);padding:9px 20px;background:rgba(5,7,12,.48);'
+    + 'border:2px solid rgba(255,255,255,.28);opacity:0;transition:opacity .55s';
+  (document.getElementById('page-char') || document.body).appendChild(bn);
+  requestAnimationFrame(function () { bn.style.opacity = '1'; });
+  setTimeout(function () { bn.style.opacity = '0'; setTimeout(function () { bn.remove(); }, 650); }, 2400);
+};
+// 공원 채팅 로그 — 광장 외치기(RTDB plaza/shout) 스트림을 MMO식 로그로. 새 줄이 오면 바닥으로.
+window._mwParkLogInit = function () {
+  const list = document.getElementById('mw-park-log'); if (!list) return;
+  const R = window._rt;
+  if (!R || !auth.currentUser) { list.innerHTML = '<span style="color:#8a93a8;font-size:10.5px">로그인하면 채팅이 보여요</span>'; return; }
+  try { window._mwParkLogUn && window._mwParkLogUn(); } catch (e) {}
+  const q = R.query ? R.query(R.ref(R.db, 'plaza/chat/park'), R.limitToLast(40)) : R.ref(R.db, 'plaza/chat/park');
+  const rows = [];
+  const E = window._escHtml || function (t) { return String(t); };
+  window._mwParkLogUn = R.onValue(q, function (snap) {
+    const el = document.getElementById('mw-park-log'); if (!el) return;
+    rows.length = 0;
+    snap.forEach(function (ch) { const v = ch.val() || {}; rows.push(v); });
+    el.innerHTML = rows.map(function (v) {
+      return '<div><b style="color:#F5C24B">' + E(String(v.nick || '머피').slice(0, 12)) + '</b>'
+        + '<span style="color:#8a93a8"> : </span>' + E(String(v.text || '').slice(0, 60)) + '</div>';
+    }).join('') || '<span style="color:#8a93a8;font-size:10.5px">첫 인사를 남겨보세요</span>';
+    el.scrollTop = el.scrollHeight;
+  });
+};
+// ★필드 앰비언트(9-04) — "필드가 죽어 있어 저퀄"(대표). 분수 물보라·연못 물결/수련잎 둥실·
+//   꽃잎 날림·구름 그림자. 좌표는 필드 %(1024 실측), 캐릭터(z10+) 아래 z4 라 걷기와 안 겹친다.
+window._mwParkAmbient = function (on) {
+  const old = document.getElementById('mw-park-amb'); if (old) old.remove();
+  if (!on) return;
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  if (!document.getElementById('mw-park-amb-css')) {
+    const st = document.createElement('style'); st.id = 'mw-park-amb-css';
+    st.textContent = `
+      #mw-park-amb{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+      #mw-park-amb i{position:absolute;display:block;font-style:normal}
+      @keyframes pkSpray{0%{transform:translate(0,0) scale(1);opacity:0}12%{opacity:.95}100%{transform:translate(var(--dx),-16px) scale(.6);opacity:0}}
+      .pk-spray{width:3px;height:7px;background:#dceeff;border-radius:45%;animation:pkSpray 1.05s ease-out infinite}
+      @keyframes pkRip{0%{transform:scale(.25);opacity:.75}100%{transform:scale(1);opacity:0}}
+      .pk-rip{width:26px;height:11px;border:1.5px solid rgba(225,245,255,.8);border-radius:50%;animation:pkRip 3.2s ease-out infinite}
+      @keyframes pkPad{0%,100%{transform:translate(0,0)}50%{transform:translate(1.5px,-2.5px)}}
+      .pk-pad{width:10px;height:5px;background:rgba(120,190,110,.9);border-radius:50%;box-shadow:0 -1px 0 rgba(60,120,60,.5) inset;animation:pkPad 3.6s ease-in-out infinite}
+      @keyframes pkShim{0%,100%{opacity:0}45%{opacity:.85}}
+      .pk-shim{width:9px;height:2px;background:rgba(230,250,255,.9);animation:pkShim 2.6s ease-in-out infinite}
+      @keyframes pkPetal{0%{transform:translate(0,-4px) rotate(0);opacity:0}8%{opacity:.9}88%{opacity:.75}100%{transform:translate(var(--px),var(--py)) rotate(230deg);opacity:0}}
+      .pk-petal{width:4px;height:3px;border-radius:60% 40% 55% 45%;animation:pkPetal var(--pd) linear infinite}
+      @keyframes pkCloud{0%{left:-45%}100%{left:115%}}
+      .pk-cloud{width:42%;height:20%;background:radial-gradient(ellipse at center,rgba(10,15,40,.085),rgba(10,15,40,0) 68%);animation:pkCloud 80s linear infinite}`;
+    document.head.appendChild(st);
+  }
+  const amb = document.createElement('div'); amb.id = 'mw-park-amb';
+  let h = '';
+  // 분수 물보라(2K v2 실측: 중앙 47.1%, 꼭대기 40.2%) — 좌우로 퍼지는 물방울 8개
+  for (let i = 0; i < 8; i++) {
+    const dx = (i - 3.5) * 2.6;
+    h += '<i class="pk-spray" style="left:calc(47.1% + ' + (i - 3.5) * 1.4 + 'px);top:40.2%;--dx:' + dx + 'px;animation-delay:' + (i * 0.13) + 's"></i>';
+  }
+  // 연못(2K v2: x15~36%, y18~32%): 물결 링 4 + 수련잎 둥실 4 + 반짝 3
+  [[19,22],[27,27],[32,21],[23,29]].forEach(function (p, i) {
+    h += '<i class="pk-rip" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 0.8) + 's"></i>'; });
+  [[21,24],[29,24],[24,28],[33,26]].forEach(function (p, i) {
+    h += '<i class="pk-pad" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 0.9) + 's"></i>'; });
+  [[18,26],[30,20],[26,30]].forEach(function (p, i) {
+    h += '<i class="pk-shim" style="left:' + p[0] + '%;top:' + p[1] + '%;animation-delay:' + (i * 1.1) + 's"></i>'; });
+  // 꽃잎 6장 — 화단(우상)·벚꽃 톤, 각자 속도·경로
+  const cols = ['#ffc9d8', '#fff2b8', '#ffd9e6', '#f6c9ff', '#ffe1c9', '#ffc9d8'];
+  for (let i = 0; i < 6; i++) {
+    h += '<i class="pk-petal" style="left:' + (12 + i * 14) + '%;top:' + (8 + (i % 3) * 20) + '%;background:' + cols[i]
+      + ';--px:' + (-40 - i * 8) + 'px;--py:' + (90 + i * 14) + 'px;--pd:' + (9 + i * 1.7) + 's;animation-delay:' + i * 1.4 + 's"></i>';
+  }
+  // 구름 그림자 2개(느리게 흘러감)
+  h += '<i class="pk-cloud" style="top:16%;animation-delay:0s"></i>';
+  h += '<i class="pk-cloud" style="top:58%;animation-delay:-38s"></i>';
+  amb.innerHTML = h;
+  room.appendChild(amb);
+};
+// ═══ 공원 NPC + 데일리 퀘스트 (9-04 대표: "게임이면 quest지") ═══
+// 퀘스트 = 진짜 앱 기능 심부름(체크인·인증·대숲·매칭) + 소액 머피. 보상은 서버 키(pq_<id>_<일>)로
+// 하루 1회 중복 차단. 목소리는 파일 있으면 재생(승인 전 파일 미배포 — 표준 절차).
+window._MW_NPCS = [
+  { k: 'keeper',  name: '관리인 박씨', img: 'char/npc/npc_keeper.png?v=1',  x: 40.6, y: 50.0, h: 3.6,
+    hi: '어서 오게. 우리 동네 공원, 마음에 드는가?', idle: '오늘 부탁은 다 끝났네. 내일 또 들르라고!',
+    q: { id: 'checkin', text: '공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!', go: '체크인 하러 가기', done: '오, 도장 찍고 왔구먼! 부지런한 게 최고야.' } },
+  { k: 'trainer', name: '강 코치', img: 'char/npc/npc_trainer.png?v=1', x: 71.9, y: 50.0, h: 3.6,
+    hi: '오! 운동하러 왔구나?', idle: '오늘은 여기까지! 내일 또 보자고.',
+    q: { id: 'cert', text: '오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!', go: '인증하러 가기', done: '그래, 그 기세야! 꾸준한 놈이 이긴다.' } },
+  { k: 'grandma', name: '순이 할매', img: 'char/npc/npc_grandma.png?v=1', x: 19.8, y: 62.5, h: 3.4,
+    hi: '아이고, 젊은이 왔는가.', idle: '오늘 할 일은 다 했네. 살펴 가시게.',
+    q: { id: 'bamboo', text: '속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.', go: '대숲 가기', done: '잘했네. 마음도 근육처럼 풀어줘야 해.' } },
+  { k: 'kid', name: '민준이', img: 'char/npc/npc_kid.png?v=1', x: 67.7, y: 77.1, h: 2.7,
+    hi: '형아! 누나! 나랑 놀자!', idle: '내일 또 놀러 와! 약속!',
+    q: { id: 'match', text: '오늘의 머피들 봤어? 매칭 탭에서 새 친구 구경하고 와!', go: '매칭 구경 가기', done: '우와, 친구 많아지겠다!' } },
+];
+window._mwQuestDone = async function (id) {
+  const day = _creditToday();
+  try {
+    if (id === 'cert') return !!(window._creditState && window._creditState.lastEarned === day);
+    if (id === 'checkin') {
+      const me = (window.currentUser || {}).uid; if (!me) return false;
+      const rows = await mwTodayCheckins();
+      return !!(rows || []).some(function (r) { return String(r.id || '').indexOf(me + '_') === 0; });
+    }
+    return localStorage.getItem('mwq_' + id + '_' + day) === '1';
+  } catch (e) { return false; }
+};
+window._mwQuestClaimed = function (id) { try { return localStorage.getItem('mwqC_' + id + '_' + _creditToday()) === '1'; } catch (e) { return false; } };
+window._mwNpcGo = function (id) {
+  const p = document.getElementById('mw-npc-talk'); if (p) p.remove();
+  if (id === 'checkin') { window.mwWorldPanel && mwWorldPanel('map'); }
+  else if (id === 'cert') { goPage('home'); setTimeout(function () { const b = document.getElementById('composer-open') || document.querySelector('[onclick*="openComposer"]'); if (b) b.click(); }, 400); }
+  else if (id === 'bamboo') { goPage('bamboo'); }
+  else if (id === 'match') { goPage('match'); }
+};
+// 목소리 훅 — 파일이 있으면 재생, 없으면 침묵(대표 승인 후 파일이 올라온다)
+window._mwNpcSnd = function (k, kind) {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    window._mwNpcCtx = window._mwNpcCtx || new C();
+    const ctx = window._mwNpcCtx;
+    if (ctx.state === 'suspended' || ctx.state === 'interrupted') { try { ctx.resume(); } catch (e) {} }
+    window._mwNpcBufs = window._mwNpcBufs || {};
+    const key = k + '_' + kind;
+    const play = function (b) { if (!b || document.hidden) return; const s = ctx.createBufferSource(); s.buffer = b; const g = ctx.createGain(); g.gain.value = 0.9; s.connect(g); g.connect(ctx.destination); s.start(); };
+    if (window._mwNpcBufs[key]) { play(window._mwNpcBufs[key]); return; }
+    fetch('char/npc/voice/' + key + '.wav?v=1').then(function (r) { if (!r.ok) throw 0; return r.arrayBuffer(); })
+      .then(function (ab) { return ctx.decodeAudioData(ab); })
+      .then(function (b) { window._mwNpcBufs[key] = b; play(b); }).catch(function () { window._mwNpcBufs[key] = null; });
+  } catch (e) {}
+};
+window._mwNpcTalk = async function (k) {
+  const n = window._MW_NPCS.find(function (x) { return x.k === k; }); if (!n) return;
+  const old = document.getElementById('mw-npc-talk'); if (old) old.remove();
+  const claimed = window._mwQuestClaimed(n.q.id);
+  const done = claimed ? false : await window._mwQuestDone(n.q.id);
+  window._mwNpcSnd(k, claimed ? 'idle' : (done ? 'done' : 'hi'));
+  const E = window._escHtml || function (t) { return String(t); };
+  const d = document.createElement('div');
+  d.id = 'mw-npc-talk';
+  d.style.cssText = 'position:fixed;left:14px;right:14px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:956;'
+    + "max-width:366px;margin:0 auto;background:rgba(9,12,20,.94);border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:11px 12px;font-family:'Galmuri11',sans-serif";
+  const talkTxt = claimed ? n.idle : (done ? n.q.done : (n.hi + ' ' + n.q.text));
+  d.innerHTML =
+      '<div style="display:flex;gap:10px;align-items:flex-start">'
+    +   '<div style="flex-shrink:0;width:52px;height:74px;background:url(\'' + n.img + '\') center/contain no-repeat;image-rendering:pixelated"></div>'
+    +   '<div style="flex:1;min-width:0">'
+    +     '<div style="font-size:11px;color:#F5C24B;letter-spacing:1px;margin-bottom:5px">' + E(n.name) + '</div>'
+    +     '<div style="font-size:12px;color:#e6ebf5;line-height:1.55">' + E(talkTxt) + '</div>'
+    +   '</div></div>'
+    + '<div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">'
+    + (claimed ? ''
+        : done
+        ? '<button onclick="window._mwNpcClaim(\'' + k + '\')" style="height:30px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">보상 받기 +3머피</button>'
+        : '<button onclick="window._mwNpcGo(\'' + n.q.id + '\')" style="height:30px;background:var(--accent);border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;color:#fff;padding:0 12px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">' + E(n.q.go) + '</button>')
+    + '<button onclick="document.getElementById(\'mw-npc-talk\').remove()" style="height:30px;background:none;border:2px solid #2b3350;color:#8a93a8;padding:0 11px;font-size:11px;cursor:pointer;font-family:inherit;border-radius:0">닫기</button></div>';
+  (document.getElementById('page-char') || document.body).appendChild(d);
+};
+window._mwNpcClaim = async function (k) {
+  const n = window._MW_NPCS.find(function (x) { return x.k === k; }); if (!n) return;
+  if (window._mwQuestClaimed(n.q.id)) return;
+  const day = _creditToday();
+  const got = window.earnCredit ? await window.earnCredit(3, '공원 퀘스트 완료!', 'parkquest', 'pq_' + n.q.id + '_' + day) : 0;
+  try { localStorage.setItem('mwqC_' + n.q.id + '_' + day, '1'); } catch (e) {}
+  const p = document.getElementById('mw-npc-talk'); if (p) p.remove();
+  if (got) { window.murpyMini && window.murpyMini(3, n.name + ' 퀘스트'); }
+  window._mwParkNpcBadges && window._mwParkNpcBadges();
+  try { window.sfx && window.sfx.play('correct'); } catch (e) {}
+};
+window._mwParkNpcs = function (on) {
+  document.querySelectorAll('.mw-npc').forEach(function (b) { b.remove(); });
+  const t = document.getElementById('mw-npc-talk'); if (t) t.remove();
+  if (!on) return;
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  if (!document.getElementById('mw-npc-css')) {
+    const st = document.createElement('style'); st.id = 'mw-npc-css';
+    st.textContent = `
+      .mw-npc{position:absolute;cursor:pointer;-webkit-tap-highlight-color:transparent}
+      .mw-npc .bd{width:100%;height:100%;background-size:contain;background-position:center bottom;background-repeat:no-repeat;image-rendering:pixelated;animation:npcBob 2.8s ease-in-out infinite}
+      @keyframes npcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+      .mw-npc .nm{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:1px;font-family:'Galmuri11',sans-serif;font-size:9px;color:#fff;background:rgba(5,7,12,.6);padding:1px 5px;white-space:nowrap}
+      .mw-npc .qb{position:absolute;left:50%;bottom:calc(100% + 2px);transform:translateX(-50%);font-family:'Galmuri14',sans-serif;font-size:15px;color:#F5C24B;text-shadow:0 1px 0 #05070c,0 0 6px rgba(245,194,75,.6);animation:npcQb 1.1s ease-in-out infinite}
+      @keyframes npcQb{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-4px)}}`;
+    document.head.appendChild(st);
+  }
+  const g = window._charTileGeom();
+  window._MW_NPCS.forEach(function (n) {
+    const el = document.createElement('div');
+    el.className = 'mw-npc'; el.dataset.k = n.k;
+    const H = Math.round(g.t * n.h), W = Math.round(H * 512 / 768);
+    const row = Math.floor(n.y / 100 * 48);
+    el.style.cssText = 'left:calc(' + n.x + '% - ' + (W / 2) + 'px);top:calc(' + n.y + '% - ' + H + 'px);width:' + W + 'px;height:' + H + 'px;z-index:' + (10 + row * 10 + 4);
+    el.innerHTML = '<i class="qb" hidden>!</i><div class="bd" style="background-image:url(\'' + n.img + '\')"></div><span class="nm">' + (window._escHtml ? _escHtml(n.name) : n.name) + '</span>';
+    el.onclick = function () { window._mwNpcTalk(n.k); };
+    room.appendChild(el);
+  });
+  window._mwParkNpcBadges && window._mwParkNpcBadges();
+};
+// 머리 위 ! 배지 — 미완료 퀘스트만 노란 느낌표(수령까지 끝나면 숨김)
+window._mwParkNpcBadges = async function () {
+  for (const n of window._MW_NPCS) {
+    const el = document.querySelector('.mw-npc[data-k="' + n.k + '"] .qb'); if (!el) continue;
+    el.hidden = window._mwQuestClaimed(n.q.id);
+  }
+};
+window._mwParkSay = function () {
+  // ★오픈월드는 '외치기'가 아니라 **일반 채팅**이다(대표 9-04) — 전체 확성기(plaza/shout,
+  //   지도 탭·20초 쿨다운)와 채널을 분리해 plaza/chat/park 에 쓴다(규칙 9-04 배포).
+  if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('채팅하려면') : requireLogin('로그인이 필요해요'); return; }
+  const inp = document.getElementById('mw-park-in'); if (!inp) return;
+  const t = String(inp.value || '').trim().slice(0, 60); if (!t) return;
+  const bad = (window.FILTER_WORDS || []).some(function (w) { return t.toLowerCase().includes(String(w).toLowerCase()); });
+  if (bad) { showToast('연락처·외부 메신저는 보낼 수 없어요'); return; }
+  const now = Date.now();
+  if (now - (window._mwParkSayAt || 0) < 2500) { showToast('조금 천천히 보내주세요'); return; }
+  const R = window._rt;
+  try {
+    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/chat/park'), {
+      uid: auth.currentUser.uid, nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: now });
+  } catch (e) { console.warn('park chat', e); }
+  window._mwParkSayAt = now; inp.value = '';
+  // 내 머리 위 말풍선 — 파티 말풍선 통로(_mwRl.msg)를 그대로 쓴다(전 필드 공용 표시 경로)
+  window._mwRl = window._mwRl || {};
+  window._mwRl.msg = { text: t, t: now };
+  window._charApplyPos && window._charApplyPos();
+  setTimeout(function () {
+    if (window._mwRl && window._mwRl.msg && window._mwRl.msg.t === now) { window._mwRl.msg = null; window._charApplyPos && window._charApplyPos(); }
+  }, window.MW_ROOM_MSG_MS || 9000);
+  try { window.sfx && window.sfx.play('btn'); } catch (e) {}
+};
+// ── 오늘 운동한 머피들: 체크인 캐시 + users 캐시로 미니 캐릭터 카드 (새 쿼리 없음) ──
+window._mwFmParade = async function () {
+  const box = document.getElementById('mw-fm-murpys'); if (!box) return;
+  try {
+    const rows = await mwTodayCheckins();
+    const uids = []; (rows || []).forEach(function (r) { const u = String(r.id || '').split('_')[0]; if (u && uids.indexOf(u) < 0) uids.push(u); });
+    const nEl = document.getElementById('mw-fm-murpys-n'); if (nEl) nEl.textContent = uids.length ? uids.length + '명' : '';
+    if (!uids.length) { box.innerHTML = '<span style="font-size:10.5px;color:#4a5266">오늘 첫 도장의 주인공이 되어보세요 — 도감 → 체크인</span>'; return; }
+    const snap = await window._usersAll(60000);
+    const byId = {}; snap.docs.forEach(function (d) { byId[d.id] = d.data(); });
+    const E = window._escHtml || function (t) { return String(t); };
+    const J = window._escJs || function (t) { return String(t); };
+    box.innerHTML = uids.slice(0, 10).map(function (u) {
+      const d = byId[u] || {};
+      const ch = (window.mwMiniCharHtml ? window.mwMiniCharHtml(d.character, 46) : '');
+      // ★카드 탭 = 프로필 열기 (대표 9-03) — 보기는 무료, 마음에 들면 '같이 운동해요' 신청(과금 퍼널)
+      // ★프로필은 필드 이동 패널(z880)보다 낮아 뒤에 깔린다 — z를 올리면 그 위 모달(z200)이
+      //   또 깔리는 연쇄라, 패널을 닫고 연다(대표 9-03 "뒤로 나옴").
+      return '<div onclick="var w=document.getElementById(\'mw-wpanel\');if(w)w.remove();window.openUserProfile&&openUserProfile(\'' + J(u) + '\',\'' + J(String(d.nickname || '머피')) + '\',\'' + J(String(d.photoURL || '')) + '\')"'
+        + ' style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px;width:56px;padding:6px 2px 5px;background:#0a0d14;border:2px solid #05070c;box-shadow:0 0 0 1px #2b3350;cursor:pointer">'
+        + '<div style="height:46px;display:flex;align-items:flex-end;pointer-events:none">' + ch + '</div>'
+        + '<span style="font-size:9px;color:#cfd6e6;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none">' + E(String(d.nickname || '머피').slice(0, 8)) + '</span></div>';
+    }).join('');
+  } catch (e) { console.warn('parade', e); box.innerHTML = ''; }
 };
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
@@ -32319,16 +33131,60 @@ window._mwFmGo = function (k) {
   if (!mk || !from || !to) { try { window.charSetField(k); } catch (e) {} if (panel) panel.remove(); return; }
   window._mwFmBusy = 1;
   try { window.sfx && window.sfx.play('btn'); } catch (e) {}
-  const face = Math.abs(to.x - from.x) > Math.abs(to.y - from.y)
-    ? (to.x > from.x ? 'right' : 'left') : (to.y > from.y ? 'down' : 'up');
-  const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  const dur = Math.max(0.45, Math.min(1.3, dist / 260));
-  window._mwFmPlace('__center', true, face);   // 중앙에서 그쪽으로 돌아선다
+  // ★대각선으로 걷지 않는다 (대표 9-03: "우리 캐릭터는 4방향") — 지도도 정직교(v7)라
+  //   ㄱ자(가로 먼저 → 세로)로 두 구간에 나눠 걷는다. 구간마다 바라보는 방향을 바꾼다.
+  const h = 46, w = Math.round(h * 141 / 224);
+  const A = { l: from.x - w / 2, t: from.y - h + 14 };
+  const B = { l: to.x - w / 2, t: to.y - h + 14 };
+  const render = function (face) { mk.innerHTML = window._mwFmCharHtml(face); };
+  // ★ㄱ자 두 구간은 마당·코트를 관통했다(대표 9-03: "다 뚫고 지나가네") →
+  //   지도 충돌맵(_MW_FM_GRID) 위 BFS 최단경로를 따라 **길로만** 걷는다. 도착지는 그 장소의 입구(door).
+  const mapEl = document.getElementById('mw-fm-map');
+  const N = 24, tile = (mapEl ? mapEl.clientWidth : 340) / N;
+  const cellPx = function (c, r) { return { l: (c + 0.5) * tile - w / 2, t: (r + 0.5) * tile - h + 14 }; };
+  // ★출발 = 지금 있는 필드의 입구(내 위치가 이야기의 시작점) — 없으면 중앙 광장
+  const sdd = window._MW_FM_DOORS[window._curField] || null;
+  const c0 = sdd ? sdd.c : Math.max(0, Math.min(N - 1, Math.floor(window._MW_FM_CENTER.x / 100 * N)));
+  const r0 = sdd ? sdd.r : Math.max(0, Math.min(N - 1, Math.floor(window._MW_FM_CENTER.y / 100 * N)));
+  const door = window._MW_FM_DOORS[k] || null;
+  let legs = [];
+  const cells = door ? window._mwFmFind(c0, r0, door.c, door.r) : null;
+  if (cells && cells.length > 1) {
+    // 연속 같은 방향을 한 구간으로 묶는다 — 구간마다 몸을 돌린다(총총총)
+    for (let i = 1; i < cells.length; i++) {
+      const dc = cells[i].c - cells[i - 1].c, dr = cells[i].r - cells[i - 1].r;
+      const face = dc > 0 ? 'right' : dc < 0 ? 'left' : dr > 0 ? 'down' : 'up';
+      const p = cellPx(cells[i].c, cells[i].r);
+      const last = legs[legs.length - 1];
+      if (last && last.face === face) { last.l = p.l; last.t = p.t; last.n++; }
+      else legs.push({ face: face, l: p.l, t: p.t, n: 1 });
+    }
+    legs.forEach(function (g) { g.d = g.n * tile; });
+    // ★입구 앞에서 멈추고 전환되면 어색하다(대표 9-03) — 문·게이트를 **통과해 안쪽까지**
+    //   한 걸음 더 걷고 나서 확대된다. thru 는 충돌맵 밖(입구 안쪽)이라 BFS 뒤에 수동으로 잇는다.
+    if (door && door.thru) {
+      const tp = cellPx(door.thru.c, door.thru.r);
+      const dc2 = door.thru.c - door.c, dr2 = door.thru.r - door.r;
+      legs.push({ face: dc2 > 0 ? 'right' : dc2 < 0 ? 'left' : dr2 > 0 ? 'down' : 'up',
+                  l: tp.l, t: tp.t, d: Math.hypot(dc2, dr2) * tile });
+    }
+    const s0 = cellPx(c0, r0); A.l = s0.l; A.t = s0.t;   // 출발도 타일 중심에 맞춘다
+  } else {
+    // 경로를 못 찾으면(충돌맵 구멍) 예전 ㄱ자로 폴백 — 멈춰버리는 것보단 낫다
+    const hor = { face: B.l > A.l ? 'right' : 'left', d: Math.abs(B.l - A.l) };
+    const ver = { face: B.t > A.t ? 'down' : 'up', d: Math.abs(B.t - A.t) };
+    if (ver.d > hor.d) {
+      if (ver.d > 4) legs.push({ face: ver.face, l: A.l, t: B.t, d: ver.d });
+      if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: B.t, d: hor.d });
+    } else {
+      if (hor.d > 4) legs.push({ face: hor.face, l: B.l, t: A.t, d: hor.d });
+      if (ver.d > 4) legs.push({ face: ver.face, l: B.l, t: B.t, d: ver.d });
+    }
+  }
+  mk.style.transition = 'none'; mk.style.left = A.l + 'px'; mk.style.top = A.t + 'px';
   mk.classList.add('walk');
-  requestAnimationFrame(function () {
-    mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
-    window._mwFmPlace(k, false, face);
-    setTimeout(function () {
+  const step = function (i) {
+    if (i >= legs.length) {
       mk.classList.remove('walk');
       // ★도착하면 지도가 그 장소 쪽으로 **확대되며** 들어간다 (대표 9-03: "해당 에셋을 확대하는 느낌").
       const map = document.getElementById('mw-fm-map');
@@ -32338,13 +33194,28 @@ window._mwFmGo = function (k) {
         map.style.transform = 'scale(2.3)';
         map.style.opacity = '.15';
       }
+      // ★확대 중엔 아래 UI 박스들이 그대로 있으면 어색하다(대표 9-03) — 같이 잦아든다
+      const bd = document.getElementById('mw-fm-board');
+      if (bd) { bd.style.transition = 'opacity .35s'; bd.style.opacity = '0'; }
+      const hd = document.querySelector('#mw-wpanel .mw-wpanel-head');
+      if (hd) { hd.style.transition = 'opacity .35s'; hd.style.opacity = '0'; }
       setTimeout(function () {
         window._mwFmBusy = 0;
         try { window.charSetField(k); } catch (e) {}
         const p2 = document.getElementById('mw-wpanel'); if (p2) p2.remove();
       }, 480);
-    }, dur * 1000 + 120);
-  });
+      return;
+    }
+    const g = legs[i];
+    render(g.face);
+    const dur = Math.max(0.3, Math.min(1.0, g.d / 220));
+    requestAnimationFrame(function () {
+      mk.style.transition = 'left ' + dur + 's linear, top ' + dur + 's linear';
+      mk.style.left = g.l + 'px'; mk.style.top = g.t + 'px';
+      setTimeout(function () { step(i + 1); }, dur * 1000 + 60);
+    });
+  };
+  step(0);
 };
 // ---------- 지도: 지금 운동 중인 머피들 (오늘 체크인 · 센터별) ----------
 // ★★캐릭터 설정이 비었거나 반쪽이면 기본 옷을 입혀서 돌려준다 (대표 8-14:
@@ -40000,8 +40871,14 @@ window.sfx = (function () {
       bas: [48,0,0,0,0,0,0,0, 43,0,0,0,0,0,0,0, 45,0,0,0,0,0,0,0, 47,0,0,0,0,0,0,0, 48,0,0,0,0,0,0,0, 43,0,0,0,0,0,0,0, 45,0,0,0,0,0,0,0, 48,0,0,0,0,0,0,0] },
   };
   TRACKS.field = TRACKS.run;
-  const bg = { name: null, timer: null, step: 0, next: 0, gain: null };
+  // ★파일 브금(9-04): 오픈월드 마을 테마는 합성이 아니라 진짜 음원 — CC0(퍼블릭 도메인),
+  //   cynicmusic 'Town Theme RPG'(opengameart.org/content/town-theme-rpg). file 이 있으면
+  //   시퀀서 대신 버퍼 루프로 돈다. 새 필드 브금은 여기 한 줄 + charSetField 매핑이면 끝.
+  TRACKS.town = { file: 'char/bgm/town.mp3?v=2', vol: 0.35 };
+  const bgBufs = {};
+  const bg = { name: null, timer: null, step: 0, next: 0, gain: null, src: null };
   const bgStop = function () {
+    if (bg.src) { try { bg.src.stop(); } catch (e) {} bg.src = null; }
     if (bg.timer) { clearInterval(bg.timer); bg.timer = null; }
     if (bg.gain) { try { const c = A(); bg.gain.gain.setTargetAtTime(0.0001, c.currentTime, 0.15); const g = bg.gain; setTimeout(function () { try { g.disconnect(); } catch (e) {} }, 500); } catch (e) {} bg.gain = null; }
     bg.name = null;
@@ -40012,6 +40889,19 @@ window.sfx = (function () {
     bgStop(); bg.name = name; bg.step = 0; bg.next = c.currentTime + 0.05;
     const g = c.createGain(); g.gain.value = 0.0001; g.connect(c.destination); bg.gain = g;
     g.gain.setTargetAtTime(T.vol, c.currentTime, 0.4);
+    if (T.file) {   // 파일 브금 — 버퍼 루프(시퀀서 안 씀)
+      const play = function (buf) {
+        if (bg.name !== name || !bg.gain) return;   // 받는 사이 곡이 바뀌었으면 버린다
+        const s = c.createBufferSource(); s.buffer = buf; s.loop = true;
+        s.connect(bg.gain); s.start(); bg.src = s;
+      };
+      if (bgBufs[name]) play(bgBufs[name]);
+      else fetch(T.file).then(function (r) { return r.arrayBuffer(); })
+        .then(function (ab) { return c.decodeAudioData(ab); })
+        .then(function (buf) { bgBufs[name] = buf; play(buf); })
+        .catch(function () {});
+      return;
+    }
     const stepDur = 60 / T.bpm / 4, len = T.mel.length;
     const note = function (m, type, t0, dur, vol) {
       if (!m) return;
