@@ -433,9 +433,22 @@ assert.strictEqual(w._CHAR_BODIES['face:abc123'].src, DOC.sheetUrl, '이미 등�
 // 커마가 아닌 키는 그대로 통과
 assert.strictEqual(w._charEnsureFaceBody('human', null), 'human');
 assert.strictEqual(w._charEnsureFaceBody('heltori', null), 'heltori');
+
+// 11) users 스냅샷 한 번 훑어 남의 커마를 전부 등록한다
+new Function('window', grab(/window\._charRegisterFaceBodiesFrom = function[\s\S]*?\n\};/, '_charRegisterFaceBodiesFrom'))(w);
+const fakeSnap = { forEach(f) { [
+  { id: 'u1', data: () => ({ character: { body: 'face:aaa' }, characterSheet: 'https://cdn/a.png' }) },
+  { id: 'u2', data: () => ({ character: { body: 'face:bbb' } }) },              // 시트 없음 → 등록 안 됨
+  { id: 'u3', data: () => ({ character: { body: 'human' }, characterSheet: 'https://cdn/x.png' }) },
+  { id: 'u4', data: () => ({}) }                                                 // 캐릭터 없음
+].forEach(f); } };
+assert.strictEqual(w._charRegisterFaceBodiesFrom(fakeSnap), 1, '등록 개수가 1이 아니다');
+assert.strictEqual(w._CHAR_BODIES['face:aaa'].src, 'https://cdn/a.png', '남의 커마가 표에 안 들어갔다');
+assert.strictEqual(w._CHAR_BODIES['face:bbb'], undefined, '시트 없는 커마를 등록했다');
+assert.strictEqual(w._charRegisterFaceBodiesFrom(null), 0, '빈 스냅샷에 터진다');
 ```
 
-마지막 줄을 `console.log('OK face-body 19항목');` 으로 바꾼다.
+마지막 줄을 `console.log('OK face-body 23항목');` 으로 바꾼다.
 
 - [ ] **Step 2: 실패를 확인한다**
 
@@ -468,30 +481,53 @@ window._charEnsureFaceBody = function (bodyKey, sheetUrl) {
 node tools/tests/face-body.test.mjs
 ```
 
-기대: `OK face-body 19항목`
+기대: `OK face-body 23항목`
 
-- [ ] **Step 5: 호출부를 찾는다**
+- [ ] **Step 5: 등록을 `_usersAll` 한 곳에 건다 (★계획 개정 9-05)**
 
-```bash
-grep -n "_charRenderTo(\|_charMiniHTML(\|_charEquippedSheets(" index.html | head -40
-```
+원래는 캐릭터를 그리는 자리마다 한 줄씩 넣으려 했다. 실제 코드를 훑어 보니 **더 나은 자리가 있다.**
 
-이 중 **남의 데이터(다른 uid 의 유저 문서·스냅샷)로 그리는 곳**만 고른다: 프로필 카드·피드·오버월드 다른 캐릭터·머피캠·랭킹 카드.
+`window._usersAll`(23429행)은 users 컬렉션 **전체**를 읽어 5분 캐시하는 공통 경로다. 홈·매칭·인기 캐릭터·경매가 전부 이걸 쓴다. 여기서 한 번 훑어 커마 몸통을 등록해두면, 그리는 자리는 **한 곳도 안 고쳐도** 이미 등록된 표를 보고 그대로 그린다. 시트 URL 을 함수 6개에 인자로 꿰는 것보다 훨씬 적게 건드린다.
 
-- [ ] **Step 6: 각 호출부에 한 줄을 넣는다**
-
-`d` = 그 사람 유저 문서 데이터, `cfg` = `d.character` 일 때, 그리기 직전에:
+`_usersAll` 안에서 스냅샷을 캐시에 넣는 두 자리(`.then` 콜백과 캐시 히트 반환) **모두**를 지나도록, 스냅샷을 돌려주기 직전에 부르는 헬퍼를 만든다:
 
 ```js
-      if (cfg && cfg.body) cfg = { ...cfg, body: window._charEnsureFaceBody(cfg.body, d.characterSheet) };
+// 남의 커마 몸통을 한 번에 등록한다. users 전체를 읽는 공통 경로에 걸어 두면
+// ★그리는 자리를 한 곳도 안 고쳐도 된다 — 표에 이미 있으니 기존 렌더가 그대로 그린다.
+// 이미 있는 키는 _charEnsureFaceBody 가 건너뛰므로 5분마다 다시 돌아도 싸다.
+window._charRegisterFaceBodiesFrom = function (snap) {
+  if (!snap || !snap.forEach) return 0;
+  let n = 0;
+  snap.forEach(function (s) {
+    const d = s.data() || {};
+    const key = d.character && d.character.body;
+    if (key && String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && d.characterSheet) {
+      if (window._charEnsureFaceBody(key, d.characterSheet) === key) n++;
+    }
+  });
+  return n;
+};
 ```
 
-**cfg 를 복사해서 쓴다** — 원본을 고치면 그 사람 문서 캐시가 오염돼 다음 렌더가 폴백된 몸통으로 굳는다.
+`_usersAll` 의 반환 지점 두 곳에 `window._charRegisterFaceBodiesFrom(snap)` 를 끼운다(캐시 히트로 돌려주는 `return c.snap;` 앞에도 넣어야 새로고침 없이 켜 둔 앱에서 빠지지 않는다).
 
-- [ ] **Step 7: 연결이 빠진 곳이 없는지 훑는다**
+- [ ] **Step 6: 등록 안 된 커마는 기본 몸통으로 떨어뜨린다 — `_charSafe` 한 곳**
+
+`window._charSafe(cfg)`(33303행)는 남의 캐릭터 설정이 지나는 공통 관문이고, 이미 `Object.assign({}, cfg)` 로 **복사본을 만든다**(원본 오염 걱정이 없다). 여기서 미등록 커마를 기본 몸통으로 바꾼다 — RTDB 로 오는 방·스쿼드 참가자처럼 유저 문서를 안 거친 경로까지 이 한 곳이 받아낸다.
+
+`const c = Object.assign({}, cfg);` **다음**, `_charEnsureDefaults` 호출 **앞**에 넣는다(순서가 바뀌면 커마에 헤어가 채워진다):
+
+```js
+  // ★미등록 커마는 기본 몸통으로 떨어뜨린다. 표에 없는 'face:xxx' 를 그대로 두면
+  //   _charRenderTo 가 human 으로 폴백해 그리기는 하지만, 여기서 데이터도 맞춰야
+  //   _charEnsureDefaults 가 엉뚱한 몸통 기준으로 옷을 벗기지 않는다.
+  if (c.body) c.body = window._charEnsureFaceBody(c.body, null);
+```
+
+- [ ] **Step 7: 연결 확인 + 전체 스위트**
 
 ```bash
-node -e "const s=require('fs').readFileSync('index.html','utf8'); const n=(s.match(/_charEnsureFaceBody\(/g)||[]).length; console.log('_charEnsureFaceBody 호출 '+n+'곳'); if(n<4) throw new Error('정의 1 + 호출 3곳 미만 — 남의 캐릭터를 그리는 자리가 그것보다 적을 리 없다');"
+node -e "const s=require('fs').readFileSync('index.html','utf8'); const n=(s.match(/_charEnsureFaceBody\(/g)||[]).length; console.log('_charEnsureFaceBody 호출 '+n+'곳'); if(n<3) throw new Error('정의 1 + 호출 2곳 미만 — _usersAll 헬퍼와 _charSafe 연결이 빠졌다'); if(!/_charRegisterFaceBodiesFrom\(snap\)/.test(s)) throw new Error('_usersAll 에 등록이 안 걸렸다');"
 node tools/module-syntax-check.mjs && node tools/dogam-syntax-check.mjs
 for t in tools/tests/*.test.mjs; do node "$t" >/dev/null || echo "FAIL $t"; done; echo "끝"
 ```
