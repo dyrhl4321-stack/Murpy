@@ -63,3 +63,11 @@ if bad:
     sys.exit(1)
 
 print('버전 OK — index.html / sw.js(3곳) / version.txt 모두 v%s, 대입 1곳' % idx)
+
+# ★9-07 사고: 충돌 마커(<<<<<<<)가 index.html 에 남은 채 v1058 로 배포돼 실서비스가 잠깐 깨졌다.
+#   버전 검사에 같이 건다 — 마커가 하나라도 있으면 실패.
+import io as _io, sys as _sys
+_bad = [f for f in ('index.html', 'sw.js', 'version.txt')
+        if any(l.startswith(('<<<<<<< ', '>>>>>>> ')) for l in _io.open(f, encoding='utf-8', errors='ignore'))]
+if _bad:
+    print('  x 충돌 마커(<<<<<<< / >>>>>>>)가 남아 있다:', ', '.join(_bad)); _sys.exit(1)
