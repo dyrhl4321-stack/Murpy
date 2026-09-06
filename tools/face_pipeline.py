@@ -135,7 +135,9 @@ def regrid(raw_path, out_src):
     bb = img.getbbox()          # ★배경 제거 후 내용(3x4 그리드)만 크롭 → 여백 왜곡 없이 규격 리샘플
     if bb: img = img.crop(bb)
     img = img.resize((SW, SH), Image.LANCZOS)   # ★부드러운 축소 = 파츠 붙어 보임(NEAREST 는 뭉툭·끊김)
-    img.save(out_src)                            # 알파 하드 이진화 안 함(LANCZOS 부드러움 유지)
+    from face_grid import clean_fringe             # ★배경색 잔상 수술 + 알파 128 이진화 (9-06, 패수현 마젠타 테두리)
+    img = Image.fromarray(clean_fringe(np.array(img), bg), 'RGBA')
+    img.save(out_src)
     print('규격화 %dx%d(배경 %s 제거) → %s' % (W, H, str(bg), out_src))
     return out_src
 
