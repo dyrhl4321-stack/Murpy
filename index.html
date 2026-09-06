@@ -15987,7 +15987,7 @@ window._notifGoPost = function (postId) {
         else goPage('squad');
         return;
       }
-      if (t === 'murpy_gift' || t === 'face_ticket' || t === 'room_visit' || t === 'poke') { goPage('char'); return; }   // 'mw' 는 없는 페이지
+      if (t === 'murpy_gift' || t === 'face_ticket' || t === 'face_done' || t === 'face_failed' || t === 'room_visit' || t === 'poke') { goPage('char'); return; }   // 'mw' 는 없는 페이지
       // ── 리텐션 알림 (8-30) — 눌렀을 때 갈 곳
       if (t === 'friend_workout') { if (pid) window._notifGoPost(pid); else goPage('home'); return; }
       if (t === 'bamboo_nearby') { goPage('bamboo'); return; }
@@ -16404,15 +16404,15 @@ window._maybeMwPromo = function () {
 //   한 세션에 두 팝업이 겹쳐 뜨는 것도 막는다 — mw_promo_sess 가 서 있으면 오늘은 양보한다.
 window.showFacePromo = function (kind, n) {
   // kind 'grant' = 이용권을 받았을 때(대표가 지급창에서 준 사람들, 9-06). 광고가 아니라 알림이라 커마가 있어도 뜬다.
-  const grant = kind === 'grant';
-  if (!grant && Object.keys((window._charState || {}).faceChars || {}).length) return;   // 광고는 이미 있으면 안 띄운다
+  const grant = kind === 'grant', done = kind === 'done';
+  if (!grant && !done && Object.keys((window._charState || {}).faceChars || {}).length) return;   // 광고는 이미 있으면 안 띄운다
   const el = document.getElementById('face-promo'); if (!el) return;
   const T = function (id, t) { const x = document.getElementById(id); if (x) x.innerHTML = t; };
-  T('face-promo-badge', grant ? '선물' : 'NEW');
-  T('face-promo-title', grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
-  T('face-promo-body', grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
-  T('face-promo-cta', grant ? '만들러 가기' : '확인하기');
-  const later = document.getElementById('face-promo-later'); if (later) later.style.display = grant ? 'none' : '';
+  T('face-promo-badge', done ? '완성' : grant ? '선물' : 'NEW');
+  T('face-promo-title', done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
+  T('face-promo-body', done ? '얼굴 커스터마이징이 끝났어요<br>캐릭터 목록에서 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
+  T('face-promo-cta', done ? '착용하러 가기' : grant ? '만들러 가기' : '확인하기');
+  const later = document.getElementById('face-promo-later'); if (later) later.style.display = (grant || done) ? 'none' : '';
   // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
   const h = document.getElementById('face-promo-hero');
   // ★머피월드에 있는 그대로 — 그 사람이 **실제로 입고 있는 옷**으로 그린다(대표 9-06: "임의로 갖다 붙이지 마").
@@ -16422,7 +16422,9 @@ window.showFacePromo = function (kind, n) {
   if (h && window._charRenderTo) {
     h.innerHTML = '<div id="face-promo-h1"></div><div id="face-promo-h2"></div>';
     const draw = function (id, cfg) { const t = document.getElementById(id); if (t) window._charRenderTo(t, window._charSnapH(104), window._charSafe ? window._charSafe(cfg) : cfg); };
-    draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' });
+    const mine = done ? Object.keys((window._charState || {}).faceChars || {}).map(function (id) { return 'face:' + id; }).filter(function (k) { return window._CHAR_BODIES[k]; }) : [];
+    if (mine.length) { draw('face-promo-h1', { body: mine[mine.length - 1] }); document.getElementById('face-promo-h2').style.display = 'none'; }
+    else { draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
     if (window._usersAll) window._usersAll().then(function (snap) {
       snap.forEach(function (d) {
         const c = (d.data() || {}).character; if (!c) return;
@@ -17060,7 +17062,7 @@ window._charState.faceChars = {};
 window._charLoadMyFaceChars = async function (uid) {
   if (!uid) return 0;
   // 내 신청이 대기 중이면 카드가 '만드는 중'으로 보인다 (실패는 조용히 — 규칙 게시 전엔 거부된다)
-  try { const rq = await getDoc(doc(db, 'faceRequests', uid)); window._charState.faceReqPending = !!(rq.exists() && rq.data().status === 'pending'); } catch (e) {}
+  try { const rq = await getDoc(doc(db, 'faceRequests', uid)); window._charState.faceReqPending = !!(rq.exists() && (rq.data().status === 'pending' || rq.data().status === 'working')); } catch (e) {}
   const snap = await getDocs(collection(db, 'users', uid, 'faceChars'));
   let n = 0;
   snap.forEach(function (s) {
@@ -24094,6 +24096,22 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'feed_like') showToast((n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast((n.fromNickname || '누군가') + '님이 내 글에 댓글을 남겼어요');
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
+          else if (n.type === 'face_done') {
+            // 서버가 캐릭터를 만들어 faceChars 에 넣었다 — 다시 읽어 표에 꽂고 도착 팝업
+            (async function () {
+              try { await window._charLoadMyFaceChars(window.currentUser.uid); } catch (e) {}
+              window._charState.faceReqPending = false;
+              if (window.charRenderRoster) window.charRenderRoster();
+              if (window.showFacePromo) window.showFacePromo('done'); else showToast('내 캐릭터가 도착했어요');
+            })();
+          }
+          else if (n.type === 'face_failed') {
+            // 서버가 실패했고 만들기 횟수는 서버가 돌려줬다 — 화면도 맞춘다
+            window._charState.faceReqPending = false;
+            window._charState.faceTickets = (window.faceTickets ? window.faceTickets() : 0) + 1;
+            if (window.charRenderRoster) window.charRenderRoster();
+            showToast('캐릭터 만들기에 실패했어요 · 만들기 횟수는 돌려드렸어요');
+          }
           else if (n.type === 'face_ticket') {
             // 대표가 지급창에서 준 얼굴 커스터마이징 이용권 — 그 자리에서 팝업(9-06)
             const k = Math.max(1, n.amount | 0);
@@ -31139,6 +31157,30 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>${safeNick}</b>님과 매칭됐어요</div>
             <div style="font-size:12px;color:rgba(255,255,255,.45);margin-bottom:2px">이제 대화할 수 있어요</div>
             <div style="font-size:11px;color:#444">${time}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'face_done') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd">내 <b style="color:#F5C24B">얼굴 커스터마이징</b> 캐릭터가 도착했어요</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">관리자 선물</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'face_failed') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel')">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M9.2 10.2h5.6M9.2 13.8h5.6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd">얼굴 커스터마이징에 실패했어요 · 만들기 횟수는 돌려드렸어요</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">관리자 선물</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;

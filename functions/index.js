@@ -128,6 +128,10 @@ function compose(n) {
                body: `관리자가 ${amt} 머피 선물을 보냈어요` };
     }
     // ── 얼굴 커스터마이징 이용권 지급 (2026-09-06, 지급창 종류 선택) ──
+    case "face_done":
+      return { title: "내 캐릭터가 도착했어요", body: "얼굴 커스터마이징이 끝났어요 · 캐릭터 목록에서 착용해보세요" };
+    case "face_failed":
+      return { title: "얼굴 커스터마이징 실패", body: "만들기에 실패했어요 · 만들기 횟수는 돌려드렸어요" };
     case "face_ticket": {
       const k = Math.max(1, Number(n.amount || 1));
       return { title: "얼굴 커스터마이징 이용권을 받았어요",
