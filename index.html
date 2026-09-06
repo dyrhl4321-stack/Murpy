@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1059';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1060';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -33982,13 +33982,22 @@ window._mwNpcSnd = function (k, kind) {
     if (ctx.state === 'suspended' || ctx.state === 'interrupted') { try { ctx.resume(); } catch (e) {} }
     window._mwNpcBufs = window._mwNpcBufs || {};
     const key = k + '_' + kind;
-    const play = function (b) { if (!b || document.hidden) return; const s = ctx.createBufferSource(); s.buffer = b; const g = ctx.createGain(); g.gain.value = 0.9; s.connect(g); g.connect(ctx.destination); s.start(); };
+    // ★9-07 대표: NPC 를 연타하면 목소리가 겹쳐 쌓였다 — 새 대사가 시작되면 앞 대사를 끊고, 늦게 도착한 옛 요청은 버린다.
+    const seq = (window._mwNpcSeq = (window._mwNpcSeq | 0) + 1);
+    if (window._mwNpcCur) { try { window._mwNpcCur.stop(); } catch (e) {} window._mwNpcCur = null; }
+    const play = function (b) {
+      if (!b || document.hidden || seq !== window._mwNpcSeq) return;
+      const s = ctx.createBufferSource(); s.buffer = b; const g = ctx.createGain(); g.gain.value = 0.9; s.connect(g); g.connect(ctx.destination);
+      s.onended = function () { if (window._mwNpcCur === s) window._mwNpcCur = null; };
+      window._mwNpcCur = s; s.start();
+    };
     if (window._mwNpcBufs[key]) { play(window._mwNpcBufs[key]); return; }
     fetch('char/npc/voice/' + key + '.mp3?v=1').then(function (r) { if (!r.ok) throw 0; return r.arrayBuffer(); })
       .then(function (ab) { return ctx.decodeAudioData(ab); })
       .then(function (b) { window._mwNpcBufs[key] = b; play(b); }).catch(function () { window._mwNpcBufs[key] = null; });
   } catch (e) {}
 };
+window._mwNpcHush = function () { if (window._mwNpcCur) { try { window._mwNpcCur.stop(); } catch (e) {} window._mwNpcCur = null; } window._mwNpcSeq = (window._mwNpcSeq | 0) + 1; };
 window._mwNpcTalk = async function (k) {
   const n = window._MW_NPCS.find(function (x) { return x.k === k; }); if (!n) return;
   const claimed = window._mwQuestClaimed(n.q.id);
@@ -34025,6 +34034,12 @@ window._mwNpcDialog = function (n, pages, mode) {
   d.innerHTML = '<div class="box"><div class="pt" style="background-image:url(\'' + (n.pt || n.img) + '\')"></div>'
     + '<div class="nm">' + E(n.name) + '</div><div class="tx"></div><div class="nx" hidden>&#9660;</div><div class="bt" hidden></div></div>';
   (document.getElementById('page-char') || document.body).appendChild(d);
+  // ★9-07 대표: 대화창이 필드 채팅 박스(#mw-park-log)를 다 가렸다 — 채팅 박스 실제 높이만큼 위로 올려 앉힌다.
+  try {
+    const log = document.getElementById('mw-park-log');
+    const r = log && log.getBoundingClientRect();
+    if (r && r.height) d.style.bottom = Math.round(window.innerHeight - r.top + 10) + 'px';
+  } catch (e) {}
   const tx = d.querySelector('.tx'), nx = d.querySelector('.nx'), bt = d.querySelector('.bt');
   let pi = 0, typing = null, full = '';
   const closeBtn = '<button class="cl" onclick="document.getElementById(\'mw-npc-talk\').remove()">닫기</button>';
