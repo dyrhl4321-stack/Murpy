@@ -313,6 +313,10 @@ const ITEMS=[
  {id:'hair_f_long__hat_ladodgers',slot:'hair',body:'human_f',name:'[여조합] 긴생머리+볼캡',overlay:'hat_ladodgers__hair_f_long'},
 ];
 const ROOT='../../';
+// ★?body=<커마 id> — 빡빡이 base 대신 얼굴 커스터마이징 시트(char/faces/<id>.png) 위에 옷을 얹어 본다.
+//   헤어 레이어(<id>_hair.png)가 있으면 옷 위에 겹쳐 보인다(앱과 같은 순서). 대표 9-07: "레드후드+패수현 금발 조합 리터치".
+const FACE_BODY=new URLSearchParams(location.search).get('body')||'';
+if(FACE_BODY) document.title='리터치 · '+FACE_BODY+' 위에';
 const OPS={
   fill:'칠한 곳을 아이템 색(머리카락 등)으로 덮는다',
   erase:'칠한 곳의 아이템 픽셀을 지워 투명하게 한다',
@@ -360,7 +364,7 @@ async function useItem(it,d){
   //   몸통만 바뀐 채로 남아 그리기가 어긋난다.
   // ★몸통에도 캐시버스터를 붙인다. 아이템 시트에만 ?t= 가 있어서, base(walk_female.png)를
   //   고쳐도 브라우저가 옛 몸통을 계속 써서 "고쳤는데 그대로"가 났다(2026-08-05 실제 발생).
-  const nb=await loadPng(ROOT+'char/'+(it.body==='human_f'?'walk_female.png':'walk.png')+'?t='+Date.now());
+  const nb=await loadPng(ROOT+'char/'+(FACE_BODY?('faces/'+FACE_BODY+'.png'):(it.body==='human_f'?'walk_female.png':'walk.png'))+'?t='+Date.now());
   if(d.width!==nb.width||d.height!==nb.height){
     say('규격이 다릅니다. 불러온 파일 <b>'+d.width+'x'+d.height+'</b> / 몸통 시트 <b>'
         +nb.width+'x'+nb.height+'</b>. 남녀를 잘못 골랐거나 시트 규격이 다릅니다.');
@@ -374,6 +378,9 @@ async function useItem(it,d){
   if(it.overlay){
     try{ overlayData=await loadPng(ROOT+'char/items/'+it.overlay+'.png?t='+Date.now()); }
     catch(e){ say('겹칠 레이어 <b>'+it.overlay+'</b> 를 못 불러왔습니다.'); }
+  } else if(FACE_BODY){
+    // 커마 몸통이면 헤어 레이어를 옷 위에 겹쳐 본다(앱: body < top < hair). 없으면 조용히 넘어간다.
+    try{ overlayData=await loadPng(ROOT+'char/faces/'+FACE_BODY+'_hair.png?t='+Date.now()); }catch(e){}
   }
   // 조합 시트(<헤어>__<모자>)는 원래 헤어에서 색을 뽑는다 — 잘린 시트엔 색이 거의 없다.
   palSource=null;
