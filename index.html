@@ -3969,14 +3969,45 @@ window._faceCharDocFrom = function (form) {
 //   "티켓은 있는데 인증이 없다" 같은 조합이 화면 코드에 흩어지면 한 화면만 고쳐진다.
 // 순서가 곧 이탈 방어다: 티켓 없음 → 상점 / 사진 없음 → 사진 등록 / 인증 없음 → 인증 / 다 되면 생성.
 window._faceEntryState = function (tickets, hasChar, faceVerified, hasPhoto) {
-  if (!(tickets > 0)) return { mode: 'buy', label: '커마권 사기',
-    desc: '내 얼굴로 캐릭터를 만들 수 있어요 · ' + window.FACE_TICKET_PRICE + '머피' };
-  if (!hasPhoto) return { mode: 'photo', label: '사진 먼저 등록하기',
-    desc: '내 얼굴이 맞는지 확인하려면 사진이 한 장 필요해요' };
-  if (!faceVerified) return { mode: 'verify', label: '얼굴 인증하기',
-    desc: '본인만 만들 수 있어요 · 사진은 저장하지 않아요' };
-  return { mode: 'create', label: '내 얼굴로 만들기',
-    desc: '커마권 ' + tickets + '장 있어요' };
+  if (!(tickets > 0)) return { mode: 'buy', label: '내 얼굴 머피',
+    desc: '1,000머피' };
+  if (!hasPhoto) return { mode: 'photo', label: '내 얼굴 머피',
+    desc: '사진 먼저' };
+  if (!faceVerified) return { mode: 'verify', label: '내 얼굴 머피',
+    desc: '얼굴 인증 먼저' };
+  return { mode: 'create', label: '내 얼굴 머피',
+    desc: tickets + '회 남음' };
+};
+// 로스터 카드를 눌렀을 때. ★새 화면 없이 기존 확인창(murpyConfirm) 하나로 상황을 설명하고 보낸다 —
+//   헬토리 카드 → 코드 모달과 같은 문법. 구매는 여기서 한 번만 확인하고 faceBuyTicket 은 확인을 건너뛴다.
+window.faceEntryTap = async function () {
+  const prof = window._cachedProfile || {};
+  const hasPhoto = !!([prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean).length);
+  const hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
+  const st = window._faceEntryState(window.faceTickets(), hasChar, !!prof.faceVerified, hasPhoto);
+  if (st.mode === 'buy') {
+    const ok = await window.murpyConfirm({ title: '내 얼굴 머피', cost: true, confirmText: '1,000머피로 만들기',
+      desc: '내 얼굴 그대로 머피 캐릭터를 만들어요<br>옷은 지금 가진 걸 그대로 입어요<br><b style="color:#F5C24B">1,000머피</b> · 마음에 안 들면 두 번 다시 만들 수 있어요' });
+    if (!ok) return;
+    if (await window.faceBuyTicket({ noConfirm: true }) && window.charRenderRoster) window.charRenderRoster();
+    return;
+  }
+  if (st.mode === 'photo') {
+    const ok = await window.murpyConfirm({ title: '내 얼굴 머피', confirmText: '사진 등록하기',
+      desc: '내 얼굴이 맞는지 보려면<br>프로필 사진이 한 장 있어야 해요' });
+    if (ok) openEditProfile();
+    return;
+  }
+  if (st.mode === 'verify') {
+    const ok = await window.murpyConfirm({ title: '내 얼굴 머피', confirmText: '얼굴 인증하기',
+      desc: '본인 얼굴로만 만들 수 있어요<br>인증 사진은 저장하지 않아요' });
+    if (ok) window.startFaceVerify();
+    return;
+  }
+  // create — 셀카 자동 생성(서버)은 다음 단계. 지금은 근방단 베타로 직접 만들어 준다는 걸 숨기지 않는다.
+  if (window.faceStartCreate) { window.faceStartCreate(); return; }
+  await window.murpyConfirm({ title: '내 얼굴 머피', confirmText: '알겠어요',
+    desc: '만들기 ' + st.desc + '<br>지금은 근방단 베타 기간이라<br>사진을 받아서 직접 만들어 드리고 있어요' });
 };
 // 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
 // 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
@@ -9255,24 +9286,21 @@ window.charRenderRoster = function () {
     adm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 히든 연출 테스트</span>'
       + ['cult', 'somm', 'zombie'].map(id => "<button class='mw-btn mw-btn-sm mw-btn-ghost' onclick=\"window.mwAdminTestHidden('" + id + "')\">" + window._CHAR_BODIES[id].name + "</button>").join('');
   } else if (adm) { adm.remove(); }
-  // 커마 진입 — ★새 화면을 만들지 않는다. 상황에 따라 기존 흐름으로 보낼 뿐이다.
-  //   진입점이 없으면 기능이 있어도 죽은 코드다(센터 탭 전례). 자리는 로스터 바로 아래 한 곳뿐이다.
-  let fe = document.getElementById('mw-face-entry');
-  if (!fe) { fe = document.createElement('div'); fe.id = 'mw-face-entry'; grid.after(fe); }
-  const _prof = window._cachedProfile || {};
-  // ★사진 판정은 startFaceVerify 가 쓰는 후보 목록과 **같아야** 한다.
-  //   여기서 좁게 보면 '인증하기'를 눌렀을 때 "먼저 사진을 한 장 등록해주세요" 로 튕긴다.
-  const _hasPhoto = !!([_prof.photoURL || (window.currentUser || {}).photoURL]
-    .concat(_prof.photos || [], _prof.workoutPhotos || []).filter(Boolean).length);
-  const _hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
-  const _st = window._faceEntryState(window.faceTickets(), _hasChar, !!_prof.faceVerified, _hasPhoto);
-  const _act = _st.mode === 'buy' ? 'window.faceBuyTicket().then(function(o){ if(o) window.charRenderRoster(); })'
-             : _st.mode === 'photo' ? 'openEditProfile()'
-             : _st.mode === 'verify' ? 'window.startFaceVerify()'
-             : 'window.faceStartCreate && window.faceStartCreate()';
-  fe.style.cssText = 'margin-top:14px';
-  fe.innerHTML = '<button class="mw-btn" style="width:100%" onclick="' + _act + '">' + _st.label + '</button>'
-    + '<div style="margin-top:6px;font-size:11px;color:#4a5266;text-align:center">' + _st.desc + '</div>';
+  // 내 얼굴 머피 — ★로스터 **안의 카드**다(헬토리 잠금 카드와 같은 문법). 대표 9-05 "헬토리처럼",
+  //   9-06 "그리드 아래 통짜 버튼은 안 이쁘다". 얼굴이 들어갈 자리라 실루엣으로 둔다.
+  //   누르면 faceEntryTap 이 상황(머피·사진·인증·생성)을 확인창 하나로 안내한다. 새 화면 없음.
+  {
+    const _prof = window._cachedProfile || {};
+    const _hasPhoto = !!([_prof.photoURL || (window.currentUser || {}).photoURL].concat(_prof.photos || [], _prof.workoutPhotos || []).filter(Boolean).length);
+    const _hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
+    const _st = window._faceEntryState(window.faceTickets(), _hasChar, !!_prof.faceVerified, _hasPhoto);
+    const _hb = window._CHAR_BODIES.human, _th = 66, _tw = Math.round(_th * _hb.cw / _hb.ch);
+    const _sil = "<div class='mw-pixelate' style=\"width:" + _tw + "px;height:" + _th + "px;margin:0 auto;background-image:url('" + (_hb.thumb || _hb.src) + "');background-repeat:no-repeat;background-size:" + (_tw * 3) + "px " + (_th * 4) + "px;background-position:0 0;filter:brightness(0) opacity(.5)\"></div>";
+    grid.insertAdjacentHTML('beforeend', "<button class='mw-card' id='mw-face-entry' onclick=\"window.faceEntryTap()\">"
+      + (_st.mode === 'buy' ? window._mwLockBadge : '')
+      + "<div style='height:66px;display:flex;align-items:flex-end'>" + _sil + "</div>"
+      + "<span class='mw-name'>" + _st.label + "</span><span class='mw-sub gold'>" + _st.desc + "</span></button>");
+  }
   // 관리자 전용: 커마 캐릭터 지급 (서버 자가생성 전까지의 지급 경로)
   let fadm = document.getElementById('mw-face-admin');
   if (typeof isAdmin === 'function' && isAdmin()) {
@@ -10987,14 +11015,14 @@ window.mwPortal = function () {
 <div id="face-promo" style="display:none;position:fixed;inset:0;z-index:10048;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
   <div class="mfg-card" style="max-width:330px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px 22px 20px;text-align:center;position:relative">
     <button onclick="window.closeFacePromo(false)" style="position:absolute;top:12px;right:12px;background:none;border:none;color:rgba(255,255,255,0.4);width:30px;height:30px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    <div style="display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;color:#F5C24B;border:1px solid rgba(245,194,75,0.4);border-radius:6px;padding:3px 9px;margin-bottom:12px">NEW · 얼굴 커마</div>
+    <div style="display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;color:#F5C24B;border:1px solid rgba(245,194,75,0.4);border-radius:6px;padding:3px 9px;margin-bottom:12px">NEW · 내 얼굴 머피</div>
     <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;height:116px;margin-bottom:8px">
       <div style="position:absolute;top:44%;left:50%;width:210px;height:180px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(245,194,75,0.17),rgba(245,194,75,0.05) 44%,transparent 72%);pointer-events:none"></div>
       <div id="face-promo-hero" style="position:relative;padding-bottom:4px;display:flex;align-items:flex-end;gap:14px"></div>
     </div>
-    <div style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">내 얼굴로 만드는 캐릭터</div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">머피월드를 걸어다니는 캐릭터가<br><b style="color:#fff">진짜 내 얼굴</b>이 돼요<br>옷·헤어는 지금 가진 것 그대로 입어요</div>
-    <button class="mfg-btn" onclick="window.facePromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">내 얼굴로 만들기</button>
+    <div style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">이 얼굴, 나야</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">내 얼굴 그대로 만든 머피가<br>머피월드를 걸어다녀요<br>옷은 가진 거 그대로 입혀요</div>
+    <button class="mfg-btn" onclick="window.facePromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">내 얼굴 머피 만들기</button>
     <button onclick="window.closeFacePromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
   </div>
 </div>
@@ -16323,7 +16351,13 @@ window.showFacePromo = function () {
   const el = document.getElementById('face-promo'); if (!el) return;
   // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
   const h = document.getElementById('face-promo-hero');
-  if (h && window._charMiniHTML) h.innerHTML = window._charMiniHTML('jaejin', 96) + window._charMiniHTML('paesuhyun', 96);
+  // ★벗은 base 로 보여주지 않는다(대표 9-06). 옷을 서로 다르게 입혀 "옷은 그대로 입는다"를 그림으로 말한다.
+  //   그리는 건 _charRenderTo 하나 — 겹 순서·긴 머리 레이어가 여기서만 맞다.
+  if (h && window._charRenderTo) {
+    h.innerHTML = '<div id="face-promo-h1"></div><div id="face-promo-h2"></div>';
+    window._charRenderTo(document.getElementById('face-promo-h1'), 96, { body: 'jaejin', top: 'top_redhood', bottom: 'bottom_trainpt', shoes: 'shoes_black' });
+    window._charRenderTo(document.getElementById('face-promo-h2'), 96, { body: 'paesuhyun', top: 'top_ringer', bottom: 'bottom_bermuda', shoes: 'shoes_white' });
+  }
   el.style.display = 'flex';
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
 };
@@ -16965,14 +16999,15 @@ window._charLoadMyFaceChars = async function (uid) {
 // ★spendCredit 을 쓰지 않는 이유 = 그건 머피만 깎는다. 커마권 +1 을 **같은 트랜잭션**에
 //   묶어야 규칙이 짝을 검사할 수 있다(따로 쓰면 커마권 단독 증가라 규칙이 막는다).
 // ★확인창을 없애지 않는다 — 돈이 빠지는 자리다(8-12 이중 차감 사고 이후 규칙).
-window.faceBuyTicket = async function () {
+window.faceBuyTicket = async function (opts) {
   const u = window.currentUser;
-  if (!u) { window.requireLogin && requireLogin('커마권은 로그인이 필요해요'); return false; }
+  if (!u) { window.requireLogin && requireLogin('로그인이 필요해요'); return false; }
   const price = window.FACE_TICKET_PRICE;
-  const ok = await window.murpyConfirm({
-    title: '얼굴 커마권 구매',
-    desc: '<b style="color:#F5C24B">' + price + '머피</b>로 커마권 한 장을 사요',
-    cost: true, confirmText: '구매'
+  // 로스터 카드(faceEntryTap)가 이미 한 번 확인했으면 건너뛴다 — 두 번 묻지 않는다. 단독 호출은 여전히 확인한다.
+  const ok = (opts && opts.noConfirm) ? true : await window.murpyConfirm({
+    title: '내 얼굴 머피',
+    desc: '<b style="color:#F5C24B">' + price + '머피</b>로 한 번 만들 수 있어요',
+    cost: true, confirmText: '만들기'
   });
   if (!ok) return false;
   try {
@@ -16990,7 +17025,7 @@ window.faceBuyTicket = async function () {
     window._charState.faceTickets = res.faceTickets;
     if (window.renderCreditUI) window.renderCreditUI();
     if (window.mwUpdateCoin) window.mwUpdateCoin();
-    window.showToast && showToast('커마권을 받았어요');
+    window.showToast && showToast('준비됐어요 · 이제 만들 수 있어요');
     return true;
   } catch (e) {
     console.error('faceBuyTicket', e);
