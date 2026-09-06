@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1056';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1057';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -9346,8 +9346,11 @@ window.charRenderRoster = function () {
       + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminGrantTicket('
       + "document.getElementById('fa-uid').value, 1)\">커마권 1장 지급</button>"
       + '<span style="width:100%;font-size:10px;color:#4a5266;margin-top:6px">대기 중인 신청 <button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminQueue()">새로고침</button></span>'
-      + '<div id="fa-queue" style="display:grid;gap:4px"></div>';
+      + '<div id="fa-queue" style="display:grid;gap:4px"></div>'
+      + '<span style="width:100%;font-size:10px;color:#4a5266;margin-top:6px">폐기·이의 신청 <button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminAppeals()">새로고침</button></span>'
+      + '<div id="fa-appeals" style="display:grid;gap:4px"></div>';
     if (window.faceAdminQueue) window.faceAdminQueue();
+    if (window.faceAdminAppeals) window.faceAdminAppeals();
   } else if (fadm) { fadm.remove(); }
 };
 // ===== 내 범퍼 (유저 피드백 #20) =====
@@ -11043,6 +11046,10 @@ window.mwPortal = function () {
 </div>
 
 <!-- ===== 얼굴 커마 광고 팝업 (머피월드 홍보 팝업과 같은 골격, 상태 키만 분리) ===== -->
+<style>
+  #face-promo .fp-chip { background:none;border:1px solid rgba(255,255,255,0.22);border-radius:999px;padding:6px 11px;color:rgba(255,255,255,0.7);font-size:12px;font-family:inherit;cursor:pointer }
+  #face-promo .fp-chip.on { border-color:#F5C24B;color:#F5C24B }
+</style>
 <div id="face-promo" style="display:none;position:fixed;inset:0;z-index:10048;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
   <div class="mfg-card" style="max-width:330px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px 22px 20px;text-align:center;position:relative">
     <button onclick="window.closeFacePromo(false)" style="position:absolute;top:12px;right:12px;background:none;border:none;color:rgba(255,255,255,0.4);width:30px;height:30px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -11054,7 +11061,13 @@ window.mwPortal = function () {
     <div id="face-promo-title" style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">얼굴 커스터마이징 기능 업데이트</div>
     <div id="face-promo-body" style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요</div>
     <input id="face-promo-name" maxlength="12" placeholder="캐릭터 이름 (1~12자)" autocomplete="off" style="display:none;width:100%;box-sizing:border-box;background:none;border:1px solid rgba(255,255,255,0.18);border-radius:10px;padding:11px 12px;color:#fff;font-size:16px;text-align:center;margin-bottom:12px;outline:none;font-family:inherit">
+    <div id="face-promo-survey" style="display:none;margin-bottom:12px;text-align:left">
+      <div id="face-promo-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+      <textarea id="face-promo-note" maxlength="500" rows="2" placeholder="자세히 적어주시면 더 잘 만들게요 (선택)" style="width:100%;box-sizing:border-box;background:none;border:1px solid rgba(255,255,255,0.18);border-radius:10px;padding:10px 12px;color:#fff;font-size:13px;outline:none;font-family:inherit;resize:none"></textarea>
+    </div>
     <button id="face-promo-cta" class="mfg-btn" onclick="window.facePromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">확인하기</button>
+    <button id="face-promo-cta2" onclick="window.faceDiscardRun('appeal')" style="display:none;width:100%;background:none;border:1px solid rgba(255,255,255,0.22);border-radius:12px;padding:12px;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:8px;font-family:inherit">폐기하고 이의 신청<span style="display:block;font-size:11px;font-weight:500;color:rgba(255,255,255,0.45);margin-top:2px">결과가 잘못됐다면 확인 후 만들기 횟수를 돌려드려요</span></button>
+    <button id="face-promo-discard" onclick="window.faceDiscardOpen(window._facePromoCharId)" style="display:none;width:100%;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">이 캐릭터 폐기하기</button>
     <button id="face-promo-later" onclick="window.closeFacePromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
   </div>
 </div>
@@ -16411,18 +16424,23 @@ window._maybeMwPromo = function () {
 //   한 세션에 두 팝업이 겹쳐 뜨는 것도 막는다 — mw_promo_sess 가 서 있으면 오늘은 양보한다.
 window.showFacePromo = function (kind, n) {
   // kind 'grant' = 이용권을 받았을 때(대표가 지급창에서 준 사람들, 9-06). 광고가 아니라 알림이라 커마가 있어도 뜬다.
-  const rename = kind === 'rename', grant = kind === 'grant', done = kind === 'done' || rename;
+  // kind 'rename' = 착용 중인 내 커마를 다시 눌렀을 때(이름 변경 + 폐기 입구). 'discard' = 폐기 사유 설문(대표 9-07).
+  const rename = kind === 'rename', grant = kind === 'grant', discard = kind === 'discard', done = kind === 'done' || rename || discard;
   if (!grant && !done && Object.keys((window._charState || {}).faceChars || {}).length) return;   // 광고는 이미 있으면 안 띄운다
   const el = document.getElementById('face-promo'); if (!el) return;
   const T = function (id, t) { const x = document.getElementById(id); if (x) x.innerHTML = t; };
-  T('face-promo-badge', rename ? '이름을 바꿔요' : done ? '캐릭터가 완성됐어요!' : grant ? '선물이 도착했어요!' : '새로운 기능이 열렸어요');   // 칩이 아니라 한 줄 문구(대표 9-07)
-  T('face-promo-title', rename ? '캐릭터 이름 바꾸기' : done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
-  T('face-promo-body', rename ? '새 이름을 지어주세요' : done ? '얼굴 커스터마이징이 끝났어요<br>이름을 짓고 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
-  T('face-promo-cta', rename ? '저장하고 착용' : done ? '이 이름으로 착용' : grant ? '만들러 가기' : '확인하기');
-  window._facePromoKind = done ? 'done' : kind; window._facePromoCharId = done ? n : null;
+  T('face-promo-badge', discard ? '캐릭터 폐기' : rename ? '커스터마이징 캐릭터' : done ? '캐릭터가 완성됐어요!' : grant ? '선물이 도착했어요!' : '새로운 기능이 열렸어요');   // 칩이 아니라 한 줄 문구(대표 9-07)
+  T('face-promo-title', discard ? '이 캐릭터를 폐기할까요' : rename ? '캐릭터 이름 변경' : done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
+  T('face-promo-body', discard ? '폐기하면 되돌릴 수 없어요<br>어떤 점이 아쉬웠는지 알려주세요' : rename ? '이 캐릭터의 이름을 바꿔요' : done ? '얼굴 커스터마이징이 끝났어요<br>이름을 짓고 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
+  T('face-promo-cta', discard ? '폐기하고 새로 만들기' : rename ? '저장하고 착용' : done ? '이 이름으로 착용' : grant ? '만들러 가기' : '확인하기');
+  window._facePromoKind = discard ? 'discard' : done ? 'done' : kind; window._facePromoCharId = done ? n : null;
   const nameInp = document.getElementById('face-promo-name');
-  if (nameInp) { nameInp.style.display = done ? '' : 'none'; if (done) nameInp.value = rename && window._CHAR_BODIES['face:' + n] ? (window._CHAR_BODIES['face:' + n].name || '') : ''; }
+  if (nameInp) { nameInp.style.display = (done && !discard) ? '' : 'none'; if (done) nameInp.value = rename && window._CHAR_BODIES['face:' + n] ? (window._CHAR_BODIES['face:' + n].name || '') : ''; }
   const later = document.getElementById('face-promo-later'); if (later) later.style.display = (grant || done) ? 'none' : '';
+  // 폐기 설문(사유 칩 + 한마디) · 이의 신청 버튼 · 이름 변경창의 폐기 입구
+  const sv = document.getElementById('face-promo-survey'); if (sv) { sv.style.display = discard ? '' : 'none'; if (discard) { sv.querySelectorAll('.fp-chip').forEach(function (c) { c.classList.remove('on'); }); const ta = document.getElementById('face-promo-note'); if (ta) ta.value = ''; } }
+  const cta2 = document.getElementById('face-promo-cta2'); if (cta2) cta2.style.display = discard ? '' : 'none';
+  const dc = document.getElementById('face-promo-discard'); if (dc) dc.style.display = rename ? '' : 'none';
   // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
   const h = document.getElementById('face-promo-hero');
   // ★머피월드에 있는 그대로 — 그 사람이 **실제로 입고 있는 옷**으로 그린다(대표 9-06: "임의로 갖다 붙이지 마").
@@ -16447,14 +16465,14 @@ window.showFacePromo = function (kind, n) {
     const h2 = document.getElementById('face-promo-h2');
     if (mineKey) { draw('face-promo-h1', { body: mineKey }); if (h2) h2.style.display = 'none'; }
     else if (done) { const h1 = document.getElementById('face-promo-h1'); if (h1) h1.innerHTML = ''; if (h2) h2.style.display = 'none'; }
-    else { if (h2) h2.style.display = ''; draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
-    if (window._usersAll) window._usersAll().then(function (snap) {
-      snap.forEach(function (d) {
-        const c = (d.data() || {}).character; if (!c) return;
-        if (c.body === 'jaejin') draw('face-promo-h1', c);
-        if (c.body === 'paesuhyun') draw('face-promo-h2', c);
-      });
-    }).catch(function () {});
+    else {
+      // ★홍보·선물 히어로는 **고정**(대표 9-07 "이대로 굳혀"). 9-07 시점 재진의 실제 착장 그대로, 패수현은 몸통 기본 옷.
+      //   예전엔 _usersAll 로 실시간 동기화했는데 그 콜백이 **모든 팝업**(도착·이름변경 포함)에서 돌아 h1 을 재진으로
+      //   덮어썼다 — "내 캐릭터가 도착했어요에 재진이 뜬다"의 진짜 원인. 동기화는 없앤다.
+      if (h2) h2.style.display = '';
+      draw('face-promo-h1', { body: 'jaejin', top: 'top_m_mangonasi', bottom: 'bottom_trainpt', shoes: 'shoes_white', skin: 't4', hair: 'hair_ivyleague' });
+      draw('face-promo-h2', { body: 'paesuhyun' });
+    }
   }
   el.style.display = 'flex';
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
@@ -16465,6 +16483,7 @@ window.closeFacePromo = function (forever) {
 };
 // CTA 는 새 화면을 열지 않는다 — 로스터로 보내면 진입 버튼이 나머지(상점·사진·인증·생성)를 판단한다.
 window.facePromoGo = function () {
+  if (window._facePromoKind === 'discard' && window._facePromoCharId) { window.faceDiscardRun('remake'); return; }
   if (window._facePromoKind === 'done' && window._facePromoCharId) { window.faceDoneWear(window._facePromoCharId); return; }
   window.closeFacePromo(true);
   if (typeof closePanel === 'function') closePanel('mypage-panel');
@@ -16474,6 +16493,20 @@ window.facePromoGo = function () {
     const fe = document.getElementById('mw-face-entry');
     if (fe && fe.scrollIntoView) fe.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, 300);
+};
+// ── 커마 폐기 (대표 9-07: "폐기 가능하게 · 사유 물어보고 · 이의 신청 · 새로 만들기") ──
+//   같은 팝업을 'discard' 로 연다. 사유 칩은 틴트 없이 테두리·글자색만(틴트 칩 금지 규칙).
+window.FACE_DISCARD_REASONS = ['얼굴이 안 닮았어요', '옆·뒷모습이 이상해요', '머리카락이 이상해요', '몸이나 옷이 바뀌었어요', '그냥 다시 만들고 싶어요'];
+window.faceDiscardOpen = function (charId) {
+  const host = document.getElementById('face-promo-chips');
+  if (host && !host.children.length) host.innerHTML = window.FACE_DISCARD_REASONS.map(function (r, i) {
+    return '<button type="button" class="fp-chip" data-i="' + i + '" onclick="this.classList.toggle(\'on\')">' + r + '</button>'; }).join('');
+  window.showFacePromo('discard', charId);
+};
+window._faceDiscardSurvey = function () {
+  const reasons = []; document.querySelectorAll('#face-promo-chips .fp-chip.on').forEach(function (c) { reasons.push(window.FACE_DISCARD_REASONS[c.dataset.i | 0]); });
+  const ta = document.getElementById('face-promo-note');
+  return { reasons: reasons, text: String((ta && ta.value) || '').trim().slice(0, 500) };
 };
 try { if (localStorage.getItem('facePromoSeen') == null) localStorage.setItem('facePromoSeen', 'armed'); } catch (e) {}
 // 발동 판정: armed + 가입세션 아님 + 세션당 1회 + 탭 3번+ + 최대 3회 (머피월드 홍보와 같은 규칙)
@@ -17268,6 +17301,64 @@ window.faceDoneWear = async function (charId) {
     if (window.charRenderRoster) window.charRenderRoster();
     showToast("'" + name + "' 착용했어요");
   }, 300);
+};
+// 폐기 실행. mode 'remake' = 지우고 바로 만들기 입구로(횟수 없으면 구매창), 'appeal' = 지우고 faceAppeals 에 사유를 남긴다
+//   (관리자 카드에서 보고 횟수를 돌려준다). 두 경우 모두 설문(사유·한마디)을 faceAppeals 에 남긴다 — 프롬프트 개선 재료.
+// ★지울 땐 지울 것만: faceChars 문서 하나 + 표에서 그 몸통. 착용 중이었으면 성별 기본 몸통으로 갈아입힌다.
+window.faceDiscardRun = async function (mode) {
+  const charId = window._facePromoCharId; if (!charId || !window.currentUser) return;
+  const sv = window._faceDiscardSurvey ? window._faceDiscardSurvey() : { reasons: [], text: '' };
+  if (!sv.reasons.length && !sv.text) { showToast('폐기 이유를 하나 골라주세요'); return; }
+  const ok = await window.murpyConfirm({ title: '캐릭터 폐기', danger: true, confirmText: '폐기하기',
+    desc: '폐기하면 되돌릴 수 없어요' + (mode === 'appeal' ? '<br>확인 후 만들기 횟수를 돌려드려요' : '') });
+  if (!ok) return;
+  const uid = window.currentUser.uid, key = 'face:' + charId;
+  const fc = (window._charState.faceChars || {})[charId] || {};
+  try {
+    await addDoc(collection(db, 'faceAppeals'), { uid: uid, nick: (window._cachedProfile || {}).nickname || '', charId: charId, name: fc.name || '',
+      sheetUrl: fc.sheetUrl || '', kind: mode, reasons: sv.reasons, text: sv.text, status: mode === 'appeal' ? 'open' : 'survey', t: Date.now() });
+  } catch (e) { console.warn('faceAppeals', e); }
+  try { await deleteDoc(doc(db, 'users', uid, 'faceChars', charId)); }
+  catch (e) { console.warn('faceDiscard', e); showToast('폐기에 실패했어요'); return; }
+  if (window._charState.faceChars) delete window._charState.faceChars[charId];
+  delete window._CHAR_BODIES[key];
+  window.closeFacePromo(false);
+  const wearing = (window._charDraft && window._charDraft.body === key) || ((window._charState.character || {}).body === key);
+  if (wearing && window.charPickBody) window.charPickBody(window._charBodyForGender((window._cachedProfile || {}).gender));
+  if (window.charRenderRoster) window.charRenderRoster();
+  if (mode === 'appeal') { showToast('이의 신청을 보냈어요 · 확인 후 만들기 횟수를 돌려드려요'); return; }
+  showToast('폐기했어요');
+  if (window.faceEntryTap) setTimeout(function () { window.faceEntryTap(); }, 400);
+};
+// 관리자: 이의 신청 목록. '횟수 돌려주기' = 이용권 1장 지급 + granted, '닫기' = closed.
+window.faceAdminAppeals = async function () {
+  const host = document.getElementById('fa-appeals'); if (!host || !isAdmin()) return;
+  host.innerHTML = '<span style="font-size:10px;color:#4a5266">불러오는 중…</span>';
+  try {
+    const snap = await getDocs(query(collection(db, 'faceAppeals'), where('status', 'in', ['open', 'survey'])));
+    const rows = []; snap.forEach(function (d) { rows.push(Object.assign({ id: d.id }, d.data())); });
+    rows.sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+    const E = window._escHtml || function (t) { return String(t); }, J = window._escJs || function (t) { return String(t); };
+    host.innerHTML = rows.length ? rows.slice(0, 30).map(function (q) {
+      const when = q.t ? new Date(q.t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      return '<div style="font-size:11px;color:#cfd6e6;border:1px solid rgba(255,255,255,0.12);padding:6px 8px">'
+        + '<div style="display:flex;align-items:center;gap:6px"><b style="color:' + (q.status === 'open' ? '#F5C24B' : '#8a93a8') + '">' + E(q.nick || '머피') + '</b>'
+        + '<span style="color:#4a5266">' + (q.status === 'open' ? '이의 신청' : '새로 만들기') + ' · ' + E(when) + '</span>'
+        + '<span style="margin-left:auto;display:flex;gap:4px">'
+        + (q.sheetUrl ? '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.open(&quot;' + J(q.sheetUrl) + '&quot;,&quot;_blank&quot;)">시트</button>' : '')
+        + (q.status === 'open' ? '<button class="mw-btn mw-btn-sm" onclick="window.faceAdminAppealDone(&quot;' + J(q.id) + '&quot;,&quot;' + J(q.uid) + '&quot;,true)">횟수 돌려주기</button>' : '')
+        + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminAppealDone(&quot;' + J(q.id) + '&quot;,&quot;' + J(q.uid) + '&quot;,false)">닫기</button></span></div>'
+        + '<div style="color:#8a93a8;margin-top:3px">' + E((q.reasons || []).join(' · ')) + (q.text ? ' — ' + E(q.text) : '') + '</div></div>';
+    }).join('') : '<span style="font-size:10px;color:#4a5266">없음</span>';
+  } catch (e) { console.warn('faceAdminAppeals', e); host.innerHTML = '<span style="font-size:10px;color:#ff6b6b">목록 실패(규칙·인덱스 확인)</span>'; }
+};
+window.faceAdminAppealDone = async function (id, uid, grant) {
+  if (!isAdmin()) return;
+  try {
+    if (grant && !(await window.faceAdminGrantTicket(uid, 1))) return;
+    await updateDoc(doc(db, 'faceAppeals', id), { status: grant ? 'granted' : 'closed', doneAt: Date.now() });
+    window.faceAdminAppeals();
+  } catch (e) { console.warn('faceAdminAppealDone', e); showToast('실패'); }
 };
 window.faceBuyTicket = async function (opts) {
   const u = window.currentUser;

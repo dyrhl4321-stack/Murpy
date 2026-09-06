@@ -48,6 +48,7 @@ import sys as _s; _s.path.insert(0, HERE)
 from gcloud_oauth import get_token as _get_token
 tok = _get_token()   # 저장된 refresh 토큰이 있으면 클릭 없이(9-07)
 print('토큰 받음', flush=True)
+HDR = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
 
 def call(url, body=None, method='GET', soft=False):
     """soft=True 면 실패해도 죽지 않고 None 을 준다(릴리스가 없을 때 만들어 보려고)."""

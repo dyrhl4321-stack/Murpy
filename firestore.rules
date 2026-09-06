@@ -42,7 +42,8 @@ service cloud.firestore {
       //   유저가 스스로 만들 수 있으면 커마권을 안 내고 캐릭터를 갖는다.
       match /faceChars/{charId} {
         allow read: if true;
-        allow create, delete: if isAdmin();
+        allow create: if isAdmin();
+        allow delete: if isAdmin() || isOwner(userId);   // 본인 폐기(9-07). 만들기는 서버만.
         // 본인은 **이름만** 바꾼다(도착 팝업에서 이름 짓기, 9-07). 시트 URL·톤·눈 좌표는 서버/관리자만.
         allow update: if isAdmin() || (isOwner(userId)
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
@@ -413,6 +414,16 @@ service cloud.firestore {
                     && request.resource.data.status == 'pending'
                     && request.resource.data.photoUrl is string);
       allow delete: if isAdmin();
+    }
+
+    // 커마 폐기 설문·이의 신청 (2026-09-07). 본인이 남기고 관리자가 처리한다.
+    match /faceAppeals/{id} {
+      allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.reasons is list
+                    && request.resource.data.text is string && request.resource.data.text.size() <= 500
+                    && request.resource.data.status in ['open', 'survey'];
+      allow update, delete: if isAdmin();
     }
 
     match /feedback/{fbId} {
