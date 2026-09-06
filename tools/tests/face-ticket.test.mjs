@@ -85,10 +85,11 @@ assert.strictEqual(w._faceEntryState(1, false, false, true).mode, 'verify', '인
 assert.strictEqual(w._faceEntryState(1, false, false, false).mode, 'photo', '사진 없이 인증으로 보낸다');
 assert.strictEqual(w._faceEntryState(1, false, true, true).mode, 'create', '조건이 다 됐는데 생성으로 안 간다');
 assert.strictEqual(w._faceEntryState(0, true, true, true).mode, 'buy', '이미 있어도 더 만들려면 티켓이 필요하다');
+assert.strictEqual(w._faceEntryState(3, false, true, true, true).mode, 'pending', '신청 대기 중인데 다시 만들기로 보낸다');
 // 문구에 이모지가 없어야 한다 (머피 UI 규칙)
 for (const m of [[0,false,true,true],[1,false,false,true],[1,false,false,false],[1,false,true,true]]) {
   const s = w._faceEntryState.apply(null, m);
   assert(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s.label + s.desc), '진입 문구에 이모지가 있다: ' + s.label);
 }
 
-console.log('OK face-ticket 27항목');
+console.log('OK face-ticket 28항목');

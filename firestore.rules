@@ -398,6 +398,18 @@ service cloud.firestore {
     // ===== 베타 피드백 (murpy.app/survey · 관리자만 열람) =====
     // ★create 를 로그인으로 막으면 안 된다 — '로그인 자체가 안 된다'는 제보를 못 받는다.
     //   대신 reports/centerEditRequests 와 같은 모양으로 읽기는 관리자만.
+    // 얼굴 커스터마이징 신청 (2026-09-06). 서버 자가생성 전까지 대표가 직접 만든다 — 그 큐.
+    //   문서 id = uid (1인 1건). 본인이 사진 URL 과 함께 pending 으로 만들고, 상태 변경·삭제는 관리자만.
+    //   ★status 를 본인이 못 바꾼다 — 'done' 을 스스로 찍어 횟수만 돌려받는 길을 막는다.
+    match /faceRequests/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create, update: if isAdmin() || (isOwner(uid)
+                    && request.resource.data.uid == uid
+                    && request.resource.data.status == 'pending'
+                    && request.resource.data.photoUrl is string);
+      allow delete: if isAdmin();
+    }
+
     match /feedback/{fbId} {
       allow read: if isAdmin();
       allow create: if request.resource.data.body is string
