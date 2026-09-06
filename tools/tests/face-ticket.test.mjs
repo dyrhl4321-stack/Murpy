@@ -50,4 +50,32 @@ assert(/faceChars/.test(rules), 'firestore.rules 에 faceChars 규칙이 없다'
 assert(new RegExp('resource\.data\.credits - ' + w.FACE_TICKET_PRICE).test(rules),
   '규칙의 차감액이 FACE_TICKET_PRICE 와 다르다 — 구매가 규칙에 막힌다');
 
-console.log('OK face-ticket 7항목');
+// 8) 관리자 입력 → Firestore 문서 조립
+new Function('window', grab(/window\._faceCharDocFrom = function[\s\S]*?\n\};/, '_faceCharDocFrom'))(w);
+const good = w._faceCharDocFrom({ name: '현수', sheetUrl: 'https://murpy.app/char/faces/hyunsu.png', skinPrefix: 'https://murpy.app/char/skin/face_hyunsu' });
+assert.strictEqual(good.ok, true, '정상 입력이 막혔다: ' + good.error);
+assert.strictEqual(good.doc.name, '현수');
+assert.strictEqual(good.doc.sheetUrl, 'https://murpy.app/char/faces/hyunsu.png');
+// 톤 5종이 규칙(t3 는 원본이라 없다)대로 조립된다
+assert.deepStrictEqual(Object.keys(good.doc.skinUrls).sort(), ['t1','t2','t4','t5','t6']);
+assert.strictEqual(good.doc.skinUrls.t4, 'https://murpy.app/char/skin/face_hyunsu_t4.png');
+assert.strictEqual(good.doc.retryCount, 0, '재생성 횟수가 0 으로 안 시작한다');
+// 이름은 1~12자
+assert.strictEqual(w._faceCharDocFrom({ name: '', sheetUrl: 'https://a/b.png' }).ok, false, '빈 이름이 통과했다');
+assert.strictEqual(w._faceCharDocFrom({ name: '가'.repeat(13), sheetUrl: 'https://a/b.png' }).ok, false, '13자 이름이 통과했다');
+// 시트 URL 은 필수 + http(s) 만
+assert.strictEqual(w._faceCharDocFrom({ name: 'x' }).ok, false, '시트 없이 통과했다');
+assert.strictEqual(w._faceCharDocFrom({ name: 'x', sheetUrl: 'javascript:alert(1)' }).ok, false, 'javascript: URL 이 통과했다');
+// 톤 접두사가 없으면 skinUrls 는 null (피부톤 탭이 "바꿀 수 없어요"로 떨어진다)
+assert.strictEqual(w._faceCharDocFrom({ name: 'x', sheetUrl: 'https://a/b.png' }).doc.skinUrls, null);
+// 이름 금칙어는 **새로 만들지 않았다.** 이 저장소엔 `_textBlocked` 가 없고, 광장 외치기·닉네임이
+// 같이 쓰는 FILTER_WORDS(연락처 필터) 기반 `window._hasContact` 가 있어 그걸 그대로 태운다.
+// 여기선 index.html 의 실제 목록을 읽어 같은 판정을 붙여 준다.
+const fw = src.match(/const FILTER_WORDS = (\[[\s\S]*?\]);/);
+assert(fw, 'index.html 에서 FILTER_WORDS 를 찾지 못함');
+w.FILTER_WORDS = JSON.parse(fw[1]);
+w._hasContact = (t) => w.FILTER_WORDS.some(x => String(t || '').toLowerCase().includes(String(x).toLowerCase()));
+assert.strictEqual(w._faceCharDocFrom({ name: '카톡열어', sheetUrl: 'https://a/b.png' }).ok, false, '금칙어 이름이 통과했다');
+assert.strictEqual(w._faceCharDocFrom({ name: '현수', sheetUrl: 'https://a/b.png' }).ok, true, '멀쩡한 이름까지 막혔다');
+
+console.log('OK face-ticket 18항목');

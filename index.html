@@ -3933,6 +3933,30 @@ window.faceTickets = function () {
   const n = window._charState && window._charState.faceTickets;
   return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.trunc(n) : 0;
 };
+// 관리자 입력 → faceChars 문서. ★검증을 순수 함수로 빼둔다 — 화면 코드에 섞으면
+//   "왜 안 들어갔지"를 앱을 켜야만 알 수 있다.
+// ★URL 은 http(s) 만 받는다. javascript: 가 들어오면 그대로 <img src> 에 박힌다.
+window._faceCharDocFrom = function (form) {
+  const f = form || {};
+  const name = String(f.name || '').trim();
+  const sheetUrl = String(f.sheetUrl || '').trim();
+  if (name.length < 1 || name.length > 12) return { ok: false, error: '이름은 1~12자예요', doc: null };
+  // ★금칙어는 **새로 만들지 않는다.** 계획서가 적어둔 `_textBlocked` 는 이 저장소에 없다 —
+  //   광장 외치기·닉네임·대숲이 같이 쓰는 FILTER_WORDS 기반 `_hasContact` 가 그 자리다.
+  if (window._hasContact && window._hasContact(name)) return { ok: false, error: '쓸 수 없는 이름이에요', doc: null };
+  if (!/^https?:\/\//i.test(sheetUrl)) return { ok: false, error: '시트 주소가 http(s) 가 아니에요', doc: null };
+  const pre = String(f.skinPrefix || '').trim();
+  // t3 = 원본이라 굽지 않는다(CHAR_SKINS 주석 참고). 나머지 5종만 표를 만든다.
+  const skinUrls = /^https?:\/\//i.test(pre)
+    ? ['t1', 't2', 't4', 't5', 't6'].reduce(function (o, t) { o[t] = pre + '_' + t + '.png'; return o; }, {})
+    : null;
+  const eyes = (f.eyeY && f.eyeXL && f.eyeXR)
+    ? { y: Number(f.eyeY), x: [Number(f.eyeXL), Number(f.eyeXR)] } : null;
+  return { ok: true, error: '', doc: {
+    name: name, sheetUrl: sheetUrl, skinUrls: skinUrls, eyes: eyes,
+    retryCount: 0, createdAt: Date.now(), updatedAt: Date.now()
+  } };
+};
 // 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
 // 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
 // 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
@@ -9203,6 +9227,23 @@ window.charRenderRoster = function () {
     adm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 히든 연출 테스트</span>'
       + ['cult', 'somm', 'zombie'].map(id => "<button class='mw-btn mw-btn-sm mw-btn-ghost' onclick=\"window.mwAdminTestHidden('" + id + "')\">" + window._CHAR_BODIES[id].name + "</button>").join('');
   } else if (adm) { adm.remove(); }
+  // 관리자 전용: 커마 캐릭터 지급 (서버 자가생성 전까지의 지급 경로)
+  let fadm = document.getElementById('mw-face-admin');
+  if (typeof isAdmin === 'function' && isAdmin()) {
+    if (!fadm) { fadm = document.createElement('div'); fadm.id = 'mw-face-admin'; (adm || grid).after(fadm); }
+    fadm.style.cssText = 'margin-top:14px;display:grid;gap:6px';
+    fadm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 커마 지급</span>'
+      + ['fa-uid:받는 사람 uid', 'fa-id:charId (영문 소문자)', 'fa-name:캐릭터 이름 (1~12자)',
+         'fa-sheet:시트 주소 https://murpy.app/char/faces/xxx.png', 'fa-skin:톤 접두사 (비우면 피부톤 없음)']
+        .map(function (s) { const p = s.split(':'); const id = p.shift();
+          return '<input id="' + id + '" placeholder="' + p.join(':') + '" style="background:none;border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:8px 10px;color:#cfd6e6;font-size:11.5px;font-family:inherit">'; }).join('')
+      + '<button class="mw-btn mw-btn-sm" onclick="window.faceAdminGrant('
+      + "document.getElementById('fa-uid').value,document.getElementById('fa-id').value,"
+      + "{name:document.getElementById('fa-name').value,sheetUrl:document.getElementById('fa-sheet').value,skinPrefix:document.getElementById('fa-skin').value})\">캐릭터 지급</button>"
+      // 베타 무료권(스펙 9장) — 스쿼드 참여·친구초대 차등은 대표가 보고 장수만 넣는다
+      + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminGrantTicket('
+      + "document.getElementById('fa-uid').value, 1)\">커마권 1장 지급</button>";
+  } else if (fadm) { fadm.remove(); }
 };
 // ===== 내 범퍼 (유저 피드백 #20) =====
 // ★"실제로 만난 사이"만 여기 뜬다 — 방명록은 온라인으로 누구나 쓰지만 범퍼는 만나야 생긴다.
@@ -16845,6 +16886,45 @@ window.faceBuyTicket = async function () {
     window.showToast && showToast('구매에 실패했어요');
     return false;
   }
+};
+// 관리자 전용 지급. 서버 자가생성이 붙기 전까지 이게 유일한 지급 경로다.
+// ★규칙상 faceChars 쓰기는 isAdmin() 만 통과한다 — 유저 계정으로는 실패한다(정상).
+window.faceAdminGrant = async function (uid, charId, form) {
+  if (!isAdmin()) { window.showToast && showToast('관리자만 할 수 있어요'); return false; }
+  const r = window._faceCharDocFrom(form);
+  if (!r.ok) { window.showToast && showToast(r.error); return false; }
+  const id = String(charId || '').trim();
+  if (!/^[a-z0-9_-]{2,24}$/.test(id)) { window.showToast && showToast('charId 는 영문 소문자·숫자 2~24자예요'); return false; }
+  const to = String(uid || '').trim();
+  if (!to) { window.showToast && showToast('받는 사람 uid 가 없어요'); return false; }
+  try {
+    await setDoc(doc(db, 'users', to, 'faceChars', id), r.doc);
+    window.showToast && showToast('커마 캐릭터를 지급했어요');
+    if (to === (window.currentUser && window.currentUser.uid)) {
+      window._charState.faceChars[id] = r.doc;
+      window._charRegisterFaceBody(id, r.doc, to);
+      if (window.charRenderRoster) window.charRenderRoster();
+    }
+    return true;
+  } catch (e) { console.error('faceAdminGrant', e); window.showToast && showToast('지급에 실패했어요'); return false; }
+};
+// 베타 무료권 지급(스펙 9장). 근방단 스쿼드 참여·친구초대 차등은 **사람이 판단**하고
+// 여기서 장수만 넣는다. 자동 집계는 친구초대 스펙 소관이다.
+// ★관리자만 통과한다 — 규칙의 isAdmin() 절이 커마권 단독 증가를 허용하는 유일한 길이다.
+window.faceAdminGrantTicket = async function (uid, n) {
+  if (!isAdmin()) { window.showToast && showToast('관리자만 할 수 있어요'); return false; }
+  const to = String(uid || '').trim();
+  const cnt = Math.trunc(Number(n));
+  if (!to || !Number.isFinite(cnt) || cnt < 1 || cnt > 10) { window.showToast && showToast('uid 와 1~10 사이 장수가 필요해요'); return false; }
+  try {
+    await updateDoc(doc(db, 'users', to), { faceTickets: increment(cnt) });
+    window.showToast && showToast('커마권 ' + cnt + '장을 지급했어요');
+    if (to === (window.currentUser && window.currentUser.uid)) {
+      window._charState.faceTickets = window.faceTickets() + cnt;
+      if (window.charRenderRoster) window.charRenderRoster();
+    }
+    return true;
+  } catch (e) { console.error('faceAdminGrantTicket', e); window.showToast && showToast('지급에 실패했어요'); return false; }
 };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
