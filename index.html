@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1036';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1039';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -2146,6 +2146,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
           <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
           <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
         </div>
+        <!-- 네이티브 사진 선택기에서 돌아온 직후 원본 디코딩이 끝날 때까지 홈 화면이 비치지 않게 한다. -->
+        <div id="crop-loading" style="position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:#0b0b0d;color:rgba(255,255,255,.58);font-size:12.5px;font-weight:600;letter-spacing:-.2px;pointer-events:none">사진 불러오는 중…</div>
       </div>
       <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center">
         <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
@@ -13900,6 +13902,24 @@ function _exifFallback(file) {
 function openCropModal(file) {
   const modal = document.getElementById('crop-modal');
   if (!file || !modal) return;
+  // ★사진 선택기에서 앱으로 돌아온 첫 프레임부터 크롭 화면이 덮고 있어야 한다.
+  //   예전에는 FileReader가 끝난 뒤에야 모달을 열어서, 큰 사진일수록 홈 피드가 잠깐 보였다.
+  //   모달+로딩판을 먼저 띄운 뒤 이미지만 준비되면 한 번에 공개한다.
+  const seq = (window._cropOpenSeq || 0) + 1;
+  window._cropOpenSeq = seq;
+  window._cropCloseSeq = (window._cropCloseSeq || 0) + 1; // 예약된 이전 닫기 무효화
+  const img = document.getElementById('crop-image');
+  const loading = document.getElementById('crop-loading');
+  if (img) {
+    img.onload = null; img.onerror = null;
+    img.style.visibility = 'hidden';
+    img.removeAttribute('src');
+  }
+  if (loading) loading.style.display = 'flex';
+  modal.style.display = 'flex';
+  modal.style.flexDirection = 'column';
+  lockBodyScroll();
+  _setCropStep(1);
   // 촬영시각을 원본에서 미리 읽어 둔다 — 크롭 후 blob 에는 EXIF 가 남지 않는다
   window.cropData.shotAt = null;
   window._exifShotAt(file).then(function (d) { window.cropData.shotAt = d; }).catch(function () {});
@@ -13908,8 +13928,10 @@ function openCropModal(file) {
   // ★실패 경로에서 반드시 잠금을 푼다. 안 그러면 모달은 안 뜨고 배경만 잠겨
   //   "화면이 내려간 채 스크롤이 안 되는" 상태가 된다(대표 리포트 2026-08-03).
   const fail = (e) => {
+    if (window._cropOpenSeq !== seq) return;
     if (e) console.warn('사진 열기 실패', e);
     modal.style.display = 'none';
+    if (loading) loading.style.display = 'none';
     unlockBodyScroll();
     const inp = document.getElementById('feed-photo-input'); if (inp) inp.value = '';
     if (window.showToast) showToast('사진을 불러오지 못했어요');
@@ -13920,17 +13942,11 @@ function openCropModal(file) {
   reader.onerror = fail;
   reader.onload = e => {
    try {
-    // 모달 먼저 열기
-    modal.style.display = 'flex';
-    modal.style.flexDirection = 'column';
-    lockBodyScroll();   // 배경(홈 피드) 스크롤 잠금
-    _setCropStep(1);
-
-    const img = document.getElementById('crop-image');
+    if (window._cropOpenSeq !== seq || !img) return;
     img.onerror = fail;
     img.style.transform = 'translate(0,0) scale(1)';
-    img.src = e.target.result;
     img.onload = () => {
+      if (window._cropOpenSeq !== seq) return;
       // 모달 열린 후에 컨테이너 크기 계산 → 4:5 영역을 꽉 채우게(cover)
       const container = document.getElementById('crop-container');
       const cw = container.offsetWidth || window.innerWidth;
@@ -13938,24 +13954,42 @@ function openCropModal(file) {
       const fitScale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
       img.style.transform = `translate(0,0) scale(${fitScale})`;
       if (window.resetCropState) window.resetCropState(fitScale);
+      // 위치와 배율을 먼저 적용한 뒤 공개해야 원본 크기→cover 크기 점프가 보이지 않는다.
+      requestAnimationFrame(function () {
+        if (window._cropOpenSeq !== seq) return;
+        img.style.visibility = 'visible';
+        if (loading) loading.style.display = 'none';
+      });
     };
+    img.src = e.target.result;
    } catch (err) { fail(err); }
   };
   reader.readAsDataURL(file);
 }
 
 function closeCropModal() {
-  document.getElementById('crop-modal').style.display = 'none';
-  unlockBodyScroll();   // 배경 스크롤 잠금 해제 + 위치 복원
-  document.getElementById('feed-photo-input').value = '';
-  document.getElementById('feed-post-input').value = '';
-  const _capIn = document.getElementById('mcam-caption');
-  const _capRow = document.getElementById('caption-row');
-  if (_capIn) { _capIn.value = ''; _capIn.style.display = 'none'; }
-  if (_capRow) _capRow.style.display = '';
-  clearTimeout(window._mcamCapT);
-  if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
-  window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
+  const modal = document.getElementById('crop-modal');
+  if (!modal) return;
+  window._cropOpenSeq = (window._cropOpenSeq || 0) + 1; // 늦게 끝난 FileReader/img.onload 무효화
+  const closeSeq = (window._cropCloseSeq || 0) + 1;
+  window._cropCloseSeq = closeSeq;
+  // ★모달을 먼저 숨기고 body position:fixed를 풀면 iOS가 그 사이의 홈 위치를 한 프레임 그린다.
+  //   검은 모달이 덮인 상태에서 스크롤을 복원하고, 다음 프레임에 모달과 URL을 정리한다.
+  unlockBodyScroll();
+  requestAnimationFrame(function () {
+    if (window._cropCloseSeq !== closeSeq) return;
+    modal.style.display = 'none';
+    const loading = document.getElementById('crop-loading'); if (loading) loading.style.display = 'none';
+    document.getElementById('feed-photo-input').value = '';
+    document.getElementById('feed-post-input').value = '';
+    const _capIn = document.getElementById('mcam-caption');
+    const _capRow = document.getElementById('caption-row');
+    if (_capIn) { _capIn.value = ''; _capIn.style.display = 'none'; }
+    if (_capRow) _capRow.style.display = '';
+    clearTimeout(window._mcamCapT);
+    if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
+    window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
+  });
 }
 
 // 크롭 모달 단계 전환 (1: 크롭 / 2: 캡션 작성) — 헤더 버튼·타이틀 함께 바꿈
@@ -16587,7 +16621,7 @@ function buildPostHTML(p, opts) {
       : `<span class="feed-tag">${t}</span>`).join('')}</div>` : '';
   const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `
-    <div style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
+    <div data-feed-post="${p._id || ''}" style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
         <div style="display:flex;align-items:center;flex:1;min-width:0${_detail ? '' : ';cursor:pointer'}" ${_detail ? '' : `onclick="openUserProfile('${p.userId}','${_escJs(p.userName||'익명')}','${_escJs(displayPhoto)}')"`}>
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
@@ -25007,6 +25041,41 @@ async function loadMoreFeed() {
 }
 
 let feedFirstPageCache = null;
+// 업로드 직후 피드를 통째로 다시 그리지 않고 새 글 한 장만 앞에 붙인다.
+// 전체 innerHTML 교체는 모든 사진을 다시 디코딩시켜 iPhone에서 화면 전체가 번쩍였다.
+function _prependUploadedFeedPost(post) {
+  if (!post || !post._id) return;
+  const activeFilter = window._feedFilter;
+  if (!activeFilter) {
+    const old = Array.isArray(feedFirstPageCache) ? feedFirstPageCache : [];
+    feedFirstPageCache = [post].concat(old.filter(function (p) { return p && p._id !== post._id; })).slice(0, FEED_PAGE);
+  }
+  if (activeFilter && !(post.tags || []).includes(activeFilter)) return;
+  const feedEl = document.getElementById('firebase-feed');
+  if (!feedEl) return;
+  const safeId = String(post._id).replace(/[^A-Za-z0-9_-]/g, '');
+  if (safeId && feedEl.querySelector('[data-feed-post="' + safeId + '"]')) return;
+  const html = buildPostHTML(post);
+  if (feedEl.querySelector('[data-feed-post]')) feedEl.insertAdjacentHTML('afterbegin', html);
+  else feedEl.innerHTML = html; // 빈 상태나 스켈레톤만 있으면 그것만 한 번 교체
+  window._feedPostCache = window._feedPostCache || {};
+  window._feedPostCache[post._id] = post;
+}
+
+// 새 글 사진을 모달 뒤에서 먼저 디코딩한다. 최대 1.2초만 기다리고 실패해도 게시 성공은 유지한다.
+function _warmFeedPhoto(url) {
+  if (!url) return Promise.resolve();
+  const src = window._cdnImg ? window._cdnImg(url, 1080) : url;
+  return Promise.race([
+    new Promise(function (done) {
+      const img = new Image();
+      img.onload = done; img.onerror = done; img.src = src;
+      if (img.complete) done();
+    }),
+    new Promise(function (done) { setTimeout(done, 1200); })
+  ]);
+}
+
 async function loadFeed() {
   // 상대가 그새 수락했으면 버튼이 '대화하기'로 바뀌어야 한다 — 피드를 새로 부를 때 같이 훑는다.
   // (loadRelations 안에 60초 스로틀이 있어 스크롤 페이지네이션마다 조회가 나가지는 않는다)
@@ -30200,7 +30269,7 @@ window.submitFeedPost = async function() {
 
     let _totalCount = 0;
     try { const _fc = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid))); _totalCount = _fc.size + 1; } catch (e) {}
-    await addDoc(collection(db, 'feed'), {
+    const postData = {
       text, camText, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
@@ -30208,7 +30277,16 @@ window.submitFeedPost = async function() {
       totalCount: _totalCount,
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
+    };
+    const newPostRef = await addDoc(collection(db, 'feed'), postData);
+    // 서버 timestamp를 기다리며 전체 피드를 재조회하지 않는다. 현재 화면에는 방금으로 보이면 충분하고,
+    // 다음 정상 로드에서 Firestore timestamp로 자연스럽게 교체된다.
+    const optimisticPost = Object.assign({}, postData, {
+      _id: newPostRef.id,
+      createdAt: { seconds: Math.floor(Date.now() / 1000) }
     });
+    await _warmFeedPhoto(json.data.url);
+    _prependUploadedFeedPost(optimisticPost);
     if (window.mwBumpMonthly) window.mwBumpMonthly('feed');
     const _earned = window.grantDailyCreditOnVerify ? await window.grantDailyCreditOnVerify(user.uid) : false;
     closeCropModal();
@@ -30232,7 +30310,8 @@ window.submitFeedPost = async function() {
     } else {
       showToast('✓ 올라갔어요!');
     }
-    loadFeed();
+    // 라이브 바만 조용히 갱신한다. 피드 본문은 위에서 새 글 한 장만 추가했으므로 다시 그리지 않는다.
+    renderHomeLiveBar();
   } catch(e) { showToast('실패: ' + e.message); }
   restore();
 };
@@ -33551,16 +33630,16 @@ window._mwParkAmbient = function (on) {
 // 퀘스트 = 진짜 앱 기능 심부름(체크인·인증·대숲·매칭) + 소액 머피. 보상은 서버 키(pq_<id>_<일>)로
 // 하루 1회 중복 차단. 목소리는 파일 있으면 재생(승인 전 파일 미배포 — 표준 절차).
 window._MW_NPCS = [
-  { k: 'keeper',  name: '관리인 박씨', img: 'char/npc/npc_keeper.png?v=1',  x: 40.6, y: 50.0, h: 3.6,
+  { k: 'keeper',  name: '관리인 박씨', img: 'char/npc/walk_npc_keeper.png?v=1',  x: 40.6, y: 50.0, h: 3.3,
     hi: '어서 오게. 우리 동네 공원, 마음에 드는가?', idle: '오늘 부탁은 다 끝났네. 내일 또 들르라고!',
     q: { id: 'checkin', text: '공원 온 김에 운동 도장도 찍어야지. 근처 헬스장에서 체크인하고 오게!', go: '체크인 하러 가기', done: '오, 도장 찍고 왔구먼! 부지런한 게 최고야.' } },
-  { k: 'trainer', name: '강 코치', img: 'char/npc/npc_trainer.png?v=1', x: 71.9, y: 50.0, h: 3.6,
+  { k: 'trainer', name: '강 코치', img: 'char/npc/walk_npc_trainer.png?v=1', x: 71.9, y: 50.0, h: 3.3,
     hi: '오! 운동하러 왔구나?', idle: '오늘은 여기까지! 내일 또 보자고.',
     q: { id: 'cert', text: '오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!', go: '인증하러 가기', done: '그래, 그 기세야! 꾸준한 놈이 이긴다.' } },
-  { k: 'grandma', name: '순이 할매', img: 'char/npc/npc_grandma.png?v=1', x: 19.8, y: 62.5, h: 3.4,
+  { k: 'grandma', name: '순이 할매', img: 'char/npc/walk_npc_grandma.png?v=1', x: 19.8, y: 62.5, h: 3.15,
     hi: '아이고, 젊은이 왔는가.', idle: '오늘 할 일은 다 했네. 살펴 가시게.',
     q: { id: 'bamboo', text: '속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.', go: '대숲 가기', done: '잘했네. 마음도 근육처럼 풀어줘야 해.' } },
-  { k: 'kid', name: '민준이', img: 'char/npc/npc_kid.png?v=1', x: 67.7, y: 77.1, h: 2.7,
+  { k: 'kid', name: '민준이', img: 'char/npc/walk_npc_kid.png?v=1', x: 67.7, y: 77.1, h: 2.6,
     hi: '형아! 누나! 나랑 놀자!', idle: '내일 또 놀러 와! 약속!',
     q: { id: 'match', text: '오늘의 머피들 봤어? 매칭 탭에서 새 친구 구경하고 와!', go: '매칭 구경 가기', done: '우와, 친구 많아지겠다!' } },
 ];
@@ -33616,7 +33695,7 @@ window._mwNpcTalk = async function (k) {
   const talkTxt = claimed ? n.idle : (done ? n.q.done : (n.hi + ' ' + n.q.text));
   d.innerHTML =
       '<div style="display:flex;gap:10px;align-items:flex-start">'
-    +   '<div style="flex-shrink:0;width:52px;height:74px;background:url(\'' + n.img + '\') center/contain no-repeat;image-rendering:pixelated"></div>'
+    +   '<div style="flex-shrink:0;width:47px;height:74px;background:url(\'' + n.img + '\') 0 0/300% 400% no-repeat;image-rendering:pixelated"></div>'
     +   '<div style="flex:1;min-width:0">'
     +     '<div style="font-size:11px;color:#F5C24B;letter-spacing:1px;margin-bottom:5px">' + E(n.name) + '</div>'
     +     '<div style="font-size:12px;color:#e6ebf5;line-height:1.55">' + E(talkTxt) + '</div>'
@@ -33649,7 +33728,7 @@ window._mwParkNpcs = function (on) {
     const st = document.createElement('style'); st.id = 'mw-npc-css';
     st.textContent = `
       .mw-npc{position:absolute;cursor:pointer;-webkit-tap-highlight-color:transparent}
-      .mw-npc .bd{width:100%;height:100%;background-size:contain;background-position:center bottom;background-repeat:no-repeat;image-rendering:pixelated;animation:npcBob 2.8s ease-in-out infinite}
+      .mw-npc .bd{width:100%;height:100%;background-size:300% 400%;background-position:0 0;background-repeat:no-repeat;image-rendering:pixelated;animation:npcBob 2.8s ease-in-out infinite}
       @keyframes npcBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
       .mw-npc .nm{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:1px;font-family:'Galmuri11',sans-serif;font-size:9px;color:#fff;background:rgba(5,7,12,.6);padding:1px 5px;white-space:nowrap}
       .mw-npc .qb{position:absolute;left:50%;bottom:calc(100% + 2px);transform:translateX(-50%);font-family:'Galmuri14',sans-serif;font-size:15px;color:#F5C24B;text-shadow:0 1px 0 #05070c,0 0 6px rgba(245,194,75,.6);animation:npcQb 1.1s ease-in-out infinite}
@@ -33660,7 +33739,8 @@ window._mwParkNpcs = function (on) {
   window._MW_NPCS.forEach(function (n) {
     const el = document.createElement('div');
     el.className = 'mw-npc'; el.dataset.k = n.k;
-    const H = Math.round(g.t * n.h), W = Math.round(H * 512 / 768);
+    // ★9-06 NPC 는 플레이어와 같은 12칸 시트(141×224 칸) — 정면 정지 칸(1행1열)만 보인다. 대표: 옛 512×768 일러스트는 도트 감성이 안 맞았다
+    const H = Math.round(g.t * n.h), W = Math.round(H * 141 / 224);
     const row = Math.floor(n.y / 100 * 48);
     el.style.cssText = 'left:calc(' + n.x + '% - ' + (W / 2) + 'px);top:calc(' + n.y + '% - ' + H + 'px);width:' + W + 'px;height:' + H + 'px;z-index:' + (10 + row * 10 + 4);
     el.innerHTML = '<i class="qb" hidden>!</i><div class="bd" style="background-image:url(\'' + n.img + '\')"></div><span class="nm">' + (window._escHtml ? _escHtml(n.name) : n.name) + '</span>';
