@@ -2146,6 +2146,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
           <div style="position:absolute;left:33.3%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
           <div style="position:absolute;left:66.6%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.18)"></div>
         </div>
+        <!-- 네이티브 사진 선택기에서 돌아온 직후 원본 디코딩이 끝날 때까지 홈 화면이 비치지 않게 한다. -->
+        <div id="crop-loading" style="position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:#0b0b0d;color:rgba(255,255,255,.58);font-size:12.5px;font-weight:600;letter-spacing:-.2px;pointer-events:none">사진 불러오는 중…</div>
       </div>
       <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center">
         <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
@@ -13900,6 +13902,24 @@ function _exifFallback(file) {
 function openCropModal(file) {
   const modal = document.getElementById('crop-modal');
   if (!file || !modal) return;
+  // ★사진 선택기에서 앱으로 돌아온 첫 프레임부터 크롭 화면이 덮고 있어야 한다.
+  //   예전에는 FileReader가 끝난 뒤에야 모달을 열어서, 큰 사진일수록 홈 피드가 잠깐 보였다.
+  //   모달+로딩판을 먼저 띄운 뒤 이미지만 준비되면 한 번에 공개한다.
+  const seq = (window._cropOpenSeq || 0) + 1;
+  window._cropOpenSeq = seq;
+  window._cropCloseSeq = (window._cropCloseSeq || 0) + 1; // 예약된 이전 닫기 무효화
+  const img = document.getElementById('crop-image');
+  const loading = document.getElementById('crop-loading');
+  if (img) {
+    img.onload = null; img.onerror = null;
+    img.style.visibility = 'hidden';
+    img.removeAttribute('src');
+  }
+  if (loading) loading.style.display = 'flex';
+  modal.style.display = 'flex';
+  modal.style.flexDirection = 'column';
+  lockBodyScroll();
+  _setCropStep(1);
   // 촬영시각을 원본에서 미리 읽어 둔다 — 크롭 후 blob 에는 EXIF 가 남지 않는다
   window.cropData.shotAt = null;
   window._exifShotAt(file).then(function (d) { window.cropData.shotAt = d; }).catch(function () {});
@@ -13908,8 +13928,10 @@ function openCropModal(file) {
   // ★실패 경로에서 반드시 잠금을 푼다. 안 그러면 모달은 안 뜨고 배경만 잠겨
   //   "화면이 내려간 채 스크롤이 안 되는" 상태가 된다(대표 리포트 2026-08-03).
   const fail = (e) => {
+    if (window._cropOpenSeq !== seq) return;
     if (e) console.warn('사진 열기 실패', e);
     modal.style.display = 'none';
+    if (loading) loading.style.display = 'none';
     unlockBodyScroll();
     const inp = document.getElementById('feed-photo-input'); if (inp) inp.value = '';
     if (window.showToast) showToast('사진을 불러오지 못했어요');
@@ -13920,17 +13942,11 @@ function openCropModal(file) {
   reader.onerror = fail;
   reader.onload = e => {
    try {
-    // 모달 먼저 열기
-    modal.style.display = 'flex';
-    modal.style.flexDirection = 'column';
-    lockBodyScroll();   // 배경(홈 피드) 스크롤 잠금
-    _setCropStep(1);
-
-    const img = document.getElementById('crop-image');
+    if (window._cropOpenSeq !== seq || !img) return;
     img.onerror = fail;
     img.style.transform = 'translate(0,0) scale(1)';
-    img.src = e.target.result;
     img.onload = () => {
+      if (window._cropOpenSeq !== seq) return;
       // 모달 열린 후에 컨테이너 크기 계산 → 4:5 영역을 꽉 채우게(cover)
       const container = document.getElementById('crop-container');
       const cw = container.offsetWidth || window.innerWidth;
@@ -13938,24 +13954,42 @@ function openCropModal(file) {
       const fitScale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
       img.style.transform = `translate(0,0) scale(${fitScale})`;
       if (window.resetCropState) window.resetCropState(fitScale);
+      // 위치와 배율을 먼저 적용한 뒤 공개해야 원본 크기→cover 크기 점프가 보이지 않는다.
+      requestAnimationFrame(function () {
+        if (window._cropOpenSeq !== seq) return;
+        img.style.visibility = 'visible';
+        if (loading) loading.style.display = 'none';
+      });
     };
+    img.src = e.target.result;
    } catch (err) { fail(err); }
   };
   reader.readAsDataURL(file);
 }
 
 function closeCropModal() {
-  document.getElementById('crop-modal').style.display = 'none';
-  unlockBodyScroll();   // 배경 스크롤 잠금 해제 + 위치 복원
-  document.getElementById('feed-photo-input').value = '';
-  document.getElementById('feed-post-input').value = '';
-  const _capIn = document.getElementById('mcam-caption');
-  const _capRow = document.getElementById('caption-row');
-  if (_capIn) { _capIn.value = ''; _capIn.style.display = 'none'; }
-  if (_capRow) _capRow.style.display = '';
-  clearTimeout(window._mcamCapT);
-  if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
-  window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
+  const modal = document.getElementById('crop-modal');
+  if (!modal) return;
+  window._cropOpenSeq = (window._cropOpenSeq || 0) + 1; // 늦게 끝난 FileReader/img.onload 무효화
+  const closeSeq = (window._cropCloseSeq || 0) + 1;
+  window._cropCloseSeq = closeSeq;
+  // ★모달을 먼저 숨기고 body position:fixed를 풀면 iOS가 그 사이의 홈 위치를 한 프레임 그린다.
+  //   검은 모달이 덮인 상태에서 스크롤을 복원하고, 다음 프레임에 모달과 URL을 정리한다.
+  unlockBodyScroll();
+  requestAnimationFrame(function () {
+    if (window._cropCloseSeq !== closeSeq) return;
+    modal.style.display = 'none';
+    const loading = document.getElementById('crop-loading'); if (loading) loading.style.display = 'none';
+    document.getElementById('feed-photo-input').value = '';
+    document.getElementById('feed-post-input').value = '';
+    const _capIn = document.getElementById('mcam-caption');
+    const _capRow = document.getElementById('caption-row');
+    if (_capIn) { _capIn.value = ''; _capIn.style.display = 'none'; }
+    if (_capRow) _capRow.style.display = '';
+    clearTimeout(window._mcamCapT);
+    if (window._composePreviewUrl) { URL.revokeObjectURL(window._composePreviewUrl); window._composePreviewUrl = null; }
+    window.cropData = { originalFile: null, croppedBlob: null, plainBlob: null };
+  });
 }
 
 // 크롭 모달 단계 전환 (1: 크롭 / 2: 캡션 작성) — 헤더 버튼·타이틀 함께 바꿈
@@ -16580,7 +16614,7 @@ function buildPostHTML(p, opts) {
       : `<span class="feed-tag">${t}</span>`).join('')}</div>` : '';
   const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `
-    <div style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
+    <div data-feed-post="${p._id || ''}" style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
         <div style="display:flex;align-items:center;flex:1;min-width:0${_detail ? '' : ';cursor:pointer'}" ${_detail ? '' : `onclick="openUserProfile('${p.userId}','${_escJs(p.userName||'익명')}','${_escJs(displayPhoto)}')"`}>
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
@@ -24970,6 +25004,41 @@ async function loadMoreFeed() {
 }
 
 let feedFirstPageCache = null;
+// 업로드 직후 피드를 통째로 다시 그리지 않고 새 글 한 장만 앞에 붙인다.
+// 전체 innerHTML 교체는 모든 사진을 다시 디코딩시켜 iPhone에서 화면 전체가 번쩍였다.
+function _prependUploadedFeedPost(post) {
+  if (!post || !post._id) return;
+  const activeFilter = window._feedFilter;
+  if (!activeFilter) {
+    const old = Array.isArray(feedFirstPageCache) ? feedFirstPageCache : [];
+    feedFirstPageCache = [post].concat(old.filter(function (p) { return p && p._id !== post._id; })).slice(0, FEED_PAGE);
+  }
+  if (activeFilter && !(post.tags || []).includes(activeFilter)) return;
+  const feedEl = document.getElementById('firebase-feed');
+  if (!feedEl) return;
+  const safeId = String(post._id).replace(/[^A-Za-z0-9_-]/g, '');
+  if (safeId && feedEl.querySelector('[data-feed-post="' + safeId + '"]')) return;
+  const html = buildPostHTML(post);
+  if (feedEl.querySelector('[data-feed-post]')) feedEl.insertAdjacentHTML('afterbegin', html);
+  else feedEl.innerHTML = html; // 빈 상태나 스켈레톤만 있으면 그것만 한 번 교체
+  window._feedPostCache = window._feedPostCache || {};
+  window._feedPostCache[post._id] = post;
+}
+
+// 새 글 사진을 모달 뒤에서 먼저 디코딩한다. 최대 1.2초만 기다리고 실패해도 게시 성공은 유지한다.
+function _warmFeedPhoto(url) {
+  if (!url) return Promise.resolve();
+  const src = window._cdnImg ? window._cdnImg(url, 1080) : url;
+  return Promise.race([
+    new Promise(function (done) {
+      const img = new Image();
+      img.onload = done; img.onerror = done; img.src = src;
+      if (img.complete) done();
+    }),
+    new Promise(function (done) { setTimeout(done, 1200); })
+  ]);
+}
+
 async function loadFeed() {
   // 상대가 그새 수락했으면 버튼이 '대화하기'로 바뀌어야 한다 — 피드를 새로 부를 때 같이 훑는다.
   // (loadRelations 안에 60초 스로틀이 있어 스크롤 페이지네이션마다 조회가 나가지는 않는다)
@@ -30163,7 +30232,7 @@ window.submitFeedPost = async function() {
 
     let _totalCount = 0;
     try { const _fc = await getDocs(query(collection(db, 'feed'), where('userId', '==', user.uid))); _totalCount = _fc.size + 1; } catch (e) {}
-    await addDoc(collection(db, 'feed'), {
+    const postData = {
       text, camText, photoURL: json.data.url,
       userName: nickname, userPhoto, userId: user.uid,
       type: window._composeType || 'workout',
@@ -30171,7 +30240,16 @@ window.submitFeedPost = async function() {
       totalCount: _totalCount,
       likes: 0, likedBy: [], commentCount: 0,
       createdAt: serverTimestamp()
+    };
+    const newPostRef = await addDoc(collection(db, 'feed'), postData);
+    // 서버 timestamp를 기다리며 전체 피드를 재조회하지 않는다. 현재 화면에는 방금으로 보이면 충분하고,
+    // 다음 정상 로드에서 Firestore timestamp로 자연스럽게 교체된다.
+    const optimisticPost = Object.assign({}, postData, {
+      _id: newPostRef.id,
+      createdAt: { seconds: Math.floor(Date.now() / 1000) }
     });
+    await _warmFeedPhoto(json.data.url);
+    _prependUploadedFeedPost(optimisticPost);
     if (window.mwBumpMonthly) window.mwBumpMonthly('feed');
     const _earned = window.grantDailyCreditOnVerify ? await window.grantDailyCreditOnVerify(user.uid) : false;
     closeCropModal();
@@ -30195,7 +30273,8 @@ window.submitFeedPost = async function() {
     } else {
       showToast('✓ 올라갔어요!');
     }
-    loadFeed();
+    // 라이브 바만 조용히 갱신한다. 피드 본문은 위에서 새 글 한 장만 추가했으므로 다시 그리지 않는다.
+    renderHomeLiveBar();
   } catch(e) { showToast('실패: ' + e.message); }
   restore();
 };
