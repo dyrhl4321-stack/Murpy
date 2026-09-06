@@ -17151,9 +17151,33 @@ window._faceReqPicked = async function (e) {
   const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
     desc: '<b style="color:#fff">' + files.length + '장</b>으로 캐릭터를 만들어요<br>정면이 잘 보이는 사진일수록 닮게 나와요<br><span style="color:#8a93a8">만들기 1회를 써요 · 1~3분 걸려요 · 사진은 만든 뒤 지워요</span>' });
   if (!ok) return;
+  // ★올리는 사진마다 **본인 얼굴인지** 대조한다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
+  //   기준 = 얼굴 인증과 같은 프로필 사진들. 얼굴이 없거나 다른 사람이면 그 사진은 뺀다.
+  showToast('얼굴 확인 중…');
+  let keep = files;
+  try {
+    await ensureFaceApi();
+    const prof = window._cachedProfile || {};
+    const cands = [prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean);
+    const refs = (await findRefDescriptor(cands), (window._fvRefDescs || []).slice());
+    if (!refs.length) { showToast('프로필 사진에서 기준 얼굴을 못 찾았어요 · 먼저 얼굴 인증을 해주세요'); return; }
+    keep = []; let notMe = 0, noFace = 0;
+    for (const f of files) {
+      let d = null;
+      try { const u = URL.createObjectURL(f); const img = await window._loadImg(u); d = img ? await _descriptorFrom(img, true) : null; URL.revokeObjectURL(u); } catch (e) {}
+      if (!d) { noFace++; continue; }
+      const dist = Math.min.apply(null, refs.map(function (r) { return faceapi.euclideanDistance(d, r); }));
+      if (dist < 0.55) keep.push(f); else notMe++;
+    }
+    if (notMe || noFace) {
+      const why = notMe ? '내 얼굴이 아닌 사진이 ' + notMe + '장 있어요' : '얼굴을 못 찾은 사진이 ' + noFace + '장 있어요';
+      if (!keep.length) { await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '알겠어요', desc: why + '<br><b style="color:#fff">본인 얼굴이 정면으로 나온 사진</b>을 올려주세요' }); return; }
+      showToast(why + ' · 그 사진은 빼고 만들어요');
+    }
+  } catch (e) { console.warn('face check', e); showToast('얼굴 확인에 실패했어요 · 다시 시도해주세요'); return; }
   showToast('사진 올리는 중…');
   const urls = [];
-  for (const f of files) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
+  for (const f of keep) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
   if (!urls.length) { showToast('사진 업로드에 실패했어요'); return; }
   try { await window._faceSubmitUrls(urls); }
   catch (err) { console.error('faceReq', err); showToast('신청에 실패했어요 · 다시 시도해주세요'); }
