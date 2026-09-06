@@ -109,4 +109,10 @@ assert.strictEqual(w._CHAR_BODIES['face:aaa'].src, 'https://cdn/a.png', '남의 
 assert.strictEqual(w._CHAR_BODIES['face:bbb'], undefined, '시트 없는 커마를 등록했다');
 assert.strictEqual(w._charRegisterFaceBodiesFrom(null), 0, '빈 스냅샷에 터진다');
 
-console.log('OK face-body 23항목');
+// 12) 긴 머리 헤어 레이어 — 문서의 hairUrl 이 hairOverlay 로 들어가고, 없으면 null
+assert.strictEqual(w._charFaceBodyDef('h', { ...DOC, hairUrl: 'https://cdn/hair.png' }, 'UID1').def.hairOverlay, 'https://cdn/hair.png', 'hairUrl 이 hairOverlay 로 안 들어갔다');
+assert.strictEqual(w._charFaceBodyDef('h', DOC, 'UID1').def.hairOverlay, null, 'hairUrl 없는데 hairOverlay 가 생겼다');
+// 하드코딩 패수현은 헤어 레이어 파일을 가리켜야 한다 (상의가 긴 머리를 덮던 9-06 지적)
+assert(/paesuhyun_hair\.png/.test(w._CHAR_BODIES.paesuhyun.hairOverlay || ''), '패수현 hairOverlay 가 없다');
+
+console.log('OK face-body 26항목');
