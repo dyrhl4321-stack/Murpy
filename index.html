@@ -3835,6 +3835,9 @@ window._CHAR_BODIES = {
   // ownerEmail 로 지정한다: 이 계정 uid 를 모르는 채로 등록해도 이메일로 주인을 가린다.
   paesuhyun: { name: '패수현', skinBase: 'face_paesuhyun', src: "char/faces/paesuhyun.png?v=1", cw: 141, ch: 224,
             wearable: true, fixedHair: true, kin: 'human', tag: '커마',
+            // ★긴 머리는 상의에 덮인다(몸통 시트 맨 밑에 구워져 있어서). 머리만 뽑은 레이어를
+            //   헤어 자리(상의 위)에 한 번 더 그린다 — tools/face_hair_layer.py 산출물. 대표 9-06 폰 검수.
+            hairOverlay: "char/faces/paesuhyun_hair.png?v=1",
             defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
             ownerEmail: 'dyrhl4321@gmail.com',
             desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
@@ -3867,6 +3870,8 @@ window._charFaceBodyDef = function (charId, d, ownerUid) {
       tag: '커마',
       defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
       owner: ownerUid || null, dynamic: true,
+      // 긴 머리용 헤어 레이어(상의 위에 한 번 더 그림). 짧은 머리는 없어도 된다.
+      hairOverlay: (typeof d.hairUrl === 'string' && d.hairUrl) ? d.hairUrl : null,
       desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터'
     },
     eyes: (d.eyes && typeof d.eyes.y === 'number' && Array.isArray(d.eyes.x) && d.eyes.x.length === 2) ? d.eyes : null
@@ -4264,7 +4269,14 @@ window._charEquippedSheets = function (cfg) {
   const bodyKey = cfg.body || 'human';
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
     // ★머리카락이 몸통에 구워진 캐릭터(얼굴 커마)는 헤어·모자를 얹지 않는다 — 두 겹이 된다.
-    if (b.fixedHair && (slot === 'hair' || slot === 'hat')) return;
+    if (b.fixedHair && (slot === 'hair' || slot === 'hat')) {
+      // ★긴 머리 커마(패수현)는 머리가 몸통 시트 **맨 밑**에 구워져 있어 상의가 등 뒤 머리를 덮었다
+      //   (링거티 뒷모습 왼쪽이 프레임마다 들쭉날쭉, 후디 목 틈으로 노란색 비침 — 대표 9-06).
+      //   머리만 뽑은 시트(hairOverlay)를 헤어 자리에 한 번 더 얹으면 상의 위로 머리가 내려온다.
+      //   같은 픽셀을 두 번 그리는 것이라 머리 위쪽은 무해하고, 모자는 여전히 잠근다.
+      if (slot === 'hair' && b.hairOverlay) out.hair = window._iv(b.hairOverlay);
+      return;
+    }
     const id = cfg[slot]; if (!id) return;
     const item = (window.CHAR_ITEMS || []).find(function (x) { return x.id === id && x.slot === slot; });
     // 다른 몸통 전용 아이템은 무시한다. 성별 백필로 남캐 헤어 id가 여캐에 남아 있어도 안 얹힌다.
