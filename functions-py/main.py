@@ -41,12 +41,17 @@ def _delete_by_url(bucket, url):
         bucket.blob(path).delete()
     except Exception: pass
 
-@firestore_fn.on_document_created(document='faceRequests/{uid}', secrets=[GEMINI],
+@firestore_fn.on_document_written(document='faceRequests/{uid}', secrets=[GEMINI],
                                   memory=options.MemoryOption.GB_2, timeout_sec=540, cpu=2)
 def face_generate(event):
+    # ★'생성' 트리거는 두 번째 신청(같은 uid 문서 갱신)에 안 깨어난다(9-07 대표 신청이 '만드는 중'에 멈춤).
+    #   '쓰기'로 받고, status 가 pending 이면서 신청 시각 t 가 바뀐 경우만 새 신청으로 본다.
     uid = event.params['uid']
-    data = event.data.to_dict() if event.data else None
-    if not data or data.get('status') != 'pending': return
+    after = event.data.after.to_dict() if (event.data and event.data.after and event.data.after.exists) else None
+    before = event.data.before.to_dict() if (event.data and event.data.before and event.data.before.exists) else None
+    if not after or after.get('status') != 'pending': return
+    if before and before.get('status') == 'pending' and before.get('t') == after.get('t'): return
+    data = after
     db = firestore.client(); ref = db.collection('faceRequests').document(uid)
     ref.update({'status': 'working', 'startedAt': int(time.time() * 1000)})
     bucket = storage.bucket(BUCKET)
@@ -55,7 +60,10 @@ def face_generate(event):
         gender = '여' if str(data.get('gender', '')).startswith('여') else '남'
         prompt = bucket.blob('private/face/prompt.txt').download_as_text()
         base_png = bucket.blob('private/face/base_%s.png' % ('f' if gender == '여' else 'm')).download_as_bytes()
-        urls = [data.get('photoUrl')] + [u for u in (data.get('photos') or []) if u][:7]
+        urls = []
+        for u in [data.get('photoUrl')] + [u for u in (data.get('photos') or []) if u]:
+            if u and u not in urls: urls.append(u)
+        urls = urls[:8]
         selfies = []
         for u in urls:
             if not u: continue
@@ -77,7 +85,7 @@ def face_generate(event):
                     'scores': json.dumps(res['scores'], ensure_ascii=False)[:4000]})
         db.collection('notifications').add({'toUid': uid, 'type': 'face_done', 'charId': char_id, 'fromUid': '', 'fromNickname': '머피',
                                             'read': False, 'createdAt': firestore.SERVER_TIMESTAMP})
-        _delete_by_url(bucket, data.get('photoUrl'))
+        for u in [data.get('photoUrl')] + list(data.get('photos') or []): _delete_by_url(bucket, u)   # 신청용 사진은 다 지운다
         print('완료', uid, char_id, res['verdict'], '시도', res['attempts'])
     except Exception as e:
         print('실패', uid, repr(e)[:400])
@@ -87,4 +95,4 @@ def face_generate(event):
         except Exception as e2: print('환불 실패', e2)
         db.collection('notifications').add({'toUid': uid, 'type': 'face_failed', 'fromUid': '', 'fromNickname': '머피',
                                             'read': False, 'createdAt': firestore.SERVER_TIMESTAMP})
-        _delete_by_url(bucket, data.get('photoUrl'))
+        for u in [data.get('photoUrl')] + list(data.get('photos') or []): _delete_by_url(bucket, u)

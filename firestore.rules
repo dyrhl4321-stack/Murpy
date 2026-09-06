@@ -42,7 +42,12 @@ service cloud.firestore {
       //   유저가 스스로 만들 수 있으면 커마권을 안 내고 캐릭터를 갖는다.
       match /faceChars/{charId} {
         allow read: if true;
-        allow write: if isAdmin();
+        allow create, delete: if isAdmin();
+        // 본인은 **이름만** 바꾼다(도착 팝업에서 이름 짓기, 9-07). 시트 URL·톤·눈 좌표는 서버/관리자만.
+        allow update: if isAdmin() || (isOwner(userId)
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 12);
       }
       // ★관리자 쓰기 (2026-08-14) — 대표가 특정 계정에 머피를 넣어줘야 한다(베타 보상·이벤트).
       //   isAdmin() 은 대표 이메일 하나로 고정돼 있다(파일 위쪽 헬퍼).

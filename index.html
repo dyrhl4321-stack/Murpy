@@ -11047,6 +11047,7 @@ window.mwPortal = function () {
     </div>
     <div id="face-promo-title" style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">얼굴 커스터마이징 기능 업데이트</div>
     <div id="face-promo-body" style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요</div>
+    <input id="face-promo-name" maxlength="12" placeholder="캐릭터 이름 (1~12자)" autocomplete="off" style="display:none;width:100%;box-sizing:border-box;background:none;border:1px solid rgba(255,255,255,0.18);border-radius:10px;padding:11px 12px;color:#fff;font-size:16px;text-align:center;margin-bottom:12px;outline:none;font-family:inherit">
     <button id="face-promo-cta" class="mfg-btn" onclick="window.facePromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">확인하기</button>
     <button id="face-promo-later" onclick="window.closeFacePromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
   </div>
@@ -15349,7 +15350,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, OAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, getDocsFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, runTransaction as rtRunTransaction, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -16411,7 +16412,10 @@ window.showFacePromo = function (kind, n) {
   T('face-promo-badge', done ? '완성' : grant ? '선물' : 'NEW');
   T('face-promo-title', done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
   T('face-promo-body', done ? '얼굴 커스터마이징이 끝났어요<br>캐릭터 목록에서 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
-  T('face-promo-cta', done ? '착용하러 가기' : grant ? '만들러 가기' : '확인하기');
+  T('face-promo-cta', done ? '이 이름으로 착용' : grant ? '만들러 가기' : '확인하기');
+  window._facePromoKind = kind; window._facePromoCharId = done ? n : null;
+  const nameInp = document.getElementById('face-promo-name');
+  if (nameInp) { nameInp.style.display = done ? '' : 'none'; if (done) nameInp.value = ''; }
   const later = document.getElementById('face-promo-later'); if (later) later.style.display = (grant || done) ? 'none' : '';
   // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
   const h = document.getElementById('face-promo-hero');
@@ -16422,9 +16426,10 @@ window.showFacePromo = function (kind, n) {
   if (h && window._charRenderTo) {
     h.innerHTML = '<div id="face-promo-h1"></div><div id="face-promo-h2"></div>';
     const draw = function (id, cfg) { const t = document.getElementById(id); if (t) window._charRenderTo(t, window._charSnapH(104), window._charSafe ? window._charSafe(cfg) : cfg); };
-    const mine = done ? Object.keys((window._charState || {}).faceChars || {}).map(function (id) { return 'face:' + id; }).filter(function (k) { return window._CHAR_BODIES[k]; }) : [];
-    if (mine.length) { draw('face-promo-h1', { body: mine[mine.length - 1] }); document.getElementById('face-promo-h2').style.display = 'none'; }
-    else { draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
+    // done: 방금 도착한 **내 캐릭터**(알림의 charId). 표에 아직 없으면(로드 실패) 그때만 기존 둘로.
+    const mineKey = done && n && window._CHAR_BODIES['face:' + n] ? 'face:' + n : null;
+    if (mineKey) { draw('face-promo-h1', { body: mineKey }); document.getElementById('face-promo-h2').style.display = 'none'; }
+    else { document.getElementById('face-promo-h2').style.display = ''; draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
     if (window._usersAll) window._usersAll().then(function (snap) {
       snap.forEach(function (d) {
         const c = (d.data() || {}).character; if (!c) return;
@@ -16438,10 +16443,11 @@ window.showFacePromo = function (kind, n) {
 };
 window.closeFacePromo = function (forever) {
   const el = document.getElementById('face-promo'); if (el) el.style.display = 'none';
-  if (forever) { try { localStorage.setItem('facePromoSeen', 'seen'); } catch (e) {} }
+  if (forever && window._facePromoKind !== 'done' && window._facePromoKind !== 'grant') { try { localStorage.setItem('facePromoSeen', 'seen'); } catch (e) {} }
 };
 // CTA 는 새 화면을 열지 않는다 — 로스터로 보내면 진입 버튼이 나머지(상점·사진·인증·생성)를 판단한다.
 window.facePromoGo = function () {
+  if (window._facePromoKind === 'done' && window._facePromoCharId) { window.faceDoneWear(window._facePromoCharId); return; }
   window.closeFacePromo(true);
   if (typeof closePanel === 'function') closePanel('mypage-panel');
   goPage('char');
@@ -17089,7 +17095,10 @@ window._charLoadMyFaceChars = async function (uid) {
   if (!uid) return 0;
   // 내 신청이 대기 중이면 카드가 '만드는 중'으로 보인다 (실패는 조용히 — 규칙 게시 전엔 거부된다)
   try { const rq = await getDoc(doc(db, 'faceRequests', uid)); window._charState.faceReqPending = !!(rq.exists() && (rq.data().status === 'pending' || rq.data().status === 'working')); } catch (e) {}
-  const snap = await getDocs(collection(db, 'users', uid, 'faceChars'));
+  // ★서버에서 읽는다 — 영속 캐시가 방금 서버가 만든 문서를 모를 수 있다(도착 팝업에 남의 캐릭터가 뜬 원인 후보, 9-07)
+  let snap;
+  try { snap = await getDocsFromServer(collection(db, 'users', uid, 'faceChars')); }
+  catch (e) { snap = await getDocs(collection(db, 'users', uid, 'faceChars')); }
   let n = 0;
   snap.forEach(function (s) {
     const d = s.data() || {};
@@ -17105,16 +17114,54 @@ window._charLoadMyFaceChars = async function (uid) {
 // ── 얼굴 커스터마이징 신청 (서버 자가생성 전 베타 경로, 2026-09-06) ──
 // 인증 모달을 '신청 모드'로 연다. 웹캠 → 프로필 대조 통과 프레임만 올린다(파일 업로드 경로 없음 = 스펙 3장).
 // ★모달 문구를 바꾼다 — 원래 안내는 "사진은 저장되지 않아요"인데 신청은 사진을 **써야** 만든다. 숨기지 않는다.
-window.faceStartCreate = async function () {
+// ★재료 = 유저가 **고르는 사진 몇 장**(대표 9-07: "웹캠 셀카가 아니라 첨부하는 사진으로 만들어야 해.
+//   얼굴 인증은 하나의 단계일 뿐"). 인증은 카드가 먼저 시키고(faceVerified), 여기선 사진만 고른다.
+//   파일 선택창은 사용자 탭 안에서 열어야 하므로 await 전에 click() 한다.
+window.faceStartCreate = function () {
   if (window.faceTickets() < 1) { showToast('만들기 횟수가 없어요'); return; }
-  window._fvMode = 'create';
-  await window.startFaceVerify();
-  if (window._fvMode !== 'create') return;              // 사진 없음 등으로 모달이 안 열린 경우
-  const cap = document.getElementById('fv-caption'); if (cap) cap.innerHTML = '정면을 보고 찍어주세요. 이 사진과 <b style="color:#ddd">프로필의 정면 사진들</b>로 캐릭터를 만들고, 만든 뒤에는 지워요.<br><span style="color:#F5C24B">프로필에 정면 사진이 많을수록 더 닮게 나와요.</span> 베타라 결과가 아쉬울 수 있어요 — 만들기 횟수 안에서 다시 신청할 수 있어요';
-  const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = '찍고 신청하기';
+  let inp = document.getElementById('face-req-input');
+  if (!inp) {
+    inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+    inp.id = 'face-req-input'; inp.style.display = 'none'; document.body.appendChild(inp);
+    inp.addEventListener('change', function (e) { window._faceReqPicked(e); });
+  }
+  inp.value = ''; inp.click();
+};
+window._faceReqPicked = async function (e) {
+  const files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
+  if (!files.length) return;
+  const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
+    desc: '<b style="color:#fff">' + files.length + '장</b>으로 캐릭터를 만들어요<br>정면이 잘 보이는 사진일수록 닮게 나와요<br><span style="color:#8a93a8">만들기 1회를 써요 · 1~3분 걸려요 · 사진은 만든 뒤 지워요</span>' });
+  if (!ok) return;
+  showToast('사진 올리는 중…');
+  const urls = [];
+  for (const f of files) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
+  if (!urls.length) { showToast('사진 업로드에 실패했어요'); return; }
+  try { await window._faceSubmitUrls(urls); }
+  catch (err) { console.error('faceReq', err); showToast('신청에 실패했어요 · 다시 시도해주세요'); }
 };
 // 통과한 프레임을 올리고 신청 문서를 만든다. 만들기 횟수 1 차감과 신청 문서를 **한 트랜잭션**으로 —
 // 사진만 올라가고 횟수가 안 빠지거나, 횟수만 빠지고 신청이 안 남는 일이 없게.
+// 신청 문서 쓰기 — 만들기 횟수 1 차감과 **한 트랜잭션**(사진만 올라가고 횟수가 안 빠지거나 그 반대가 없게).
+// ★문서 id = uid 라 두 번째부터는 '갱신'이다. 서버 트리거는 쓰기(written)로 받고 t(신청 시각)로 새 신청을 구분한다.
+window._faceSubmitUrls = async function (urls) {
+  const uid = window.currentUser.uid, prof = window._cachedProfile || {};
+  const r = await runTransaction(db, async tx => {
+    const uref = doc(db, 'users', uid); const snap = await tx.get(uref);
+    const have = (snap.exists() && typeof snap.data().faceTickets === 'number') ? snap.data().faceTickets : 0;
+    if (have < 1) return { ok: false };
+    tx.update(uref, { faceTickets: have - 1 });
+    tx.set(doc(db, 'faceRequests', uid), { uid: uid, nick: String(prof.nickname || ''), gender: String(prof.gender || ''),
+      photoUrl: urls[0], photos: urls.slice(1), status: 'pending', t: Date.now() });
+    return { ok: true, faceTickets: have - 1 };
+  });
+  if (!r.ok) { showToast('만들기 횟수가 없어요'); return false; }
+  window._charState.faceTickets = r.faceTickets; window._charState.faceReqPending = true;
+  showToast('신청됐어요 · 만들어지면 알려드려요');
+  if (window.charRenderRoster) window.charRenderRoster();
+  return true;
+};
+// (구) 웹캠 프레임으로 신청 — 인증 모달의 create 모드가 쓰던 경로. 지금은 사진 고르기가 기본이라 안 쓰인다.
 window._faceSubmitRequest = async function (v) {
   setFvStatus('사진 올리는 중...');
   const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
@@ -17122,24 +17169,9 @@ window._faceSubmitRequest = async function (v) {
   const blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.92); });
   if (!blob) throw new Error('capture');
   const url = await window.mwUploadImage(blob, 'facereq');
-  const uid = window.currentUser.uid, prof = window._cachedProfile || {};
-  // ★프로필 사진들을 같이 보낸다 — 생성은 셀카 여러 장(원 레시피 7장)일수록 닮는다. 인증에 쓴 후보 목록과 같다.
-  const photos = [prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean).slice(0, 12);
-  const r = await runTransaction(db, async tx => {
-    const uref = doc(db, 'users', uid); const snap = await tx.get(uref);
-    const have = (snap.exists() && typeof snap.data().faceTickets === 'number') ? snap.data().faceTickets : 0;
-    if (have < 1) return { ok: false };
-    tx.update(uref, { faceTickets: have - 1 });
-    tx.set(doc(db, 'faceRequests', uid), { uid: uid, nick: String(prof.nickname || ''), gender: String(prof.gender || ''),
-      photoUrl: url, photos: photos, status: 'pending', t: Date.now() });
-    return { ok: true, faceTickets: have - 1 };
-  });
-  if (!r.ok) { setFvStatus('만들기 횟수가 없어요'); return; }
-  window._charState.faceTickets = r.faceTickets; window._charState.faceReqPending = true;
-  setFvStatus('신청됐어요! 만들어지면 캐릭터 목록에 나타나요');
-  showToast('신청됐어요 · 만들어지면 알려드려요');
-  if (window.charRenderRoster) window.charRenderRoster();
-  setTimeout(function () { window.stopFaceVerify(); }, 1800);
+  const ok = await window._faceSubmitUrls([url]);
+  if (ok) { setFvStatus('신청됐어요! 만들어지면 캐릭터 목록에 나타나요'); setTimeout(function () { window.stopFaceVerify(); }, 1800); }
+  else setFvStatus('만들기 횟수가 없어요');
 };
 // 관리자: 대기 중인 신청 목록. 사진을 열어 로컬 파이프라인(tools/face_pipeline.py)으로 만든 뒤 위 지급 폼으로 준다.
 window.faceAdminQueue = async function () {
@@ -17173,6 +17205,27 @@ window.faceAdminDone = async function (uid) {
   if (!isAdmin()) return;
   try { await updateDoc(doc(db, 'faceRequests', uid), { status: 'done', doneAt: Date.now() }); showToast('완료 처리'); window.faceAdminQueue(); }
   catch (e) { console.warn('faceAdminDone', e); showToast('실패'); }
+};
+// 도착 팝업에서 이름을 짓고 바로 입는다 (대표 9-07: "이름은 내가 작성"). 이름은 faceChars 문서의 name 만 바꾼다(규칙이 그 필드만 연다).
+window.faceDoneWear = async function (charId) {
+  const inp = document.getElementById('face-promo-name');
+  const name = String((inp && inp.value) || '').trim();
+  if (name.length < 1 || name.length > 12) { showToast('이름은 1~12자로 지어주세요'); if (inp) inp.focus(); return; }
+  if (window._hasContact && window._hasContact(name)) { showToast('쓸 수 없는 이름이에요'); return; }
+  const uid = window.currentUser.uid, key = 'face:' + charId;
+  try { await updateDoc(doc(db, 'users', uid, 'faceChars', charId), { name: name, updatedAt: Date.now() }); }
+  catch (e) { console.warn('faceDoneWear', e); showToast('이름 저장에 실패했어요'); return; }
+  if (window._CHAR_BODIES[key]) window._CHAR_BODIES[key].name = name;
+  if (window._charState.faceChars && window._charState.faceChars[charId]) window._charState.faceChars[charId].name = name;
+  window.closeFacePromo(false);
+  if (typeof closePanel === 'function') closePanel('mypage-panel');
+  goPage('char');
+  setTimeout(function () {
+    if (window.charHubTab) window.charHubTab('me');
+    if (window.charPickBody) window.charPickBody(key);
+    if (window.charRenderRoster) window.charRenderRoster();
+    showToast("'" + name + "' 착용했어요");
+  }, 300);
 };
 window.faceBuyTicket = async function (opts) {
   const u = window.currentUser;
@@ -24128,7 +24181,7 @@ window.startNotifListener = (uid) => {
               try { await window._charLoadMyFaceChars(window.currentUser.uid); } catch (e) {}
               window._charState.faceReqPending = false;
               if (window.charRenderRoster) window.charRenderRoster();
-              if (window.showFacePromo) window.showFacePromo('done'); else showToast('내 캐릭터가 도착했어요');
+              if (window.showFacePromo) window.showFacePromo('done', n.charId || null); else showToast('내 캐릭터가 도착했어요');
             })();
           }
           else if (n.type === 'face_failed') {
