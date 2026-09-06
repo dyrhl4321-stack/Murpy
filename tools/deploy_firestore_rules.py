@@ -44,53 +44,10 @@ for name, o, c in (('중괄호', '{', '}'), ('괄호', '(', ')'), ('대괄호', 
         raise SystemExit('%s 개수가 안 맞습니다 (%d vs %d)' % (name, RULES.count(o), RULES.count(c)))
 print('%s %d자 · 규칙 %d줄 · 대상 %s' % (RULE_FILE, len(RULES), RULES.count('allow '), RELEASE), flush=True)
 
-STATE = secrets.token_urlsafe(12)
-AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
-    'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
-    'scope': 'email openid https://www.googleapis.com/auth/cloud-platform',
-    'state': STATE, 'access_type': 'offline', 'prompt': 'consent'})
-print('아래 링크를 브라우저에서 열 것 (관리자 계정으로 로그인):', flush=True)
-print(AUTH_URL, flush=True)
-# ★백그라운드로 돌리면 stdout 이 끝날 때까지 안 보인다. 그래서 링크를 파일로도 남긴다 —
-#   안 그러면 대표가 눌러야 할 링크를 아무도 못 본다.
-try:
-    io.open(os.path.join(HERE, '_oauth_url.txt'), 'w', encoding='utf-8').write(AUTH_URL)
-except Exception:
-    pass
-
-got = {}
-
-
-class H(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *a):
-        pass
-
-    def do_GET(self):
-        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        ok = q.get('state', [''])[0] == STATE and q.get('code', [''])[0]
-        if ok:
-            got['code'] = q['code'][0]
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.end_headers()
-        msg = '확인됐어요. 이 창을 닫으셔도 됩니다.' if ok else '실패했어요. 터미널을 봐주세요.'
-        self.wfile.write(('<meta charset=utf-8><body style="font-family:sans-serif;'
-                          'padding:40px;text-align:center"><h2>' + msg + '</h2>').encode('utf-8'))
-
-
-srv = http.server.HTTPServer(('127.0.0.1', 9005), H)
-srv.timeout = 300
-while 'code' not in got:
-    srv.handle_request()
-
-tok = json.loads(urllib.request.urlopen(urllib.request.Request(
-    'https://oauth2.googleapis.com/token',
-    urllib.parse.urlencode({'code': got['code'], 'client_id': CID, 'client_secret': CSEC,
-                            'redirect_uri': REDIRECT,
-                            'grant_type': 'authorization_code'}).encode())).read())['access_token']
+import sys as _s; _s.path.insert(0, HERE)
+from gcloud_oauth import get_token as _get_token
+tok = _get_token()   # 저장된 refresh 토큰이 있으면 클릭 없이(9-07)
 print('토큰 받음', flush=True)
-HDR = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
-
 
 def call(url, body=None, method='GET', soft=False):
     """soft=True 면 실패해도 죽지 않고 None 을 준다(릴리스가 없을 때 만들어 보려고)."""

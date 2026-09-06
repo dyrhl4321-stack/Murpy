@@ -64,12 +64,13 @@ def back_face_check(ai_path):
 def outfit_check(ai_path, base_path):
     """정면 칸 몸통 띠(y 128~170, x 50~92)의 평균색이 base 속옷과 얼마나 다른가 — 옷을 바꿔 그린 실패
     (hyunsu 1호가 흰 나시로 바뀜). 색거리 60 넘으면 의심."""
-    A = np.array(Image.open(ai_path).convert('RGBA')).astype(int)[128:170, 50:92]
-    B = np.array(Image.open(base_path).convert('RGBA')).astype(int)[128:170, 50:92]
-    ma, mb = A[..., 3] > 128, B[..., 3] > 128
-    if ma.sum() < 50 or mb.sum() < 50: return 0
-    ca, cb = A[ma][:, :3].mean(0), B[mb][:, :3].mean(0)
-    return int(round(float(np.sqrt(((ca - cb) ** 2).sum()))))
+    Af = np.array(Image.open(ai_path).convert('RGBA')).astype(int); Bf = np.array(Image.open(base_path).convert('RGBA')).astype(int)
+    worst = 0
+    for (y0, y1) in ((128, 170), (168, 200)):          # 상의 띠 + 하의 띠(흰 바지 실전 사고, 9-07)
+        A, B = Af[y0:y1, 50:92], Bf[y0:y1, 50:92]; ma, mb = A[..., 3] > 128, B[..., 3] > 128
+        if ma.sum() < 50 or mb.sum() < 50: continue
+        worst = max(worst, int(round(float(np.sqrt(((A[ma][:, :3].mean(0) - B[mb][:, :3].mean(0)) ** 2).sum())))))
+    return worst
 
 def score(ai_path, base_path, hair_path):
     cm = cell_metrics(ai_path, base_path)
@@ -92,7 +93,7 @@ def verdict(s):
     if s['semi'] or s['mag']: bad.append('잔상')
     if s['crown'] < 300: bad.append('머리없음?')
     if s['backface'] > 150: bad.append('뒤칸에얼굴')
-    if s['outfit'] > 60: bad.append('옷바뀜')
+    if s['outfit'] > 45: bad.append('옷바뀜')
     return 'OK' if not bad else ' '.join(bad)
 
 def contact(base_path, ai_paths, out_path):

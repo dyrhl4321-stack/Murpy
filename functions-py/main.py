@@ -71,7 +71,7 @@ def face_generate(event):
             except Exception as e: print('사진 실패', u[:80], e)
         if not selfies: raise RuntimeError('셀카를 하나도 못 받았다')
         with tempfile.TemporaryDirectory() as td:
-            res = pipeline.process(GEMINI.value, base_png, prompt, selfies, td, attempts=3, log=print, base_path=pipeline.align_base(gender))
+            res = pipeline.process(GEMINI.value, base_png, prompt, selfies, td, attempts=4, log=print, base_path=pipeline.align_base(gender))
             char_id = 'f%d' % int(time.time())
             pre = 'faces/%s/%s/' % (uid, char_id)
             sheet_url = _upload(bucket, pre + 'sheet.png', res['sheet'])

@@ -25,16 +25,23 @@ def cell_metrics(A, B):
                          'h': (ay.max() - ay.min() + 1) / (by.max() - by.min() + 1)})
     return rows
 
-def score(ai_path, base_path, hair_px=0):
+def score(ai_path, base_path, hair_px=0, fringe_src=None):
+    """fringe_src = 잔상 검사를 할 시트(기본 ai_path). 머리 이식본은 base 몸통의 원래 반투명 픽셀을 물려받으니
+    이식 **전** AI 시트로 잔상을 본다(9-07 로컬 하네스에서 이식본이 전부 '잔상'으로 걸림)."""
     A = np.array(Image.open(ai_path).convert('RGBA')).astype(int); B = np.array(Image.open(base_path).convert('RGBA')).astype(int)
     cm = [m for m in cell_metrics(A, B) if m]
-    al = A[..., 3]; mx = A[..., :3].max(-1)
+    F = np.array(Image.open(fringe_src).convert('RGBA')).astype(int) if fringe_src else A
+    al = F[..., 3]; mx = F[..., :3].max(-1)
     semi = int(((al > 0) & (al < 255)).sum())
-    mag = int(((al == 255) & (mx > 100) & (A[..., 0] > A[..., 1] + 40) & (A[..., 2] > A[..., 1] + 40)).sum())
+    mag = int(((al == 255) & (mx > 100) & (F[..., 0] > F[..., 1] + 40) & (F[..., 2] > F[..., 1] + 40)).sum())
     crown = A[8:40, 30:111]; crown_px = int(((crown[..., 3] > 128) & ~_skin(crown)).sum())
     back = A[CH + 30:CH + 110, 40:100]; backface = int(((back[..., 3] > 128) & _skin(back)).sum())
-    ta, tb = A[128:170, 50:92], B[128:170, 50:92]; ma, mb = ta[..., 3] > 128, tb[..., 3] > 128
-    outfit = int(round(float(np.sqrt(((ta[ma][:, :3].mean(0) - tb[mb][:, :3].mean(0)) ** 2).sum())))) if ma.sum() >= 50 and mb.sum() >= 50 else 0
+    # ★상의 띠(y128~170)만 보다가 **흰 바지**(하의 바뀜)를 통과시켰다(9-07 대표 실전 1호). 상·하의 띠 둘 다, 큰 쪽.
+    outfit = 0
+    for (y0, y1) in ((128, 170), (168, 200)):
+        ta, tb = A[y0:y1, 50:92], B[y0:y1, 50:92]; ma, mb = ta[..., 3] > 128, tb[..., 3] > 128
+        if ma.sum() >= 50 and mb.sum() >= 50:
+            outfit = max(outfit, int(round(float(np.sqrt(((ta[ma][:, :3].mean(0) - tb[mb][:, :3].mean(0)) ** 2).sum())))))
     return {'cells': len(cm),
             'dy_max': max((abs(m['dy']) for m in cm), default=99), 'dx_max': max((abs(m['dx']) for m in cm), default=99),
             'h_min': round(min((m['h'] for m in cm), default=0), 3), 'h_max': round(max((m['h'] for m in cm), default=0), 3),
@@ -49,5 +56,5 @@ def verdict(s):
     if s['semi'] or s['mag']: bad.append('잔상')
     if s['crown'] < 300: bad.append('머리없음')
     if s['backface'] > 150: bad.append('뒤칸에얼굴')
-    if s['outfit'] > 60: bad.append('옷바뀜')
+    if s['outfit'] > 45: bad.append('옷바뀜')
     return 'OK' if not bad else ' '.join(bad)

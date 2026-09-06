@@ -40,17 +40,24 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
         except SystemExit as e:
             log('  규격화 %d 실패: %s' % (i + 1, e)); scores.append({'attempt': i + 1, 'error': 'regrid ' + str(e)[:200]}); continue
         hair_path = os.path.join(out_dir, 'hair_%d.png' % (i + 1))
-        kind, hair_px = hair.extract_auto(ai_path, hair_path)
+        kind, hair_px = hair.extract_auto(ai_path, hair_path)          # 헤어는 **이식 전** AI 시트에서(긴 머리 포함)
         if not hair_px: hair_path = None
-        s = score.score(ai_path, base_path, hair_px); v = score.verdict(s)
+        # ★얼굴만 바꾼다: 목선 위 = AI, 목선 아래 = base 픽셀 그대로 → 속옷·몸이 바뀔 길이 없다(대표 9-07)
+        grafted = os.path.join(out_dir, 'sheet_%d.png' % (i + 1))
+        grid.graft_head(ai_path, base_path, grafted)
+        s = score.score(grafted, base_path, hair_px, fringe_src=ai_path); v = score.verdict(s)
         s.update({'attempt': i + 1, 'verdict': v, 'hairKind': kind}); scores.append(s)
         log('  시도 %d: %s' % (i + 1, v))
         bad = 0 if v == 'OK' else len(v.split())
         if best is None or bad < best['bad']:
-            best = {'bad': bad, 'ai': ai_path, 'hair': hair_path, 'verdict': v, 'attempt': i + 1}
+            best = {'bad': bad, 'ai': grafted, 'hair': hair_path, 'verdict': v, 'attempt': i + 1}
         if v == 'OK': break
     if best is None:
         raise RuntimeError('생성이 전부 실패했다: ' + json.dumps(scores, ensure_ascii=False)[:500])
+    # ★채점을 통과한 게 하나도 없으면 **내보내지 않는다** — '덜 나쁜 것'을 줬다가 흰 바지가 나갔다(9-07 대표: "제대로 걸러줘야 함").
+    #   실패로 올리면 서버가 횟수를 환불하고 알림을 보낸다. 유저는 다시 신청하면 된다.
+    if best['bad'] > 0:
+        raise RuntimeError('품질 검사 통과 못 함(%d회): %s' % (len(scores), best['verdict']))
     # 피부톤 5종 — skin 모듈은 전역 OUT 에 쓴다(도구 시절 관례). 임시폴더로 돌려 쓴다.
     skin.OUT = out_dir
     skin.bake(best['ai'], 'skin')

@@ -18,35 +18,7 @@ sys.path.insert(0, HERE)
 from face_pipeline import load_cfg, PRIV
 BUCKET = 'murpyprototype.firebasestorage.app'
 
-# deploy_firestore_rules.py 의 클라이언트 정보를 그대로 쓴다(같은 파일에서 읽는다 — 두 곳에 두지 않는다)
-_src = io.open(os.path.join(HERE, 'deploy_firestore_rules.py'), encoding='utf-8').read()
-def _const(name):
-    import re
-    m = re.search(r"^%s\s*=\s*'([^']+)'" % name, _src, re.M); return m.group(1) if m else None
-CID, CSEC, REDIRECT = _const('CID'), _const('CSEC'), _const('REDIRECT') or 'http://localhost:9005'
-if not CID or not CSEC: raise SystemExit('deploy_firestore_rules.py 에서 CID/CSEC 를 못 읽었다')
-
-def oauth_token():
-    state = secrets.token_urlsafe(12)
-    url = 'https://accounts.google.com/o/oauth2/v2/auth?' + urllib.parse.urlencode({
-        'client_id': CID, 'redirect_uri': REDIRECT, 'response_type': 'code',
-        'scope': 'email openid https://www.googleapis.com/auth/cloud-platform', 'state': state, 'access_type': 'offline', 'prompt': 'consent'})
-    print('아래 링크를 브라우저에서 열 것 (관리자 계정으로 로그인):', flush=True); print(url, flush=True)
-    got = {}
-    class H(http.server.BaseHTTPRequestHandler):
-        def log_message(self, *a): pass
-        def do_GET(self):
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            ok = q.get('state', [''])[0] == state and q.get('code', [''])[0]
-            if ok: got['code'] = q['code'][0]
-            self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.end_headers()
-            self.wfile.write(('<h2>%s</h2>' % ('완료 — 창을 닫아도 됩니다' if ok else '실패')).encode('utf-8'))
-    srv = http.server.HTTPServer(('127.0.0.1', 9005), H)
-    while 'code' not in got: srv.handle_request()
-    tok = json.loads(urllib.request.urlopen(urllib.request.Request('https://oauth2.googleapis.com/token',
-        urllib.parse.urlencode({'code': got['code'], 'client_id': CID, 'client_secret': CSEC, 'redirect_uri': REDIRECT,
-                                'grant_type': 'authorization_code'}).encode())).read())['access_token']
-    print('토큰 받음', flush=True); return tok
+from gcloud_oauth import get_token as oauth_token   # 저장된 refresh 토큰이 있으면 클릭 없이
 
 def upload(tok, path, data, ctype):
     url = 'https://storage.googleapis.com/upload/storage/v1/b/%s/o?uploadType=media&name=%s' % (BUCKET, urllib.parse.quote(path, safe=''))

@@ -177,3 +177,37 @@ if __name__ == '__main__':
     ap.add_argument('--out', required=True)
     a = ap.parse_args()
     regrid_cells(a.raw, a.base, a.out)
+
+
+def neck_y(cell_alpha, lo=95, hi=125):
+    """칸(224행) 에서 목선 y — 머리와 어깨 사이 불투명 폭이 가장 좁은 행 (재진 1호 face_graft 와 같은 판정)."""
+    best, by = None, lo
+    for y in range(lo, hi):
+        w = int(cell_alpha[y].sum())
+        if w and (best is None or w < best): best, by = w, y
+    return by
+
+def graft_head(ai_path, base_path, out_path):
+    """★얼굴만 바꾸는 게 목적이다(대표 9-07: "얼굴 잘라서 base 캐릭터에 얹는 건데 왜 속옷이 바뀌냐").
+    칸마다 목선 위는 AI 시트, 목선 아래는 **base 시트 픽셀 그대로**. 목 아래로 내려오는 긴 머리는
+    hair.extract_auto 가 AI 시트에서 따로 뽑아 헤어 레이어(상의 위)로 얹으므로 여기서 잘려도 된다."""
+    A = np.array(Image.open(ai_path).convert('RGBA')); B = np.array(Image.open(base_path).convert('RGBA'))
+    CW, CH = 141, 224
+    out = B.copy()
+    for r in range(4):
+        for c in range(3):
+            ys, xs = slice(r * CH, (r + 1) * CH), slice(c * CW, (c + 1) * CW)
+            ny = neck_y(B[ys, xs, 3] > 128)
+            head = A[ys, xs]
+            m = head[..., 3] > 128
+            m[ny:, :] = False                       # 목선 아래는 AI 를 쓰지 않는다
+            cell = out[ys, xs]
+            cell[:ny][m[:ny]] = head[:ny][m[:ny]]
+            # 목선 위에서 base 에만 있고 AI 엔 없는 픽셀(빡빡이 두상 윤곽)은 지운다 — 남으면 머리 뒤로 살색이 비친다
+            base_only = (B[ys, xs, 3] > 128) & ~(head[..., 3] > 128)
+            base_only[ny:, :] = False
+            cell[base_only] = 0
+            out[ys, xs] = cell
+    Image.fromarray(out, 'RGBA').save(out_path)
+    print('  머리 이식 → base 몸통 그대로', out_path)
+    return out_path
