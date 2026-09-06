@@ -77,7 +77,7 @@ def face_generate(event):
             sheet_url = _upload(bucket, pre + 'sheet.png', res['sheet'])
             hair_url = _upload(bucket, pre + 'hair.png', res['hair']) if res.get('hair') else None
             skin_urls = {t: _upload(bucket, pre + 'skin_%s.png' % t, p) for t, p in res['skins'].items()}
-        nick = str(data.get('nick') or '내 캐릭터')[:12]
+        nick = '새 캐릭터'   # 이름은 유저가 도착 팝업에서 짓는다(닉네임을 그대로 쓰니 대표가 '마음대로 패수현' 이라 함, 9-07)
         db.collection('users').document(uid).collection('faceChars').document(char_id).set({
             'name': nick, 'sheetUrl': sheet_url, 'hairUrl': hair_url, 'skinUrls': skin_urls, 'eyes': res['eyes'],
             'retryCount': res['attempts'], 'verdict': res['verdict'], 'createdAt': int(time.time() * 1000), 'updatedAt': int(time.time() * 1000)})

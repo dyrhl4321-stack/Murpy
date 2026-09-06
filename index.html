@@ -4143,7 +4143,9 @@ window.CHAR_ITEMS = [
   // 체크인 30회 → 10회로 낮춤 (대표 지시 2026-08-07). 오픈 단계에선 30회가 너무 멀어서
   // 아무도 도달 못 한 채 '못 여는 아이템'으로만 보였다. ★남/여 두 벌을 반드시 같이 바꿀 것.
   { id: 'acc_airpodsmax', slot: 'acc', body: 'human', name: '에어팟 맥스', price: 0, sheet: 'char/items/acc_airpodsmax.png', thumb: 'char/items/acc_airpodsmax_thumb.png', require: { checkins: 10 } },
-  { id: 'top_redhood', slot: 'top', body: 'human', name: '레드 후디', price: 12, sheet: 'char/items/top_redhood.png', thumb: 'char/items/top_redhood_thumb.png' },
+  // ★bodyVariants = 특정 몸통이 입을 때만 갈아끼우는 시트. 패수현(긴 금발)은 후디 목 틈으로 머리가 비쳐 대표가
+  //   retouch 로 이 조합 전용 시트를 만들었다(9-07). 다른 몸통은 원본 그대로.
+  { id: 'top_redhood', slot: 'top', body: 'human', name: '레드 후디', price: 12, sheet: 'char/items/top_redhood.png', thumb: 'char/items/top_redhood_thumb.png', bodyVariants: { paesuhyun: 'char/items/top_redhood__paesuhyun.png?v=1' } },
   { id: 'top_ringer', slot: 'top', body: 'human', name: 'ART 링거티', price: 12, sheet: 'char/items/top_ringer.png', thumb: 'char/items/top_ringer_thumb.png' },
   { id: 'bottom_bermuda', slot: 'bottom', body: 'human', name: '회색 버뮤다', price: 12, sheet: 'char/items/bottom_bermuda.png', thumb: 'char/items/bottom_bermuda_thumb.png', overShoes: true },
   { id: 'bottom_trainpt', slot: 'bottom', body: 'human', name: '검정 트레이닝', price: 12, sheet: 'char/items/bottom_trainpt.png', thumb: 'char/items/bottom_trainpt_thumb.png' },
@@ -4334,6 +4336,8 @@ window._charEquippedSheets = function (cfg) {
     // 다른 몸통 전용 아이템은 무시한다. 성별 백필로 남캐 헤어 id가 여캐에 남아 있어도 안 얹힌다.
     if (item && !window._charFits(item.body, bodyKey)) return;
     let sheet = item && item.sheet;
+    // ★몸통별 대체 시트(bodyVariants) — 그 몸통이 입을 때만. 예: 레드 후디 × 패수현(대표 retouch, 9-07)
+    if (item && item.bodyVariants && item.bodyVariants[bodyKey]) sheet = item.bodyVariants[bodyKey];
     // 모자 착용 시 헤어는 대체 시트로: 비니 안으로 들어가고 뒷머리만 빼꼼(null=완전히 숨김)
     if (slot === 'hair' && item && item.hatVariants && cfg.hat && (cfg.hat in item.hatVariants)) {
       sheet = item.hatVariants[cfg.hat];
@@ -9291,7 +9295,9 @@ window.charRenderRoster = function () {
     const sub = equipped ? '<span class="mw-sub on">착용중</span>'
       : unlocked ? '<span class="mw-sub">착용</span>'
       : '<span class="mw-sub gold">' + (isHidden ? '히든' : isQuest ? '퀘스트' : (b.tag || '한정')) + '</span>';
-    const action = unlocked ? ("window.charPickBody('" + key + "')")
+    // ★착용 중인 **내 커마**를 다시 누르면 이름 바꾸기(서버가 지은 기본 이름을 유저가 고친다, 대표 9-07)
+    const action = (equipped && key.indexOf('face:') === 0) ? ("window.showFacePromo('rename','" + key.slice(5) + "')")
+      : unlocked ? ("window.charPickBody('" + key + "')")
       : isHidden ? "window.mwHiddenLockedTap()"
       : isQuest ? "window.mwGoQuest()"
       : ("window.openCharCodeModal('" + key + "')");
@@ -16405,17 +16411,17 @@ window._maybeMwPromo = function () {
 //   한 세션에 두 팝업이 겹쳐 뜨는 것도 막는다 — mw_promo_sess 가 서 있으면 오늘은 양보한다.
 window.showFacePromo = function (kind, n) {
   // kind 'grant' = 이용권을 받았을 때(대표가 지급창에서 준 사람들, 9-06). 광고가 아니라 알림이라 커마가 있어도 뜬다.
-  const grant = kind === 'grant', done = kind === 'done';
+  const rename = kind === 'rename', grant = kind === 'grant', done = kind === 'done' || rename;
   if (!grant && !done && Object.keys((window._charState || {}).faceChars || {}).length) return;   // 광고는 이미 있으면 안 띄운다
   const el = document.getElementById('face-promo'); if (!el) return;
   const T = function (id, t) { const x = document.getElementById(id); if (x) x.innerHTML = t; };
-  T('face-promo-badge', done ? '완성' : grant ? '선물' : 'NEW');
-  T('face-promo-title', done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
-  T('face-promo-body', done ? '얼굴 커스터마이징이 끝났어요<br>캐릭터 목록에서 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
-  T('face-promo-cta', done ? '이 이름으로 착용' : grant ? '만들러 가기' : '확인하기');
-  window._facePromoKind = kind; window._facePromoCharId = done ? n : null;
+  const badge = document.getElementById('face-promo-badge'); if (badge) badge.style.display = 'none';   // 칩 없음 — 담백하게(대표 9-07)
+  T('face-promo-title', rename ? '캐릭터 이름 바꾸기' : done ? '내 캐릭터가 도착했어요' : grant ? '얼굴 커스터마이징 이용권을 받았어요' : '얼굴 커스터마이징 기능 업데이트');
+  T('face-promo-body', rename ? '새 이름을 지어주세요' : done ? '얼굴 커스터마이징이 끝났어요<br>이름을 짓고 착용해보세요' : grant ? '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>지금 ' + (n || 1) + '회 만들 수 있어요' : '내 얼굴로 머피월드 캐릭터를 만들 수 있어요<br>옷은 지금 가진 것을 그대로 입어요');
+  T('face-promo-cta', rename ? '저장하고 착용' : done ? '이 이름으로 착용' : grant ? '만들러 가기' : '확인하기');
+  window._facePromoKind = done ? 'done' : kind; window._facePromoCharId = done ? n : null;
   const nameInp = document.getElementById('face-promo-name');
-  if (nameInp) { nameInp.style.display = done ? '' : 'none'; if (done) nameInp.value = ''; }
+  if (nameInp) { nameInp.style.display = done ? '' : 'none'; if (done) nameInp.value = rename && window._CHAR_BODIES['face:' + n] ? (window._CHAR_BODIES['face:' + n].name || '') : ''; }
   const later = document.getElementById('face-promo-later'); if (later) later.style.display = (grant || done) ? 'none' : '';
   // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
   const h = document.getElementById('face-promo-hero');

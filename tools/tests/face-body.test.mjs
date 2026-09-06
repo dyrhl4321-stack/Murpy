@@ -115,4 +115,14 @@ assert.strictEqual(w._charFaceBodyDef('h', DOC, 'UID1').def.hairOverlay, null, '
 // 하드코딩 패수현은 헤어 레이어 파일을 가리켜야 한다 (상의가 긴 머리를 덮던 9-06 지적)
 assert(/paesuhyun_hair\.png/.test(w._CHAR_BODIES.paesuhyun.hairOverlay || ''), '패수현 hairOverlay 가 없다');
 
-console.log('OK face-body 26항목');
+// 13) 몸통별 대체 시트 — 패수현이 레드 후디를 입을 때만 전용 시트, 기본 몸통은 원본
+new Function('window', grab(/window\.CHAR_ITEMS = \[[\s\S]*?\n\];/, 'CHAR_ITEMS'))(w);
+new Function('window', grab(/window\._charHairSrc = function[\s\S]*?\n\};/, '_charHairSrc'))(w);
+new Function('window', grab(/window\._charEquippedSheets = function[\s\S]*?\n\};/, '_charEquippedSheets'))(w);
+new Function('window', grab(/window\._charFits = function[\s\S]*?\n\};/, '_charFits'))(w);
+w._iv = (u) => u;
+assert(/top_redhood__paesuhyun/.test(w._charEquippedSheets({ body: 'paesuhyun', top: 'top_redhood' }).top), '패수현 레드후디가 전용 시트를 안 쓴다');
+assert(!/__paesuhyun/.test(w._charEquippedSheets({ body: 'human', top: 'top_redhood' }).top), '기본 몸통 레드후디가 전용 시트를 쓴다');
+assert(!/__paesuhyun/.test(w._charEquippedSheets({ body: 'jaejin', top: 'top_redhood' }).top), '재진 레드후디가 전용 시트를 쓴다');
+
+console.log('OK face-body 29항목');
