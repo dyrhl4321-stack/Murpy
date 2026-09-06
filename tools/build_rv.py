@@ -6,7 +6,7 @@ import io, os, html
 REPO = r"C:/Users/dyrhl/Murpy"
 OUT = REPO + "/rv"
 E = html.escape
-AV = "5"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
+AV = "6"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
 
 BGM = [
     # (id, 제목, 작곡/분위기, 내려받음, 파일, 현재적용?)
@@ -104,6 +104,23 @@ for n in NPC:
         '<p class="line">&ldquo;%s&rdquo;</p>%s'
         '<div class="rows">%s</div>'
         '</section>' % (E(n["name"]), E(n["age"]), done, E(n["quest"]), E(n["line"]), note, rows))
+
+# ★대표가 '다시' 를 누른 줄 — 후보를 늘어놓고 고르게 한다(기계가 '다른 사람 같다'를 못 가르므로)
+CANDS = [
+    ("민준이", "보상까지 받은 뒤", "내일 또 놀러 와! 약속!", "kid", "idle",
+     "대표님 지적: 이 줄만 다른 사람 목소리 같다. 후보는 전부 같은 Leda 목소리·같은 설정으로 뽑았고, 발음 뭉개진 건 미리 걸러냈습니다."),
+    ("관리인 박씨", "퀘스트 완료", "오, 도장 찍고 왔구먼! 부지런한 게 최고야.", "keeper", "done", ""),
+]
+cands_html = []
+for who, what, txt, ck, kind, note in CANDS:
+    slot = "후보: " + who + " " + what
+    files = sorted(f for f in os.listdir(OUT + "/a") if f.startswith("cand_%s_%s_" % (ck, kind)) and f.endswith(".mp3"))
+    rows = row(slot, "현재", "지금 올라간 것", txt, "", "line_%s_%s.mp3" % (ck, kind))
+    rows += "".join(row(slot, f.rsplit("_", 1)[1][:-4], "후보 " + f.rsplit("_", 1)[1][:-4], txt, "", f) for f in files)
+    cands_html.append(
+        '<section class="npc"><header class="nhd"><h3>%s</h3><span class="age">%s</span></header>'
+        '<p class="line">&ldquo;%s&rdquo;</p>%s<div class="rows">%s</div></section>'
+        % (E(who), E(what), E(txt), ('<p class="note">%s</p>' % E(note)) if note else "", rows))
 
 lines_html = []
 for who, voice, items in LINES:
@@ -232,6 +249,10 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
   그래도 귀에 걸리는 줄이 있으면 그 줄의 <b>다시</b>만 눌러주세요 &mdash; 눌러주신 것만 다시 뽑습니다.</p>
   __LINES__
 
+  <h2>다시 뽑은 후보 &mdash; 골라주세요</h2>
+  <p class="h2note">&lsquo;다시&rsquo; 눌러주신 두 줄입니다. <b>제일 자연스러운 하나에 고르기</b>를 눌러주세요. &lsquo;지금 올라간 것&rsquo;이 제일 낫다면 그걸 고르셔도 됩니다.</p>
+  __CANDS__
+
   <div class="okbox">
     <button class="ok" id="okall" type="button">전부 좋아요 &mdash; 앱에 넣어주세요</button>
     <button class="ng" id="okng" type="button">다시 뽑을 게 있어요</button>
@@ -311,6 +332,7 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
   function text() {
     var order = ['브금', '관리인 박씨', '강 코치', '순이 할매', '민준이'], out = [];
     order.forEach(function (k) { if (picks[k]) out.push(k + ' ' + picks[k]); });
+    Object.keys(picks).forEach(function (k) { if (k.indexOf('후보: ') === 0 && picks[k]) out.push(k.slice(4) + ' → ' + picks[k]); });
     var redo = Object.keys(picks).filter(function (k) { return k.indexOf('다시: ') === 0 && picks[k]; });
     if (redo.length) out.push('다시 뽑을 대사 ' + redo.map(function (k) { return k.slice(4); }).join(' / '));
     return out.join(', ');
@@ -361,7 +383,8 @@ h2{font-family:'Jua',sans-serif;font-weight:400;font-size:20px;margin:34px 0 3px
 
 DOC = (DOC.replace("__BGM__", bgm_html)
           .replace("__NPC__", "".join(npc_html))
-          .replace("__LINES__", "".join(lines_html)))
+          .replace("__LINES__", "".join(lines_html))
+          .replace("__CANDS__", "".join(cands_html)))
 io.open(OUT + "/audio-0904.html", "w", encoding="utf-8", newline="\n").write(DOC)
 
 # 무결성 자가검사 — 부분 치환 사고 재발 방지

@@ -184,6 +184,104 @@ def passes(r, min_clarity):
     return bool(r) and not r['cut'] and r['clarity'] >= min_clarity and not r['mush']
 
 
+def split_on_silence(pcm, rate, want):
+    """긴 무음에서 잘라 want 개 조각으로 나눈다. 간격 문턱을 넓은 쪽부터 좁혀가며 맞춘다."""
+    import array
+    a = array.array('h'); a.frombytes(pcm)
+    if not len(a):
+        return []
+    peak = max(abs(v) for v in a)
+    th = max(int(peak * 0.012), 160)
+    win = int(rate * 0.02)
+    loud = [max(abs(v) for v in a[i:i + win]) >= th for i in range(0, len(a) - win, win)]
+    for gap in (1.2, 0.9, 0.7, 0.55, 0.45):
+        need = int(gap / 0.02)
+        segs, run, start = [], 0, None
+        for i, on in enumerate(loud):
+            if on:
+                if start is None:
+                    start = i
+                run = 0
+            else:
+                run += 1
+                if start is not None and run >= need:
+                    segs.append((start, i - run + 1)); start = None
+        if start is not None:
+            segs.append((start, len(loud)))
+        if len(segs) == want:
+            pad = int(0.035 * rate)
+            return [a[max(0, x * win - pad):min(len(a), y * win + pad)].tobytes() for x, y in segs]
+    return []
+
+
+def take_warmup(ck, kind, txt, key, temp, model):
+    """★짧은 대사가 '다른 사람 같다'는 지적의 정답 — 그 줄만 따로 녹음하니 톤이 떠버린다.
+    이 캐릭터의 긴 첫 대사에 **이어붙여 한 테이크로** 읽히고 뒤쪽만 잘라 쓴다.
+    같은 테이크이므로 목소리가 어긋날 수가 없다. 두 조각으로 안 잘리면 버린다."""
+    lead = LINES[ck][0][1]
+    if lead == txt:
+        return None
+    extra = (DICTION + ' 아래 두 대사를 한 번에 이어서 녹음한다. 같은 사람이 같은 목소리로 계속 말한다.'
+             ' 두 대사 사이에는 2초 동안 완전히 침묵한다. 빈 줄이나 기호를 읽지 않는다.')
+    try:
+        pcm, rate = synth(build_prompt(ck, lead + chr(10) + chr(10) + txt, extra),
+                          CHARS[ck]['voice'], model, key, timeout=600, temp=temp)
+    except BaseException as e:
+        print('     이어읽기 실패: %s' % str(e)[:90].replace(chr(10), ' '))
+        return None
+    segs = split_on_silence(pcm, rate, 2)
+    if not segs:
+        print('     이어읽기 — 두 조각으로 안 잘림, 버림')
+        return None
+    w = to_wav(trim(segs[1], rate), rate)
+    r = judge(w, txt, key) or {'heard': '', 'mush': [], 'clarity': -1, 'cut': False}
+    if r['heard'] and similarity(txt, r['heard']) < 0.75:
+        print('     이어읽기 — 뒷조각이 원문과 다름(%s), 버림' % r['heard'][:40])
+        return None
+    r['wav'] = w; r['rate'] = rate
+    r['dur'] = (len(w) - 44) / 2.0 / rate
+    r['how'] = '이어읽기'
+    return r
+
+
+def run_cands(ck, key, n, temp, model, kinds, warmup=True, keep_weak=False):
+    """대표가 '다시' 를 누른 줄에 대해 **후보를 여러 개** 뽑는다(교체하지 않는다).
+    ★목소리가 '다른 사람 같다'는 지적은 기계가 못 가른다(9-05 실측: 같은 캐릭터끼리는
+      전부 10점, 할매를 섞어야 0점). 그래서 후보를 늘어놓고 대표가 고르는 게 정답이다.
+    절반은 이어읽기(take_warmup), 절반은 단독 녹음으로 뽑아 성격이 다른 후보를 준다."""
+    out = []
+    for kind, txt in LINES[ck]:
+        if kinds and kind not in kinds:
+            continue
+        got, letters = [], 'ABCDEFGH'
+        # 이미 있는 후보 다음 글자부터 — 여러 번 돌려도 덮어쓰지 않는다
+        have = [c for c in letters if os.path.exists(os.path.join(OUT, 'cand_%s_%s_%s.mp3' % (ck, kind, c)))]
+        letters = letters[len(have):]
+        for i in range(n):
+            r = take_warmup(ck, kind, txt, key, temp, model) if (warmup and i < n // 2) else None
+            if r is None:
+                r = take(ck, txt, key, temp, model)
+            if r is None:
+                continue
+            r.setdefault('how', '단독')
+            if r['cut'] or r['clarity'] < (6 if keep_weak else 8) or (r['mush'] and not keep_weak):
+                print('   %s %s 후보%d 버림 (또렷함 %d%s%s)'
+                      % (ck, kind, i + 1, r['clarity'], ' 끊김' if r['cut'] else '',
+                         (' 뭉갬 ' + ','.join(r['mush'])) if r['mush'] else ''))
+                continue
+            got.append(r)
+        os.makedirs(OUT, exist_ok=True)
+        for j, r in enumerate(got):
+            base = os.path.join(OUT, 'cand_%s_%s_%s' % (ck, kind, letters[j]))
+            open(base + '.wav', 'wb').write(r['wav'])
+            mp3(base + '.wav', base + '.mp3')
+            print('   -> cand_%s_%s_%s.mp3  %.2f초  또렷함 %d  (%s)'
+                  % (ck, kind, letters[j], r['dur'], r['clarity'], r['how']))
+        if not got:
+            print('  x %s %s — 쓸 만한 후보가 하나도 안 나왔다' % (ck, kind))
+    return True
+
+
 def run_char(ck, key, tries, temp, model, min_clarity, force=False, kinds=(), rounds=2):
     """기존 파일을 먼저 심사하고, 합격이면 그대로 둔다(멀쩡한 걸 새로 뽑아 나빠지는 걸 막는다).
     불합격이면 다시 뽑되, 새 테이크가 기존보다 확실히 나을 때만 교체한다."""
@@ -244,6 +342,10 @@ if __name__ == '__main__':
     ap.add_argument('--min-clarity', type=int, default=9, help='발음 또렷함 합격선(0~10)')
     ap.add_argument('--force', action='store_true', help='기존 파일 심사를 건너뛰고 무조건 다시 뽑는다')
     ap.add_argument('--kinds', default='', help='특정 대사만 (hi,done,idle 중 쉼표로)')
+    ap.add_argument('--no-warmup', action='store_true', help='후보를 단독 녹음으로만 뽑는다')
+    ap.add_argument('--keep-weak', action='store_true', help='또렷함 6 이상이면 후보로 남긴다(대표 귀로 고를 때)')
+    ap.add_argument('--cands', type=int, default=0,
+                    help='N개 후보만 뽑는다(교체 안 함). 대표가 고를 줄에 쓴다')
     ap.add_argument('--judge-rounds', type=int, default=2,
                     help='기존 파일을 몇 번 들어보고 판정할지. 심사에 편차가 있어 여러 번 듣고 제일 나쁜 결과를 쓴다')
     a = ap.parse_args()
@@ -254,6 +356,9 @@ if __name__ == '__main__':
 
     todo = [a.only] if a.only else ['keeper', 'trainer', 'grandma', 'kid']
     kinds = tuple(x.strip() for x in a.kinds.split(',') if x.strip())
-    ok = [run_char(c, key, a.tries, a.temp, a.model, a.min_clarity, a.force, kinds, a.judge_rounds)
-          for c in todo]
+    if a.cands:
+        ok = [run_cands(c, key, a.cands, a.temp, a.model, kinds, not a.no_warmup, a.keep_weak) for c in todo]
+    else:
+        ok = [run_char(c, key, a.tries, a.temp, a.model, a.min_clarity, a.force, kinds, a.judge_rounds)
+              for c in todo]
     print('\n끝 — 성공 %d / %d' % (sum(ok), len(ok)))

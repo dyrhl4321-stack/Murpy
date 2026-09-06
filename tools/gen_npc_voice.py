@@ -115,7 +115,8 @@ def trim(pcm, rate):
     j = len(s) - 1
     while j > i and abs(s[j]) < th: j -= 1
     pad = int(rate * 0.035)
-    i = max(0, i - pad); j = min(len(s) - 1, j + pad)
+    # ★끝은 넉넉히(120ms) — "약속!" 처럼 받침으로 끝나는 말은 꼬리를 35ms 로 자르면 잘린 것처럼 들린다(9-05)
+    i = max(0, i - pad); j = min(len(s) - 1, j + int(rate * 0.12))
     return s[i:j + 1].tobytes()
 
 
