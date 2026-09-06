@@ -16432,10 +16432,22 @@ window.showFacePromo = function (kind, n) {
   if (h && window._charRenderTo) {
     h.innerHTML = '<div id="face-promo-h1"></div><div id="face-promo-h2"></div>';
     const draw = function (id, cfg) { const t = document.getElementById(id); if (t) window._charRenderTo(t, window._charSnapH(104), window._charSafe ? window._charSafe(cfg) : cfg); };
-    // done: 방금 도착한 **내 캐릭터**(알림의 charId). 표에 아직 없으면(로드 실패) 그때만 기존 둘로.
-    const mineKey = done && n && window._CHAR_BODIES['face:' + n] ? 'face:' + n : null;
-    if (mineKey) { draw('face-promo-h1', { body: mineKey }); document.getElementById('face-promo-h2').style.display = 'none'; }
-    else { document.getElementById('face-promo-h2').style.display = ''; draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
+    // done/rename: **내 캐릭터**만 보여준다. 알림 charId 가 없으면 내 커마 중 가장 최근 것. 표에 아직 없으면
+    //   문서로 즉석 등록. 그래도 없으면 히어로를 **비운다** — 남의 얼굴(재진)이 뜨던 것을 원천 차단(대표 9-07).
+    let mineKey = null;
+    if (done) {
+      const fc = (window._charState || {}).faceChars || {};
+      let id = n;
+      if (!id) { const ids = Object.keys(fc).sort(function (a, b) { return ((fc[b] || {}).createdAt || 0) - ((fc[a] || {}).createdAt || 0); }); id = ids[0] || null; }
+      if (id && !window._CHAR_BODIES['face:' + id] && fc[id] && window._charRegisterFaceBody) window._charRegisterFaceBody(id, fc[id], (window.currentUser || {}).uid || null);
+      if (id && window._CHAR_BODIES['face:' + id]) mineKey = 'face:' + id;
+      window._facePromoCharId = id || null;
+      if (nameInp && rename && id && window._CHAR_BODIES['face:' + id]) nameInp.value = window._CHAR_BODIES['face:' + id].name || '';
+    }
+    const h2 = document.getElementById('face-promo-h2');
+    if (mineKey) { draw('face-promo-h1', { body: mineKey }); if (h2) h2.style.display = 'none'; }
+    else if (done) { const h1 = document.getElementById('face-promo-h1'); if (h1) h1.innerHTML = ''; if (h2) h2.style.display = 'none'; }
+    else { if (h2) h2.style.display = ''; draw('face-promo-h1', { body: 'jaejin' }); draw('face-promo-h2', { body: 'paesuhyun' }); }
     if (window._usersAll) window._usersAll().then(function (snap) {
       snap.forEach(function (d) {
         const c = (d.data() || {}).character; if (!c) return;
