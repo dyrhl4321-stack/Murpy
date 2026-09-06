@@ -71,7 +71,7 @@ assert.strictEqual(w._charSkinSrc('face:abc123', 't1'), DOC.skinUrls.t1, '구운
 assert.strictEqual(w._charSkinSrc('face:abc123', 't3'), DOC.sheetUrl, 't3(원본)은 시트 그대로여야 한다');
 assert.strictEqual(w._charSkinSrc('face:abc123', 't5'), DOC.sheetUrl, '없는 톤은 원본으로 폴백해야 한다');
 // 기존 몸통은 하나도 안 바뀐다
-assert.strictEqual(w._charSkinSrc('human', 't1'), 'char/skin/walk_t1.png?v=4', '기존 피부톤 경로가 바뀌었다');
+assert.strictEqual(w._charSkinSrc('human', 't1'), 'char/skin/walk_t1.png?v=5', '기존 피부톤 경로가 바뀌었다');
 assert.strictEqual(w._charSkinSrc('human', 't3'), w._CHAR_BODIES.human.src, '기존 t3 폴백이 깨졌다');
 
 // 9) 착용 저장 시 남길 characterSheet — 남이 나를 그릴 때 이 URL 하나만 본다
