@@ -78,4 +78,17 @@ w._hasContact = (t) => w.FILTER_WORDS.some(x => String(t || '').toLowerCase().in
 assert.strictEqual(w._faceCharDocFrom({ name: '카톡열어', sheetUrl: 'https://a/b.png' }).ok, false, '금칙어 이름이 통과했다');
 assert.strictEqual(w._faceCharDocFrom({ name: '현수', sheetUrl: 'https://a/b.png' }).ok, true, '멀쩡한 이름까지 막혔다');
 
-console.log('OK face-ticket 18항목');
+// 9) 진입 버튼이 상황마다 뭘 말해야 하는가 (스펙 4장 흐름)
+new Function('window', grab(/window\._faceEntryState = function[\s\S]*?\n\};/, '_faceEntryState'))(w);
+assert.strictEqual(w._faceEntryState(0, false, true, true).mode, 'buy', '티켓 0장인데 상점으로 안 보낸다');
+assert.strictEqual(w._faceEntryState(1, false, false, true).mode, 'verify', '인증 없이 생성으로 보낸다');
+assert.strictEqual(w._faceEntryState(1, false, false, false).mode, 'photo', '사진 없이 인증으로 보낸다');
+assert.strictEqual(w._faceEntryState(1, false, true, true).mode, 'create', '조건이 다 됐는데 생성으로 안 간다');
+assert.strictEqual(w._faceEntryState(0, true, true, true).mode, 'buy', '이미 있어도 더 만들려면 티켓이 필요하다');
+// 문구에 이모지가 없어야 한다 (머피 UI 규칙)
+for (const m of [[0,false,true,true],[1,false,false,true],[1,false,false,false],[1,false,true,true]]) {
+  const s = w._faceEntryState.apply(null, m);
+  assert(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s.label + s.desc), '진입 문구에 이모지가 있다: ' + s.label);
+}
+
+console.log('OK face-ticket 27항목');
