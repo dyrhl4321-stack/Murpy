@@ -4008,7 +4008,7 @@ window.faceEntryTap = async function () {
   }
   if (st.mode === 'buy') {
     const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', cost: true, confirmText: '1,000머피로 만들기',
-      desc: '내 얼굴 그대로 머피 캐릭터를 만들어요<br>옷은 지금 가진 걸 그대로 입어요<br><b style="color:#F5C24B">1,000머피</b> · 마음에 안 들면 두 번 다시 만들 수 있어요' });
+      desc: '내 얼굴 그대로 머피 캐릭터를 만들어요<br>옷은 지금 가진 걸 그대로 입어요<br><b style="color:#F5C24B">1,000머피</b><br><span style="color:#8a93a8">베타라 결과가 아쉬울 수 있어요 · 프로필에 정면 사진이 많을수록 잘 나와요</span>' });
     if (!ok) return;
     if (await window.faceBuyTicket({ noConfirm: true }) && window.charRenderRoster) window.charRenderRoster();
     return;
@@ -17082,7 +17082,7 @@ window.faceStartCreate = async function () {
   window._fvMode = 'create';
   await window.startFaceVerify();
   if (window._fvMode !== 'create') return;              // 사진 없음 등으로 모달이 안 열린 경우
-  const cap = document.getElementById('fv-caption'); if (cap) cap.textContent = '정면을 보고 찍어주세요. 이 사진으로 캐릭터를 만들고, 만든 뒤에는 지워요';
+  const cap = document.getElementById('fv-caption'); if (cap) cap.innerHTML = '정면을 보고 찍어주세요. 이 사진과 <b style="color:#ddd">프로필의 정면 사진들</b>로 캐릭터를 만들고, 만든 뒤에는 지워요.<br><span style="color:#F5C24B">프로필에 정면 사진이 많을수록 더 닮게 나와요.</span> 베타라 결과가 아쉬울 수 있어요 — 만들기 횟수 안에서 다시 신청할 수 있어요';
   const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = '찍고 신청하기';
 };
 // 통과한 프레임을 올리고 신청 문서를 만든다. 만들기 횟수 1 차감과 신청 문서를 **한 트랜잭션**으로 —
@@ -17095,13 +17095,15 @@ window._faceSubmitRequest = async function (v) {
   if (!blob) throw new Error('capture');
   const url = await window.mwUploadImage(blob, 'facereq');
   const uid = window.currentUser.uid, prof = window._cachedProfile || {};
+  // ★프로필 사진들을 같이 보낸다 — 생성은 셀카 여러 장(원 레시피 7장)일수록 닮는다. 인증에 쓴 후보 목록과 같다.
+  const photos = [prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean).slice(0, 12);
   const r = await runTransaction(db, async tx => {
     const uref = doc(db, 'users', uid); const snap = await tx.get(uref);
     const have = (snap.exists() && typeof snap.data().faceTickets === 'number') ? snap.data().faceTickets : 0;
     if (have < 1) return { ok: false };
     tx.update(uref, { faceTickets: have - 1 });
     tx.set(doc(db, 'faceRequests', uid), { uid: uid, nick: String(prof.nickname || ''), gender: String(prof.gender || ''),
-      photoUrl: url, status: 'pending', t: Date.now() });
+      photoUrl: url, photos: photos, status: 'pending', t: Date.now() });
     return { ok: true, faceTickets: have - 1 };
   });
   if (!r.ok) { setFvStatus('만들기 횟수가 없어요'); return; }
@@ -17125,11 +17127,19 @@ window.faceAdminQueue = async function () {
       return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#cfd6e6;border:1px solid rgba(255,255,255,0.12);padding:6px 8px">'
         + '<b style="color:#F5C24B">' + E(q.nick || '머피') + '</b><span style="color:#4a5266">' + E(q.gender || '') + ' · ' + E(when) + '</span>'
         + '<span style="margin-left:auto;display:flex;gap:4px">'
-        + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.open(&quot;' + J(q.photoUrl || '') + '&quot;,&quot;_blank&quot;)">사진</button>'
+        + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.open(&quot;' + J(q.photoUrl || '') + '&quot;,&quot;_blank&quot;)">셀카</button>'
+        + (Array.isArray(q.photos) && q.photos.length ? '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminOpenPhotos(&quot;' + J(q.uid) + '&quot;)">프로필 ' + q.photos.length + '장</button>' : '')
         + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="document.getElementById(&quot;fa-uid&quot;).value=&quot;' + J(q.uid) + '&quot;;showToast(&quot;uid 넣었어요&quot;)">uid</button>'
         + '<button class="mw-btn mw-btn-sm" onclick="window.faceAdminDone(&quot;' + J(q.uid) + '&quot;)">완료</button></span></div>';
     }).join('') : '<span style="font-size:10px;color:#4a5266">대기 중인 신청 없음</span>';
   } catch (e) { console.warn('faceAdminQueue', e); host.innerHTML = '<span style="font-size:10px;color:#ff6b6b">목록 실패(규칙 게시 확인)</span>'; }
+};
+// 프로필 사진 전부 새 탭으로 (팝업 차단이면 첫 장만 열린다 — 그때는 하나씩)
+window.faceAdminOpenPhotos = async function (uid) {
+  try {
+    const d = await getDoc(doc(db, 'faceRequests', uid)); const ph = (d.exists() && d.data().photos) || [];
+    ph.forEach(function (u, i) { setTimeout(function () { window.open(u, '_blank'); }, i * 250); });
+  } catch (e) { showToast('사진 목록 실패'); }
 };
 window.faceAdminDone = async function (uid) {
   if (!isAdmin()) return;
