@@ -169,7 +169,10 @@ SLOT_REGIONS = {
 
 def _is_skin(p) -> bool:
     r, g, b, a = p
-    return a > 0 and r > 150 and g > 80 and b < 150 and (r - b) > 30
+    # ★9-07: 선명한 노랑(255,220,0)이 살색으로 잡혀 노란 티셔츠가 통째로 지워졌다.
+    #   b>60 이나 r-g 로는 노랑 그늘색(b 60~120)이 다시 걸린다(실측).
+    #   판정은 색상각(hue): 살색은 주황(~25°), 노랑은 45° 이상. hue = 60*(g-b)/(r-b) < 38 만 살색.
+    return a > 0 and r > 150 and g > 80 and b < 150 and (r - b) > 30 and (g - b) * 60 < 38 * (r - b)
 
 
 def _alpha_sum(image: Image.Image, box) -> int:
