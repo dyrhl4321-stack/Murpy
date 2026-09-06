@@ -16798,15 +16798,21 @@ async function _descriptorFrom(input, ref) {
 // URL 한 장에서 얼굴 벡터 추출: 직접 로드 → 실패/타인트 시 weserv 프록시 폴백
 async function _descFromUrl(url) {
   const variants = [url, 'https://images.weserv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, ''))];
+  let loaded = false;
   for (const v of variants) {
     let img = null;
     try { img = await _loadImg(v); } catch (e) { continue; }
+    loaded = true;
     try { const d = await _descriptorFrom(img, true); if (d) return d; } catch (e) {}
   }
+  // ★왜 못 찾았는지 남긴다 — "불러오기 실패"(CORS·주소 죽음)와 "얼굴 없음"(탐지 실패)은 처방이 다르다(대표 9-06)
+  window._fvRefStats = window._fvRefStats || { loadFail: 0, noFace: 0 };
+  if (loaded) window._fvRefStats.noFace++; else window._fvRefStats.loadFail++;
   return null;
 }
 // 후보 사진들을 순회하며 얼굴 잡히는 첫 사진을 기준으로
 async function findRefDescriptor(urls) {
+  window._fvRefStats = { loadFail: 0, noFace: 0, total: urls.length };
   for (const u of urls) {
     const d = await _descFromUrl(u);
     if (d) return d;
@@ -24656,25 +24662,55 @@ window.startFaceVerify = async function() {
   setFvStatus('내 사진들에서 얼굴 찾는 중...');
   window._fvRefDesc = await findRefDescriptor(candidates);
   if (!window._fvRefDesc) {
-    // 인증 모달을 먼저 닫는다 — 확인창이 모달 뒤에 깔리지 않게
+    // ★막다른 길을 없앤다(대표 9-06: 정면 사진을 올렸는데도 계속 못 찾음). 사진을 더 올리라는 대신
+    //   **지금 웹캠으로 찍은 사진을 프로필에 등록하고 그걸 기준으로 인증**한다 — 한 번에 끝난다.
+    //   왜 못 찾았는지도 보여준다: 불러오기 실패(CORS·주소) / 얼굴 없음(탐지) 은 원인이 다르다.
+    const st = window._fvRefStats || {}; const mode = window._fvMode;
     window.stopFaceVerify();
-    const ok = await window.murpyConfirm({ title: '프로필 인증', confirmText: '사진 추가하기',
-      desc: '등록된 사진에서 얼굴을 찾지 못했어요<br>얼굴이 정면으로 잘 보이는 사진을<br>한 장 추가해주세요' });
-    if (ok) window.faceVerifyAddPhoto();
+    const ok = await window.murpyConfirm({ title: '프로필 인증', confirmText: '지금 찍어서 등록',
+      desc: '등록된 사진 ' + (st.total || 0) + '장에서 얼굴을 찾지 못했어요<br><span style="color:#8a93a8">불러오기 실패 ' + (st.loadFail || 0) + ' · 얼굴 없음 ' + (st.noFace || 0) + '</span><br>지금 웹캠으로 찍은 정면 사진을<br>프로필에 등록하고 그걸로 인증할까요?' });
+    if (ok) { window._fvMode = mode; window.startFaceSelfRef(); }
     return;
   }
   setFvStatus('정면을 원 안에 맞추고 [촬영하고 인증]을 눌러요');
   _fvCaptureEnabled(true);
 };
 
+window.startFaceSelfRef = async function () {
+  window._fvRefDesc = null; window._fvSelfRef = true;
+  _fvCaptureEnabled(false);
+  openModal('face-verify-modal');
+  setFvStatus('카메라 준비 중...');
+  try {
+    _fvStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    document.getElementById('fv-video').srcObject = _fvStream;
+  } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
+  try { await ensureFaceApi(); } catch (e) { setFvStatus('모델 로딩 실패. 잠시 후 다시 시도해주세요'); return; }
+  const cap = document.getElementById('fv-caption'); if (cap) cap.textContent = '이 사진이 프로필 사진으로 등록되고, 인증 기준이 돼요. 정면을 밝은 곳에서 찍어주세요';
+  const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = window._fvMode === 'create' ? '찍고 등록·신청' : '찍고 등록·인증';
+  setFvStatus('정면을 원 안에 맞추고 촬영을 눌러요');
+  _fvCaptureEnabled(true);
+};
 window.captureFaceVerify = async function() {
   const v = document.getElementById('fv-video');
-  if (!v || !v.videoWidth || !window._fvRefDesc) return;
+  if (!v || !v.videoWidth || (!window._fvRefDesc && !window._fvSelfRef)) return;
   _fvCaptureEnabled(false);
   setFvStatus('얼굴 분석 중...');
   let desc = null;
   try { desc = await _descriptorFrom(v); } catch (e) {}
   if (!desc) { setFvStatus('얼굴이 잘 안 보여요. 정면으로 다시 찍어주세요'); _fvCaptureEnabled(true); return; }
+  if (window._fvSelfRef && !window._fvRefDesc) {
+    // 자기 기준 등록: 이 프레임을 프로필 사진으로 올리고, 이 얼굴을 기준으로 삼는다 → 이어서 인증(또는 신청)
+    setFvStatus('사진 등록 중...');
+    try {
+      const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+      const blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.92); });
+      const url = await window.mwUploadImage(blob, 'profile');
+      await window.persistUserPhotos(url, 'photos');
+      if (window.renderUserPhotoGrid) window.renderUserPhotoGrid('photos');
+    } catch (e) { console.warn('selfref', e); setFvStatus('사진 등록에 실패했어요. 다시 시도해주세요'); _fvCaptureEnabled(true); return; }
+    window._fvRefDesc = desc; window._fvSelfRef = false;
+  }
   const dist = faceapi.euclideanDistance(desc, window._fvRefDesc);
   const matchPct = Math.max(0, Math.round((1 - dist / 0.6) * 100));
   if (dist < 0.55) {
@@ -24701,7 +24737,7 @@ window.captureFaceVerify = async function() {
 window.stopFaceVerify = function() {
   if (_fvStream) { _fvStream.getTracks().forEach(t => t.stop()); _fvStream = null; }
   // 신청 모드로 바꿔 둔 문구를 되돌린다 — 다음에 '프로필 인증'으로 열면 원래 안내가 나와야 한다
-  window._fvMode = null;
+  window._fvMode = null; window._fvSelfRef = false;
   const cap = document.getElementById('fv-caption'); if (cap) cap.textContent = '정면을 보고 셀카를 찍으면, AI가 프로필 사진과 자동으로 대조해요. (사진은 저장되지 않아요)';
   const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = '촬영하고 인증';
   const v = document.getElementById('fv-video'); if (v) v.srcObject = null;
