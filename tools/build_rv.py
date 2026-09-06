@@ -6,7 +6,7 @@ import io, os, html
 REPO = r"C:/Users/dyrhl/Murpy"
 OUT = REPO + "/rv"
 E = html.escape
-AV = "7"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
+AV = "8"   # 오디오 캐시버스터 — 음원을 다시 뽑으면 올린다
 
 BGM = [
     # (id, 제목, 작곡/분위기, 내려받음, 파일, 현재적용?)
