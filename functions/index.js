@@ -127,6 +127,12 @@ function compose(n) {
       return { title: "머피가 도착했어요",
                body: `관리자가 ${amt} 머피 선물을 보냈어요` };
     }
+    // ── 얼굴 커스터마이징 이용권 지급 (2026-09-06, 지급창 종류 선택) ──
+    case "face_ticket": {
+      const k = Math.max(1, Number(n.amount || 1));
+      return { title: "얼굴 커스터마이징 이용권을 받았어요",
+               body: `내 얼굴로 캐릭터를 만들 수 있어요 · ${k}회` };
+    }
 
     // ── 리텐션 (2026-08-30, functions/retention.js) ─────────────────────
     //   ★쪼아대는 톤은 대표·송정현 형님이 원한 것("제정신이냐" 류). 선은 '친구가 놀리는 말'까지.
