@@ -1,0 +1,119 @@
+# -*- coding: utf-8 -*-
+"""생성 원본(3x4)을 칸 단위로 규격화한다 — 12칸을 각각 base 캐릭터 위치에 맞춰 앉힌다.
+
+    python tools/face_grid.py --raw <생성원본.png> --base char/walk.png --out char/faces/kim_ai.png
+
+★왜 칸 단위인가 (9-04 실측): 시트 전체를 한 번에 423x896 으로 늘이면, AI 가 그린 칸 간격이
+  base 와 달라(실측 154.5 vs 142) 열마다 -13 / -1 / +12 px 씩 어긋난다. 칸을 따로 앉히면
+  이 어긋남이 통째로 사라진다. 배율은 몸 폭으로 재면 높이 구간과 무관하게 일정하다(실측 0.3235).
+"""
+import os, sys, argparse
+import numpy as np
+from PIL import Image
+sys.stdout.reconfigure(encoding='utf-8')
+
+CW, CH = 141, 224
+COLS, ROWS = 3, 4
+SW, SH = CW * COLS, CH * ROWS
+
+
+def _blobs(v, thr=2, minw=20):
+    on = v > thr
+    out, s = [], None
+    for i, x in enumerate(on):
+        if x and s is None:
+            s = i
+        elif not x and s is not None:
+            out.append((s, i - 1)); s = None
+    if s is not None:
+        out.append((s, len(on) - 1))
+    return [b for b in out if b[1] - b[0] > minw]
+
+
+def foreground(raw_path, tol=60):
+    """단색 배경(마젠타) 위의 캐릭터 마스크와 RGBA 이미지."""
+    img = Image.open(raw_path).convert('RGB')
+    a = np.array(img).astype(int)
+    bg = a[0, 0]
+    fg = ((a - bg) ** 2).sum(-1) > tol * tol
+    rgba = np.dstack([np.array(img), np.where(fg, 255, 0).astype(np.uint8)])
+    return rgba, fg, bg
+
+
+def anchors(mask):
+    """캐릭터의 발 기준점 — 맨 아래 행(발바닥)과 하위 10% 구간의 좌우 중심.
+    머리·머리카락에 안 휘둘리는 유일한 기준이라 정렬 앵커로 쓴다."""
+    ys, xs = np.where(mask)
+    if not len(ys):
+        return None
+    bot, top = ys.max(), ys.min()
+    band = mask[max(top, bot - max(2, int((bot - top) * 0.10))):bot + 1]
+    bxs = np.where(band.any(0))[0]
+    return float(bot), (float(bxs.min()) + float(bxs.max())) / 2.0
+
+
+def regrid_cells(raw_path, base_path, out_path):
+    rgba, fg, bg = foreground(raw_path)
+    cb, rb = _blobs(fg.sum(0)), _blobs(fg.sum(1))
+    if len(cb) != COLS or len(rb) != ROWS:
+        raise SystemExit('칸 탐지 실패: 열 %d개 행 %d개 (3x4 여야 한다)' % (len(cb), len(rb)))
+    base = np.array(Image.open(base_path).convert('RGBA'))
+
+    # 배율 = base 몸 폭 / AI 몸 폭. 캐릭터 높이의 여러 지점에서 재 중앙값을 쓴다
+    # (전체 높이로 재면 머리카락 부피에 흔들린다).
+    scales = []
+    for r, (y0, y1) in enumerate(rb):
+        for c, (x0, x1) in enumerate(cb):
+            sub = fg[y0:y1 + 1, x0:x1 + 1]
+            bo = base[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW, 3] > 128
+            ays, _ = np.where(sub); bys, _ = np.where(bo)
+            if not len(ays) or not len(bys):
+                continue
+            at, ah = ays.min(), ays.max() - ays.min() + 1
+            bt, bh = bys.min(), bys.max() - bys.min() + 1
+            for f in (0.65, 0.75, 0.85, 0.94):
+                def w(m, y, d):
+                    seg = m[y:y + max(1, d)]
+                    xs = np.where(seg.any(0))[0]
+                    return xs.max() - xs.min() + 1 if len(xs) else 0
+                aw = w(sub, int(at + ah * f), int(ah * 0.04))
+                bw = w(bo, int(bt + bh * f), max(1, int(bh * 0.04)))
+                if aw > 4 and bw > 4:
+                    scales.append(bw / float(aw))
+    s = float(np.median(scales))
+    print('  칸 %dx%d · 배율 %.4f (표본 %d)' % (len(cb), len(rb), s, len(scales)))
+
+    out = np.zeros((SH, SW, 4), np.uint8)
+    for r, (y0, y1) in enumerate(rb):
+        for c, (x0, x1) in enumerate(cb):
+            crop = rgba[y0:y1 + 1, x0:x1 + 1]
+            m = fg[y0:y1 + 1, x0:x1 + 1]
+            nw, nh = max(1, int(round(crop.shape[1] * s))), max(1, int(round(crop.shape[0] * s)))
+            small = np.array(Image.fromarray(crop, 'RGBA').resize((nw, nh), Image.LANCZOS))
+            sm = small[..., 3] > 128
+            bo = base[r * CH:(r + 1) * CH, c * CW:(c + 1) * CW, 3] > 128
+            aa, ba = anchors(sm), anchors(bo)
+            if aa is None or ba is None:
+                continue
+            dy, dx = int(round(ba[0] - aa[0])), int(round(ba[1] - aa[1]))
+            for yy in range(nh):                       # base 셀 안으로 발 기준 정렬해 붙인다
+                ty = yy + dy
+                if 0 <= ty < CH:
+                    xs0, xs1 = max(0, -dx), min(nw, CW - dx)
+                    if xs1 > xs0:
+                        dst = out[r * CH + ty, c * CW + xs0 + dx: c * CW + xs1 + dx]
+                        src = small[yy, xs0:xs1]
+                        keep = src[..., 3] > 0
+                        dst[keep] = src[keep]
+    Image.fromarray(out, 'RGBA').save(out_path)
+    print('  칸단위 규격화 →', out_path)
+    return out_path
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--raw', required=True)
+    ap.add_argument('--base', required=True)
+    ap.add_argument('--out', required=True)
+    a = ap.parse_args()
+    regrid_cells(a.raw, a.base, a.out)

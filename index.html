@@ -3831,11 +3831,157 @@ window._CHAR_BODIES = {
             defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
             owner: 'VDstJZ5lJFRnBie55QRFLggRU7w2',
             desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
+  // 2호(2026-09-04) — 새 파이프라인(Pro 2K 생성 + tools/face_grid.py 칸 단위 규격화)으로 뽑았다.
+  // ownerEmail 로 지정한다: 이 계정 uid 를 모르는 채로 등록해도 이메일로 주인을 가린다.
+  paesuhyun: { name: '패수현', skinBase: 'face_paesuhyun', src: "char/faces/paesuhyun.png?v=1", cw: 141, ch: 224,
+            wearable: true, fixedHair: true, kin: 'human', tag: '커마',
+            defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
+            ownerEmail: 'dyrhl4321@gmail.com',
+            desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터' },
   ddungddung: { name: '돼쫀토', src: "char/ddungddung.png?v=2", cw: 145, ch: 224, code: 'DDUNGDDUNG', limited: true, tag: '한정', desc: '개발자가 눈찢어진 토끼상을 좋아해서 만든 캐릭터.' },
   // 히든 3종(고정 캐릭터). 해금=users.hiddenChars, 소유 판정은 mwHasHidden. 실제 발동/연출은 mwEvalHidden/mwHiddenReveal.
   cult:   { name: '요일교 교주',   src: "char/hidden_cult.png?v=1",   cw: 135, ch: 224, hidden: true, limited: true, tag: '히든' },
   somm:   { name: '헬스장 소믈리에', src: "char/hidden_somm.png?v=1",   cw: 133, ch: 224, hidden: true, limited: true, tag: '히든' },
   zombie: { name: '작심삼일 좀비',  src: "char/hidden_zombie.png?v=2", cw: 142, ch: 224, hidden: true, limited: true, tag: '히든' }
+};
+// ===== 얼굴 커마 — 데이터 기반 몸통 (2026-09-05) =====
+// ★위 표는 하드코딩이다. 고객이 한 명 생길 때마다 사람이 이 파일을 고치고 재배포해야 하니
+//   "커마권 쓰면 바로 지급"이 원천적으로 불가능하다. 그래서 커마 몸통만 **문서로** 뺀다:
+//   users/{uid}/faceChars/{charId} → 부팅 때 읽어 이 표에 주입한다(_charLoadMyFaceChars).
+// ★키에 'face:' 를 **강제**한다. 접두사가 없으면 언젠가 charId 가 'human' 이거나 'jaejin' 이어서
+//   기본 몸통을 통째로 덮어쓴다 — 전 유저가 남의 얼굴로 보인다.
+// ★kin:'human' = 목 아래가 base 와 같은 몸이라 human 옷이 그대로 맞는다(_charFits 참고).
+//   fixedHair = 머리카락이 시트에 구워져 있어 헤어·모자 슬롯을 잠근다(두 겹 방지).
+window.FACE_BODY_PREFIX = 'face:';
+window._charFaceBodyDef = function (charId, d, ownerUid) {
+  if (!charId || !d || !d.sheetUrl) return null;   // 시트가 없으면 빈 캐릭터가 된다 — 아예 안 만든다
+  return {
+    key: window.FACE_BODY_PREFIX + charId,
+    def: {
+      name: String(d.name || '내 캐릭터').slice(0, 12),
+      src: d.sheetUrl,
+      skinBase: null,                    // 경로 조립 대신 아래 skinUrls 를 쓴다
+      skinUrls: (d.skinUrls && typeof d.skinUrls === 'object') ? d.skinUrls : null,
+      cw: 141, ch: 224,
+      wearable: true, fixedHair: true, kin: 'human',
+      tag: '커마',
+      defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
+      owner: ownerUid || null, dynamic: true,
+      desc: '얼굴 커스터마이징으로 만든 나만의 캐릭터'
+    },
+    eyes: (d.eyes && typeof d.eyes.y === 'number' && Array.isArray(d.eyes.x) && d.eyes.x.length === 2) ? d.eyes : null
+  };
+};
+window._charRegisterFaceBody = function (charId, d, ownerUid) {
+  const r = window._charFaceBodyDef(charId, d, ownerUid);
+  if (!r) return null;
+  window._CHAR_BODIES[r.key] = r.def;
+  // 눈 좌표가 없으면 넣지 않는다 — 소비처가 SQ_MG_EYES.human 으로 폴백한다(무궁화 하트눈).
+  if (r.eyes && window.SQ_MG_EYES) window.SQ_MG_EYES[r.key] = r.eyes;
+  return r.key;
+};
+// 착용 중인 몸통이 커마면 그 시트 URL 을 돌려준다. 유저 문서에 복사해 두면
+// ★남이 나를 그릴 때 서브컬렉션까지 읽으러 갈 필요가 없다(피드·오버월드·채팅이 다 빨라진다).
+// 커마가 아니면 null — 저장 쪽에서 필드를 지운다(옛 커마 시트가 남으면 남에게 옛 얼굴로 보인다).
+window._charSheetForBody = function (bodyKey) {
+  if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return null;
+  const b = window._CHAR_BODIES[bodyKey];
+  return (b && b.src) ? b.src : null;
+};
+// 남의 커마 캐릭터를 그리기 **직전에** 부른다. 그 사람 유저 문서의 characterSheet 하나로
+// 임시 몸통을 등록해 두면 _charRenderTo·오버월드·머피캠이 손 안 대고 그대로 그린다.
+// ★owner 를 null 로 둔다 — 남의 몸통이 내 로스터(charRenderRoster)에 뜨면 안 된다.
+// ★이미 있는 키는 절대 덮지 않는다. 내 커마를 남의 캐시로 갈아치우면 내 얼굴이 바뀐다.
+// ★시트가 없으면(구버전 유저·URL 유실) 'human' 으로 폴백한다 — 빈 화면보다 기본 캐릭터가 낫다.
+window._charEnsureFaceBody = function (bodyKey, sheetUrl) {
+  if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return bodyKey || 'human';
+  if (window._CHAR_BODIES[bodyKey]) return bodyKey;
+  if (!sheetUrl) return 'human';
+  const charId = String(bodyKey).slice(window.FACE_BODY_PREFIX.length);
+  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl }, null) || 'human';
+};
+// 남의 커마 몸통을 한 번에 등록한다. users 전체를 읽는 공통 경로(_usersAll)에 걸어 두면
+// ★그리는 자리를 한 곳도 안 고쳐도 된다 — 표에 이미 있으니 기존 렌더가 그대로 그린다.
+// 이미 있는 키는 _charEnsureFaceBody 가 건너뛰므로 5분마다 다시 돌아도 싸다.
+window._charRegisterFaceBodiesFrom = function (snap) {
+  if (!snap || !snap.forEach) return 0;
+  let n = 0;
+  snap.forEach(function (s) {
+    const d = s.data() || {};
+    const key = d.character && d.character.body;
+    if (key && String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && d.characterSheet) {
+      if (window._charEnsureFaceBody(key, d.characterSheet) === key) n++;
+    }
+  });
+  return n;
+};
+// ===== 커마권 =====
+// ★가격은 여기 한 곳에서만 온다. 정식 전환(19,900원 실결제)때 이 상수만 바꾼다.
+//   ※firestore.rules 에도 같은 숫자가 박혀 있다(규칙은 JS 를 못 읽는다) — 같이 고칠 것.
+window.FACE_TICKET_PRICE = 1000;
+// 구매 계산(순수). 트랜잭션 안에서 이 결과대로 쓴다 — 계산과 쓰기를 섞으면 검증을 못 한다.
+// ★머피와 커마권을 **한 쓰기로** 묶는 게 핵심이다. 규칙이 그 짝을 강제하므로
+//   "머피는 안 내고 커마권만 +1" 이 원천 차단된다(8-31 머피 무한증액 사고와 같은 급의 자산).
+window._faceTicketBuyTx = function (balance, tickets) {
+  const bal = Number.isFinite(Number(balance)) ? Math.trunc(Number(balance)) : 0;
+  const have = (typeof tickets === 'number' && Number.isFinite(tickets) && tickets > 0) ? Math.trunc(tickets) : 0;
+  const price = window.FACE_TICKET_PRICE;
+  if (bal < price) return { ok: false, reason: 'insufficient', credits: bal, faceTickets: have };
+  return { ok: true, reason: '', credits: bal - price, faceTickets: have + 1 };
+};
+window.faceTickets = function () {
+  const n = window._charState && window._charState.faceTickets;
+  return (typeof n === 'number' && Number.isFinite(n) && n > 0) ? Math.trunc(n) : 0;
+};
+// 관리자 입력 → faceChars 문서. ★검증을 순수 함수로 빼둔다 — 화면 코드에 섞으면
+//   "왜 안 들어갔지"를 앱을 켜야만 알 수 있다.
+// ★URL 은 http(s) 만 받는다. javascript: 가 들어오면 그대로 <img src> 에 박힌다.
+window._faceCharDocFrom = function (form) {
+  const f = form || {};
+  const name = String(f.name || '').trim();
+  const sheetUrl = String(f.sheetUrl || '').trim();
+  if (name.length < 1 || name.length > 12) return { ok: false, error: '이름은 1~12자예요', doc: null };
+  // ★이건 **연락처 필터지 욕설 필터가 아니다.** FILTER_WORDS 는 @·카톡·010·라인·전화뿐이라
+  //   욕설은 하나도 안 막는다. 이 저장소에 욕설 필터는 아직 없다.
+  //   그래도 태우는 이유 = 이름이 나중에 남에게 보이는 값이 되므로(A-2 에서 유저가 직접 짓는다)
+  //   대숲·외치기와 같은 이유로 **외부 유입 문구**를 막아야 한다. 욕설 차단은 A-2 숙제다.
+  //   ※지금은 관리자만 쓰는 입력이라 오탐(예: 이름에 '라인')이 나도 대표가 바로 안다.
+  if (window._hasContact && window._hasContact(name)) return { ok: false, error: '쓸 수 없는 이름이에요', doc: null };
+  if (!/^https?:\/\//i.test(sheetUrl)) return { ok: false, error: '시트 주소가 http(s) 가 아니에요', doc: null };
+  const pre = String(f.skinPrefix || '').trim();
+  // t3 = 원본이라 굽지 않는다(CHAR_SKINS 주석 참고). 나머지 5종만 표를 만든다.
+  const skinUrls = /^https?:\/\//i.test(pre)
+    ? ['t1', 't2', 't4', 't5', 't6'].reduce(function (o, t) { o[t] = pre + '_' + t + '.png'; return o; }, {})
+    : null;
+  const eyes = (f.eyeY && f.eyeXL && f.eyeXR)
+    ? { y: Number(f.eyeY), x: [Number(f.eyeXL), Number(f.eyeXR)] } : null;
+  return { ok: true, error: '', doc: {
+    name: name, sheetUrl: sheetUrl, skinUrls: skinUrls, eyes: eyes,
+    retryCount: 0, createdAt: Date.now(), updatedAt: Date.now()
+  } };
+};
+// 로스터 진입 버튼이 지금 무엇을 해야 하는가. ★분기를 순수 함수로 빼는 이유 =
+//   "티켓은 있는데 인증이 없다" 같은 조합이 화면 코드에 흩어지면 한 화면만 고쳐진다.
+// 순서가 곧 이탈 방어다: 티켓 없음 → 상점 / 사진 없음 → 사진 등록 / 인증 없음 → 인증 / 다 되면 생성.
+window._faceEntryState = function (tickets, hasChar, faceVerified, hasPhoto) {
+  if (!(tickets > 0)) return { mode: 'buy', label: '커마권 사기',
+    desc: '내 얼굴로 캐릭터를 만들 수 있어요 · ' + window.FACE_TICKET_PRICE + '머피' };
+  if (!hasPhoto) return { mode: 'photo', label: '사진 먼저 등록하기',
+    desc: '내 얼굴이 맞는지 확인하려면 사진이 한 장 필요해요' };
+  if (!faceVerified) return { mode: 'verify', label: '얼굴 인증하기',
+    desc: '본인만 만들 수 있어요 · 사진은 저장하지 않아요' };
+  return { mode: 'create', label: '내 얼굴로 만들기',
+    desc: '커마권 ' + tickets + '장 있어요' };
+};
+// 커마 몸통 주인 판정 — **한 곳에서만** 판정한다(로스터 노출과 보유 판정이 갈라지면
+// 목록엔 보이는데 착용은 안 되는 버그가 난다). owner(uid) 또는 ownerEmail(로그인 이메일) 중
+// 하나라도 맞으면 주인이다. ownerEmail 은 uid 를 모르는 채로 등록할 때 쓴다.
+window._charBodyIsMine = function (b) {
+  if (!b || (!b.owner && !b.ownerEmail)) return false;
+  const u = window.currentUser || {};
+  if (b.owner && b.owner === (u.uid || '')) return true;
+  if (b.ownerEmail && u.email && b.ownerEmail.toLowerCase() === String(u.email).toLowerCase()) return true;
+  return false;
 };
 // 성별(가입 시 설정) → 오버월드 몸통. '비공개'·미설정은 기본 남성 몸통.
 // ★몸통은 유저가 고르는 게 아니라 가입 성별로 정해진다(대표 확정). 관리자만 로스터에서 둘 다 쓴다.
@@ -4025,7 +4171,11 @@ window.CHAR_SKIN_DEFAULT = 't3';
 window._charSkinSrc = function (bodyKey, skin) {
   const b = window._CHAR_BODIES[bodyKey] || {};
   // 옛 데이터는 skin 에 색상값(#F0C9A0)이 들어 있다 — t1~t7 이 아니면 원본을 쓴다
-  if (!b.skinBase || !skin || window.CHAR_SKINS.indexOf(skin) < 0 || skin === 't3') return b.src;
+  const ok = !!(skin && window.CHAR_SKINS.indexOf(skin) >= 0 && skin !== 't3');
+  // ★동적 커마 몸통은 구운 톤 시트가 Storage 에 있다. 경로를 조립할 수 없으니 URL 표를 본다.
+  //   표에 없는 톤은 원본(b.src)으로 떨어진다 — 깨진 이미지보다 원색이 낫다.
+  if (ok && b.skinUrls) return b.skinUrls[skin] || b.src;
+  if (!b.skinBase || !ok) return b.src;
   return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=4';
 };
 // ★헤어 시트도 톤을 태운다. 헤어는 **이마 피부를 같이 들고 있어서**(추출할 때 머리카락 밑
@@ -9059,7 +9209,7 @@ window.charRenderRoster = function () {
     const b = window._CHAR_BODIES[key];
     // ★얼굴 커마 캐릭터는 **주인에게만** 보인다. 남에게는 목록에 아예 없다.
     //   단 관리자(대표)는 전부 보인다 — 커마권이 늘어나도 실기기에서 확인할 수 있어야 한다.
-    if (b.owner) return _isAdm || b.owner === ((window.currentUser || {}).uid || '');
+    if (b.owner || b.ownerEmail) return _isAdm || window._charBodyIsMine(b);
     if (!b.gender) return true;                 // 성별 무관(헬토리·히든)
     return _bothGenders || key === _myBody;
   }).map(key => {
@@ -9093,6 +9243,41 @@ window.charRenderRoster = function () {
     adm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 히든 연출 테스트</span>'
       + ['cult', 'somm', 'zombie'].map(id => "<button class='mw-btn mw-btn-sm mw-btn-ghost' onclick=\"window.mwAdminTestHidden('" + id + "')\">" + window._CHAR_BODIES[id].name + "</button>").join('');
   } else if (adm) { adm.remove(); }
+  // 커마 진입 — ★새 화면을 만들지 않는다. 상황에 따라 기존 흐름으로 보낼 뿐이다.
+  //   진입점이 없으면 기능이 있어도 죽은 코드다(센터 탭 전례). 자리는 로스터 바로 아래 한 곳뿐이다.
+  let fe = document.getElementById('mw-face-entry');
+  if (!fe) { fe = document.createElement('div'); fe.id = 'mw-face-entry'; grid.after(fe); }
+  const _prof = window._cachedProfile || {};
+  // ★사진 판정은 startFaceVerify 가 쓰는 후보 목록과 **같아야** 한다.
+  //   여기서 좁게 보면 '인증하기'를 눌렀을 때 "먼저 사진을 한 장 등록해주세요" 로 튕긴다.
+  const _hasPhoto = !!([_prof.photoURL || (window.currentUser || {}).photoURL]
+    .concat(_prof.photos || [], _prof.workoutPhotos || []).filter(Boolean).length);
+  const _hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
+  const _st = window._faceEntryState(window.faceTickets(), _hasChar, !!_prof.faceVerified, _hasPhoto);
+  const _act = _st.mode === 'buy' ? 'window.faceBuyTicket().then(function(o){ if(o) window.charRenderRoster(); })'
+             : _st.mode === 'photo' ? 'openEditProfile()'
+             : _st.mode === 'verify' ? 'window.startFaceVerify()'
+             : 'window.faceStartCreate && window.faceStartCreate()';
+  fe.style.cssText = 'margin-top:14px';
+  fe.innerHTML = '<button class="mw-btn" style="width:100%" onclick="' + _act + '">' + _st.label + '</button>'
+    + '<div style="margin-top:6px;font-size:11px;color:#4a5266;text-align:center">' + _st.desc + '</div>';
+  // 관리자 전용: 커마 캐릭터 지급 (서버 자가생성 전까지의 지급 경로)
+  let fadm = document.getElementById('mw-face-admin');
+  if (typeof isAdmin === 'function' && isAdmin()) {
+    if (!fadm) { fadm = document.createElement('div'); fadm.id = 'mw-face-admin'; (adm || grid).after(fadm); }
+    fadm.style.cssText = 'margin-top:14px;display:grid;gap:6px';
+    fadm.innerHTML = '<span style="width:100%;font-size:10px;color:#4a5266">관리자 커마 지급</span>'
+      + ['fa-uid:받는 사람 uid', 'fa-id:charId (영문 소문자)', 'fa-name:캐릭터 이름 (1~12자)',
+         'fa-sheet:시트 주소 https://murpy.app/char/faces/xxx.png', 'fa-skin:톤 접두사 (비우면 피부톤 없음)']
+        .map(function (s) { const p = s.split(':'); const id = p.shift();
+          return '<input id="' + id + '" placeholder="' + p.join(':') + '" style="background:none;border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:8px 10px;color:#cfd6e6;font-size:11.5px;font-family:inherit">'; }).join('')
+      + '<button class="mw-btn mw-btn-sm" onclick="window.faceAdminGrant('
+      + "document.getElementById('fa-uid').value,document.getElementById('fa-id').value,"
+      + "{name:document.getElementById('fa-name').value,sheetUrl:document.getElementById('fa-sheet').value,skinPrefix:document.getElementById('fa-skin').value})\">캐릭터 지급</button>"
+      // 베타 무료권(스펙 9장) — 스쿼드 참여·친구초대 차등은 대표가 보고 장수만 넣는다
+      + '<button class="mw-btn mw-btn-sm mw-btn-ghost" onclick="window.faceAdminGrantTicket('
+      + "document.getElementById('fa-uid').value, 1)\">커마권 1장 지급</button>";
+  } else if (fadm) { fadm.remove(); }
 };
 // ===== 내 범퍼 (유저 피드백 #20) =====
 // ★"실제로 만난 사이"만 여기 뜬다 — 방명록은 온라인으로 누구나 쓰지만 범퍼는 만나야 생긴다.
@@ -10716,11 +10901,11 @@ window.mwPortal = function () {
   #tennis-pane-title.in > *,#tennis-pane-howto.in > *,#tennis-pane-recs.in > *,
   #run-pane-title.in > *,#run-pane-howto.in > *,#run-pane-recs.in > *{animation:none}
 }
-#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:mfg-in .36s cubic-bezier(.2,.8,.25,1) both}
+#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#face-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:mfg-in .36s cubic-bezier(.2,.8,.25,1) both}
 .mfg-btn{transition:transform .12s ease}
 .mfg-btn:active{transform:scale(.97)}
 .mfg-row:active{background:rgba(255,255,255,0.03)}
-@media (prefers-reduced-motion:reduce){#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:none}}
+@media (prefers-reduced-motion:reduce){#murpy-first-guide.show .mfg-card,#mw-promo.show .mfg-card,#face-promo.show .mfg-card,#hof-popup.show .mfg-card{animation:none}}
 /* 콜드유저 코치마크: 네온 테두리(한바퀴 계속 삭, 색 지정) + 온보딩식 흰 말풍선 */
 @property --coach-a{syntax:'<angle>';inherits:false;initial-value:0deg}
 .coach-neon::after{content:'';position:absolute;inset:-3px;border-radius:16px;padding:3px;pointer-events:none;background:conic-gradient(from var(--coach-a),transparent 0 64%,var(--coach-glow,rgba(61,126,255,0.18)) 76%,var(--coach-c,#3D7EFF) 91%,var(--coach-c2,#D3E2FF) 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:coachBeam 1.7s linear infinite}
@@ -10783,6 +10968,22 @@ window.mwPortal = function () {
     <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">운동해서 모은 머피로 <b style="color:#fff">캐릭터와 내 방</b>을 꾸미고,<br>헬스장에서 <b style="color:#fff">체크인</b>하면 <b style="color:#fff">지도</b> 위에<br>내 캐릭터가 도장처럼 남아요</div>
     <button class="mfg-btn" onclick="window.mwPromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">머피월드 구경하기</button>
     <button onclick="window.closeMwPromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
+  </div>
+</div>
+
+<!-- ===== 얼굴 커마 광고 팝업 (머피월드 홍보 팝업과 같은 골격, 상태 키만 분리) ===== -->
+<div id="face-promo" style="display:none;position:fixed;inset:0;z-index:10048;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)">
+  <div class="mfg-card" style="max-width:330px;width:100%;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:24px 22px 20px;text-align:center;position:relative">
+    <button onclick="window.closeFacePromo(false)" style="position:absolute;top:12px;right:12px;background:none;border:none;color:rgba(255,255,255,0.4);width:30px;height:30px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div style="display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;color:#F5C24B;border:1px solid rgba(245,194,75,0.4);border-radius:6px;padding:3px 9px;margin-bottom:12px">NEW · 얼굴 커마</div>
+    <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;height:116px;margin-bottom:8px">
+      <div style="position:absolute;top:44%;left:50%;width:210px;height:180px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(245,194,75,0.17),rgba(245,194,75,0.05) 44%,transparent 72%);pointer-events:none"></div>
+      <div id="face-promo-hero" style="position:relative;padding-bottom:4px;display:flex;align-items:flex-end;gap:14px"></div>
+    </div>
+    <div style="font-size:19px;font-weight:800;margin-bottom:6px;letter-spacing:-0.3px">내 얼굴로 만드는 캐릭터</div>
+    <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.65;margin-bottom:20px">머피월드를 걸어다니는 캐릭터가<br><b style="color:#fff">진짜 내 얼굴</b>이 돼요<br>옷·헤어는 지금 가진 것 그대로 입어요</div>
+    <button class="mfg-btn" onclick="window.facePromoGo()" style="width:100%;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">내 얼굴로 만들기</button>
+    <button onclick="window.closeFacePromo(true)" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:8px;padding:6px">다시 보지 않기</button>
   </div>
 </div>
 
@@ -11200,7 +11401,7 @@ function goPage(name, navOpts) {
   // 머피월드 홍보 팝업: 머피월드 방문하면 이미 발견 → 중단 / 그 외 탭 이동은 카운트해서 판정
   try {
     if (name === 'char') { if (localStorage.getItem('mw_promo') === 'armed') localStorage.setItem('mw_promo', 'seen'); }
-    else { window._mwTabN = (window._mwTabN || 0) + 1; if (window._maybeMwPromo) window._maybeMwPromo(); }
+    else { window._mwTabN = (window._mwTabN || 0) + 1; if (window._maybeMwPromo) window._maybeMwPromo(); if (window._maybeFacePromo) window._maybeFacePromo(); }
   } catch (e) {}
   if (window._maybeCoach) window._maybeCoach(name);
   try { if (window._murpyPageShown) window._murpyPageShown(name, navOpts); } catch (e) {}
@@ -16025,6 +16226,8 @@ try {
       if (_dev === 'photo' && window.openModal) openModal('photo-pick-sheet');
       // ?dev=promo — 머피월드 홍보 팝업 즉시 확인(조건 무시)
       if (_dev === 'promo' && window.showMwPromo) window.showMwPromo();
+      // ?dev=facepromo — 얼굴 커마 광고 팝업 즉시 확인(조건 무시)
+      if (_dev === 'facepromo' && window.showFacePromo) window.showFacePromo();
       // ?dev=cap — 사진 없이 캡션 칸만 띄운다(글자 크기 확인용). 현재 버전도 같이 표시.
       if (_dev === 'cap') {
         const m = document.getElementById('crop-modal');
@@ -16095,6 +16298,53 @@ window._maybeMwPromo = function () {
     sessionStorage.setItem('mw_promo_sess', '1');
     localStorage.setItem('mw_promo_n', String(n + 1));
     window.showMwPromo();
+  } catch (e) {}
+};
+
+// ===== 얼굴 커마 광고 팝업 =====
+// ★상태 키를 mw_promo 와 **분리**한다(face_promo). 같은 키를 쓰면 둘이 서로를 잡아먹어
+//   한쪽은 영영 안 뜬다(머피월드 홍보 팝업이 armed 를 못 받아 한 번도 안 떴던 전례).
+//   한 세션에 두 팝업이 겹쳐 뜨는 것도 막는다 — mw_promo_sess 가 서 있으면 오늘은 양보한다.
+window.showFacePromo = function () {
+  // 이미 커마 캐릭터가 있으면 광고할 게 없다.
+  if (Object.keys((window._charState || {}).faceChars || {}).length) return;
+  const el = document.getElementById('face-promo'); if (!el) return;
+  // 히어로 = 실제 커마 캐릭터 둘. 말로 설명하지 않고 결과물을 먼저 보여준다.
+  const h = document.getElementById('face-promo-hero');
+  if (h && window._charMiniHTML) h.innerHTML = window._charMiniHTML('jaejin', 96) + window._charMiniHTML('paesuhyun', 96);
+  el.style.display = 'flex';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+};
+window.closeFacePromo = function (forever) {
+  const el = document.getElementById('face-promo'); if (el) el.style.display = 'none';
+  if (forever) { try { localStorage.setItem('facePromoSeen', 'seen'); } catch (e) {} }
+};
+// CTA 는 새 화면을 열지 않는다 — 로스터로 보내면 진입 버튼이 나머지(상점·사진·인증·생성)를 판단한다.
+window.facePromoGo = function () {
+  window.closeFacePromo(true);
+  if (typeof closePanel === 'function') closePanel('mypage-panel');
+  goPage('char');
+  setTimeout(function () {
+    if (window.charHubTab) window.charHubTab('me');
+    const fe = document.getElementById('mw-face-entry');
+    if (fe && fe.scrollIntoView) fe.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 300);
+};
+try { if (localStorage.getItem('facePromoSeen') == null) localStorage.setItem('facePromoSeen', 'armed'); } catch (e) {}
+// 발동 판정: armed + 가입세션 아님 + 세션당 1회 + 탭 3번+ + 최대 3회 (머피월드 홍보와 같은 규칙)
+window._maybeFacePromo = function () {
+  try {
+    if (localStorage.getItem('facePromoSeen') !== 'armed') return;
+    if (Object.keys((window._charState || {}).faceChars || {}).length) return;
+    if (sessionStorage.getItem('mw_signup_sess')) return;
+    if (sessionStorage.getItem('mw_promo_sess')) return;   // 오늘은 머피월드 홍보가 먼저 떴다
+    if (sessionStorage.getItem('facePromoSeen_sess')) return;
+    if ((window._mwTabN || 0) < 3) return;
+    const n = parseInt(localStorage.getItem('facePromoSeen_n') || '0', 10);
+    if (n >= 3) { localStorage.setItem('facePromoSeen', 'seen'); return; }
+    sessionStorage.setItem('facePromoSeen_sess', '1');
+    localStorage.setItem('facePromoSeen_n', String(n + 1));
+    window.showFacePromo();
   } catch (e) {}
 };
 
@@ -16685,6 +16935,96 @@ window._mwRefreshIfOpen = function () {
   } catch (e) { console.warn('refresh', e); }
 };
 window.getMyCharacter = function () { return window._charState.character ? window._charState.character : { ...window.CHAR_DEFAULT }; };
+// 내 커마 캐릭터를 읽어 몸통 표에 꽂는다. 실패해도 앱은 그냥 돈다(기존 몸통으로 보인다).
+// ★읽기 실패를 삼키는 이유 = 커마는 코스메틱이다. 여기서 던지면 로그인 전체가 멈춘다.
+window._charState.faceChars = {};
+window._charLoadMyFaceChars = async function (uid) {
+  if (!uid) return 0;
+  const snap = await getDocs(collection(db, 'users', uid, 'faceChars'));
+  let n = 0;
+  snap.forEach(function (s) {
+    const d = s.data() || {};
+    window._charState.faceChars[s.id] = d;
+    if (window._charRegisterFaceBody(s.id, d, uid)) n++;
+  });
+  return n;
+};
+// 커마권 구매. 시착 구매(charTryOnBuy)와 같은 모양이다 — 확인창 → 트랜잭션 → 토스트.
+// ★spendCredit 을 쓰지 않는 이유 = 그건 머피만 깎는다. 커마권 +1 을 **같은 트랜잭션**에
+//   묶어야 규칙이 짝을 검사할 수 있다(따로 쓰면 커마권 단독 증가라 규칙이 막는다).
+// ★확인창을 없애지 않는다 — 돈이 빠지는 자리다(8-12 이중 차감 사고 이후 규칙).
+window.faceBuyTicket = async function () {
+  const u = window.currentUser;
+  if (!u) { window.requireLogin && requireLogin('커마권은 로그인이 필요해요'); return false; }
+  const price = window.FACE_TICKET_PRICE;
+  const ok = await window.murpyConfirm({
+    title: '얼굴 커마권 구매',
+    desc: '<b style="color:#F5C24B">' + price + '머피</b>로 커마권 한 장을 사요',
+    cost: true, confirmText: '구매'
+  });
+  if (!ok) return false;
+  try {
+    const res = await runTransaction(db, async tx => {
+      const ref = doc(db, 'users', u.uid);
+      const snap = await tx.get(ref);
+      const d = snap.exists() ? snap.data() : {};
+      const r = window._faceTicketBuyTx(d.credits, d.faceTickets);
+      if (!r.ok) return r;
+      tx.update(ref, { credits: r.credits, faceTickets: r.faceTickets });
+      return r;
+    });
+    if (!res.ok) { window.showToast && showToast('머피가 모자라요'); return false; }
+    window._creditState.credits = res.credits;
+    window._charState.faceTickets = res.faceTickets;
+    if (window.renderCreditUI) window.renderCreditUI();
+    if (window.mwUpdateCoin) window.mwUpdateCoin();
+    window.showToast && showToast('커마권을 받았어요');
+    return true;
+  } catch (e) {
+    console.error('faceBuyTicket', e);
+    window.showToast && showToast('구매에 실패했어요');
+    return false;
+  }
+};
+// 관리자 전용 지급. 서버 자가생성이 붙기 전까지 이게 유일한 지급 경로다.
+// ★규칙상 faceChars 쓰기는 isAdmin() 만 통과한다 — 유저 계정으로는 실패한다(정상).
+window.faceAdminGrant = async function (uid, charId, form) {
+  if (!isAdmin()) { window.showToast && showToast('관리자만 할 수 있어요'); return false; }
+  const r = window._faceCharDocFrom(form);
+  if (!r.ok) { window.showToast && showToast(r.error); return false; }
+  const id = String(charId || '').trim();
+  if (!/^[a-z0-9_-]{2,24}$/.test(id)) { window.showToast && showToast('charId 는 영문 소문자·숫자 2~24자예요'); return false; }
+  const to = String(uid || '').trim();
+  if (!to) { window.showToast && showToast('받는 사람 uid 가 없어요'); return false; }
+  try {
+    await setDoc(doc(db, 'users', to, 'faceChars', id), r.doc);
+    window.showToast && showToast('커마 캐릭터를 지급했어요');
+    if (to === (window.currentUser && window.currentUser.uid)) {
+      window._charState.faceChars[id] = r.doc;
+      window._charRegisterFaceBody(id, r.doc, to);
+      if (window.charRenderRoster) window.charRenderRoster();
+    }
+    return true;
+  } catch (e) { console.error('faceAdminGrant', e); window.showToast && showToast('지급에 실패했어요'); return false; }
+};
+// 베타 무료권 지급(스펙 9장). 근방단 스쿼드 참여·친구초대 차등은 **사람이 판단**하고
+// 여기서 장수만 넣는다. 자동 집계는 친구초대 스펙 소관이다.
+// ★관리자만 통과한다 — 규칙의 isAdmin() 절이 커마권 단독 증가를 허용하는 유일한 길이다.
+window.faceAdminGrantTicket = async function (uid, n) {
+  if (!isAdmin()) { window.showToast && showToast('관리자만 할 수 있어요'); return false; }
+  const to = String(uid || '').trim();
+  const cnt = Math.trunc(Number(n));
+  if (!to || !Number.isFinite(cnt) || cnt < 1 || cnt > 10) { window.showToast && showToast('uid 와 1~10 사이 장수가 필요해요'); return false; }
+  try {
+    await updateDoc(doc(db, 'users', to), { faceTickets: increment(cnt) });
+    window.showToast && showToast('커마권 ' + cnt + '장을 지급했어요');
+    if (to === (window.currentUser && window.currentUser.uid)) {
+      window._charState.faceTickets = window.faceTickets() + cnt;
+      if (window.charRenderRoster) window.charRenderRoster();
+    }
+    return true;
+  } catch (e) { console.error('faceAdminGrantTicket', e); window.showToast && showToast('지급에 실패했어요'); return false; }
+};
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
   if (!window._mwDocReady()) {
@@ -16698,7 +17038,16 @@ window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return 
     });
     return null;                       // false(실패) 와 구분한다
   }
-  try { await updateDoc(doc(db, 'users', window.currentUser.uid), { character: cfg, characterUpdatedAt: serverTimestamp() }); return true; } catch (e) { console.error('char save', e); return false; } };
+  try {
+    // ★characterSheet 는 **남이 나를 그릴 때** 쓰는 단 하나의 값이다. 착용과 같은 쓰기에
+    //   묶어야 "내 화면엔 커마인데 피드엔 기본 캐릭터" 같은 어긋남이 안 생긴다.
+    //   커마가 아니면 필드를 지운다 — 남겨두면 옛 얼굴로 계속 보인다.
+    const sheet = window._charSheetForBody(cfg && cfg.body);
+    await updateDoc(doc(db, 'users', window.currentUser.uid),
+      { character: cfg, characterSheet: sheet === null ? deleteField() : sheet, characterUpdatedAt: serverTimestamp() });
+    return true;
+  } catch (e) { console.error('char save', e); return false; }
+};
 window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
   if (!window._mwDocReady()) {
     window._mwQueueWrite('wardrobe', function () { window._charPersistWardrobe(arr); });
@@ -18413,8 +18762,7 @@ window._golfOwnedBodies = function () {
 // 몸통 보유 판정 — 꾸미기 로스터(mwRenderRoster)와 **같은 기준**: 커마는 주인, 히든은 mwHasHidden, 코드/퀘스트는 wardrobe.
 window._charBodyOwned = function (key) {
   const b = (window._CHAR_BODIES || {})[key]; if (!b) return false;
-  const me = (window.currentUser || {}).uid || '';
-  if (b.owner) return b.owner === me;
+  if (b.owner || b.ownerEmail) return window._charBodyIsMine(b);
   if (b.hidden) return !!(window.mwHasHidden && window.mwHasHidden(key));
   const owned = (window._charState && window._charState.wardrobe) || [];
   const isQuest = (window.QUEST_CHARS || []).some(function (c) { return c.id === key; });
@@ -22173,6 +22521,12 @@ window.ensureCreditsInit = async (uid) => {
       }
       window._charState.wardrobe = Array.isArray(d.wardrobe) ? d.wardrobe : [...window.CHAR_FREE];
       window._charState.hidden = (d.hiddenChars && typeof d.hiddenChars === 'object') ? d.hiddenChars : {};
+      // ★커마 몸통 주입은 **성별 백필·_charEnsureDefaults 보다 먼저** 와야 한다.
+      //   표에 없으면 _charEnsureDefaults 가 human 으로 폴백해 커마에 헤어를 채워 넣는다
+      //   (fixedHair 라 화면엔 안 보이지만 저장 데이터가 더러워진다).
+      //   ※계획서는 ref.id 라 했지만 이 스코프의 함수 인자 uid 가 같은 값이라 그걸 쓴다.
+      window._charState.faceTickets = (typeof d.faceTickets === 'number' && d.faceTickets > 0) ? Math.trunc(d.faceTickets) : 0;
+      try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('faceChars', e); }
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
       // 기존 유저 성별 몸통 백필. 여캐가 생기기 전에 가입한 여성은 남캐 몸으로 남아 있다.
       // 헬토리·히든을 골라둔 사람은 건드리지 않는다(본인 선택이므로).
@@ -23337,10 +23691,14 @@ window.matchBuyMore = async function () {
 window._usersAll = async function (maxAge) {
   const now = Date.now();
   const c = window._usersAllCache;
-  if (c && (now - c.at) < (maxAge || 300000)) return c.snap;
+  // ★남의 커마 몸통 등록은 **반환 지점마다** 지나야 한다. 캐시 히트만 빠지면
+  //   앱을 켜 둔 채로는(새로고침 없이) 새 커마가 영영 기본 캐릭터로 보인다.
+  if (c && (now - c.at) < (maxAge || 300000)) { window._charRegisterFaceBodiesFrom(c.snap); return c.snap; }
   if (window._usersAllPending) return window._usersAllPending;
   window._usersAllPending = getDocs(collection(db, 'users')).then(function (snap) {
-    window._usersAllCache = { snap: snap, at: Date.now() }; window._usersAllPending = null; return snap;
+    window._usersAllCache = { snap: snap, at: Date.now() }; window._usersAllPending = null;
+    window._charRegisterFaceBodiesFrom(snap);   // 남의 커마 몸통을 표에 미리 꽂아 둔다
+    return snap;
   }, function (e) { window._usersAllPending = null; throw e; });
   return window._usersAllPending;
 };
@@ -33213,6 +33571,11 @@ window._charSafe = function (cfg) {
     return Object.assign({}, window.CHAR_DEFAULT || {});
   }
   const c = Object.assign({}, cfg);
+  // ★미등록 커마는 기본 몸통으로 떨어뜨린다. 표에 없는 'face:xxx' 를 그대로 두면
+  //   _charRenderTo 가 human 으로 폴백해 그리기는 하지만, 여기서 데이터도 맞춰야
+  //   _charEnsureDefaults 가 엉뚱한 몸통 기준으로 옷을 벗기지 않는다.
+  //   ★_charEnsureDefaults **앞**이어야 한다 — 뒤로 가면 커마에 헤어가 채워진다.
+  if (c.body) c.body = window._charEnsureFaceBody(c.body, null);
   try { window._charEnsureDefaults && window._charEnsureDefaults(c); } catch (e) {}
   return c;
 };
@@ -41117,7 +41480,7 @@ window.sqGamePicker = function () {
 // OX 퀴즈가 깔아둔 것을 그대로 쓴다 — 필드·위치동기화(_sqRtLast)·참석자명단·진행자승계·낙사연출.
 // 새로 만드는 건 판정 하나다.
 // 몸통별 눈 위치(정면 셀 대비 비율). 9-02 시트에서 실측 + 눈 검수. 새 몸통을 추가하면 여기도 한 줄.
-window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
+window.SQ_MG_EYES = {"human": {"y": 0.393, "x": [0.328, 0.649]}, "human_f": {"y": 0.369, "x": [0.315, 0.678]}, "jaejin": {"y": 0.291, "x": [0.322, 0.648]}, "paesuhyun": {"y": 0.363, "x": [0.345, 0.641]}, "ddungddung": {"y": 0.402, "x": [0.354, 0.642]}, "somm": {"y": 0.281, "x": [0.308, 0.684]}, "heltori": {"y": 0.4, "x": [0.385, 0.605]}, "cult": {"y": 0.405, "x": [0.39, 0.61]}, "zombie": {"y": 0.41, "x": [0.34, 0.57]}};
 window.SQ_MG = {
   GO_MIN: 1400, GO_MAX: 3400,   // (예비) 목소리가 없을 때 등 보이는 시간
   // ★외치는 길이가 곧 등 돌린 시간. 다 외치면 즉시 돌아본다 — 7가지 변화구의 실제 WAV 길이(초).
