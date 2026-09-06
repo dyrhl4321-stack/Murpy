@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1061';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1062';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -4146,7 +4146,7 @@ window.CHAR_ITEMS = [
   // ★bodyVariants = 특정 몸통이 입을 때만 갈아끼우는 시트. 패수현(긴 금발)은 후디 목 틈으로 머리가 비쳐 대표가
   //   retouch 로 이 조합 전용 시트를 만들었다(9-07). 다른 몸통은 원본 그대로.
   { id: 'top_redhood', slot: 'top', body: 'human', name: '레드 후디', price: 12, sheet: 'char/items/top_redhood.png', thumb: 'char/items/top_redhood_thumb.png', bodyVariants: { paesuhyun: 'char/items/top_redhood__paesuhyun.png?v=1' } },
-  { id: 'top_ringer', slot: 'top', body: 'human', name: 'ART 링거티', price: 12, sheet: 'char/items/top_ringer.png', thumb: 'char/items/top_ringer_thumb.png' },
+  { id: 'top_ringer', slot: 'top', body: 'human', name: 'ART 링거티', price: 12, sheet: 'char/items/top_ringer.png?v=2', thumb: 'char/items/top_ringer_thumb.png' },
   { id: 'bottom_bermuda', slot: 'bottom', body: 'human', name: '회색 버뮤다', price: 12, sheet: 'char/items/bottom_bermuda.png', thumb: 'char/items/bottom_bermuda_thumb.png', overShoes: true },
   { id: 'bottom_trainpt', slot: 'bottom', body: 'human', name: '검정 트레이닝', price: 12, sheet: 'char/items/bottom_trainpt.png', thumb: 'char/items/bottom_trainpt_thumb.png' },
   { id: 'shoes_white', slot: 'shoes', body: 'human', name: '흰색 러닝화', price: 10, sheet: 'char/items/shoes_white.png', thumb: 'char/items/shoes_white_thumb.png' },
@@ -16477,7 +16477,22 @@ window.showFacePromo = function (kind, n) {
   }
   el.style.display = 'flex';
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  // ★히어로를 기기 픽셀 정수 자리에 앉힌다 — 카드가 화면 가운데 정렬이라 위치가 소수점(주소창·키보드에 따라 변함)이면
+  //   1:1 시트인데도 보간이 걸려 뺨에 가로선이 "생겼다 사라졌다" 한다(대표 9-07). 등장 애니(.36s) 끝나고 + 뷰포트 바뀔 때마다.
+  window._facePromoSnap();
+  setTimeout(window._facePromoSnap, 420);
 };
+window._facePromoSnap = function () {
+  const hero = document.getElementById('face-promo-hero'); if (!hero || hero.offsetParent === null) return;
+  hero.style.transform = 'none';
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const probe = hero.querySelector('#face-promo-h1 > div') || hero;
+  const r = probe.getBoundingClientRect();
+  const fx = ((r.left * dpr) % 1) / dpr, fy = ((r.top * dpr) % 1) / dpr;
+  if (fx > 0.001 || fy > 0.001) hero.style.transform = 'translate(' + (-fx).toFixed(4) + 'px,' + (-fy).toFixed(4) + 'px)';
+};
+if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { if (window._facePromoSnap) window._facePromoSnap(); });
+window.addEventListener('resize', function () { if (window._facePromoSnap) window._facePromoSnap(); });
 window.closeFacePromo = function (forever) {
   const el = document.getElementById('face-promo'); if (el) el.style.display = 'none';
   if (forever && window._facePromoKind !== 'done' && window._facePromoKind !== 'grant') { try { localStorage.setItem('facePromoSeen', 'seen'); } catch (e) {} }
