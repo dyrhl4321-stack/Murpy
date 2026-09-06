@@ -65,15 +65,17 @@ def clean_fringe(arr, bgcol, passes=2):
     semi = (al > 0) & (al < 255)
     a[al < 128] = 0; a[al >= 128, 3] = 255
     bc = np.array(bgcol[:3], int); dom = bc > bc.mean() + 40      # 배경의 지배 채널(마젠타: R,B)
-    if dom.sum() == 0 or dom.sum() == 3:
-        dom = bc >= bc.max() - 30
     chans = a[..., :3]
     mx = chans.max(-1)
-    tinted = (a[..., 3] == 255) & (mx > 100)
-    for i in range(3):
-        for j in range(3):
-            if dom[i] and not dom[j]:
-                tinted &= chans[..., i] > chans[..., j] + 40
+    # ★배경이 무채색(검정·흰·회색)이면 채널 배열로 배경 기운을 가려낼 수 없다 — 그때 '밝은 픽셀 전부'를
+    #   배경 기운으로 잡아 캐릭터를 통째로 검게 칠한 사고(9-06 백테스트 bt_1·bt_2). 그 경우 반투명만 다룬다.
+    achromatic = (bc.max() - bc.min()) < 40 or dom.sum() == 0 or dom.sum() == 3
+    tinted = np.zeros(al.shape, bool) if achromatic else ((a[..., 3] == 255) & (mx > 100))
+    if not achromatic:
+        for i in range(3):
+            for j in range(3):
+                if dom[i] and not dom[j]:
+                    tinted &= chans[..., i] > chans[..., j] + 40
     suspect = (a[..., 3] == 255) & (tinted | semi)
     n_tint = int(tinted.sum())
     H, W = al.shape; fixed = 0
