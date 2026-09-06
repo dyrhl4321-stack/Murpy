@@ -16777,7 +16777,7 @@ async function _descriptorFrom(input, ref) {
   // ★한 번(416px·0.4)만 보고 포기하면 옛날 사진·작은 얼굴·어두운 사진을 놓쳐 "등록된 사진에서 얼굴을 찾지
   //   못했어요"가 반복된다(대표 9-06, 본인 사진인데도). 크기 3단계 × 기준 2단계로 다시 보고,
   //   기준 사진(ref)은 여러 얼굴이면 **가장 큰 얼굴**을 쓴다(단체 사진). 웹캠 프레임은 한 명만.
-  const tries = ref ? [[416, 0.4], [608, 0.3], [320, 0.3], [608, 0.2]] : [[416, 0.4], [416, 0.3]];
+  const tries = ref ? [[416, 0.4], [608, 0.4], [320, 0.4], [608, 0.3]] : [[416, 0.4], [416, 0.3]];
   for (const [inputSize, scoreThreshold] of tries) {
     const opt = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold });
     try {
@@ -16813,11 +16813,15 @@ async function _descFromUrl(url) {
 // 후보 사진들을 순회하며 얼굴 잡히는 첫 사진을 기준으로
 async function findRefDescriptor(urls) {
   window._fvRefStats = { loadFail: 0, noFace: 0, total: urls.length };
-  for (const u of urls) {
+  // ★첫 사진 하나만 기준으로 삼으면 그 한 장이 옛 사진이거나 엉뚱한 얼굴일 때 "일치도 0%"(대표 9-06).
+  //   전부 모아 두고 촬영 때 가장 가까운 것과 비교한다. 최대 8장.
+  const all = [];
+  for (const u of urls.slice(0, 8)) {
     const d = await _descFromUrl(u);
-    if (d) return d;
+    if (d) all.push(d);
   }
-  return null;
+  window._fvRefDescs = all;
+  return all.length ? all[0] : null;
 }
 // imgBB 업로드 (사진첩 영속화용)
 // ★실패하면 **왜** 실패했는지 보여준다.
@@ -24649,7 +24653,7 @@ window.startFaceVerify = async function() {
     if (ok) window.faceVerifyAddPhoto();
     return;
   }
-  window._fvRefDesc = null;
+  window._fvRefDesc = null; window._fvRefDescs = []; window._fvSelfRef = false;
   _fvCaptureEnabled(false);
   openModal('face-verify-modal');
   setFvStatus('카메라 준비 중...');
@@ -24699,19 +24703,13 @@ window.captureFaceVerify = async function() {
   let desc = null;
   try { desc = await _descriptorFrom(v); } catch (e) {}
   if (!desc) { setFvStatus('얼굴이 잘 안 보여요. 정면으로 다시 찍어주세요'); _fvCaptureEnabled(true); return; }
-  if (window._fvSelfRef && !window._fvRefDesc) {
+  if (window._fvSelfRef) {
     // 자기 기준 등록: 이 프레임을 프로필 사진으로 올리고, 이 얼굴을 기준으로 삼는다 → 이어서 인증(또는 신청)
-    setFvStatus('사진 등록 중...');
-    try {
-      const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
-      const blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.92); });
-      const url = await window.mwUploadImage(blob, 'profile');
-      await window.persistUserPhotos(url, 'photos');
-      if (window.renderUserPhotoGrid) window.renderUserPhotoGrid('photos');
-    } catch (e) { console.warn('selfref', e); setFvStatus('사진 등록에 실패했어요. 다시 시도해주세요'); _fvCaptureEnabled(true); return; }
-    window._fvRefDesc = desc; window._fvSelfRef = false;
+    if (!(await window._fvRegisterSelf(v))) return;
+    window._fvRefDesc = desc; window._fvRefDescs = [desc]; window._fvSelfRef = false;
   }
-  const dist = faceapi.euclideanDistance(desc, window._fvRefDesc);
+  const refs = (window._fvRefDescs && window._fvRefDescs.length) ? window._fvRefDescs : [window._fvRefDesc];
+  const dist = Math.min.apply(null, refs.map(function (r) { return faceapi.euclideanDistance(desc, r); }));
   const matchPct = Math.max(0, Math.round((1 - dist / 0.6) * 100));
   if (dist < 0.55) {
     // ★얼굴 커스터마이징 신청 모드 — 인증 저장 대신 **이 프레임으로 신청**한다(프로필 대조를 통과한 사진만).
@@ -24729,9 +24727,25 @@ window.captureFaceVerify = async function() {
       setTimeout(() => window.stopFaceVerify(), 1500);
     } catch (e) { setFvStatus('저장 실패. 다시 시도해주세요'); _fvCaptureEnabled(true); }
   } else {
-    setFvStatus('프로필 사진과 일치하지 않아요 (일치도 ' + matchPct + '%). 정면으로 다시 시도해주세요');
+    // ★불일치는 막다른 길이 아니다 — 옛 사진·다른 사람이 잡힌 사진일 수 있다(대표 9-06 "일치도 0%").
+    //   버튼이 '이 사진으로 등록·인증'으로 바뀌고 한 번 더 누르면 방금 얼굴을 프로필에 등록해 기준으로 삼는다.
+    window._fvSelfRef = true;
+    setFvStatus('등록된 사진과 일치도 ' + matchPct + '% · 사진이 오래됐거나 다른 얼굴이 잡혔을 수 있어요. 아래 버튼으로 지금 얼굴을 기준으로 등록해요');
+    const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = window._fvMode === 'create' ? '이 사진으로 등록·신청' : '이 사진으로 등록·인증';
     _fvCaptureEnabled(true);
   }
+};
+// 웹캠 프레임을 프로필 사진으로 올린다(자기 기준 등록). 성공하면 true.
+window._fvRegisterSelf = async function (v) {
+  setFvStatus('사진 등록 중...');
+  try {
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+    const blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.92); });
+    const url = await window.mwUploadImage(blob, 'profile');
+    await window.persistUserPhotos(url, 'photos');
+    if (window.renderUserPhotoGrid) window.renderUserPhotoGrid('photos');
+    return true;
+  } catch (e) { console.warn('selfref', e); setFvStatus('사진 등록에 실패했어요. 다시 시도해주세요'); _fvCaptureEnabled(true); return false; }
 };
 
 window.stopFaceVerify = function() {
