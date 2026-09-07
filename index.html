@@ -5989,7 +5989,7 @@ window._mwPetStep = function (p) {
   var petDef = window._mwPetDef(p.id) || {};
   // ★9-07 대표: 공원에선 따라오기가 기본이되 '자유' 로 풀면 돌아다니고 **펫끼리 어울려 논다**.
   //   방의 일과표(밥그릇·개집·캣타워)는 공원에 없으므로 여기서 갈라진다.
-  if (window._curField === 'park' && mode !== 'follow') { if (window._mwPetParkRoam(p, petDef)) return; }
+  if (window._mwIsOpenField() && mode !== 'follow') { if (window._mwPetParkRoam(p, petDef)) return; }
   if (mode === 'house' && petDef.kind === 'dog') {
     var dogHouse = window._mwPetNearest(p, 'house');
     if (dogHouse) {
@@ -6130,7 +6130,7 @@ window._mwPetUnstick = function (p) {
 window._mwPetSync = function () {
   var room = document.getElementById('charworld-room');
   // ★펫이 사는 필드 = 내 방 + 공원(9-03 산책). 다른 필드에선 빈 목록 → 걷어진다.
-  var list = (window._curField === 'home' || window._curField === 'park') ? window._mwPetsData() : [];
+  var list = (window._curField === 'home' || window._mwIsOpenField()) ? window._mwPetsData() : [];
   var clear = function () {
     window._mwPets.forEach(function (p) { clearTimeout(p._t); if (p.el) p.el.remove(); });
     window._mwPets = [];
@@ -6145,7 +6145,7 @@ window._mwPetSync = function () {
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
     // ★목록이 비어 있어도 재시도한다 — 문서가 아직 안 왔을 뿐일 수 있다(8-30).
     //   home 필드가 아닐 때만 진짜로 그만둔다.
-    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || window._curField === 'park')))) {
+    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || window._mwIsOpenField())))) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -6298,7 +6298,7 @@ window.mwPetMenu = function (p) {
     if (navigator.vibrate) navigator.vibrate(8);
     return;
   }
-  var acts = (window._curField === 'park')
+  var acts = (window._mwIsOpenField && window._mwIsOpenField())
     // ★9-07 대표: 공원은 공원 전용 — 밥 주기·들여보내기(하우스) 없음
     ? [ { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
         { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat(' + p.i + ')' },
@@ -6346,7 +6346,7 @@ window.mwPetModePick = function (idx) {
   var cy = hb.top - rb.top + hb.height * 0.55;
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 70;
   var kind = (window._mwPetDef(p.id) || {}).kind;
-  var modes = window.MW_PET_MODES.filter(function (m) { return (!m.kind || m.kind === kind) && (window._curField !== 'park' || m.k === 'free' || m.k === 'follow'); });   // 공원은 자유·따라와만(9-07)
+  var modes = window.MW_PET_MODES.filter(function (m) { return (!m.kind || m.kind === kind) && (!window._mwIsOpenField() || m.k === 'free' || m.k === 'follow'); });   // 오픈월드는 자유·따라와만(9-07)
   var spots = [{ dx: 0, dy: -R - 12 }, { dx: -R - 4, dy: 10 },
                { dx: R + 4, dy: 10 }, { dx: 0, dy: R + 28 }];
   var el = document.createElement('div');
@@ -8234,6 +8234,58 @@ window._FIELDS = {
     "#####################...########################",
     "#####################...########################"
   ] }
+  // ★9-07 산책로(오픈월드 2번째 맵) — 광장 우상단 길 끝(43,7)에서 이어진다. 아트 = 공원 v2 프롬프트 계열(Pro 2K), 벤치는 할매 스프라이트가 들고 온다.
+  //   충돌맵은 색 분류 자동 추출 + 데크 바닥 개방 + 출입구 보장. 아래 출입구(21~23,47)는 운동존 맵이 생기면 연다.
+  walk: { name: '산책로', src: "char/fields/field_walk.png?v=1", grid: 48, start: { tc: 2, tr: 21 }, map: [
+    '...#..........#..###.......#####################',
+    '#..##.......########.......#######.#############',
+    '#.##........##.##..........#####################',
+    '................#...........####################',
+    '...##.......#.................#..#.#############',
+    '#.#####..####...####........#.#..###############',
+    '#...########....####........#....###############',
+    '......####......####........#....###############',
+    '...#...###......####.............###############',
+    '####...###....####..........#....###############',
+    '.......##.....####..........#....###############',
+    '..............####..............##.#############',
+    '...#..........####...............#.#############',
+    '#####.........####...............###############',
+    '....#..###....#####...........#..###############',
+    '..........#...##.###.............###############',
+    '#.###.........######.............###############',
+    '#####...###...######..........##.###############',
+    '.##.#......#########.........###################',
+    '.#..#...#.#.#.####..............################',
+    '................................################',
+    '.................................###############',
+    '..................................##############',
+    '................................................',
+    '................................................',
+    '....#.......................#...................',
+    '....#.....#.......................#.............',
+    '............................#....##.............',
+    '..............#.....#...........###.............',
+    '....#.......................#....##.............',
+    '...##..############.........#....##.............',
+    '...##..#############.............###############',
+    '####..........##.##.........##.#################',
+    '..............#####........###.######.##########',
+    '...#..#####...######........##########.#########',
+    '#.##..######..####..........##########.#########',
+    '####.#######....##..........##########.#########',
+    '.....########...##..........#########..#########',
+    '...#.#######.....###.......###..###....#########',
+    '#.##.#######......##.......###...##....#########',
+    '####....#.........##........##...##....#########',
+    '........#.........##........##.........#########',
+    '...#....##.........#...................#########',
+    '#.##...................................#########',
+    '####...................................#########',
+    '.......................................#########',
+    '...#......#......#............#........#########',
+    '#####.##.######.##..#......#..##.##..###########'
+  ] },
 };
 // ★공원에서는 펫이 **산책 모드** — '따라와'(follow)를 자동으로 걸고 계속 갱신한다.
 //   부름은 2분이면 저절로 풀리는 구조(MW_PET_CALL_MS)라, 공원에 있는 동안 4초마다 되건다.
@@ -8282,20 +8334,44 @@ window._mwFieldReveal = function (key, tok) {
     if (el) el.style.visibility = 'visible';
   }, 2500);
 };
+window._MW_OPEN_FIELDS = ['park', 'walk'];
+window._mwIsOpenField = function (k) { return window._MW_OPEN_FIELDS.indexOf(k || window._curField) >= 0; };
+// ★출입구 — 그 칸을 밟으면 다른 맵으로. at = 도착 칸. (park 우상단 길 끝 ↔ walk 왼쪽 가장자리)
+window._FIELD_GATES = {
+  park: [{ tc: [43, 43], tr: [6, 8], to: 'walk', at: { tc: 2, tr: 21 } }],
+  walk: [{ tc: [0, 0], tr: [20, 22], to: 'park', at: { tc: 42, tr: 7 } }]
+};
+window._mwGateCheck = function () {
+  const g = (window._FIELD_GATES || {})[window._curField]; if (!g) return false;
+  const P = window._charPos; if (!P) return false;
+  for (const x of g) {
+    if (P.tc >= x.tc[0] && P.tc <= x.tc[1] && P.tr >= x.tr[0] && P.tr <= x.tr[1]) {
+      window._mwNpcAutoStop && window._mwNpcAutoStop();
+      window.charSetField(x.to);
+      window._charPos.tc = x.at.tc; window._charPos.tr = x.at.tr; window._charApplyPos && window._charApplyPos();
+      // 펫도 옆으로
+      (window._mwPets || []).forEach(function (p, i) { p.tc = x.at.tc + (i % 2 ? 1 : -1); p.tr = x.at.tr + (i > 1 ? 1 : 0); p.moving = false; try { window._mwPetApply(p); } catch (e) {} });
+      window.showToast && showToast((window._FIELDS[x.to] || {}).name + '(으)로 이동');
+      return true;
+    }
+  }
+  return false;
+};
 window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
+  const _open = window._mwIsOpenField(key);   // ★9-07 오픈월드 = 공원·산책로(맵이 늘어난다)
   // ★오픈월드(공원) 모드 — 풀스크린 필드+카메라 팔로우+상단 로고바+외치기 채팅바 (대표 9-04)
-  document.body.classList.toggle('mw-open', key === 'park');
-  window._mwParkBar && window._mwParkBar(key === 'park');
-  if (key !== 'park') { const _rm = document.getElementById('charworld-room'); if (_rm) _rm.style.transform = ''; }
+  document.body.classList.toggle('mw-open', _open);
+  window._mwParkBar && window._mwParkBar(_open);
+  if (!_open) { const _rm = document.getElementById('charworld-room'); if (_rm) _rm.style.transform = ''; }
   // ★오픈월드 마을 브금(9-04, CC0 음원) — 공원에 있는 동안만. 다른 필드는 무음(게임이 각자 켠다)
-  try { window.sfx && window.sfx.bgm(key === 'park' ? 'town' : null); } catch (e) {}
+  try { window.sfx && window.sfx.bgm(_open ? 'town' : null); } catch (e) {}
   // ★필드 앰비언트(9-04): "필드가 죽어 있어 저퀄로 보인다"(대표) — 분수 물보라·연못 반짝임·
   //   꽃잎·구름 그림자를 상시 재생. 좌표는 필드 %라 방 크기와 무관하고 카메라와 같이 흐른다.
   try { window._mwParkAmbient && window._mwParkAmbient(key === 'park'); } catch (e) {}
-  try { window._mwParkNpcs && window._mwParkNpcs(key === 'park'); } catch (e) {}   // NPC+퀘스트(9-04)
+  try { window._mwParkNpcs && window._mwParkNpcs(_open); } catch (e) {}   // NPC+퀘스트(9-04) — 필드별로 거른다
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
   const _fu = document.getElementById('mw-furn');
@@ -8310,7 +8386,7 @@ window.charSetField = function (key) {
   window._charApplyPos && window._charApplyPos();
   // ★공원 입장 시 펫은 **내 캐릭터 옆**에서 시작(대표 9-04) — 이전 필드의 좌표(그리드가 다름)를
   //   그대로 두면 못 가는 칸·구석에서 로드된다. 시작칸 주변 링에서 걸을 수 있는 칸을 하나씩 준다.
-  if (key === 'park' && window._mwPets && window._mwPets.length) {
+  if (_open && window._mwPets && window._mwPets.length) {
     const _ring = [[1,0],[-1,0],[0,1],[2,0],[-2,0],[1,1],[-1,1],[2,1],[-2,1],[0,2],[1,2],[-1,2],[3,0],[-3,0]];
     let _ri = 0;
     window._mwPets.forEach(function (p) {
@@ -8575,6 +8651,7 @@ window.charMove = function (dx, dy) {
   const ntc = window._charPos.tc + dx, ntr = window._charPos.tr + dy;
   const canMove = window._charWalkable(ntc, ntr);
   if (canMove) { window._charPos.tc = ntc; window._charPos.tr = ntr; }
+  if (canMove && window._mwGateCheck && window._mwGateCheck()) return true;   // ★출입구 밟으면 맵 전환(9-07)
   // ★히든 오브젝트 밟기. 이동에 성공했을 때만 보고, 칸을 벗어났다 다시 들어와야 재발동한다
   //   (같은 칸에서 걸음마다 반복되면 대화창이 계속 뜬다).
   if (canMove) {
@@ -34052,7 +34129,7 @@ window._MW_NPCS = [
   { k: 'trainer', name: '강 코치', img: 'char/npc/anim/trainer_coach.png?v=4', anim: 3, ms: 3000, pt: 'char/npc/portrait_trainer.png?v=10', x: 76.0, y: 51.0, h: 3.3,
     hi: '오! 운동하러 왔구나?', idle: '오늘은 여기까지! 내일 또 보자고.',
     q: { id: 'cert', text: '오늘 운동 인증 아직이지? 피드에 인증샷 한 장 올리고 와!', go: '인증하러 가기', done: '그래, 그 기세야! 꾸준한 놈이 이긴다.' } },
-  { k: 'grandma', name: '순이 할매', img: 'char/npc/anim/grandma_sit.png?v=4', anim: 3, ms: 2400, pt: 'char/npc/portrait_grandma.png?v=10', x: 17.7, y: 36.5, h: 3.15,
+  { k: 'grandma', field: 'walk', name: '순이 할매', img: 'char/npc/anim/grandma_sit.png?v=4', anim: 3, ms: 2400, pt: 'char/npc/portrait_grandma.png?v=10', x: 39.0, y: 36.5, h: 3.15,
     hi: '아이고, 젊은이 왔는가.', idle: '오늘 할 일은 다 했네. 살펴 가시게.',
     q: { id: 'bamboo', text: '속에 담아둔 얘기 있으면 대나무숲에 살짝 적어보게. 속이 후련해져.', go: '대숲 가기', done: '잘했네. 마음도 근육처럼 풀어줘야 해.' } },
   { k: 'kid', name: '민준이', img: 'char/npc/anim/kid_play.png?v=4', anim: 3, ms: 1400, pt: 'char/npc/portrait_kid.png?v=10', x: 19.8, y: 75.0, h: 2.6,
@@ -34115,6 +34192,7 @@ window._mwNpcHush = function () { if (window._mwNpcCur) { try { window._mwNpcCur
 // ★9-07 대표: "직접 움직여서 NPC 앞으로 가야만 받을 수 있게" — 멀리서 탭하면 캐릭터가 NPC 앞까지 걸어가서 도착 후 대화.
 window._mwNpcApproach = function (k) {
   const n = window._MW_NPCS.find(function (x) { return x.k === k; }); if (!n) return;
+  if ((n.field || 'park') !== window._curField) { window.showToast && showToast(n.name + '은(는) ' + ((window._FIELDS[n.field || 'park'] || {}).name) + '에 있어요'); return; }
   const N = 48, P = window._charPos; if (!P) { window._mwNpcTalk(k); return; }
   const ntc = Math.floor(n.x / 100 * N), ntr = Math.floor(n.y / 100 * N);
   const near = function (tc, tr) { return Math.abs(tc - ntc) <= 1 && Math.abs(tr - ntr) <= 1; };
@@ -34303,6 +34381,7 @@ window._mwParkNpcs = function (on) {
   }
   const g = window._charTileGeom();
   window._MW_NPCS.forEach(function (n) {
+    if ((n.field || 'park') !== window._curField) return;   // ★맵별 배치(9-07): 할매는 산책로
     const el = document.createElement('div');
     el.className = 'mw-npc'; el.dataset.k = n.k;
     // ★9-06 NPC 는 플레이어와 같은 12칸 시트(141×224 칸) — 정면 정지 칸(1행1열)만 보인다. 대표: 옛 512×768 일러스트는 도트 감성이 안 맞았다
@@ -34313,7 +34392,7 @@ window._mwParkNpcs = function (on) {
     el.onclick = function () { window._mwNpcApproach(n.k); };
     room.appendChild(el);
   });
-  (window._MW_PARK_EXTRAS || []).forEach(function (x) {
+  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {
     const el = document.createElement('div'); el.className = 'mw-npc mw-extra';
     const H = Math.round(g.t * x.h), W = Math.round(H * 141 / 224), row = Math.floor(x.y / 100 * 48);
     el.style.cssText = 'left:calc(' + x.x + '% - ' + (W / 2) + 'px);top:calc(' + x.y + '% - ' + H + 'px);width:' + W + 'px;height:' + H + 'px;z-index:' + (10 + row * 10 + 4) + ';pointer-events:none';
