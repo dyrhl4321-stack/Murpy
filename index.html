@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1098';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1099';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -14867,6 +14867,7 @@ function getCentersList() {
 
 // 관리자 판별 (센터 정보/광고 편집 권한)
 const ADMIN_EMAILS = ['dyrhl4321@gmail.com'];
+window.ADMIN_UID = '3ojRNNyRutYE4IDQn2GrJDcXz0Q2';   // 관리자(패수현) uid — 이의 신청 알림 수신용(9-07)
 function isAdmin() {
   const u = window.currentUser;
   return !!(u && u.email && ADMIN_EMAILS.includes(u.email));
@@ -17690,6 +17691,8 @@ window.faceDiscardRun = async function (mode) {
   try {
     await addDoc(collection(db, 'faceAppeals'), { uid: uid, nick: (window._cachedProfile || {}).nickname || '', charId: charId, name: fc.name || '',
       sheetUrl: fc.sheetUrl || '', kind: mode, reasons: sv.reasons, text: sv.text, status: mode === 'appeal' ? 'open' : 'survey', t: Date.now() });
+    // 이의 신청은 관리자에게 알림(카드에서만 보이던 것, 9-07). 푸시 문구는 functions 기본값("새 소식")으로 떨어진다.
+    if (mode === 'appeal' && window.ADMIN_UID) { try { await _sendNotif(window.ADMIN_UID, 'face_appeal', { text: sv.reasons.join(' · ') + (sv.text ? ' — ' + sv.text : ''), charId: charId }); } catch (e) {} }
   } catch (e) { console.warn('faceAppeals', e); }
   try { await deleteDoc(doc(db, 'users', uid, 'faceChars', charId)); }
   catch (e) { console.warn('faceDiscard', e); showToast('폐기에 실패했어요'); return; }
@@ -24700,6 +24703,7 @@ window.startNotifListener = (uid) => {
             // 신청 문서 구독과 같은 처리기로 모은다. 둘이 동시에 와도 charId 키로 한 번만 뜬다.
             window._faceApplyRequestState && window._faceApplyRequestState(uid, { status: 'done', charId: n.charId || '' });
           }
+          else if (n.type === 'face_appeal') { showToast((n.fromNickname || '누군가') + '님이 커마 이의 신청을 보냈어요'); }
           else if (n.type === 'face_failed') {
             // 실패 시각/환불 잔액은 알림 사본이 아니라 신청·유저 문서에서 다시 읽는다.
             getDocFromServer(doc(db, 'faceRequests', uid)).then(function (s) {
@@ -31914,6 +31918,12 @@ window.loadNotificationsFirestore = async () => {
             <div style="font-size:11px;color:#444;margin-top:2px">자동 생성 완료</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
+        </div>`;
+      }
+      if (n.type === 'face_appeal') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.5:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');goPage('char');setTimeout(function(){if(window.charHubTab)window.charHubTab('me');if(window.faceAdminAppeals)window.faceAdminAppeals();},300)">
+          <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(245,194,75,.55);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#F5C24B;font-size:12px;font-weight:800">!</div>
+          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">${_escHtml(n.fromNickname || '누군가')}님의 커마 이의 신청</div><div style="font-size:12px;color:#8a93a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escHtml(n.text || '')}</div></div>
         </div>`;
       }
       if (n.type === 'face_failed') {
