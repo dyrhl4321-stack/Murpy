@@ -47,6 +47,8 @@ assert(/status === 'done'/.test(src) && /_charLoadMyFaceChars\(uid\)/.test(src),
 assert(/getDocFromServer\(doc\(db, 'users', uid\)\)/.test(src), '실패 환불 잔액을 서버에서 다시 맞추지 않는다');
 assert(/window\._faceOwnerUid !== uid/.test(src) && /delete window\._CHAR_BODIES\[k\]/.test(src),
   '계정 전환 시 이전 사용자의 얼굴 캐시를 지우지 않는다');
+assert(/if \(b\.dynamic\) return !!b\.owner && window\._charBodyIsMine\(b\)/.test(src),
+  '남의 렌더용 동적 얼굴(owner:null)이 내 로스터 선택 카드로 노출된다');
 
 // 6) 특정 Android PWA에서 필드만 검게 빈 경우 배경·캐릭터 겹·가구를 독립 복구한다.
 assert(/window\._mwRepairStage = function/.test(src), '빈 머피월드 필드 자가복구가 없다');
@@ -57,4 +59,4 @@ assert(/id = 'murpy-grant'[\s\S]{0,800}?touch-action:pan-y/.test(src), '관리�
 assert(/box\.innerHTML = list\.map\(u =>/.test(src), '관리자 머피 지급 명단을 첫 80명에서 잘라 ㅇ 이후 사용자가 보이지 않는다');
 assert(!/box\.innerHTML = list\.slice\(0, 80\)/.test(src), '관리자 머피 지급 명단에 80명 제한이 남아 있다');
 
-console.log('OK openworld-face-autogen 30항목');
+console.log('OK openworld-face-autogen 31항목');

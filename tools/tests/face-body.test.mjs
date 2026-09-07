@@ -125,4 +125,20 @@ assert(/top_redhood__paesuhyun/.test(w._charEquippedSheets({ body: 'paesuhyun', 
 assert(!/__paesuhyun/.test(w._charEquippedSheets({ body: 'human', top: 'top_redhood' }).top), '기본 몸통 레드후디가 전용 시트를 쓴다');
 assert(!/__paesuhyun/.test(w._charEquippedSheets({ body: 'jaejin', top: 'top_redhood' }).top), '재진 레드후디가 전용 시트를 쓴다');
 
-console.log('OK face-body 29항목');
+// 다른 사람을 렌더한 뒤 내 로스터를 열어도 임시 커마는 보이면 안 된다.
+const filterBody = src.match(/grid\.innerHTML = Object\.keys\(window\._CHAR_BODIES\)\.filter\(key => \{([\s\S]*?)\n  \}\)\.map\(key =>/)[1];
+const rosterAllows = new Function('window', 'key', '_isAdm', '_bothGenders', '_myBody', filterBody);
+w.currentUser = { uid: 'UID1' };
+for (const admin of [false, true]) {
+  assert.strictEqual(rosterAllows(w, 'face:zzz', admin, admin, 'human'), false, '원격 owner:null 커마가 선택 목록에 나타남');
+  assert.strictEqual(rosterAllows(w, 'face:abc123', admin, admin, 'human'), true, '본인 커마가 목록에서 사라짐');
+}
+w.currentUser = { uid: 'UID2' };
+assert.strictEqual(rosterAllows(w, 'face:abc123', false, false, 'human'), false, '계정 전환 뒤 이전 계정 커마가 노출됨');
+new Function('window', grab(/window\.charPickBody = function[\s\S]*?\n\};/, 'charPickBody'))(w);
+w._charDraft = { body: 'human' };
+w.charPickBody('face:zzz');
+assert.strictEqual(w._charDraft.body, 'human', '남의 임시 커마 선택이 차단되지 않음');
+new Function('window', grab(/window\._charPersistCharacter = async[\s\S]*?\n\};/, '_charPersistCharacter'))(w);
+assert.strictEqual(await w._charPersistCharacter({ body: 'face:zzz' }), false, '남의 커마 저장이 DB 호출 전에 차단되지 않음');
+console.log('OK face-body · 소유권/원격 캐시/선택/저장 회귀 통과');

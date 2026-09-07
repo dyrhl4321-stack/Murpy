@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1098';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1099';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -9436,6 +9436,7 @@ window._charSyncSlotTabs = function () {
 
 window.charPickBody = function (key) {
   if (!window._charDraft || !window._CHAR_BODIES[key]) return;
+  if (String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && !window._charBodyIsMine(window._CHAR_BODIES[key])) return;
   window._charDraft.body = key;
   // 몸통을 바꾸면 다른 몸통 전용 아이템은 벗긴다 (관리자가 남↔여 오갈 때 헤어가 섞이는 것 방지)
   ['bottom', 'shoes', 'top', 'hair', 'acc', 'hat'].forEach(function (slot) {
@@ -9512,6 +9513,11 @@ window.charRenderRoster = function () {
   const _bothGenders = _isAdm;
   grid.innerHTML = Object.keys(window._CHAR_BODIES).filter(key => {
     const b = window._CHAR_BODIES[key];
+    // ★남의 얼굴은 피드·매칭·오픈월드에서 그리기 위해 전역 표에 owner:null 로 임시 등록된다.
+    // 그 값을 아래의 "owner 없음 = 일반 캐릭터" 분기로 흘리면 남의 커마가 모든 계정 로스터에
+    // 선택 가능한 카드로 뜬다(이태양 '탱이'가 패수현·채니에게 보인 9-07 사고).
+    // 동적 얼굴은 **현재 계정 소유 문서로 로드되어 owner uid가 붙은 것만** 로스터에 낸다.
+    if (b.dynamic) return !!b.owner && window._charBodyIsMine(b);
     // ★얼굴 커마 캐릭터는 **주인에게만** 보인다. 남에게는 목록에 아예 없다.
     //   단 관리자(대표)는 전부 보인다 — 커마권이 늘어나도 실기기에서 확인할 수 있어야 한다.
     if (b.owner || b.ownerEmail) return _isAdm || window._charBodyIsMine(b);
@@ -17402,7 +17408,7 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 // ★읽기 실패를 삼키는 이유 = 커마는 코스메틱이다. 여기서 던지면 로그인 전체가 멈춘다.
 window._charState.faceChars = {};
 window._charLoadMyFaceChars = async function (uid) {
-  if (!uid) return 0;
+  if (!uid || (window.currentUser || {}).uid !== uid) return 0;
   // 계정이 바뀌면 이전 계정에서 동적으로 꽂은 face:* 몸통을 전부 걷는다.
   // faceChars 서브컬렉션은 uid별인데 전역 _CHAR_BODIES 는 세션 공용이라, 이 정리가 없으면
   // A 계정 얼굴이 B 계정 로스터/렌더에 남아 "다른 사람 캐릭터가 들어왔다"처럼 보인다.
@@ -17417,11 +17423,13 @@ window._charLoadMyFaceChars = async function (uid) {
     window._faceOwnerUid = uid;
   }
   // 내 신청이 대기 중이면 카드가 '만드는 중'으로 보인다 (실패는 조용히 — 규칙 게시 전엔 거부된다)
-  try { const rq = await getDoc(doc(db, 'faceRequests', uid)); window._charState.faceReqPending = !!(rq.exists() && (rq.data().status === 'pending' || rq.data().status === 'working')); } catch (e) {}
+  try { const rq = await getDoc(doc(db, 'faceRequests', uid)); if ((window.currentUser || {}).uid !== uid) return 0; window._charState.faceReqPending = !!(rq.exists() && (rq.data().status === 'pending' || rq.data().status === 'working')); } catch (e) {}
   // ★서버에서 읽는다 — 영속 캐시가 방금 서버가 만든 문서를 모를 수 있다(도착 팝업에 남의 캐릭터가 뜬 원인 후보, 9-07)
   let snap;
   try { snap = await getDocsFromServer(collection(db, 'users', uid, 'faceChars')); }
   catch (e) { snap = await getDocs(collection(db, 'users', uid, 'faceChars')); }
+  if ((window.currentUser || {}).uid !== uid || window._faceOwnerUid !== uid) return 0;
+  window._charState.faceChars = {};
   let n = 0;
   snap.forEach(function (s) {
     const d = s.data() || {};
@@ -17438,6 +17446,7 @@ window._faceReqShown = {};
 window._faceRefreshTickets = async function (uid) {
   try {
     const us = await getDocFromServer(doc(db, 'users', uid));
+    if ((window.currentUser || {}).uid !== uid) return;
     const n = us.exists() && typeof us.data().faceTickets === 'number' ? us.data().faceTickets : 0;
     window._charState.faceTickets = Math.max(0, Math.trunc(n));
   } catch (e) {}
@@ -17448,13 +17457,15 @@ window._faceApplyRequestState = async function (uid, data) {
   window._charState.faceReqPending = status === 'pending' || status === 'working';
   if (status === 'done') {
     try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('face done reload', e); }
+    if ((window.currentUser || {}).uid !== uid) return;
     const charId = String(data.charId || '');
     const body = charId && window._CHAR_BODIES['face:' + charId];
     if (body && window._charPreloadFaceBody) { try { await window._charPreloadFaceBody(body); } catch (e) {} }
+    if ((window.currentUser || {}).uid !== uid) return;
     const once = 'done|' + charId;
     const storeKey = 'murpy_face_seen_' + uid + '_' + charId;
     let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
-    if (charId && !stored && !window._faceReqShown[once]) {
+    if (charId && body && window._charBodyIsMine(body) && window._charState.faceChars[charId] && !stored && !window._faceReqShown[once]) {
       window._faceReqShown[once] = 1;
       try { localStorage.setItem(storeKey, '1'); } catch (e) {}
       if (window.showFacePromo) window.showFacePromo('done', charId); else showToast('내 캐릭터가 도착했어요');
@@ -17462,6 +17473,7 @@ window._faceApplyRequestState = async function (uid, data) {
   } else if (status === 'failed') {
     // 서버가 이미 횟수를 환불했다. 로컬에서 +1 하면 알림과 문서 구독이 겹칠 때 두 번 늘어난다.
     await window._faceRefreshTickets(uid);
+    if ((window.currentUser || {}).uid !== uid) return;
     const once = 'failed|' + String(data.doneAt || data.t || '');
     const storeKey = 'murpy_face_failed_' + uid + '_' + String(data.doneAt || data.t || '');
     let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
@@ -17478,6 +17490,7 @@ window._faceWatchRequest = function (uid) {
   if (!uid) return;
   try {
     window._faceReqUnsub = onSnapshot(doc(db, 'faceRequests', uid), function (snap) {
+      if ((window.currentUser || {}).uid !== uid) return;
       if (snap.exists()) window._faceApplyRequestState(uid, snap.data());
       else { window._charState.faceReqPending = false; if (window.charRenderRoster) window.charRenderRoster(); }
     }, function (e) { console.warn('face request watch', e); });
@@ -17808,6 +17821,7 @@ window.faceAdminGrantTicket = async function (uid, n) {
 };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
+  if (cfg && String(cfg.body).indexOf(window.FACE_BODY_PREFIX) === 0 && !window._charBodyIsMine(window._CHAR_BODIES[cfg.body])) return false;
   if (!window._mwDocReady()) {
     // ★미뤄 두는 것은 **실패가 아니다.** 예전엔 여기서 false 를 돌려줘 꾸미기가
     //   '저장 실패 · 인터넷 확인'을 띄웠다(대표 8-28). 실제로는 곧 저장된다 —
