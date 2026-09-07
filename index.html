@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1107';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1108';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1791,11 +1791,16 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .sq-stamp { position:absolute; bottom:calc(100% + 4px); left:50%; z-index:130; pointer-events:none;
     animation:sqStampPop 1.9s cubic-bezier(.34,1.56,.64,1) forwards }
   /* ★9-07 이모트(머리 위 픽셀 아이콘, 8칸 스트립 char/ui/emotes.png) + 이름표 프레임(에셋 없이 박스섀도 픽셀 테두리) */
-  .mw-emote { position:absolute; bottom:calc(100% + 6px); left:50%; width:28px; height:28px; z-index:131; pointer-events:none;
+  /* ★말풍선·칭호가 머리 바로 위를 쓰므로 이모트는 그보다 **위**(+34px)에, 크고(40px) 튀게(대표 9-07 "말풍선에 가려짐·임팩트 약함") */
+  .mw-emote { position:absolute; bottom:calc(100% + 34px); left:50%; width:40px; height:40px; z-index:140; pointer-events:none;
     background-image:url('char/ui/emotes.png?v=1'); background-size:800% 100%; background-repeat:no-repeat; image-rendering:pixelated;
-    animation:mwEmotePop 2.6s cubic-bezier(.34,1.56,.64,1) forwards }
-  @keyframes mwEmotePop { 0%{ opacity:0; transform:translateX(-50%) scale(.3) } 14%{ opacity:1; transform:translateX(-50%) scale(1.15) }
-    24%{ transform:translateX(-50%) scale(1) } 78%{ opacity:1; transform:translateX(-50%) translateY(-3px) } 100%{ opacity:0; transform:translateX(-50%) translateY(-10px) } }
+    filter:drop-shadow(0 2px 0 rgba(5,7,12,.6));
+    animation:mwEmotePop 2.8s cubic-bezier(.34,1.56,.64,1) forwards }
+  @keyframes mwEmotePop { 0%{ opacity:0; transform:translateX(-50%) translateY(14px) scale(.2) } 12%{ opacity:1; transform:translateX(-50%) translateY(-4px) scale(1.35) }
+    22%{ transform:translateX(-50%) translateY(0) scale(1) } 32%{ transform:translateX(-50%) translateY(-3px) scale(1.08) } 42%{ transform:translateX(-50%) translateY(0) scale(1) }
+    80%{ opacity:1; transform:translateX(-50%) translateY(-2px) scale(1) } 100%{ opacity:0; transform:translateX(-50%) translateY(-14px) scale(.9) } }
+  .mw-emote-hop { animation:mwEmoteHop .5s cubic-bezier(.34,1.56,.64,1) 1 }
+  @keyframes mwEmoteHop { 0%{ transform:translateY(0) } 40%{ transform:translateY(-9px) } 70%{ transform:translateY(0) } 85%{ transform:translateY(-3px) } 100%{ transform:translateY(0) } }
   .mw-frame-gold { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #F5C24B !important }
   .mw-frame-leaf { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #4CBF5A !important }
   .mw-emote-chip { width:44px; height:44px; background-image:url('char/ui/emotes.png?v=1'); background-size:800% 100%; background-repeat:no-repeat; image-rendering:pixelated }
@@ -41637,7 +41642,10 @@ window._mwEmotePop = function (hostEl, id) {
   const el = document.createElement('div'); el.className = 'mw-emote';
   el.style.backgroundPosition = (i * 100 / 7) + '% 0';
   hostEl.appendChild(el);
-  setTimeout(function () { try { el.remove(); } catch (e) {} }, 2700);
+  // 캐릭터도 살짝 뛴다 — 위치는 바깥 요소(transform)가 잡으므로 **안쪽 몸통**에만 건다(.sq-body / .mw-rc-body / 내 아바타 첫 자식)
+  const body = hostEl.querySelector(':scope > .sq-body, :scope > .mw-rc-body') || hostEl.firstElementChild;
+  if (body) { body.classList.remove('mw-emote-hop'); void body.offsetWidth; body.classList.add('mw-emote-hop'); setTimeout(function () { body.classList.remove('mw-emote-hop'); }, 600); }
+  setTimeout(function () { try { el.remove(); } catch (e) {} }, 2900);
 };
 window._mwEmotesOwned = function () {
   const st = window._seasonState || {};
@@ -41655,7 +41663,7 @@ window.mwEmoteSend = function (id) {
   if (mine) window._mwEmotePop(mine, id);
   clearTimeout(window._myEmoteT);
   window._myEmoteT = setTimeout(function () { window._myEmote = null; push(); }, window.MW_EMOTE_MS);
-  try { window.sfx && window.sfx.play('btn'); } catch (e) {}
+  try { window.sfx && window.sfx.play({ heart: 'point', fire: 'win', smile: 'correct', note: 'ready', zzz: 'turn', sweat: 'miss' }[id] || 'btn'); } catch (e) {}
 };
 // 아우라 앞겹(발밑 아래로 내려오는 절반)의 높이. CSS 의 width:103% + aspect-ratio 140/45 와
 // **같은 식**이어야 한다 — 여기서 어긋나면 이름표가 고리를 덮거나 너무 멀리 떨어진다.
