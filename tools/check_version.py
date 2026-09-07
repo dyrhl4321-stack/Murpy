@@ -71,3 +71,9 @@ _bad = [f for f in ('index.html', 'sw.js', 'version.txt')
         if any(l.startswith(('<<<<<<< ', '>>>>>>> ')) for l in _io.open(f, encoding='utf-8', errors='ignore'))]
 if _bad:
     print('  x 충돌 마커(<<<<<<< / >>>>>>>)가 남아 있다:', ', '.join(_bad)); _sys.exit(1)
+
+# ★9-07: 모든 <script> 블록 파싱 검사(클래식 블록 포함). 쉼표 하나로 머피월드가 통째로 죽었다.
+import subprocess as _sp
+_r = _sp.run(['node', '--experimental-vm-modules', 'tools/all-scripts-syntax-check.mjs'], capture_output=True, text=True, encoding='utf-8', errors='ignore')
+if _r.returncode != 0:
+    print(_r.stdout.strip()); print('  x 스크립트 블록 문법 오류 — 배포 금지'); _sys.exit(1)
