@@ -19,6 +19,23 @@ options.set_global_options(region='asia-northeast3')
 
 BUCKET = 'murpyprototype.firebasestorage.app'
 
+# 클라이언트가 보내는 건 아래 네 코드뿐이다. 자유문장을 프롬프트에 붙이지 않는다(프롬프트 주입 방지).
+# 핵심 생성 프롬프트는 계속 비공개 Storage 에 두고, 여기서는 사용자가 고른 머리 방향만 좁게 덧붙인다.
+HAIR_PREFS = {
+    'as_photo': '',
+    'forehead': ('Hairstyle requirement: keep the same person and hair color, but style the front hair up or swept back '
+                 'so the forehead is clearly visible. Preserve that exact hairstyle consistently in all 12 cells and all four directions.'),
+    'bangs': ('Hairstyle requirement: use natural front bangs covering part of the forehead. '
+              'Preserve that exact hairstyle consistently in all 12 cells and all four directions.'),
+    'tied': ('Hairstyle requirement: wear the hair tied up or tied back, with no loose long hair falling over the chest. '
+             'The tied shape must remain visible and consistent from the front, back, left, and right in all 12 cells.')
+}
+
+def _prompt_with_hair(prompt, pref):
+    """허용된 머리 프리셋만 비공개 기본 프롬프트 뒤에 붙인다."""
+    extra = HAIR_PREFS.get(str(pref or 'as_photo'), '')
+    return prompt if not extra else prompt.rstrip() + '\n\n' + extra
+
 def _download(url, timeout=60):
     with urllib.request.urlopen(url, timeout=timeout) as r:
         ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0]
@@ -57,8 +74,13 @@ def face_generate(event):
     bucket = storage.bucket(BUCKET)
     from facegen import pipeline
     try:
-        gender = '여' if str(data.get('gender', '')).startswith('여') else '남'
-        prompt = bucket.blob('private/face/prompt.txt').download_as_text()
+        # 신청 화면의 캐시는 로그인 직후 비어 있을 수 있다. 몸통 선택은 신청값을 믿지 않고
+        # users/{uid}.gender 를 다시 읽어 확정한다 — 빈 값이 남성 베이스로 떨어지는 사고 방지.
+        profile = db.collection('users').document(uid).get().to_dict() or {}
+        raw_gender = str(profile.get('gender') or data.get('gender') or '')
+        gender = '여' if raw_gender.startswith('여') else '남'
+        ref.update({'resolvedGender': gender})
+        prompt = _prompt_with_hair(bucket.blob('private/face/prompt.txt').download_as_text(), data.get('hairPref'))
         base_png = bucket.blob('private/face/base_%s.png' % ('f' if gender == '여' else 'm')).download_as_bytes()
         urls = []
         for u in [data.get('photoUrl')] + [u for u in (data.get('photos') or []) if u]:

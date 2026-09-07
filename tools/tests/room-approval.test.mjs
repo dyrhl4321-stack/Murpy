@@ -80,7 +80,7 @@ has(/id="mw-party-input"[^>]*enterkeyhint="send"/,
   '입력칸에 enterkeyhint=send 가 없다 — 모바일 키보드에 전송 키가 안 뜬다');
 has(/_mwEnterSend\(document\.getElementById\('mw-party-input'\), window\.mwRoomSay\)/,
   '모바일 키보드의 전송 키로 한 번에 말하기가 되지 않는다');
-has(/window\._mwEnterSend = function[\s\S]{0,600}?e\.preventDefault\(\); fn\(\);/,
+has(/window\._mwEnterSend = function[\s\S]{0,5000}?e\.preventDefault\(\); send\(\);/,
   '_mwEnterSend 가 Enter 를 preventDefault 하고 전송하지 않는다');
 has(/id="mw-quick-send" onpointerdown="event\.preventDefault\(\)"/,
   '키보드가 열린 채 말하기 버튼을 누르면 먼저 포커스가 풀린다');

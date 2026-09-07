@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1097';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1098';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -4015,7 +4015,7 @@ window.faceEntryTap = async function () {
   const st = window._faceEntryState(window.faceTickets(), hasChar, !!prof.faceVerified, hasPhoto, !!(window._charState || {}).faceReqPending);
   if (st.mode === 'pending') {
     await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '확인',
-      desc: '신청이 접수됐어요<br>완성되면 알림으로 알려드려요' });
+      desc: '나노바나나 Pro가 자동으로 만들고 있어요<br>완료되면 바로 캐릭터 목록에 들어와요' });
     return;
   }
   if (st.mode === 'buy') {
@@ -8967,6 +8967,33 @@ window.charMove = function (dx, dy) {
   if (document.readyState !== 'loading') { window._initDragpad(); window._initRoomJoy(); }
   else document.addEventListener('DOMContentLoaded', () => { window._initDragpad(); window._initRoomJoy(); });
 })();
+// 일부 Android PWA가 배포 직후 옛 HTML/새 자산을 섞어 받은 경우, 머피월드 외곽·로스터는
+// 보이는데 방 배경과 캐릭터만 검게 비는 제보(염철범, 9-07). 필드 렌더는 장식 하나의 예외에
+// 같이 죽으면 안 된다. 현재 필드·배경·캐릭터 겹을 각각 독립적으로 다시 세우는 자가복구다.
+window._mwRepairStage = function () {
+  const page = document.getElementById('page-char'), room = document.getElementById('charworld-room');
+  if (!page || !page.classList.contains('active') || !room) return;
+  let f = window._FIELDS && window._FIELDS[window._curField];
+  if (!f) { window._curField = 'home'; f = window._FIELDS && window._FIELDS.home; }
+  if (f && f.src) {
+    const wanted = "url('" + f.src + "')";
+    if (!room.style.backgroundImage || room.style.backgroundImage === 'none') room.style.backgroundImage = wanted;
+    // 캐시에 깨진 응답이 들어간 경우 한 번만 네트워크 주소를 바꿔 재시도한다.
+    if (room.dataset.bgChecked !== f.src) {
+      room.dataset.bgChecked = f.src;
+      const im = new Image();
+      im.onerror = function () {
+        const sep = f.src.indexOf('?') >= 0 ? '&' : '?';
+        room.style.backgroundImage = "url('" + f.src + sep + 'repair=' + (window._SW_V || Date.now()) + "')";
+      };
+      im.src = f.src;
+    }
+  }
+  const av = document.getElementById('charworld-avatar');
+  try { if (av && !av.querySelector('.cw-layer')) window._charBuildLayers && window._charBuildLayers(); } catch (e) { console.warn('stage layers repair', e); }
+  try { window._charApplyPos && window._charApplyPos(); } catch (e) { console.warn('stage char repair', e); }
+  try { window.mwRenderFurn && window.mwRenderFurn(); } catch (e) { console.warn('stage room repair', e); }
+};
 window.renderCharSpace = function () {
   window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
   if (!window._charDraft.body) window._charDraft.body = 'human';
@@ -9007,6 +9034,9 @@ window.renderCharSpace = function () {
   if (_hub) _hub.style.display = '';
   window.charHubTab('me');   // 기본 진입 = 내 캐릭터 탭
   if (room && room.animate) room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' }); // 게임 진입 연출
+  // 첫 프레임과 이미지 디코딩 뒤 두 번 확인. 정상 기기에서는 같은 값을 다시 적용할 뿐이다.
+  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 80);
+  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 900);
 };
 if (!window._charKeyBound) {
   window._charKeyBound = true;
@@ -16143,6 +16173,7 @@ onAuthStateChanged(auth, async (user) => {
     }
   } else {
 window.currentUser = null;
+    try { window._mwOpenLeave && window._mwOpenLeave(); } catch (e) {}
     // 로그아웃하면 머피월드를 **즉시** 콜드스타트 화면으로 되돌린다.
     // 안 하면 내 방이 한 번 더 뜨고, 나갔다 들어와야 신규 시점이 된다(대표 8-25).
     window._charState.ready = false; window._creditState.ready = false;
@@ -16360,6 +16391,7 @@ document.addEventListener('murpy-logout', async () => {
   //   회원 탈퇴가 이미 location.replace('/') 로 끝내고 있다 — 같은 방식으로 통일한다.
   //   ★나가기 전에 방에서 먼저 빠진다. 안 그러면 남의 화면에 유령으로 서 있는다.
   try { window._mwRlLeave && window._mwRlLeave(); } catch (e) {}
+  try { window._mwOpenLeave && window._mwOpenLeave(); } catch (e) {}
   userPhotoCache.clear();
   window.currentUser = null;
   window._setHeaderAvatar('');   // 사진 지우고 대체 아이콘을 되살린다
@@ -17371,6 +17403,19 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 window._charState.faceChars = {};
 window._charLoadMyFaceChars = async function (uid) {
   if (!uid) return 0;
+  // 계정이 바뀌면 이전 계정에서 동적으로 꽂은 face:* 몸통을 전부 걷는다.
+  // faceChars 서브컬렉션은 uid별인데 전역 _CHAR_BODIES 는 세션 공용이라, 이 정리가 없으면
+  // A 계정 얼굴이 B 계정 로스터/렌더에 남아 "다른 사람 캐릭터가 들어왔다"처럼 보인다.
+  if (window._faceOwnerUid !== uid) {
+    Object.keys(window._CHAR_BODIES || {}).forEach(function (k) {
+      if (k.indexOf(window.FACE_BODY_PREFIX) === 0) {
+        delete window._CHAR_BODIES[k];
+        if (window.SQ_MG_EYES) delete window.SQ_MG_EYES[k];
+      }
+    });
+    window._charState.faceChars = {};
+    window._faceOwnerUid = uid;
+  }
   // 내 신청이 대기 중이면 카드가 '만드는 중'으로 보인다 (실패는 조용히 — 규칙 게시 전엔 거부된다)
   try { const rq = await getDoc(doc(db, 'faceRequests', uid)); window._charState.faceReqPending = !!(rq.exists() && (rq.data().status === 'pending' || rq.data().status === 'working')); } catch (e) {}
   // ★서버에서 읽는다 — 영속 캐시가 방금 서버가 만든 문서를 모를 수 있다(도착 팝업에 남의 캐릭터가 뜬 원인 후보, 9-07)
@@ -17385,6 +17430,59 @@ window._charLoadMyFaceChars = async function (uid) {
   });
   return n;
 };
+// 얼굴 신청 문서가 진실의 원본이다. 일반 알림 리스너는 앱을 켤 때 이미 있던 알림을 일부러
+// 무시하므로, 생성이 백그라운드에서 끝나면 완료를 영영 놓쳤다. 이 문서를 별도로 구독해
+// 첫 스냅샷부터 pending/working/done/failed 를 회수한다.
+window._faceReqUnsub = null;
+window._faceReqShown = {};
+window._faceRefreshTickets = async function (uid) {
+  try {
+    const us = await getDocFromServer(doc(db, 'users', uid));
+    const n = us.exists() && typeof us.data().faceTickets === 'number' ? us.data().faceTickets : 0;
+    window._charState.faceTickets = Math.max(0, Math.trunc(n));
+  } catch (e) {}
+};
+window._faceApplyRequestState = async function (uid, data) {
+  if (!uid || !data || !window.currentUser || window.currentUser.uid !== uid) return;
+  const status = String(data.status || '');
+  window._charState.faceReqPending = status === 'pending' || status === 'working';
+  if (status === 'done') {
+    try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('face done reload', e); }
+    const charId = String(data.charId || '');
+    const body = charId && window._CHAR_BODIES['face:' + charId];
+    if (body && window._charPreloadFaceBody) { try { await window._charPreloadFaceBody(body); } catch (e) {} }
+    const once = 'done|' + charId;
+    const storeKey = 'murpy_face_seen_' + uid + '_' + charId;
+    let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
+    if (charId && !stored && !window._faceReqShown[once]) {
+      window._faceReqShown[once] = 1;
+      try { localStorage.setItem(storeKey, '1'); } catch (e) {}
+      if (window.showFacePromo) window.showFacePromo('done', charId); else showToast('내 캐릭터가 도착했어요');
+    }
+  } else if (status === 'failed') {
+    // 서버가 이미 횟수를 환불했다. 로컬에서 +1 하면 알림과 문서 구독이 겹칠 때 두 번 늘어난다.
+    await window._faceRefreshTickets(uid);
+    const once = 'failed|' + String(data.doneAt || data.t || '');
+    const storeKey = 'murpy_face_failed_' + uid + '_' + String(data.doneAt || data.t || '');
+    let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
+    if (!stored && !window._faceReqShown[once]) {
+      window._faceReqShown[once] = 1;
+      try { localStorage.setItem(storeKey, '1'); } catch (e) {}
+      showToast('캐릭터 만들기에 실패했어요 · 만들기 횟수는 돌려드렸어요');
+    }
+  }
+  if (window.charRenderRoster) window.charRenderRoster();
+};
+window._faceWatchRequest = function (uid) {
+  if (window._faceReqUnsub) { window._faceReqUnsub(); window._faceReqUnsub = null; }
+  if (!uid) return;
+  try {
+    window._faceReqUnsub = onSnapshot(doc(db, 'faceRequests', uid), function (snap) {
+      if (snap.exists()) window._faceApplyRequestState(uid, snap.data());
+      else { window._charState.faceReqPending = false; if (window.charRenderRoster) window.charRenderRoster(); }
+    }, function (e) { console.warn('face request watch', e); });
+  } catch (e) { console.warn('face request watch start', e); }
+};
 // 커마권 구매. 시착 구매(charTryOnBuy)와 같은 모양이다 — 확인창 → 트랜잭션 → 토스트.
 // ★spendCredit 을 쓰지 않는 이유 = 그건 머피만 깎는다. 커마권 +1 을 **같은 트랜잭션**에
 //   묶어야 규칙이 짝을 검사할 수 있다(따로 쓰면 커마권 단독 증가라 규칙이 막는다).
@@ -17394,7 +17492,43 @@ window._charLoadMyFaceChars = async function (uid) {
 // ★모달 문구를 바꾼다 — 원래 안내는 "사진은 저장되지 않아요"인데 신청은 사진을 **써야** 만든다. 숨기지 않는다.
 // ★재료 = 유저가 **고르는 사진 몇 장**(대표 9-07: "웹캠 셀카가 아니라 첨부하는 사진으로 만들어야 해.
 //   얼굴 인증은 하나의 단계일 뿐"). 인증은 카드가 먼저 시키고(faceVerified), 여기선 사진만 고른다.
-//   파일 선택창은 사용자 탭 안에서 열어야 하므로 await 전에 click() 한다.
+//   파일 선택창은 사용자 탭 안에서 열어야 하므로 먼저 click() 하고, 고른 뒤 머리 모양을 묻는다.
+window._FACE_HAIR_PREFS = [
+  { k: 'as_photo', t: '사진 그대로', d: '사진 속 머리 모양을 유지해요' },
+  { k: 'forehead', t: '앞머리 올림', d: '이마가 보이게 올리거나 넘겨요' },
+  { k: 'bangs', t: '앞머리 내림', d: '자연스러운 앞머리를 만들어요' },
+  { k: 'tied', t: '묶은 머리', d: '뒤로 묶거나 올린 형태로 만들어요' }
+];
+window._faceHairPref = function (v) {
+  return window._FACE_HAIR_PREFS.some(function (x) { return x.k === v; }) ? v : 'as_photo';
+};
+window._faceChooseHair = function () {
+  return new Promise(function (resolve) {
+    const old = document.getElementById('face-hair-modal'); if (old) old.remove();
+    const el = document.createElement('div'); el.id = 'face-hair-modal'; el.className = 'modal-overlay';
+    el.innerHTML = '<div class="modal-sheet"><div style="font-size:18px;font-weight:800;margin-bottom:6px">머리 모양</div>'
+      + '<div style="font-size:12.5px;color:#8a93a8;line-height:1.55;margin-bottom:14px">나노바나나 Pro가 고른 모양을 12칸 모두 같게 만들어요</div>'
+      + '<div id="face-hair-options" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>'
+      + '<button id="face-hair-cancel" style="width:100%;margin-top:10px;padding:11px;background:none;border:none;color:#666;font:600 13px inherit">취소</button></div>';
+    document.body.appendChild(el);
+    const done = function (v) {
+      try { closeModal('face-hair-modal'); } catch (e) {}
+      setTimeout(function () { el.remove(); }, 180);
+      resolve(v);
+    };
+    const box = el.querySelector('#face-hair-options');
+    window._FACE_HAIR_PREFS.forEach(function (x) {
+      const b = document.createElement('button');
+      b.style.cssText = 'min-height:72px;padding:11px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.045);color:#fff;text-align:left;font-family:inherit;cursor:pointer';
+      const t = document.createElement('b'); t.style.cssText = 'display:block;font-size:14px;margin-bottom:5px'; t.textContent = x.t;
+      const d = document.createElement('span'); d.style.cssText = 'display:block;font-size:10.5px;line-height:1.45;color:#8a93a8'; d.textContent = x.d;
+      b.appendChild(t); b.appendChild(d); b.onclick = function () { done(x.k); }; box.appendChild(b);
+    });
+    el.querySelector('#face-hair-cancel').onclick = function () { done(null); };
+    el.onclick = function (e) { if (e.target === el) done(null); };
+    if (window.openModal) openModal('face-hair-modal'); else { el.style.display = 'flex'; }
+  });
+};
 window.faceStartCreate = function () {
   if (window.faceTickets() < 1) { showToast('만들기 횟수가 없어요'); return; }
   let inp = document.getElementById('face-req-input');
@@ -17408,8 +17542,11 @@ window.faceStartCreate = function () {
 window._faceReqPicked = async function (e) {
   const files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
   if (!files.length) return;
+  const hairPref = await window._faceChooseHair();
+  if (!hairPref) return;
+  const hp = window._FACE_HAIR_PREFS.find(function (x) { return x.k === hairPref; }) || window._FACE_HAIR_PREFS[0];
   const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
-    desc: '사진 <b style="color:#fff">' + files.length + '장</b>으로 캐릭터를 만들어요<br>완성되면 알림으로 알려드려요<br><span style="color:#8a93a8">정면 사진이 많을수록 더 닮아요</span>' });
+    desc: '사진 <b style="color:#fff">' + files.length + '장</b> · <b style="color:#F5C24B">' + hp.t + '</b><br>자동 생성이 끝나면 바로 캐릭터 목록에 들어와요<br><span style="color:#8a93a8">정면 사진이 많을수록 더 닮아요</span>' });
   if (!ok) return;
   // 올리는 사진이 본인인지 본다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
   // ★문턱은 느슨하게(대표 9-07 "내 사진인데도 안 됨, 제한 많이 풀어"): 얼굴을 **찾았고 분명히 다른 사람**(0.68 이상)일 때만 뺀다.
@@ -17445,27 +17582,30 @@ window._faceReqPicked = async function (e) {
   const urls = [];
   for (const f of keep) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
   if (!urls.length) { showToast('사진을 올리지 못했어요 · 잠시 후 다시 해주세요'); return; }
-  try { await window._faceSubmitUrls(urls); }
+  try { await window._faceSubmitUrls(urls, hairPref); }
   catch (err) { console.error('faceReq', err); showToast('신청하지 못했어요 · 잠시 후 다시 해주세요'); }
 };
 // 통과한 프레임을 올리고 신청 문서를 만든다. 만들기 횟수 1 차감과 신청 문서를 **한 트랜잭션**으로 —
 // 사진만 올라가고 횟수가 안 빠지거나, 횟수만 빠지고 신청이 안 남는 일이 없게.
 // 신청 문서 쓰기 — 만들기 횟수 1 차감과 **한 트랜잭션**(사진만 올라가고 횟수가 안 빠지거나 그 반대가 없게).
 // ★문서 id = uid 라 두 번째부터는 '갱신'이다. 서버 트리거는 쓰기(written)로 받고 t(신청 시각)로 새 신청을 구분한다.
-window._faceSubmitUrls = async function (urls) {
+window._faceSubmitUrls = async function (urls, hairPref) {
   const uid = window.currentUser.uid, prof = window._cachedProfile || {};
+  hairPref = window._faceHairPref(hairPref);
   const r = await runTransaction(db, async tx => {
     const uref = doc(db, 'users', uid); const snap = await tx.get(uref);
-    const have = (snap.exists() && typeof snap.data().faceTickets === 'number') ? snap.data().faceTickets : 0;
+    const ud = snap.exists() ? (snap.data() || {}) : {};
+    const have = (typeof ud.faceTickets === 'number') ? ud.faceTickets : 0;
     if (have < 1) return { ok: false };
     tx.update(uref, { faceTickets: have - 1 });
-    tx.set(doc(db, 'faceRequests', uid), { uid: uid, nick: String(prof.nickname || ''), gender: String(prof.gender || ''),
-      photoUrl: urls[0], photos: urls.slice(1), status: 'pending', t: Date.now() });
+    // 화면 캐시는 계정 전환/콜드 스타트 때 늦을 수 있다. 성별은 방금 트랜잭션에서 읽은 서버 문서를 우선한다.
+    tx.set(doc(db, 'faceRequests', uid), { uid: uid, nick: String(ud.nickname || prof.nickname || ''), gender: String(ud.gender || prof.gender || ''),
+      photoUrl: urls[0], photos: urls.slice(1), hairPref: hairPref, status: 'pending', t: Date.now() });
     return { ok: true, faceTickets: have - 1 };
   });
   if (!r.ok) { showToast('만들기 횟수가 없어요'); return false; }
   window._charState.faceTickets = r.faceTickets; window._charState.faceReqPending = true;
-  showToast('신청했어요 · 완성되면 알려드려요');
+  showToast('자동으로 만들고 있어요 · 끝나면 바로 알려드려요');
   if (window.charRenderRoster) window.charRenderRoster();
   return true;
 };
@@ -17477,7 +17617,7 @@ window._faceSubmitRequest = async function (v) {
   const blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.92); });
   if (!blob) throw new Error('capture');
   const url = await window.mwUploadImage(blob, 'facereq');
-  const ok = await window._faceSubmitUrls([url]);
+  const ok = await window._faceSubmitUrls([url], 'as_photo');
   if (ok) { setFvStatus('신청됐어요! 만들어지면 캐릭터 목록에 나타나요'); setTimeout(function () { window.stopFaceVerify(); }, 1800); }
   else setFvStatus('만들기 횟수가 없어요');
 };
@@ -23908,7 +24048,11 @@ window.showMurpyGrant = async function () {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
   const el = document.createElement('div');
   el.id = 'murpy-grant';
-  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-y:auto;padding:18px 16px 90px';
+  // ★iOS 설치형 PWA에서도 이 오버레이 자체가 끝까지 스크롤 주인이어야 한다.
+  // 예전에는 아래 렌더러가 첫 80명만 잘라 놓아 목록이 ㅇ 부근에서 끝났고,
+  // 대표 눈에는 스크롤이 막힌 것처럼 보였다. 전체 명단을 렌더하고 이 컨테이너에
+  // 명시적으로 세로 pan/관성 스크롤을 준다.
+  el.style.cssText = 'position:fixed;inset:0;z-index:20100;background:#0a0a0a;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;height:100dvh;box-sizing:border-box;padding:18px 16px 100px';
   el.innerHTML = '<div style="color:#8a93a8;font-size:13px">불러오는 중…</div>';
   document.body.appendChild(el);
   let users = [];
@@ -23956,7 +24100,7 @@ window._grantRender = function () {
   const t = document.getElementById('grant-btn-t');
   const face = (document.getElementById('grant-kind')?.value === 'face');
   if (t) t.textContent = n ? `${n}명에게 ${face ? '이용권' : '머피'} 지급` : '선택한 사람에게 지급';
-  box.innerHTML = list.slice(0, 80).map(u => {
+  box.innerHTML = list.map(u => {
     const on = !!(window._grantPick || {})[u.uid];
     return `<div onclick="window._grantToggle('${u.uid}')" style="display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer">
       <div style="flex:1;min-width:0">
@@ -23967,7 +24111,7 @@ window._grantRender = function () {
         ${on ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
       </div>
     </div>`;
-  }).join('') + (list.length > 80 ? '<div style="padding:12px;text-align:center;color:#5d6678;font-size:12px">이름으로 더 좁혀주세요</div>' : '');
+  }).join('');
 };
 window._grantToggle = function (uid) {
   window._grantPick = window._grantPick || {};
@@ -24530,6 +24674,7 @@ function _showMatchPopup(n) {
 }
 window.startNotifListener = (uid) => {
   if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
+  if (window._faceWatchRequest) window._faceWatchRequest(uid);
   _notifFirst = true;
   try {
     // ★8-29: 최근 100개만 구독. 예전엔 내 알림 **전부**를 구독해서 오래 쓴 사람일수록 로그인마다 수백 문서를 받았다.
@@ -24552,22 +24697,14 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'feed_comment') showToast((n.fromNickname || '누군가') + '님이 내 글에 댓글을 남겼어요');
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
           else if (n.type === 'face_done') {
-            // 서버가 캐릭터를 만들어 faceChars 에 넣었다 — 다시 읽어 표에 꽂고 도착 팝업
-            (async function () {
-              try { await window._charLoadMyFaceChars(window.currentUser.uid); } catch (e) {}
-              window._charState.faceReqPending = false;
-              if (window.charRenderRoster) window.charRenderRoster();
-              const nb = n.charId && window._CHAR_BODIES['face:' + n.charId];
-              if (nb && window._charPreloadFaceBody) { try { await window._charPreloadFaceBody(nb); } catch (e) {} }   // 시트 받은 뒤 열기(최대 3초)
-              if (window.showFacePromo) window.showFacePromo('done', n.charId || null); else showToast('내 캐릭터가 도착했어요');
-            })();
+            // 신청 문서 구독과 같은 처리기로 모은다. 둘이 동시에 와도 charId 키로 한 번만 뜬다.
+            window._faceApplyRequestState && window._faceApplyRequestState(uid, { status: 'done', charId: n.charId || '' });
           }
           else if (n.type === 'face_failed') {
-            // 서버가 실패했고 만들기 횟수는 서버가 돌려줬다 — 화면도 맞춘다
-            window._charState.faceReqPending = false;
-            window._charState.faceTickets = (window.faceTickets ? window.faceTickets() : 0) + 1;
-            if (window.charRenderRoster) window.charRenderRoster();
-            showToast('캐릭터 만들기에 실패했어요 · 만들기 횟수는 돌려드렸어요');
+            // 실패 시각/환불 잔액은 알림 사본이 아니라 신청·유저 문서에서 다시 읽는다.
+            getDocFromServer(doc(db, 'faceRequests', uid)).then(function (s) {
+              if (s.exists() && window._faceApplyRequestState) window._faceApplyRequestState(uid, s.data());
+            }).catch(function () {});
           }
           else if (n.type === 'face_ticket') {
             // 대표가 지급창에서 준 얼굴 커스터마이징 이용권 — 그 자리에서 팝업(9-06)
@@ -24645,6 +24782,8 @@ window.startNotifListener = (uid) => {
 window.stopNotifListener = () => {
   if (_notifUnsub) { _notifUnsub(); _notifUnsub = null; }
   if (_likesUnsub) { _likesUnsub(); _likesUnsub = null; }
+  if (window._faceReqUnsub) { window._faceReqUnsub(); window._faceReqUnsub = null; }
+  window._faceOwnerUid = '';
 };
 
 // ===== FCM 시스템 푸시 (앱 꺼져 있어도) =====
@@ -29132,10 +29271,113 @@ window._mwRlTick = function () {
   clearTimeout(window._mwRl.sendT);
   window._mwRl.sendT = setTimeout(function () { window._mwRl.lastSend = Date.now(); window._mwRlSend('move'); }, wait + 30);
 };
+// ═══ 오픈월드 presence — 공원/산책로/야외 헬스장에서 실제 유저를 직접 만난다 ═══
+// 방 초대(roomLive)는 방주 승인/복귀 규칙이 있어 그대로 재사용할 수 없다. 공개 필드는
+// plaza/players/{field}/{uid}에 현재 접속 중인 좌표만 두고, 연결이 끊기면 즉시 지운다.
+window._mwOpenLive = { field: '', ref: null, unsub: null, chars: {}, beatT: 0, sendT: 0, lastSend: 0, metaKey: '' };
+window._mwOpenClearChars = function () {
+  const S = window._mwOpenLive;
+  Object.keys(S.chars || {}).forEach(function (k) { const c = S.chars[k]; if (c && c.el) c.el.remove(); });
+  S.chars = {};
+};
+window._mwOpenLeave = function () {
+  const S = window._mwOpenLive, R = window._rt;
+  clearInterval(S.beatT); clearTimeout(S.sendT);
+  if (S.unsub) { try { S.unsub(); } catch (e) {} }
+  if (R && S.ref) { try { R.remove(S.ref); } catch (e) {} }
+  window._mwOpenClearChars();
+  window._mwOpenLive = { field: '', ref: null, unsub: null, chars: {}, beatT: 0, sendT: 0, lastSend: 0, metaKey: '' };
+};
+window._mwOpenSend = function (mode) {
+  const S = window._mwOpenLive, R = window._rt, u = auth.currentUser;
+  if (!R || !u || !S.ref || S.field !== window._curField || !window._mwIsOpenField(S.field)) return;
+  const p = window._charPos || { tc: 0, tr: 0, face: 'down' };
+  const cfg = window.getMyCharacter ? window.getMyCharacter() : null;
+  const meta = {
+    nick: String(window._mwMyNick || '머피').slice(0, 24),
+    title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
+    aura: ((window._seasonState || {}).auraOn) || '',
+    character: cfg,
+    characterSheet: cfg && window._charSheetForBody ? window._charSheetForBody(cfg.body) : null,
+    msg: (window._mwRl && window._mwRl.msg) || null
+  };
+  const key = JSON.stringify(meta), light = (mode === 'move' || mode === 'beat') && S.metaKey === key;
+  try {
+    if (light) R.update(S.ref, mode === 'move'
+      ? { tc: p.tc, tr: p.tr, face: p.face || 'down', t: Date.now() }
+      : { t: Date.now() });
+    else { R.set(S.ref, Object.assign({ tc: p.tc, tr: p.tr, face: p.face || 'down' }, meta, { t: Date.now() })); S.metaKey = key; }
+  } catch (e) { console.warn('open presence send', e); }
+};
+window._mwOpenTick = function () {
+  const S = window._mwOpenLive;
+  if (!S.ref || S.field !== window._curField) return;
+  const now = Date.now(), wait = 170;
+  if (now - (S.lastSend || 0) > wait) { S.lastSend = now; window._mwOpenSend('move'); }
+  clearTimeout(S.sendT);
+  S.sendT = setTimeout(function () { S.lastSend = Date.now(); window._mwOpenSend('move'); }, wait + 35);
+};
+window._mwOpenRender = function (all) {
+  const S = window._mwOpenLive, room = document.getElementById('charworld-room');
+  if (!room || !room.clientWidth || S.field !== window._curField || !window._mwIsOpenField(S.field)) return;
+  const me = (auth.currentUser || {}).uid, g = window._charTileGeom(), t = g.t, DH = Math.round(t * 3.3);
+  const seen = {}, now = Date.now();
+  Object.keys(all || {}).forEach(function (uid) {
+    const v = all[uid] || {};
+    if (uid === me || !Number.isFinite(v.tc) || !Number.isFinite(v.tr) || now - (v.t || 0) > 70000) return;
+    seen[uid] = 1;
+    if (v.character && v.character.body && window._charEnsureFaceBody) window._charEnsureFaceBody(v.character.body, v.characterSheet || '');
+    let c = S.chars[uid];
+    if (!c || !c.el || !c.el.isConnected) {
+      const el = document.createElement('div'); el.className = 'mw-rc mw-open-player'; el.dataset.uid = uid;
+      el.style.cssText = 'position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;will-change:transform;transition:transform .2s linear';
+      el.innerHTML = '<div class="mw-rc-top"><div class="mw-rc-bub" style="display:none"></div><div class="cw-title" style="display:none;position:static;transform:none;margin:0"></div></div><div class="mw-rc-body"></div><span class="cw-nick"></span>';
+      room.appendChild(el); c = S.chars[uid] = { el: el, cfg: '', pos: '', lastT: 0, stopT: 0 };
+    }
+    const cj = JSON.stringify(v.character || null) + '|' + String(v.aura || '') + '|' + String(v.face || 'down');
+    if (c.cfg !== cj || c.h !== DH) {
+      c.cfg = cj; c.h = DH;
+      const body = c.el.querySelector('.mw-rc-body');
+      body.innerHTML = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, DH, v.face === 'down' ? undefined : v.face) : '';
+      const aura = window._mwAurOf ? window._mwAurOf(uid, v.aura) : '';
+      window._mwAurApply && window._mwAurApply(body, aura); c.el.classList.toggle('mw-aur-on', !!aura);
+    }
+    const title = (window.mwValidTitle && window.mwValidTitle(v.title || '')) || '';
+    const te = c.el.querySelector('.cw-title'); te.textContent = title ? '<' + title + '>' : ''; te.style.display = title ? '' : 'none';
+    if (title && window.mwTitleColor) te.style.color = window.mwTitleColor(title);
+    const nick = String(v.nick || '머피').slice(0, 24); c.el.querySelector('.cw-nick').textContent = nick;
+    c.el.onclick = function (e) { e.stopPropagation(); window.mwOtherMenu && window.mwOtherMenu(uid, nick, e); };
+    const bub = c.el.querySelector('.mw-rc-bub'), fresh = v.msg && v.msg.text && now - (v.msg.t || 0) < (window.MW_ROOM_MSG_MS || 9000);
+    bub.textContent = fresh ? String(v.msg.text).slice(0, 40) : ''; bub.style.display = fresh ? '' : 'none';
+    const w = Math.round(DH * 141 / 224), pos = v.tc + '|' + v.tr + '|' + t;
+    c.el.style.width = w + 'px'; c.el.style.height = DH + 'px';
+    if (c.pos !== pos) {
+      const gap = c.lastT ? Math.max(120, Math.min(460, now - c.lastT)) : 0; c.lastT = now; c.pos = pos;
+      const x = (v.tc + .5) * t - w / 2, y = (v.tr + 1) * t - DH;
+      c.el.style.transitionDuration = gap ? (gap / 1000).toFixed(2) + 's' : '0s';
+      if (gap) { c.el.classList.add('walking'); clearTimeout(c.stopT); c.stopT = setTimeout(function () { c.el.classList.remove('walking'); }, gap + 140); }
+      c.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)'; c.el.style.zIndex = 10 + v.tr * 10 + 5;
+    }
+  });
+  Object.keys(S.chars).forEach(function (uid) { if (!seen[uid]) { clearTimeout(S.chars[uid].stopT); S.chars[uid].el.remove(); delete S.chars[uid]; } });
+};
+window._mwOpenJoin = function (field) {
+  const R = window._rt, u = auth.currentUser;
+  if (!R || !u || !window._mwIsOpenField(field)) { window._mwOpenLeave(); return; }
+  if (window._mwOpenLive.field === field && window._mwOpenLive.ref) { window._mwOpenSend(); return; }
+  window._mwOpenLeave();
+  const S = window._mwOpenLive, allRef = R.ref(R.db, 'plaza/players/' + field), meRef = R.ref(R.db, 'plaza/players/' + field + '/' + u.uid);
+  S.field = field; S.ref = meRef;
+  try { R.onDisconnect(meRef).remove(); } catch (e) {}
+  S.unsub = R.onValue(allRef, function (snap) { window._mwOpenRender(snap.val() || {}); });
+  window._mwOpenSend();
+  S.beatT = setInterval(function () { if (S.field !== window._curField) { window._mwOpenLeave(); return; } window._mwOpenSend('beat'); }, 25000);
+};
+window._mwOpenPresenceSync = function (key) { if (window._mwIsOpenField(key)) window._mwOpenJoin(key); else window._mwOpenLeave(); };
 (function () {
   const orig = window._charApplyPos;
   if (typeof orig !== 'function' || orig._rlWrapped) return;
-  const wrapped = function () { const r = orig.apply(this, arguments); window._mwRlTick && window._mwRlTick(); return r; };
+  const wrapped = function () { const r = orig.apply(this, arguments); window._mwRlTick && window._mwRlTick(); window._mwOpenTick && window._mwOpenTick(); return r; };
   wrapped._rlWrapped = 1;
   window._charApplyPos = wrapped;
 })();
@@ -29371,6 +29613,8 @@ window._mwRlRender = function (all) {
 
 // ---- 필드가 바뀔 때 붙였다 뗀다 ----
 window.mwRoomFieldSync = function (key) {
+  // 홈의 승인형 roomLive와 공개 필드 presence는 동시에 붙지 않는다.
+  window._mwOpenPresenceSync && window._mwOpenPresenceSync(key);
   if (key !== 'home') { window._mwRlLeave(); return; }
   const u = auth.currentUser; if (!u) return;
   // ★앱을 껐다 켜도 **있던 방으로 돌아간다** (대표 8-20). 나가기를 누른 적이 없으면
@@ -31667,7 +31911,7 @@ window.loadNotificationsFirestore = async () => {
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd">내 <b style="color:#F5C24B">얼굴 커스터마이징</b> 캐릭터가 도착했어요</div>
-            <div style="font-size:11px;color:#444;margin-top:2px">관리자 선물</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">자동 생성 완료</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;
@@ -31679,7 +31923,7 @@ window.loadNotificationsFirestore = async () => {
           </div>
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;line-height:1.6;color:#ddd">얼굴 커스터마이징에 실패했어요 · 만들기 횟수는 돌려드렸어요</div>
-            <div style="font-size:11px;color:#444;margin-top:2px">관리자 선물</div>
+            <div style="font-size:11px;color:#444;margin-top:2px">자동 생성</div>
           </div>
           ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#3D7EFF;flex-shrink:0"></div>' : ''}
         </div>`;
@@ -34112,7 +34356,7 @@ window._mwParkBar = function (on) {
   // ★지역명 진입 배너 — "게임에 들어왔다" 신호(2.4초 떴다 사라짐)
   const bn = document.createElement('div');
   bn.id = 'mw-park-zone';
-  bn.textContent = '우리 동네 공원';
+  bn.textContent = ((window._FIELDS[window._curField] || {}).name || '우리 동네 공원');
   bn.style.cssText = 'position:fixed;top:16%;left:50%;transform:translateX(-50%);z-index:952;pointer-events:none;'
     + "font-family:'Galmuri14',sans-serif;font-size:19px;color:#fff;letter-spacing:3px;white-space:nowrap;"
     + 'text-shadow:0 3px 8px rgba(0,0,0,.85);padding:9px 20px;background:rgba(5,7,12,.48);'
@@ -34127,7 +34371,8 @@ window._mwParkLogInit = function () {
   const R = window._rt;
   if (!R || !auth.currentUser) { list.innerHTML = '<span style="color:#8a93a8;font-size:10.5px">로그인하면 채팅이 보여요</span>'; return; }
   try { window._mwParkLogUn && window._mwParkLogUn(); } catch (e) {}
-  const q = R.query ? R.query(R.ref(R.db, 'plaza/chat/park'), R.limitToLast(40)) : R.ref(R.db, 'plaza/chat/park');
+  const field = window._mwIsOpenField(window._curField) ? window._curField : 'park';
+  const q = R.query ? R.query(R.ref(R.db, 'plaza/chat/' + field), R.limitToLast(40)) : R.ref(R.db, 'plaza/chat/' + field);
   const rows = [];
   const E = window._escHtml || function (t) { return String(t); };
   window._mwParkLogUn = R.onValue(q, function (snap) {
@@ -34610,7 +34855,8 @@ window._mwParkSay = function () {
   if (now - (window._mwParkSayAt || 0) < 2500) { showToast('조금 천천히 보내주세요'); return; }
   const R = window._rt;
   try {
-    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/chat/park'), {
+    const field = window._mwIsOpenField(window._curField) ? window._curField : 'park';
+    if (R && auth.currentUser) R.push(R.ref(R.db, 'plaza/chat/' + field), {
       uid: auth.currentUser.uid, nick: String(window._mwMyNick || '머피').slice(0, 12), text: t, t: now });
   } catch (e) { console.warn('park chat', e); }
   window._mwParkSayAt = now; inp.value = '';
