@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1064';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1065';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17199,38 +17199,42 @@ window._faceReqPicked = async function (e) {
   const files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
   if (!files.length) return;
   const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
-    desc: '<b style="color:#fff">' + files.length + '장</b>으로 만들어요<br>무표정 정면 사진일수록 잘 나와요<br><span style="color:#8a93a8">1~3분 걸려요 · 사진은 만든 뒤 지워요</span>' });
+    desc: '사진 <b style="color:#fff">' + files.length + '장</b>으로 캐릭터를 만들어요<br>완성되면 알림으로 알려드려요<br><span style="color:#8a93a8">정면 사진이 많을수록 더 닮아요</span>' });
   if (!ok) return;
-  // ★올리는 사진마다 **본인 얼굴인지** 대조한다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
-  //   기준 = 얼굴 인증과 같은 프로필 사진들. 얼굴이 없거나 다른 사람이면 그 사진은 뺀다.
-  showToast('얼굴 확인 중…');
+  // 올리는 사진이 본인인지 본다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
+  // ★문턱은 느슨하게(대표 9-07 "내 사진인데도 안 됨, 제한 많이 풀어"): 얼굴을 **찾았고 분명히 다른 사람**(0.68 이상)일 때만 뺀다.
+  //   얼굴을 못 찾은 사진·기준 사진이 없는 경우는 막지 않는다(얼굴 인증이 이미 관문이고, 최종 판정은 서버 채점이 한다).
+  showToast('사진 확인 중');
   let keep = files;
   try {
     await ensureFaceApi();
     const prof = window._cachedProfile || {};
     const cands = [prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean);
     const refs = (await findRefDescriptor(cands), (window._fvRefDescs || []).slice());
-    if (!refs.length) { showToast('프로필 사진에서 기준 얼굴을 못 찾았어요 · 먼저 얼굴 인증을 해주세요'); return; }
-    keep = []; let notMe = 0, noFace = 0;
-    for (const f of files) {
-      let d = null;
-      try { const u = URL.createObjectURL(f); const img = await window._loadImg(u); d = img ? await _descriptorFrom(img, true) : null; URL.revokeObjectURL(u); } catch (e) {}
-      if (!d) { noFace++; continue; }
-      const dist = Math.min.apply(null, refs.map(function (r) { return faceapi.euclideanDistance(d, r); }));
-      if (dist < 0.55) keep.push(f); else notMe++;
+    if (refs.length) {
+      keep = []; let notMe = 0;
+      for (const f of files) {
+        let d = null;
+        try { const u = URL.createObjectURL(f); const img = await window._loadImg(u); d = img ? await _descriptorFrom(img, true) : null; URL.revokeObjectURL(u); } catch (e) {}
+        if (!d) { keep.push(f); continue; }
+        const dist = Math.min.apply(null, refs.map(function (r) { return faceapi.euclideanDistance(d, r); }));
+        if (dist < 0.68) keep.push(f); else notMe++;
+      }
+      if (!keep.length) {
+        const again = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '다시 고르기',
+          desc: '올린 사진이 프로필 사진과 다른 사람으로 보여요<br>본인 정면 사진으로 다시 골라주세요' });
+        if (again && window.faceStartCreate) window.faceStartCreate();
+        return;
+      }
+      if (notMe) showToast('다른 사람으로 보이는 ' + notMe + '장은 빼고 만들어요');
     }
-    if (notMe || noFace) {
-      const why = notMe ? '내 얼굴이 아닌 사진이 ' + notMe + '장 있어요' : '얼굴을 못 찾은 사진이 ' + noFace + '장 있어요';
-      if (!keep.length) { await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '알겠어요', desc: why + '<br><b style="color:#fff">본인 얼굴이 정면으로 나온 사진</b>을 올려주세요' }); return; }
-      showToast(why + ' · 그 사진은 빼고 만들어요');
-    }
-  } catch (e) { console.warn('face check', e); showToast('얼굴 확인에 실패했어요 · 다시 시도해주세요'); return; }
-  showToast('사진 올리는 중…');
+  } catch (e) { console.warn('face check', e); keep = files; }
+  showToast('올리는 중');
   const urls = [];
   for (const f of keep) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
-  if (!urls.length) { showToast('사진 업로드에 실패했어요'); return; }
+  if (!urls.length) { showToast('사진을 올리지 못했어요 · 잠시 후 다시 해주세요'); return; }
   try { await window._faceSubmitUrls(urls); }
-  catch (err) { console.error('faceReq', err); showToast('신청에 실패했어요 · 다시 시도해주세요'); }
+  catch (err) { console.error('faceReq', err); showToast('신청하지 못했어요 · 잠시 후 다시 해주세요'); }
 };
 // 통과한 프레임을 올리고 신청 문서를 만든다. 만들기 횟수 1 차감과 신청 문서를 **한 트랜잭션**으로 —
 // 사진만 올라가고 횟수가 안 빠지거나, 횟수만 빠지고 신청이 안 남는 일이 없게.
@@ -17249,7 +17253,7 @@ window._faceSubmitUrls = async function (urls) {
   });
   if (!r.ok) { showToast('만들기 횟수가 없어요'); return false; }
   window._charState.faceTickets = r.faceTickets; window._charState.faceReqPending = true;
-  showToast('신청됐어요 · 만들어지면 알려드려요');
+  showToast('신청했어요 · 완성되면 알려드려요');
   if (window.charRenderRoster) window.charRenderRoster();
   return true;
 };
