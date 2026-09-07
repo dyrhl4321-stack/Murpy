@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1102';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1103';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -9414,11 +9414,16 @@ window._charSetSaveStatus = function (state) {
 window._charAutoSave = function (immediate) {
   if (!window._charDraft) return;
   if (!window.currentUser) { window._charSetSaveStatus('guest'); return; }
+  const saveUid = window.currentUser.uid;
+  if (String(window._charDraft.body).indexOf(window.FACE_BODY_PREFIX) === 0 && !window._charBodyIsMine(window._CHAR_BODIES[window._charDraft.body])) {
+    window._charSetSaveStatus('error'); return;
+  }
   // 화면상의 내 캐릭터는 즉시 최신으로(저장 완료를 기다리지 않는다)
   if (window._charState) window._charState.character = { ...window._charDraft };
   window._charSetSaveStatus('saving');
   if (window._charSaveT) { clearTimeout(window._charSaveT); window._charSaveT = null; }
   const run = async () => {
+    if ((window.currentUser || {}).uid !== saveUid) return;
     // ★★갈아입은 모습을 **지금 있는 방·필드에 바로 알린다** (대표 8-28: "각 사람들이
     //   꾸민 게 바로바로 연동돼서 최신화되게").
     //   프레즌스는 움직이거나 심장박동이 돌 때만 나간다 — 가만히 서서 옷만 갈아입으면
@@ -17914,12 +17919,14 @@ window.faceAdminGrantTicket = async function (uid, n) {
 };
 // 성공 여부를 돌려준다 — 꾸미기 자동저장(#16)이 '저장됨/실패'를 표시해야 하므로
 window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return false;
+  const saveUid = window.currentUser.uid;
   if (cfg && String(cfg.body).indexOf(window.FACE_BODY_PREFIX) === 0 && !window._charBodyIsMine(window._CHAR_BODIES[cfg.body])) return false;
   if (!window._mwDocReady()) {
     // ★미뤄 두는 것은 **실패가 아니다.** 예전엔 여기서 false 를 돌려줘 꾸미기가
     //   '저장 실패 · 인터넷 확인'을 띄웠다(대표 8-28). 실제로는 곧 저장된다 —
     //   보낸 뒤에 상태를 '저장됨'으로 바꿔 준다.
     window._mwQueueWrite('character', function () {
+      if ((window.currentUser || {}).uid !== saveUid) return;
       window._charPersistCharacter(cfg).then(function (ok) {
         window._charSetSaveStatus && window._charSetSaveStatus(ok ? 'saved' : 'error');
       });
@@ -17931,7 +17938,7 @@ window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return 
     //   묶어야 "내 화면엔 커마인데 피드엔 기본 캐릭터" 같은 어긋남이 안 생긴다.
     //   커마가 아니면 필드를 지운다 — 남겨두면 옛 얼굴로 계속 보인다.
     const sheet = window._charSheetForBody(cfg && cfg.body);
-    await updateDoc(doc(db, 'users', window.currentUser.uid),
+    await updateDoc(doc(db, 'users', saveUid),
       { character: cfg, characterSheet: sheet === null ? deleteField() : sheet, characterUpdatedAt: serverTimestamp() });
     return true;
   } catch (e) { console.error('char save', e); return false; }
