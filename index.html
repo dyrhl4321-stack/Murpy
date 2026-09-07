@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1068';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1069';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -3892,10 +3892,22 @@ window._charFaceBodyDef = function (charId, d, ownerUid) {
     eyes: (d.eyes && typeof d.eyes.y === 'number' && Array.isArray(d.eyes.x) && d.eyes.x.length === 2) ? d.eyes : null
   };
 };
+// 커마 시트 미리 받기(도착 팝업·로스터가 뜰 때 이미 캐시에 있게). 같은 URL 은 한 번만. 3초 넘으면 기다리지 않는다.
+window._facePreload = {};
+window._charPreloadFaceBody = function (def) {
+  if (!def) return Promise.resolve();
+  const urls = [def.src, def.hairOverlay].concat(def.skinUrls ? Object.keys(def.skinUrls).map(function (k) { return def.skinUrls[k]; }) : []).filter(Boolean);
+  const ps = urls.map(function (u) {
+    if (!window._facePreload[u]) window._facePreload[u] = new Promise(function (res) { const im = new Image(); im.onload = im.onerror = function () { res(); }; im.src = window._iv ? window._iv(u) : u; });
+    return window._facePreload[u];
+  });
+  return Promise.race([Promise.all(ps), new Promise(function (res) { setTimeout(res, 3000); })]);
+};
 window._charRegisterFaceBody = function (charId, d, ownerUid) {
   const r = window._charFaceBodyDef(charId, d, ownerUid);
   if (!r) return null;
   window._CHAR_BODIES[r.key] = r.def;
+  if (ownerUid && window.currentUser && ownerUid === window.currentUser.uid) window._charPreloadFaceBody(r.def);   // 내 것만(남의 커마는 그릴 때)
   // 눈 좌표가 없으면 넣지 않는다 — 소비처가 SQ_MG_EYES.human 으로 폴백한다(무궁화 하트눈).
   if (r.eyes && window.SQ_MG_EYES) window.SQ_MG_EYES[r.key] = r.eyes;
   return r.key;
@@ -9292,7 +9304,11 @@ window.charRenderRoster = function () {
     const equipped = cur === key;
     const th = 66, tw = Math.round(th * b.cw / b.ch);
     const lockFilter = unlocked ? "" : (secret ? "filter:brightness(0) opacity(.5);" : "filter:grayscale(1) brightness(.5);");
-    const thumb = "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + (b.thumb || b.src) + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + lockFilter + "\"></div>";
+    // ★커마 몸통은 시트 원본을 깔지 않는다 — 머리 이식 시트는 목선 아래 머리가 잘려 있고 그 끝은 헤어 레이어에 있다(대표 9-07
+    //   "썸네일 뒷머리가 가로로 잘린다"). 머피월드와 같은 _charRenderTo 로 합성해 그린다(아래 grid 채운 뒤 일괄).
+    const thumb = key.indexOf('face:') === 0
+      ? "<div class='mw-face-thumb' data-body='" + key + "' style='height:" + th + "px'></div>"
+      : "<div class='mw-pixelate' style=\"width:" + tw + "px;height:" + th + "px;margin:0 auto;background-image:url('" + (b.thumb || b.src) + "');background-repeat:no-repeat;background-size:" + (tw * 3) + "px " + (th * 4) + "px;background-position:0 0;" + lockFilter + "\"></div>";
     const sub = equipped ? '<span class="mw-sub on">착용중</span>'
       : unlocked ? '<span class="mw-sub">착용</span>'
       : '<span class="mw-sub gold">' + (isHidden ? '히든' : isQuest ? '퀘스트' : (b.tag || '한정')) + '</span>';
@@ -9307,6 +9323,7 @@ window.charRenderRoster = function () {
     if (secret) label = '???';
     return "<button class='mw-card" + (equipped ? " equipped" : "") + "' onclick=\"" + action + "\">" + (unlocked ? "" : window._mwLockBadge) + "<div style='height:66px;display:flex;align-items:flex-end'>" + thumb + "</div><span class='mw-name'>" + label + "</span>" + sub + "</button>";
   }).join('');
+  if (window._charRenderTo) grid.querySelectorAll('.mw-face-thumb').forEach(function (t) { window._charRenderTo(t, 66, { body: t.dataset.body }); });
   // 관리자(패수현) 전용: 히든 연출 강제 테스트 + 실루엣 확인용
   let adm = document.getElementById('mw-hidden-admtest');
   if (typeof isAdmin === 'function' && isAdmin()) {
@@ -24337,6 +24354,8 @@ window.startNotifListener = (uid) => {
               try { await window._charLoadMyFaceChars(window.currentUser.uid); } catch (e) {}
               window._charState.faceReqPending = false;
               if (window.charRenderRoster) window.charRenderRoster();
+              const nb = n.charId && window._CHAR_BODIES['face:' + n.charId];
+              if (nb && window._charPreloadFaceBody) { try { await window._charPreloadFaceBody(nb); } catch (e) {} }   // 시트 받은 뒤 열기(최대 3초)
               if (window.showFacePromo) window.showFacePromo('done', n.charId || null); else showToast('내 캐릭터가 도착했어요');
             })();
           }
