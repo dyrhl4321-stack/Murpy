@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1092';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1093';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17637,6 +17637,16 @@ window._charPersistWardrobe = async (arr) => { if (!window.currentUser) return;
     return;
   }
   try { await updateDoc(doc(db, 'users', window.currentUser.uid), { wardrobe: arr }); } catch (e) {} };
+// ★9-07 NPC 퀘스트 누적 횟수(users.npcQuest.{k}) — 민준이 3회 → 노란 티 보상 판정용. 하루 1회만 부르므로 increment 로 충분.
+window._npcQuestCount = async function (k) {
+  const u = window.currentUser; if (!u) return 0;
+  try {
+    await updateDoc(doc(db, 'users', u.uid), { ['npcQuest.' + k]: increment(1) });
+    const snap = await getDoc(doc(db, 'users', u.uid));
+    const c = ((snap.data() || {}).npcQuest || {})[k];
+    return typeof c === 'number' ? c : 0;
+  } catch (e) { console.warn('npcQuestCount', e); return 0; }
+};
 // 히든 캐릭터 해금 저장/판정. hidden = { cult:{weekday}, somm:true, zombie:true } 맵.
 window.mwHasHidden = function (id) { return !!(window._charState.hidden && window._charState.hidden[id]); };
 window._charPersistHidden = async (map) => { if (!window.currentUser) return;
@@ -34381,6 +34391,7 @@ window._mwNpcClaim = async function (k) {
   try { localStorage.setItem('mwqC_' + n.q.id + '_' + day, '1'); } catch (e) {}
   const p = document.getElementById('mw-npc-talk'); if (p) p.remove();
   if (got) { window.murpyMini && window.murpyMini(3, n.name + ' 퀘스트'); }
+  if (got && n.k === 'kid' && window._npcRewardKid) window._npcRewardKid(n);   // 9-07 민준이 3회 → 노란 티(왼쪽 세션)
   // ★9-06 보너스: 오늘 네 명 퀘스트를 다 깨면 +5 (공원 올클리어). 하루 최대 3×4+5 = 17머피.
   const allDone = window._MW_NPCS.every(function (x) { return window._mwQuestClaimed(x.q.id); });
   if (allDone && got) {
@@ -34393,6 +34404,24 @@ window._mwNpcClaim = async function (k) {
   window._mwParkNpcBadges && window._mwParkNpcBadges();
   window._mwQuestPanel && window._mwQuestPanel(true);
   try { window.sfx && window.sfx.play('correct'); } catch (e) {}
+};
+// ★9-07 민준이 보상: 민준이 퀘스트를 **3번** 완료하면 '민준이 노란 티'(성별 몸통 것) 지급. 대표 승인 에셋(top_yellowtee / top_f_yellowtee).
+//   횟수는 서버 문서(npcQuest.kid)에 누적 — 폰 바꿔도 이어진다. 이미 가진 사람은 안 준다(대표 계정은 미리 지급됨).
+window.MW_KID_TEE_N = 3;
+window._npcRewardKid = async function (n) {
+  if (!window._npcQuestCount) return;
+  const c = await window._npcQuestCount('kid');
+  const g = (window._cachedProfile || {}).gender;
+  const id = (window._charBodyForGender && window._charBodyForGender(g) === 'human_f') ? 'top_f_yellowtee' : 'top_yellowtee';
+  const owned = (window._charState && window._charState.wardrobe) || [];
+  if (c < window.MW_KID_TEE_N) { if (c > 0) setTimeout(function () { showToast('민준이와 ' + (window.MW_KID_TEE_N - c) + '번 더 놀아주면 선물이 있대요'); }, 1200); return; }
+  if (owned.includes(id) || !(window.CHAR_ITEMS || []).some(function (x) { return x.id === id; })) return;
+  window._charState.wardrobe = [...owned, id];
+  if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+  setTimeout(function () {
+    window._mwNpcDialog(n, ['형아 누나 매일 놀아줘서 고마워! 이거 내가 아끼는 노란 티야, 선물!', '옷장에 넣어놨어. 꾸미기에서 입어봐!'], 'close');
+    try { window.sfx && window.sfx.play('correct'); } catch (e) {}
+  }, 1500);
 };
 // ★9-07 대표: 오픈월드 UI 에 퀘스트 목록 — 접었다 폈다, 체크표시. 픽셀 프레임(라운드 금지).
 window._mwQuestPanel = async function (on) {
