@@ -5967,10 +5967,12 @@ window._mwPetParkRoam = function (p, def) {
       }
     }
   }
-  // 어슬렁: 주인 반경 6칸 안을 목적지 삼아 걷고, 도착하면 잠깐 서 있거나 앉는다
+  // 어슬렁: ★9-07 '자유' 는 주인 곁이 아니라 **제자리 반경 5칸**을 돈다(주인 반경으로 잡으면 따라오는 것처럼 보였다).
+  //   너무 멀어지면(14칸 밖) 가끔 주인 쪽으로 한 번 다가와 잃어버리지는 않는다.
   if (now > S.until) {
     if (Math.random() < 0.35) { S.until = now + 2500 + Math.random() * 3000; window._mwPetPlay(p, Math.random() < 0.5 ? 'sit' : 'stand', null); return true; }
-    var dest = pick(me.tc, me.tr, 6);
+    var far = Math.abs(me.tc - p.tc) + Math.abs(me.tr - p.tr) > 14;
+    var dest = far ? pick(Math.round((me.tc + p.tc) / 2), Math.round((me.tr + p.tr) / 2), 3) : pick(p.tc, p.tr, 5);
     if (dest) { p.run = false; S.until = now + 1200; window._mwPetGoto(p, dest, 'stand'); return true; }
   }
   return true;
@@ -8343,10 +8345,14 @@ window._FIELDS = {
 // ★공원에서는 펫이 **산책 모드** — '따라와'(follow)를 자동으로 걸고 계속 갱신한다.
 //   부름은 2분이면 저절로 풀리는 구조(MW_PET_CALL_MS)라, 공원에 있는 동안 4초마다 되건다.
 //   집에서 '따라와' 했을 때의 그 걸음(위로 가면 위로, 아래로 가면 아래로)이 그대로 온다(대표 9-03).
+// ★9-07 대표: "자유 눌러도 다 따라온다" — 이 타이머가 '자유' 펫에게도 따라와를 되걸고 있었다.
+//   기본(설정 없음)=따라오기, '자유'(saved.mode==='free')면 부름을 풀고 _mwPetParkRoam 배회. 산책로·야외 헬스장도 같다.
 setInterval(function () {
-  if (window._curField !== 'park') return;
+  if (!(window._mwIsOpenField && window._mwIsOpenField())) return;
   (window._mwPets || []).forEach(function (p) {
+    var saved = window._mwPetSaved ? window._mwPetSaved(p) : null;
     var c = window._mwPetCallOf ? window._mwPetCallOf(p) : null;
+    if (saved && saved.mode === 'free') { if (c && c.k === 'follow' && !c.uid) p.call = null; return; }
     if (!c || c.k !== 'follow') { p.call = { k: 'follow', uid: '', t: Date.now() }; try { window._mwPetStep && window._mwPetStep(p); } catch (e) {} }
     else { c.t = Date.now(); }
   });
