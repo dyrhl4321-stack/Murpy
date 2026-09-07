@@ -44,4 +44,13 @@ assert.deepEqual(await infer({ naturalWidth: 4032, naturalHeight: 3024 }, true),
 assert.deepEqual(inferredSize, [640, 480]);
 assert.deepEqual([canvas.width, canvas.height], [1, 1], '추론 캔버스가 해제되지 않았다');
 assert.equal(await infer({ width: 0, height: 0 }, true), null);
+const auto = src.match(/window\._charAutoSave = function[\s\S]*?\n\};/)[0];
+const draftWindow = { currentUser: { uid: 'alice' }, FACE_BODY_PREFIX: 'face:',
+  _charDraft: { body: 'face:bob' }, _charState: { character: { body: 'human_f' } },
+  _CHAR_BODIES: { 'face:bob': { owner: 'bob', dynamic: true } },
+  _charBodyIsMine: () => false, _charSetSaveStatus: () => {},
+  _mwRlSend() { throw new Error('Unauthorized avatar broadcast'); } };
+new Function('window', auto)(draftWindow);
+draftWindow._charAutoSave(true);
+assert.equal(draftWindow._charState.character.body, 'human_f', '남의 얼굴을 로컬 내 캐릭터에 반영했다');
 console.log('OK face-request-lifecycle: 중복 차감·성별·계정 전환·추론 메모리 회귀');
