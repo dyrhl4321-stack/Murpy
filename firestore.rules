@@ -19,6 +19,16 @@ service cloud.firestore {
 
     // ===== 유저 프로필 (사진/닉네임 공개 읽기 필요) =====
     match /users/{userId} {
+      // 원격 렌더용 face:*가 로스터에 노출됐던 구버전도 남의 얼굴을 저장할 수 없다.
+      // 프로필/경제만 수정하는 쓰기는 영향받지 않고, 캐릭터·시트 변경 때만 검사한다.
+      function ownsSelectedFace() {
+        let c = request.resource.data.get('character', {});
+        let b = c.get('body', '');
+        return !(b is string) || !b.matches('^face:.*')
+          || (b.matches('^face:[a-zA-Z0-9_-]+$')
+              && exists(/databases/$(database)/documents/users/$(userId)/faceChars/$(b.split(':')[1]))
+              && request.resource.data.get('characterSheet', '') == get(/databases/$(database)/documents/users/$(userId)/faceChars/$(b.split(':')[1])).data.sheetUrl);
+      }
       // ★users 읽기 조이기를 두 번 시도했다가 **두 번 다 되돌렸다** (2026-08-25). 기록으로 남긴다.
       //   ① `read: if signedIn()` → 비가입자 화면에서 이름을 못 읽어 **전부 '머피'로** 떴다
       //   ② `get: true / list: signedIn()` → 인기 캐릭터·인기 룸이 **컬렉션을 통째로 받아
@@ -53,8 +63,8 @@ service cloud.firestore {
       // ★관리자 쓰기 (2026-08-14) — 대표가 특정 계정에 머피를 넣어줘야 한다(베타 보상·이벤트).
       //   isAdmin() 은 대표 이메일 하나로 고정돼 있다(파일 위쪽 헬퍼).
       // ★가입 문서의 초기 credits 상한 (8-31 C2) — 없으면 create 로 1억 머피를 들고 태어날 수 있다
-      allow create: if isAdmin() || (isOwner(userId)
-                    && (!('credits' in request.resource.data) || request.resource.data.credits <= 500));
+      allow create: if ownsSelectedFace() && (isAdmin() || (isOwner(userId)
+                    && (!('credits' in request.resource.data) || request.resource.data.credits <= 500)));
       allow delete: if isAdmin();
       // ★C2 마지막 잠금 (2026-09-02) — 클라는 credits 를 **못 올린다**(감소만).
       //   지급은 전부 Cloud Functions(earn, Admin SDK 라 규칙을 안 거친다)로 이관 완료(8-31 v863),
@@ -69,7 +79,8 @@ service cloud.firestore {
       //   짝을 규칙이 강제하니 "돈 안 내고 커마권만 +1" 이 원천 차단된다.
       //   소모(생성)는 서버가 하지만, 클라가 스스로 줄이는 것은 손해라 허용한다.
       //   ★1000 = index.html 의 window.FACE_TICKET_PRICE. **같이 고칠 것**(규칙은 JS 를 못 읽는다).
-      allow update: if isAdmin() || (isOwner(userId) && (
+      allow update: if (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['character', 'characterSheet']) || ownsSelectedFace())
+        && (isAdmin() || (isOwner(userId) && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits', 'faceTickets'])
           || (!('credits' in resource.data) && request.resource.data.credits is int
               && request.resource.data.credits <= 30
@@ -83,7 +94,7 @@ service cloud.firestore {
               && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['faceTickets'])
                   || (request.resource.data.faceTickets is int
                       && request.resource.data.faceTickets <= (('faceTickets' in resource.data) ? resource.data.faceTickets : 0))))
-      ));
+      )));
 
       // 머피월드 방명록 (싸이월드식) — 작성자=본인 서명, 삭제=방주인/작성자
       match /guestbook/{entryId} {
@@ -409,10 +420,20 @@ service cloud.firestore {
     //   ★status 를 본인이 못 바꾼다 — 'done' 을 스스로 찍어 횟수만 돌려받는 길을 막는다.
     match /faceRequests/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow create, update: if isAdmin() || (isOwner(uid)
-                    && request.resource.data.uid == uid
-                    && request.resource.data.status == 'pending'
-                    && request.resource.data.photoUrl is string);
+      function paidRequest() {
+        return isOwner(uid) && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.t is int
+          && request.resource.data.photoUrl is string
+          && get(/databases/$(database)/documents/users/$(uid)).data.faceTickets >= 1
+          && getAfter(/databases/$(database)/documents/users/$(uid)).data.faceTickets
+              == get(/databases/$(database)/documents/users/$(uid)).data.faceTickets - 1;
+      }
+      allow create: if paidRequest();
+      // Older clients must not replace an in-flight job or create a request without spending a ticket.
+      allow update: if (isAdmin() && request.resource.data.status != 'pending')
+        || (resource.data.status in ['done', 'failed']
+            && request.resource.data.t != resource.data.t && paidRequest());
       allow delete: if isAdmin();
     }
 

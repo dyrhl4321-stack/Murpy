@@ -41,6 +41,10 @@ assert.strictEqual(r.def.kin, 'human', "kin 이 'human' 이 아니면 기존 옷
 assert.strictEqual(r.def.wearable, true, 'wearable 이 아니면 옷을 못 입는다');
 assert.strictEqual(r.def.fixedHair, true, 'fixedHair 가 아니면 머리가 두 겹이 된다');
 assert.strictEqual(r.def.cw, 141); assert.strictEqual(r.def.ch, 224);
+const female = w._charFaceBodyDef('female', { ...DOC, gender: '여' }, 'UID1');
+assert.strictEqual(female.def.kin, 'human_f', '여성 커마에 남성 옷 골격을 적용한다');
+assert.strictEqual(female.def.defaultTop, w._CHAR_BODIES.human_f.defaultTop);
+assert.strictEqual(female.def.defaultBottom, w._CHAR_BODIES.human_f.defaultBottom);
 
 // 3) 주인 판정은 _charBodyIsMine 한 곳으로 간다
 w.currentUser = { uid: 'UID1', email: 'a@b.c' };

@@ -10,9 +10,7 @@ import colorsys, io, os
 
 # 9-03 옛 컴퓨터 절대경로(allys)로 박혀 있어 이 기계에서 못 돌았다 → 파일 위치에서 유도
 M = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(M, "char", "skin")   # ★서버는 pipeline 이 이 전역을 임시폴더로 바꿔 쓴다
-try: os.makedirs(OUT, exist_ok=True)
-except Exception: pass
+OUT = os.path.join(M, "char", "skin")   # CLI 기본값. 서버 요청이 이 값을 변경하면 안 된다.
 
 REF = (0xF5, 0xA9, 0x7D)
 # ★어두울수록 **채도를 낮춘다**. 실제 어두운 피부는 채도가 낮은데, 주황빛 그대로 어둡게만
@@ -58,13 +56,15 @@ class _Log:
     def write(self, t): print(t.rstrip())
 log = _Log()   # ★서버(읽기전용 FS)에서는 파일을 못 연다 — 도구 시절 skin_bake2.txt 대신 stdout
 
-def bake(src, pre, hair=False):
+def bake(src, pre, hair=False, *, out_dir=None):
     """hair=True: 헤어 시트. ★헤어는 **이마 피부를 같이 들고 있다**(추출할 때 머리카락 밑
     그림자진 이마가 딸려 들어왔다). 그래서 몸통만 톤을 바꾸면 이마에 가로 경계가 생긴다
     (대표 8-26: "남자 기본헤어 + 세미리프컷은 이마쪽에서 아직 피부톤 경계짐,
     아이비리그컷만 안 생김" — 아이비리그는 이마 피부가 거의 없는 시트였다).
     그 이마를 지우면 그림자가 사라지니, 몸통과 **같은 변환을 걸어** 색을 맞춘다.
     단 마스크를 타이트한 살색 판정으로 한정한다 — 안 그러면 머리카락 색까지 바뀐다."""
+    destination = os.fspath(out_dir) if out_dir is not None else OUT
+    os.makedirs(destination, exist_ok=True)
     im = Image.open(src).convert("RGBA")
     a = np.array(im)
     H, S, L = rgb2hsl(a)
@@ -113,7 +113,7 @@ def bake(src, pre, hair=False):
         o[..., 1] = np.clip(G * 255, 0, 255)
         o[..., 2] = np.clip(B * 255, 0, 255)
         o[..., 3] = np.where(alpha >= 128, 255, 0)
-        Image.fromarray(o.astype(np.uint8), "RGBA").save(os.path.join(OUT, pre + "_" + name + ".png"))
+        Image.fromarray(o.astype(np.uint8), "RGBA").save(os.path.join(destination, pre + "_" + name + ".png"))
 
 # 9-03 import 만 해도 전체 굽기가 돌던 것을 막았다(face_pipeline 이 bake 를 가져다 쓴다).
 #   인자 없이 돌리면 예전 그대로 전체 굽기, --src/--pre 면 그 시트 하나만.

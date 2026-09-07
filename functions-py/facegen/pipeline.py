@@ -8,7 +8,7 @@ process(...) 한 번이 유저 한 명이다:
 ★한 번에 잘 뽑히는 비율이 1/3(기준 프롬프트)~3/3(개정 프롬프트, 9-06 백테스트)라 재시도가 곧 품질이다.
   대표 손을 하나도 안 거치는 게 목적(대표 9-06: "그냥 자동으로 다 해야 해").
 """
-import os, io, json
+import os, io, json, time
 from PIL import Image
 from . import grid, hair, eyes, score, skin
 from .gen import generate
@@ -20,14 +20,18 @@ def align_base(gender):
     그걸 기준으로 맞추면 11px 어긋나고 채점이 전부 '옷바뀜'으로 나온다(9-06 로컬 하네스 실측)."""
     return os.path.join(ASSETS, 'walk_female.png' if gender == '여' else 'walk.png')
 
-def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_fn=None, base_path=None):
+def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_fn=None, base_path=None, deadline=None):
     """base_png = 생성 참고용 시트(제미나이에 첨부) · base_path = 정합/채점 기준 앱 시트(기본 남성 walk.png).
     돌려주는 값 = dict(sheet, hair, skins{t:path}, eyes, verdict, attempts, scores[]). 파일은 out_dir 아래."""
     os.makedirs(out_dir, exist_ok=True)
     base_path = base_path or align_base('남')
-    gen_fn = gen_fn or (lambda i: generate(key, base_png, selfies, prompt))
+    gen_fn = gen_fn or (lambda i: generate(key, base_png, selfies, prompt,
+        timeout=max(1, min(180, deadline - time.monotonic() - 35)) if deadline else 300))
     best = None; scores = []
     for i in range(attempts):
+        if deadline and deadline - time.monotonic() < 45:
+            scores.append({'error': 'generation time budget exhausted'})
+            break
         raw_path = os.path.join(out_dir, 'raw_%d.png' % (i + 1))
         try:
             data = gen_fn(i)
@@ -58,9 +62,8 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
     #   실패로 올리면 서버가 횟수를 환불하고 알림을 보낸다. 유저는 다시 신청하면 된다.
     if best['bad'] > 0:
         raise RuntimeError('품질 검사 통과 못 함(%d회): %s' % (len(scores), best['verdict']))
-    # 피부톤 5종 — skin 모듈은 전역 OUT 에 쓴다(도구 시절 관례). 임시폴더로 돌려 쓴다.
-    skin.OUT = out_dir
-    skin.bake(best['ai'], 'skin')
+    # 요청별 목적지를 인자로 고정한다. 모듈 전역을 바꾸면 동시 생성한 다른 얼굴이 섞인다.
+    skin.bake(best['ai'], 'skin', out_dir=out_dir)
     skins = {t: os.path.join(out_dir, 'skin_%s.png' % t) for t in ('t1', 't2', 't4', 't5', 't6')}
     skins = {t: p for t, p in skins.items() if os.path.exists(p)}
     ey = eyes.detect(best['ai'])

@@ -3873,6 +3873,7 @@ window._CHAR_BODIES = {
 window.FACE_BODY_PREFIX = 'face:';
 window._charFaceBodyDef = function (charId, d, ownerUid) {
   if (!charId || !d || !d.sheetUrl) return null;   // 시트가 없으면 빈 캐릭터가 된다 — 아예 안 만든다
+  const female = d.kin === 'human_f' || String(d.gender || '').indexOf('여') === 0;
   return {
     key: window.FACE_BODY_PREFIX + charId,
     def: {
@@ -3881,9 +3882,9 @@ window._charFaceBodyDef = function (charId, d, ownerUid) {
       skinBase: null,                    // 경로 조립 대신 아래 skinUrls 를 쓴다
       skinUrls: (d.skinUrls && typeof d.skinUrls === 'object') ? d.skinUrls : null,
       cw: 141, ch: 224,
-      wearable: true, fixedHair: true, kin: 'human',
+      wearable: true, fixedHair: true, kin: female ? 'human_f' : 'human',
       tag: '커마',
-      defaultTop: 'top_basic_tee', defaultBottom: 'bottom_basic_shorts',
+      defaultTop: female ? 'top_f_basic_tee' : 'top_basic_tee', defaultBottom: female ? 'bottom_f_basic_shorts' : 'bottom_basic_shorts',
       owner: ownerUid || null, dynamic: true,
       // 긴 머리용 헤어 레이어(상의 위에 한 번 더 그림). 짧은 머리는 없어도 된다.
       hairOverlay: (typeof d.hairUrl === 'string' && d.hairUrl) ? d.hairUrl : null,
@@ -3896,7 +3897,8 @@ window._charFaceBodyDef = function (charId, d, ownerUid) {
 window._facePreload = {};
 window._charPreloadFaceBody = function (def) {
   if (!def) return Promise.resolve();
-  const urls = [def.src, def.hairOverlay].concat(def.skinUrls ? Object.keys(def.skinUrls).map(function (k) { return def.skinUrls[k]; }) : []).filter(Boolean);
+  // 피부톤 5종을 로그인·인증 중 한꺼번에 디코딩하지 않는다. 실제 선택 톤은 렌더 시 로드.
+  const urls = [def.src, def.hairOverlay].filter(Boolean);
   const ps = urls.map(function (u) {
     if (!window._facePreload[u]) window._facePreload[u] = new Promise(function (res) { const im = new Image(); im.onload = im.onerror = function () { res(); }; im.src = window._iv ? window._iv(u) : u; });
     return window._facePreload[u];
@@ -3925,12 +3927,12 @@ window._charSheetForBody = function (bodyKey) {
 // ★owner 를 null 로 둔다 — 남의 몸통이 내 로스터(charRenderRoster)에 뜨면 안 된다.
 // ★이미 있는 키는 절대 덮지 않는다. 내 커마를 남의 캐시로 갈아치우면 내 얼굴이 바뀐다.
 // ★시트가 없으면(구버전 유저·URL 유실) 'human' 으로 폴백한다 — 빈 화면보다 기본 캐릭터가 낫다.
-window._charEnsureFaceBody = function (bodyKey, sheetUrl) {
+window._charEnsureFaceBody = function (bodyKey, sheetUrl, gender) {
   if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return bodyKey || 'human';
   if (window._CHAR_BODIES[bodyKey]) return bodyKey;
   if (!sheetUrl) return 'human';
   const charId = String(bodyKey).slice(window.FACE_BODY_PREFIX.length);
-  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl }, null) || 'human';
+  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl, gender: gender }, null) || 'human';
 };
 // 남의 커마 몸통을 한 번에 등록한다. users 전체를 읽는 공통 경로(_usersAll)에 걸어 두면
 // ★그리는 자리를 한 곳도 안 고쳐도 된다 — 표에 이미 있으니 기존 렌더가 그대로 그린다.
@@ -3942,7 +3944,7 @@ window._charRegisterFaceBodiesFrom = function (snap) {
     const d = s.data() || {};
     const key = d.character && d.character.body;
     if (key && String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && d.characterSheet) {
-      if (window._charEnsureFaceBody(key, d.characterSheet) === key) n++;
+      if (window._charEnsureFaceBody(key, d.characterSheet, d.gender) === key) n++;
     }
   });
   return n;
@@ -4009,13 +4011,14 @@ window._faceEntryState = function (tickets, hasChar, faceVerified, hasPhoto, pen
 // 로스터 카드를 눌렀을 때. ★새 화면 없이 기존 확인창(murpyConfirm) 하나로 상황을 설명하고 보낸다 —
 //   헬토리 카드 → 코드 모달과 같은 문법. 구매는 여기서 한 번만 확인하고 faceBuyTicket 은 확인을 건너뛴다.
 window.faceEntryTap = async function () {
+  if (window._faceCreateBusy) { showToast(window._faceCreateStatus || '사진을 준비하고 있어요'); return; }
   const prof = window._cachedProfile || {};
   const hasPhoto = !!([prof.photoURL || (window.currentUser || {}).photoURL].concat(prof.photos || [], prof.workoutPhotos || []).filter(Boolean).length);
   const hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
   const st = window._faceEntryState(window.faceTickets(), hasChar, !!prof.faceVerified, hasPhoto, !!(window._charState || {}).faceReqPending);
   if (st.mode === 'pending') {
     await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '확인',
-      desc: '나노바나나 Pro가 자동으로 만들고 있어요<br>완료되면 바로 캐릭터 목록에 들어와요' });
+      desc: '캐릭터를 만들고 있어요<br>다른 화면을 이용해도 괜찮아요. 완료되면 알려드려요' });
     return;
   }
   if (st.mode === 'buy') {
@@ -8995,6 +8998,9 @@ window._mwRepairStage = function () {
   try { window.mwRenderFurn && window.mwRenderFurn(); } catch (e) { console.warn('stage room repair', e); }
 };
 window.renderCharSpace = function () {
+  // 중간 예외가 나도 복구 예약까지 도달할 수 있도록 진입 시 먼저 예약한다.
+  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 80);
+  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 900);
   window._charDraft = { ...(window.getMyCharacter ? window.getMyCharacter() : window.CHAR_DEFAULT) };
   if (!window._charDraft.body) window._charDraft.body = 'human';
   // ★없어진 헤어 id(옛 'hair_short' 등)를 들고 있으면 빡빡이로 보인다 → 몸통 기본헤어로 보정
@@ -9034,9 +9040,6 @@ window.renderCharSpace = function () {
   if (_hub) _hub.style.display = '';
   window.charHubTab('me');   // 기본 진입 = 내 캐릭터 탭
   if (room && room.animate) room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' }); // 게임 진입 연출
-  // 첫 프레임과 이미지 디코딩 뒤 두 번 확인. 정상 기기에서는 같은 값을 다시 적용할 뿐이다.
-  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 80);
-  setTimeout(function () { window._mwRepairStage && window._mwRepairStage(); }, 900);
 };
 if (!window._charKeyBound) {
   window._charKeyBound = true;
@@ -9575,6 +9578,10 @@ window.charRenderRoster = function () {
       + (_st.mode === 'buy' ? window._mwLockBadge : '')
       + "<div style='height:66px;display:flex;align-items:flex-end'>" + _sil + "</div>"
       + "<span class='mw-name'>" + _st.label + "</span><span class='mw-sub gold'>" + _st.desc + "</span></button>");
+    const progress = document.createElement('div'); progress.id = 'face-create-progress'; progress.setAttribute('role', 'status');
+    progress.style.cssText = 'grid-column:1/-1;font-size:12px;line-height:1.6;color:#8a93a8;padding:8px 0';
+    progress.textContent = window._faceCreateStatus || (_st.mode === 'pending' ? '캐릭터 생성 중 · 다른 화면을 이용해도 완료되면 알려드려요' : '');
+    progress.hidden = !progress.textContent; grid.appendChild(progress);
   }
   // 관리자 전용: 커마 캐릭터 지급 (서버 자가생성 전까지의 지급 경로)
   let fadm = document.getElementById('mw-face-admin');
@@ -12059,6 +12066,7 @@ function openModal(id) {
 }
 function closeModal(id) {
   const el = document.getElementById(id); if (!el) return;
+  if (id === 'face-hair-modal' && el._cancelChoice) el._cancelChoice();
   el.classList.remove('open');   // 시트 슬라이드다운 + 스크림 페이드아웃
   if (_FULL_MODALS.indexOf(id) >= 0) _lockBodyScroll(false);
   el._closeT = setTimeout(() => { el.style.display = 'none'; }, 320);
@@ -17068,8 +17076,9 @@ async function renderHomeLiveBar() {
 // ===== AI 얼굴 인증 (face-api.js, 브라우저 내) =====
 const FACE_LIB = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js';
 const FACE_MODELS = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
-let _faceApiReady = false;
+let _faceApiReady = false, _faceApiLoading = null;
 let _fvStream = null;
+let _fvSession = 0;
 
 function _loadScript(src) {
   return new Promise((res, rej) => {
@@ -17080,42 +17089,51 @@ function _loadScript(src) {
 }
 async function ensureFaceApi() {
   if (_faceApiReady) return;
-  if (!window.faceapi) await _loadScript(FACE_LIB);
-  await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS);
-  await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS);
-  await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS);
-  _faceApiReady = true;
+  if (!_faceApiLoading) _faceApiLoading = (async function () {
+    if (!window.faceapi) await _loadScript(FACE_LIB);
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS);
+    _faceApiReady = true;
+  })().finally(function () { _faceApiLoading = null; });
+  return _faceApiLoading;
 }
 function _loadImg(url) {
   return new Promise((res, rej) => {
     const im = new Image();
+    const timer = setTimeout(() => { im.onload = im.onerror = null; im.src = ''; rej(new Error('img load timeout')); }, 15000);
     im.crossOrigin = 'anonymous';
-    im.onload = () => res(im);
-    im.onerror = () => rej(new Error('img load fail'));
+    im.onload = () => { clearTimeout(timer); res(im); };
+    im.onerror = () => { clearTimeout(timer); rej(new Error('img load fail')); };
     im.src = url;
   });
 }
 async function _descriptorFrom(input, ref) {
+  // 고해상도 사진 전체를 추론 텐서로 올리지 않고 640px 캔버스 한 장만 사용한다.
+  const iw = input.videoWidth || input.naturalWidth || input.width, ih = input.videoHeight || input.naturalHeight || input.height;
+  if (!(iw > 0 && ih > 0)) return null;
+  const canvas = document.createElement('canvas'), ratio = Math.min(1, 640 / Math.max(iw, ih));
+  canvas.width = Math.max(1, Math.round(iw * ratio)); canvas.height = Math.max(1, Math.round(ih * ratio));
+  canvas.getContext('2d').drawImage(input, 0, 0, canvas.width, canvas.height);
+  try {
   // ★한 번(416px·0.4)만 보고 포기하면 옛날 사진·작은 얼굴·어두운 사진을 놓쳐 "등록된 사진에서 얼굴을 찾지
   //   못했어요"가 반복된다(대표 9-06, 본인 사진인데도). 크기 3단계 × 기준 2단계로 다시 보고,
-  //   기준 사진(ref)은 여러 얼굴이면 **가장 큰 얼굴**을 쓴다(단체 사진). 웹캠 프레임은 한 명만.
+  //   단체 사진도 한 얼굴씩만 분석해 모바일 메모리 급증을 피한다.
   const tries = ref ? [[416, 0.4], [608, 0.4], [320, 0.4], [608, 0.3]] : [[416, 0.4], [416, 0.3]];
   for (const [inputSize, scoreThreshold] of tries) {
     const opt = new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold });
     try {
       if (ref) {
-        const all = await faceapi.detectAllFaces(input, opt).withFaceLandmarks().withFaceDescriptors();
-        if (all && all.length) {
-          all.sort((a, b) => (b.detection.box.width * b.detection.box.height) - (a.detection.box.width * a.detection.box.height));
-          return all[0].descriptor;
-        }
+        const det = await faceapi.detectSingleFace(canvas, opt).withFaceLandmarks().withFaceDescriptor();
+        if (det) return det.descriptor;
       } else {
-        const det = await faceapi.detectSingleFace(input, opt).withFaceLandmarks().withFaceDescriptor();
+        const det = await faceapi.detectSingleFace(canvas, opt).withFaceLandmarks().withFaceDescriptor();
         if (det) return det.descriptor;
       }
     } catch (e) {}
   }
   return null;
+  } finally { canvas.width = 1; canvas.height = 1; }
 }
 // URL 한 장에서 얼굴 벡터 추출: 직접 로드 → 실패/타인트 시 weserv 프록시 폴백
 async function _descFromUrl(url) {
@@ -17126,6 +17144,7 @@ async function _descFromUrl(url) {
     try { img = await _loadImg(v); } catch (e) { continue; }
     loaded = true;
     try { const d = await _descriptorFrom(img, true); if (d) return d; } catch (e) {}
+    finally { img.src = ''; img = null; }
   }
   // ★왜 못 찾았는지 남긴다 — "불러오기 실패"(CORS·주소 죽음)와 "얼굴 없음"(탐지 실패)은 처방이 다르다(대표 9-06)
   window._fvRefStats = window._fvRefStats || { loadFail: 0, noFace: 0 };
@@ -17134,13 +17153,17 @@ async function _descFromUrl(url) {
 }
 // 후보 사진들을 순회하며 얼굴 잡히는 첫 사진을 기준으로
 async function findRefDescriptor(urls) {
+  const uid = (window.currentUser || {}).uid;
+  const searchId = window._faceRefSearchId = (window._faceRefSearchId || 0) + 1;
   window._fvRefStats = { loadFail: 0, noFace: 0, total: urls.length };
   // ★첫 사진 하나만 기준으로 삼으면 그 한 장이 옛 사진이거나 엉뚱한 얼굴일 때 "일치도 0%"(대표 9-06).
-  //   전부 모아 두고 촬영 때 가장 가까운 것과 비교한다. 최대 8장.
+  //   중복 URL을 빼고 최대 8장 중 유효 기준 2개까지만 모아 비교한다.
   const all = [];
-  for (const u of urls.slice(0, 8)) {
+  for (const u of [...new Set(urls)].slice(0, 8)) {
     const d = await _descFromUrl(u);
+    if ((window.currentUser || {}).uid !== uid || window._faceRefSearchId !== searchId) return null;
     if (d) all.push(d);
+    if (all.length >= 2) break;
   }
   window._fvRefDescs = all;
   return all.length ? all[0] : null;
@@ -17407,8 +17430,12 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 // 내 커마 캐릭터를 읽어 몸통 표에 꽂는다. 실패해도 앱은 그냥 돈다(기존 몸통으로 보인다).
 // ★읽기 실패를 삼키는 이유 = 커마는 코스메틱이다. 여기서 던지면 로그인 전체가 멈춘다.
 window._charState.faceChars = {};
-window._charLoadMyFaceChars = async function (uid) {
+window._charLoadMyFaceChars = async function (uid, profileGender) {
   if (!uid || (window.currentUser || {}).uid !== uid) return 0;
+  if (!profileGender) {
+    try { const p = await getDocFromServer(doc(db, 'users', uid)); profileGender = p.exists() ? p.data().gender : ''; } catch (e) {}
+    if ((window.currentUser || {}).uid !== uid) return 0;
+  }
   // 계정이 바뀌면 이전 계정에서 동적으로 꽂은 face:* 몸통을 전부 걷는다.
   // faceChars 서브컬렉션은 uid별인데 전역 _CHAR_BODIES 는 세션 공용이라, 이 정리가 없으면
   // A 계정 얼굴이 B 계정 로스터/렌더에 남아 "다른 사람 캐릭터가 들어왔다"처럼 보인다.
@@ -17433,6 +17460,8 @@ window._charLoadMyFaceChars = async function (uid) {
   let n = 0;
   snap.forEach(function (s) {
     const d = s.data() || {};
+    // Legacy documents lacked body-family metadata. Only use this owner's verified profile, never another cached account.
+    if (!d.gender && !d.kin && profileGender) d.gender = profileGender;
     window._charState.faceChars[s.id] = d;
     if (window._charRegisterFaceBody(s.id, d, uid)) n++;
   });
@@ -17520,15 +17549,18 @@ window._faceChooseHair = function () {
     const old = document.getElementById('face-hair-modal'); if (old) old.remove();
     const el = document.createElement('div'); el.id = 'face-hair-modal'; el.className = 'modal-overlay';
     el.innerHTML = '<div class="modal-sheet"><div style="font-size:18px;font-weight:800;margin-bottom:6px">머리 모양</div>'
-      + '<div style="font-size:12.5px;color:#8a93a8;line-height:1.55;margin-bottom:14px">나노바나나 Pro가 고른 모양을 12칸 모두 같게 만들어요</div>'
+      + '<div style="font-size:12.5px;color:#8a93a8;line-height:1.55;margin-bottom:14px">캐릭터에 적용할 머리 모양을 골라주세요</div>'
       + '<div id="face-hair-options" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>'
       + '<button id="face-hair-cancel" style="width:100%;margin-top:10px;padding:11px;background:none;border:none;color:#666;font:600 13px inherit">취소</button></div>';
     document.body.appendChild(el);
     const done = function (v) {
+      if (!el._cancelChoice) return;
+      el._cancelChoice = null;
       try { closeModal('face-hair-modal'); } catch (e) {}
       setTimeout(function () { el.remove(); }, 180);
       resolve(v);
     };
+    el._cancelChoice = function () { el._cancelChoice = null; resolve(null); setTimeout(function () { el.remove(); }, 340); };
     const box = el.querySelector('#face-hair-options');
     window._FACE_HAIR_PREFS.forEach(function (x) {
       const b = document.createElement('button');
@@ -17543,6 +17575,7 @@ window._faceChooseHair = function () {
   });
 };
 window.faceStartCreate = function () {
+  if (window._faceCreateBusy) return;
   if (window.faceTickets() < 1) { showToast('만들기 횟수가 없어요'); return; }
   let inp = document.getElementById('face-req-input');
   if (!inp) {
@@ -17552,7 +17585,21 @@ window.faceStartCreate = function () {
   }
   inp.value = ''; inp.click();
 };
+window._faceProgress = function (message) {
+  window._faceCreateStatus = message || '';
+  const el = document.getElementById('face-create-progress');
+  if (el) { el.textContent = message || ''; el.hidden = !message; }
+};
 window._faceReqPicked = async function (e) {
+  if (window._faceCreateBusy) return;
+  window._faceCreateBusy = true;
+  try { await window._faceReqProcess(e); }
+  catch (err) { console.warn('face upload', err); showToast('사진 준비에 실패했어요 · 다시 선택해주세요'); }
+  finally { window._faceCreateBusy = false; window._faceProgress(''); if (window.charRenderRoster) window.charRenderRoster(); }
+};
+window._faceReqProcess = async function (e) {
+  const requestUid = (window.currentUser || {}).uid;
+  if (!requestUid) return;
   const files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
   if (!files.length) return;
   const hairPref = await window._faceChooseHair();
@@ -17560,11 +17607,12 @@ window._faceReqPicked = async function (e) {
   const hp = window._FACE_HAIR_PREFS.find(function (x) { return x.k === hairPref; }) || window._FACE_HAIR_PREFS[0];
   const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
     desc: '사진 <b style="color:#fff">' + files.length + '장</b> · <b style="color:#F5C24B">' + hp.t + '</b><br>자동 생성이 끝나면 바로 캐릭터 목록에 들어와요<br><span style="color:#8a93a8">정면 사진이 많을수록 더 닮아요</span>' });
-  if (!ok) return;
+  if (!ok || (window.currentUser || {}).uid !== requestUid) return;
   // 올리는 사진이 본인인지 본다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
   // ★문턱은 느슨하게(대표 9-07 "내 사진인데도 안 됨, 제한 많이 풀어"): 얼굴을 **찾았고 분명히 다른 사람**(0.68 이상)일 때만 뺀다.
   //   얼굴을 못 찾은 사진·기준 사진이 없는 경우는 막지 않는다(얼굴 인증이 이미 관문이고, 최종 판정은 서버 채점이 한다).
   showToast('사진 확인 중');
+  window._faceProgress('사진 확인 중 · 잠시만 기다려주세요');
   let keep = files;
   try {
     await ensureFaceApi();
@@ -17575,7 +17623,9 @@ window._faceReqPicked = async function (e) {
       keep = []; let notMe = 0;
       for (const f of files) {
         let d = null;
-        try { const u = URL.createObjectURL(f); const img = await window._loadImg(u); d = img ? await _descriptorFrom(img, true) : null; URL.revokeObjectURL(u); } catch (e) {}
+        const u = URL.createObjectURL(f); let img;
+        try { img = await _loadImg(u); d = img ? await _descriptorFrom(img, true) : null; } catch (e) {}
+        finally { if (img) img.src = ''; URL.revokeObjectURL(u); }
         if (!d) { keep.push(f); continue; }
         const dist = Math.min.apply(null, refs.map(function (r) { return faceapi.euclideanDistance(d, r); }));
         if (dist < 0.68) keep.push(f); else notMe++;
@@ -17585,15 +17635,21 @@ window._faceReqPicked = async function (e) {
         //   경고만 하고 '그래도 만들기'면 고른 사진 전부로 진행. 취소면 앨범을 다시 연다.
         const go = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '그래도 만들기', cancelText: '다시 고르기',
           desc: '프로필 사진과 다른 사람처럼 보여요<br>본인 사진이 맞다면 그대로 만들어요' });
-        if (!go) { if (window.faceStartCreate) window.faceStartCreate(); return; }
+        if (!go) { showToast('커스터마이징 카드를 눌러 사진을 다시 골라주세요'); return; }
         keep = files;
+        notMe = 0;
       }
       if (notMe) showToast('다른 사람으로 보이는 ' + notMe + '장은 빼고 만들어요');
     }
   } catch (e) { console.warn('face check', e); keep = files; }
   showToast('올리는 중');
   const urls = [];
-  for (const f of keep) { try { urls.push(await window.mwUploadImage(f, 'facereq')); } catch (err) { console.warn('facereq upload', err); } }
+  for (let i = 0; i < keep.length; i++) {
+    if ((window.currentUser || {}).uid !== requestUid) return;
+    window._faceProgress('사진 올리는 중 · ' + (i + 1) + '/' + keep.length);
+    try { urls.push(await window.mwUploadImage(keep[i], 'facereq')); } catch (err) { console.warn('facereq upload', err); }
+  }
+  if ((window.currentUser || {}).uid !== requestUid) return;
   if (!urls.length) { showToast('사진을 올리지 못했어요 · 잠시 후 다시 해주세요'); return; }
   try { await window._faceSubmitUrls(urls, hairPref); }
   catch (err) { console.error('faceReq', err); showToast('신청하지 못했어요 · 잠시 후 다시 해주세요'); }
@@ -17607,6 +17663,8 @@ window._faceSubmitUrls = async function (urls, hairPref) {
   hairPref = window._faceHairPref(hairPref);
   const r = await runTransaction(db, async tx => {
     const uref = doc(db, 'users', uid); const snap = await tx.get(uref);
+    const requestRef = doc(db, 'faceRequests', uid), previous = await tx.get(requestRef);
+    if (previous.exists() && ['pending', 'working'].includes(previous.data().status)) return { ok: false, pending: true };
     const ud = snap.exists() ? (snap.data() || {}) : {};
     const have = (typeof ud.faceTickets === 'number') ? ud.faceTickets : 0;
     if (have < 1) return { ok: false };
@@ -17616,7 +17674,8 @@ window._faceSubmitUrls = async function (urls, hairPref) {
       photoUrl: urls[0], photos: urls.slice(1), hairPref: hairPref, status: 'pending', t: Date.now() });
     return { ok: true, faceTickets: have - 1 };
   });
-  if (!r.ok) { showToast('만들기 횟수가 없어요'); return false; }
+  if ((window.currentUser || {}).uid !== uid) return !!r.ok;
+  if (!r.ok) { showToast(r.pending ? '이미 만들고 있어요 · 완료되면 알려드려요' : '만들기 횟수가 없어요'); return false; }
   window._charState.faceTickets = r.faceTickets; window._charState.faceReqPending = true;
   showToast('자동으로 만들고 있어요 · 끝나면 바로 알려드려요');
   if (window.charRenderRoster) window.charRenderRoster();
@@ -23349,7 +23408,7 @@ window.ensureCreditsInit = async (uid) => {
           try { await updateDoc(ref, { faceTicketsSeen: have }); } catch (e) {}
         }
       }
-      try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('faceChars', e); }
+      try { await window._charLoadMyFaceChars(uid, d.gender); } catch (e) { console.warn('faceChars', e); }
       if (!d.character) { try { await setDoc(ref, { character: window._charState.character, wardrobe: window._charState.wardrobe }, { merge: true }); } catch (e) {} }
       // 기존 유저 성별 몸통 백필. 여캐가 생기기 전에 가입한 여성은 남캐 몸으로 남아 있다.
       // 헬토리·히든을 골라둔 사람은 건드리지 않는다(본인 선택이므로).
@@ -25229,6 +25288,7 @@ window.faceVerifyAddPhoto = function () {
 };
 window.startFaceVerify = async function() {
   if (window._notMember()) { requireLogin('프로필 인증은 로그인이 필요해요'); return; }
+  const session = ++_fvSession;
   const prof = window._cachedProfile || {};
   const candidates = [prof.photoURL || window.currentUser.photoURL, ...(prof.photos || []), ...(prof.workoutPhotos || [])].filter(Boolean);
   if (!candidates.length) {
@@ -25240,15 +25300,12 @@ window.startFaceVerify = async function() {
   window._fvRefDesc = null; window._fvRefDescs = []; window._fvSelfRef = false;
   _fvCaptureEnabled(false);
   openModal('face-verify-modal');
-  setFvStatus('카메라 준비 중...');
-  try {
-    _fvStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-    document.getElementById('fv-video').srcObject = _fvStream;
-  } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
   setFvStatus('AI 모델 불러오는 중... (최초 1회)');
   try { await ensureFaceApi(); } catch (e) { setFvStatus('모델 로딩 실패. 잠시 후 다시 시도해주세요'); return; }
+  if (session !== _fvSession) return;
   setFvStatus('내 사진들에서 얼굴 찾는 중...');
   window._fvRefDesc = await findRefDescriptor(candidates);
+  if (session !== _fvSession) return;
   if (!window._fvRefDesc) {
     // ★막다른 길을 없앤다(대표 9-06: 정면 사진을 올렸는데도 계속 못 찾음). 사진을 더 올리라는 대신
     //   **지금 웹캠으로 찍은 사진을 프로필에 등록하고 그걸 기준으로 인증**한다 — 한 번에 끝난다.
@@ -25260,36 +25317,51 @@ window.startFaceVerify = async function() {
     if (ok) { window._fvMode = mode; window.startFaceSelfRef(); }
     return;
   }
+  setFvStatus('카메라 준비 중...');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } } });
+    if (session !== _fvSession) { stream.getTracks().forEach(t => t.stop()); return; }
+    if (_fvStream) _fvStream.getTracks().forEach(t => t.stop());
+    _fvStream = stream; document.getElementById('fv-video').srcObject = stream;
+  } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
   setFvStatus('정면을 원 안에 맞추고 [촬영하고 인증]을 눌러요');
   _fvCaptureEnabled(true);
 };
 
 window.startFaceSelfRef = async function () {
+  const session = ++_fvSession;
   window._fvRefDesc = null; window._fvSelfRef = true;
   _fvCaptureEnabled(false);
   openModal('face-verify-modal');
   setFvStatus('카메라 준비 중...');
   try {
-    _fvStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } } });
+    if (session !== _fvSession) { stream.getTracks().forEach(t => t.stop()); return; }
+    if (_fvStream) _fvStream.getTracks().forEach(t => t.stop());
+    _fvStream = stream;
     document.getElementById('fv-video').srcObject = _fvStream;
   } catch (e) { setFvStatus('카메라 권한을 허용해주세요'); return; }
   try { await ensureFaceApi(); } catch (e) { setFvStatus('모델 로딩 실패. 잠시 후 다시 시도해주세요'); return; }
+  if (session !== _fvSession) return;
   const cap = document.getElementById('fv-caption'); if (cap) cap.textContent = '이 사진이 프로필 사진으로 등록되고, 인증 기준이 돼요. 정면을 밝은 곳에서 찍어주세요';
   const cb = document.getElementById('fv-capture'); if (cb) cb.textContent = window._fvMode === 'create' ? '찍고 등록·신청' : '찍고 등록·인증';
   setFvStatus('정면을 원 안에 맞추고 촬영을 눌러요');
   _fvCaptureEnabled(true);
 };
 window.captureFaceVerify = async function() {
+  const session = _fvSession, uid = (window.currentUser || {}).uid;
   const v = document.getElementById('fv-video');
   if (!v || !v.videoWidth || (!window._fvRefDesc && !window._fvSelfRef)) return;
   _fvCaptureEnabled(false);
   setFvStatus('얼굴 분석 중...');
   let desc = null;
   try { desc = await _descriptorFrom(v); } catch (e) {}
+  if (session !== _fvSession || (window.currentUser || {}).uid !== uid) return;
   if (!desc) { setFvStatus('얼굴이 잘 안 보여요. 정면으로 다시 찍어주세요'); _fvCaptureEnabled(true); return; }
   if (window._fvSelfRef) {
     // 자기 기준 등록: 이 프레임을 프로필 사진으로 올리고, 이 얼굴을 기준으로 삼는다 → 이어서 인증(또는 신청)
     if (!(await window._fvRegisterSelf(v))) return;
+    if (session !== _fvSession || (window.currentUser || {}).uid !== uid) return;
     window._fvRefDesc = desc; window._fvRefDescs = [desc]; window._fvSelfRef = false;
   }
   const refs = (window._fvRefDescs && window._fvRefDescs.length) ? window._fvRefDescs : [window._fvRefDesc];
@@ -25303,15 +25375,19 @@ window.captureFaceVerify = async function() {
       return;
     }
     try {
-      await setDoc(doc(db, 'users', window.currentUser.uid), { faceVerified: true, faceVerifiedAt: serverTimestamp() }, { merge: true });
+      // 추론 성공 후 카메라 버퍼를 즉시 해제하고 저장/로스터 렌더를 진행한다.
+      if (_fvStream) { _fvStream.getTracks().forEach(t => t.stop()); _fvStream = null; }
+      v.srcObject = null;
+      await setDoc(doc(db, 'users', uid), { faceVerified: true, faceVerifiedAt: serverTimestamp() }, { merge: true });
+      if (session !== _fvSession || (window.currentUser || {}).uid !== uid) return;
       if (window._cachedProfile) window._cachedProfile.faceVerified = true;
       setFvStatus('인증 완료! 일치도 ' + matchPct + '%');
-      showToast('얼굴 인증이 완료됐어요!');
+      showToast('얼굴 인증 완료 · 커스터마이징 카드를 눌러 만들 사진을 골라주세요');
       window.renderMyVerifyStatus();
       // ★로스터의 '얼굴 커스터마이징' 카드도 바로 바뀌어야 한다('얼굴 인증 먼저' → 'N회 남음') — 대표 9-07
       if (window.charRenderRoster) window.charRenderRoster();
-      setTimeout(() => window.stopFaceVerify(), 1500);
-    } catch (e) { setFvStatus('저장 실패. 다시 시도해주세요'); _fvCaptureEnabled(true); }
+      window.stopFaceVerify();
+    } catch (e) { window.stopFaceVerify(); showToast('인증 저장에 실패했어요 · 인증하기를 다시 눌러주세요'); }
   } else {
     // ★불일치는 막다른 길이 아니다 — 옛 사진·다른 사람이 잡힌 사진일 수 있다(대표 9-06 "일치도 0%").
     //   버튼이 '이 사진으로 등록·인증'으로 바뀌고 한 번 더 누르면 방금 얼굴을 프로필에 등록해 기준으로 삼는다.
@@ -25335,6 +25411,7 @@ window._fvRegisterSelf = async function (v) {
 };
 
 window.stopFaceVerify = function() {
+  _fvSession++;
   if (_fvStream) { _fvStream.getTracks().forEach(t => t.stop()); _fvStream = null; }
   // 신청 모드로 바꿔 둔 문구를 되돌린다 — 다음에 '프로필 인증'으로 열면 원래 안내가 나와야 한다
   window._fvMode = null; window._fvSelfRef = false;
