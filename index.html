@@ -1790,6 +1790,15 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .sq-bubble.on { opacity:1 }
   .sq-stamp { position:absolute; bottom:calc(100% + 4px); left:50%; z-index:130; pointer-events:none;
     animation:sqStampPop 1.9s cubic-bezier(.34,1.56,.64,1) forwards }
+  /* ★9-07 이모트(머리 위 픽셀 아이콘, 8칸 스트립 char/ui/emotes.png) + 이름표 프레임(에셋 없이 박스섀도 픽셀 테두리) */
+  .mw-emote { position:absolute; bottom:calc(100% + 6px); left:50%; width:28px; height:28px; z-index:131; pointer-events:none;
+    background-image:url('char/ui/emotes.png?v=1'); background-size:800% 100%; background-repeat:no-repeat; image-rendering:pixelated;
+    animation:mwEmotePop 2.6s cubic-bezier(.34,1.56,.64,1) forwards }
+  @keyframes mwEmotePop { 0%{ opacity:0; transform:translateX(-50%) scale(.3) } 14%{ opacity:1; transform:translateX(-50%) scale(1.15) }
+    24%{ transform:translateX(-50%) scale(1) } 78%{ opacity:1; transform:translateX(-50%) translateY(-3px) } 100%{ opacity:0; transform:translateX(-50%) translateY(-10px) } }
+  .mw-frame-gold { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #F5C24B !important }
+  .mw-frame-leaf { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #4CBF5A !important }
+  .mw-emote-chip { width:44px; height:44px; background-image:url('char/ui/emotes.png?v=1'); background-size:800% 100%; background-repeat:no-repeat; image-rendering:pixelated }
   @keyframes sqStampPop { 0%{ opacity:1; transform:translateX(-50%) scale(0) rotate(-18deg) }
     18%{ transform:translateX(-50%) scale(1.3) rotate(7deg) } 30%{ transform:translateX(-50%) scale(1) rotate(0) }
     78%{ opacity:1 } 100%{ opacity:0; transform:translateX(-50%) scale(1) } }
@@ -8656,6 +8665,7 @@ window._charApplyPos = function () {
     if (t && window.mwTitleColor) tl.style.color = window.mwTitleColor(t);
   }
   const bl = (ui || host).querySelector('.cw-bubble');
+  const _nk = (ui || host).querySelector('.cw-nick'); if (_nk && window._mwFrameApply) window._mwFrameApply(_nk, ((window._seasonState || {}).frameOn) || '');   // 9-07 프레임
   if (bl) {
     // ★방에서 친 한마디는 **내 캐릭터 머리 위**에 뜬다 (대표 8-20). 남들이 보는 것과 같은 모양이다.
     //   내 방에 걸어둔 말풍선(roomMsg)은 남의 방까지 따라다니면 안 되므로 방문 중엔 안 쓴다.
@@ -8887,10 +8897,12 @@ window.charMove = function (dx, dy) {
       { k: 'move',  t: '이동',   dx: 0,  dy: -R - 12, fn: "window.mwWorldPanel('field')" },
       { k: 'edit',  t: '꾸미기', dx: -R - 6, dy: 4,   fn: 'window.mwRoomEdit&&window.mwRoomEdit()' },
       { k: 'bub',   t: '말풍선', dx: R + 6,  dy: 4,   fn: 'window.mwBubbleEdit&&window.mwBubbleEdit()' },
-      { k: 'title', t: '칭호',   dx: 0,  dy: R + 20,  fn: 'window.mwTitlePick&&window.mwTitlePick()' },
+      { k: 'title', t: '칭호',   dx: -R * 0.62, dy: R * 0.8,  fn: 'window.mwTitlePick&&window.mwTitlePick()' },
+      { k: 'emote', t: '이모트', dx: R * 0.62,  dy: R * 0.8,  fn: 'window.mwEmotePick&&window.mwEmotePick()' },   // 9-07
     ] : [
       { k: 'move',  t: '이동',   dx: 0,  dy: -R - 12, fn: "window.mwWorldPanel('field')" },
-      { k: 'title', t: '칭호',   dx: 0,  dy: R + 20,  fn: 'window.mwTitlePick&&window.mwTitlePick()' },
+      { k: 'title', t: '칭호',   dx: -R * 0.62, dy: R * 0.8,  fn: 'window.mwTitlePick&&window.mwTitlePick()' },
+      { k: 'emote', t: '이모트', dx: R * 0.62,  dy: R * 0.8,  fn: 'window.mwEmotePick&&window.mwEmotePick()' },
     ];
     const W = room.clientWidth || 320, H = room.clientHeight || 320;
     const el = document.createElement('div');
@@ -8907,6 +8919,34 @@ window.charMove = function (dx, dy) {
     el.addEventListener('pointerdown', function (e) { if (e.target === el) { el.remove(); if (e.cancelable) e.preventDefault(); } });
     room.appendChild(el);
     if (navigator.vibrate) navigator.vibrate(8);
+  };
+  window._RING_ICONS.emote = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M9 9.5h.01M15 9.5h.01M9.5 13c1.3 1 3.7 1 5 0"/></svg>';
+  // 9-07 이모트·이름표 프레임 고르기 (링 메뉴 → 이모트 / 스쿼드 퀵바). 이모트는 누르면 바로 머리 위에, 프레임은 장착 토글.
+  window.mwEmotePick = function () {
+    const old = document.getElementById('mw-emote-modal'); if (old) { old.remove(); return; }
+    const owned = window._mwEmotesOwned(), st = window._seasonState || {};
+    const cell = function (id) {
+      const i = window._MW_EMOTES.indexOf(id), has = owned.indexOf(id) >= 0;
+      return '<button ' + (has ? 'onclick="window.mwEmoteSend(\'' + id + '\');var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()"' : 'disabled')
+        + ' style="width:56px;height:56px;padding:0;border:2px solid #05070c;background:' + (has ? '#141a28' : '#0d111a') + ';cursor:' + (has ? 'pointer' : 'default') + ';display:flex;align-items:center;justify-content:center;' + (has ? '' : 'opacity:.28;') + 'box-shadow:0 0 0 2px #2b3350">'
+        + '<div class="mw-emote-chip" style="background-position:' + (i * 100 / 7) + '% 0"></div></button>';
+    };
+    const frames = Object.keys(window._MW_FRAMES).map(function (id) {
+      const has = (st.frames || []).indexOf(id) >= 0, on = st.frameOn === id;
+      return '<button ' + (has ? 'onclick="window.mwFrameSet(\'' + (on ? '' : id) + '\');var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()"' : 'disabled')
+        + ' style="font-family:\'Galmuri11\',sans-serif;font-size:11px;cursor:' + (has ? 'pointer' : 'default') + ';padding:8px 12px;border:2px solid ' + (on ? '#F5C24B' : '#05070c') + ';background:' + (on ? '#232c42' : '#141a28') + ';color:' + (has ? '#fff' : '#4a5266') + '">' + window._MW_FRAMES[id] + (on ? ' ·켜짐' : '') + '</button>';
+    }).join('');
+    const el = document.createElement('div'); el.id = 'mw-emote-modal';
+    el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;padding:14vh 20px 20px;background:rgba(5,7,12,.7);overflow:hidden;overscroll-behavior:contain';
+    el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">'
+      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">이모트</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px">' + window._MW_EMOTES.map(cell).join('') + '</div>'
+      + '<div style="font-size:10.5px;color:#8a93a8;margin-top:10px;line-height:1.6">흐린 건 아직 없는 이모트 — 공원 사람들 부탁을 들어주면 생겨요</div>'
+      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin:16px 0 10px">이름표 프레임</div>'
+      + (frames ? '<div style="display:flex;flex-wrap:wrap;gap:7px">' + frames + '</div>' : '')
+      + '</div>';
+    el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
+    document.body.appendChild(el);
   };
   // 칭호 고르기 (링 메뉴 → 칭호). 퀘스트 탭이 아니라 캐릭터에 딸린 기능으로.
   window.mwTitlePick = function () {
@@ -18208,6 +18248,40 @@ window.mwAuraTitleRepair = async function () {
 };
 // 아우라를 **특정 값으로** 맞춘다(''=끔). 토글과 '안 씀' 버튼이 둘 다 이걸 쓴다 —
 // 끄는 길이 두 벌이 되면 한쪽만 고치는 사고가 난다.
+// 9-07 이름표 프레임 장착/해제 — mwAuraSet 과 같은 흐름(쓰고 → 로컬 → 내 필드 → 스쿼드/방/광장 재전송)
+window.mwFrameSet = async function (next) {
+  const user = window.currentUser; if (!user) return;
+  const st = window._seasonState || {};
+  next = next && window._MW_FRAMES[next] ? next : '';
+  if (next && (st.frames || []).indexOf(next) < 0) return;
+  if ((st.frameOn || '') === next) return;
+  try { await window._seasonWrite(user.uid, { frame: next }); } catch (e) { console.warn('frame set', e); return; }
+  st.frameOn = next;
+  window._charApplyPos && window._charApplyPos();
+  try { window._sqRtSend && window._sqRtSend(); } catch (e) {} try { window._mwRlSend && window._mwRlSend(); } catch (e) {} try { window._mwOpenSend && window._mwOpenSend(); } catch (e) {}
+};
+window._npcGrantFrame = async function (id) {
+  const user = window.currentUser; if (!user || !window._MW_FRAMES[id]) return false;
+  const st = window._seasonState || {}; if ((st.frames || []).indexOf(id) >= 0) return false;
+  try { await window._seasonWrite(user.uid, { frames: arrayUnion(id) }); } catch (e) { console.warn('frame grant', e); return false; }
+  st.frames = (st.frames || []).concat([id]);
+  if (!st.frameOn) window.mwFrameSet(id);
+  return true;
+};
+window._npcGrantEmotes = async function (ids) {
+  const user = window.currentUser; if (!user) return false;
+  const st = window._seasonState || {}; const need = (ids || []).filter(function (e) { return window._MW_EMOTES.indexOf(e) >= 0 && (st.emotes || []).indexOf(e) < 0; });
+  if (!need.length) return false;
+  try { await window._seasonWrite(user.uid, { emotes: arrayUnion.apply(null, need) }); } catch (e) { console.warn('emote grant', e); return false; }
+  st.emotes = (st.emotes || []).concat(need);
+  return true;
+};
+window._npcGrantCompanion = async function (id) {
+  const user = window.currentUser; if (!user) return false;
+  const st = window._seasonState || {}; if (st.companion === id) return false;
+  try { await window._seasonWrite(user.uid, { companion: id }); } catch (e) { console.warn('companion', e); return false; }
+  st.companion = id; return true;
+};
 window.mwAuraSet = async function (next) {
   const user = window.currentUser; if (!user) return;
   const st = window._seasonState || {};
@@ -23595,6 +23669,11 @@ window.ensureCreditsInit = async (uid) => {
       // 필드 아우라 — 소유(fieldAuras)와 장착(aura)을 나눈다. 얻은 걸 꾸미기에서 골라 켠다.
       window._seasonState.auras = Array.isArray(d.fieldAuras) ? d.fieldAuras.slice() : [];
       window._seasonState.auraOn = (typeof d.aura === 'string') ? d.aura : '';
+      // 9-07 이름표 프레임(소유 frames·장착 frame)·이모트(emotes)·동행(companion) — NPC 퀘스트 보상
+      window._seasonState.frames = Array.isArray(d.frames) ? d.frames.slice() : [];
+      window._seasonState.frameOn = (typeof d.frame === 'string') ? d.frame : '';
+      window._seasonState.emotes = Array.isArray(d.emotes) ? d.emotes.slice() : [];
+      window._seasonState.companion = (typeof d.companion === 'string') ? d.companion : '';
       window._seasonState.ready = true;
       // 장착 칭호·말풍선·닉네임 로드 → 오버월드 라벨 갱신
       window._myTitle = (typeof d.title === 'string') ? d.title : '';
@@ -29373,6 +29452,7 @@ window._mwRlSend = function (mode) {
     guest: !!u.isAnonymous,
     title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
     aura: ((window._seasonState || {}).auraOn) || '',
+    frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07
     character: window.getMyCharacter ? window.getMyCharacter() : null,
     msg: window._mwRl.msg || null,
     pin: !!window._mwBubblePin,
@@ -29441,6 +29521,7 @@ window._mwOpenSend = function (mode) {
     nick: String(window._mwMyNick || '머피').slice(0, 24),
     title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
     aura: ((window._seasonState || {}).auraOn) || '',
+    frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07
     character: cfg,
     characterSheet: cfg && window._charSheetForBody ? window._charSheetForBody(cfg.body) : null,
     msg: (window._mwRl && window._mwRl.msg) || null
@@ -29493,6 +29574,8 @@ window._mwOpenRender = function (all) {
     c.el.onclick = function (e) { e.stopPropagation(); window.mwOtherMenu && window.mwOtherMenu(uid, nick, e); };
     const bub = c.el.querySelector('.mw-rc-bub'), fresh = v.msg && v.msg.text && now - (v.msg.t || 0) < (window.MW_ROOM_MSG_MS || 9000);
     bub.textContent = fresh ? String(v.msg.text).slice(0, 40) : ''; bub.style.display = fresh ? '' : 'none';
+    if (v.emote && v.emote.t && c.lastEmote !== v.emote.t && now - v.emote.t < 8000) { c.lastEmote = v.emote.t; window._mwEmotePop(c.el, v.emote.id); }   // 9-07 이모트
+    if (c.frame !== (v.frame || '')) { c.frame = v.frame || ''; window._mwFrameApply(c.el.querySelector('.cw-nick'), c.frame); }
     const w = Math.round(DH * 141 / 224), pos = v.tc + '|' + v.tr + '|' + t;
     c.el.style.width = w + 'px'; c.el.style.height = DH + 'px';
     if (c.pos !== pos) {
@@ -29619,6 +29702,8 @@ window._mwRlRender = function (all) {
       if (fresh) { bub.textContent = String(v.msg.text).slice(0, 40); bub.style.display = ''; }
       else bub.style.display = 'none';
     }
+    if (v.emote && v.emote.t && c.lastEmote !== v.emote.t && Date.now() - v.emote.t < 8000) { c.lastEmote = v.emote.t; window._mwEmotePop(c.el, v.emote.id); }   // 9-07 이모트
+    if (c.frame !== (v.frame || '')) { c.frame = v.frame || ''; window._mwFrameApply(c.el.querySelector('.cw-nick'), c.frame); }
     // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
     const w = Math.round(DH * 141 / 224);
     if (c.boxW !== w || c.boxH !== DH) {
@@ -34920,9 +35005,16 @@ window._npcRewardTitle = async function (n) {
   const c = await window._npcQuestCount(n.k);
   if (c < window.MW_NPC_TITLE_N) { if (c > 0) setTimeout(function () { showToast(n.name + ' 부탁을 ' + (window.MW_NPC_TITLE_N - c) + '번 더 들어주면 칭호를 받아요'); }, 1200); return; }
   if (!window._npcGrantTitle || !(await window._npcGrantTitle(t))) return;
+  // 칭호 + 손 안 가는 보상 하나씩(대표 9-07): 코치 = 이름표 골드 프레임, 할매 = 이모트 6종, 관리인 = 비둘기 동행(오픈월드 렌더는 반대 창)
+  const extra = { trainer: '이름표에 골드 프레임도 달아뒀다. 캐릭터 메뉴 → 이모트에서 켜고 꺼.', grandma: '내 이모트 보따리도 주마. 캐릭터 메뉴 → 이모트에서 써 보게.', keeper: '공원 비둘기 한 마리가 자네를 따를 걸세.' }[n.k] || '';
+  try {
+    if (n.k === 'trainer' && window._npcGrantFrame) await window._npcGrantFrame('gold');
+    if (n.k === 'grandma' && window._npcGrantEmotes) await window._npcGrantEmotes(['heart', 'sweat', 'zzz', 'note', 'fire', 'smile']);
+    if (n.k === 'keeper' && window._npcGrantCompanion) await window._npcGrantCompanion('pigeon');
+  } catch (e) {}
   const line = { keeper: '자네 덕에 공원이 훤하구먼. 오늘부터 자네는 "공원 지킴이"일세.', trainer: '3번이나 인증했네? 인정. 이제 넌 "강 코치 제자"다.', grandma: '아이고 착한 것. 오늘부터 우리 손주여, "할매 손주".' }[n.k] || ('"' + t + '" 칭호를 받았어요!');
   setTimeout(function () {
-    window._mwNpcDialog(n, [line, '칭호는 꾸미기에서 달 수 있어요.'], 'close');
+    window._mwNpcDialog(n, [line, extra || '칭호는 꾸미기에서 달 수 있어요.'], 'close');
     try { window.sfx && window.sfx.play('correct'); } catch (e) {}
     window._charApplyPos && window._charApplyPos();
   }, 1500);
@@ -41528,6 +41620,43 @@ window._mwAurOf = function (uid, fromPresence) {
 // 뒤/앞 두 겹을 붙인다. 색 이름은 파일명에 그대로 들어가므로 화이트리스트로 막는다
 // (프레즌스로 남의 값이 올 수 있는 자리라 그대로 쓰면 경로 주입이 된다).
 window._MW_AUR_COLORS = ['blue'];
+// ★9-07 이모트·이름표 프레임 — 몸통·헤어와 무관한 코스메틱(대표: 퀘스트 보상은 에셋 대신 손 안 가는 것).
+//   프레임 id 와 이모트 id 는 프레즌스로 남의 값이 오므로 **화이트리스트**만 통과시킨다(아우라 색과 같은 이유).
+window._MW_FRAMES = { gold: '골드 프레임', leaf: '나뭇잎 프레임' };
+window._MW_EMOTES = ['ex', 'q', 'heart', 'sweat', 'zzz', 'note', 'fire', 'smile'];   // char/ui/emotes.png 칸 순서
+window.MW_EMOTE_FREE = ['ex', 'q'];                                                   // 전원 기본 제공
+window.MW_EMOTE_MS = 3200;
+window._mwFrameApply = function (el, id) {
+  if (!el) return;
+  const ok = id && window._MW_FRAMES[id] ? id : '';
+  el.className = String(el.className || '').replace(/\bmw-frame-\w+/g, '').trim() + (ok ? ' mw-frame-' + ok : '');
+};
+window._mwEmotePop = function (hostEl, id) {
+  const i = window._MW_EMOTES.indexOf(id); if (!hostEl || i < 0) return;
+  const old = hostEl.querySelector(':scope > .mw-emote'); if (old) old.remove();
+  const el = document.createElement('div'); el.className = 'mw-emote';
+  el.style.backgroundPosition = (i * 100 / 7) + '% 0';
+  hostEl.appendChild(el);
+  setTimeout(function () { try { el.remove(); } catch (e) {} }, 2700);
+};
+window._mwEmotesOwned = function () {
+  const st = window._seasonState || {};
+  return window.MW_EMOTE_FREE.concat((st.emotes || []).filter(function (e) { return window._MW_EMOTES.indexOf(e) >= 0 && window.MW_EMOTE_FREE.indexOf(e) < 0; }));
+};
+// 내 이모트: 프레즌스 3곳(방·광장·스쿼드)에 emote {id,t} 로 실리고 MW_EMOTE_MS 뒤 비운다(말풍선 msg 와 같은 방식).
+window.mwEmoteSend = function (id) {
+  if (window._mwEmotesOwned().indexOf(id) < 0) { showToast('아직 없는 이모트예요'); return; }
+  window._myEmote = { id: id, t: Date.now() };
+  const push = function () { try { window._sqRtSend && window._sqRtSend(); } catch (e) {} try { window._mwRlSend && window._mwRlSend(); } catch (e) {} try { window._mwOpenSend && window._mwOpenSend(); } catch (e) {} };
+  push();
+  // 내 캐릭터 위에도 바로(방/광장 = #charworld-avatar, 스쿼드 = 내 uid 의 .sq-char)
+  const me = (window.currentUser || {}).uid;
+  const mine = (window._sqChars && me && window._sqChars[me] && window._sqChars[me].el) || document.getElementById('charworld-avatar');
+  if (mine) window._mwEmotePop(mine, id);
+  clearTimeout(window._myEmoteT);
+  window._myEmoteT = setTimeout(function () { window._myEmote = null; push(); }, window.MW_EMOTE_MS);
+  try { window.sfx && window.sfx.play('btn'); } catch (e) {}
+};
 // 아우라 앞겹(발밑 아래로 내려오는 절반)의 높이. CSS 의 width:103% + aspect-ratio 140/45 와
 // **같은 식**이어야 한다 — 여기서 어긋나면 이름표가 고리를 덮거나 너무 멀리 떨어진다.
 // ★이 값이 필요한 이유: 이름표가 발밑 바로 아래에 붙어 앞겹을 거의 다 덮었다(대표 8-19).
@@ -41730,6 +41859,11 @@ window._sqQuickBar = function (s) {
     + 'border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#fff;padding:0 9px;font-size:16px;'
     + 'outline:none;font-family:inherit;border-radius:0"'
     + ' inputmode="text" enterkeyhint="send">'
+    // 9-07 이모트(스쿼드 필드는 캐릭터 링 메뉴가 없어 퀵바에)
+    + '<button onmousedown="event.preventDefault()" onclick="window.mwEmotePick&&window.mwEmotePick()" aria-label="이모트"'
+    + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);'
+    + "border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:0;font-size:11px;cursor:pointer;"
+    + "font-family:'Galmuri11',sans-serif;border-radius:0\">:)</button>"
     // 고정 토글 — 켜면 내 말풍선이 안 사라진다(켜져 있으면 골드)
     + '<button id="sq-quick-pin" onmousedown="event.preventDefault()" onclick="window.sqBubblePinToggle()" aria-label="말풍선 고정"'
     + ' style="flex-shrink:0;box-sizing:border-box;height:34px;width:34px;'
@@ -41946,6 +42080,7 @@ window._sqRtJoin = function (sid, sArg) {
       moving: !!p.moving, nick: window._mwMyNick || (window.currentUser || {}).nickname || '',   // ★빈값으로 — '머피'로 박히면 그리는 쪽이 진짜 이름을 못 찾는다(9-02 이빈 사례)
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
+      frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07 이름표 프레임·이모트
       character: window.getMyCharacter ? window.getMyCharacter() : null,
       poseV: 2,                                          // v2부터 첫 입장 완료 후 정면을 본다
       cv: String(window._SW_V || ''), qe: window._sqQzErr || null,   // 9-01 원격 진단: 실행 중 버전·퀴즈 오류
@@ -43843,6 +43978,8 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     seen[uid] = now;
     // 출석 도장 브로드캐스트 (T7이 stamp 필드 기록)
     if (p.stamp && c.lastStamp !== p.stamp && now - p.stamp < 8000) { c.lastStamp = p.stamp; window._sqStampPop(uid); }
+    if (p.emote && p.emote.t && c.lastEmote !== p.emote.t && now - p.emote.t < 8000) { c.lastEmote = p.emote.t; window._mwEmotePop(c.el, p.emote.id); }   // 9-07 이모트
+    if (c.frame !== (p.frame || '')) { c.frame = p.frame || ''; window._mwFrameApply(c.el.querySelector('.sq-nick'), c.frame); }
   });
   // 나간 사람: 페이드아웃 후 제거
   Object.keys(window._sqChars || {}).forEach(uid => {
