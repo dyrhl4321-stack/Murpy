@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v1089';
-const STATIC_CACHE = 'murpy-static-v1089';
-const CDN_CACHE = 'murpy-cdn-v1089';
+const CACHE_NAME = 'murpy-v1090';
+const STATIC_CACHE = 'murpy-static-v1090';
+const CDN_CACHE = 'murpy-cdn-v1090';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img';
 
@@ -120,6 +120,22 @@ self.addEventListener('fetch', e => {
         caches.open(STATIC_CACHE).then(c => c.put(e.request, clone));
         return res;
       }).catch(() => fetch(e.request).catch(() => caches.match(e.request)))
+    );
+    return;
+  }
+
+  // ★9-07 로컬 이미지(char/**·아이콘)는 버전 없는 IMG_CACHE 로 — STATIC_CACHE 는 이름에 버전이 박혀 있어
+  //   **배포마다 공원 2.8MB 포함 이미지 전부가 지워지고 다시 받았다**(머피월드·필드이동 느림의 최대 원인).
+  //   파일이 바뀌면 ?v= 가 바뀌어 주소가 달라지니 캐시 우선이 안전하다(스토리지와 같은 논리).
+  if (url.origin === self.location.origin && /\.(png|jpe?g|webp|gif|mp3|wav)$/i.test(url.pathname)) {
+    e.respondWith(
+      caches.open(IMG_CACHE).then(async cache => {
+        const cached = await cache.match(e.request);
+        if (cached) return cached;
+        const res = await fetch(e.request);
+        if (res && res.ok) cache.put(e.request, res.clone());
+        return res;
+      }).catch(() => fetch(e.request))
     );
     return;
   }
