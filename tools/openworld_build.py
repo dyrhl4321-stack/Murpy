@@ -246,7 +246,7 @@ def main():
     s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>80.0\g<2>57.0", s)
     s = re.sub(r"(\{ k: 'grandma',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>25.0\g<2>60.0", s)
     GB = cell_ar('char/npc/anim/grandma_bench4.png', 4); KB = cell_ar('char/npc/anim/kid_ball4.png', 4)
-    s = re.sub(r"img: 'char/npc/anim/grandma_[a-z0-9]+\.png\?v=\d+', (anim: 3|strip: 4), ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/grandma_bench4.png?v=1', strip: 4, ms: 4800, ar: %.3f" % GB, s)
+    s = re.sub(r"img: 'char/npc/anim/grandma_[a-z0-9]+\.png\?v=\d+', (anim: 3|strip: 4), ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/grandma_bench4.png?v=2', strip: 4, ms: 4800, ar: %.3f" % GB, s)
     s = re.sub(r"img: 'char/npc/anim/kid_[a-z0-9]+\.png\?v=\d+', strip: \d, ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/kid_ball4.png?v=1', strip: 4, ms: 1600, ar: %.3f" % KB, s)
     for key_, im_, rows_ in (('park', park, pr), ('walk', walk, wr), ('outgym', gym, gr)):
         s = put_spots(s, key_, im_, rows_)
