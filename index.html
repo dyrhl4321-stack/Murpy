@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1065';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1066';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -17221,10 +17221,12 @@ window._faceReqPicked = async function (e) {
         if (dist < 0.68) keep.push(f); else notMe++;
       }
       if (!keep.length) {
-        const again = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '다시 고르기',
-          desc: '올린 사진이 프로필 사진과 다른 사람으로 보여요<br>본인 정면 사진으로 다시 골라주세요' });
-        if (again && window.faceStartCreate) window.faceStartCreate();
-        return;
+        // ★막지 않는다(대표 9-07 "내 사진인데도 안 됨") — 프로필 기준 사진이 오래됐으면 본인도 '다른 사람'으로 나온다.
+        //   경고만 하고 '그래도 만들기'면 고른 사진 전부로 진행. 취소면 앨범을 다시 연다.
+        const go = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '그래도 만들기', cancelText: '다시 고르기',
+          desc: '프로필 사진과 다른 사람처럼 보여요<br>본인 사진이 맞다면 그대로 만들어요' });
+        if (!go) { if (window.faceStartCreate) window.faceStartCreate(); return; }
+        keep = files;
       }
       if (notMe) showToast('다른 사람으로 보이는 ' + notMe + '장은 빼고 만들어요');
     }
