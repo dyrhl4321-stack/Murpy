@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1100';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1101';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18029,11 +18029,22 @@ window._myRoomMsg = '';
 //   받았는데 사라진 것으로 보인다(대표 8-19: "칭호탭에서 누락되어있음").
 //   ★칭호를 주는 곳을 새로 만들면 **반드시 여기 목록에도 넣을 것.**
 //   지금 칭호를 주는 곳: SEASON_ITEMS(월간/히든 오브젝트) + FIELD_AURAS(필드 히든 아티팩트)
+// ★9-07 NPC 퀘스트 칭호(대표: 퀘스트 보상은 에셋보다 손 안 가는 것으로). k = _MW_NPCS.k
+window.NPC_TITLES = { keeper: '공원 지킴이', trainer: '강 코치 제자', grandma: '할매 손주' };
 window._mwTitleDefs = function () {
   const out = (window.SEASON_ITEMS || []).slice();
   const fa = window.FIELD_AURAS || {};
   for (const k in fa) if (fa[k] && fa[k].title) out.push({ title: fa[k].title, kind: 'hidden' });
+  for (const k in window.NPC_TITLES) out.push({ title: window.NPC_TITLES[k], kind: 'npc' });
   return out;
+};
+window._npcGrantTitle = async function (t) {
+  const user = window.currentUser; if (!user || !t) return false;
+  const st = window._seasonState || {};
+  if ((st.titles || []).indexOf(t) >= 0) return false;
+  try { await window._seasonWrite(user.uid, { titles: arrayUnion(t) }); } catch (e) { console.warn('npc title', e); return false; }
+  st.titles = (st.titles || []).concat([t]);
+  return true;
 };
 window.mwValidTitle = function (t) {
   return window._mwTitleDefs().some(s => s.title === t) ? t : '';
@@ -34719,7 +34730,7 @@ window._mwNpcClaim = async function (k) {
   try { localStorage.setItem('mwqC_' + n.q.id + '_' + day, '1'); } catch (e) {}
   const p = document.getElementById('mw-npc-talk'); if (p) p.remove();
   if (got) { window.murpyMini && window.murpyMini(3, n.name + ' 퀘스트'); }
-  if (got && n.k === 'kid' && window._npcRewardKid) window._npcRewardKid(n);   // 9-07 민준이 3회 → 노란 티(왼쪽 세션)
+  if (got && window._npcReward) window._npcReward(n);   // 9-07 민준이 3회 → 노란 티, 나머지 3회 → 칭호(왼쪽 세션)
   // ★9-06 보너스: 오늘 네 명 퀘스트를 다 깨면 +5 (공원 올클리어). 하루 최대 3×4+5 = 17머피.
   const allDone = window._MW_NPCS.every(function (x) { return window._mwQuestClaimed(x.q.id); });
   if (allDone && got) {
@@ -34736,6 +34747,21 @@ window._mwNpcClaim = async function (k) {
 // ★9-07 민준이 보상: 민준이 퀘스트를 **3번** 완료하면 '민준이 노란 티'(성별 몸통 것) 지급. 대표 승인 에셋(top_yellowtee / top_f_yellowtee).
 //   횟수는 서버 문서(npcQuest.kid)에 누적 — 폰 바꿔도 이어진다. 이미 가진 사람은 안 준다(대표 계정은 미리 지급됨).
 window.MW_KID_TEE_N = 3;
+window.MW_NPC_TITLE_N = 3;
+// 관리인·코치·할매: 3회 완료 → 칭호(NPC_TITLES). 옷 같은 에셋 보상은 민준이 하나로 끝(대표 9-07 "손 안 가는 보상으로").
+window._npcRewardTitle = async function (n) {
+  const t = (window.NPC_TITLES || {})[n.k]; if (!t || !window._npcQuestCount) return;
+  const c = await window._npcQuestCount(n.k);
+  if (c < window.MW_NPC_TITLE_N) { if (c > 0) setTimeout(function () { showToast(n.name + ' 부탁을 ' + (window.MW_NPC_TITLE_N - c) + '번 더 들어주면 칭호를 받아요'); }, 1200); return; }
+  if (!window._npcGrantTitle || !(await window._npcGrantTitle(t))) return;
+  const line = { keeper: '자네 덕에 공원이 훤하구먼. 오늘부터 자네는 "공원 지킴이"일세.', trainer: '3번이나 인증했네? 인정. 이제 넌 "강 코치 제자"다.', grandma: '아이고 착한 것. 오늘부터 우리 손주여, "할매 손주".' }[n.k] || ('"' + t + '" 칭호를 받았어요!');
+  setTimeout(function () {
+    window._mwNpcDialog(n, [line, '칭호는 꾸미기에서 달 수 있어요.'], 'close');
+    try { window.sfx && window.sfx.play('correct'); } catch (e) {}
+    window._charApplyPos && window._charApplyPos();
+  }, 1500);
+};
+window._npcReward = function (n) { if (n.k === 'kid') return window._npcRewardKid(n); return window._npcRewardTitle(n); };
 window._npcRewardKid = async function (n) {
   if (!window._npcQuestCount) return;
   const c = await window._npcQuestCount('kid');
