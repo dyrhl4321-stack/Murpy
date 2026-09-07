@@ -5924,6 +5924,51 @@ window._mwPetHear = function (map) {
 };
 
 // ===== 드라이버 (한 마리분) =====
+// 공원 자유행동 — 주인 근처를 어슬렁거리다, 다른 펫이 가까우면 서로 다가가 잠깐 논다(act1/act2·run).
+window._mwPetParkRoam = function (p, def) {
+  var now = Date.now(); p._pk = p._pk || { until: 0, state: 'idle', mate: null, cool: 0 };
+  var S = p._pk, W = window._mwCritterWalkable;
+  var me = window._charPos || { tc: p.tc, tr: p.tr };
+  var pick = function (cx, cy, r) {   // (cx,cy) 반경 r 안 걸을 수 있는 칸
+    for (var t = 0; t < 12; t++) {
+      var tc = cx + Math.floor(Math.random() * (2 * r + 1)) - r, tr = cy + Math.floor(Math.random() * (2 * r + 1)) - r;
+      if ((tc !== p.tc || tr !== p.tr) && W(tc, tr) && !window._mwPetOccupied(tc, tr, p)) return { tc: tc, tr: tr };
+    }
+    return null;
+  };
+  // 놀이 중
+  if (S.state === 'play' && S.mate && S.mate.el && S.mate.el.isConnected) {
+    if (now > S.until) { S.state = 'idle'; S.cool = now + 15000 + Math.random() * 15000; S.mate._pk && (S.mate._pk.cool = S.cool); S.mate = null; p.run = false; window._mwPetPlay(p, 'stand', null); return true; }
+    var q = S.mate, d = Math.abs(q.tc - p.tc) + Math.abs(q.tr - p.tr);
+    if (d > 1) { p.run = true; var spot = pick(q.tc, q.tr, 1); if (spot) { window._mwPetGoto(p, spot, 'stand'); return true; } }
+    // 붙어 있으면 마주보고 장난(act1/act2 번갈아), 가끔 한 바퀴 뛰기
+    var face = (q.tc > p.tc) ? 2 : (q.tc < p.tc ? 3 : (q.tr > p.tr ? 0 : 1));
+    var r = Math.random();
+    if (r < 0.25) { p.run = true; var around = pick(q.tc, q.tr, 2); if (around) { window._mwPetGoto(p, around, 'stand'); return true; } }
+    window._mwPetPlay(p, r < 0.6 ? 'act1' : 'act2', face); return true;
+  }
+  // 친구 찾기(내 펫들 중 4칸 안, 쿨다운 지난 애) — 둘이 같은 세션에 들어간다
+  if (now > S.cool && S.state !== 'play') {
+    var arr = window._mwPets || [];
+    for (var i = 0; i < arr.length; i++) {
+      var q2 = arr[i]; if (!q2 || q2 === p || !q2.el || !q2.el.isConnected) continue;
+      var m2 = window._mwPetSaved(q2); if (m2 && m2.mode === 'follow') continue;
+      var q2s = q2._pk || (q2._pk = { until: 0, state: 'idle', mate: null, cool: 0 });
+      if (q2s.state === 'play' || now < q2s.cool) continue;
+      if (Math.abs(q2.tc - p.tc) + Math.abs(q2.tr - p.tr) <= 4) {
+        S.state = 'play'; S.mate = q2; S.until = now + 6000 + Math.random() * 5000;
+        q2s.state = 'play'; q2s.mate = p; q2s.until = S.until; return true;
+      }
+    }
+  }
+  // 어슬렁: 주인 반경 6칸 안을 목적지 삼아 걷고, 도착하면 잠깐 서 있거나 앉는다
+  if (now > S.until) {
+    if (Math.random() < 0.35) { S.until = now + 2500 + Math.random() * 3000; window._mwPetPlay(p, Math.random() < 0.5 ? 'sit' : 'stand', null); return true; }
+    var dest = pick(me.tc, me.tr, 6);
+    if (dest) { p.run = false; S.until = now + 1200; window._mwPetGoto(p, dest, 'stand'); return true; }
+  }
+  return true;
+};
 window._mwPetStep = function (p) {
   if (!p || !p.el || p.moving || p.rush) return;
   if (p._eatUntil && Date.now() < p._eatUntil) return;   // 먹는 중엔 일과표가 안 끼어든다
@@ -5939,6 +5984,9 @@ window._mwPetStep = function (p) {
   var call = window._mwPetCallOf(p);
   var mode = call ? call.k : (guest ? 'free' : ((saved && saved.mode) || 'free'));
   var petDef = window._mwPetDef(p.id) || {};
+  // ★9-07 대표: 공원에선 따라오기가 기본이되 '자유' 로 풀면 돌아다니고 **펫끼리 어울려 논다**.
+  //   방의 일과표(밥그릇·개집·캣타워)는 공원에 없으므로 여기서 갈라진다.
+  if (window._curField === 'park' && mode !== 'follow') { if (window._mwPetParkRoam(p, petDef)) return; }
   if (mode === 'house' && petDef.kind === 'dog') {
     var dogHouse = window._mwPetNearest(p, 'house');
     if (dogHouse) {
@@ -6247,7 +6295,12 @@ window.mwPetMenu = function (p) {
     if (navigator.vibrate) navigator.vibrate(8);
     return;
   }
-  var acts = [
+  var acts = (window._curField === 'park')
+    // ★9-07 대표: 공원은 공원 전용 — 밥 주기·들여보내기(하우스) 없음
+    ? [ { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
+        { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat(' + p.i + ')' },
+        { k: 'bub', t: '이름', dx: -R - 6, dy: 4, fn: 'window.mwPetName(' + p.i + ')' } ]
+    : [
     { k: 'move', t: '행동', dx: 0, dy: -R - 12, fn: 'window.mwPetModePick(' + p.i + ')' },
     { k: 'bowl', t: '밥 주기', dx: -R - 6, dy: 4, fn: 'window.mwPetFeed(' + p.i + ')' },
     { k: 'poke', t: '쓰다듬기', dx: R + 6, dy: 4, fn: 'window.mwPetPat(' + p.i + ')' },
@@ -6290,7 +6343,7 @@ window.mwPetModePick = function (idx) {
   var cy = hb.top - rb.top + hb.height * 0.55;
   var W = room.clientWidth || 320, H = room.clientHeight || 320, R = 70;
   var kind = (window._mwPetDef(p.id) || {}).kind;
-  var modes = window.MW_PET_MODES.filter(function (m) { return !m.kind || m.kind === kind; });
+  var modes = window.MW_PET_MODES.filter(function (m) { return (!m.kind || m.kind === kind) && (window._curField !== 'park' || m.k === 'free' || m.k === 'follow'); });   // 공원은 자유·따라와만(9-07)
   var spots = [{ dx: 0, dy: -R - 12 }, { dx: -R - 4, dy: 10 },
                { dx: R + 4, dy: 10 }, { dx: 0, dy: R + 28 }];
   var el = document.createElement('div');
