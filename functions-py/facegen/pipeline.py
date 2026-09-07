@@ -10,7 +10,7 @@ process(...) 한 번이 유저 한 명이다:
 """
 import os, io, json, time
 from PIL import Image
-from . import grid, hair, eyes, score, skin
+from . import grid, hair, eyes, score, skin, finalize
 from .gen import generate
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
@@ -49,6 +49,9 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
         # ★얼굴만 바꾼다: 목선 위 = AI, 목선 아래 = base 픽셀 그대로 → 속옷·몸이 바뀔 길이 없다(대표 9-07)
         grafted = os.path.join(out_dir, 'sheet_%d.png' % (i + 1))
         grid.graft_head(ai_path, base_path, grafted)
+        # ★마지막 정리(9-08): 알파 128 이진화 + 어두운 보라끼·가장자리 마젠타 제거 — 시트·헤어 둘 다(박기웅 시트 후광 사고)
+        try: log('  정리 %d: %s' % (i + 1, finalize.demagenta(grafted))); hair_path and finalize.demagenta(hair_path)
+        except Exception as e: log('  정리 %d 실패(무시): %s' % (i + 1, e))
         s = score.score(grafted, base_path, hair_px, fringe_src=ai_path); v = score.verdict(s)
         s.update({'attempt': i + 1, 'verdict': v, 'hairKind': kind}); scores.append(s)
         log('  시도 %d: %s' % (i + 1, v))
