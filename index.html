@@ -8490,7 +8490,17 @@ window.charSetField = function (key) {
   window._plateState = 'closed'; window._plateTaps = 0; window._plateOn = '';
   const _ft = document.getElementById('mw-fieldtalk'); if (_ft) _ft.remove();
   const room = document.getElementById('charworld-room');
-  if (room) room.style.backgroundImage = "url('" + f.src + "')";
+  // ★9-08 로딩(c-③): 배경을 바로 갈아끼우면 디코드되는 동안 검은 방이 보인다 → 미리 받아 decode() 뒤에 교체(2.5초 넘으면 그냥 교체).
+  //   그 사이엔 이전 배경이 남아 있다(검정보다 낫다). 토큰이 바뀌었으면(그 사이 다른 필드) 버린다.
+  if (room) {
+    let swapped = false;
+    const swap = function () { if (swapped || _tok !== window._mwFieldTok) return; swapped = true; room.style.backgroundImage = "url('" + f.src + "')"; };
+    try {
+      const im = new Image(); im.decoding = 'async'; im.src = f.src;
+      (im.decode ? im.decode() : Promise.resolve()).then(swap, swap);
+    } catch (e) { swap(); }
+    setTimeout(swap, 2500);
+  }
   const st = f.start || { tc: 7, tr: 8 };
   window._charPos = { tc: st.tc, tr: st.tr, face: 'down', frame: 0 };
   window._charApplyPos && window._charApplyPos();
