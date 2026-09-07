@@ -5927,6 +5927,9 @@ window._mwPetHear = function (map) {
 };
 
 // ===== 드라이버 (한 마리분) =====
+// ★오픈월드 필드 판정 — 펫 코드가 모듈 실행 초기에 부르므로 **여기(첫 사용 앞)** 에 있어야 한다. 9-07 밤 charSetField 옆에 뒀다가 TypeError 로 모듈이 통째로 죽었다(머피월드·매칭 먹통).
+window._MW_OPEN_FIELDS = ['park', 'walk'];
+window._mwIsOpenField = function (k) { return window._MW_OPEN_FIELDS.indexOf(k || window._curField) >= 0; };
 // 공원 자유행동 — 주인 근처를 어슬렁거리다, 다른 펫이 가까우면 서로 다가가 잠깐 논다(act1/act2·run).
 window._mwPetParkRoam = function (p, def) {
   var now = Date.now(); p._pk = p._pk || { until: 0, state: 'idle', mate: null, cool: 0 };
@@ -5989,7 +5992,7 @@ window._mwPetStep = function (p) {
   var petDef = window._mwPetDef(p.id) || {};
   // ★9-07 대표: 공원에선 따라오기가 기본이되 '자유' 로 풀면 돌아다니고 **펫끼리 어울려 논다**.
   //   방의 일과표(밥그릇·개집·캣타워)는 공원에 없으므로 여기서 갈라진다.
-  if (window._mwIsOpenField() && mode !== 'follow') { if (window._mwPetParkRoam(p, petDef)) return; }
+  if (window._mwIsOpenField && window._mwIsOpenField() && mode !== 'follow') { if (window._mwPetParkRoam(p, petDef)) return; }
   if (mode === 'house' && petDef.kind === 'dog') {
     var dogHouse = window._mwPetNearest(p, 'house');
     if (dogHouse) {
@@ -6130,7 +6133,7 @@ window._mwPetUnstick = function (p) {
 window._mwPetSync = function () {
   var room = document.getElementById('charworld-room');
   // ★펫이 사는 필드 = 내 방 + 공원(9-03 산책). 다른 필드에선 빈 목록 → 걷어진다.
-  var list = (window._curField === 'home' || window._mwIsOpenField()) ? window._mwPetsData() : [];
+  var list = (window._curField === 'home' || (window._mwIsOpenField && window._mwIsOpenField())) ? window._mwPetsData() : [];
   var clear = function () {
     window._mwPets.forEach(function (p) { clearTimeout(p._t); if (p.el) p.el.remove(); });
     window._mwPets = [];
@@ -6145,7 +6148,7 @@ window._mwPetSync = function () {
     //   -> 잴 수 있게 될 때까지 짧게 다시 본다. 방을 나가면 list 가 비어 저절로 멈춘다.
     // ★목록이 비어 있어도 재시도한다 — 문서가 아직 안 왔을 뿐일 수 있다(8-30).
     //   home 필드가 아닐 때만 진짜로 그만둔다.
-    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || window._mwIsOpenField())))) {
+    if (room && (!room.clientWidth || (!list.length && (window._curField === 'home' || (window._mwIsOpenField && window._mwIsOpenField()))))) {
       window._mwPetSyncTry = (window._mwPetSyncTry || 0) + 1;
       if (window._mwPetSyncTry <= 24) {          // 최대 ~4초. 그 뒤엔 진짜 안 보이는 화면이다
         clearTimeout(window._mwPetSyncT);
@@ -8334,8 +8337,6 @@ window._mwFieldReveal = function (key, tok) {
     if (el) el.style.visibility = 'visible';
   }, 2500);
 };
-window._MW_OPEN_FIELDS = ['park', 'walk'];
-window._mwIsOpenField = function (k) { return window._MW_OPEN_FIELDS.indexOf(k || window._curField) >= 0; };
 // ★출입구 — 그 칸을 밟으면 다른 맵으로. at = 도착 칸. (park 우상단 길 끝 ↔ walk 왼쪽 가장자리)
 window._FIELD_GATES = {
   park: [{ tc: [43, 43], tr: [6, 8], to: 'walk', at: { tc: 2, tr: 21 } }],
