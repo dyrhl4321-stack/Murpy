@@ -8,7 +8,7 @@ while ((m = re.exec(html))) {
   const attrs = m[1], src = m[2]; if (/\bsrc=/.test(attrs) || !src.trim()) continue; n++;
   const isModule = /type\s*=\s*["']module["']/.test(attrs);
   try {
-    if (isModule) new vm.SourceTextModule ? new vm.SourceTextModule(src) : null;   // 모듈은 module-syntax-check 가 본다
+    if (isModule) { if (vm.SourceTextModule) new vm.SourceTextModule(src, { identifier: 'script#' + n }); }   // 모듈은 module-syntax-check 도 본다
     else new vm.Script(src, { filename: 'script#' + n });
   } catch (e) {
     bad++; const line = (html.slice(0, m.index + m[0].indexOf(src)).match(/\n/g) || []).length;
