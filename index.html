@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1113';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1114';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1806,6 +1806,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .mw-frame-gold { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #F5C24B !important }
   .mw-frame-leaf { box-shadow:0 0 0 2px #05070c, 0 0 0 4px #4CBF5A !important }
   .mw-emote-chip { width:32px; height:32px; background-image:url('char/ui/emotes.png?v=2'); background-size:96px auto; background-repeat:no-repeat; image-rendering:pixelated }
+  .bm-emo { display:inline-block; width:18px; height:18px; background-image:url('char/ui/emotes.png?v=2'); background-size:54px auto; background-repeat:no-repeat; image-rendering:pixelated; vertical-align:middle }
   @keyframes sqStampPop { 0%{ opacity:1; transform:translateX(-50%) scale(0) rotate(-18deg) }
     18%{ transform:translateX(-50%) scale(1.3) rotate(7deg) } 30%{ transform:translateX(-50%) scale(1) rotate(0) }
     78%{ opacity:1 } 100%{ opacity:0; transform:translateX(-50%) scale(1) } }
@@ -8949,12 +8950,15 @@ window.charMove = function (dx, dy) {
   };
   window._RING_ICONS.emote = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M9 9.5h.01M15 9.5h.01M9.5 13c1.3 1 3.7 1 5 0"/></svg>';
   // 9-07 이모트·이름표 프레임 고르기 (링 메뉴 → 이모트 / 스쿼드 퀵바). 이모트는 누르면 바로 머리 위에, 프레임은 장착 토글.
-  window.mwEmotePick = function () {
-    const old = document.getElementById('mw-emote-modal'); if (old) { old.remove(); return; }
+  window.mwEmotePick = function (opts) {
+    const old = document.getElementById('mw-emote-modal'); if (old) { old.remove(); if (!opts) return; }
+    opts = opts || {};
+    window._mwEmotePickCb = opts.pick || null;   // 대숲 반응처럼 '고르기만' 할 때
     const owned = window._mwEmotesOwned(), st = window._seasonState || {};
     const cell = function (id) {
       const i = window._MW_EMOTES.indexOf(id), has = owned.indexOf(id) >= 0;
-      return '<button ' + (has ? 'onclick="window.mwEmoteSend(\'' + id + '\');var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()"' : 'disabled')
+      const act = opts.pick ? 'window._mwEmotePickCb&&window._mwEmotePickCb(\'' + id + '\')' : 'window.mwEmoteSend(\'' + id + '\')';
+      return '<button ' + (has ? 'onclick="' + act + ';var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()"' : 'disabled')
         + ' style="width:56px;height:56px;padding:0;border:2px solid #05070c;background:' + (has ? '#141a28' : '#0d111a') + ';cursor:' + (has ? 'pointer' : 'default') + ';display:flex;align-items:center;justify-content:center;' + (has ? '' : 'opacity:.28;') + 'box-shadow:0 0 0 2px #2b3350">'
         + '<div class="mw-emote-chip" style="background-position:0 ' + (-i * 32) + 'px"></div></button>';
     };
@@ -8966,11 +8970,11 @@ window.charMove = function (dx, dy) {
     const el = document.createElement('div'); el.id = 'mw-emote-modal';
     el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;padding:14vh 20px 20px;background:rgba(5,7,12,.7);overflow:hidden;overscroll-behavior:contain';
     el.innerHTML = '<div class="mw-panel" style="width:100%;max-width:320px;padding:16px">'
-      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">이모트</div>'
+      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">' + (opts.title || '이모트') + '</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:8px">' + window._MW_EMOTES.map(cell).join('') + '</div>'
-      + '<div style="font-size:10.5px;color:#8a93a8;margin-top:10px;line-height:1.6">흐린 건 아직 없는 이모트 — 공원 사람들 부탁을 들어주면 생겨요</div>'
-      + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin:16px 0 10px">이름표 프레임</div>'
-      + (frames ? '<div style="display:flex;flex-wrap:wrap;gap:7px">' + frames + '</div>' : '')
+      + '<div style="font-size:10.5px;color:#8a93a8;margin-top:10px;line-height:1.6">' + (opts.hint || '흐린 건 아직 없는 이모트 — 공원 사람들 부탁을 들어주면 생겨요') + '</div>'
+      + (opts.pick ? '' : '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin:16px 0 10px">이름표 프레임</div>'
+      + (frames ? '<div style="display:flex;flex-wrap:wrap;gap:7px">' + frames + '</div>' : ''))
       + '</div>';
     el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
     document.body.appendChild(el);
@@ -31863,6 +31867,7 @@ window.loadBamboo = async (tab) => {
       if (post.likes) meta.push(_num(_icLike, post.likes, 'rgba(255,255,255,0.66)'));
       if (post.commentCount) meta.push(_num(_icCmt, post.commentCount, 'rgba(255,255,255,0.66)'));
       if ((post.requesters || []).length) meta.push(`<span style="display:inline-flex;align-items:center;gap:4px;color:#4ADE80;margin-left:-4px">${_icMe}${post.requesters.length}</span>`);
+      if (post.emo && window._bmEmoHtml) { const _eh = window._bmEmoHtml(post, (post.emoBy || {})[(window.currentUser || {}).uid]); if (_eh) meta.push(`<span style="display:inline-flex;gap:8px">${_eh}</span>`); }   // 9-08 이모트 반응
       return `<article class="bamboo-item" role="button" tabindex="0"
         onclick="window.openBambooDetail('${post.id}')"
         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.openBambooDetail('${post.id}')}">
@@ -32080,6 +32085,9 @@ window.openBambooDetail = async function (postId) {
       <button onclick="openCommentPanel('${p.id}','bamboo')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:rgba(255,255,255,0.42);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;transition:color 0.15s ease">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>댓글 ${p.commentCount || 0}
       </button>
+      <button onclick="window.bambooEmotePick('${p.id}')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:${(p.emoBy || {})[user && user.uid] ? '#4ADE80' : 'rgba(255,255,255,0.42)'};font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-0.2px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14c1.2 1.4 2.4 2 3.5 2s2.3-.6 3.5-2M9 9.5h.01M15 9.5h.01"/></svg>${window._bmEmoHtml ? (window._bmEmoHtml(p, (p.emoBy || {})[user && user.uid]) || '이모트') : '이모트'}
+      </button>
       ${isMine && requesters.length ? `<button onclick="window.viewBambooRequesters('${p.id}')" style="display:flex;align-items:center;gap:7px;background:none;border:none;padding:4px 0;color:#4ADE80;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:-0.2px;margin-left:auto">
         ${window.icHandUp(16)}신청자 ${requesters.length}
       </button>` : ''}
@@ -32130,6 +32138,29 @@ window.deleteBambooPost = async (postId) => {
   }
 };
 
+// 대숲 이모트 반응 — 글당 하나. 같은 걸 다시 고르면 취소, 다른 걸 고르면 교체. emo 개수와 emoBy 를 한 트랜잭션으로.
+window.bambooEmoteReact = async (postId, emoteId) => {
+  const user = auth.currentUser || window.currentUser;
+  if (!user) { showToast('로그인 후 반응할 수 있어요'); return; }
+  if (!window._MW_EMOTES || window._MW_EMOTES.indexOf(emoteId) < 0) return;
+  try {
+    const ref = doc(db, 'bamboo', postId);
+    let mine = null;
+    await runTransaction(db, async tx => {
+      const s = await tx.get(ref); if (!s.exists()) return;
+      const d = s.data() || {}; const emo = Object.assign({}, d.emo || {}); const by = Object.assign({}, d.emoBy || {});
+      const prev = by[user.uid] || null;
+      if (prev) emo[prev] = Math.max(0, (emo[prev] || 0) - 1);
+      if (prev === emoteId) { delete by[user.uid]; mine = null; }
+      else { by[user.uid] = emoteId; emo[emoteId] = (emo[emoteId] || 0) + 1; mine = emoteId; }
+      tx.update(ref, { emo: emo, emoBy: by });
+    });
+    if (window._bambooCache) delete window._bambooCache[postId];
+    showToast(mine ? '이모트로 반응했어요' : '반응을 지웠어요');
+    if (window._bambooDetailId === postId && document.getElementById('bamboo-detail-body')) await window.openBambooDetail(postId);
+    window.loadBamboo(window.bambooTab || 'all');
+  } catch (e) { console.error('bambooEmoteReact', e); showToast('반응 실패 · 잠시 후 다시'); }
+};
 window.toggleBambooLikeFirestore = async (postId) => {
   const user = auth.currentUser || window.currentUser;
   if (!user) { showToast('로그인 후 좋아요를 누를 수 있어요'); return; }
@@ -41834,6 +41865,19 @@ window._mwEmotePop = function (hostEl, id) {
 window._mwEmotesOwned = function () {
   const st = window._seasonState || {};
   return window.MW_EMOTE_FREE.concat((st.emotes || []).filter(function (e) { return window._MW_EMOTES.indexOf(e) >= 0 && window.MW_EMOTE_FREE.indexOf(e) < 0; }));
+};
+// ── 대숲 이모트 반응(할매 퀘스트 보상, 대표 9-07) — 글에 이모트 하나. 익명은 그대로(uid 는 likedBy 처럼 문서에만).
+window._bmEmoHtml = function (post, mine) {
+  const emo = (post && post.emo) || {}; const ids = Object.keys(emo).filter(function (k) { return emo[k] > 0 && window._MW_EMOTES.indexOf(k) >= 0; });
+  ids.sort(function (a, b) { return emo[b] - emo[a]; });
+  return ids.slice(0, 4).map(function (k) {
+    const i = window._MW_EMOTES.indexOf(k);
+    return '<span style="display:inline-flex;align-items:center;gap:2px;color:' + (k === mine ? '#4ADE80' : 'rgba(255,255,255,0.66)') + '"><i class="bm-emo" style="background-position:0 ' + (-i * 18) + 'px"></i>' + emo[k] + '</span>';
+  }).join('');
+};
+window.bambooEmotePick = function (postId) {
+  if (window._notMember && window._notMember()) { window.memberGate ? window.memberGate('이모트로 반응하려면 로그인이 필요해요') : (window.requireLogin && requireLogin()); return; }
+  window.mwEmotePick({ title: '이모트로 반응', hint: '같은 걸 다시 누르면 취소돼요 · 흐린 건 공원 순이 할매 부탁으로 열려요', pick: function (id) { window.bambooEmoteReact && window.bambooEmoteReact(postId, id); } });
 };
 // 내 이모트: 프레즌스 3곳(방·광장·스쿼드)에 emote {id,t} 로 실리고 MW_EMOTE_MS 뒤 비운다(말풍선 msg 와 같은 방식).
 window.mwEmoteSend = function (id) {
