@@ -4031,8 +4031,9 @@ window.faceEntryTap = async function () {
   const hasChar = Object.keys((window._charState || {}).faceChars || {}).length > 0;
   const st = window._faceEntryState(window.faceTickets(), hasChar, !!prof.faceVerified, hasPhoto, !!(window._charState || {}).faceReqPending);
   if (st.mode === 'pending') {
-    await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '확인',
-      desc: '캐릭터를 만들고 있어요<br>다른 화면을 이용해도 괜찮아요. 완료되면 알려드려요' });
+    const check = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '생성 상태 확인',
+      desc: '캐릭터를 만들고 있어요<br>다른 화면을 이용해도 괜찮아요.<br>오래 멈춘 작업은 상태 확인 시 이용권을 복구해요.' });
+    if (check && window.faceRecoverRequest) await window.faceRecoverRequest();
     return;
   }
   if (st.mode === 'buy') {
@@ -9212,7 +9213,7 @@ window.charSlot = function (slot, btn) {
 window._charSkinPaint = function (grid) {
   const bodyKey = (window._charDraft || {}).body || 'human';
   const b = window._CHAR_BODIES[bodyKey] || {};
-  if (!b.skinBase) {
+  if (!b.skinBase && !b.skinUrls) {
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:26px 14px;'
       + 'font-size:12px;color:#4a5266;line-height:1.9">이 캐릭터는 피부톤을 바꿀 수 없어요</div>';
     return;
@@ -9511,7 +9512,7 @@ window._charSyncSlotTabs = function () {
   bar.querySelectorAll('.tab-btn').forEach(function (t) {
     const slot = t.dataset.slot; if (!slot) return;
     const hide = !!(b.fixedHair && (slot === 'hair' || slot === 'hat'))
-      || (slot === 'skin' && !b.skinBase);
+      || (slot === 'skin' && !b.skinBase && !b.skinUrls);
     t.style.display = hide ? 'none' : '';
     if (hide && t.classList.contains('active')) movedTo = bar.querySelector('.tab-btn[data-slot="top"]');
   });
@@ -15709,7 +15710,7 @@ import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, Google
 import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, getDocsFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, runTransaction as rtRunTransaction, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
-import { getStorage, ref as stRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+import { getStorage, ref as stRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ",
@@ -17514,9 +17515,10 @@ window.getMyCharacter = function () { return window._charState.character ? windo
 window._charState.faceChars = {};
 window._charLoadMyFaceChars = async function (uid, profileGender) {
   if (!uid || (window.currentUser || {}).uid !== uid) return 0;
+  const loadId = window._faceLoadId = (window._faceLoadId || 0) + 1;
   if (!profileGender) {
     try { const p = await getDocFromServer(doc(db, 'users', uid)); profileGender = p.exists() ? p.data().gender : ''; } catch (e) {}
-    if ((window.currentUser || {}).uid !== uid) return 0;
+    if ((window.currentUser || {}).uid !== uid || window._faceLoadId !== loadId) return 0;
   }
   // 계정이 바뀌면 이전 계정에서 동적으로 꽂은 face:* 몸통을 전부 걷는다.
   // faceChars 서브컬렉션은 uid별인데 전역 _CHAR_BODIES 는 세션 공용이라, 이 정리가 없으면
@@ -17537,7 +17539,13 @@ window._charLoadMyFaceChars = async function (uid, profileGender) {
   let snap;
   try { snap = await getDocsFromServer(collection(db, 'users', uid, 'faceChars')); }
   catch (e) { snap = await getDocs(collection(db, 'users', uid, 'faceChars')); }
-  if ((window.currentUser || {}).uid !== uid || window._faceOwnerUid !== uid) return 0;
+  if ((window.currentUser || {}).uid !== uid || window._faceOwnerUid !== uid || window._faceLoadId !== loadId) return 0;
+  // Remove stale owned definitions too: a deleted face must not survive in the selectable registry.
+  Object.keys(window._CHAR_BODIES).forEach(function (k) {
+    if (k.indexOf(window.FACE_BODY_PREFIX) === 0 && window._CHAR_BODIES[k].owner === uid) {
+      delete window._CHAR_BODIES[k]; if (window.SQ_MG_EYES) delete window.SQ_MG_EYES[k];
+    }
+  });
   window._charState.faceChars = {};
   let n = 0;
   snap.forEach(function (s) {
@@ -17564,15 +17572,22 @@ window._faceRefreshTickets = async function (uid) {
 };
 window._faceApplyRequestState = async function (uid, data) {
   if (!uid || !data || !window.currentUser || window.currentUser.uid !== uid) return;
+  const requestTime = Number(data.t || 0), rank = ({ pending: 0, working: 1, done: 2, failed: 2 })[data.status];
+  if (rank === undefined) return;
+  const seen = window._faceRequestSeen = window._faceRequestSeen || {};
+  const prior = seen[uid];
+  if (prior && (requestTime < prior.t || (requestTime === prior.t && rank < prior.rank))) return;
+  seen[uid] = { t: requestTime, rank: rank };
+  const applyId = window._faceApplyId = (window._faceApplyId || 0) + 1;
   const status = String(data.status || '');
   window._charState.faceReqPending = status === 'pending' || status === 'working';
   if (status === 'done') {
     try { await window._charLoadMyFaceChars(uid); } catch (e) { console.warn('face done reload', e); }
-    if ((window.currentUser || {}).uid !== uid) return;
+    if ((window.currentUser || {}).uid !== uid || window._faceApplyId !== applyId) return;
     const charId = String(data.charId || '');
     const body = charId && window._CHAR_BODIES['face:' + charId];
     if (body && window._charPreloadFaceBody) { try { await window._charPreloadFaceBody(body); } catch (e) {} }
-    if ((window.currentUser || {}).uid !== uid) return;
+    if ((window.currentUser || {}).uid !== uid || window._faceApplyId !== applyId) return;
     const once = 'done|' + charId;
     const storeKey = 'murpy_face_seen_' + uid + '_' + charId;
     let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
@@ -17584,7 +17599,7 @@ window._faceApplyRequestState = async function (uid, data) {
   } else if (status === 'failed') {
     // 서버가 이미 횟수를 환불했다. 로컬에서 +1 하면 알림과 문서 구독이 겹칠 때 두 번 늘어난다.
     await window._faceRefreshTickets(uid);
-    if ((window.currentUser || {}).uid !== uid) return;
+    if ((window.currentUser || {}).uid !== uid || window._faceApplyId !== applyId) return;
     const once = 'failed|' + String(data.doneAt || data.t || '');
     const storeKey = 'murpy_face_failed_' + uid + '_' + String(data.doneAt || data.t || '');
     let stored = false; try { stored = localStorage.getItem(storeKey) === '1'; } catch (e) {}
@@ -17679,10 +17694,34 @@ window._faceReqPicked = async function (e) {
   catch (err) { console.warn('face upload', err); showToast('사진 준비에 실패했어요 · 다시 선택해주세요'); }
   finally { window._faceCreateBusy = false; window._faceProgress(''); if (window.charRenderRoster) window.charRenderRoster(); }
 };
+window._faceCleanupUploads = async function (urls, uid) {
+  if ((window.currentUser || {}).uid !== uid) return;
+  await Promise.allSettled(urls.map(async function (url) {
+    const ref = stRef(_mwStorage, url);
+    if (ref.fullPath.indexOf('uploads/' + uid + '/facereq_') === 0) await deleteObject(ref);
+  }));
+};
+window._facePrepareFile = async function (file) {
+  if (file.size > 25 * 1024 * 1024) throw new Error('사진은 25MB 이하로 골라주세요');
+  const url = URL.createObjectURL(file), canvas = document.createElement('canvas');
+  let img;
+  try {
+    img = await _loadImg(url);
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (!(w > 0 && h > 0)) throw new Error('사진을 읽지 못했어요');
+    const scale = Math.min(1, 1536 / Math.max(w, h));
+    canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob || blob.size > 8 * 1024 * 1024) throw new Error('사진 변환에 실패했어요');
+    return blob;
+  } finally { if (img) img.src = ''; URL.revokeObjectURL(url); canvas.width = canvas.height = 1; }
+};
 window._faceReqProcess = async function (e) {
   const requestUid = (window.currentUser || {}).uid;
   if (!requestUid) return;
-  const files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
+  let files = Array.from((e.target && e.target.files) || []).filter(function (f) { return /^image\//.test(f.type); }).slice(0, 7);
   if (!files.length) return;
   const hairPref = await window._faceChooseHair();
   if (!hairPref) return;
@@ -17690,6 +17729,13 @@ window._faceReqProcess = async function (e) {
   const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', confirmText: '만들기',
     desc: '사진 <b style="color:#fff">' + files.length + '장</b> · <b style="color:#F5C24B">' + hp.t + '</b><br>자동 생성이 끝나면 바로 캐릭터 목록에 들어와요<br><span style="color:#8a93a8">정면 사진이 많을수록 더 닮아요</span>' });
   if (!ok || (window.currentUser || {}).uid !== requestUid) return;
+  const prepared = [];
+  for (let i = 0; i < files.length; i++) {
+    window._faceProgress('사진 준비 중 · ' + (i + 1) + '/' + files.length);
+    prepared.push(await window._facePrepareFile(files[i]));
+    if ((window.currentUser || {}).uid !== requestUid) return;
+  }
+  files = prepared;
   // 올리는 사진이 본인인지 본다 — 인증만 해놓고 남의 사진을 올리면 남의 캐릭터가 나온다(대표 9-07).
   // ★문턱은 느슨하게(대표 9-07 "내 사진인데도 안 됨, 제한 많이 풀어"): 얼굴을 **찾았고 분명히 다른 사람**(0.68 이상)일 때만 뺀다.
   //   얼굴을 못 찾은 사진·기준 사진이 없는 경우는 막지 않는다(얼굴 인증이 이미 관문이고, 최종 판정은 서버 채점이 한다).
@@ -17729,11 +17775,12 @@ window._faceReqProcess = async function (e) {
   for (let i = 0; i < keep.length; i++) {
     if ((window.currentUser || {}).uid !== requestUid) return;
     window._faceProgress('사진 올리는 중 · ' + (i + 1) + '/' + keep.length);
-    try { urls.push(await window.mwUploadImage(keep[i], 'facereq')); } catch (err) { console.warn('facereq upload', err); }
+    try { urls.push(await window.mwUploadImage(keep[i], 'facereq')); }
+    catch (err) { await window._faceCleanupUploads(urls, requestUid); showToast('사진 업로드에 실패했어요 · 신청되지 않았고 이용권은 차감되지 않았어요'); return; }
   }
   if ((window.currentUser || {}).uid !== requestUid) return;
   if (!urls.length) { showToast('사진을 올리지 못했어요 · 잠시 후 다시 해주세요'); return; }
-  try { await window._faceSubmitUrls(urls, hairPref); }
+  try { if (!(await window._faceSubmitUrls(urls, hairPref))) await window._faceCleanupUploads(urls, requestUid); }
   catch (err) { console.error('faceReq', err); showToast('신청하지 못했어요 · 잠시 후 다시 해주세요'); }
 };
 // 통과한 프레임을 올리고 신청 문서를 만든다. 만들기 횟수 1 차감과 신청 문서를 **한 트랜잭션**으로 —
@@ -17762,6 +17809,21 @@ window._faceSubmitUrls = async function (urls, hairPref) {
   showToast('자동으로 만들고 있어요 · 끝나면 바로 알려드려요');
   if (window.charRenderRoster) window.charRenderRoster();
   return true;
+};
+window.faceRecoverRequest = async function () {
+  const uid = (window.currentUser || {}).uid; if (!uid || window._faceRecoverBusy) return;
+  window._faceRecoverBusy = true;
+  try {
+    const res = await httpsCallable(getFunctions(app, 'asia-northeast3'), 'face_recover')({});
+    if ((window.currentUser || {}).uid !== uid) return;
+    await window._faceRefreshTickets(uid);
+    const snap = await getDocFromServer(doc(db, 'faceRequests', uid));
+    if ((window.currentUser || {}).uid !== uid) return;
+    if (snap.exists()) await window._faceApplyRequestState(uid, snap.data());
+    if (res.data.status === 'active') showToast('아직 생성 중이에요 · 15분 이상 멈춘 작업만 복구할 수 있어요');
+    else if (res.data.status === 'recovered') showToast('멈춘 작업을 정리하고 이용권을 돌려드렸어요');
+  } catch (e) { if ((window.currentUser || {}).uid === uid) showToast('상태를 확인하지 못했어요 · 잠시 후 다시 시도해주세요'); }
+  finally { window._faceRecoverBusy = false; }
 };
 // (구) 웹캠 프레임으로 신청 — 인증 모달의 create 모드가 쓰던 경로. 지금은 사진 고르기가 기본이라 안 쓰인다.
 window._faceSubmitRequest = async function (v) {
@@ -17810,19 +17872,22 @@ window.faceAdminDone = async function (uid) {
 };
 // 도착 팝업에서 이름을 짓고 바로 입는다 (대표 9-07: "이름은 내가 작성"). 이름은 faceChars 문서의 name 만 바꾼다(규칙이 그 필드만 연다).
 window.faceDoneWear = async function (charId) {
+  const uid = (window.currentUser || {}).uid, key = 'face:' + charId;
+  if (!uid || !window._charBodyIsMine(window._CHAR_BODIES[key]) || !(window._charState.faceChars || {})[charId]) return;
   const inp = document.getElementById('face-promo-name');
   const name = String((inp && inp.value) || '').trim();
   if (name.length < 1 || name.length > 12) { showToast('이름은 1~12자로 지어주세요'); if (inp) inp.focus(); return; }
   if (window._hasContact && window._hasContact(name)) { showToast('쓸 수 없는 이름이에요'); return; }
-  const uid = window.currentUser.uid, key = 'face:' + charId;
   try { await updateDoc(doc(db, 'users', uid, 'faceChars', charId), { name: name, updatedAt: Date.now() }); }
   catch (e) { console.warn('faceDoneWear', e); showToast('이름 저장에 실패했어요'); return; }
+  if ((window.currentUser || {}).uid !== uid) return;
   if (window._CHAR_BODIES[key]) window._CHAR_BODIES[key].name = name;
   if (window._charState.faceChars && window._charState.faceChars[charId]) window._charState.faceChars[charId].name = name;
   window.closeFacePromo(false);
   if (typeof closePanel === 'function') closePanel('mypage-panel');
   goPage('char');
   setTimeout(function () {
+    if ((window.currentUser || {}).uid !== uid || !(window._charState.faceChars || {})[charId]) return;
     if (window.charHubTab) window.charHubTab('me');
     if (window.charPickBody) window.charPickBody(key);
     if (window.charRenderRoster) window.charRenderRoster();
@@ -17832,32 +17897,58 @@ window.faceDoneWear = async function (charId) {
 // 폐기 실행. mode 'remake' = 지우고 바로 만들기 입구로(횟수 없으면 구매창), 'appeal' = 지우고 faceAppeals 에 사유를 남긴다
 //   (관리자 카드에서 보고 횟수를 돌려준다). 두 경우 모두 설문(사유·한마디)을 faceAppeals 에 남긴다 — 프롬프트 개선 재료.
 // ★지울 땐 지울 것만: faceChars 문서 하나 + 표에서 그 몸통. 착용 중이었으면 성별 기본 몸통으로 갈아입힌다.
+window._faceDiscardTx = async function (uid, charId, mode, survey) {
+  const key = 'face:' + charId;
+  return runTransaction(db, async tx => {
+    const userRef = doc(db, 'users', uid), faceRef = doc(db, 'users', uid, 'faceChars', charId);
+    const user = await tx.get(userRef), face = await tx.get(faceRef);
+    if (!user.exists() || !face.exists()) return null;
+    const ud = user.data(), fc = face.data(), oldChar = ud.character || {};
+    const wearing = oldChar.body === key, female = String(ud.gender || '').indexOf('여') === 0;
+    const replacement = { body: female ? 'human_f' : 'human', hair: female ? 'hair_f_basic' : 'hair_m_basic',
+      top: female ? 'top_f_basic_tee' : 'top_basic_tee', bottom: female ? 'bottom_f_basic_shorts' : 'bottom_basic_shorts' };
+    if (oldChar.skin) replacement.skin = oldChar.skin;
+    if (wearing) tx.update(userRef, { character: replacement, characterSheet: deleteField(), characterUpdatedAt: serverTimestamp() });
+    tx.set(doc(db, 'faceAppeals', uid + '_' + charId), { uid: uid, nick: ud.nickname || '', charId: charId, name: fc.name || '',
+      sheetUrl: fc.sheetUrl || '', kind: mode, reasons: survey.reasons, text: survey.text,
+      status: mode === 'appeal' ? 'open' : 'survey', t: Date.now() });
+    tx.delete(faceRef);
+    return { wearing: wearing, character: wearing ? replacement : oldChar };
+  });
+};
 window.faceDiscardRun = async function (mode) {
   const charId = window._facePromoCharId; if (!charId || !window.currentUser) return;
+  if (window._faceDiscardBusy || !['appeal', 'remake'].includes(mode)) return;
+  const uid = window.currentUser.uid, key = 'face:' + charId;
+  if (!window._charBodyIsMine(window._CHAR_BODIES[key])) return;
   const sv = window._faceDiscardSurvey ? window._faceDiscardSurvey() : { reasons: [], text: '' };
   if (!sv.reasons.length && !sv.text) { showToast('폐기 이유를 하나 골라주세요'); return; }
+  window._faceDiscardBusy = true;
+  let discarded = false;
+  try {
   const ok = await window.murpyConfirm({ title: '캐릭터 폐기', danger: true, confirmText: '폐기하기',
     desc: '폐기하면 되돌릴 수 없어요' + (mode === 'appeal' ? '<br>확인 후 만들기 횟수를 돌려드려요' : '') });
-  if (!ok) return;
-  const uid = window.currentUser.uid, key = 'face:' + charId;
-  const fc = (window._charState.faceChars || {})[charId] || {};
-  try {
-    await addDoc(collection(db, 'faceAppeals'), { uid: uid, nick: (window._cachedProfile || {}).nickname || '', charId: charId, name: fc.name || '',
-      sheetUrl: fc.sheetUrl || '', kind: mode, reasons: sv.reasons, text: sv.text, status: mode === 'appeal' ? 'open' : 'survey', t: Date.now() });
-    // 이의 신청은 관리자에게 알림(카드에서만 보이던 것, 9-07). 푸시 문구는 functions 기본값("새 소식")으로 떨어진다.
-    if (mode === 'appeal' && window.ADMIN_UID) { try { await _sendNotif(window.ADMIN_UID, 'face_appeal', { text: sv.reasons.join(' · ') + (sv.text ? ' — ' + sv.text : ''), charId: charId }); } catch (e) {} }
-  } catch (e) { console.warn('faceAppeals', e); }
-  try { await deleteDoc(doc(db, 'users', uid, 'faceChars', charId)); }
-  catch (e) { console.warn('faceDiscard', e); showToast('폐기에 실패했어요'); return; }
+  if (!ok || (window.currentUser || {}).uid !== uid) return;
+  const result = await window._faceDiscardTx(uid, charId, mode, sv);
+  if ((window.currentUser || {}).uid !== uid) return;
+  if (!result) { showToast('이미 폐기됐거나 보유하지 않은 캐릭터예요'); return; }
+  discarded = true;
+  window._faceLoadId = (window._faceLoadId || 0) + 1;
   if (window._charState.faceChars) delete window._charState.faceChars[charId];
   delete window._CHAR_BODIES[key];
+  if (window.SQ_MG_EYES) delete window.SQ_MG_EYES[key];
+  if (result.wearing) window._charState.character = result.character;
+  if (window._charDraft && window._charDraft.body === key) window._charDraft = { ...result.character };
   window.closeFacePromo(false);
-  const wearing = (window._charDraft && window._charDraft.body === key) || ((window._charState.character || {}).body === key);
-  if (wearing && window.charPickBody) window.charPickBody(window._charBodyForGender((window._cachedProfile || {}).gender));
+  if (result.wearing && window.renderCharSpace) window.renderCharSpace();
+  if (mode === 'appeal' && window.ADMIN_UID) { try { await _sendNotif(window.ADMIN_UID, 'face_appeal', { text: sv.reasons.join(' · ') + (sv.text ? ' — ' + sv.text : ''), charId: charId }); } catch (e) {} }
+  if ((window.currentUser || {}).uid !== uid) return;
   if (window.charRenderRoster) window.charRenderRoster();
   if (mode === 'appeal') { showToast('이의 신청을 보냈어요 · 확인 후 만들기 횟수를 돌려드려요'); return; }
   showToast('폐기했어요');
-  if (window.faceEntryTap) setTimeout(function () { window.faceEntryTap(); }, 400);
+  if (window.faceEntryTap) setTimeout(function () { if ((window.currentUser || {}).uid === uid) window.faceEntryTap(); }, 400);
+  } catch (e) { console.warn('faceDiscard', e); showToast(discarded ? '폐기는 완료됐어요 · 화면을 다시 열어주세요' : '폐기에 실패했어요 · 캐릭터는 그대로 보존됐어요'); }
+  finally { window._faceDiscardBusy = false; }
 };
 // 관리자: 이의 신청 목록. '횟수 돌려주기' = 이용권 1장 지급 + granted, '닫기' = closed.
 window.faceAdminAppeals = async function () {
@@ -17884,8 +17975,20 @@ window.faceAdminAppeals = async function () {
 window.faceAdminAppealDone = async function (id, uid, grant) {
   if (!isAdmin()) return;
   try {
-    if (grant && !(await window.faceAdminGrantTicket(uid, 1))) return;
-    await updateDoc(doc(db, 'faceAppeals', id), { status: grant ? 'granted' : 'closed', doneAt: Date.now() });
+    const result = await runTransaction(db, async tx => {
+      const appealRef = doc(db, 'faceAppeals', id), appeal = await tx.get(appealRef);
+      if (!appeal.exists()) return false;
+      const a = appeal.data();
+      if (a.uid !== uid || !['open', 'survey'].includes(a.status) || (grant && a.status !== 'open')) return false;
+      if (grant) {
+        const userRef = doc(db, 'users', a.uid), user = await tx.get(userRef);
+        if (!user.exists()) return false;
+        tx.update(userRef, { faceTickets: (Number(user.data().faceTickets) || 0) + 1 });
+      }
+      tx.update(appealRef, { status: grant ? 'granted' : 'closed', doneAt: Date.now() });
+      return true;
+    });
+    showToast(result ? (grant ? '이용권 1회를 돌려드렸어요' : '닫았어요') : '이미 처리됐거나 대상이 일치하지 않아요');
     window.faceAdminAppeals();
   } catch (e) { console.warn('faceAdminAppealDone', e); showToast('실패'); }
 };
@@ -24907,7 +25010,9 @@ window.startNotifListener = (uid) => {
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
           else if (n.type === 'face_done') {
             // 신청 문서 구독과 같은 처리기로 모은다. 둘이 동시에 와도 charId 키로 한 번만 뜬다.
-            window._faceApplyRequestState && window._faceApplyRequestState(uid, { status: 'done', charId: n.charId || '' });
+            getDocFromServer(doc(db, 'faceRequests', uid)).then(function (s) {
+              if (s.exists() && window._faceApplyRequestState) window._faceApplyRequestState(uid, s.data());
+            }).catch(function (e) { console.warn('face notification refresh', e); });
           }
           else if (n.type === 'face_appeal') { showToast((n.fromNickname || '누군가') + '님이 커마 이의 신청을 보냈어요'); }
           else if (n.type === 'face_failed') {

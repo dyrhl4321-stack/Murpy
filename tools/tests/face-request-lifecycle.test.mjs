@@ -53,4 +53,27 @@ const draftWindow = { currentUser: { uid: 'alice' }, FACE_BODY_PREFIX: 'face:',
 new Function('window', auto)(draftWindow);
 draftWindow._charAutoSave(true);
 assert.equal(draftWindow._charState.character.body, 'human_f', '남의 얼굴을 로컬 내 캐릭터에 반영했다');
+const prepare = src.match(/window\._facePrepareFile = async function[\s\S]*?\n\};/)[0];
+let preparedCanvas, preparedSize, revoked = 0;
+const preparationDocument = { createElement() {
+  preparedCanvas = { width:0,height:0,getContext:()=>({fillRect(){},drawImage(){}}),
+    toBlob(resolve, mime) { preparedSize=[this.width,this.height]; resolve({type:mime,size:100}); } };
+  return preparedCanvas;
+} };
+const pw = {};
+new Function('window','document','URL','_loadImg',prepare)(pw, preparationDocument,
+  {createObjectURL:()=> 'blob:test',revokeObjectURL:()=>revoked++},async ()=>({naturalWidth:4032,naturalHeight:3024,src:'blob:test'}));
+assert.equal((await pw._facePrepareFile({size:1_000_000,type:'image/heic'})).type,'image/jpeg');
+assert.deepEqual(preparedSize,[1536,1152]);
+assert.deepEqual([preparedCanvas.width,preparedCanvas.height],[1,1]); assert.equal(revoked,1);
+await assert.rejects(pw._facePrepareFile({size:26*1024*1024}));
+const apply = src.match(/window\._faceApplyRequestState = async function[\s\S]*?\n\};/)[0];
+const aw = { currentUser:{uid:'alice'}, _charState:{}, charRenderRoster(){},
+  _charLoadMyFaceChars(){ throw new Error('Old done event must not load/show a face'); } };
+new Function('window','localStorage','showToast',apply)(aw,{getItem:()=>null,setItem(){}},()=>{});
+await aw._faceApplyRequestState('alice',{status:'working',t:200});
+await aw._faceApplyRequestState('alice',{status:'done',t:100,charId:'old'});
+assert.equal(aw._charState.faceReqPending,true,'옛 완료 알림이 새 생성의 진행 상태를 덮었다');
+await aw._faceApplyRequestState('alice',{status:'pending',t:200});
+assert.equal(aw._faceRequestSeen.alice.rank,1,'지연 pending 응답이 working 상태를 되돌렸다');
 console.log('OK face-request-lifecycle: 중복 차감·성별·계정 전환·추론 메모리 회귀');

@@ -65,7 +65,12 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
     # 요청별 목적지를 인자로 고정한다. 모듈 전역을 바꾸면 동시 생성한 다른 얼굴이 섞인다.
     skin.bake(best['ai'], 'skin', out_dir=out_dir)
     skins = {t: os.path.join(out_dir, 'skin_%s.png' % t) for t in ('t1', 't2', 't4', 't5', 't6')}
-    skins = {t: p for t, p in skins.items() if os.path.exists(p)}
+    # Never deliver a partial skin set or malformed geometry: those appear as random faces/blank frames on selection.
+    for path in [best['ai']] + list(skins.values()) + ([best['hair']] if best['hair'] else []):
+        with Image.open(path) as im:
+            if im.size != (423, 896) or im.mode != 'RGBA':
+                raise RuntimeError('최종 캐릭터 시트 규격 검사 실패')
+            im.load()
     ey = eyes.detect(best['ai'])
     return {'sheet': best['ai'], 'hair': best['hair'], 'skins': skins, 'eyes': ey,
             'verdict': best['verdict'], 'attempts': best['attempt'], 'scores': scores}

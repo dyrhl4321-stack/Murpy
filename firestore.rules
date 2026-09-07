@@ -53,7 +53,10 @@ service cloud.firestore {
       match /faceChars/{charId} {
         allow read: if true;
         allow create: if isAdmin();
-        allow delete: if isAdmin() || isOwner(userId);   // 본인 폐기(9-07). 만들기는 서버만.
+        // Deletion must atomically leave a valid outfit and a retained appeal/survey record.
+        allow delete: if isAdmin() || (isOwner(userId)
+          && getAfter(/databases/$(database)/documents/users/$(userId)).data.get('character', {}).get('body', '') != 'face:' + charId
+          && existsAfter(/databases/$(database)/documents/faceAppeals/$(userId + '_' + charId)));
         // 본인은 **이름만** 바꾼다(도착 팝업에서 이름 짓기, 9-07). 시트 URL·톤·눈 좌표는 서버/관리자만.
         allow update: if isAdmin() || (isOwner(userId)
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt'])
@@ -441,6 +444,9 @@ service cloud.firestore {
     match /faceAppeals/{id} {
       allow read: if isAdmin() || (request.auth != null && resource.data.uid == request.auth.uid);
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid
+                    && id == request.auth.uid + '_' + request.resource.data.charId
+                    && exists(/databases/$(database)/documents/users/$(request.auth.uid)/faceChars/$(request.resource.data.charId))
+                    && request.resource.data.sheetUrl == get(/databases/$(database)/documents/users/$(request.auth.uid)/faceChars/$(request.resource.data.charId)).data.sheetUrl
                     && request.resource.data.reasons is list
                     && request.resource.data.text is string && request.resource.data.text.size() <= 500
                     && request.resource.data.status in ['open', 'survey'];

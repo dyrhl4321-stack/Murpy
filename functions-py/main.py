@@ -9,10 +9,10 @@
 배포: firebase.json 의 codebase 'face' (python312). `firebase deploy --only functions:face`
 """
 import os, time, uuid, json, tempfile, urllib.request, urllib.parse
-from firebase_functions import firestore_fn, options
+from firebase_functions import firestore_fn, https_fn, options
 from firebase_functions.params import SecretParam
 from firebase_admin import initialize_app, firestore, storage
-from facegen.jobs import claim_request, complete_request, fail_request, request_photo_path
+from facegen.jobs import claim_request, complete_request, fail_request, request_photo_path, recover_request
 
 GEMINI = SecretParam('GEMINI_API_KEY')
 initialize_app()
@@ -42,11 +42,13 @@ def _download(url, timeout=60):
         ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0]
         return ctype, r.read()
 
-def _upload(bucket, path, local, ctype='image/png'):
+def _upload(bucket, path, local, ctype='image/png', deadline=None):
     """Firebase 다운로드 URL(토큰) 로 올린다 — 규칙과 무관하게 <img src> 로 바로 쓸 수 있다."""
     blob = bucket.blob(path); token = uuid.uuid4().hex
     blob.metadata = {'firebaseStorageDownloadTokens': token}
-    blob.upload_from_filename(local, content_type=ctype)
+    remaining = deadline - time.monotonic() if deadline else 30
+    if remaining <= 0: raise RuntimeError('캐릭터 저장 시간이 초과됐어요')
+    blob.upload_from_filename(local, content_type=ctype, timeout=min(30, remaining), retry=None)
     return 'https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media&token=%s' % (bucket.name, urllib.parse.quote(path, safe=''), token)
 
 def _delete_by_url(bucket, url, uid):
@@ -58,7 +60,7 @@ def _delete_by_url(bucket, url, uid):
     except Exception: pass
 
 @firestore_fn.on_document_written(document='faceRequests/{uid}', secrets=[GEMINI],
-                                  memory=options.MemoryOption.GB_2, timeout_sec=540, cpu=2)
+                                  memory=options.MemoryOption.GB_2, timeout_sec=540, cpu=2, concurrency=1)
 def face_generate(event):
     # ★'생성' 트리거는 두 번째 신청(같은 uid 문서 갱신)에 안 깨어난다(9-07 대표 신청이 '만드는 중'에 멈춤).
     #   '쓰기'로 받고, status 가 pending 이면서 신청 시각 t 가 바뀐 경우만 새 신청으로 본다.
@@ -84,8 +86,11 @@ def face_generate(event):
         if not raw_gender.startswith(('여', '남')):
             raise RuntimeError('프로필 성별을 확인한 뒤 다시 신청해주세요')
         gender = '여' if raw_gender.startswith('여') else '남'
-        prompt = _prompt_with_hair(bucket.blob('private/face/prompt.txt').download_as_text(), data.get('hairPref'))
-        base_png = bucket.blob('private/face/base_%s.png' % ('f' if gender == '여' else 'm')).download_as_bytes()
+        prompt = _prompt_with_hair(bucket.blob('private/face/prompt.txt').download_as_text(timeout=20, retry=None), data.get('hairPref'))
+        base_png = bucket.blob('private/face/base_%s.png' % ('f' if gender == '여' else 'm')).download_as_bytes(timeout=20, retry=None)
+        photos = data.get('photos') or []
+        if not isinstance(photos, list) or len(photos) > 7 or data.get('uid') != uid:
+            raise RuntimeError('사진 신청 형식이 올바르지 않아요')
         urls = []
         for u in [data.get('photoUrl')] + [u for u in (data.get('photos') or []) if u]:
             if u and u not in urls: urls.append(u)
@@ -95,17 +100,25 @@ def face_generate(event):
         selfies = []
         for u in urls:
             if not u: continue
-            try: selfies.append(_download(u, timeout=20))
-            except Exception as e: print('사진 실패', u[:80], e)
+            path = request_photo_path(u, uid, BUCKET)
+            blob = bucket.blob(path)
+            blob.reload(timeout=20, retry=None)
+            if not blob.size or blob.size > 8 * 1024 * 1024:
+                raise RuntimeError('사진은 한 장당 8MB 이하로 다시 올려주세요')
+            mime = (blob.content_type or '').split(';')[0]
+            if mime not in ('image/jpeg', 'image/png', 'image/webp'):
+                raise RuntimeError('사진을 JPG 또는 PNG로 변환한 뒤 다시 올려주세요')
+            # Freeze the exact uploaded generation; don't silently substitute another photo or omit failed inputs.
+            selfies.append((mime, blob.download_as_bytes(if_generation_match=blob.generation, timeout=20, retry=None)))
         if not selfies: raise RuntimeError('셀카를 하나도 못 받았다')
         with tempfile.TemporaryDirectory() as td:
             res = pipeline.process(GEMINI.value, base_png, prompt, selfies, td, attempts=4, log=print, base_path=pipeline.align_base(gender), deadline=deadline)
             # Global client registry keys must not collide for users finishing in the same second.
             char_id = 'f' + claim_id
             pre = 'faces/%s/%s/' % (uid, char_id)
-            sheet_url = _upload(bucket, pre + 'sheet.png', res['sheet'])
-            hair_url = _upload(bucket, pre + 'hair.png', res['hair']) if res.get('hair') else None
-            skin_urls = {t: _upload(bucket, pre + 'skin_%s.png' % t, p) for t, p in res['skins'].items()}
+            sheet_url = _upload(bucket, pre + 'sheet.png', res['sheet'], deadline=deadline)
+            hair_url = _upload(bucket, pre + 'hair.png', res['hair'], deadline=deadline) if res.get('hair') else None
+            skin_urls = {t: _upload(bucket, pre + 'skin_%s.png' % t, p, deadline=deadline) for t, p in res['skins'].items()}
         nick = '새 캐릭터'   # 이름은 유저가 도착 팝업에서 짓는다(닉네임을 그대로 쓰니 대표가 '마음대로 패수현' 이라 함, 9-07)
         char_doc = {
             'name': nick, 'sheetUrl': sheet_url, 'hairUrl': hair_url, 'skinUrls': skin_urls, 'eyes': res['eyes'],
@@ -135,3 +148,21 @@ def face_generate(event):
         if not refunded: return
         if bucket:
             for u in [data.get('photoUrl')] + list(data.get('photos') or []): _delete_by_url(bucket, u, uid)
+
+
+@https_fn.on_call(timeout_sec=60, memory=options.MemoryOption.MB_256)
+def face_recover(request):
+    """Owner-triggered recovery; no guessed target UID or client-provided elapsed time."""
+    if not request.auth or not request.auth.uid:
+        raise https_fn.HttpsError(https_fn.FunctionsErrorCode.UNAUTHENTICATED, '로그인이 필요해요')
+    uid = request.auth.uid
+    db = firestore.client()
+    result = firestore.transactional(recover_request)(db.transaction(),
+        db.collection('faceRequests').document(uid), db.collection('users').document(uid),
+        db.collection('notifications').document(), int(time.time() * 1000), {'faceTickets': firestore.Increment(1)},
+        {'toUid': uid, 'type': 'face_failed', 'fromUid': '', 'fromNickname': '머피',
+         'read': False, 'createdAt': firestore.SERVER_TIMESTAMP})
+    if result['status'] == 'recovered':
+        bucket = storage.bucket(BUCKET)
+        for url in result.get('sourceUrls', []): _delete_by_url(bucket, url, uid)
+    return {'status': result['status']}

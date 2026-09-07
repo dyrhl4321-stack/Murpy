@@ -3,6 +3,7 @@ import copy
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -25,6 +26,28 @@ class Tx:
 
 
 class FaceIsolation(unittest.TestCase):
+    def test_recover_crashed_job_once_and_block_late_completion(self):
+        now = 2_000_000
+        ref = Ref({'status':'working', 't':9, 'claimId':'old', 'photoUrl':'own-input'})
+        ref.update_time = datetime.fromtimestamp((now - 900_001) / 1000, timezone.utc)
+        user = Ref({'faceTickets':0})
+        result = jobs.recover_request(Tx(), ref, user, Ref(), now, {'faceTickets':1}, {})
+        self.assertEqual(result['status'], 'recovered')
+        self.assertEqual(user.value['faceTickets'], 1)
+        tx = Tx()
+        self.assertEqual(jobs.recover_request(tx, ref, user, Ref(), now, {'faceTickets':2}, {})['status'], 'finished')
+        self.assertFalse(jobs.complete_request(tx, ref, {'t':9}, 'old', Ref(), {}, Ref(), {}, {}))
+        self.assertEqual(tx.writes, [])
+
+    def test_active_job_ignores_forged_client_timestamp(self):
+        now = 2_000_000
+        for status in ['pending','working']:
+            ref = Ref({'status':status, 't':1, 'startedAt':1})
+            ref.update_time = datetime.fromtimestamp((now - 10) / 1000, timezone.utc)
+            tx = Tx()
+            self.assertEqual(jobs.recover_request(tx, ref, Ref({'faceTickets':0}), Ref(), now, {}, {})['status'], 'active')
+            self.assertEqual(tx.writes, [])
+
     def test_source_and_cleanup_are_bound_to_request_owner(self):
         prefix = 'https://firebasestorage.googleapis.com/v0/b/my-bucket/o/'
         good = prefix + 'uploads%2Falice%2Ffacereq_123.jpg?alt=media&token=test'
