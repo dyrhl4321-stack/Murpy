@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1127';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1128';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1804,9 +1804,17 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .mw-emote-hop { animation:mwEmoteHop .5s cubic-bezier(.34,1.56,.64,1) 1 }
   @keyframes mwEmoteHop { 0%{ transform:translateY(0) } 40%{ transform:translateY(-9px) } 70%{ transform:translateY(0) } 85%{ transform:translateY(-3px) } 100%{ transform:translateY(0) } }
   /* ★9-08 이름표 프레임 = 나노바나나 Pro 그림(9-slice border-image). 원본 48px 높이·테두리 ~11px → 6px 로 축소 표시 */
-  .mw-frame-gold, .mw-frame-leaf { border:6px solid transparent !important; border-image-slice:11 !important; border-image-repeat:round !important; background-clip:padding-box !important; image-rendering:pixelated; box-shadow:none !important }
-  .mw-frame-gold { border-image-source:url('char/ui/frame_gold.png?v=2') !important }
-  .mw-frame-leaf { border-image-source:url('char/ui/frame_leaf.png?v=1') !important }
+/* 대표 9-08 #43: 라벨 안쪽에 반 크기로 그리니 잘리고 '사각형 두 개'로 보였다 → 원본 1배 픽셀(24px 시트·테두리 6px)을
+     border-image-outset 으로 **라벨 바깥에** 두른다. 라벨 크기·검은 배경은 그대로(액자 느낌). */
+  .mw-frame-gold, .mw-frame-leaf { border:0 solid transparent !important; border-image-slice:6 !important; border-image-width:6px !important; border-image-outset:5px 6px !important; border-image-repeat:round !important; image-rendering:pixelated; box-shadow:none !important }
+  .mw-frame-gold { border-image-source:url('char/ui/frame_gold.png?v=3') !important }
+  .mw-frame-leaf { border-image-source:url('char/ui/frame_leaf.png?v=2') !important }
+  /* ② 나비 동행(스쿼드 필드·방 필드용 — 오픈월드는 _mwCompanions 가 그린다). 머리 위 왼쪽에서 8자 궤도로 살랑살랑 */
+  .mw-bfc { position:absolute; left:50%; bottom:calc(100% - 6px); width:32px; height:32px; margin-left:-40px; pointer-events:none; z-index:132;
+    animation:mwBfcFly 3.4s ease-in-out infinite alternate }
+  .mw-bfc > i { display:block; width:32px; height:32px; background:url('char/npc/anim/butterfly4.png?v=2') 0 0/128px 32px no-repeat; image-rendering:pixelated; animation:mwBfcWing .6s steps(4) infinite }
+  @keyframes mwBfcWing { from { background-position-x:0 } to { background-position-x:-128px } }
+  @keyframes mwBfcFly { 0% { transform:translate(0,0) } 35% { transform:translate(14px,-6px) } 70% { transform:translate(46px,2px) scaleX(-1) } 100% { transform:translate(60px,-8px) scaleX(-1) } }
   .mw-emote-chip { width:32px; height:32px; background-image:url('char/ui/emotes.png?v=2'); background-size:96px auto; background-repeat:no-repeat; image-rendering:pixelated }
   .bm-emo { display:inline-block; width:18px; height:18px; background-image:url('char/ui/emotes.png?v=2'); background-size:54px auto; background-repeat:no-repeat; image-rendering:pixelated; vertical-align:middle }
   @keyframes sqStampPop { 0%{ opacity:1; transform:translateX(-50%) scale(0) rotate(-18deg) }
@@ -8711,6 +8719,7 @@ window._charApplyPos = function () {
   }
   const bl = (ui || host).querySelector('.cw-bubble');
   const _nk = (ui || host).querySelector('.cw-nick'); if (_nk && window._mwFrameApply) window._mwFrameApply(_nk, ((window._seasonState || {}).frameOn) || '');   // 9-07 프레임
+  if (window._mwCompanionApply) { const _open = window._mwIsOpenField && window._mwIsOpenField(window._curField); window._mwCompanionApply(ui || host, _open ? '' : (((window._seasonState || {}).companion) || '')); }   // 9-08 #43 나비(방·헬스장 필드)
   if (bl) {
     // ★방에서 친 한마디는 **내 캐릭터 머리 위**에 뜬다 (대표 8-20). 남들이 보는 것과 같은 모양이다.
     //   내 방에 걸어둔 말풍선(roomMsg)은 남의 방까지 따라다니면 안 되므로 방문 중엔 안 쓴다.
@@ -29668,6 +29677,7 @@ window._mwRlSend = function (mode) {
     title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
     aura: ((window._seasonState || {}).auraOn) || '',
     frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07
+    companion: ((window._seasonState || {}).companion) || '',   // 9-08 #43 방·헬스장 필드에도 나비
     character: window.getMyCharacter ? window.getMyCharacter() : null,
     msg: window._mwRl.msg || null,
     pin: !!window._mwBubblePin,
@@ -29921,6 +29931,7 @@ window._mwRlRender = function (all) {
     }
     if (v.emote && v.emote.t && c.lastEmote !== v.emote.t && Date.now() - v.emote.t < 8000) { c.lastEmote = v.emote.t; window._mwEmotePop(c.el, v.emote.id); }   // 9-07 이모트
     if (c.frame !== (v.frame || '')) { c.frame = v.frame || ''; window._mwFrameApply(c.el.querySelector('.cw-nick'), c.frame); }
+    if (c.comp !== (v.companion || '')) { c.comp = v.companion || ''; window._mwCompanionApply(c.el, c.comp); }   // 9-08 #43 나비
     // 발밑 기준 — 내 캐릭터(_charApplyPos)와 **같은 식**이라야 앞뒤가 안 어긋난다
     const w = Math.round(DH * 141 / 224);
     if (c.boxW !== w || c.boxH !== DH) {
@@ -41980,11 +41991,20 @@ window._mwFrameApply = function (el, id) {
   const ok = id && window._MW_FRAMES[id] ? id : '';
   el.className = String(el.className || '').replace(/\bmw-frame-\w+/g, '').trim() + (ok ? ' mw-frame-' + ok : '');
 };
+window._mwCompanionApply = function (hostEl, id) {
+  if (!hostEl) return;
+  const cur = hostEl.querySelector(':scope > .mw-bfc');
+  if (id === 'butterfly') { if (!cur) { const e = document.createElement('i'); e.className = 'mw-bfc'; e.innerHTML = '<i></i>'; hostEl.appendChild(e); } }
+  else if (cur) cur.remove();
+};
 window._mwEmotePop = function (hostEl, id) {
   const i = window._MW_EMOTES.indexOf(id); if (!hostEl || i < 0) return;
   const old = hostEl.querySelector(':scope > .mw-emote'); if (old) old.remove();
   const el = document.createElement('div'); el.className = 'mw-emote';
   el.style.backgroundPositionY = (-i * 32) + 'px';
+  // 칭호(<...>)가 머리 위에 있으면 그 위로(대표 9-08 #43 "이모트가 칭호랑 겹친다")
+  const te = hostEl.querySelector('.cw-title, .sq-title');
+  if (te && te.textContent && te.style.display !== 'none' && te.offsetHeight) el.style.bottom = 'calc(100% + ' + (te.offsetHeight + 8) + 'px)';
   hostEl.appendChild(el);
   // ★이모트 동안 그 캐릭터의 말풍선(고정 포함)은 잠시 숨긴다 — 겹치니까(대표 9-08). 끝나면 원래대로.
   const bub = hostEl.querySelector('.sq-bubble, .mw-rc-bub, .cw-bubble');
@@ -42476,6 +42496,7 @@ window._sqRtJoin = function (sid, sArg) {
       title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
       aura: ((window._seasonState || {}).auraOn) || '',   // 켜둔 아우라 — 남이 보려면 실려야 한다
       frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07 이름표 프레임·이모트
+      companion: ((window._seasonState || {}).companion) || '',   // 9-08 #43 나비 동행은 스쿼드 필드에도
       character: window.getMyCharacter ? window.getMyCharacter() : null,
       poseV: 2,                                          // v2부터 첫 입장 완료 후 정면을 본다
       cv: String(window._SW_V || ''), qe: window._sqQzErr || null,   // 9-01 원격 진단: 실행 중 버전·퀴즈 오류
@@ -44375,6 +44396,7 @@ window._sqRenderRemotes = function (sid, all, myUid) {
     if (p.stamp && c.lastStamp !== p.stamp && now - p.stamp < 8000) { c.lastStamp = p.stamp; window._sqStampPop(uid); }
     if (p.emote && p.emote.t && c.lastEmote !== p.emote.t && now - p.emote.t < 8000) { c.lastEmote = p.emote.t; window._mwEmotePop(c.el, p.emote.id); }   // 9-07 이모트
     if (c.frame !== (p.frame || '')) { c.frame = p.frame || ''; window._mwFrameApply(c.el.querySelector('.sq-nick'), c.frame); }
+    if (c.comp !== (p.companion || '')) { c.comp = p.companion || ''; window._mwCompanionApply(c.el, c.comp); }   // 9-08 #43 나비
   });
   // 나간 사람: 페이드아웃 후 제거
   Object.keys(window._sqChars || {}).forEach(uid => {
