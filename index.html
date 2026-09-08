@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1134';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1135';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -40741,8 +40741,8 @@ window._sqRenderDetailInner = function () {
         <!-- ★입금 토글도 골드로 통일하고 **면을 칠하지 않는다**(대표 8-12). 누를 수 있다는 건
              채움이 아니라 **테두리**로 알린다 — 반투명 면을 깔면 화면이 탁해진다. -->
         <!-- ★벙주든 아니든 **같은 모양**이어야 한다(대표 8-14: 벙마다 입금 표시가 달라 보였다).
-             벙주만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
-        ${s.feeAmount>0 && isHost && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
+             벙주와 운영진만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
+        ${s.feeAmount>0 && window._sqCanManagePaid(s, mem, me) && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
           : (s.feeAmount>0 && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
         <!-- ★승인은 이 줄의 칩이 아니라 **오른쪽으로 밀어서** 한다(대표 8-14) — 아래 대기 구역 참조.
              운영진 임명도 이 줄에서 뺐다. 입금 토글 옆에 파란 버튼이 또 붙으니 읽히지 않았다.
@@ -40855,11 +40855,18 @@ window.joinSquad = async function (sid) {
       if ((d.memberUids||[]).includes(user.uid)) throw new Error('이미 참가중이에요');
       const instant = d.joinMode !== 'approval';
       if (instant && (d.memberUids||[]).length >= d.capacity) throw new Error('정원이 찼어요');
+      const mRef = doc(db,'squads',sid,'members',user.uid);
+      const prevMember = await tx.get(mRef);
+      const prior = prevMember.exists() ? prevMember.data() : null;
       if (instant) tx.update(sRef, { memberUids: [...(d.memberUids||[]), user.uid] });
-      tx.set(doc(db,'squads',sid,'members',user.uid), {
+      tx.set(mRef, {
         status: instant ? 'accepted' : 'invited', nickname: window._mwMyNick || '머피',
         // ★비었거나 반쪽인 채로 박지 않는다 — 한 번 박히면 그 벙 내내 빡빡이다(대표 8-14)
-        character: window._charSafe(cfg), paid: false, joinedAt: serverTimestamp() });
+        character: window._charSafe(cfg),
+        // 재가입으로 입금 기록을 지우거나 예전 운영진 권한을 되살리지 않는다.
+        ...(prior ? {} : {paid: false}),
+        ...(prior && prior.staff === true && prior.status !== 'accepted' ? {staff: false} : {}),
+        joinedAt: serverTimestamp() }, {merge: true});
     });
     showToast('참가 완료!');
     return true;                          // 초대 수락 흐름이 성공 여부를 알아야 방으로 보낸다
@@ -40957,6 +40964,7 @@ window.leaveSquad = async function (sid) {
   } catch(e) { showToast('실패했어요'); }
 };
 window.sqTogglePaid = async function (sid, uid, cur) {
+  if (!window._sqDoc || window._sqDoc.id !== sid || !window._sqCanManagePaid(window._sqDoc, window._sqMembers, (auth.currentUser || {}).uid)) { showToast('스쿼드장과 운영진만 입금을 체크할 수 있어요'); return; }
   try { await updateDoc(doc(db,'squads',sid,'members',uid), { paid: !cur }); }
   catch(e) { showToast('변경 실패'); }
 };
@@ -41505,11 +41513,16 @@ window.sqPartCopy = function () {
 // ★입금 현황 (대표 8-14) — 상단 '입금 N/M' 을 누르면 **누가 냈는지** 보이고,
 //   벙주는 그 자리에서 체크를 고칠 수 있다. 멤버 줄의 작은 칩만으로는 훑기 어렵다.
 //   내보낸 사람·대기자는 목록에 없다(그들이 세어져서 '입금 5/4' 가 나왔다).
+window._sqCanManagePaid = function (s, mem, uid) {
+  if (!s || !uid) return false;
+  const m = (mem || {})[uid] || {};
+  return uid === s.hostUid || (m.staff === true && m.status === 'accepted');
+};
 window.sqPaidPicker = function (sid) {
   const s = window._sqDoc, mem = window._sqMembers || {};
   const me = (auth.currentUser || {}).uid;
   if (!s) return;
-  const isHost = !!(me && me === s.hostUid);
+  const canPaid = window._sqCanManagePaid(s, mem, me);
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   // ★벙주 → 운영진 → 나머지 순 (대표 8-14). 돈 얘기는 **책임 순서대로** 읽히는 게 맞다.
   //   낸 사람을 위로 올리면 매번 순서가 바뀌어 누가 어디 있었는지 못 찾는다.
@@ -41531,11 +41544,11 @@ window.sqPaidPicker = function (sid) {
         <div style="font-size:13px;font-weight:800;color:#F5C24B">${paid}/${list.length}</div>
       </div>
       <div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:7px">
-        ${isHost ? '눌러서 입금을 체크하거나 해제할 수 있어요' : '스쿼드장만 체크할 수 있어요'}</div>
+        ${canPaid ? '눌러서 입금을 체크하거나 해제할 수 있어요' : '스쿼드장과 운영진만 체크할 수 있어요'}</div>
       <div style="flex:1;overflow-y:auto;margin:16px 0 4px;min-height:80px">
         ${list.map(u => {
           const m = mem[u];
-          return `<div ${isHost ? `onclick="window.sqPaidToggleIn('${sid}','${u}')"` : ''} data-paid="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;${isHost ? 'cursor:pointer' : ''}">
+          return `<div ${canPaid ? `onclick="window.sqPaidToggleIn('${sid}','${u}')"` : ''} data-paid="${u}" style="display:flex;align-items:center;gap:11px;padding:9px 4px;${canPaid ? 'cursor:pointer' : ''}">
             <div style="flex-shrink:0">${window.mwMiniCharHtml ? window.mwMiniCharHtml(m.character, 36) : ''}</div>
             <div style="flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqShowName(m))}${u === s.hostUid ? ' <span style="font-size:10.5px;color:#F5C24B;font-weight:700">스쿼드장</span>' : ''}</div>
             <span class="sq-paid-chip" style="flex-shrink:0;background:none;border:1px solid ${m.paid ? 'rgba(245,194,75,.5)' : 'rgba(255,255,255,.14)'};color:${m.paid ? '#F5C24B' : 'rgba(255,255,255,.45)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700">${m.paid ? '입금 ✓' : '미입금'}</span>
@@ -41548,6 +41561,7 @@ window.sqPaidPicker = function (sid) {
 };
 // 팝업 안에서 바로 토글 — 화면을 다시 그리지 않고 그 줄만 바꾼다(스크롤 위치가 튀지 않게).
 window.sqPaidToggleIn = async function (sid, uid) {
+  if (!window._sqDoc || window._sqDoc.id !== sid || !window._sqCanManagePaid(window._sqDoc, window._sqMembers, (auth.currentUser || {}).uid)) { showToast('스쿼드장과 운영진만 입금을 체크할 수 있어요'); return; }
   const mem = window._sqMembers || {};
   const cur = !!(mem[uid] && mem[uid].paid);
   const chip = document.querySelector('#sq-paid [data-paid="' + uid + '"] .sq-paid-chip');

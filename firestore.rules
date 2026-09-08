@@ -335,7 +335,8 @@ service cloud.firestore {
       //   규칙 전체가 거부로 떨어진다(아래 members 규칙에 적어 둔 것과 같은 함정).
       function isSquadStaff(sid) {
         return exists(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid))
-            && get(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid)).data.get('staff', false) == true;
+            && get(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid)).data.get('staff', false) == true
+            && get(/databases/$(database)/documents/squads/$(sid)/members/$(request.auth.uid)).data.get('status', '') == 'accepted';
       }
       allow delete: if signedIn() && resource.data.hostUid == request.auth.uid;
 
@@ -348,10 +349,30 @@ service cloud.firestore {
       //   규칙 전체가 거부로 떨어진다. 필드도 get('staff', false) 로 기본값을 준다.
       match /members/{memberId} {
         allow read: if true;
-        allow write: if signedIn() && (request.auth.uid == memberId
-                     || get(/databases/$(database)/documents/squads/$(squadId)).data.hostUid == request.auth.uid
-                     || (exists(/databases/$(database)/documents/squads/$(squadId)/members/$(request.auth.uid))
-                         && get(/databases/$(database)/documents/squads/$(squadId)/members/$(request.auth.uid)).data.get('staff', false) == true));
+        function host() {
+          return get(/databases/$(database)/documents/squads/$(squadId)).data.hostUid == request.auth.uid;
+        }
+        // 운영진 임명은 벙주만. 본인 참가 생성으로 staff/paid를 위조하지 못한다.
+        allow create: if signedIn() && (host() || (
+            (request.auth.uid == memberId || isSquadStaff(squadId))
+            && request.resource.data.get('staff', false) == false
+            && request.resource.data.get('paid', false) == false));
+        allow update: if signedIn() && (host() || (
+            (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['staff'])
+             || (request.auth.uid == memberId && resource.data.get('status', '') != 'accepted'
+                 && request.resource.data.get('staff', false) == false))
+            && !(resource.data.get('staff', false) == true
+                 && resource.data.get('status', '') != 'accepted'
+                 && request.resource.data.get('staff', false) == true
+                 && request.resource.data.get('status', '') == 'accepted')
+            && ((isSquadStaff(squadId)
+                 && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paid'])
+                     || request.resource.data.paid is bool))
+                || (request.auth.uid == memberId
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['paid'])))));
+        // 탈퇴는 status:left로 기록을 보존한다. 본인 삭제→재생성으로 입금 기록 초기화 금지.
+        allow delete: if signedIn() && (host() || (isSquadStaff(squadId) && !resource.data.get('staff', false))
+            || (request.auth.uid == memberId && !resource.data.get('staff', false) && !resource.data.get('paid', false)));
       }
 
       // 스쿼드 톡 (sys 메시지는 uid=null 허용)
