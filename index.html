@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1120';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1121';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -18423,6 +18423,12 @@ window._npcGrantCoachStamp = async function () {
   try { await window._seasonWrite(user.uid, { coachStamp: true }); } catch (e) { console.warn('coach stamp', e); return false; }
   st.coachStamp = true; return true;
 };
+window._npcGrantMinjunLetter = async function () {
+  const user = window.currentUser; if (!user) return false;
+  const st = window._seasonState || {}; if (st.minjunLetter) return false;
+  try { await window._seasonWrite(user.uid, { minjunLetter: true }); } catch (e) { console.warn('minjun letter', e); return false; }
+  st.minjunLetter = true; return true;
+};
 window._npcGrantCompanion = async function (id) {
   const user = window.currentUser; if (!user) return false;
   const st = window._seasonState || {}; if (st.companion === id) return false;
@@ -23822,6 +23828,7 @@ window.ensureCreditsInit = async (uid) => {
       window._seasonState.emotes = Array.isArray(d.emotes) ? d.emotes.slice() : [];
       window._seasonState.companion = (typeof d.companion === 'string') ? d.companion : '';
       window._seasonState.coachStamp = !!d.coachStamp;   // 9-08 강 코치 도장(머피캠)
+      window._seasonState.minjunLetter = !!d.minjunLetter;   // 9-08 민준이 편지(슈퍼 좋아요)
       window._seasonState.ready = true;
       // 장착 칭호·말풍선·닉네임 로드 → 오버월드 라벨 갱신
       window._myTitle = (typeof d.title === 'string') ? d.title : '';
@@ -24685,8 +24692,13 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
       }
     } catch (e) { /* 못 읽으면 아래 흐름 그대로 — 막는 것보다 보내는 게 낫다 */ }
   }
+  // 9-08 민준이 편지(보상 보유자만): 비용 확인 **전에** 편지를 물어본다 — 취소하면 여기서 끝(머피 안 빠짐)
+  let _letter = '';
+  if (!free && !skipConfirm && (window._seasonState || {}).minjunLetter && window.minjunLetterPrompt) {
+    const lt = await window.minjunLetterPrompt(toName); if (lt === null) return; _letter = lt || '';
+  }
   if (!free && !skipConfirm && window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
-    if (!(await window.murpyConfirm({ title: '같이 운동해요 보내기', desc: await window.matchCostDesc(me), cost: true, confirmText: '보내기' }))) return;
+    if (!(await window.murpyConfirm({ title: _letter ? '민준이 편지와 함께 보내기' : '같이 운동해요 보내기', desc: await window.matchCostDesc(me), cost: true, confirmText: '보내기' }))) return;
   }
   // free = 수락(상대가 이미 보냈다). 비용은 먼저 신청한 쪽이 냈으므로 받는 쪽은 안 낸다.
   // ★8-29: 하루 MATCH_FREE_DAY 회 무료 → 그 뒤 COST_MATCH. 무료 카운터와 잔액을 한 트랜잭션에서.
@@ -24695,7 +24707,7 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
     window.track && window.track('match_request', { free: r.free ? 1 : 0, cost: r.cost | 0 });
     if (r.free && typeof r.left === 'number') showToast(r.left > 0 ? '무료로 보냈어요 · 오늘 ' + r.left + '회 남음' : '오늘 무료 신청을 다 썼어요 · 다음부턴 ' + COST_MATCH + '머피'); }
   try {
-    try { await setDoc(doc(db, 'likes', me + '_' + toUid), { from: me, to: toUid, createdAt: serverTimestamp() }); }
+    try { await setDoc(doc(db, 'likes', me + '_' + toUid), Object.assign({ from: me, to: toUid, createdAt: serverTimestamp() }, _letter ? { letter: _letter, via: 'minjun' } : {})); }
     catch (e) {   // 8-31 여기서 실패하면 방금 차감한 무료 횟수/머피를 돌려준다
       if (_spent) { try { await window.matchRefund(me, _spent); showToast('전송이 안 돼서 사용한 횟수·머피를 돌려드렸어요'); } catch (e2) {} }
       throw e;
@@ -24717,7 +24729,9 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
       // ★보낸 즉시 **화면에 있는 그 사람 버튼이 전부** 바뀐다(대표 8-12).
       //   피드에서 보냈든 매칭 탭에서 보냈든, 어디서 보내도 같은 상태가 되어야 한다.
       window.relMark && window.relMark(toUid, 'sent');
-      showToast('같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
+      showToast(_letter ? '민준이가 편지를 들고 뛰어갔어요!' : '같이 운동하자고 보냈어요! 상대도 수락하면 매칭돼요');
+      // 편지는 상대에게 알림으로 — 민준이가 전한다("우리 형/누나가 좋아요를 보냈어요!")
+      if (_letter) { try { const _g = (window._cachedProfile || {}).gender; await _sendNotif(toUid, 'minjun_like', { text: _letter, rel: _g === '여성' ? '누나' : '형' }); } catch (e) {} }
     }
     // 좋아요 보낸 사람은 이번 세션 '더 많은 추천'에서 숨김(_matchPassed와 동일 패턴).
     // 단, 관리자·테스트 계정은 반복 실험을 위해 숨기지 않고 계속 노출.
@@ -25045,6 +25059,7 @@ window.startNotifListener = (uid) => {
           const n = ch.doc.data();
           if (n.read) return;
           if (n.type === 'match') _showMatchPopup(n);
+          else if (n.type === 'minjun_like') showToast('민준이: 우리 ' + (n.rel === '누나' ? '누나가' : '형이') + ' 좋아요를 보냈어요!');
           else if (n.type === 'feed_like') showToast((n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast((n.fromNickname || '누군가') + '님이 내 글에 댓글을 남겼어요');
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
@@ -32301,6 +32316,17 @@ window.loadNotificationsFirestore = async () => {
       // (safeText 는 < 만 막아서 제목에 " 가 있으면 onclick 이 통째로 부서진다)
       const _attrJs = (v) => String(v || '')
         .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      if (n.type === 'minjun_like') {
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start;opacity:${n.read?0.6:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');openPanel('interest-panel');window._loadInterestPanel&&window._loadInterestPanel()">
+          <img src="char/npc/portrait_kid.png?v=11" alt="" style="width:40px;height:40px;border-radius:12px;object-fit:cover;background:#0d111a;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;line-height:1.6;color:#ddd;margin-bottom:4px"><b>민준이</b>: 우리 ${n.rel === '누나' ? '누나가' : '형이'} 좋아요를 보냈어요!</div>
+            <div style="font-size:12.5px;color:#fff;background:rgba(255,255,255,0.06);border-left:2px solid #F5C24B;padding:6px 9px;border-radius:0 8px 8px 0;white-space:pre-wrap;word-break:break-word;margin-bottom:4px">${_escHtml(n.text || '')}</div>
+            <div style="font-size:11px;color:#444">${time} · ${safeNick}</div>
+          </div>
+          ${!n.read ? '<div style="width:8px;height:8px;border-radius:50%;background:#F5C24B;flex-shrink:0;margin-top:14px"></div>' : ''}
+        </div>`;
+      }
       if (n.type === 'match') {
         return `<div class="card" style="display:flex;gap:12px;align-items:center;opacity:${n.read?0.6:1}" onclick="window.markFirebaseNotifRead('${safeId}');closePanel('notif-panel');window.openChatWith('${safeFromUid}','${safeNickJs}','')">
           <div style="width:34px;height:34px;border-radius:50%;background:none;border:1.5px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3D7EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
@@ -32726,7 +32752,7 @@ window._loadInterestPanel = async (silent) => {
     for (const d of snap.docs) {
       const fromUid = d.data().from;
       if (await window.isMatched(fromUid)) continue;
-      likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt });
+      likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt, letter: d.data().letter || '' });   // 9-08 민준이 편지
     }
   } catch(e) {}
 
@@ -32790,7 +32816,7 @@ window._renderInterestList = async () => {
 
   const _empty = (t1, t2) => `<div style="text-align:center;padding:44px 20px"><div style="font-size:13px;color:#444">${t1}</div><div style="font-size:12px;color:#333;margin-top:6px">${t2}</div></div>`;
   const _fetchProfiles = async (docs) => Promise.all(docs.map(async d => {
-    try { const us = await getDoc(doc(db, 'users', d.uid)); return us.exists() ? { uid: d.uid, ...us.data() } : { uid: d.uid }; }
+    try { const us = await getDoc(doc(db, 'users', d.uid)); return us.exists() ? { uid: d.uid, ...us.data(), letter: d.letter || '' } : { uid: d.uid, letter: d.letter || '' }; }
     catch(e) { return { uid: d.uid }; }
   }));
   const _section = (txt, color) => `<div style="font-size:12px;font-weight:700;color:${color};padding:14px 4px 8px;letter-spacing:-0.2px">${txt}</div>`;
@@ -32808,6 +32834,7 @@ window._renderInterestList = async () => {
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px;margin-bottom:2px">${nick}</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.4)">${[age,district].filter(Boolean).join(' · ')}</div>
+        ${p.letter ? `<div style="margin-top:7px;display:flex;gap:7px;align-items:flex-start"><img src="char/npc/portrait_kid.png?v=11" alt="" style="width:22px;height:22px;border-radius:7px;object-fit:cover;flex-shrink:0;margin-top:1px"><div style="font-size:12.5px;color:#fff;background:rgba(255,255,255,0.06);border-left:2px solid #F5C24B;padding:5px 8px;border-radius:0 8px 8px 0;white-space:pre-wrap;word-break:break-word">${_escHtml(p.letter)}</div></div>` : ''}
       </div>
       ${right||''}
     </div>`;
@@ -35247,8 +35274,9 @@ window._npcRewardKid = async function (n) {
   if (owned.includes(id) || !(window.CHAR_ITEMS || []).some(function (x) { return x.id === id; })) return;
   window._charState.wardrobe = [...owned, id];
   if (window._charPersistWardrobe) window._charPersistWardrobe(window._charState.wardrobe);
+  try { if (window._npcGrantMinjunLetter) await window._npcGrantMinjunLetter(); } catch (e) {}   // 9-08 편지(슈퍼 좋아요)
   setTimeout(function () {
-    window._mwNpcDialog(n, ['형아 누나 매일 놀아줘서 고마워! 이거 내가 아끼는 노란 티야, 선물!', '옷장에 넣어놨어. 꾸미기에서 입어봐!'], 'close');
+    window._mwNpcDialog(n, ['형아 누나 매일 놀아줘서 고마워! 이거 내가 아끼는 노란 티야, 선물!', '옷장에 넣어놨어. 꾸미기에서 입어봐!', '그리고 마음에 드는 사람 있으면 말해. 내가 편지 들고 뛰어가 줄게! 매칭에서 "같이 운동해요" 보낼 때 편지 붙이기.'], 'close');
     try { window.sfx && window.sfx.play('correct'); } catch (e) {}
   }, 1500);
 };
@@ -41915,6 +41943,31 @@ window._bmEmoHtml = function (post, mine) {
     const i = window._MW_EMOTES.indexOf(k);
     return '<span style="display:inline-flex;align-items:center;gap:2px;color:' + (k === mine ? '#4ADE80' : 'rgba(255,255,255,0.66)') + '"><i class="bm-emo" style="background-position:0 ' + (-i * 18) + 'px"></i>' + emo[k] + '</span>';
   }).join('');
+};
+// ── 민준이 편지(슈퍼 좋아요, 대표 9-08) — 민준이 부탁 3회 보상. '같이 운동해요' 보낼 때 편지 한 통(80자)을 붙이면
+//    상대에게 민준이가 "우리 형/누나가 좋아요를 보냈어요!" 하고 전한다. 비용은 일반 신청과 같다.
+//    반환: 문자열(편지, 빈 문자열이면 편지 없이) / null(취소)
+window.minjunLetterPrompt = function (toName) {
+  return new Promise(function (res) {
+    const old = document.getElementById('mj-letter'); if (old) old.remove();
+    const el = document.createElement('div'); el.id = 'mj-letter';
+    el.style.cssText = 'position:fixed;inset:0;z-index:10060;display:flex;align-items:flex-start;justify-content:center;padding:12vh 20px 20px;background:rgba(0,0,0,.66);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)';
+    const E = window._escHtml || function (t) { return String(t); };
+    el.innerHTML = '<div style="width:100%;max-width:330px;background:#161616;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:20px 20px 16px">'
+      + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><img src="char/npc/portrait_kid.png?v=11" alt="" style="width:56px;height:56px;border-radius:14px;object-fit:cover;background:#0d111a;flex-shrink:0">'
+      + '<div style="font-size:14px;line-height:1.55;color:#fff"><b>민준이</b>: ' + E(toName || '그 사람') + '한테 편지 써 줄래? 내가 들고 뛰어갈게!</div></div>'
+      + '<textarea id="mj-letter-text" maxlength="80" rows="3" placeholder="한 마디 (80자)" style="width:100%;box-sizing:border-box;background:none;border:1px solid rgba(255,255,255,0.18);border-radius:12px;padding:11px 12px;color:#fff;font-size:15px;outline:none;font-family:inherit;resize:none;line-height:1.5"></textarea>'
+      + '<button id="mj-letter-go" style="width:100%;margin-top:12px;background:#F5C24B;color:#1a1a1a;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">편지 붙여서 보내기</button>'
+      + '<button id="mj-letter-plain" style="width:100%;margin-top:8px;background:none;border:1px solid rgba(255,255,255,0.18);border-radius:12px;padding:12px;color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit">편지 없이 보내기</button>'
+      + '<button id="mj-letter-x" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;cursor:pointer;margin-top:6px;padding:6px;font-family:inherit">취소</button></div>';
+    const done = function (v) { el.remove(); res(v); };
+    el.querySelector('#mj-letter-go').onclick = function () { const t = String(document.getElementById('mj-letter-text').value || '').trim(); if (!t) { showToast('편지 내용을 적어주세요'); return; } if (window._hasContact && window._hasContact(t)) { showToast('연락처는 적을 수 없어요'); return; } done(t.slice(0, 80)); };
+    el.querySelector('#mj-letter-plain').onclick = function () { done(''); };
+    el.querySelector('#mj-letter-x').onclick = function () { done(null); };
+    el.addEventListener('click', function (e) { if (e.target === el) done(null); });
+    document.body.appendChild(el);
+    setTimeout(function () { const t = document.getElementById('mj-letter-text'); if (t) t.focus(); }, 60);
+  });
 };
 window.bambooEmotePick = function (postId) {
   if (window._notMember && window._notMember()) { window.memberGate ? window.memberGate('이모트로 반응하려면 로그인이 필요해요') : (window.requireLogin && requireLogin()); return; }
