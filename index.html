@@ -37905,19 +37905,45 @@ window.mwGoOpenField = function (field) {
   setTimeout(function () { try { window.charSetField(field); } catch (e) { console.warn('go open field', e); } }, 350);
   window.track && window.track('home_open_go', { field: field });
 };
-window._homeOpenCounts = {};
+window._homeOpenCounts = {}; window._homeOpenPeople = {}; window._homeOpenKnown = null; window._homeOpenShout = null;
+// 아는 사람 = 같은 헬스장(gyms 교집합) 또는 범프한 사람(bumpers). users 캐시(5분)로 한 번만 만든다.
+window._homeOpenBuildKnown = async function () {
+  try {
+    const me = (window.currentUser || {}).uid, prof = window._cachedProfile || {};
+    const myGyms = new Set([].concat(prof.gyms || [], prof.gym ? [prof.gym] : []).filter(Boolean));
+    const bumped = new Set(Object.keys(prof.bumpers || {}));
+    const snap = await window._usersAll(); const known = new Set();
+    snap.forEach(function (d) {
+      if (d.id === me) return; const u = d.data() || {};
+      if (bumped.has(d.id)) { known.add(d.id); return; }
+      if ([].concat(u.gyms || [], u.gym ? [u.gym] : []).some(function (g) { return g && myGyms.has(g); })) known.add(d.id);
+    });
+    window._homeOpenKnown = known; window._homeOpenPaint();
+  } catch (e) { console.warn('home open known', e); }
+};
 window._homeOpenPaint = function () {
-  const C = window._homeOpenCounts, N = window.MW_OPEN_NAMES;
+  const C = window._homeOpenCounts, N = window.MW_OPEN_NAMES, E = window._escHtml || function (t) { return String(t); };
   const card = document.getElementById('home-open-card'); if (!card) return;
   const title = card.querySelector(':scope > div:last-child > div:first-child'), meta = document.getElementById('home-open-meta');
   const order = ['park', 'walk', 'outgym'].sort(function (a, b) { return (C[b] || 0) - (C[a] || 0); });
   const total = order.reduce(function (s, k) { return s + (C[k] || 0); }, 0);
   window._homeOpenBest = total ? order[0] : 'park';
   if (!title || !meta) return;
-  if (!total) { title.textContent = '공원 놀러 가기'; meta.textContent = '지금 들어가면 첫 손님이에요'; return; }
-  title.innerHTML = '지금 ' + N[order[0]] + '에 <span style="color:#7aa4ff">' + C[order[0]] + '명</span>';
-  const rest = order.slice(1).filter(function (k) { return C[k]; }).map(function (k) { return N[k] + ' ' + C[k]; }).join(' · ');
-  meta.textContent = (rest ? rest + ' · ' : '') + '놀러 가기';
+  if (!total) {
+    title.textContent = '공원 놀러 가기';
+    const sh = window._homeOpenShout;   // 아무도 없으면 최근 외침 한 줄로 '살아 있다'는 느낌(대표 9-09 ②)
+    meta.innerHTML = (sh && sh.text && Date.now() - (sh.t || 0) < 86400000)
+      ? '<span style="color:#F5C24B">' + E(String(sh.nick || '머피').slice(0, 10)) + '</span> ' + E(String(sh.text).slice(0, 26))
+      : '지금 들어가면 첫 손님이에요';
+    return;
+  }
+  // 아는 사람이 있으면 그 사람 이름으로 부른다(대표 9-09 ③) — 숫자보다 세게 당긴다
+  let known = null;
+  order.some(function (f) { return (window._homeOpenPeople[f] || []).some(function (pp) { if (window._homeOpenKnown && window._homeOpenKnown.has(pp.uid)) { known = { f: f, nick: pp.nick }; return true; } return false; }); });
+  if (known) { window._homeOpenBest = known.f; title.innerHTML = '<span style="color:#7aa4ff">' + E(String(known.nick || '').slice(0, 10)) + '</span>님이 ' + N[known.f] + '에 있어요'; }
+  else title.innerHTML = '지금 ' + N[order[0]] + '에 <span style="color:#7aa4ff">' + C[order[0]] + '명</span>';
+  const rest = order.filter(function (k) { return C[k] && k !== (known ? known.f : order[0]); }).map(function (k) { return N[k] + ' ' + C[k]; }).join(' · ');
+  meta.textContent = (known ? N[known.f] + ' ' + C[known.f] + (rest ? ' · ' + rest : '') : (rest || '')) + (rest || known ? ' · ' : '') + '놀러 가기';
 };
 window._homeOpenWatch = function () {
   const R = window._rt; if (!R || !window.currentUser || window._homeOpenWatching) { window._homeOpenPaint(); return; }
@@ -37925,12 +37951,17 @@ window._homeOpenWatch = function () {
   (window._MW_OPEN_FIELDS || ['park', 'walk', 'outgym']).forEach(function (f) {
     try {
       R.onValue(R.ref(R.db, 'plaza/players/' + f), function (snap) {
-        const v = snap.val() || {}, now = Date.now(); let n = 0;
-        Object.keys(v).forEach(function (uid) { const p = v[uid]; if (p && (now - (p.t || 0)) < 70000) n++; });   // 70초 넘은 유령은 안 센다(오픈월드 렌더와 같은 기준)
-        window._homeOpenCounts[f] = n; window._homeOpenPaint();
+        const v = snap.val() || {}, now = Date.now(), me = (window.currentUser || {}).uid, ppl = [];
+        Object.keys(v).forEach(function (uid) { const p = v[uid]; if (p && uid !== me && (now - (p.t || 0)) < 70000) ppl.push({ uid: uid, nick: p.nick || '머피' }); });   // 70초 넘은 유령·본인은 안 센다(오픈월드 렌더와 같은 기준)
+        window._homeOpenCounts[f] = ppl.length; window._homeOpenPeople[f] = ppl; window._homeOpenPaint();
       });
     } catch (e) { console.warn('home open watch', f, e); }
   });
+  try {   // 최근 외침 1건(0명일 때 카드 한 줄)
+    const q = R.query && R.limitToLast ? R.query(R.ref(R.db, 'plaza/shout'), R.limitToLast(1)) : null;
+    if (q) R.onValue(q, function (snap) { let last = null; snap.forEach(function (c) { last = c.val(); }); window._homeOpenShout = last; window._homeOpenPaint(); });
+  } catch (e) { console.warn('home open shout', e); }
+  window._homeOpenBuildKnown();
   // 딥링크 murpy.app/?go=park — 로그인 확정 뒤 여기서 소비한다(주소는 라우터가 이미 지웠다)
   if (window._pendingGo) { const g = window._pendingGo; window._pendingGo = ''; setTimeout(function () { window.mwGoOpenField(g); }, 400); }
 };
