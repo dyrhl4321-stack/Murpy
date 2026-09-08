@@ -8497,6 +8497,7 @@ window.charSetField = function (key) {
   try { window._mwParkAmbient && window._mwParkAmbient(key === 'park'); } catch (e) {}
   try { window._mwPigeons && window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : (key === 'outgym' ? 2 : 0))); } catch (e) {}
   try { window._mwDucks && window._mwDucks(key === 'park' ? 2 : 0); } catch (e) {}
+  try { window._mwCompanions && window._mwCompanions(_open); } catch (e) {}
   try { window._mwParkNpcs && window._mwParkNpcs(_open); } catch (e) {}   // NPC+퀘스트(9-04) — 필드별로 거른다
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
@@ -29687,7 +29688,7 @@ window._mwOpenSend = function (mode) {
     title: (window.mwValidTitle && window.mwValidTitle(window._myTitle || '')) || '',
     aura: ((window._seasonState || {}).auraOn) || '',
     frame: ((window._seasonState || {}).frameOn) || '', emote: window._myEmote || null,   // 9-07
-    companion: ((window._seasonState || {}).companion) || '',   // 9-08 관리인 퀘스트 보상 = 비둘기 동행(dyrhl-4d)
+    companion: ((window._seasonState || {}).companion) || '',   // 9-08 관리인 퀘스트 보상 = 나비 동행
     character: cfg,
     characterSheet: cfg && window._charSheetForBody ? window._charSheetForBody(cfg.body) : null,
     msg: (window._mwRl && window._mwRl.msg) || null
@@ -29710,7 +29711,7 @@ window._mwOpenTick = function () {
 };
 window._mwOpenRender = function (all) {
   const S = window._mwOpenLive, room = document.getElementById('charworld-room');
-  S.lastAll = all || {};   // 9-08 비둘기 동행이 남의 companion 을 읽는다
+  S.lastAll = all || {};   // 9-08 나비 동행이 남의 companion 을 읽는다
   if (!room || !room.clientWidth || S.field !== window._curField || !window._mwIsOpenField(S.field)) return;
   const me = (auth.currentUser || {}).uid, g = window._charTileGeom(), t = g.t, DH = Math.round(t * 3.3);
   const seen = {}, now = Date.now();
@@ -34880,6 +34881,55 @@ window._mwParkAmbient = function (on) {
   amb.innerHTML = h;
   room.appendChild(amb);
 };
+// ═══ 나비 동행 (9-08 대표: 비둘기 동행은 별로 → "비둘기 말고 다른 날것은 괜찮다" → 나비) ═══
+// users.companion === 'butterfly'(관리인 퀘스트 3회 보상, _seasonState.companion) 이면 오픈월드에서 주인 머리 위·옆을
+// 공중에서 살랑살랑 따라다닌다. 남의 것은 프레즌스 companion(_mwOpenLive.lastAll). 시트 = char/npc/anim/butterfly4.png(4프레임 가로).
+window._mwCompanions = function (on) {
+  const old = document.getElementById('mw-comps'); if (old) old.remove();
+  if (window._mwCompT) { clearInterval(window._mwCompT); window._mwCompT = 0; }
+  if (!on) return;
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  if (!document.getElementById('mw-comp-css')) {
+    const st = document.createElement('style'); st.id = 'mw-comp-css';
+    st.textContent = `
+      #mw-comps{position:absolute;inset:0;pointer-events:none;z-index:40}
+      .mw-bf{position:absolute;width:2.6%;height:2.6%;transition:left 1.1s ease-in-out,top 1.1s ease-in-out;will-change:left,top}
+      .mw-bf>b{display:block;width:100%;height:100%;overflow:hidden;animation:mwBfBob 1.9s ease-in-out infinite}
+      .mw-bf>b>i{display:block;width:400%;height:100%;background:url('char/npc/anim/butterfly4.png?v=1') 0 0/100% 100% no-repeat;image-rendering:pixelated;animation:mwBfFlap .6s steps(4) infinite}
+      .mw-bf.l>b{transform:scaleX(-1)}
+      @keyframes mwBfFlap{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+      @keyframes mwBfBob{0%,100%{margin-top:0}50%{margin-top:-3px}}`;
+    document.head.appendChild(st);
+  }
+  const lay = document.createElement('div'); lay.id = 'mw-comps'; room.appendChild(lay);
+  const comps = {};
+  const ownerPos = function (uid) {
+    if (uid === 'me') return window._charPos;
+    const v = ((window._mwOpenLive || {}).lastAll || {})[uid]; return v && Number.isFinite(v.tc) ? { tc: v.tc, tr: v.tr } : null;
+  };
+  const place = function (b, o) {
+    // 머리 위 1.4칸, 좌우로 살짝 떠돌기(-0.9~0.9칸) — 목적지는 2~4초마다 바뀌고 transition 이 부드럽게 옮긴다
+    const x = (o.tc + 0.5 + b.dx) * 100 / 48, y = (o.tr - 1.4 + b.dy) * 100 / 48;
+    if (b.dx < b.pdx - 0.05) b.el.classList.add('l'); else if (b.dx > b.pdx + 0.05) b.el.classList.remove('l');
+    b.pdx = b.dx; b.el.style.left = (x - 1.3) + '%'; b.el.style.top = (y - 1.3) + '%';
+  };
+  window._mwCompT = setInterval(function () {
+    if (!lay.isConnected) { clearInterval(window._mwCompT); window._mwCompT = 0; return; }
+    if (document.hidden) return;
+    const want = {}, now = Date.now();
+    if (((window._seasonState || {}).companion) === 'butterfly') want.me = 1;
+    const all = (window._mwOpenLive || {}).lastAll || {}, meUid = (window.currentUser || {}).uid;
+    Object.keys(all).forEach(function (uid) { const v = all[uid] || {}; if (uid !== meUid && v.companion === 'butterfly' && now - (v.t || 0) < 70000) want[uid] = 1; });
+    Object.keys(comps).forEach(function (uid) { if (!want[uid]) { comps[uid].el.remove(); delete comps[uid]; } });
+    Object.keys(want).forEach(function (uid) {
+      const o = ownerPos(uid); if (!o) return;
+      let b = comps[uid];
+      if (!b) { const el = document.createElement('div'); el.className = 'mw-bf'; el.innerHTML = '<b><i></i></b>'; lay.appendChild(el); b = comps[uid] = { el, dx: 0.6, dy: 0, pdx: 0.6, until: 0 }; }
+      if (now > b.until) { b.dx = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6); b.dy = (Math.random() - 0.5) * 0.6; b.until = now + 2000 + Math.random() * 2500; }
+      place(b, o);
+    });
+  }, 350);
+};
 // ═══ 오리 — 연못 물칸 위를 헤엄친다 (9-08 대표: "오리 같은 애들 돌아다니는 느낌으로") ═══
 // duck4.png: 헤엄 3프레임 + 머리 담그기 1. 물칸 목록은 _FIELDS.park.duck(빌드 스크립트가 색으로 실측). 좌우는 scaleX.
 window._mwDucks = function (n) {
@@ -34952,7 +35002,6 @@ window._mwPigeons = function (n) {
       .mw-pg.walk.fast{transition-duration:.45s}
       .mw-pg.peck>b>i{animation:mwPgPeck 1.1s steps(1) infinite}
       .mw-pg.stand>b>i{transform:translateX(calc(-100% / 6 * 5))}
-      .mw-pg.comp{transition-duration:.45s;z-index:6}
       @keyframes mwPgWalk{from{transform:translateX(0)}to{transform:translateX(calc(-100% / 6 * 4))}}
       @keyframes mwPgPeck{0%,55%{transform:translateX(calc(-100% / 6 * 4))}56%,100%{transform:translateX(calc(-100% / 6 * 5))}}`;
     document.head.appendChild(st);
@@ -34972,42 +35021,7 @@ window._mwPigeons = function (n) {
     place(b); lay.appendChild(el); birds.push(b);
   }
   room.appendChild(lay);
-  // ★9-08 동행 비둘기(관리인 퀘스트 3회 보상, users.companion='pigeon'): 주인 한 칸 뒤를 따라다닌다. 남의 것은 프레즌스 companion 으로.
-  const comps = {};
-  const compOwnerPos = function (uid) {
-    if (uid === 'me') return window._charPos;
-    const v = ((window._mwOpenLive || {}).lastAll || {})[uid]; return v && Number.isFinite(v.tc) ? { tc: v.tc, tr: v.tr } : null;
-  };
-  const syncComps = function () {
-    const want = {};
-    if (((window._seasonState || {}).companion) === 'pigeon') want.me = 1;
-    const all = (window._mwOpenLive || {}).lastAll || {}, meUid = (window.currentUser || {}).uid, now = Date.now();
-    Object.keys(all).forEach(function (uid) { const v = all[uid] || {}; if (uid !== meUid && v.companion === 'pigeon' && now - (v.t || 0) < 70000) want[uid] = 1; });
-    Object.keys(comps).forEach(function (uid) { if (!want[uid]) { comps[uid].el.remove(); delete comps[uid]; } });
-    Object.keys(want).forEach(function (uid) {
-      if (comps[uid]) return;
-      const o = compOwnerPos(uid); if (!o) return;
-      const el = document.createElement('div'); el.className = 'mw-pg stand comp'; el.innerHTML = '<b><i></i></b>';
-      const b = { el, tc: o.tc, tr: o.tr + 1, until: 0, st: 'stand', comp: uid };
-      if (!W(b.tc, b.tr)) { b.tc = o.tc; b.tr = o.tr; }
-      place(b); lay.appendChild(el); comps[uid] = b;
-    });
-  };
-  const compStep = function (b) {
-    const o = compOwnerPos(b.comp); if (!o) return;
-    const dx = o.tc - b.tc, dy = o.tr - b.tr, d = Math.abs(dx) + Math.abs(dy), now = Date.now();
-    if (d > 6) { b.tc = o.tc; b.tr = o.tr + 1; if (!W(b.tc, b.tr)) { b.tc = o.tc; b.tr = o.tr; } place(b); setSt(b, 'stand'); return; }   // 게이트 이동 등 — 옆으로 순간이동
-    if (d > 1) {
-      const ax = Math.abs(dx) >= Math.abs(dy);
-      const first = ax ? [Math.sign(dx), 0] : [0, Math.sign(dy)], second = ax ? [0, Math.sign(dy)] : [Math.sign(dx), 0];
-      if (stepTo(b, first[0], first[1], true) || ((second[0] || second[1]) && stepTo(b, second[0], second[1], true))) { b.until = now + 450; return; }
-      setSt(b, 'stand'); return;
-    }
-    if (now < b.until) return;
-    if (Math.random() < 0.3) { setSt(b, 'peck'); b.until = now + 1800 + Math.random() * 1500; }
-    else { setSt(b, 'stand'); b.until = now + 1500 + Math.random() * 2000; }
-  };
-  const setSt = function (b, st, fast) { b.st = st; b.el.className = 'mw-pg ' + st + (fast ? ' fast' : '') + (b.left ? ' l' : '') + (b.comp ? ' comp' : ''); };
+  const setSt = function (b, st, fast) { b.st = st; b.el.className = 'mw-pg ' + st + (fast ? ' fast' : '') + (b.left ? ' l' : ''); };
   const stepTo = function (b, dc, dr, fast) {
     const tc = b.tc + dc, tr = b.tr + dr; if (!W(tc, tr)) return false;
     if (dc) b.left = dc < 0;
@@ -35018,7 +35032,6 @@ window._mwPigeons = function (n) {
     if (!lay.isConnected) { clearInterval(window._mwPigeonT); window._mwPigeonT = 0; return; }
     if (document.hidden) return;
     const me = window._charPos || { tc: -99, tr: -99 }, now = Date.now();
-    try { syncComps(); Object.keys(comps).forEach(function (k) { const b = comps[k], o = compOwnerPos(k); if (!o) return; if (now >= (b.until || 0) || Math.abs(o.tc - b.tc) + Math.abs(o.tr - b.tr) > 1) compStep(b); }); } catch (e) {}
     birds.forEach(function (b) {
       const dx = b.tc - me.tc, dy = b.tr - me.tr, near = Math.abs(dx) + Math.abs(dy) <= 2;
       if (near) {   // 사람이 다가오면 반대쪽으로 종종걸음
