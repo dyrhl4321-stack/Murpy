@@ -35,12 +35,22 @@ def recolor_array(a, target, mode):
             h, s, v = colorsys.rgb_to_hsv(*(a[y, x, :3] / 255.0)); tot += 1
             if s > 0.25 and v > 0.3: sat += 1
         mode = 'hue' if tot and sat / tot > 0.3 else 'tint'
+    # ★밝기 정규화: 천에서 가장 밝은 픽셀이 목표 밝기(tv)가 되고 그늘은 비례해서 어두워진다.
+    #   (없으면 회색 천 위 노랑은 올리브, 검정은 회청색이 된다 — 9-08 1차 배치)
+    vmax = 0.0
+    for y, x in zip(ys[::3], xs[::3]):
+        h, s, v = colorsys.rgb_to_hsv(*(a[y, x, :3] / 255.0))
+        if v >= 0.30 and (mode != 'tint' or s <= 0.35): vmax = max(vmax, v)
+    vmax = vmax or 1.0
     for y, x in zip(ys, xs):
         r, g, b = a[y, x, :3] / 255.0; h, s, v = colorsys.rgb_to_hsv(r, g, b)
         if v < 0.30: continue                                   # 외곽선·깊은 그늘은 그대로
         if mode == 'tint':
             if s > 0.35: continue                               # 이미 색이 있는 부분(프린트·지퍼 등)은 유지
-            nr, ng, nb = colorsys.hsv_to_rgb(th, ts * min(1.0, 0.75 + v * 0.25), v * (0.55 + 0.45 * tv))
+            rel = v / vmax
+            nv = max(0.12, tv * rel) if tv >= 0.35 else max(0.10, tv + (rel - 1.0) * 0.12)   # 어두운 목표(검정)는 그늘 폭을 좁게
+            ns = ts if tv >= 0.35 else min(ts, 0.35)
+            nr, ng, nb = colorsys.hsv_to_rgb(th, ns, nv)
         else:  # hue
             if s < 0.20: continue
             nr, ng, nb = colorsys.hsv_to_rgb(th, s, v)
