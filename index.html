@@ -14192,6 +14192,32 @@ function gymPickerChoose(name) {
 // ===== 크롭 시스템 =====
 window.cropData = { originalFile: null, croppedBlob: null };
 
+// .page의 transform은 fixed 자식의 기준 좌표를 페이지로 바꾼다.
+// 피드를 내린 채 body를 고정하면 크롭 창까지 화면 위로 밀리므로 body 직속으로 분리한다.
+window._cropViewportStart = function () {
+  const modal = document.getElementById('crop-modal'); if (!modal) return;
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  if (window._cropViewportFit) { window._cropViewportFit(); return; }
+  const vv = window.visualViewport;
+  const fit = function () {
+    if (modal.style.display === 'none') return;
+    const height = vv ? vv.height : window.innerHeight;
+    if (!(height > 0)) return;
+    modal.style.top = (vv ? Math.max(0, vv.offsetTop) : 0) + 'px';
+    modal.style.height = height + 'px'; modal.style.bottom = 'auto'; modal.style.maxHeight = 'none';
+  };
+  window._cropViewportFit = fit;
+  if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
+  window.addEventListener('resize', fit);
+  fit();
+};
+window._cropViewportStop = function () {
+  const fit = window._cropViewportFit; if (!fit) return;
+  const vv = window.visualViewport;
+  if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); }
+  window.removeEventListener('resize', fit); window._cropViewportFit = null;
+};
+
 // iOS 안전 배경 스크롤 잠금 (position:fixed 방식 — 모달 내부 스크롤 안 깨짐)
 // ★중첩 호출 가드가 반드시 필요하다 — 잠긴 상태에서 다시 부르면 window.scrollY 가 0 이라
 //   _cropSavedScrollY 가 0 으로 덮어써지고, 풀 때 화면이 맨 위로 튀거나 아래로 끌려 내려간
@@ -14399,6 +14425,9 @@ function closeCropModal() {
   window._cropCloseSeq = closeSeq;
   // ★모달을 먼저 숨기고 body position:fixed를 풀면 iOS가 그 사이의 홈 위치를 한 프레임 그린다.
   //   검은 모달이 덮인 상태에서 스크롤을 복원하고, 다음 프레임에 모달과 URL을 정리한다.
+  const focused = document.activeElement;
+  if (focused && modal.contains && modal.contains(focused) && focused.blur) focused.blur();
+  if (window._cropViewportStop) window._cropViewportStop();
   unlockBodyScroll();
   requestAnimationFrame(function () {
     if (window._cropCloseSeq !== closeSeq) return;
@@ -14418,6 +14447,7 @@ function closeCropModal() {
 
 // 크롭 모달 단계 전환 (1: 크롭 / 2: 캡션 작성) — 헤더 버튼·타이틀 함께 바꿈
 function _setCropStep(step) {
+  if (window._cropViewportStart) window._cropViewportStart();
   const left = document.getElementById('crop-left-btn');
   const right = document.getElementById('crop-right-btn');
   const title = document.getElementById('crop-title');
