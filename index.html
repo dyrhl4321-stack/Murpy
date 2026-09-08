@@ -14192,11 +14192,25 @@ function gymPickerChoose(name) {
 // ===== 크롭 시스템 =====
 window.cropData = { originalFile: null, croppedBlob: null };
 
+// 키보드 전환 중에는 visualViewport와 layout viewport가 다른 프레임에 갱신된다.
+// 작성창만 줄이고, 그 뒤의 불투명 가림막은 전체 화면에 남겨 홈이 비치지 않게 한다.
+window._cropBackdrop = function (show) {
+  let el = document.getElementById('crop-backdrop');
+  if (!el && show) {
+    el = document.createElement('div'); el.id = 'crop-backdrop';
+    el.setAttribute('aria-hidden', 'true');
+    el.style.cssText = 'position:fixed;inset:-100vh 0;background:#000;z-index:9998;touch-action:none';
+    document.body.appendChild(el);
+  }
+  if (el) el.style.display = show ? 'block' : 'none';
+};
+
 // .page의 transform은 fixed 자식의 기준 좌표를 페이지로 바꾼다.
 // 피드를 내린 채 body를 고정하면 크롭 창까지 화면 위로 밀리므로 body 직속으로 분리한다.
 window._cropViewportStart = function () {
   const modal = document.getElementById('crop-modal'); if (!modal) return;
   if (modal.parentElement !== document.body) document.body.appendChild(modal);
+  window._cropBackdrop(modal.style.display !== 'none');
   if (window._cropViewportFit) { window._cropViewportFit(); return; }
   const vv = window.visualViewport;
   const fit = function () {
@@ -14380,9 +14394,8 @@ function openCropModal(file) {
   const fail = (e) => {
     if (window._cropOpenSeq !== seq) return;
     if (e) console.warn('사진 열기 실패', e);
-    modal.style.display = 'none';
+    closeCropModal();
     if (loading) loading.style.display = 'none';
-    unlockBodyScroll();
     const inp = document.getElementById('feed-photo-input'); if (inp) inp.value = '';
     if (window.showToast) showToast('사진을 불러오지 못했어요');
   };
@@ -14432,6 +14445,7 @@ function closeCropModal() {
   requestAnimationFrame(function () {
     if (window._cropCloseSeq !== closeSeq) return;
     modal.style.display = 'none';
+    if (window._cropBackdrop) window._cropBackdrop(false);
     const loading = document.getElementById('crop-loading'); if (loading) loading.style.display = 'none';
     document.getElementById('feed-photo-input').value = '';
     document.getElementById('feed-post-input').value = '';
