@@ -16707,7 +16707,7 @@ window._notifGoPost = function (postId) {
   //   그 링크들까지 살리려면 여기서 한 번 더 막아야 한다.
   if (q.get('game')) return;
   const go = q.get('go');   // 9-09 murpy.app/?go=park — 카톡에 "지금 공원 모여" 한 줄로 뿌리는 주소
-  if (go && ['park', 'walk', 'outgym'].indexOf(go) >= 0) { window._pendingGo = go; try { history.replaceState(null, '', location.pathname); } catch (e) {} return; }
+  if (go && ['park', 'walk', 'outgym'].indexOf(go) >= 0) { window._pendingGo = go; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   const t = q.get('n'); if (!t) return;
   const f = q.get('f') || '', pid = q.get('p') || '';
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
@@ -16735,6 +16735,7 @@ window._notifGoPost = function (postId) {
       if (t === 'friend_workout') { if (pid) window._notifGoPost(pid); else goPage('home'); return; }
       if (t === 'bamboo_nearby') { goPage('bamboo'); return; }
       if (t === 'gym_now') { goPage('char'); setTimeout(function () { window.mwWorldPanel && window.mwWorldPanel('map'); }, 600); return; }
+      if (t === 'park_friend') { if (!window._pendingGo) window._pendingGo = 'park'; return; }   // 9-09 go= 가 같이 오면 그 맵, 없으면 공원(로그인 뒤 _homeOpenWatch 가 소비)
       if (t === 'squad_host_again') { const sid3 = q.get('sq') || ''; goPage('crew'); setTimeout(function () { sid3 && window.sqReopen && window.sqReopen(sid3); }, 500); return; }
       if (t === 'squad_again' || t === 'squad_nearby') {
         const sid2 = q.get('sq') || '';
@@ -25461,6 +25462,7 @@ window.startNotifListener = (uid) => {
           if (n.read) return;
           if (n.type === 'match') _showMatchPopup(n);
           else if (n.type === 'minjun_like') showToast('민준이: 우리 ' + (n.rel === '누나' ? '누나가' : '형이') + ' 좋아요를 보냈어요!');
+          else if (n.type === 'park_friend') showToast((n.fromNickname || '아는 사람') + '님이 ' + (n.text || '공원') + '에 있어요 · 홈 카드에서 놀러 가요');
           else if (n.type === 'feed_like') showToast((n.fromNickname || '누군가') + '님이 내 글에 좋아요를 눌렀어요');
           else if (n.type === 'feed_comment') showToast((n.fromNickname || '누군가') + '님이 내 글에 댓글을 남겼어요');
           else if (n.type === 'bamboo_comment') showToast('내 대숲 글에 익명 댓글이 달렸어요');
@@ -33023,7 +33025,7 @@ window.loadNotificationsFirestore = async () => {
         </div>`;
       }
       // ── 리텐션 알림 (8-30). 한 카드 틀로 여섯 종류를 그린다 — 종류마다 문장·가는 곳만 다르다.
-      if (['friend_workout','bamboo_nearby','gym_now','squad_again','squad_nearby','squad_host_again','nag'].includes(n.type)) {
+      if (['friend_workout','bamboo_nearby','gym_now','squad_again','squad_nearby','squad_host_again','nag','park_friend'].includes(n.type)) {
         const _post = String(n.postText || '').replace(/</g,'&lt;').slice(0, 30);
         const _txt = String(n.text || '').replace(/</g,'&lt;');
         const _sq = String(n.squadId || '').replace(/'/g, '');
@@ -33034,6 +33036,9 @@ window.loadNotificationsFirestore = async () => {
             svg: '<path d="M6 7v10M18 7v10M3 9v6M21 9v6"/><path d="M6 12h12"/>' },
           bamboo_nearby: { c: '#4ADE80', h: `${_txt || '우리 동네'} 대숲에 새 글`, s: _post ? `"${_post}"` : '동네 사람이 뭔가 털어놨어요',
             go: `goPage('bamboo')`, svg: '<path d="M12 3v18"/><path d="M8 7c2 0 4 1 4 3M16 11c-2 0-4 1-4 3M8 15c2 0 4 1 4 3"/>' },
+          park_friend: { c: '#3D7EFF', h: `<b>${safeNick}</b>님이 ${_txt || '공원'}에 있어요`, s: '지금 들어가면 같이 놀 수 있어요',
+            go: `window.mwGoOpenField&&window.mwGoOpenField('${String(n.field || 'park').replace(/[^a-z]/g, '')}')`,
+            svg: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>' },
           gym_now: { c: '#3D7EFF', h: `${_txt || '내 헬스장'}에 <b>${safeNick}</b>님 도착`, s: '지금 가면 아는 얼굴이 있어요',
             go: `goPage('char');setTimeout(function(){window.mwWorldPanel&&window.mwWorldPanel('map')},600)`,
             svg: '<path d="M12 22s7-6 7-12a7 7 0 0 0-14 0c0 6 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>' },

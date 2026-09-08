@@ -3,6 +3,8 @@ const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { getDatabase } = require("firebase-admin/database");
+const { onValueCreated } = require("firebase-functions/v2/database");
 
 initializeApp();
 
@@ -152,6 +154,11 @@ function compose(n) {
       return { title: `🏋️ ${n.text || "내 헬스장"}에 ${who}님 도착`,
                body: "지금 가면 아는 얼굴이 있어요" };
 
+    // ── 오픈월드 (9-09) — 아는 사람이 공원에 들어오면 ──
+    case "park_friend":
+      return { title: `🌳 ${who}님이 ${n.text || "공원"}에 있어요`,
+               body: "지금 머피월드에 들어가면 같이 놀 수 있어요" };
+
     case "squad_again":
       return { title: `⚡ ${who}님이 또 열었어요`,
                body: post ? `"${post}" · 지난번 멤버 소집 중, 빠지면 서운해요` : "지난번 멤버 소집 중 · 빠지면 서운해요" };
@@ -184,6 +191,7 @@ function linkFor(n) {
   const sid = n.squadId || n.crewId;
   if (sid) q.set("sq", String(sid));
   if (n.centerId) q.set("c", String(n.centerId));
+  if (n.field) q.set("go", String(n.field));   // 9-09 오픈월드 맵으로 바로(park/walk/outgym)
   const qs = q.toString();
   return "https://murpy.app/" + (qs ? "?" + qs : "");
 }
@@ -396,3 +404,47 @@ exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
 
 // ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
 Object.assign(exports, require("./retention.js"));
+
+// ────────────────────────────────────────────────────
+// 9-09 아는 사람이 오픈월드(공원·산책로·야외 헬스장)에 들어오면 알린다 — 사람이 모이는 시간을 만든다(대표: "광장에서 마음껏 뛰어놀게").
+//   트리거 = RTDB plaza/players/{field}/{uid} 생성(앱 _mwOpenJoin 이 set). 같은 맵 안에서 걷는 건 update 라 다시 안 뛴다.
+//   대상 = 들어온 사람과 같은 헬스장(gyms 교집합) 또는 그 사람과 범프한 사람(bumpers).
+//   절제: 대상 1명당 3시간에 1번(plaza/alerted/{uid}), 07~23시 KST 만, 이미 오픈월드에 있는 사람은 제외, 한 번에 최대 20명.
+//   알림은 notifications 문서로 만들고 발송은 위 sendNotifPush 가 맡는다(문구 compose 'park_friend').
+// ────────────────────────────────────────────────────
+const FIELD_KO = { park: "공원", walk: "산책로", outgym: "야외 헬스장" };
+exports.parkFriendAlert = onValueCreated(
+  { ref: "/plaza/players/{field}/{uid}", instance: "murpyprototype-default-rtdb", region: "asia-southeast1" },
+  async (event) => {
+    const field = event.params.field, uid = event.params.uid, v = event.data && event.data.val();
+    if (!v || !FIELD_KO[field] || !uid || uid.startsWith("murpy_")) return;   // murpy_* = 테스트봇
+    const hourKST = new Date(Date.now() + 9 * 3600e3).getUTCHours();
+    if (hourKST < 7 || hourKST >= 23) return;
+    const db = getFirestore(), rt = getDatabase();
+    const meSnap = await db.doc("users/" + uid).get(); if (!meSnap.exists) return;
+    const me = meSnap.data() || {};
+    const gyms = [...(me.gyms || []), me.gym].filter(Boolean).slice(0, 3);
+    const targets = new Set(Object.keys(me.bumpers || {}));
+    for (const g of gyms) {
+      const qs = await db.collection("users").where("gyms", "array-contains", g).limit(60).get();
+      qs.forEach((d) => { if (d.id !== uid) targets.add(d.id); });
+    }
+    targets.delete(uid);
+    if (!targets.size) return;
+    const [alertedSnap, presentSnap] = await Promise.all([rt.ref("plaza/alerted").get(), rt.ref("plaza/players").get()]);
+    const alerted = alertedSnap.val() || {}, present = presentSnap.val() || {}, online = new Set();
+    Object.values(present).forEach((m) => Object.keys(m || {}).forEach((u) => online.add(u)));
+    const now = Date.now(), batch = db.batch(), upd = {}; let n = 0;
+    for (const t of targets) {
+      if (online.has(t) || now - (alerted[t] || 0) < 3 * 3600e3) continue;
+      if (n >= 20) break;
+      batch.set(db.collection("notifications").doc(), {
+        type: "park_friend", toUid: t, fromUid: uid, fromNickname: String(v.nick || me.nickname || "머피").slice(0, 24),
+        text: FIELD_KO[field], field, read: false, createdAt: FieldValue.serverTimestamp(),
+      });
+      upd[t] = now; n++;
+    }
+    if (!n) return;
+    await batch.commit(); await rt.ref("plaza/alerted").update(upd);
+    console.log(`park_friend field=${field} from=${uid} targets=${targets.size} sent=${n}`);
+  });
