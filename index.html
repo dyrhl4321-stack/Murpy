@@ -8768,6 +8768,7 @@ window.charSetField = function (key) {
   try { window._mwPigeons && window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : (key === 'outgym' ? 2 : 0))); } catch (e) {}
   try { window._mwDucks && window._mwDucks(key === 'park' ? 2 : 0); } catch (e) {}
   try { window._mwCompanions && window._mwCompanions(_open); } catch (e) {}
+  try { window._mwPeopleHint && window._mwPeopleHint(key); } catch (e) {}
   try { window._mwParkNpcs && window._mwParkNpcs(_open); } catch (e) {}   // NPC+퀘스트(9-04) — 필드별로 거른다
   // ★배경이 다 뜰 때까지 오브젝트 겹을 감춘다. 아래 _mwFieldReveal 이 같이 켜 준다.
   const _tok = ++window._mwFieldTok;
@@ -30168,6 +30169,19 @@ window._mwOpenJoin = function (field) {
   S.beatT = setInterval(function () { if (S.field !== window._curField) { window._mwOpenLeave(); return; } window._mwOpenSend('beat'); }, 25000);
 };
 window._mwOpenPresenceSync = function (key) { if (window._mwIsOpenField(key)) window._mwOpenJoin(key); else window._mwOpenLeave(); };
+// ★9-09 대표 "광장·필드이동을 잘 노출(지금 광장에 몇 명 등)": 오픈월드 3필드 인원수를 한 번에 구독한다. cb({park:n, walk:n, outgym:n}). 반환 = 해제 함수.
+window._mwOpenCounts = function (cb) {
+  const R = window._rt; if (!R || !auth.currentUser) { cb({}); return function () {}; }
+  const fields = window._MW_OPEN_FIELDS || ['park', 'walk', 'outgym'], counts = {}, me = auth.currentUser.uid, uns = [];
+  fields.forEach(function (f) {
+    uns.push(R.onValue(R.ref(R.db, 'plaza/players/' + f), function (snap) {
+      const v = snap.val() || {}, now = Date.now();
+      counts[f] = Object.keys(v).filter(function (uid) { return uid !== me && now - ((v[uid] || {}).t || 0) < 70000; }).length;
+      cb(Object.assign({}, counts));
+    }, function () { counts[f] = 0; cb(Object.assign({}, counts)); }));
+  });
+  return function () { uns.forEach(function (u) { try { u(); } catch (e) {} }); };
+};
 (function () {
   const orig = window._charApplyPos;
   if (typeof orig !== 'function' || orig._rlWrapped) return;
@@ -34936,6 +34950,7 @@ window._mwFieldWorldMap = function (body) {
           + '<span class="mw-fmname">' + f.name + '</span></button>';
       }).join('')
     + '<div id="mw-fm-char"></div>'
+    + '<div id="mw-fm-live" style="position:absolute;left:8px;top:8px;z-index:7;font-family:Galmuri11,sans-serif;font-size:10px;color:#F5C24B;background:rgba(5,7,12,.8);border:2px solid #05070c;padding:3px 7px;display:none"></div>'
     // ★아치(캐릭터보다 키 큰 입구)는 캐릭터가 **밑으로** 지나가야 한다(대표 9-04) —
     //   지도 원본의 아치 상단부(보+간판)를 같은 이미지 배경으로 캐릭터 위(z6)에 얹는다.
     //   같은 파일을 같은 배율로 잘라 쓰므로 좌표가 어긋날 수 없다. 좌표는 1024 기준.
@@ -35036,6 +35051,7 @@ window._mwFmNews = async function () {
   slides.push({ img: 'char/banners/hero_gym.jpg?v=1', t: '헬스장 체크인', s: '도장 찍고 도감을 채워요' });
   slides.push({ img: 'char/banners/hero_pet.jpg?v=1', t: '펫이랑 산책', s: '공원에서 풀어주면 알아서 놀아요' });
   slides.push({ img: 'char/banners/hero_earn.jpg?v=1', t: '운동 인증하면 5머피', s: '오늘의 첫 인증을 남겨보세요' });
+  window._mwFmLiveAttach && window._mwFmLiveAttach();   // 9-09 지도 노드에 오픈월드 인원수
   const dots = document.getElementById('mw-fm-hero-dots');
   if (dots) dots.innerHTML = slides.map(function (_, i) {
     return '<span data-i="' + i + '" style="width:6px;height:6px;background:rgba(255,255,255,.35)"></span>'; }).join('');
@@ -35284,6 +35300,27 @@ window._mwParkAmbient = function (on) {
   h += '<i class="pk-cloud" style="top:58%;animation-delay:-38s"></i>';
   amb.innerHTML = h;
   room.appendChild(amb);
+};
+// ═══ 사람 있는 맵 안내 (9-09 대표: "광장·필드이동 잘 노출") — 지금 맵이 비었고 다른 오픈월드 맵에 사람이 있으면 6초 힌트 ═══
+window._mwPeopleHint = function (key) {
+  const old = document.getElementById('mw-people-hint'); if (old) old.remove();
+  if (window._mwPeopleOff) { try { window._mwPeopleOff(); } catch (e) {} window._mwPeopleOff = null; }
+  if (!(window._mwIsOpenField && window._mwIsOpenField(key)) || !window._mwOpenCounts) return;
+  let shown = false;
+  window._mwPeopleOff = window._mwOpenCounts(function (c) {
+    if (shown || window._curField !== key) return;
+    if (c[key] === undefined) return;
+    const others = Object.keys(c).filter(function (f) { return f !== key && c[f] > 0; }).sort(function (a, b) { return c[b] - c[a]; });
+    if (!others.length || c[key] > 0) { if (Object.keys(c).length >= 3) { shown = true; window._mwPeopleOff && window._mwPeopleOff(); } return; }
+    shown = true; window._mwPeopleOff && window._mwPeopleOff(); window._mwPeopleOff = null;
+    const f = others[0], name = (window._FIELDS[f] || {}).name || f;
+    const el = document.createElement('button'); el.id = 'mw-people-hint';
+    el.style.cssText = 'position:fixed;left:50%;top:calc(96px + env(safe-area-inset-top));transform:translateX(-50%);z-index:956;font-family:Galmuri11,sans-serif;font-size:11px;color:#fff;background:rgba(9,12,20,.92);border:2px solid #F5C24B;box-shadow:0 0 0 2px #2b3350;padding:6px 12px;cursor:pointer;white-space:nowrap';
+    el.innerHTML = '지금 <b style="color:#F5C24B">' + name + '</b>에 ' + c[f] + '명 있어요 · 가기 &#9654;';
+    el.onclick = function () { el.remove(); try { window.charSetField(f); } catch (e) {} };
+    (document.getElementById('page-char') || document.body).appendChild(el);
+    setTimeout(function () { if (el.isConnected) el.remove(); }, 6000);
+  });
 };
 // ═══ 나비 동행 (9-08 대표: 비둘기 동행은 별로 → "비둘기 말고 다른 날것은 괜찮다" → 나비) ═══
 // users.companion === 'butterfly'(관리인 퀘스트 3회 보상, _seasonState.companion) 이면 오픈월드에서 주인 머리 위·옆을
@@ -35929,6 +35966,22 @@ window._mwFmParade = async function () {
         + '<span style="font-size:9px;color:#cfd6e6;max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none">' + E(String(d.nickname || '머피').slice(0, 8)) + '</span></div>';
     }).join('');
   } catch (e) { console.warn('parade', e); box.innerHTML = ''; }
+};
+// 필드이동 지도가 열리면 오픈월드 인원수를 노드 이름표에 붙인다(패널이 닫히면 해제)
+window._mwFmLiveAttach = function () {
+  if (window._mwFmLiveOff) { try { window._mwFmLiveOff(); } catch (e) {} window._mwFmLiveOff = null; }
+  const panel = document.getElementById('mw-wpanel'); if (!panel || !window._mwOpenCounts) return;
+  window._mwFmLiveOff = window._mwOpenCounts(function (c) {
+    if (!panel.isConnected) { window._mwFmLiveOff && window._mwFmLiveOff(); window._mwFmLiveOff = null; return; }
+    let total = 0;
+    Object.keys(c).forEach(function (f) {
+      const el = panel.querySelector('.mw-fmnode[data-k="' + f + '"] .mw-fmname'); if (!el) return;
+      const base = el.dataset.base || (el.dataset.base = el.textContent);
+      el.textContent = c[f] ? base + ' · ' + c[f] + '명' : base; total += c[f] || 0;
+    });
+    const lv = document.getElementById('mw-fm-live');
+    if (lv) { lv.style.display = total ? 'block' : 'none'; lv.textContent = '지금 오픈월드에 ' + total + '명'; }
+  });
 };
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
