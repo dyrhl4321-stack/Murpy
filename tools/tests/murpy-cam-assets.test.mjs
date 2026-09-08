@@ -37,7 +37,7 @@ vm.runInNewContext(extract('_mcamLoadSheet'), {window, Image:FakeImage, URL, loc
 let result=window._mcamLoadSheet('https://firebasestorage.googleapis.com/v0/b/example/o/a?alt=media&token=fixture');
 assert.equal(image.crossOrigin,'anonymous');
 assert.equal(new URL(image.src).searchParams.get('token'),'fixture');
-assert.equal(new URL(image.src).searchParams.get('mcam'),'1');
+assert.equal(new URL(image.src).searchParams.get('mcam'),'2');
 image.onload(); assert.equal(await result,image); assert.equal(image.onload,null);
 result=window._mcamLoadSheet('char/walk.png?v=1');
 assert.equal(image.src,'https://murpy.app/char/walk.png?v=1');

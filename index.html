@@ -14664,6 +14664,10 @@ window.toggleMurpyCam = async function (keepFocus) {
   const prev = document.getElementById('compose-preview');
   const plain = window.cropData && window.cropData.plainBlob;
   if (!tg || !prev || !plain) return;
+  const crop = window.cropData;
+  const openSeq = window._cropOpenSeq;
+  const seq = (window._mcamSeq || 0) + 1; window._mcamSeq = seq;
+  const current = () => window._mcamSeq === seq && window._cropOpenSeq === openSeq && window.cropData === crop && crop.plainBlob === plain;
 
   // 필터 ON → 사진 안 입력칸을 쓰고 아래 캡션칸은 감춘다. OFF → 반대로 되돌린다.
   const capIn = document.getElementById('mcam-caption');
@@ -14689,11 +14693,12 @@ window.toggleMurpyCam = async function (keepFocus) {
     if (window._composePreviewUrl) URL.revokeObjectURL(window._composePreviewUrl);
     window._composePreviewUrl = URL.createObjectURL(blob);
     prev.src = window._composePreviewUrl;
-    window.cropData.croppedBlob = blob;      // 업로드되는 것도 같이 바뀐다
+    crop.croppedBlob = blob;      // 업로드되는 것도 같이 바뀐다
   };
 
-  if (!tg.checked) { show(plain); return; }
+  if (!tg.checked) { crop.mcamError = null; crop.mcamPending = false; show(plain); if (busy) busy.style.display = 'none'; tg.disabled = false; return; }
 
+  crop.mcamPending = true; crop.mcamError = null;
   if (busy) busy.style.display = '';
   tg.disabled = true;
   let previewImageUrl = null;
@@ -14705,18 +14710,19 @@ window.toggleMurpyCam = async function (keepFocus) {
     });
     // ★미리보기는 **글씨 없이** 합성한다. 글씨는 위에 겹쳐둔 입력칸이 보여주기 때문에,
     //   여기서도 찍으면 두 겹으로 보인다. 실제 인쇄는 공유할 때 한 번만 한다(submitFeedPost).
-    const dataUrl = await window._mwBuildStamp(img, null, '', window.cropData && window.cropData.shotAt);
+    const dataUrl = await window._mwBuildStamp(img, null, '', crop.shotAt);
     const blob = await (await fetch(dataUrl)).blob();
+    if (!current()) return;
     show(blob);
   } catch (e) {
+    if (!current()) return;
     console.warn('머피캠 필터 실패', e);
-    tg.checked = false;
-    show(plain);
+    // 실패를 원본 사진 업로드로 바꾸지 않는다. 선택·한마디를 보존하고 공유 시 재시도한다.
+    crop.mcamError = e.message || '머피캠 합성 실패';
     if (window.showToast) showToast(e.code === 'MCAM_ASSET' ? e.message : '머피캠 필터를 적용하지 못했어요');
   } finally {
     if (previewImageUrl) URL.revokeObjectURL(previewImageUrl);
-    if (busy) busy.style.display = 'none';
-    tg.disabled = false;
+    if (current()) { crop.mcamPending = false; if (busy) busy.style.display = 'none'; tg.disabled = false; }
   }
 };
 
@@ -19065,7 +19071,7 @@ window.dodgeGo = function () {
   // 고정 DOM 의 기억을 지운다 — 안 지우면 이전 판의 방향·프레임이 남는다
   ['dodge-me', 'dodge-uncle', 'dodge-nag'].forEach(function (id) {
     const e = document.getElementById(id);
-    if (e) { e._face = null; e._fr = null; e._t = null; e._hurt = null; e._sheet = null; e.classList.remove('dodge-hurt'); }
+    if (e) { e._face = null; e._charHtml = null; e._fr = null; e._t = null; e._hurt = null; e._sheet = null; e.classList.remove('dodge-hurt'); }
   });
   const _un = document.getElementById('dodge-uncle'); if (_un) _un.style.display = 'none';
   const _ng = document.getElementById('dodge-nag'); if (_ng) _ng.style.display = 'none';
@@ -19151,15 +19157,21 @@ window._dodgePaint = function (s) {
     const real = auth.currentUser && !auth.currentUser.isAnonymous
       && window._charState && window._charState.character;
     const cfg = real ? window.getMyCharacter() : Object.assign({}, window.CHAR_DEFAULT || {});
-    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, chH, s.face) || '';
+    if (cfg && window.mwMiniCharHtml) ch = window.mwMiniCharHtml(cfg, chH, 'down') || '';
   } catch (e) {}
   host.innerHTML = html;                      // 떨어지는 물건만 매 프레임 다시 그린다
 
   // ── 내 캐릭터 (고정 DOM) ──
   const meEl = document.getElementById('dodge-me');
   if (meEl) {
-    // 그림은 방향이 바뀔 때만 다시 만든다 — 매 프레임 만들면 깜빡인다
-    if (meEl._face !== s.face) { meEl.innerHTML = ch; meEl._face = s.face; }
+    // 좌우 전환은 이미 로드한 레이어의 행만 옮긴다. 원격 커마 DOM 재생성으로 머리가 깜빡이지 않게.
+    // 시트가 늦게 준비되거나 옷/피부가 바뀐 경우에는 방향이 같아도 갱신한다.
+    if (ch && meEl._charHtml !== ch) { meEl.innerHTML = ch; meEl._charHtml = ch; meEl._face = null; }
+    if (meEl._face !== s.face) {
+      const row = s.face === 'left' ? 2 : s.face === 'right' ? 3 : s.face === 'up' ? 1 : 0;
+      meEl.querySelectorAll(':scope > div > div').forEach(function (layer) { layer.style.backgroundPositionY = (-row * chH) + 'px'; });
+      meEl._face = s.face;
+    }
     meEl.style.left = px(s.x).toFixed(1) + 'px';
     meEl.style.top = (D.PLAYER_Y / 100 * H).toFixed(1) + 'px';
     meEl.style.transform = 'translate(-50%,-100%)';
@@ -23200,7 +23212,7 @@ window._loadImg = (src) => new Promise(res => { const i = new Image(); i.crossOr
 window._mcamLoadSheet = function (src) {
   return new Promise(function (resolve, reject) {
     const url = new URL(src, location.href);
-    if (url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com') url.searchParams.set('mcam', '1');
+    if (url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com') url.searchParams.set('mcam', '2');
     const im = new Image();
     const finish = function (ok) {
       clearTimeout(timer); im.onload = im.onerror = null;
@@ -31467,6 +31479,7 @@ window.submitFeedPost = async function() {
   if (window._notMember && window._notMember()) { window._mwJoinGate ? window._mwJoinGate('인증글을 쓰려면') : showToast('계정이 필요해요'); return; }   // 8-31 임시 계정 차단
   let file = window.cropData.croppedBlob;
   if (!file) { showToast('사진을 먼저 선택해주세요'); return; }
+  if (window.cropData.mcamPending) { showToast('머피캠 합성 중이에요. 잠시 후 공유해주세요'); return; }
   // ★머피캠 필터를 켰으면 글이 **사진 안에 이미 찍혀 있다.** 본문으로 또 내보내면
   //   피드에 같은 말이 두 번 나와 난잡해진다(대표 지적) → 본문은 비우고 camText 로만 남긴다.
   //   camText 는 화면에 안 그리고, 이미지 alt(스크린리더)와 나중 검색에 쓴다.
@@ -31482,7 +31495,8 @@ window.submitFeedPost = async function() {
   try {
     // ★머피캠이 켜져 있으면 여기서 **글씨까지 넣어 한 번 더 합성**한다.
     //   미리보기는 글씨 없이 만들었고(입력칸이 그 자리를 보여줌), 실제 인쇄는 여기 한 번뿐이다.
-    if (_mcamOn && camText && window.cropData.plainBlob && window._mwBuildStamp) {
+    if (_mcamOn) {
+      if (!window.cropData.plainBlob || !window._mwBuildStamp) throw new Error('머피캠 원본을 다시 선택해주세요');
       let finalImageUrl = null;
       try {
         const _u = URL.createObjectURL(window.cropData.plainBlob);
@@ -37234,7 +37248,7 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
   // ★9-08 강 코치 도장(코치 부탁 3회 보상, 대표: "따봉하는 유쾌한 상반신을 왼쪽에 말풍선처럼") — 켜져 있을 때만
   try {
     if (window._mcamCoachWant && window._mcamCoachWant()) {
-      const ci = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'char/npc/coach_stamp.png?v=2'; });
+      const ci = await window._mcamLoadSheet('char/npc/coach_stamp.png?v=2');
       if (ci) {
         const CH3 = 340, CW3 = Math.round(CH3 * ci.width / ci.height), cx0 = 18, cy0 = (H - bar - 6) - CH3;   // 대표 9-08: 상반신 아랫변 = 검은 필름바 윗선(겹치지 않게, 바 위에 올라앉음)
         x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
@@ -37248,10 +37262,11 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
         x.quadraticCurveTo(bx, by + bh, bx, by + bh - 16); x.lineTo(bx, by + 16); x.quadraticCurveTo(bx, by, bx + 16, by); x.closePath();
         x.fill(); x.stroke();
         x.fillStyle = '#05070c'; x.font = "36px 'Galmuri14','Galmuri11',sans-serif"; x.textAlign = 'center'; x.textBaseline = 'middle';
-        x.fillText('강코치 인증!', bx + bw / 2, by + bh / 2 + 2);   // 대표 9-08: '인정!' 말고 '강코치 인증!' x.restore(); x.textAlign = 'start'; x.textBaseline = 'middle';
+        x.fillText('강코치 인증!', bx + bw / 2, by + bh / 2 + 2);
+        x.restore(); x.textAlign = 'start'; x.textBaseline = 'middle';
       }
     }
-  } catch (e) { console.warn('coach stamp skip', e); }
+  } catch (e) { console.warn('coach stamp failed', e); throw e; }
   // 도장 (붉은 인주, 기울어진 이중 링)
   x.save(); x.translate(W-180, 200); x.rotate(-12*Math.PI/180); x.globalAlpha=0.92;
   x.strokeStyle='#E4472E'; x.lineWidth=10; x.beginPath(); x.arc(0,0,128,0,7); x.stroke();
@@ -42061,9 +42076,14 @@ window._mwEmotePop = function (hostEl, id) {
   const old = hostEl.querySelector(':scope > .mw-emote'); if (old) old.remove();
   const el = document.createElement('div'); el.className = 'mw-emote';
   el.style.backgroundPositionY = (-i * 32) + 'px';
-  // 칭호(<...>)가 머리 위에 있으면 그 위로(대표 9-08 #43 "이모트가 칭호랑 겹친다")
+  // 실제 칭호 윗변 기준 4px. 스쿼드 칭호는 이미 부모 높이에 포함돼 높이를 또 더하면 두 번 벌어진다.
   const te = hostEl.querySelector('.cw-title, .sq-title');
-  if (te && te.textContent && te.style.display !== 'none' && te.offsetHeight) el.style.bottom = 'calc(100% + ' + (te.offsetHeight + 8) + 'px)';
+  if (te && te.textContent && te.style.display !== 'none' && te.offsetHeight) {
+    const hr = hostEl.getBoundingClientRect(), tr = te.getBoundingClientRect();
+    const scale = hostEl.offsetHeight ? hr.height / hostEl.offsetHeight : 1;
+    const above = Math.max(0, (hr.top - tr.top) / (scale || 1));
+    el.style.bottom = 'calc(100% + ' + (above + 4) + 'px)';
+  }
   hostEl.appendChild(el);
   // ★이모트 동안 그 캐릭터의 말풍선(고정 포함)은 잠시 숨긴다 — 겹치니까(대표 9-08). 끝나면 원래대로.
   const bub = hostEl.querySelector('.sq-bubble, .mw-rc-bub, .cw-bubble');
