@@ -16704,6 +16704,8 @@ window._notifGoPost = function (postId) {
   //   닉네임 자리는 nick= 으로 옮겼지만, **이미 카톡에 퍼진 옛 링크**에는 n= 이 그대로 남아 있다.
   //   그 링크들까지 살리려면 여기서 한 번 더 막아야 한다.
   if (q.get('game')) return;
+  const go = q.get('go');   // 9-09 murpy.app/?go=park — 카톡에 "지금 공원 모여" 한 줄로 뿌리는 주소
+  if (go && ['park', 'walk', 'outgym'].indexOf(go) >= 0) { window._pendingGo = go; try { history.replaceState(null, '', location.pathname); } catch (e) {} return; }
   const t = q.get('n'); if (!t) return;
   const f = q.get('f') || '', pid = q.get('p') || '';
   try { history.replaceState(null, '', location.pathname); } catch (e) {}
@@ -37892,6 +37894,46 @@ window._mwMaskNick = function (n) {
   n = String(n || '');
   return n ? n.slice(0, 1) + '○○' : '○○○';
 };
+// ===== 9-09 홈 → 오픈월드(공원·산책로·야외 헬스장) 노출 =====
+// 진입 순서는 오픈월드 담당 창과 합의한 그대로: 로그인 확정 → goPage('char')(아바타 준비) → 300ms 뒤 charSetField(field).
+// charSetField 가 배경·NPC·펫·프레즌스(_mwOpenJoin)까지 전부 처리한다.
+window.MW_OPEN_NAMES = { park: '공원', walk: '산책로', outgym: '야외 헬스장' };
+window.mwGoOpenField = function (field) {
+  field = (window._MW_OPEN_FIELDS || []).indexOf(field) >= 0 ? field : (window._homeOpenBest || 'park');
+  if (!window.currentUser) { requireLogin('가입하면 공원에서 사람들과 같이 놀 수 있어요'); return; }
+  goPage('char');
+  setTimeout(function () { try { window.charSetField(field); } catch (e) { console.warn('go open field', e); } }, 350);
+  window.track && window.track('home_open_go', { field: field });
+};
+window._homeOpenCounts = {};
+window._homeOpenPaint = function () {
+  const C = window._homeOpenCounts, N = window.MW_OPEN_NAMES;
+  const card = document.getElementById('home-open-card'); if (!card) return;
+  const title = card.querySelector(':scope > div:last-child > div:first-child'), meta = document.getElementById('home-open-meta');
+  const order = ['park', 'walk', 'outgym'].sort(function (a, b) { return (C[b] || 0) - (C[a] || 0); });
+  const total = order.reduce(function (s, k) { return s + (C[k] || 0); }, 0);
+  window._homeOpenBest = total ? order[0] : 'park';
+  if (!title || !meta) return;
+  if (!total) { title.textContent = '공원 놀러 가기'; meta.textContent = '지금 들어가면 첫 손님이에요'; return; }
+  title.innerHTML = '지금 ' + N[order[0]] + '에 <span style="color:#7aa4ff">' + C[order[0]] + '명</span>';
+  const rest = order.slice(1).filter(function (k) { return C[k]; }).map(function (k) { return N[k] + ' ' + C[k]; }).join(' · ');
+  meta.textContent = (rest ? rest + ' · ' : '') + '놀러 가기';
+};
+window._homeOpenWatch = function () {
+  const R = window._rt; if (!R || !window.currentUser || window._homeOpenWatching) { window._homeOpenPaint(); return; }
+  window._homeOpenWatching = true;
+  (window._MW_OPEN_FIELDS || ['park', 'walk', 'outgym']).forEach(function (f) {
+    try {
+      R.onValue(R.ref(R.db, 'plaza/players/' + f), function (snap) {
+        const v = snap.val() || {}, now = Date.now(); let n = 0;
+        Object.keys(v).forEach(function (uid) { const p = v[uid]; if (p && (now - (p.t || 0)) < 70000) n++; });   // 70초 넘은 유령은 안 센다(오픈월드 렌더와 같은 기준)
+        window._homeOpenCounts[f] = n; window._homeOpenPaint();
+      });
+    } catch (e) { console.warn('home open watch', f, e); }
+  });
+  // 딥링크 murpy.app/?go=park — 로그인 확정 뒤 여기서 소비한다(주소는 라우터가 이미 지웠다)
+  if (window._pendingGo) { const g = window._pendingGo; window._pendingGo = ''; setTimeout(function () { window.mwGoOpenField(g); }, 400); }
+};
 window.loadHomeTrending = async () => {
   const el = document.getElementById('home-trending-scroll');
   if (!el) return;
@@ -37953,6 +37995,17 @@ window.loadHomeTrending = async () => {
         </div>
       </button>`;
     };
+
+    // 0. ★9-09 오픈월드 라이브 — 대표: "광장·필드이동이 크게 좋아졌으니 홈에서 잘 노출되게. 지금 광장에 몇 명 있다든지".
+    //   숫자는 RTDB plaza/players/{park,walk,outgym} 를 구독해 실시간으로 갈아 끼운다(_homeOpenWatch). 0명이면 '첫 손님'으로.
+    //   비로그인은 규칙상 읽을 수 없으니 숫자 없이 '공원 놀러 가기'만.
+    const icoWorld = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>`;
+    cards.push(card({
+      click: 'window.mwGoOpenField && window.mwGoOpenField()', color: BLUE, icon: icoWorld, label: '지금 머피월드', aria: '지금 머피월드',
+      img: 'char/banners/hero_park.jpg?v=2', zoom: 1.04,
+      title: '공원 놀러 가기',
+      meta: '<span id="home-open-meta">지금 들어가면 첫 손님이에요</span>'
+    }).replace('aria-label="지금 머피월드"', 'id="home-open-card" aria-label="지금 머피월드"'));
 
     // 1. 인기 스쿼드 (모집 중 · 참가자 많은 순) — 크루를 대체한다
     // ★★필드 이름이 전부 틀려 있었다 (2026-08-09 대표 지적으로 발견).
@@ -38218,6 +38271,7 @@ window.loadHomeTrending = async () => {
 
 
     el.innerHTML = cards.join('');
+    window._homeOpenWatch && window._homeOpenWatch();   // 9-09 오픈월드 인원 실시간
   } catch(e) {
     console.error('trending error:', e);
   }
