@@ -165,7 +165,8 @@ def put_spots(s, key, im, rows):
     import random; random.seed(7); random.shuffle(sn); sn = sn[:70]
     k0 = s.index("%s: { name: '" % key); a0 = s.index("start: {", k0); a1 = s.index("}", a0) + 1
     tail = s[a1:]
-    tail = re.sub(r"^, sniff: \[.*?\]\](, duck: \[.*?\]\])?(?=, map: \[)", "", tail, count=1, flags=re.S)
+    # road(조깅 길)·low(데크 칸)는 보존하고 sniff/duck 만 갈아끼운다
+    tail = re.sub(r"^(, road: \[.*?\]\])?(, low: \[.*?\]\])?, sniff: \[.*?\]\](, duck: \[.*?\]\])?(?=, map: \[)", lambda m: (m.group(1) or '') + (m.group(2) or ''), tail, count=1, flags=re.S)
     ins = ", sniff: %s" % json.dumps(sn, separators=(',', ':')).replace('"', "'")
     if key == 'park': ins += ", duck: %s" % json.dumps(dk, separators=(',', ':'))
     print('  spots', key, 'sniff', len(sn), 'duck', len(dk))
