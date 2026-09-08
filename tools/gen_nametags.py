@@ -28,8 +28,8 @@ def plate(img, x0, x1, pal):
             corner2 = (x in (x0 + 1, x1 - 1)) and (y in (PT, PB))
             corner3 = (x in (x0, x1)) and (y in (PT + 1, PB - 1))
             if edge_x or edge_y or corner2 or corner3: px[x, y] = pal['K']; continue
-            if y == PT + 1 or (y == PT + 2 and x in (x0 + 1, x1 - 1)): px[x, y] = pal['H']
-            elif y == PB - 1 or (y == PB - 2 and x in (x0 + 1, x1 - 1)): px[x, y] = pal['S']
+            if y == PT + 1 or (y == PT + 2 and x in (x0 + 1, x1 - 1)) or (x == x0 + 1 and y < PB - 2): px[x, y] = pal['H']
+            elif y == PB - 1 or (y == PB - 2 and x in (x0 + 1, x1 - 1)) or (x == x1 - 1 and y > PT + 2): px[x, y] = pal['S']
             else: px[x, y] = pal['B']
     # 모서리 둥글게: 대각 픽셀
     for (cx, cy) in ((x0 + 1, PT + 1), (x1 - 1, PT + 1), (x0 + 1, PB - 1), (x1 - 1, PB - 1)): px[cx, cy] = pal['K']
@@ -111,6 +111,31 @@ KSSSSK
 .KKKK.
 """.strip().splitlines()
 
+CARROT = """
+..KK.KK.
+.KgGKGgK
+..KGGGK.
+..KOoOK.
+.KOoOOOK
+.KOOOOOK
+.KOOOOOK
+..KOOOK.
+..KOOOK.
+...KOK..
+...KOK..
+....K...
+""".strip().splitlines()
+
+SPARK = """
+...K...
+..KyK..
+.KyyyK.
+KyyyyyK
+.KyyyK.
+..KyK..
+...K...
+""".strip().splitlines()
+
 STAR = """
 ....K....
 ...KyK...
@@ -123,28 +148,30 @@ KKKKyKKKK
 """.strip().splitlines()
 
 SKINS = [
-  # id, 이름, 팔레트, 마스코트 art, (ox, oy), 판 x0..x1, 왼쪽 slice, 오른쪽 slice, 글자색
-  ('bunny',   '토끼 이름표', dict(K='#6b4a3a', B='#fff6e6', H='#ffffff', S='#f0dcc4', W='#ffffff', P='#ffb0c4', p='#ffd6e0', E='#3a2620'), BUNNY, (1, 2), (4, None), 16, 5, '#4a3328'),
-  ('heart',   '하트 이름표', dict(K='#b03a5a', B='#ffc2d2', H='#ffe0ea', S='#ffa4bc', W='#ffffff', P='#ff6f91', p='#ff9fb6'), HEART, (2, 1), (3, None), 13, 5, '#5a1f33'),
-  ('sprout',  '새싹 이름표', dict(K='#2f7a55', B='#d6f5e6', H='#f0fff7', S='#b6e8cf', G='#4fc27f', g='#a7e9c1'), SPROUT, (2, 0), (3, None), 15, 5, '#1f4a35'),
-  ('ribbon',  '리본 이름표', dict(K='#5a3f9a', B='#e8dcff', H='#f7f2ff', S='#d2c0f5', P='#b48cff', p='#d9c4ff'), RIBBON, (2, 0), (3, None), 15, 5, '#3a2866'),
-  ('dumbbell','덤벨 이름표', dict(K='#26386e', B='#a8c4ff', H='#dbe7ff', S='#7f9ee6'), WEIGHT, (0, 0), (5, 'weight'), 8, 8, '#16244a'),
-  ('star',    '별 이름표',   dict(K='#8a6a1e', B='#fff2b8', H='#fffbe0', S='#f2dd8c', y='#ffd84a'), STAR, (2, 0), (3, None), 13, 5, '#4a3a10'),
+  # id, 이름, 팔레트, 왼쪽 아트,(ox,oy), 오른쪽 아트(None=왼쪽 좌우반전),(오른쪽 끝에서 ox, oy), 판 x0, 캡 폭(양쪽 같음), 글자색
+  ('bunny',   '토끼 이름표', dict(K='#6b4a3a', B='#fff6e6', H='#ffffff', S='#f0dcc4', W='#ffffff', P='#ffb0c4', p='#ffd6e0', E='#3a2620', O='#ff9a3c', o='#ffc27a', G='#4fc27f', g='#a7e9c1'), BUNNY, (1, 2), CARROT, (1, 1), 4, 15, '#4a3328'),
+  ('heart',   '하트 이름표', dict(K='#b03a5a', B='#ffc2d2', H='#ffe0ea', S='#ffa4bc', W='#ffffff', P='#ff6f91', p='#ff9fb6'), HEART, (2, 1), None, (2, 1), 3, 12, '#5a1f33'),
+  ('sprout',  '새싹 이름표', dict(K='#2f7a55', B='#d6f5e6', H='#f0fff7', S='#b6e8cf', G='#4fc27f', g='#a7e9c1'), SPROUT, (2, 0), None, (2, 0), 3, 14, '#1f4a35'),
+  ('ribbon',  '리본 이름표', dict(K='#5a3f9a', B='#e8dcff', H='#f7f2ff', S='#d2c0f5', P='#b48cff', p='#d9c4ff'), RIBBON, (2, 0), None, (2, 0), 3, 14, '#3a2866'),
+  ('dumbbell','덤벨 이름표', dict(K='#26386e', B='#a8c4ff', H='#dbe7ff', S='#7f9ee6'), WEIGHT, (0, 0), 'weight', (0, 0), 5, 8, '#16244a'),
+  ('star',    '별 이름표',   dict(K='#8a6a1e', B='#fff2b8', H='#fffbe0', S='#f2dd8c', y='#ffd84a'), STAR, (2, 0), SPARK, (3, 1), 3, 12, '#4a3a10'),
 ]
 
 def make(skin):
-    sid, name, pal, art, (ox, oy), (x0, mode), L, R, tc = skin
+    sid, name, pal, art, (ox, oy), rart, (rx, ry), x0, C, tc = skin
     pal = {k: hx(v) for k, v in pal.items()}
-    W = L + 14 + R                                   # 중간 stretch 구간 14px(어차피 늘어난다)
+    W = C * 2 + 14                                   # 중간 stretch 구간 14px(어차피 늘어난다)
     img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    if mode == 'weight':
+    if rart == 'weight':
         plate(img, x0, W - 6, pal)
         blit(img, WEIGHT, 0, 0, pal); blit(img, WEIGHT, W - 6, 0, pal)
     else:
-        plate(img, x0, W - 1, pal)
+        plate(img, x0, W - 1 - x0, pal)
         blit(img, art, ox, oy, pal)
+        r = rart or [row[::-1] for row in art]
+        blit(img, r, W - rx - len(r[0]), ry, pal)
     p = os.path.join(OUT, 'tag_%s.png' % sid); img.save(p)
-    return p, img, L, R, tc, name
+    return p, img, C, C, tc, name
 
 def main():
     os.makedirs(REVIEW, exist_ok=True)
@@ -154,7 +181,7 @@ def main():
         big = img.resize((img.width * 6, img.height * 6), Image.NEAREST)
         bg = Image.new('RGBA', big.size, (40, 44, 56, 255)); bg.alpha_composite(big)
         bg.save(os.path.join(REVIEW, 'tag_%s_x6.png' % s[0]))
-        rows.append("  .mw-frame-%s { color:%s !important; border-image-source:url('char/ui/tag_%s.png?v=1') !important; border-image-slice:7 %d 3 %d fill !important; border-image-width:7px %dpx 3px %dpx !important; border-image-outset:6px %dpx 2px %dpx !important }" % (s[0], tc, s[0], R, L, R, L, R - 2, L - 2))
+        rows.append("  .mw-frame-%s { color:%s !important; border-image-source:url('char/ui/tag_%s.png?v=2') !important; border-image-slice:7 %d 3 %d fill !important; border-image-width:7px %dpx 3px %dpx !important; border-image-outset:6px %dpx 2px %dpx !important }" % (s[0], tc, s[0], R, L, R, L, R - 2, L - 2))
         names.append("%s: '%s'" % (s[0], name))
         print(p, img.size, 'slice L', L, 'R', R)
     print('\n'.join(rows)); print('window._MW_FRAMES = { ' + ', '.join(names) + ' };')
