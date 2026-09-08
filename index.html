@@ -35469,6 +35469,7 @@ window._MW_NPCS = [
 // ★9-07 대표: 필드에 운동하는 머피들 — 운동존(우측 고무 바닥)에 3프레임 루프 엑스트라. 탭 안 됨, 이름표 없음.
 // ★9-07 대표 "깜박깜박": 포즈 전환은 느리게(5~6초) + 항상 숨쉬기(부드러운 transform) + 공·철봉·바벨은 8프레임 절차 애니(strip)
 window._mwNpcAnimCss = function (n) {   // .bd 는 숨쉬기만, 프레임은 안쪽 .fr 이 translateX 로 민다(% background-position 함정 회피)
+  if (n && n.noBreathe) return '';   // ★9-09 대표 "철봉이 위아래로 움직인다": 기구 포함 스프라이트는 scaleY 숨쉬기를 끈다(봉·기둥까지 늘었다 줄었다 했다)
   return 'animation:npcBreathe 2.6s ease-in-out infinite';
 };
 window._mwNpcFrameHtml = function (n) {
@@ -35477,11 +35478,9 @@ window._mwNpcFrameHtml = function (n) {
   if (n.anim) return '<i class="fr fr3" style="background-image:url(' + u + ');animation:mwStrip3 ' + (n.ms || 3000) + 'ms steps(3) infinite"></i>';
   return '<i class="fr fr1" style="background-image:url(' + u + ')"></i>';
 };
-window._MW_PARK_EXTRAS = [   // ★9-07 대표: 운동존은 별도 필드(outgym) — 철봉·벤치·스트레칭 엑스트라도 거기로
-  // ★9-07 대표 "기구와 동작이 안 맞는다": 엑스트라는 **기구를 포함한** 4프레임 스프라이트라 맵의 기구 위에 겹쳐 놓지 않고 빈 고무바닥에 둔다
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=6', strip: 4, x: 62.0, y: 60.0, h: 4.4, ms: 2200, ar: 0.66 },
-  { field: 'outgym', img: 'char/npc/anim/extra_bench4.png?v=3', strip: 4, x: 52.0, y: 74.0, h: 3.72, ms: 2000, ar: 0.687 },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 72.0, y: 74.0, h: 3.06, ms: 3600, ar: 0.657 },
+window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 noBreathe, 코치 쪽(우측)에 몰지 말고 바닥 곳곳에. 벤치프레스는 필드 바벨 크기와 안 맞아 뺌.
+  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=6', strip: 4, x: 32.0, y: 34.0, h: 4.4, ms: 2200, ar: 0.66, noBreathe: true },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 24.0, y: 66.0, h: 3.06, ms: 3600, ar: 0.657 },
 ];
 window._mwQuestDone = async function (id) {
   const day = _creditToday();
@@ -35533,18 +35532,30 @@ window._mwNpcHush = function () { if (window._mwNpcCur) { try { window._mwNpcCur
 // ★9-07 대표: "직접 움직여서 NPC 앞으로 가야만 받을 수 있게" — 멀리서 탭하면 캐릭터가 NPC 앞까지 걸어가서 도착 후 대화.
 window._mwNpcApproach = function (k) {
   const n = window._MW_NPCS.find(function (x) { return x.k === k; }); if (!n) return;
-  if ((n.field || 'park') !== window._curField) {   // ★9-09 대표 "다른 필드 NPC 도 클릭하면 자동으로": 그 맵으로 옮긴 뒤 걸어간다
-    const f = n.field || 'park'; if (window._mwNpcHop === f) return; window._mwNpcHop = f;
-    window.showToast && showToast(((window._FIELDS[f] || {}).name) + '로 이동해서 ' + n.name + '에게 가요');
-    try { window.charSetField(f); } catch (e) {}
-    setTimeout(function () { window._mwNpcHop = null; if (window._curField === f) window._mwNpcApproach(k); }, 900);
+  if ((n.field || 'park') !== window._curField) {   // ★9-09 대표 "순간이동이 아니라 직접 걸어가서 필드로 이동해야지": 출입구까지 걸어가 넘어간 뒤 이어서 간다
+    const f = n.field || 'park', gates = (window._FIELD_GATES || {})[window._curField] || [];
+    const gt = gates.find(function (g) { return g.to === f; }) || gates.find(function (g) { return g.to === 'park'; });   // 직행 없으면 광장(허브) 경유
+    if (!gt) { window.showToast && showToast(n.name + '은(는) ' + ((window._FIELDS[f] || {}).name) + '에 있어요'); return; }
+    window.showToast && showToast(((window._FIELDS[f] || {}).name) + '의 ' + n.name + '에게 가는 중…');
+    window._mwNpcPending = { k: k, hops: (window._mwNpcPending ? window._mwNpcPending.hops : 0) + 1 };
+    if (window._mwNpcPending.hops > 3) { window._mwNpcPending = null; return; }
+    // 출입구 칸을 밟으면 _mwGateCheck 가 필드를 바꾸고(자동 걷기도 거기서 멈춘다) 새 필드의 _mwParkNpcs 가 _mwNpcPending 을 보고 이어서 걸어간다
+    window._mwWalkTo(function (tc, tr) { return tc >= gt.tc[0] && tc <= gt.tc[1] && tr >= gt.tr[0] && tr <= gt.tr[1]; }, null, (window._FIELDS[gt.to] || {}).name + ' 입구');
     return;
   }
+  window._mwNpcPending = null;
   const N = 48, P = window._charPos; if (!P) { window._mwNpcTalk(k); return; }
   const ntc = Math.floor(n.x / 100 * N), ntr = Math.floor(n.y / 100 * N);
   const near = function (tc, tr) { return Math.abs(tc - ntc) <= 1 && Math.abs(tr - ntr) <= 1; };
   window._mwNpcAutoStop();
   if (near(P.tc, P.tr)) { window._mwNpcTalk(k); return; }
+  window._mwWalkTo(near, function () { window._mwNpcTalk(k); }, n.name);
+};
+// 목적지 판정(near) 까지 BFS 로 걸어간다. 도착하면 onArrive. (9-09: NPC 접근·출입구 이동 공용)
+window._mwWalkTo = function (near, onArrive, label) {
+  const N = 48, P = window._charPos; if (!P) return;
+  window._mwNpcAutoStop();
+  if (near(P.tc, P.tr)) { onArrive && onArrive(); return; }
   // BFS: 내 타일 → NPC 이웃 타일 중 제일 가까운 곳
   const ok = function (tc, tr) { return tc >= 0 && tr >= 0 && tc < N && tr < N && window._charWalkable(tc, tr, true); };
   const key = function (tc, tr) { return tr * N + tc; };
@@ -35557,13 +35568,13 @@ window._mwNpcApproach = function (k) {
       if (prev.has(kk) || !ok(x, y)) continue; prev.set(kk, [tc, tr]); q.push([x, y]);
     }
   }
-  if (!goal) { window.showToast && showToast(n.name + ' 근처로 가 주세요'); return; }
+  if (!goal) { window.showToast && showToast((label || '그곳') + ' 근처로 가 주세요'); return; }
   const path = []; let cur = goal;
   while (cur && !(cur[0] === P.tc && cur[1] === P.tr)) { path.unshift(cur); cur = prev.get(key(cur[0], cur[1])); }
   let i = 0;
   window._mwNpcAuto = setInterval(function () {
     if (!(window._mwIsOpenField && window._mwIsOpenField())) { window._mwNpcAutoStop(); return; }   // ★9-08 산책로·헬스장에서도 NPC 에게 걸어가 말 건다(park 고정이라 클릭이 안 됐다)
-    if (i >= path.length) { window._mwNpcAutoStop(); window._mwNpcTalk(k); return; }
+    if (i >= path.length) { window._mwNpcAutoStop(); onArrive && onArrive(); return; }
     const [tc, tr] = path[i++]; const dx = tc - window._charPos.tc, dy = tr - window._charPos.tr;
     const moved = window.charMove(dx, dy);
     if (!moved && !(window._charPos.tc === tc && window._charPos.tr === tr)) { window._mwNpcAutoStop(); }
@@ -35855,6 +35866,10 @@ window._mwParkNpcs = function (on) {
   });
   window._mwParkNpcBadges && window._mwParkNpcBadges();
   window._mwQuestPanel && window._mwQuestPanel(true);
+  if (window._mwNpcPending) {   // 9-09 다른 필드 NPC 자동 이동 — 출입구로 넘어온 뒤 이어서 걸어간다
+    const pk = window._mwNpcPending.k;
+    setTimeout(function () { if (window._mwNpcPending && window._mwNpcPending.k === pk) window._mwNpcApproach(pk); }, 600);
+  }
 };
 // 머리 위 ! 배지 — 미완료 퀘스트만 노란 느낌표(수령까지 끝나면 숨김)
 window._mwParkNpcBadges = async function () {
