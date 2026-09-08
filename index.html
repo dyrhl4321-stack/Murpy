@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1141';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1142';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -8997,10 +8997,12 @@ window.charMove = function (dx, dy) {
     };
     const frames = Object.keys(window._MW_FRAMES).map(function (id) {
       const has = (st.frames || []).indexOf(id) >= 0, on = st.frameOn === id;
-      return '<button ' + (has ? 'onclick="window.mwFrameSet(\'' + (on ? '' : id) + '\');var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()"' : 'disabled')
-        + ' style="cursor:' + (has ? 'pointer' : 'default') + ';padding:12px 10px 8px 22px;border:2px solid ' + (on ? '#F5C24B' : '#05070c') + ';background:' + (on ? '#232c42' : '#141a28') + ';display:flex;flex-direction:column;align-items:center;gap:8px;' + (has ? '' : 'opacity:.35;') + '">'
-        + '<span class="sq-nick mw-frame-' + id + '" style="margin:0">' + window._escHtml((window.currentUser || {}).nickname || '머피') + '</span>'
-        + '<span style="font-family:\'Galmuri11\',sans-serif;font-size:10px;color:' + (has ? '#c8d0e0' : '#4a5266') + '">' + window._MW_FRAMES[id] + (on ? ' ·켜짐' : '') + '</span></button>';
+      const quest = !!(window._MW_FRAME_QUEST || {})[id], buy = !has && !quest;   // 9-09 안 가진 건 사거나(머피) 퀘스트 전용
+      const act = has ? 'window.mwFrameSet(\'' + (on ? '' : id) + '\');var m=document.getElementById(\'mw-emote-modal\');if(m)m.remove()' : (buy ? 'window.mwFrameBuy(\'' + id + '\')' : '');
+      return '<button ' + (act ? 'onclick="' + act + '"' : 'disabled')
+        + ' style="cursor:' + (act ? 'pointer' : 'default') + ';padding:12px 10px 8px 22px;border:2px solid ' + (on ? '#F5C24B' : '#05070c') + ';background:' + (on ? '#232c42' : '#141a28') + ';display:flex;flex-direction:column;align-items:center;gap:8px;' + (has || buy ? '' : 'opacity:.35;') + '">'
+        + '<span class="sq-nick mw-frame-' + id + '" style="margin:0' + (buy ? ';opacity:.55' : '') + '">' + window._escHtml((window.currentUser || {}).nickname || '머피') + '</span>'
+        + '<span style="font-family:\'Galmuri11\',sans-serif;font-size:10px;color:' + (has ? '#c8d0e0' : (buy ? '#F5C24B' : '#4a5266')) + '">' + window._MW_FRAMES[id] + (on ? ' ·켜짐' : (buy ? ' · ' + window.MW_TAG_PRICE + '머피' : '')) + '</span></button>';
     }).join('');
     const el = document.createElement('div'); el.id = 'mw-emote-modal';
     el.style.cssText = 'position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-start;justify-content:center;padding:14vh 20px 20px;background:rgba(5,7,12,.7);overflow:hidden;overscroll-behavior:contain';
@@ -9008,8 +9010,9 @@ window.charMove = function (dx, dy) {
       + '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin-bottom:12px">' + (opts.title || '이모트') + '</div>'
       + '<div style="display:flex;flex-wrap:wrap;gap:8px">' + window._MW_EMOTES.map(cell).join('') + '</div>'
       + '<div style="font-size:10.5px;color:#8a93a8;margin-top:10px;line-height:1.6">' + (opts.hint || '흐린 건 아직 없는 이모트 — 공원 사람들 부탁을 들어주면 생겨요') + '</div>'
-      + (opts.pick ? '' : '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin:16px 0 10px">이름표 프레임</div>'
-      + (frames ? '<div style="display:flex;flex-wrap:wrap;gap:7px">' + frames + '</div>' : ''))
+      + (opts.pick ? '' : '<div style="font-family:\'Galmuri14\',sans-serif;font-size:13px;color:#fff;margin:16px 0 10px">이름표</div>'
+      + (frames ? '<div style="display:flex;flex-wrap:wrap;gap:7px">' + frames + '</div>' : '')
+      + '<div style="font-size:10.5px;color:#8a93a8;margin-top:10px;line-height:1.6">이름표는 머피로 살 수 있어요 · 흐린 토끼는 공원 관리인 아저씨 부탁을 들어주면 생겨요</div>')
       + '</div>';
     el.addEventListener('click', function (e) { if (e.target === el) el.remove(); });
     document.body.appendChild(el);
@@ -18496,6 +18499,28 @@ window.mwFrameSet = async function (next) {
   st.frameOn = next;
   window._charApplyPos && window._charApplyPos();
   try { window._sqRtSend && window._sqRtSend(); } catch (e) {} try { window._mwRlSend && window._mwRlSend(); } catch (e) {} try { window._mwOpenSend && window._mwOpenSend(); } catch (e) {}
+};
+window.mwFrameBuy = async function (id) {
+  const user = window.currentUser; if (!user) { window.requireLogin && window.requireLogin('로그인이 필요해요'); return; }
+  if (!window._MW_FRAMES[id] || (window._MW_FRAME_QUEST || {})[id]) return;
+  const st = window._seasonState || {}; if ((st.frames || []).indexOf(id) >= 0) return;
+  const price = window.MW_TAG_PRICE;
+  if (window.creditsEnforcedFor && window.creditsEnforcedFor(user.uid)) {
+    const ok = await window.murpyConfirm({
+      title: window._MW_FRAMES[id],
+      desc: '<span class="sq-nick mw-frame-' + id + '" style="display:inline-block;margin:6px 0 10px">' + window._escHtml(user.nickname || '머피') + '</span><br>'
+        + '<b style="color:#F5C24B">' + price + '머피</b>를 사용해요 · 사면 바로 달아요',
+      icon: window.murpyTokenSVG ? window.murpyTokenSVG(40) : '', cost: true, confirmText: '사기'
+    });
+    if (!ok) return;
+  }
+  if (!(await window.spendCredit(user.uid, price))) { showToast(window.creditSpendFailMessage()); return; }
+  try { await window._seasonWrite(user.uid, { frames: arrayUnion(id) }); } catch (e) { console.warn('frame buy', e); showToast('저장에 실패했어요'); return; }
+  st.frames = (st.frames || []).concat([id]);
+  window.mwFrameSet(id);
+  showToast(window._MW_FRAMES[id] + '를 달았어요!');
+  window.track && window.track('tag_buy', { id: id });
+  if (document.getElementById('mw-emote-modal')) window.mwEmotePick({});
 };
 window._npcGrantFrame = async function (id) {
   const user = window.currentUser; if (!user || !window._MW_FRAMES[id]) return false;
@@ -42058,6 +42083,9 @@ window._MW_AUR_COLORS = ['blue'];
 // ★9-07 이모트·이름표 프레임 — 몸통·헤어와 무관한 코스메틱(대표: 퀘스트 보상은 에셋 대신 손 안 가는 것).
 //   프레임 id 와 이모트 id 는 프레즌스로 남의 값이 오므로 **화이트리스트**만 통과시킨다(아우라 색과 같은 이유).
 window._MW_FRAMES = { bunny: '토끼 이름표', heart: '하트 이름표', sprout: '새싹 이름표', ribbon: '리본 이름표', dumbbell: '덤벨 이름표', star: '별 이름표' };
+// 9-09 이름표 판매(메이플 명찰반지처럼 코스메틱 매출) — 토끼는 관리인 퀘스트 보상이라 안 판다. 가격은 대표 조정 대상.
+window.MW_TAG_PRICE = 30;
+window._MW_FRAME_QUEST = { bunny: '공원 관리인 아저씨 부탁을 들어주면 생겨요' };
 window._MW_EMOTES = ['ex', 'q', 'note', 'heart',
   'blush', 'zzz', 'sweat', 'tear', 'anger',
   'lines', 'fire', 'fist', 'v', 'medal',
@@ -42098,8 +42126,14 @@ window._mwEmotePop = function (hostEl, id) {
   if (bub && bub.style.visibility !== 'hidden') { bub.style.visibility = 'hidden'; setTimeout(function () { bub.style.visibility = ''; }, 2900); }
   // 캐릭터도 살짝 뛴다 — 위치는 바깥 요소(transform)가 잡으므로 **안쪽 몸통**에만 건다(.sq-body / .mw-rc-body / 내 아바타)
   const myAv = hostEl.id === 'charworld-headui' ? document.getElementById('charworld-avatar') : null;
-  const body = hostEl.querySelector(':scope > .sq-body, :scope > .mw-rc-body') || (myAv ? myAv.firstElementChild : hostEl.firstElementChild);
-  if (body) { body.classList.remove('mw-emote-hop'); void body.offsetWidth; body.classList.add('mw-emote-hop'); setTimeout(function () { body.classList.remove('mw-emote-hop'); }, 600); }
+  const sqBody = hostEl.querySelector(':scope > .sq-body');
+  if (sqBody) { sqBody.classList.remove('mw-emote-hop'); void sqBody.offsetWidth; sqBody.classList.add('mw-emote-hop'); setTimeout(function () { sqBody.classList.remove('mw-emote-hop'); }, 600); }
+  else {
+    // 9-09 방·오픈월드: transform 은 _charApplyPos/렌더가 매 프레임 다시 쓰므로 class(transform) 로는 안 뛴다(대표 "오픈월드에서도 점프 있어야").
+    //   → margin-top 을 WAAPI 로 흔든다(다른 속성과 안 겹침). 내 몸통은 #charworld-avatar 자체(자식은 재렌더로 갈릴 수 있다).
+    const body = hostEl.querySelector(':scope > .mw-rc-body') || myAv || hostEl.firstElementChild;
+    if (body) { try { body.animate([{ marginTop: '0px' }, { marginTop: '-9px', offset: .4 }, { marginTop: '0px', offset: .7 }, { marginTop: '-3px', offset: .85 }, { marginTop: '0px' }], { duration: 500, easing: 'cubic-bezier(.34,1.56,.64,1)' }); } catch (e) {} }
+  }
   setTimeout(function () { try { el.remove(); } catch (e) {} }, 2900);
 };
 window._mwEmotesOwned = function () {
