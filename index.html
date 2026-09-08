@@ -14615,23 +14615,25 @@ window.toggleMurpyCam = async function (keepFocus) {
 
   if (busy) busy.style.display = '';
   tg.disabled = true;
+  let previewImageUrl = null;
   try {
     const url = URL.createObjectURL(plain);
+    previewImageUrl = url;
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
     });
     // ★미리보기는 **글씨 없이** 합성한다. 글씨는 위에 겹쳐둔 입력칸이 보여주기 때문에,
     //   여기서도 찍으면 두 겹으로 보인다. 실제 인쇄는 공유할 때 한 번만 한다(submitFeedPost).
     const dataUrl = await window._mwBuildStamp(img, null, '', window.cropData && window.cropData.shotAt);
-    URL.revokeObjectURL(url);
     const blob = await (await fetch(dataUrl)).blob();
     show(blob);
   } catch (e) {
     console.warn('머피캠 필터 실패', e);
     tg.checked = false;
     show(plain);
-    if (window.showToast) showToast('머피캠 필터를 적용하지 못했어요');
+    if (window.showToast) showToast(e.code === 'MCAM_ASSET' ? e.message : '머피캠 필터를 적용하지 못했어요');
   } finally {
+    if (previewImageUrl) URL.revokeObjectURL(previewImageUrl);
     if (busy) busy.style.display = 'none';
     tg.disabled = false;
   }
@@ -23107,21 +23109,42 @@ window._mcamCharBox = function () {
   return { x: g.W - cw - 34, y: g.H - g.bar - g.CH + 26, w: cw, h: g.CH };
 };
 window._loadImg = (src) => new Promise(res => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+// CSS 표시용 이미지와 캔버스용 CORS 요청의 HTTP 캐시를 분리한다.
+window._mcamLoadSheet = function (src) {
+  return new Promise(function (resolve, reject) {
+    const url = new URL(src, location.href);
+    if (url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com') url.searchParams.set('mcam', '1');
+    const im = new Image();
+    const finish = function (ok) {
+      clearTimeout(timer); im.onload = im.onerror = null;
+      if (ok) resolve(im);
+      else { im.src = ''; const e = new Error('캐릭터 이미지를 불러오지 못했어요. 잠시 후 머피캠을 다시 켜주세요.'); e.code = 'MCAM_ASSET'; reject(e); }
+    };
+    const timer = setTimeout(function () { finish(false); }, 12000);
+    im.crossOrigin = 'anonymous';
+    im.onload = function () { finish(im.naturalWidth > 0 && im.naturalHeight > 0); };
+    im.onerror = function () { finish(false); };
+    im.src = url.href;
+  });
+};
 // 캐릭터 한 벌을 캔버스에 그린다(정면 정지 = row0 col0)
 window._mcamDrawChar = async function (ctx, cfg, box) {
   const sheets = window._charEquippedSheets ? window._charEquippedSheets(cfg) : null;
-  if (!sheets) return false;
-  ctx.imageSmoothingEnabled = false;
+  if (!sheets || !sheets.body) {
+    const e = new Error('캐릭터를 불러오는 중이에요. 잠시 후 머피캠을 다시 켜주세요.'); e.code = 'MCAM_ASSET'; throw e;
+  }
   // ★겹 순서는 반드시 _charLayerOrder 로 물어본다. 손으로 적은 배열을 쓰면 overShoes
   //   (버뮤다 밑단이 신발 목을 덮는 규칙)가 빠진다 — 대표 8-27: "인기 캐릭터·방에서는
   //   해결됐는데 아직 머피캠에 뜨는 건 해결 안 됨". 사본이 여섯 곳이었다.
-  for (const slot of (window._charLayerOrder ? window._charLayerOrder(cfg)
-                      : ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'])) {
-    const url = sheets[slot]; if (!url) continue;
-    const im = await window._loadImg(url); if (!im) continue;
-    ctx.drawImage(im, 0, 0, im.width / 3, im.height / 4, box.x, box.y, box.w, box.h);
-  }
-  ctx.imageSmoothingEnabled = true;
+  const order = window._charLayerOrder ? window._charLayerOrder(cfg)
+    : ['body', 'bottom', 'shoes', 'top', 'hair', 'hat', 'acc'];
+  // 전 레이어가 준비된 뒤 그린다. 하나라도 실패하면 옷만 있는 사진을 만들지 않는다.
+  const images = await Promise.all(order.filter(slot => sheets[slot]).map(slot => window._mcamLoadSheet(sheets[slot])));
+  const smoothing = ctx.imageSmoothingEnabled;
+  try {
+    ctx.imageSmoothingEnabled = false;
+    for (const im of images) ctx.drawImage(im, 0, 0, im.width / 3, im.height / 4, box.x, box.y, box.w, box.h);
+  } finally { ctx.imageSmoothingEnabled = smoothing; }
   return true;
 };
 window.showFeedHairFix = async function () {
@@ -31362,13 +31385,15 @@ window.submitFeedPost = async function() {
     // ★머피캠이 켜져 있으면 여기서 **글씨까지 넣어 한 번 더 합성**한다.
     //   미리보기는 글씨 없이 만들었고(입력칸이 그 자리를 보여줌), 실제 인쇄는 여기 한 번뿐이다.
     if (_mcamOn && camText && window.cropData.plainBlob && window._mwBuildStamp) {
+      let finalImageUrl = null;
       try {
         const _u = URL.createObjectURL(window.cropData.plainBlob);
+        finalImageUrl = _u;
         const _im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = _u; });
         const _d = await window._mwBuildStamp(_im, null, camText, window.cropData && window.cropData.shotAt);
-        URL.revokeObjectURL(_u);
         file = await (await fetch(_d)).blob();
-      } catch (e) { console.warn('머피캠 최종 합성 실패, 미리보기본으로 올림', e); }
+      } catch (e) { console.warn('머피캠 최종 합성 실패', e); throw e; }
+      finally { if (finalImageUrl) URL.revokeObjectURL(finalImageUrl); }
     }
     // users 컬렉션에서 최신 닉네임 + 프로필 사진
     let nickname = user.displayName || '익명';
@@ -37066,6 +37091,7 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
     const cfg={ ...((window.getMyCharacter?window.getMyCharacter():window.CHAR_DEFAULT)||{}) };
     if (window._charEnsureDefaults) window._charEnsureDefaults(cfg);
     const sheets=window._charEquippedSheets?window._charEquippedSheets(cfg):null;
+    if (!sheets || !sheets.body) { const e = new Error('캐릭터를 불러오는 중이에요. 잠시 후 머피캠을 다시 켜주세요.'); e.code = 'MCAM_ASSET'; throw e; }
     if (sheets) {
       // ★9-02 대표: 340px 는 "커서 퀄리티 저하", 224px(1배)는 "너무 작다" → **290px**.
       //   비정수 배(1.3x)를 NEAREST 로 바로 그리면 픽셀이 1칸·2칸 섞여 울퉁불퉁해진다(그게 저퀄의 정체).
@@ -37075,17 +37101,11 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
       const K=3, oc=document.createElement('canvas'); oc.width=141*K; oc.height=224*K;
       const ox=oc.getContext('2d'); ox.imageSmoothingEnabled=false;
       // ★손으로 적지 않는다 — overShoes 가 빠져 신발이 바지 위로 올라온다(8-27)
-      const ordr=window._charLayerOrder?window._charLayerOrder(cfg):['body','bottom','shoes','top','hair','hat','acc'];
-      for (const slot of ordr) {
-        const url=sheets[slot]; if(!url) continue;
-        const im=await new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>res(null);i.src=url;});
-        if(!im) continue;
-        ox.drawImage(im, 0,0, im.width/3, im.height/4, 0,0, oc.width, oc.height);   // 정수 3배 = 픽셀 그대로
-      }
+      await window._mcamDrawChar(ox, cfg, { x: 0, y: 0, w: oc.width, h: oc.height });
       x.imageSmoothingEnabled=true; x.imageSmoothingQuality='high';
       x.drawImage(oc, W-CW2-34, H-bar-CH2+26, CW2, CH2);                          // 부드럽게 축소
     }
-  } catch(e){ console.warn('char render skip', e); }
+  } catch(e){ console.warn('char render failed', e); throw e; }
   // ★9-08 강 코치 도장(코치 부탁 3회 보상, 대표: "따봉하는 유쾌한 상반신을 왼쪽에 말풍선처럼") — 켜져 있을 때만
   try {
     if (window._mcamCoachWant && window._mcamCoachWant()) {
@@ -37123,9 +37143,12 @@ window._mwBuildStamp = async function (photo, t, caption, shotAt, kind) {
 };
 window.mwCompose = async function (photo) {
   window.mwCloseCam();
+  window._mwStampData = null;
   // 카메라 탭·체크인은 언제나 운동 인증이다 — 컴포저의 식단 선택이 새어 들어오면 안 된다
-  window._mwStampData = await window._mwBuildStamp(photo, window._mwCkTarget, undefined, undefined, 'workout');
-  window.mwShowStampResult();
+  try {
+    window._mwStampData = await window._mwBuildStamp(photo, window._mwCkTarget, undefined, undefined, 'workout');
+    window.mwShowStampResult();
+  } catch (e) { showToast(e.code === 'MCAM_ASSET' ? e.message : '사진 합성을 완료하지 못했어요. 다시 시도해주세요.'); }
 };
 // 브랜드 아이콘(인라인 SVG — 이모지·PNG 금지, 공식 컬러). 카톡=브라운 말풍선, 인스타=그라데이션 렌즈.
 window._MW_BRAND = {
