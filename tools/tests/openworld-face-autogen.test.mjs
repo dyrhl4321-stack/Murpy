@@ -52,7 +52,7 @@ assert(/if \(b\.dynamic\) return !!b\.owner && window\._charBodyIsMine\(b\)/.tes
 
 // 6) 특정 Android PWA에서 필드만 검게 빈 경우 배경·캐릭터 겹·가구를 독립 복구한다.
 assert(/window\._mwRepairStage = function/.test(src), '빈 머피월드 필드 자가복구가 없다');
-assert(/!av\.querySelector\('\.cw-layer'\)/.test(src), '캐릭터 겹 유실을 복구하지 않는다');
+assert(/_CHAR_LAYER_ORDER\.every\(function \(slot\)/.test(src), '캐릭터 실제 슬롯 유실을 검사하지 않는다');
 assert(/repair=/.test(src) && /room\.style\.backgroundImage/.test(src), '깨진 배경 캐시를 우회하지 않는다');
 
 assert(/id = 'murpy-grant'[\s\S]{0,800}?touch-action:pan-y/.test(src), '관리자 머피 지급창이 iOS에서 자체 세로 스크롤을 갖지 않는다');

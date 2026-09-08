@@ -4314,7 +4314,12 @@ window._charLayerOrder = function (cfg) {
 };
 window._charBuildLayers = function () {
   const host = document.getElementById('charworld-avatar'); if (!host) return;
-  if (host._layersBuilt) return;
+  // DOM이 유실되면 JS 플래그만 남을 수 있다. 실제 슬롯이 모두 있을 때만 건너뛴다.
+  if (host._layersBuilt && window._CHAR_LAYER_ORDER.every(function (slot) {
+    return host.querySelector('.cw-layer[data-slot="' + slot + '"]');
+  })) return;
+  host.querySelectorAll('.cw-layer, .cw-shadow').forEach(function (el) { el.remove(); });
+  (document.getElementById('charworld-headui') || host).querySelectorAll('.cw-title, .cw-bubble, .cw-nick').forEach(function (el) { el.remove(); });
   host.style.backgroundImage = 'none';           // 컨테이너화: 자체 배경 제거
   // 접지 그림자(가구 _mwShadowHtml과 같은 평평한 타원). CSS drop-shadow 필터는 이동 시
   // 모바일에서 잔상(발자국·아지랑이)을 남겨 금지 — 대신 host 안에 타원 한 장.
@@ -9078,9 +9083,8 @@ window.charMove = function (dx, dy) {
   if (document.readyState !== 'loading') { window._initDragpad(); window._initRoomJoy(); }
   else document.addEventListener('DOMContentLoaded', () => { window._initDragpad(); window._initRoomJoy(); });
 })();
-// 일부 Android PWA가 배포 직후 옛 HTML/새 자산을 섞어 받은 경우, 머피월드 외곽·로스터는
-// 보이는데 방 배경과 캐릭터만 검게 비는 제보(염철범, 9-07). 필드 렌더는 장식 하나의 예외에
-// 같이 죽으면 안 된다. 현재 필드·배경·캐릭터 겹을 각각 독립적으로 다시 세우는 자가복구다.
+// 방 영역만 비는 제보의 기기 원인은 아직 미확정. 아래는 재현 가능한 복구 경로를 보강한다.
+// 배경 요청 지연·DOM 슬롯 유실은 서버 데이터 초기화 없이 현재 필드 안에서만 복구한다.
 window._mwRepairStage = function () {
   const page = document.getElementById('page-char'), room = document.getElementById('charworld-room');
   if (!page || !page.classList.contains('active') || !room) return;
@@ -9094,6 +9098,8 @@ window._mwRepairStage = function () {
       room.dataset.bgChecked = f.src;
       const im = new Image();
       im.onerror = function () {
+        // 이전 필드의 느린 실패 응답이 현재 필드 배경을 덮지 않게 한다.
+        if (window._FIELDS[window._curField] !== f || !page.classList.contains('active')) return;
         const sep = f.src.indexOf('?') >= 0 ? '&' : '?';
         room.style.backgroundImage = "url('" + f.src + sep + 'repair=' + (window._SW_V || Date.now()) + "')";
       };
@@ -9101,9 +9107,23 @@ window._mwRepairStage = function () {
     }
   }
   const av = document.getElementById('charworld-avatar');
-  try { if (av && !av.querySelector('.cw-layer')) window._charBuildLayers && window._charBuildLayers(); } catch (e) { console.warn('stage layers repair', e); }
+  try { if (av) window._charBuildLayers && window._charBuildLayers(); } catch (e) { console.warn('stage layers repair', e); }
   try { window._charApplyPos && window._charApplyPos(); } catch (e) { console.warn('stage char repair', e); }
   try { window.mwRenderFurn && window.mwRenderFurn(); } catch (e) { console.warn('stage room repair', e); }
+};
+window._mwRoomEnterFx = function (room) {
+  // 중단된 WAAPI 애니메이션은 opacity:0을 계속 적용한다. CSS 배경을 다시 그려도 안 보인다.
+  if (window._mwRoomEnterAnimation) { window._mwRoomEnterAnimation.cancel(); window._mwRoomEnterAnimation = null; }
+  if (!room || !room.animate || (window._mwIsOpenField && window._mwIsOpenField(window._curField))) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try {
+    const anim = room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' });
+    window._mwRoomEnterAnimation = anim;
+    const done = function () { anim.cancel(); if (window._mwRoomEnterAnimation === anim) window._mwRoomEnterAnimation = null; };
+    anim.onfinish = done;
+    // 폰 절전/백그라운드 복귀 등으로 onfinish가 오지 않아도 이 연출만 종료한다.
+    setTimeout(done, 700);
+  } catch (e) { console.warn('room entry animation', e); }
 };
 window.renderCharSpace = function () {
   // 중간 예외가 나도 복구 예약까지 도달할 수 있도록 진입 시 먼저 예약한다.
@@ -9147,7 +9167,7 @@ window.renderCharSpace = function () {
   var _hub = document.getElementById('mw-hub-wrap');
   if (_hub) _hub.style.display = '';
   window.charHubTab('me');   // 기본 진입 = 내 캐릭터 탭
-  if (room && room.animate) room.animate([{ opacity: 0, transform: 'scale(.96)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, easing: 'ease' }); // 게임 진입 연출
+  window._mwRoomEnterFx(room);
 };
 if (!window._charKeyBound) {
   window._charKeyBound = true;
