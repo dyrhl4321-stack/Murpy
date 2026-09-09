@@ -20026,7 +20026,12 @@ window.GOLF_CHARS = {
   zombie:     { name: '좀비',     power: 1.0,  jitter: 2, windMul: 1.0, cup: 1.0, accZone: 0.09, mulligan: 1, tip: '홀마다 한 번은 없던 일로' }
 };
 // LCG 난수 (dodge 와 같은 식) — 시드가 같으면 바람·지터가 재현된다
-window._golfRnd = function (s) { s.rnd = (s.rnd * 1103515245 + 12345) % 2147483648; return s.rnd / 2147483648; };
+window._golfRnd = function (s) {
+  s.rnd = (s.rnd * 1103515245 + 12345) % 2147483648;
+  // JS %는 음수 나머지를 그대로 돌려준다. 기존 음수 상태도 [0, 1)로 복구한다.
+  if (s.rnd < 0) s.rnd += 2147483648;
+  return s.rnd / 2147483648;
+};
 window.golfHoleScore = function (par, strokes) { return Math.max(0, (par + 3 - strokes)) * 10; };
 window._golfWindFor = function (s) {
   const lv = window.GOLF_LV[s.lv] || window.GOLF_LV.mid;
@@ -20035,7 +20040,8 @@ window._golfWindFor = function (s) {
   return { x: Math.cos(ang) * k, y: Math.sin(ang) * k };
 };
 window.golfNew = function (seed, lvKey, chKey) {
-  const s = { rnd: (seed | 0) || 1, lv: lvKey || 'mid', ch: chKey || 'human',
+  // Date.now() | 0는 약 24.9일씩 음수 → 두더지 SP[음수] 접근으로 시작 화면만 닫힌 채 멈췄다(#46).
+  const s = { rnd: (seed & 0x7fffffff) || 1, lv: lvKey || 'mid', ch: chKey || 'human',
               hole: 0, strokes: Array(window.GOLF.HOLES).fill(0), x: window.GOLF.TEE_X, y: window.GOLF.TEE_Y, vx: 0, vy: 0,
               moving: false, inBunker: false, done: false, last: '', t: 0,
               px: window.GOLF.TEE_X, py: window.GOLF.TEE_Y, mulligan: 0, wind: { x: 0, y: 0 },

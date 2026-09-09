@@ -24,6 +24,40 @@ const run = (s, ms) => { for (let t = 0; t < ms; t += 16) w.golfTick(s, 16); ret
 const calm = (s) => { s.wind = { x: 0, y: 0 }; s.crow = null; s.mole = null; return s; };
 const dist = (s, H) => Math.hypot(s.x - H.x, s.y - H.y);
 
+// #46: Date.now()의 signed 32-bit 변환이 음수인 날에도 시작/두더지 배치가 안전해야 한다.
+// 작은 양수 시드만 쓰던 테스트는 실제 시각에서 SP[-1]로 죽는 시작 버그를 놓쳤다.
+const startSeeds = [-2147483648, -123456789, -1, 0, 1, 2147483647, 2147483648, 4294967295];
+for (let hour = 0; hour < 24 * 60; hour += 3) startSeeds.push(Date.parse('2026-08-25T00:00:00Z') + hour * 3600000);
+for (const seed of startSeeds) {
+  const rand = { rnd: seed | 0 };
+  for (let i = 0; i < 20; i++) {
+    const v = w._golfRnd(rand);
+    assert(v >= 0 && v < 1, `난수 범위: seed=${seed}, value=${v}`);
+  }
+  for (const lv of ['easy', 'mid', 'hard']) {
+    const game = w.golfNew(seed, lv, 'face:regression');
+    for (let hole = 0; hole < w.GOLF.HOLES; hole++) {
+      assert.strictEqual(game.hole, hole);
+      if (game.mole) {
+        assert(Number.isInteger(game.mole.i) && game.mole.i >= 0 && game.mole.i < w.GOLF_MOLE_SPOTS.length);
+        assert(Number.isFinite(game.mole.x) && Number.isFinite(game.mole.y));
+        assert(game.mole.ph >= 0 && game.mole.ph < w.GOLF.MOLE_CYCLE);
+      }
+      w.golfTick(game, 16);
+      w._golfNextHole(game);
+    }
+    assert(game.done);
+  }
+}
+// 기존 정상(양수) 시드의 난수열·난이도·샷 결과는 그대로 유지한다.
+for (const seed of [1, 7, 12345, 2147483647]) {
+  const state = { rnd: seed }; let old = seed;
+  for (let i = 0; i < 100; i++) {
+    old = (old * 1103515245 + 12345) % 2147483648;
+    assert.strictEqual(w._golfRnd(state), old / 2147483648);
+  }
+}
+
 // 1) 점수표
 assert.strictEqual(w.golfHoleScore(3, 1), 50); assert.strictEqual(w.golfHoleScore(3, 3), 30); assert.strictEqual(w.golfHoleScore(3, 6), 0);
 
