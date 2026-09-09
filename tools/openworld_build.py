@@ -172,6 +172,28 @@ def put_spots(s, key, im, rows):
     print('  spots', key, 'sniff', len(sn), 'duck', len(dk))
     return s[:a1] + ins + tail
 
+def head_h(path, n=4):
+    """엑스트라 h(칸) = base 머리폭(87/224) 기준 — 셀 높이가 아니라 머리 폭으로 크기를 맞춘다(9-09 대표 '캐릭터가 작다')"""
+    a = np.array(Image.open(path).convert('RGBA')); H, W = a.shape[:2]; c = a[:, :W // n]
+    r, g, b, al = c[..., 0].astype(int), c[..., 1].astype(int), c[..., 2].astype(int), c[..., 3] > 0
+    skin = al & (r > 170) & (g > 110) & (b > 80) & (r > g + 20) & (g > b + 10); hw = int(skin[:int(H * 0.6)].sum(axis=1).max()) or 1
+    return round(3.3 * (87 / 224) / (hw / H), 2)
+
+def place_free(s, rows, field, prefs):
+    """엑스트라 발끝 (x%,y%) 주변(폭 h*ar 칸·몸통 아래 60%·여유 1칸)이 전부 '.' 이어야 통과. 아니면 prefs 후보 중 첫 통과 자리로 옮긴다."""
+    def free(x, y, h, ar, margin=1):
+        tc = x / 100 * 48; tr = y / 100 * 48; w = h * ar; c0 = int(tc - w / 2) - margin; c1 = int(tc + w / 2) + margin; r0 = int(tr - h * 0.6) - margin; r1 = int(tr) + margin
+        return all(0 <= r < 48 and 0 <= c < 48 and rows[r][c] == '.' for r in range(r0, r1 + 1) for c in range(c0, c1 + 1))
+    xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs)
+    for img, x, y, h, ar in re.findall(r"field: '%s', img: '([^']+)', strip: \d, x: ([0-9.]+), y: ([0-9.]+), h: ([0-9.]+), ms: \d+, ar: ([0-9.]+)" % field, s[xs:xe]):
+        key = img.split('/')[-1].split('.')[0]
+        if free(float(x), float(y), float(h), float(ar)): print('  extra', key, 'ok at', x, y); continue
+        for cx, cy in prefs.get(key, []):
+            if free(cx, cy, float(h), float(ar)):
+                s = re.sub(r"(img: '%s', strip: \d, x: )[0-9.]+(, y: )[0-9.]+" % re.escape(img), r"\g<1>%s\g<2>%s" % (float(cx), float(cy)), s); print('  extra', key, 'moved to', cx, cy); break
+        else: print('  ★extra', key, 'no free spot')
+    return s
+
 def cell_ar(path, n):
     im = Image.open(path); return (im.width / n) / im.height
 
@@ -181,7 +203,7 @@ def main():
     json.dump({'fount': fb, 'pond': qb, 'src': WORK + 'park_v5.png'}, open('char/fields/anim/water_boxes.json', 'w'))
     mk = np.ones((2048, 2048))   # 전체 재분류
     from PIL import ImageOps
-    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v5.png').convert('RGB')   # v5(9-09): 기구 10개·오른쪽 절반 빈 바닥·입구 오른쪽(v3/v4 는 아래로 새 길이 나 폐기)
+    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v7.png').convert('RGB')   # v7(9-09 #48): v5 뉘앙스 재생성 — 격자 깔끔·우측 입구·오른쪽 빈 바닥(격자 손질 대신 새로 뽑음)
     print('park2', quant_save(park, 'char/fields/field_park2.png'), 'walk', quant_save(walk, 'char/fields/field_walk.png'), 'outgym', quant_save(gym, 'char/fields/field_outgym.png'))
     p = 'index.html'; s = io.open(p, encoding='utf-8').read()
     # 광장 충돌맵: 바뀐 영역(마스크>0.5)만 재분류, 나머지는 기존 맵 유지
@@ -221,14 +243,14 @@ def main():
     # 산책로 / 야외 헬스장
     wr = classify(walk, [(0.05, 0.47), (0.5, 0.72), (0.78, 0.50), (0.30, 0.80), (0.5, 0.30)])
     w0, w1 = edge_road_rows(walk, 'L'); print('walk entrance rows', w0, w1)
-    gr = classify_with(gym, [(0.95, 0.50), (0.60, 0.60), (0.10, 0.70), (0.50, 0.92), (0.70, 0.30)], extra_colors=[beige_color(gym)], thr=36, frac=0.86)   # v4: 길·고무·잔디·잔디·고무 + 길 베이지. ★기구 칸이 열리지 않게 86%
+    gr = classify_with(gym, [(0.95, 0.50), (0.60, 0.60), (0.10, 0.30), (0.50, 0.94), (0.70, 0.30)], extra_colors=[beige_color(gym)], thr=36, frac=0.86)   # v4: 길·고무·잔디·잔디·고무 + 길 베이지. ★기구 칸이 열리지 않게 86%
     g0, g1 = edge_road_rows(gym, 'R'); print('gym entrance rows(right)', g0, g1)
     force(wr, [(c, r) for c in range(0, 4) for r in range(w0, w1 + 1)]); force(gr, [(c, r) for c in range(44, 48) for r in range(g0, g1 + 1)])
     force(wr, [(c, r) for c in range(33, 37) for r in range(22, 26)])   # 강변 데크로 내려가는 계단(v4 실측: x69~75%, y47~55%)
     s = setmap(s, "walk: { name: '산책로'", wr)
     s = s.replace('src: "char/fields/field_park2.png?v=4"', 'src: "char/fields/field_park2.png?v=5"')
     s = s.replace('src: "char/fields/field_walk.png?v=2"', 'src: "char/fields/field_walk.png?v=3"')
-    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=4"', s)
+    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=6"', s)
     s = re.sub(r"(walk: \{ name: '산책로'[^\n]*start: \{ tc: 2, tr: )\d+", r"\g<1>%d" % ((w0 + w1) // 2), s)
     s = re.sub(r"(outgym: \{ name: '야외 헬스장'[^\n]*start: \{ tc: )\d+, tr: \d+", r"\g<1>45, tr: %d" % ((g0 + g1) // 2), s)
     if "outgym: { name: '야외 헬스장'" not in s:
@@ -255,12 +277,10 @@ def main():
     for key_, im_, rows_ in (('park', park, pr), ('walk', walk, wr), ('outgym', gym, gr)):
         s = put_spots(s, key_, im_, rows_)
     xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs) + 2
-    s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-07 대표: 운동존은 별도 필드(outgym) — 철봉·벤치·스트레칭 엑스트라도 거기로
-  // ★9-07 대표 "기구와 동작이 안 맞는다": 엑스트라는 **기구를 포함한** 4프레임 스프라이트라 맵의 기구 위에 겹쳐 놓지 않고 빈 고무바닥에 둔다
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=3', strip: 4, x: 62.0, y: 60.0, h: 3.9, ms: 2000, ar: %.3f },
-  { field: 'outgym', img: 'char/npc/anim/extra_press4.png?v=1', strip: 4, x: 50.0, y: 74.0, h: 3.3, ms: 1800, ar: %.3f },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 72.0, y: 74.0, h: 3.3, ms: 3600, ar: %.3f },
-];""" % (cell_ar('char/npc/anim/extra_pullup4.png', 4), cell_ar('char/npc/anim/extra_press4.png', 4), cell_ar('char/npc/anim/extra_stretch4.png', 4)) + s[xe:]
+    s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(빌드 스크립트 place_free)
+  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=8', strip: 4, x: 58.0, y: 44.0, h: %.2f, ms: 2200, ar: %.3f, noBreathe: true },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 40.0, y: 70.0, h: %.2f, ms: 3600, ar: %.3f },
+];""" % (head_h('char/npc/anim/extra_pullup4.png'), cell_ar('char/npc/anim/extra_pullup4.png', 4), head_h('char/npc/anim/extra_stretch4.png'), cell_ar('char/npc/anim/extra_stretch4.png', 4)) + s[xe:]
     s = s.replace("  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {",
                   "  (window._MW_PARK_EXTRAS || []).filter(function (x) { return (x.field || 'park') === window._curField; }).forEach(function (x) {")
     s = s.replace(".pk-fx-fount>i{width:1600%;background-image:url('char/fields/anim/fountain_anim.png?v=3');animation-duration:2.4s;animation-timing-function:steps(16)}",
