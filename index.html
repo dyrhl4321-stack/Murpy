@@ -75,7 +75,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1187';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1190';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -8792,6 +8792,10 @@ window._mwGateCheck = function () {
 };
 window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
+  // ★9-09 대표: 광장(오픈월드)은 **가입 회원만** — 필드이동·출입구·홈 카드·딥링크 어디로 오든 여기 한 곳에서 막는다(비로그인·임시 계정 → 기존 로그인 팝업).
+  if (window._mwIsOpenField && window._mwIsOpenField(key) && window._notMember && window._notMember()) {
+    (window.memberGate || window.requireLogin)('가입하면 공원에서 사람들과 같이 놀 수 있어요'); return;
+  }
   window._mwWarmField(key); // NPC/가구 DOM 작업보다 먼저 다운로드 시작
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
@@ -35615,7 +35619,7 @@ window._mwNpcFrameHtml = function (n) {
   return '<i class="fr fr1" style="background-image:url(' + u + ')"></i>';
 };
 window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(빌드 스크립트 place_free)
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=9', strip: 4, x: 58.0, y: 44.0, h: 6.12, ms: 2200, ar: 0.479, noBreathe: true },
+  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=11', strip: 4, x: 58.0, y: 44.0, h: 4.78, ms: 2200, ar: 0.462, noBreathe: true },
   { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 30.0, y: 56.0, h: 3.06, ms: 3600, ar: 0.657 },
 ];
 window._mwQuestDone = async function (id) {
@@ -38064,7 +38068,7 @@ window._mwMaskNick = function (n) {
 window.MW_OPEN_NAMES = { park: '공원', walk: '산책로', outgym: '야외 헬스장' };
 window.mwGoOpenField = function (field) {
   field = (window._MW_OPEN_FIELDS || []).indexOf(field) >= 0 ? field : (window._homeOpenBest || 'park');
-  if (!window.currentUser) { requireLogin('가입하면 공원에서 사람들과 같이 놀 수 있어요'); return; }
+  if (window._notMember && window._notMember()) { (window.memberGate || requireLogin)('가입하면 공원에서 사람들과 같이 놀 수 있어요'); return; }   // 9-09 charSetField 와 같은 기준(임시 계정도 막음)
   goPage('char');
   setTimeout(function () { try { window.charSetField(field); } catch (e) { console.warn('go open field', e); } }, 350);
   window.track && window.track('home_open_go', { field: field });
