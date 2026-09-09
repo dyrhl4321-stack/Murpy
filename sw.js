@@ -3,7 +3,7 @@ const CACHE_NAME = 'murpy-v1171';
 const STATIC_CACHE = 'murpy-static-v1171';
 const CDN_CACHE = 'murpy-cdn-v1171';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
-const IMG_CACHE = 'murpy-img';
+const IMG_CACHE = 'murpy-img-v2';   // ★9-09 대표 폰에서 골프 에셋 전부 안 뜸 — 버전 없는 캐시에 깨진 항목이 박제되면 배포로도 안 지워진다 → 이름을 바꿔 한 번 전부 다시 받게
 
 // 앱 시작 시 즉시 캐시할 로컬 파일
 const STATIC_ASSETS = [
@@ -83,9 +83,12 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.open(IMG_CACHE).then(async cache => {
         const cached = await cache.match(e.request);
-        if (cached) return cached;
+        // ★9-09: 캐시된 게 진짜 이미지/오디오가 아니면(빈 응답·HTML 등) 버리고 다시 받는다 — 자가 치유(대표 폰 골프 에셋 실종)
+        const ct = cached ? (cached.headers.get('content-type') || '') : '';
+        if (cached && cached.status === 200 && /^(image|audio|video)\//.test(ct)) return cached;
+        if (cached) { try { await cache.delete(e.request); } catch (err) {} }
         const res = await fetch(e.request);
-        if (res && res.ok) cache.put(e.request, res.clone());
+        if (res && res.ok && /^(image|audio|video)\//.test(res.headers.get('content-type') || '')) cache.put(e.request, res.clone());
         return res;
       }).catch(() => fetch(e.request))
     );
@@ -131,9 +134,12 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.open(IMG_CACHE).then(async cache => {
         const cached = await cache.match(e.request);
-        if (cached) return cached;
+        // ★9-09: 캐시된 게 진짜 이미지/오디오가 아니면(빈 응답·HTML 등) 버리고 다시 받는다 — 자가 치유(대표 폰 골프 에셋 실종)
+        const ct = cached ? (cached.headers.get('content-type') || '') : '';
+        if (cached && cached.status === 200 && /^(image|audio|video)\//.test(ct)) return cached;
+        if (cached) { try { await cache.delete(e.request); } catch (err) {} }
         const res = await fetch(e.request);
-        if (res && res.ok) cache.put(e.request, res.clone());
+        if (res && res.ok && /^(image|audio|video)\//.test(res.headers.get('content-type') || '')) cache.put(e.request, res.clone());
         return res;
       }).catch(() => fetch(e.request))
     );
