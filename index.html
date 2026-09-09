@@ -4020,17 +4020,26 @@ window._charSheetForBody = function (bodyKey) {
   const b = window._CHAR_BODIES[bodyKey];
   return (b && b.src) ? b.src : null;
 };
+// ★9-09 긴 머리 커마의 헤어 오버레이(hairUrl)도 남에게 알려줘야 한다 — 이게 없으면 남이 나를 그릴 때 상의가 등 뒤 머리를
+//   덮어 **뒷머리가 잘린 것처럼** 보였다(대표: "제육의아이들·유꾸미 머피캠은 멀쩡한데 명예의 전당에선 뒷머리 잘림").
+//   머피캠은 내 faceChars 문서(hairUrl 포함)로 그리고, 명예의 전당·피드·오픈월드는 users.characterSheet 하나로만 등록했었다.
+window._charHairForBody = function (bodyKey) {
+  if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return null;
+  const b = window._CHAR_BODIES[bodyKey];
+  return (b && b.hairOverlay) ? b.hairOverlay : null;
+};
 // 남의 커마 캐릭터를 그리기 **직전에** 부른다. 그 사람 유저 문서의 characterSheet 하나로
 // 임시 몸통을 등록해 두면 _charRenderTo·오버월드·머피캠이 손 안 대고 그대로 그린다.
 // ★owner 를 null 로 둔다 — 남의 몸통이 내 로스터(charRenderRoster)에 뜨면 안 된다.
 // ★이미 있는 키는 절대 덮지 않는다. 내 커마를 남의 캐시로 갈아치우면 내 얼굴이 바뀐다.
 // ★시트가 없으면(구버전 유저·URL 유실) 'human' 으로 폴백한다 — 빈 화면보다 기본 캐릭터가 낫다.
-window._charEnsureFaceBody = function (bodyKey, sheetUrl, gender) {
+window._charEnsureFaceBody = function (bodyKey, sheetUrl, gender, hairUrl) {
   if (!bodyKey || String(bodyKey).indexOf(window.FACE_BODY_PREFIX) !== 0) return bodyKey || 'human';
-  if (window._CHAR_BODIES[bodyKey]) return bodyKey;
+  const have = window._CHAR_BODIES[bodyKey];
+  if (have) { if (!have.hairOverlay && hairUrl && have.owner == null) have.hairOverlay = hairUrl; return bodyKey; }   // 9-09 헤어만 늦게 온 경우 보강(남의 몸통만)
   if (!sheetUrl) return 'human';
   const charId = String(bodyKey).slice(window.FACE_BODY_PREFIX.length);
-  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl, gender: gender }, null) || 'human';
+  return window._charRegisterFaceBody(charId, { name: '커마', sheetUrl: sheetUrl, gender: gender, hairUrl: hairUrl || null }, null) || 'human';
 };
 // 남의 커마 몸통을 한 번에 등록한다. users 전체를 읽는 공통 경로(_usersAll)에 걸어 두면
 // ★그리는 자리를 한 곳도 안 고쳐도 된다 — 표에 이미 있으니 기존 렌더가 그대로 그린다.
@@ -4042,7 +4051,7 @@ window._charRegisterFaceBodiesFrom = function (snap) {
     const d = s.data() || {};
     const key = d.character && d.character.body;
     if (key && String(key).indexOf(window.FACE_BODY_PREFIX) === 0 && d.characterSheet) {
-      if (window._charEnsureFaceBody(key, d.characterSheet, d.gender) === key) n++;
+      if (window._charEnsureFaceBody(key, d.characterSheet, d.gender, d.characterHair || null) === key) n++;   // 9-09 characterHair 동봉
     }
   });
   return n;
@@ -18470,9 +18479,9 @@ window._charPersistCharacter = async (cfg) => { if (!window.currentUser) return 
     // ★characterSheet 는 **남이 나를 그릴 때** 쓰는 단 하나의 값이다. 착용과 같은 쓰기에
     //   묶어야 "내 화면엔 커마인데 피드엔 기본 캐릭터" 같은 어긋남이 안 생긴다.
     //   커마가 아니면 필드를 지운다 — 남겨두면 옛 얼굴로 계속 보인다.
-    const sheet = window._charSheetForBody(cfg && cfg.body);
+    const sheet = window._charSheetForBody(cfg && cfg.body), hair = window._charHairForBody(cfg && cfg.body);   // 9-09 긴 머리 오버레이도 같이
     await updateDoc(doc(db, 'users', saveUid),
-      { character: cfg, characterSheet: sheet === null ? deleteField() : sheet, characterUpdatedAt: serverTimestamp() });
+      { character: cfg, characterSheet: sheet === null ? deleteField() : sheet, characterHair: hair === null ? deleteField() : hair, characterUpdatedAt: serverTimestamp() });
     return true;
   } catch (e) { console.error('char save', e); return false; }
 };
@@ -30094,6 +30103,7 @@ window._mwOpenSend = function (mode) {
     companion: ((window._seasonState || {}).companion) || '',   // 9-08 관리인 퀘스트 보상 = 나비 동행
     character: cfg,
     characterSheet: cfg && window._charSheetForBody ? window._charSheetForBody(cfg.body) : null,
+    characterHair: cfg && window._charHairForBody ? window._charHairForBody(cfg.body) : null,   // 9-09 뒷머리
     msg: (window._mwRl && window._mwRl.msg) || null
   };
   const key = JSON.stringify(meta), light = (mode === 'move' || mode === 'beat') && S.metaKey === key;
@@ -30122,7 +30132,7 @@ window._mwOpenRender = function (all) {
     const v = all[uid] || {};
     if (uid === me || !Number.isFinite(v.tc) || !Number.isFinite(v.tr) || now - (v.t || 0) > 70000) return;
     seen[uid] = 1;
-    if (v.character && v.character.body && window._charEnsureFaceBody) window._charEnsureFaceBody(v.character.body, v.characterSheet || '');
+    if (v.character && v.character.body && window._charEnsureFaceBody) window._charEnsureFaceBody(v.character.body, v.characterSheet || '', '', v.characterHair || null);
     let c = S.chars[uid];
     if (!c || !c.el || !c.el.isConnected) {
       const el = document.createElement('div'); el.className = 'mw-rc mw-open-player'; el.dataset.uid = uid;
