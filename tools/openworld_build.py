@@ -203,7 +203,7 @@ def main():
     json.dump({'fount': fb, 'pond': qb, 'src': WORK + 'park_v5.png'}, open('char/fields/anim/water_boxes.json', 'w'))
     mk = np.ones((2048, 2048))   # 전체 재분류
     from PIL import ImageOps
-    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v7.png').convert('RGB')   # v7(9-09 #48): v5 뉘앙스 재생성 — 격자 깔끔·우측 입구·오른쪽 빈 바닥(격자 손질 대신 새로 뽑음)
+    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v7b.png').convert('RGB')   # v7(9-09 #48): v5 뉘앙스 재생성 — 격자 깔끔·우측 입구·오른쪽 빈 바닥(격자 손질 대신 새로 뽑음)
     print('park2', quant_save(park, 'char/fields/field_park2.png'), 'walk', quant_save(walk, 'char/fields/field_walk.png'), 'outgym', quant_save(gym, 'char/fields/field_outgym.png'))
     p = 'index.html'; s = io.open(p, encoding='utf-8').read()
     # 광장 충돌맵: 바뀐 영역(마스크>0.5)만 재분류, 나머지는 기존 맵 유지
@@ -250,7 +250,7 @@ def main():
     s = setmap(s, "walk: { name: '산책로'", wr)
     s = s.replace('src: "char/fields/field_park2.png?v=4"', 'src: "char/fields/field_park2.png?v=5"')
     s = s.replace('src: "char/fields/field_walk.png?v=2"', 'src: "char/fields/field_walk.png?v=3"')
-    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=6"', s)
+    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=7"', s)
     s = re.sub(r"(walk: \{ name: '산책로'[^\n]*start: \{ tc: 2, tr: )\d+", r"\g<1>%d" % ((w0 + w1) // 2), s)
     s = re.sub(r"(outgym: \{ name: '야외 헬스장'[^\n]*start: \{ tc: )\d+, tr: \d+", r"\g<1>45, tr: %d" % ((g0 + g1) // 2), s)
     if "outgym: { name: '야외 헬스장'" not in s:
@@ -269,7 +269,7 @@ def main():
     s = s.replace("window._MW_OPEN_FIELDS = ['park', 'walk'];", "window._MW_OPEN_FIELDS = ['park', 'walk', 'outgym'];")
     s = s.replace("window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : 0))", "window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : (key === 'outgym' ? 2 : 0)))")
     s = s.replace("{ k: 'trainer', name: '강 코치'", "{ k: 'trainer', field: 'outgym', name: '강 코치'")
-    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>74.0\g<2>50.0", s)
+    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>70.0\g<2>58.0", s)
     s = re.sub(r"(\{ k: 'grandma',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>25.0\g<2>60.0", s)
     GB = cell_ar('char/npc/anim/grandma_bench4.png', 4); KB = cell_ar('char/npc/anim/kid_ball4.png', 4)
     s = re.sub(r"img: 'char/npc/anim/grandma_[a-z0-9]+\.png\?v=\d+', (anim: 3|strip: 4), ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/grandma_bench4.png?v=2', strip: 4, ms: 4800, ar: %.3f" % GB, s)
@@ -277,10 +277,10 @@ def main():
     for key_, im_, rows_ in (('park', park, pr), ('walk', walk, wr), ('outgym', gym, gr)):
         s = put_spots(s, key_, im_, rows_)
     xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs) + 2
-    s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(빌드 스크립트 place_free)
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=8', strip: 4, x: 58.0, y: 44.0, h: %.2f, ms: 2200, ar: %.3f, noBreathe: true },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 40.0, y: 70.0, h: %.2f, ms: 3600, ar: %.3f },
-];""" % (head_h('char/npc/anim/extra_pullup4.png'), cell_ar('char/npc/anim/extra_pullup4.png', 4), head_h('char/npc/anim/extra_stretch4.png'), cell_ar('char/npc/anim/extra_stretch4.png', 4)) + s[xe:]
+    s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(free). 값은 확정본 — 빌드가 되돌리지 않는다
+  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=12', strip: 4, x: 58.0, y: 44.0, h: 5.16, ms: 2200, ar: 0.429, noBreathe: true },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 30.0, y: 56.0, h: 3.06, ms: 3600, ar: 0.657 },
+];""" + s[xe:]
     s = s.replace("  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {",
                   "  (window._MW_PARK_EXTRAS || []).filter(function (x) { return (x.field || 'park') === window._curField; }).forEach(function (x) {")
     s = s.replace(".pk-fx-fount>i{width:1600%;background-image:url('char/fields/anim/fountain_anim.png?v=3');animation-duration:2.4s;animation-timing-function:steps(16)}",
