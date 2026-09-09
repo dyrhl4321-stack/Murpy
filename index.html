@@ -8482,6 +8482,38 @@ window._mwAurColor = function (key) {
 
 // ===== 필드(맵) + 타일 충돌: 한 칸씩 이동, 막힌 칸(#)엔 못 감(포켓몬/쯔꾸르식) =====
 window._FIELD_BORDER =["################","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","#..............#","################"];
+// 선택한 필드/게임만 준비한다. URL별 진행 중 요청·decode를 공유하고 실패는 다음 진입에 재시도.
+window._mwWarmCache = new Map();
+window._mwWarmImage = function (src) {
+  if (!src) return Promise.resolve(null);
+  const cache = window._mwWarmCache;
+  if (cache.has(src)) return cache.get(src);
+  let finish, timer;
+  const p = new Promise(function (resolve) { finish = resolve; });
+  if (cache.size >= 16) cache.delete(cache.keys().next().value);
+  cache.set(src, p);
+  const im = new Image(); im.decoding = 'async';
+  let settled = false;
+  const done = function (ok) {
+    if (settled) return; settled = true; clearTimeout(timer);
+    im.onload = im.onerror = null;
+    if (!ok && cache.get(src) === p) cache.delete(src);
+    finish(ok ? im : null);
+  };
+  im.onload = function () {
+    if (im.decode) { try { im.decode().then(function () { done(true); }, function () { done(true); }); } catch (e) { done(true); } }
+    else done(true);
+  };
+  im.onerror = function () { done(false); };
+  timer = setTimeout(function () { done(false); }, 8000);
+  im.src = src;
+  return p;
+};
+window._mwWarmField = function (key) {
+  const f = (window._FIELDS || {})[key]; if (!f) return;
+  window._mwWarmImage(f.src);
+  ((window._MW_FIELD_SPRITES || {})[key] || []).forEach(window._mwWarmImage);
+};
 window._FIELDS = {
   home: {
     name: '내 방', src: "char/fields/field_room.png?v=1", grid: 16,
@@ -8724,9 +8756,7 @@ window._mwFieldReveal = function (key, tok) {
   };
   list.forEach(function (src) {
     if (!src) { done(); return; }
-    const im = new Image();
-    im.onload = im.onerror = done;                     // 못 받아도 영원히 숨지 않게 onerror 도 본다
-    im.src = src;
+    window._mwWarmImage(src).then(done);               // 배경 교체와 같은 요청/decode를 공유
   });
   // ★안전장치 — 이 겹에는 **내 방 가구도 같이** 산다. 어떤 이유로든 위 콜백이 안 오면
   //   가구가 통째로 안 보이는 사고가 된다. 2.5초 뒤엔 무조건 켠다.
@@ -8748,6 +8778,7 @@ window._mwGateCheck = function () {
   const g = (window._FIELD_GATES || {})[window._curField]; if (!g) return false;
   const P = window._charPos; if (!P) return false;
   for (const x of g) {
+    if (P.tc >= x.tc[0] - 3 && P.tc <= x.tc[1] + 3 && P.tr >= x.tr[0] - 3 && P.tr <= x.tr[1] + 3) window._mwWarmField(x.to);
     if (P.tc >= x.tc[0] && P.tc <= x.tc[1] && P.tr >= x.tr[0] && P.tr <= x.tr[1]) {
       window._mwNpcAutoStop && window._mwNpcAutoStop();
       window.charSetField(x.to);
@@ -8762,6 +8793,7 @@ window._mwGateCheck = function () {
 };
 window.charSetField = function (key) {
   const f = window._FIELDS[key]; if (!f) return;
+  window._mwWarmField(key); // NPC/가구 DOM 작업보다 먼저 다운로드 시작
   if (window._curField === 'home' && key !== 'home' && window._mwSaveRoomPos) window._mwSaveRoomPos();   // 방 나가기 전 좌표 저장
   window._curField = key;
   const _open = window._mwIsOpenField(key);   // ★9-07 오픈월드 = 공원·산책로(맵이 늘어난다)
@@ -8794,8 +8826,7 @@ window.charSetField = function (key) {
     let swapped = false;
     const swap = function () { if (swapped || _tok !== window._mwFieldTok) return; swapped = true; room.style.backgroundImage = "url('" + f.src + "')"; };
     try {
-      const im = new Image(); im.decoding = 'async'; im.src = f.src;
-      (im.decode ? im.decode() : Promise.resolve()).then(swap, swap);
+      window._mwWarmImage(f.src).then(swap, swap);
     } catch (e) { swap(); }
     setTimeout(swap, 2500);
   }
@@ -19232,29 +19263,25 @@ window._dodgeApplyBg = function () {
 window._dodgeArt = null;                 // null=아직 모름 / true=있음 / false=없음
 window._dodgeBgOk = false;               // 전용 인게임 배경이 있나
 window._dodgeCheckArt = function () {
-  if (window._dodgeArt !== null) return;
-  window._dodgeArt = false;
-  const im = new Image();
-  im.onload = function () {
+  if (window._dodgeArtLoading || (window._dodgeArt === true && window._dodgeUncleArt && window._dodgeUncleSide)) return;
+  window._dodgeArtLoading = true;
+  window._mwWarmImage('char/game/dodge_title.png?v=2').then(function (im) {
+    window._dodgeArtLoading = false;
+    if (!im) { window._dodgeArt = false; return; }
     window._dodgeArt = true;
     // ★그림 비율을 재둔다. 정사각을 세로 화면에 cover 로 채우면 가로의 절반이 잘려
     //   제목 글자가 화면 밖으로 나간다(대표 8-19: "너무 커서 화면에 다 안 들어온다").
     //   9:16 그림이 들어오면 꽉 채우고, 정사각이면 통째로 보여준다 — 코드를 안 고쳐도 된다.
     window._dodgeArtRatio = im.naturalWidth / (im.naturalHeight || 1);
     window._dodgePaintStart();
-  };
-  im.src = 'char/game/dodge_title.png?v=2';
-  const um = new Image();
-  um.onload = function () { window._dodgeUncleArt = true; };
-  um.src = 'char/game/uncle.png?v=1';
+  });
+  window._mwWarmImage('char/game/uncle.png?v=1').then(function (im) { window._dodgeUncleArt = !!im; });
   // ★붙잡고 훈수 둘 때 쓰는 **옆모습** (대표 8-19: "달라붙었을 땐 옆모습 써야 함").
   //   칸이 정면과 똑같은 82x140 이라 URL 만 갈아끼우면 된다.
-  const sm = new Image();
-  sm.onload = function () { window._dodgeUncleSide = true; };
-  sm.src = 'char/game/uncle_side.png?v=1';
+  window._mwWarmImage('char/game/uncle_side.png?v=1').then(function (im) { window._dodgeUncleSide = !!im; });
 };
 window._dodgePaintStart = function () {
-  window._dodgeCheckArt();
+  if (window._dodgeArt == null) window._dodgeCheckArt();
   const art = document.getElementById('dodge-art-bg');
   const txt = document.getElementById('dodge-title-txt');
   if (art && txt) {
@@ -19563,7 +19590,8 @@ window.dodgeFieldBtn = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('dodge-start');
   if (key !== 'gym') { if (b) b.remove(); return; }
-  if (!window._dodgePreloaded) { window._dodgePreloaded = 1; ['dodge_title.png?v=2', 'dodge_bg.jpg?v=3', 'dumbbell.png', 'protein.png', 'chicken.png', 'uncle.png?v=1', 'uncle_side.png?v=1'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
+  window._dodgeCheckArt();
+  ['dodge_bg.jpg?v=3', 'dumbbell.png', 'protein.png', 'chicken.png'].forEach(function (f) { window._mwWarmImage('char/game/' + f); });
   if (b) return;
   b = document.createElement('button');
   b.id = 'dodge-start'; b.className = 'mw-fieldchip'; b.style.top = '52px';
@@ -20376,14 +20404,19 @@ window._golfApplyBg = function (s) {
   bg.style.backgroundPosition = Math.round(W / 2 - c.x * U) + 'px ' + Math.round(H * window.GOLF.CAM_Y - c.y * U) + 'px';
 };
 window._golfCheckArt = function () {
-  if (window._golfArt != null) return;
-  const im = new Image();
+  if (window._golfArtLoading || (window._golfArt === true && ['ball', 'hole', 'bunker', 'pond', 'tree', 'crow', 'mole'].every(function (k) { return (window._golfObj || {})[k]; }))) return;
+  window._golfArtLoading = true;
   // ★덤벨 마크업을 복사하면서 #golf-art-bg 에 display:none 이 딸려왔다 — 켜 주지 않으면 타이틀이 검은 화면(대표 8-30)
-  im.onload = function () { window._golfArt = true; const a = document.getElementById('golf-art-bg'); if (a) { a.style.backgroundImage = "url('char/game/golf_title.png?v=8')"; a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in'); } window._golfPaintStart(); };
-  im.onerror = function () { window._golfArt = false; window._golfPaintStart(); };
-  im.src = 'char/game/golf_title.png?v=8';
-  window._golfObj = {};
-  ['ball', 'hole', 'bunker', 'pond', 'tree', 'crow', 'mole'].forEach(function (k) { const o = new Image(); o.onload = function () { window._golfObj[k] = true; }; o.onerror = function () { window._golfObj[k] = false; }; o.src = 'char/game/golf_' + k + '.png?v=3'; });
+  window._mwWarmImage('char/game/golf_title.png?v=8').then(function (im) {
+    window._golfArtLoading = false; window._golfArt = !!im;
+    const a = document.getElementById('golf-art-bg');
+    if (im && a) { a.style.backgroundImage = "url('char/game/golf_title.png?v=8')"; a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in'); }
+    window._golfPaintStart();
+  });
+  window._golfObj = window._golfObj || {};
+  ['ball', 'hole', 'bunker', 'pond', 'tree', 'crow', 'mole'].forEach(function (k) {
+    window._mwWarmImage('char/game/golf_' + k + '.png?v=3').then(function (im) { window._golfObj[k] = !!im; });
+  });
 };
 window.golfOpen = function () {
   const el = document.getElementById('golf-screen'); if (!el) return;
@@ -20417,7 +20450,8 @@ window.golfFieldBtn = function (key) {
   let b = document.getElementById('golf-start');
   if (key !== 'golf') { if (b) b.remove(); return; }
   // ★필드에 들어온 순간 게임 그림을 미리 받아 둔다(대표 8-30: "게임이 너무 늦게 뜬다") — 칩을 누를 땐 이미 캐시에 있다
-  if (!window._golfPreloaded) { window._golfPreloaded = 1; ['golf_title.png?v=6', 'golf_grass.png?v=3', 'golf_ball.png?v=3', 'golf_hole.png?v=3', 'golf_bunker.png?v=3', 'golf_pond.png?v=3', 'golf_tree.png?v=3', 'golf_crow.png?v=3', 'golf_mole.png?v=3'].forEach(function (f) { const im = new Image(); im.src = 'char/game/' + f; }); }
+  window._golfCheckArt();
+  window._mwWarmImage('char/game/golf_grass.png?v=3');
   if (b) return;
   b = document.createElement('button');
   b.id = 'golf-start'; b.className = 'mw-fieldchip'; b.style.top = '52px'; b.textContent = '홀인 머피';
@@ -20471,7 +20505,7 @@ window._golfPaint = function (s) {
   const ov = function (e, cls, k) {
     const c = P(e.cx, e.cy); if (c.vy < -20 || c.vy > 130) return;
     const w = e.rx * om * 2 * U, hh = e.ry * om * 2 * U;
-    h += '<div class="golf-obs ' + cls + (O[k] ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + w + 'px;height:' + hh + 'px;' + (O[k] ? "border-radius:0;background-image:url('char/game/golf_" + k + ".png?v=1')" : '') + '"></div>';
+    h += '<div class="golf-obs ' + cls + (O[k] ? '' : ' css') + '" style="left:' + c.x + 'px;top:' + c.y + 'px;width:' + w + 'px;height:' + hh + 'px;' + (O[k] ? "border-radius:0;background-image:url('char/game/golf_" + k + ".png?v=3')" : '') + '"></div>';
   };
   // ★8-31 `h += ov(...)` 였다 — ov 가 안에서 h 에 붙이는데 반환값(undefined)으로 덮어써 연못·벙커가 **한 번도 안 그려졌다**(대표: 안 보이는데 빠졌다고 뜸)
   Hh.ponds.forEach(function (e) { ov(e, 'pond', 'pond'); });
@@ -21086,9 +21120,11 @@ window._tennisShowPane = function (id) {
 // 타이틀·상대 그림 확인 — 골프 _golfCheckArt 와 같은 방식.
 // 그림이 있으면 배경으로 깔고 글자 제목은 숨긴다. 없으면 글자로 떨어진다(안 죽는다).
 window._tennisCheckArt = function () {
-  if (window._tennisArt != null) return;
-  const im = new Image();
-  im.onload = function () {
+  if (window._tennisArtLoading || (window._tennisArt === true && window._tennisRabbit && window._tennisRabbitSide)) return;
+  window._tennisArtLoading = true;
+  window._mwWarmImage('char/game/tennis_title.png?v=12').then(function (im) {
+    window._tennisArtLoading = false;
+    if (!im) { window._tennisArt = false; window._tennisPaintStart(); return; }
     window._tennisArt = true;
     const a = document.getElementById('tennis-art-bg');
     if (a) {
@@ -21096,11 +21132,9 @@ window._tennisCheckArt = function () {
       a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
     }
     window._tennisPaintStart();
-  };
-  im.onerror = function () { window._tennisArt = false; window._tennisPaintStart(); };
-  im.src = 'char/game/tennis_title.png?v=12';
-  const rb = new Image();
-  rb.onload = function () {
+  });
+  window._mwWarmImage('char/game/tennis_rabbit.png?v=2').then(function (im) {
+    if (!im) { window._tennisRabbit = false; return; }
     window._tennisRabbit = true;
     // ★버그(대표 9-02): 화면을 열 때 깔아두는 대기 코트가 이 그림의 로드보다 먼저 그려져서
     //   폴백(색 돌린 기본 몸통)이 상대 자리에 서 있었고, 설명 화면 뒤로 그게 비쳤다.
@@ -21110,13 +21144,8 @@ window._tennisCheckArt = function () {
       window._tennisBuild();
       try { window._tennisPaint(window.tennisNew(window._tennisLv)); } catch (e) {}
     }
-  };
-  rb.onerror = function () { window._tennisRabbit = false; };
-  rb.src = 'char/game/tennis_rabbit.png?v=2';
-  const rs = new Image();
-  rs.onload = function () { window._tennisRabbitSide = true; };
-  rs.onerror = function () { window._tennisRabbitSide = false; };
-  rs.src = 'char/game/tennis_rabbit_side.png?v=2';
+  });
+  window._mwWarmImage('char/game/tennis_rabbit_side.png?v=2').then(function (im) { window._tennisRabbitSide = !!im; });
 };
 window.tennisRecs = async function () {
   window._tennisShowPane('tennis-pane-recs');
@@ -21660,12 +21689,7 @@ window.tennisFieldBtn = function (key) {
   let b = document.getElementById('tennis-start');
   if (key !== 'tennis') { if (b) b.remove(); return; }
   // 필드에 들어온 순간 게임 그림을 미리 받아 둔다(골프와 동일) — 칩을 누를 땐 이미 캐시에 있다
-  if (!window._tennisPreloaded) {
-    window._tennisPreloaded = 1;
-    ['tennis_title.png?v=10', 'tennis_rabbit.png?v=2', 'tennis_rabbit_side.png?v=2'].forEach(function (f) {
-      const im = new Image(); im.src = 'char/game/' + f;
-    });
-  }
+  window._tennisCheckArt();
   if (b) return;
   b = document.createElement('button');
   b.id = 'tennis-start'; b.className = 'mw-fieldchip'; b.style.top = '52px'; b.textContent = '머피 테니스';
@@ -21871,9 +21895,11 @@ window._runShowPane = function (id) {
   el.style.display = 'flex'; void el.offsetWidth; el.classList.add('in');
 };
 window._runCheckArt = function () {
-  if (window._runArt != null) return;
-  const im = new Image();
-  im.onload = function () {
+  if (window._runArt === true || window._runArtLoading) return;
+  window._runArtLoading = true;
+  window._mwWarmImage('char/game/run_title.png?v=7').then(function (im) {
+    window._runArtLoading = false;
+    if (!im) { window._runArt = false; window._runPaintStart(); return; }
     window._runArt = true;
     const a = document.getElementById('run-art-bg');
     if (a) {
@@ -21881,9 +21907,7 @@ window._runCheckArt = function () {
       a.style.display = ''; a.classList.remove('in'); void a.offsetWidth; a.classList.add('in');
     }
     window._runPaintStart();
-  };
-  im.onerror = function () { window._runArt = false; window._runPaintStart(); };
-  im.src = 'char/game/run_title.png?v=7';
+  });
 };
 window.runRecs = async function () {
   window._runShowPane('run-pane-recs');
@@ -22364,12 +22388,10 @@ window.runFieldBtn = function (key) {
   const room = document.getElementById('charworld-room'); if (!room) return;
   let b = document.getElementById('run-start');
   if (key !== 'running') { if (b) b.remove(); return; }
-  if (!window._runPreloaded) {
-    window._runPreloaded = 1;
-    ['run_title.png?v=5', 'run_bg.jpg?v=1', 'run_track.png?v=1', 'run_hurdle.png?v=1', 'run_puddle.png?v=1', 'run_pigeon.png?v=1', 'run_bike.png?v=1', 'run_scooter.png?v=1', 'run_dog.png?v=1', 'protein.png', 'chicken.png'].forEach(function (f) {
-      const im = new Image(); im.src = 'char/game/' + f;
-    });
-  }
+  window._runCheckArt();
+  ['run_bg.jpg?v=1', 'run_track.png?v=1', 'run_hurdle.png?v=1', 'run_puddle.png?v=1', 'run_pigeon.png?v=1', 'run_bike.png?v=1', 'run_scooter.png?v=1', 'run_dog.png?v=1', 'protein.png', 'chicken.png', 'golf_tree.png?v=3'].forEach(function (f) {
+    window._mwWarmImage('char/game/' + f);
+  });
   if (b) return;
   b = document.createElement('button');
   b.id = 'run-start'; b.className = 'mw-fieldchip'; b.style.top = '52px'; b.textContent = '머피런';
@@ -36063,6 +36085,7 @@ window._mwFmLiveAttach = function () {
 };
 window._mwFmGo = function (k) {
   if (window._mwFmBusy) return;
+  window._mwWarmField(k); // 지도 캐릭터가 입구까지 걷는 동안 선택한 목적지만 준비
   const panel = document.getElementById('mw-wpanel');
   if (k === window._curField) { if (panel) panel.remove(); return; }
   const mk = document.getElementById('mw-fm-char');
@@ -44364,6 +44387,9 @@ window._sqMgIsOwner = function () {
 };
 
 // ── 판 열기 / 참석 / 시작 / 종료 ────────────────────────────────────────
+window._sqMgWarmArt = function () {
+  ['char/fields/field_mugung_tall.png?v=1', 'char/game/walk_npc_gyogwan.png?v=12', 'char/game/fx_heart.png?v=1', 'char/game/fx_charm_eyes.png?v=1'].forEach(window._mwWarmImage);
+};
 window.sqMugungStart = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
@@ -44375,14 +44401,13 @@ window.sqMugungStart = function () {
   }
   const stEl = document.getElementById('sq-room-stage'); if (stEl) { try { stEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
   const node = { g: 'mg', host: me.uid, hostNick: window._mwMyNick || '머피', st: 'lb', t: Date.now(), dl: 0, join: null, out: null, fin: null, snap: null, win: null };
+  window._sqMgWarmArt(); // 서버 왕복 이전에 필드/교관 다운로드 시작
   window._sqMgGoalSent = null;   // 새 판 — 완주 청구 기록 리셋
   // ★OX 와 같은 함정 — 잔류 노드가 있으면 set 이 규칙에 막힌다. 지우고 쓴다.
   Promise.resolve(R.remove(window._sqMgRef(s.id)).catch(function () {})).then(function () {
     return R.set(window._sqMgRef(s.id), node);
   }).then(function () {
     window._sqMgArm(s.id);
-    try { ['char/fields/field_mugung_tall.png?v=1', 'char/game/walk_npc_gyogwan.png?v=12', 'char/game/fx_heart.png?v=1', 'char/game/fx_charm_eyes.png?v=1']
-            .forEach(function (u) { const i = new Image(); i.src = u; }); } catch (e) {}
     try {
       const meU = me.uid;
       (s.memberUids || []).forEach(function (uid) { if (uid !== meU) _sendNotif(uid, 'mugung', { sid: s.id, text: (s.title || '스쿼드').slice(0, 30) }); });
@@ -44394,6 +44419,7 @@ window.sqMugungJoin = function () {
   const s = window._sqDoc, R = window._rt, me = auth.currentUser;
   if (!s || !R || !me) return;
   const v = window._sqMgV; if (!v || v.st !== 'lb') return;
+  window._sqMgWarmArt(); // 참가자도 로비에서 준비(진행자만 미리 받던 누락)
   window.sfx.play('ready');
   R.set(R.ref(R.db, 'squadRooms/' + s.id + '/quiz/join/' + me.uid), { nick: window._mwMyNick || '머피', t: Date.now() })
     .catch(function (e) { console.warn('mugung join', e); showToast('참석 등록이 안 됐어요'); });
