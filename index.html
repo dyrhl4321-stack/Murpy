@@ -35278,18 +35278,24 @@ window._mwParkLogInit = function () {
   try { window._mwParkLogUn && window._mwParkLogUn(); } catch (e) {}
   const field = window._mwIsOpenField(window._curField) ? window._curField : 'park';
   const q = R.query ? R.query(R.ref(R.db, 'plaza/chat/' + field), R.limitToLast(40)) : R.ref(R.db, 'plaza/chat/' + field);
-  const rows = [];
+  // ★9-09 대표 "외치기 노출": 전역 확성기(plaza/shout) 최근 6건도 같은 로그에 섞는다(시간순, '확성기' 태그) — 다른 맵 사람 말이 오픈월드 안에서도 들린다
+  const qs = R.query && R.limitToLast ? R.query(R.ref(R.db, 'plaza/shout'), R.limitToLast(6)) : null;
+  const rows = [], shouts = [];
   const E = window._escHtml || function (t) { return String(t); };
-  window._mwParkLogUn = R.onValue(q, function (snap) {
+  const render = function () {
     const el = document.getElementById('mw-park-log'); if (!el) return;
-    rows.length = 0;
-    snap.forEach(function (ch) { const v = ch.val() || {}; rows.push(v); });
-    el.innerHTML = rows.map(function (v) {
-      return '<div><b style="color:#F5C24B">' + E(String(v.nick || '머피').slice(0, 12)) + '</b>'
+    const all = rows.map(function (v) { return Object.assign({ _s: 0 }, v); }).concat(shouts.map(function (v) { return Object.assign({ _s: 1 }, v); }))
+      .sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+    el.innerHTML = all.map(function (v) {
+      return '<div>' + (v._s ? '<span style="color:#3D7EFF;font-size:9.5px;letter-spacing:1px;margin-right:4px">확성기</span>' : '')
+        + '<b style="color:' + (v._s ? '#8fb3ff' : '#F5C24B') + '">' + E(String(v.nick || '머피').slice(0, 12)) + '</b>'
         + '<span style="color:#8a93a8"> : </span>' + E(String(v.text || '').slice(0, 60)) + '</div>';
     }).join('') || '<span style="color:#8a93a8;font-size:10.5px">첫 인사를 남겨보세요</span>';
     el.scrollTop = el.scrollHeight;
-  });
+  };
+  const un1 = R.onValue(q, function (snap) { rows.length = 0; snap.forEach(function (ch) { rows.push(ch.val() || {}); }); render(); });
+  const un2 = qs ? R.onValue(qs, function (snap) { shouts.length = 0; const now = Date.now(); snap.forEach(function (ch) { const v = ch.val() || {}; if (now - (v.t || 0) < 6 * 3600 * 1000) shouts.push(v); }); render(); }, function () {}) : null;
+  window._mwParkLogUn = function () { try { un1(); } catch (e) {} try { un2 && un2(); } catch (e) {} };
 };
 // ★필드 앰비언트(9-04) — "필드가 죽어 있어 저퀄"(대표). 분수 물보라·연못 물결/수련잎 둥실·
 //   꽃잎 날림·구름 그림자. 좌표는 필드 %(1024 실측), 캐릭터(z10+) 아래 z4 라 걷기와 안 겹친다.
