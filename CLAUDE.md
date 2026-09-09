@@ -4,7 +4,8 @@
 > 여기에는 "어디를 봐야 하는가"와 "지금 어디까지 왔는가"만 적는다.
 > 충돌하면 **코드 > 설계 문서 > CLAUDE.md** 순으로 신뢰할 것.
 > 전략 확정본은 `murpyworld-master-brief.md`(2026-07-12), 경제·가격은 `Murpy_private/머피경제_v2_출시가격확정.md`(비공개).
-> ★2026-08-29 코드 전수 인벤토리로 재작성(줄번호는 그날 기준, 금방 밀린다 — 함수명으로 rg 할 것).
+> ★2026-08-29 코드 전수 인벤토리로 재작성 → **2026-09-09 9월 작업 반영**(줄번호는 금방 밀린다 — 함수명으로 rg 할 것).
+> ★출시 전 남은 것 = `docs/prompts/2026-09-09-launch-checklist.txt` (8-29 잔업목록은 대부분 이미 끝났다 — 착수 전 코드 확인 필수).
 
 ---
 
@@ -77,7 +78,8 @@ Murpy/
 ├── sw.js                   # 서비스워커 — 버전 murpy-vNNN 3곳 (tools/bump-version.mjs 가 올린다)
 ├── version.txt             # 앱이 60초마다 폴링해 새 버전 감지
 ├── firestore.rules · firestore.indexes.json · database.rules.json · storage.rules
-├── functions/index.js      # sendNotifPush · settleArtSold · earn(그림자)
+├── functions/index.js      # sendNotifPush · settleArtSold · earn(그림자) · parkFriendAlert(9-09, RTDB 트리거)
+├── functions-py/           # 얼굴 커마 생성(python312, codebase 'face')
 ├── privacy.html · terms.html
 ├── char/                   # 에셋 + 파이프라인 (walk.png = base, 절대 재수정 금지)
 ├── tools/                  # 아래 §9
@@ -91,7 +93,9 @@ Murpy/
 ※ `page-center` 는 `display:none` — **센터 탭은 없다.** 센터 상세·리뷰·신고·수정요청은 도달 불가한 죽은 코드.
 ※ 크루(`crews` 컬렉션, `renderCrews`·QR·공금) 는 **휴면** — 스쿼드로 대체됨.
 
-**머피월드 내부**: 방(내 방·손님 방) · 필드(`_FIELDS` = home/gym/tennis/golf **4종**) · 체크인(지도·도장) · 머피캠
+**머피월드 내부**: 방(내 방·손님 방) · 필드(`_FIELDS` = home/gym/tennis/golf/running + **오픈월드 park/walk/outgym**) · 체크인(지도·도장) · 머피캠
+※ **오픈월드**(`_MW_OPEN_FIELDS = ['park','walk','outgym']`) = 카메라 팔로우·전역 프레즌스(`plaza/players/{field}`)·NPC 퀘스트·외치기.
+  가입자만 입장(`charSetField` 첫머리에서 `_notMember()` → `memberGate`). 홈 '지금 머피월드' 카드와 `?go=park` 딥링크로 진입.
 
 ## 6. Firebase 데이터
 
@@ -108,41 +112,46 @@ reports · centerEditRequests · feedback · notifications · chats(+messages) �
 RTDB
 roomLive/{owner}/{players/{uid}, kick, chat, jam/{open,px}, pets/{live,scene}}   # 머피룸 파티
 squadRooms/{sid}/players/{uid}                                                   # 스쿼드 필드
+plaza/players/{field}/{uid}   # 오픈월드 프레즌스(park/walk/outgym, onDisconnect remove)
+plaza/shout/{mid}             # 광장 외치기(전역, 60자)   ·   plaza/alerted/{uid}  # park_friend 쿨다운(서버만)
 Storage  uploads/{uid}/*.jpg (8MB, image만)
 ```
 
-규칙 요점(8-29 배포): users 읽기 공개 · credits 는 1회 +1000 제한(**반복 가능 = C2 미해결**) · chats/messages 당사자만 · notifications create 는 fromUid 본인 · kakaoLinks/ledger 클라이언트 접근 불가.
+규칙 요점(9-02 잠금 배포): users 읽기 공개 · **credits 는 클라가 감소만**(C2 잠금 완료, 지갑 초기화 ≤30 예외) · `faceTickets` 는 머피 차감과 짝 강제 · `ownsSelectedFace()`(character.body 가 face: 면 본인 faceChars 존재 + characterSheet 일치) · chats/messages 당사자만 · notifications create 는 fromUid 본인 · kakaoLinks/ledger 클라이언트 접근 불가.
 규칙 배포 = `python tools/deploy_firestore_rules.py`(OAuth 클릭 1회) 또는 `firebase deploy --only firestore:rules`.
 
-## 7. 완료된 기능 (2026-08-29 코드 기준)
+## 7. 완료된 기능 (2026-08-29 기준 + 9월 추가분)
 
 **계정** — 구글·카카오(커스텀 토큰)·익명(방/스쿼드 게스트), 온보딩(성별로 몸통 결정), 탈퇴(익명화), 약관·개인정보
 **피드·대숲·채팅·알림** — 4:5 컴포저·태그·인증뱃지·페이지네이션, 대숲(저에요 10머피·상호수락→채팅), 1:1 채팅, 알림(최근 100·FCM 푸시), 차단·신고
 **매칭** — 오늘의 5명 덱(날짜 시드 로테이션, 패스 14일), 같은 헬스장+4·동네+2·활동, **무료 신청 하루 3회 → 100머피**(하루 10회 상한), 더보기 40머피, 수락 무료. 성별 필터 없음(기본 "모두")
 **머피 경제** — `CREDITS_MODE='enforced'`, 가입 30 + 첫 인증 500(창립, `BETA_GIFT_ON`) / 출시 후 100, 하루 인증 5, 체크인 2, 소셜 1×2, 범프 10/3, 생일 55, 도감 10/30/80. 충전 모달 = 가격표(500머피 9,900원·2,000/34,900·4,500/69,000) + "곧 열려요"(**PG 없음**). 적립 그림자 장부(`functions earn` → `ledger`)
-**머피월드** — 캐릭터(몸통 8종·아이템 34종·헤어 7·시즌 4·피부톤 3), 방 인테리어(슬롯 5·확장권 40), 손님 방문·방명록·콕·좋아요, **머피룸 파티**(RTDB, 정원 4, 초대 링크, 강퇴), 룸톡, **낙서판·같이 그리기**(32×32), 같이 찍기(폴라로이드), **그림 경매·장터**(상한 200, 수수료 10% 소각, 공동작 70/30, **서버 정산**), **펫 6종**(일과표·따라오기·채팅 명령·손님이 부르기), 공룡, 필드 히든 오브젝트(헬창의 기운), **덤벨 피하기**(gym 필드, 난이도 3, 게스트 링크 바이럴), 명예의 전당(인증·체크인·스쿼드장·게임, 월요일 팝업), 히든 캐릭터 3종, 시즌 한정·칭호, 얼굴 커마(재진 1건, 판매 UI 없음), 체크인(반경 **100m**), 머피캠·카카오 공유
+**머피월드** — 캐릭터(몸통 8종·아이템 34종·헤어 7·시즌 4·피부톤 3), 방 인테리어(슬롯 5·확장권 40), 손님 방문·방명록·콕·좋아요, **머피룸 파티**(RTDB, 정원 4, 초대 링크, 강퇴), 룸톡, **낙서판·같이 그리기**(32×32), 같이 찍기(폴라로이드), **그림 경매·장터**(상한 200, 수수료 10% 소각, 공동작 70/30, **서버 정산**), **펫 6종**(일과표·따라오기·채팅 명령·손님이 부르기), 공룡, 필드 히든 오브젝트(헬창의 기운), **덤벨 피하기**(gym 필드, 난이도 3, 게스트 링크 바이럴), 명예의 전당(인증·체크인·스쿼드장·게임, 월요일 팝업), 히든 캐릭터 3종, 시즌 한정·칭호, 체크인(반경 **100m**), 머피캠·카카오 공유
 **스쿼드** — 종목 9종 필드(시간대별), 생성/참가/승인(밀어서)/강퇴/운영진, 입금 토글, 출석 코드(30분) + **범프 출석**, 스쿼드 톡·공지, **부위 보드 + 참석 시간(slot)** + 명단 복사, 히어로 카드(배너), 게스트 초대(`?sq=`), 범프(가속도 동시성, 범퍼 도감)
+**오픈월드(9-04~09)** — 공원·산책로·야외 헬스장 3맵(48타일, 카메라 팔로우), 전역 프레즌스(RTDB `plaza/players/{field}`, onDisconnect·25초 beat, 70초 유령 컷), 광장 외치기(`plaza/shout`), NPC 4명(관리인 박씨·순이 할매·강 코치·민준이) 퀘스트 3회 누적 → 보상, 엑스트라·비둘기·오리·조깅러너, 필드이동 지도에 실시간 인원, 홈 '지금 머피월드' 카드 + `?go=park` 딥링크, `park_friend` 푸시(같은 헬스장·범프 상대, 3h 쿨다운·07~23시, Functions `parkFriendAlert` 배포됨)
+**얼굴 커마(9-05~09)** — 커마권(`FACE_TICKET_PRICE=1000`, 규칙이 머피 차감과 짝 강제), 서버 생성(`functions-py` face), 도착 팝업·이름 변경·폐기·이의신청, 남이 볼 때는 `users.characterSheet`+**`characterHair`**(9-09: 없으면 상의가 뒷머리를 덮어 잘려 보였다)
+**보상 코스메틱(9-07~09)** — 이모트 27종(`_MW_EMOTES`, 할매 보상 23종·대숲 반응), **도트 이름표 6종**(`_MW_FRAMES` bunny/heart/sprout/ribbon/dumbbell/star, `tools/gen_nametags.py` 가 1배 픽셀로 찍음, 30머피 판매 · sprout=할매 전용), 나비 동행(관리인), 강코치 머피캠 도장, 민준이 노란 티·편지(슈퍼 좋아요), 칭호 4종, **보상 안내 팝업 6종**(`NPC_REWARD_INTRO`, 실제 필드 배경 위 애니메이션, `?rewarddemo=1`)
+**단체 게임** — OX 퀴즈·무궁화꽃이 피었습니다(스쿼드 필드). 1인 게임 = 덤벨 피하기·골프·테니스·러닝
 **인프라(8-29)** — XSS 이스케이프(`_escHtml/_escJs`), 대숲 limit 200, 알림 limit 100(복합 인덱스), users 5분 캐시(`_usersAll`), RTDB 방 child 구독 + pets live/scene 분리, sw HTML no-cache, Storage 전용 업로드(imgBB 폴백 제거), Analytics 이벤트 7종
 
-## 8. 미완성 / 잔업 (2026-08-29 전수 목록 — 상세는 메모리 `project_murpy_prelaunch_audit`)
+## 8. 미완성 / 잔업 — ★상세는 `docs/prompts/2026-09-09-launch-checklist.txt`
 
-**대표 손 필요**
-- [ ] Sign in with Apple(앱스토어 필수) · Apple Developer · iOS 빌드(Mac) · Play 비공개 테스트
-- [ ] **단체(동시) 게임** 0건 — OX 퀴즈/밸런스게임/덤벨 단체전 중 선택 · **필드별 미니게임** 1개뿐(출시 전 2개 + 시작화면·난이도·캐릭터 선택·특성)
-- [ ] 범프↔헬스장 GPS 연동(대표 지정 ①, B2B 청구 근거) — 스쿼드 개설 화면 변경 상의
-- [ ] 에셋: 헤어×모자 재생성, 여캐 러닝화·긴 츄리닝, 히든 캐릭터 여자 3종, 핑크 벽지·바닥(방 배경 교체 구조 없음), 후드+레깅스 살색, 캣타워 흔들림 답
-- [ ] PG 결제(사업자 후) · `BETA_GIFT_ON=false`(스토어 날) · 성별 필터 UI(200~500명) · 실명 인증 · RTDB Blaze 확인 · imgBB 키 폐기(대시보드) · MapTiler 키 도메인 제한
-- [ ] 대표 답 대기: 핑크 에디션 가격 · 8-13 질문 4개(무료 수락값 등)
+**8-29 잔업목록은 낡았다.** 9-09 재확인 결과 아래는 **이미 끝나 있다** — 다시 "미완"이라 말하지 말 것:
+채팅 `limitToLast(80)` · likes `limit(100/300)` · 그림 신고(`openReportSheet('art')`) · `handleProfilePic`/`openUserProfile` 중복 제거 ·
+sw.js `'731'` 하드코딩 · `check_version.py` cp949 · C2 머피 잠금 · 단체 게임(OX·무궁화) · 덤벨 피하기 시작화면.
 
-**대표 손 없이 가능**
-- [ ] **C2 2단계** — `ledger` 며칠 본 뒤 규칙에서 클라이언트 `credits` 증가 금지 + `earn` 서버 지급으로 14곳 이관
-- [ ] 체크인·범프·스쿼드 출석 서버 검증(H5) · users 비로그인 공개(H3) · 익명계정 권한(H6) · 센터 수정·RTDB 채팅 uid 스푸핑
-- [ ] **users 문서 분리**(room·roomSaves·bumpers·artworks 서브컬렉션) — 131명 1.8MB, 1,000명이면 13MB/회
-- [ ] 1:1 채팅 `limitToLast` · likes limit · 낙서/그림 신고 경로 · 덤벨 피하기 시작화면·캐릭터 선택
-- [ ] 죽은 코드(`handleProfilePic`·`openUserProfile` 중복) · `mwSetHome` 무음 실패 · `check_version.py` cp949 · sw.js activate `version:'731'` 하드코딩
-- [ ] 문서: 8월 plans 체크박스, MONETIZATION.md, 사업 지식베이스 04~10
+**출시를 막고 있는 것(대표만 가능)**
+- [ ] **Play 프로덕션 신청** — 비공개 테스트 12명·9일 경과(9-09), 14일 되는 **9-14 무렵** 버튼 활성.
+      답변 초안 = `docs/prompts/2026-09-09-play-production-access-answers.txt`
+- [ ] **Apple** — Sign in with Apple 코드는 끝(9-07). 아이폰 실검증 · App Store Connect 심사 상태 확인 · 맥+Xcode 빌드
+- [ ] **실기기 검수** — 오픈월드 멀티(두 계정 동시 접속·푸시), 보상 팝업 `?rewarddemo=1`, 이름표, 체크인 100m
+- [ ] **결정** — 이름표 가격(임시 30머피) · 색상 파생 옷 15종 등록 여부(에셋만 있고 카탈로그 미등록) · 핑크 에디션 가격
+- [ ] **출시 당일** — `BETA_GIFT_ON=false` · MapTiler 키 도메인 제한 · imgBB 키 폐기
 
-**폰 확인 대기(코드 끝)**: 카카오 `?diag=1 → kakao: custom` · 경매 1회 · 남의 방 펫·가구·그림 · 손님 펫 부르기(두 대) · 아이폰 키보드 바·엔터 전송 · 체크인 100m 실내
+**출시 후로 미뤄도 되는 것**
+- [ ] users 문서 분리(room·roomSaves·bumpers·artworks → 하위 컬렉션). 1,000명 넘으면 필수, 지금은 5분 캐시로 버팀
+- [ ] 체크인·범프·출석 서버 검증(H5) · PG 결제(사업자 후) · 성별 필터 UI(200~500명) · 실명 인증
+- [ ] 에셋: 헤어×모자 재생성, 여캐 러닝화·긴 츄리닝, 히든 캐릭터 여자 3종, 핑크 벽지·바닥
 
 ## 9. 주요 함수 · 도구
 
@@ -156,7 +165,7 @@ Storage  uploads/{uid}/*.jpg (8MB, image만)
 | 인증 | `_kakaoCodeToAuth → _kakaoWorker → _kakaoCustomAuth`(옛 `_kakaoLegacyAuth`) · `deleteMyAccount` |
 | Functions | `sendNotifPush` · `settleArtSold` · `earn` |
 
-**tools/**: `bump-version.mjs`(버전 3곳 한 번에) · `check_version.py`(`PYTHONIOENCODING=utf-8` 필요) · `module-syntax-check.mjs` + `dogam-syntax-check.mjs`(둘 다 돌릴 것) · `layer-order-check.mjs` · `deploy_firestore_rules.py`/`deploy_rtdb_rules.py` · `kakao-worker/`(wrangler.toml, `--keep-vars`) · `item-purity-check.py`/`drop_stray.py`(옷 추출 뒤 필수) · `skin_bake.py`/`face_graft.py` · `asset-studio/`(리터치, 8777) · `character-customizer/customizer_cli.py`(추출은 이것으로만)
+**tools/**: `all-scripts-syntax-check.mjs`(★classic 5블록+module 한 번에) · `gen_nametags.py`(도트 이름표) · `item_recolor.py`(옷 색상 파생) · `key_defringe.py`(누끼 마무리, --check 0) · `openworld_build.py`(오픈월드 맵) · `openworld_testbot.py`(멀티 프레즌스 검증) · `face_reprocess_demagenta.py` · `bump-version.mjs`(버전 3곳 한 번에) · `check_version.py`(`PYTHONIOENCODING=utf-8` 필요) · `module-syntax-check.mjs` + `dogam-syntax-check.mjs`(둘 다 돌릴 것) · `layer-order-check.mjs` · `deploy_firestore_rules.py`/`deploy_rtdb_rules.py` · `kakao-worker/`(wrangler.toml, `--keep-vars`) · `item-purity-check.py`/`drop_stray.py`(옷 추출 뒤 필수) · `skin_bake.py`/`face_graft.py` · `asset-studio/`(리터치, 8777) · `character-customizer/customizer_cli.py`(추출은 이것으로만)
 
 ## 10. 작업 시 주의사항
 
@@ -186,4 +195,4 @@ Storage  uploads/{uid}/*.jpg (8MB, image만)
 - 특허 초안·수익구조 문서를 공개 저장소에 두는 것
 
 ---
-*마지막 업데이트: 2026-08-29 — 코드 전수 인벤토리 + 출시 전 진단(v804~v817) 반영 전면 재작성.*
+*마지막 업데이트: 2026-09-09 (v1193) — 9월 작업(오픈월드 3맵·얼굴 커마·보상 코스메틱·홈 노출) 반영, 잔업 목록을 출시 체크리스트로 교체.*
