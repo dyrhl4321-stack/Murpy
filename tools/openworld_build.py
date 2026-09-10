@@ -269,7 +269,7 @@ def main():
     s = s.replace("window._MW_OPEN_FIELDS = ['park', 'walk'];", "window._MW_OPEN_FIELDS = ['park', 'walk', 'outgym'];")
     s = s.replace("window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : 0))", "window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : (key === 'outgym' ? 2 : 0)))")
     s = s.replace("{ k: 'trainer', name: '강 코치'", "{ k: 'trainer', field: 'outgym', name: '강 코치'")
-    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>80.2\g<2>64.4", s)
+    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>71.9\g<2>54.0", s)
     s = re.sub(r"(\{ k: 'grandma',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>25.0\g<2>60.0", s)
     GB = cell_ar('char/npc/anim/grandma_bench4.png', 4); KB = cell_ar('char/npc/anim/kid_ball4.png', 4)
     s = re.sub(r"img: 'char/npc/anim/grandma_[a-z0-9]+\.png\?v=\d+', (anim: 3|strip: 4), ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/grandma_bench4.png?v=2', strip: 4, ms: 4800, ar: %.3f" % GB, s)
@@ -278,8 +278,8 @@ def main():
         s = put_spots(s, key_, im_, rows_)
     xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs) + 2
     s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(free). 값은 확정본 — 빌드가 되돌리지 않는다
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=14', strip: 4, x: 26.0, y: 43.5, h: 3.82, ms: 2200, ar: 0.703, noBreathe: true },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 51.0, y: 68.5, h: 3.06, ms: 3600, ar: 0.657 },
+  { field: 'outgym', img: 'char/npc/anim/extra_squat4.png?v=1', strip: 4, x: 26.0, y: 43.5, h: 3.37, ms: 1800, ar: 0.75 },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 51.0, y: 68.5, h: 3.24, ms: 3600, ar: 0.657 },
 ];""" + s[xe:]
     s = s.replace("  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {",
                   "  (window._MW_PARK_EXTRAS || []).filter(function (x) { return (x.field || 'park') === window._curField; }).forEach(function (x) {")
