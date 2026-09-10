@@ -161,6 +161,16 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   #dodge-screen ::selection, #golf-screen ::selection, #tennis-screen ::selection, #run-screen ::selection,
   #page-char ::selection, #mw-jam ::selection, #mw-redit-room ::selection { background: transparent; }
+  /* ★9-11 대표 "아이폰 미니게임에서 더블탭하면 확대되고 복사하기·드래그가 뜬다, 미니게임 쪽만 고치자".
+     구멍은 **touch-action 이 상속되지 않는다**는 것이었다 — 컨테이너에만 걸어둬서
+     실측(iPhone WebKit) 결과 자식 50~62개가 touch-action:auto 로 남아 더블탭 확대가 살아 있었다.
+     ※스쿼드 OX·무궁화는 #sq-detail / #sq-room-stage 라 여기 선택자에 안 걸린다(9-06 회귀 재발 방지). */
+  #dodge-screen *, #golf-screen *, #tennis-screen *, #run-screen *
+    { touch-action: manipulation; -webkit-user-drag: none; }
+  /* 실제 조작면은 스크롤·핀치까지 전부 끈다 */
+  #dodge-screen, #golf-screen, #tennis-screen, #run-screen,
+  #dodge-field, #golf-field, #tennis-field, #run-field, #dodge-bg, #golf-bg
+    { touch-action: none; }
   /* 입력창은 선택·복사가 돼야 한다 — 위 금지에서 제외 */
   #page-char input, #page-char textarea, #mw-jam input { -webkit-user-select: text; user-select: text; }
   body { background: #0a0a0a; color: #fff; font-family: 'Pretendard Variable', 'Pretendard', 'Apple SD Gothic Neo', sans-serif; max-width: 390px; margin: 0 auto; min-height: 100vh; position: relative; overflow-x: hidden; }
@@ -21570,6 +21580,31 @@ window.addEventListener('load', function () { setTimeout(window._tennisLinkBoot,
       el = el.parentElement;
     }
   }, { passive: false, capture: true });
+})();
+
+// ═══ 미니게임 전용 제스처 차단 (9-11) ═══
+// 대표: "아이폰 미니게임 더블클릭하면 확대되고 복사하기 드래그 되는 거 고치자.
+//        근데 예전에 이거 고치다가 스쿼드 OX게임 클릭 이상하게 되던 이슈 있어서 미니게임 쪽만."
+// → 위 전역 가드(IDS)는 손대지 않고, **네 게임 화면 안에서만** 기본 제스처를 끊는다.
+//   selectstart/dragstart/contextmenu = 복사·드래그·길게눌러 메뉴, gesture* = 아이폰 핀치 확대.
+//   클릭/탭 계열은 건드리지 않으므로 게임 조작과 OX 는 영향이 없다.
+(function () {
+  const GAME_IDS = ['dodge-screen', 'golf-screen', 'tennis-screen', 'run-screen'];
+  function inGame(t) {
+    let el = t;
+    while (el && el.nodeType === 1) { if (el.id && GAME_IDS.indexOf(el.id) >= 0) return true; el = el.parentElement; }
+    return false;
+  }
+  function gameOpen() {
+    return GAME_IDS.some(function (id) { const el = document.getElementById(id); return el && el.offsetParent !== null; });
+  }
+  ['selectstart', 'dragstart', 'contextmenu', 'dblclick'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { if (e.cancelable && inGame(e.target)) e.preventDefault(); }, { passive: false, capture: true });
+  });
+  // 아이폰 핀치 확대 — target 이 document 로 오는 경우가 있어 '게임이 열려 있는가'로 판단한다
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { if (e.cancelable && gameOpen()) e.preventDefault(); }, { passive: false, capture: true });
+  });
 })();
 
 // ═══ 앱 설치 배너 (9-02) ═══
