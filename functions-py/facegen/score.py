@@ -35,6 +35,11 @@ def score(ai_path, base_path, hair_px=0, fringe_src=None):
     semi = int(((al > 0) & (al < 255)).sum())
     mag = int(((al == 255) & (mx > 100) & (F[..., 0] > F[..., 1] + 40) & (F[..., 2] > F[..., 1] + 40)).sum())
     crown = A[8:40, 30:111]; crown_px = int(((crown[..., 3] > 128) & ~_skin(crown)).sum())
+    # ★9-10 '머리가 칸 위로 잘림'(대표: 뒷머리가 수평으로 잘린다). 발을 base 에 맞춰 앉히는 구조라
+    #   머리가 224px 을 넘으면 위가 **평평하게 잘려** 나간다(보우야 3칸). 손제작 자산은 y=0 에 절대 안 닿는다.
+    #   여기서 걸러 재생성시킨다 — 스케일을 줄이면 목선이 base 와 어긋나 이식에 구멍이 난다.
+    clipped = sum(1 for r in range(4) for c in range(3)
+                  if (A[r * CH, c * CW:(c + 1) * CW, 3] > 128).any())
     back = A[CH + 30:CH + 110, 40:100]; backface = int(((back[..., 3] > 128) & _skin(back)).sum())
     # ★상의 띠(y128~170)만 보다가 **흰 바지**(하의 바뀜)를 통과시켰다(9-07 대표 실전 1호). 상·하의 띠 둘 다, 큰 쪽.
     outfit = 0
@@ -45,7 +50,8 @@ def score(ai_path, base_path, hair_px=0, fringe_src=None):
     return {'cells': len(cm),
             'dy_max': max((abs(m['dy']) for m in cm), default=99), 'dx_max': max((abs(m['dx']) for m in cm), default=99),
             'h_min': round(min((m['h'] for m in cm), default=0), 3), 'h_max': round(max((m['h'] for m in cm), default=0), 3),
-            'semi': semi, 'mag': mag, 'hair': int(hair_px), 'crown': crown_px, 'backface': backface, 'outfit': outfit}
+            'semi': semi, 'mag': mag, 'hair': int(hair_px), 'crown': crown_px, 'backface': backface,
+            'outfit': outfit, 'clipped': clipped}
 
 def verdict(s):
     bad = []
@@ -55,6 +61,7 @@ def verdict(s):
     if s['h_min'] < 0.93 or s['h_max'] > 1.07: bad.append('크기%.2f~%.2f' % (s['h_min'], s['h_max']))
     if s['semi'] or s['mag']: bad.append('잔상')
     if s['crown'] < 300: bad.append('머리없음')
+    if s.get('clipped'): bad.append('머리잘림%d칸' % s['clipped'])
     if s['backface'] > 150: bad.append('뒤칸에얼굴')
     if s['outfit'] > 45: bad.append('옷바뀜')
     return 'OK' if not bad else ' '.join(bad)

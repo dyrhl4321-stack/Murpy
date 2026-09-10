@@ -4,6 +4,8 @@
 process(...) 한 번이 유저 한 명이다:
   1) 생성(제미나이) → 2) 칸 단위 규격화 + 배경 잔상 수술(grid) → 3) 헤어 레이어 자동(hair)
   → 4) 채점(score). OK 가 아니면 1) 부터 다시, 최대 attempts 회. 끝까지 OK 가 없으면 결함이 가장 적은 것.
+★2026-09-10 정리 단계 확장(finalize): 머리 **안쪽** 마젠타 잔재·머리 위 평평한 처마·기준 초과 잔선까지 지운다.
+  채점에도 '머리잘림'(칸 위로 넘쳐 평평하게 잘림)을 넣어 그런 결과는 내보내지 않고 다시 생성한다.
   → 5) 피부톤 5종(skin) → 6) 눈 좌표(eyes)
 ★한 번에 잘 뽑히는 비율이 1/3(기준 프롬프트)~3/3(개정 프롬프트, 9-06 백테스트)라 재시도가 곧 품질이다.
   대표 손을 하나도 안 거치는 게 목적(대표 9-06: "그냥 자동으로 다 해야 해").
@@ -50,7 +52,7 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
         grafted = os.path.join(out_dir, 'sheet_%d.png' % (i + 1))
         grid.graft_head(ai_path, base_path, grafted)
         # ★마지막 정리(9-08): 알파 128 이진화 + 어두운 보라끼·가장자리 마젠타 제거 — 시트·헤어 둘 다(박기웅 시트 후광 사고)
-        try: log('  정리 %d: %s' % (i + 1, finalize.demagenta(grafted))); hair_path and finalize.demagenta(hair_path)
+        try: log('  정리 %d: %s' % (i + 1, finalize.demagenta(grafted))); hair_path and finalize.demagenta(hair_path, is_hair=True)
         except Exception as e: log('  정리 %d 실패(무시): %s' % (i + 1, e))
         s = score.score(grafted, base_path, hair_px, fringe_src=ai_path); v = score.verdict(s)
         s.update({'attempt': i + 1, 'verdict': v, 'hairKind': kind}); scores.append(s)
