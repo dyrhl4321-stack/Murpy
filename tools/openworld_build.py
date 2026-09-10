@@ -203,7 +203,7 @@ def main():
     json.dump({'fount': fb, 'pond': qb, 'src': WORK + 'park_v5.png'}, open('char/fields/anim/water_boxes.json', 'w'))
     mk = np.ones((2048, 2048))   # 전체 재분류
     from PIL import ImageOps
-    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v9.png').convert('RGB')   # v9(9-09 대표 "에셋 퀄리티 저급·복붙·그림자 없음"): Pro 로 통째 재생성(gym_v8_3, 기구를 좌·중·우 고르게) + 기구마다 접지 그림자 베이크(scratchpad/gym_v9.py)
+    walk = Image.open(WORK + 'walkway_v4.png'); gym = Image.open(WORK + 'gym_v11.png').convert('RGB')   # v11(9-10 대표 "왼쪽 상단 철봉 그림자 이상·오른쪽 머신 뭔지 모르겠음"): 기구를 하나씩 이름 붙여 다시 생성(gym_v10_3) — 그림자가 원화에 들어 있어 베이크 안 함
     print('park2', quant_save(park, 'char/fields/field_park2.png'), 'walk', quant_save(walk, 'char/fields/field_walk.png'), 'outgym', quant_save(gym, 'char/fields/field_outgym.png'))
     p = 'index.html'; s = io.open(p, encoding='utf-8').read()
     # 광장 충돌맵: 바뀐 영역(마스크>0.5)만 재분류, 나머지는 기존 맵 유지
@@ -250,7 +250,7 @@ def main():
     s = setmap(s, "walk: { name: '산책로'", wr)
     s = s.replace('src: "char/fields/field_park2.png?v=4"', 'src: "char/fields/field_park2.png?v=5"')
     s = s.replace('src: "char/fields/field_walk.png?v=2"', 'src: "char/fields/field_walk.png?v=3"')
-    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=9"', s)
+    s = re.sub(r'src: "char/fields/field_outgym\.png\?v=\d+"', 'src: "char/fields/field_outgym.png?v=11"', s)
     s = re.sub(r"(walk: \{ name: '산책로'[^\n]*start: \{ tc: 2, tr: )\d+", r"\g<1>%d" % ((w0 + w1) // 2), s)
     s = re.sub(r"(outgym: \{ name: '야외 헬스장'[^\n]*start: \{ tc: )\d+, tr: \d+", r"\g<1>45, tr: %d" % ((g0 + g1) // 2), s)
     if "outgym: { name: '야외 헬스장'" not in s:
@@ -269,7 +269,7 @@ def main():
     s = s.replace("window._MW_OPEN_FIELDS = ['park', 'walk'];", "window._MW_OPEN_FIELDS = ['park', 'walk', 'outgym'];")
     s = s.replace("window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : 0))", "window._mwPigeons(key === 'park' ? 5 : (key === 'walk' ? 3 : (key === 'outgym' ? 2 : 0)))")
     s = s.replace("{ k: 'trainer', name: '강 코치'", "{ k: 'trainer', field: 'outgym', name: '강 코치'")
-    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>78.1\g<2>72.7", s)
+    s = re.sub(r"(\{ k: 'trainer',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>80.2\g<2>64.4", s)
     s = re.sub(r"(\{ k: 'grandma',[^\n]*?x: )[0-9.]+(, y: )[0-9.]+", r"\g<1>25.0\g<2>60.0", s)
     GB = cell_ar('char/npc/anim/grandma_bench4.png', 4); KB = cell_ar('char/npc/anim/kid_ball4.png', 4)
     s = re.sub(r"img: 'char/npc/anim/grandma_[a-z0-9]+\.png\?v=\d+', (anim: 3|strip: 4), ms: \d+(, ar: [0-9.]+)?", "img: 'char/npc/anim/grandma_bench4.png?v=2', strip: 4, ms: 4800, ar: %.3f" % GB, s)
@@ -278,8 +278,8 @@ def main():
         s = put_spots(s, key_, im_, rows_)
     xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs) + 2
     s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(free). 값은 확정본 — 빌드가 되돌리지 않는다
-  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=13', strip: 4, x: 51.0, y: 41.5, h: 3.79, ms: 2200, ar: 0.685, noBreathe: true },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 17.7, y: 64.4, h: 3.06, ms: 3600, ar: 0.657 },
+  { field: 'outgym', img: 'char/npc/anim/extra_pullup4.png?v=14', strip: 4, x: 26.0, y: 43.5, h: 3.82, ms: 2200, ar: 0.703, noBreathe: true },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 51.0, y: 68.5, h: 3.06, ms: 3600, ar: 0.657 },
 ];""" + s[xe:]
     s = s.replace("  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {",
                   "  (window._MW_PARK_EXTRAS || []).filter(function (x) { return (x.field || 'park') === window._curField; }).forEach(function (x) {")
