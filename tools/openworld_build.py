@@ -278,8 +278,8 @@ def main():
         s = put_spots(s, key_, im_, rows_)
     xs = s.index("window._MW_PARK_EXTRAS = ["); xe = s.index("];", xs) + 2
     s = s[:xs] + """window._MW_PARK_EXTRAS = [   // ★9-09 대표: 기구 포함 스프라이트는 숨쉬기 없음(전체 끔), 자리는 충돌맵 검증(free). 값은 확정본 — 빌드가 되돌리지 않는다
-  { field: 'outgym', img: 'char/npc/anim/extra_squat4.png?v=1', strip: 4, x: 26.0, y: 43.5, h: 2.95, ms: 1800, ar: 0.75 },
-  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 51.0, y: 68.5, h: 3.06, ms: 3600, ar: 0.657 },
+  { field: 'outgym', img: 'char/npc/anim/extra_squat4.png?v=1', strip: 4, x: 26.0, y: 43.5, h: 3.37, ms: 1800, ar: 0.75 },
+  { field: 'outgym', img: 'char/npc/anim/extra_stretch4.png?v=2', strip: 4, x: 51.0, y: 68.5, h: 3.24, ms: 3600, ar: 0.657 },
 ];""" + s[xe:]
     s = s.replace("  (window._curField === 'park' ? (window._MW_PARK_EXTRAS || []) : []).forEach(function (x) {",
                   "  (window._MW_PARK_EXTRAS || []).filter(function (x) { return (x.field || 'park') === window._curField; }).forEach(function (x) {")
