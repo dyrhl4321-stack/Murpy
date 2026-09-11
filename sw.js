@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v1200';
-const STATIC_CACHE = 'murpy-static-v1200';
-const CDN_CACHE = 'murpy-cdn-v1200';
+const CACHE_NAME = 'murpy-v1201';
+const STATIC_CACHE = 'murpy-static-v1201';
+const CDN_CACHE = 'murpy-cdn-v1201';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img-v2';   // ★9-09 대표 폰에서 골프 에셋 전부 안 뜸 — 버전 없는 캐시에 깨진 항목이 박제되면 배포로도 안 지워진다 → 이름을 바꿔 한 번 전부 다시 받게
 
