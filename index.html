@@ -83,7 +83,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1202';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1203';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -4043,14 +4043,37 @@ window._charFaceBodyDef = function (charId, d, ownerUid) {
 };
 // 커마 시트 미리 받기(도착 팝업·로스터가 뜰 때 이미 캐시에 있게). 같은 URL 은 한 번만. 3초 넘으면 기다리지 않는다.
 window._facePreload = {};
+// ★9-14 커마 시트 **고정(blob)** — 대표: "재현 캐릭터가 필드이동에서 얼굴이 없어지고 캐릭터들이 계속 깜빡인다,
+//   유꾸미가 덤벨 피하기에서만 머리 없어지던 것과 같은 이슈".
+//   원인: 커마 몸통·헤어 시트는 Storage 주소(Cache-Control: private, max-age=0)라 브라우저 메모리 캐시에 안 남고,
+//   새 DOM 요소가 background-image 로 그 주소를 쓸 때마다 서비스워커 캐시 왕복(수십 ms)을 기다린다. 그 사이 옷(로컬 시트,
+//   즉시)은 그려지고 몸통·머리만 비어 **머리 없는 몸**이 한 프레임 보인다. 필드이동 지도 마커(_mwFmPlace)·오픈월드 남들·
+//   스쿼드 필드는 걸음/방향마다 innerHTML 을 다시 만들어서 계속 깜빡였다. 덤벨 피하기는 8-2x 에 DOM 재생성을 피해 국소 수습했고
+//   나머지 자리는 그대로였다.
+//   → 시트를 한 번 받아 blob: 주소로 붙잡아 둔다(CORS 허용 확인 9-14). blob 은 메모리에 있어 새 요소도 **즉시** 칠해진다.
+//   _charSkinSrc / _charEquippedSheets(헤어 오버레이)가 고정된 주소를 돌려주므로 그리는 자리 어디도 안 고친다.
+window._faceBlob = {};      // 원 주소 → blob: 주소
+window._faceBlobPending = {};
+window._charPinFaceUrl = function (u) {
+  if (!u || window._faceBlob[u] || window._faceBlobPending[u]) return window._faceBlob[u] || null;
+  if (!/^https?:/.test(u) || !window.fetch || !window.URL || !URL.createObjectURL) return null;   // 로컬 시트는 그대로
+  window._faceBlobPending[u] = fetch(u, { mode: 'cors' }).then(function (r) {
+    if (!r.ok || !/^image\//.test(r.headers.get('content-type') || '')) throw new Error('bad ' + r.status);
+    return r.blob();
+  }).then(function (b) {
+    window._faceBlob[u] = URL.createObjectURL(b);
+    // 내 캐릭터가 화면에 있으면 고정된 주소로 한 번 다시 칠한다(첫 렌더가 원 주소로 나갔을 수 있다)
+    try { if (window._curField && window._charApplyPos && document.getElementById('charworld-avatar')) window._charApplyPos(); } catch (e) {}
+  }).catch(function (e) { console.warn('face pin', u.slice(0, 80), e && e.message); }).then(function () { delete window._faceBlobPending[u]; });
+  return null;
+};
 window._charPreloadFaceBody = function (def) {
   if (!def) return Promise.resolve();
-  // 피부톤 5종을 로그인·인증 중 한꺼번에 디코딩하지 않는다. 실제 선택 톤은 렌더 시 로드.
-  const urls = [def.src, def.hairOverlay].filter(Boolean);
-  const ps = urls.map(function (u) {
-    if (!window._facePreload[u]) window._facePreload[u] = new Promise(function (res) { const im = new Image(); im.onload = im.onerror = function () { res(); }; im.src = window._iv ? window._iv(u) : u; });
-    return window._facePreload[u];
-  });
+  // 몸통 시트 + 헤어 + **지금 고른 피부톤 시트**(예전엔 톤 시트를 안 받아 t2 이하 톤은 매번 늦게 떴다)를 blob 으로 붙잡는다.
+  const mine = (window.getMyCharacter && window.getMyCharacter()) || {};
+  const urls = [def.src, def.hairOverlay, def.skinUrls && mine.skin ? def.skinUrls[mine.skin] : null].filter(Boolean);
+  urls.forEach(function (u) { window._charPinFaceUrl(u); });
+  const ps = urls.map(function (u) { return window._faceBlobPending[u] || Promise.resolve(); });
   return Promise.race([Promise.all(ps), new Promise(function (res) { setTimeout(res, 3000); })]);
 };
 window._charRegisterFaceBody = function (charId, d, ownerUid) {
@@ -4409,6 +4432,11 @@ window._charSkinSrc = function (bodyKey, skin) {
   const ok = !!(skin && window.CHAR_SKINS.indexOf(skin) >= 0 && skin !== 't3');
   // ★동적 커마 몸통은 구운 톤 시트가 Storage 에 있다. 경로를 조립할 수 없으니 URL 표를 본다.
   //   표에 없는 톤은 원본(b.src)으로 떨어진다 — 깨진 이미지보다 원색이 낫다.
+  //   9-14: Storage 주소는 blob 으로 고정한 것을 돌려준다(위 _charPinFaceUrl — 새 요소마다 머리가 깜빡이던 것).
+  if (b.dynamic || /^https?:/.test(String(b.src || ''))) {
+    const u = (ok && b.skinUrls && b.skinUrls[skin]) || b.src;
+    return (window._faceBlob && window._faceBlob[u]) || (window._charPinFaceUrl && window._charPinFaceUrl(u)) || u;
+  }
   if (ok && b.skinUrls) return b.skinUrls[skin] || b.src;
   if (!b.skinBase || !ok) return b.src;
   return 'char/skin/' + b.skinBase + '_' + skin + '.png?v=5';
@@ -4509,7 +4537,11 @@ window._charEquippedSheets = function (cfg) {
       //   (링거티 뒷모습 왼쪽이 프레임마다 들쭉날쭉, 후디 목 틈으로 노란색 비침 — 대표 9-06).
       //   머리만 뽑은 시트(hairOverlay)를 헤어 자리에 한 번 더 얹으면 상의 위로 머리가 내려온다.
       //   같은 픽셀을 두 번 그리는 것이라 머리 위쪽은 무해하고, 모자는 여전히 잠근다.
-      if (slot === 'hair' && b.hairOverlay) out.hair = window._iv(b.hairOverlay);
+      if (slot === 'hair' && b.hairOverlay) {
+        // 9-14: Storage 헤어도 blob 고정(위 _charPinFaceUrl). 로컬 시트(내장 커마)는 예전처럼 ?v 부착.
+        const hp = /^https?:/.test(b.hairOverlay) ? ((window._faceBlob && window._faceBlob[b.hairOverlay]) || (window._charPinFaceUrl && window._charPinFaceUrl(b.hairOverlay))) : null;
+        out.hair = hp || window._iv(b.hairOverlay);
+      }
       return;
     }
     const id = cfg[slot]; if (!id) return;
