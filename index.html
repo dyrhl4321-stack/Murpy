@@ -83,7 +83,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1203';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1204';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -3847,8 +3847,19 @@ window.expandBambooCompose = function () {
   if (window.requireRealAccount && window.requireRealAccount('대나무숲 글을 쓰려면 계정이 필요해요')) return;
   if (t) t.style.display = 'none';
   if (f) {
+    // ★9-14 대표 "대나무숲 작성 안 됨"(8-30 이후 새 글 0건). 원인: .page 에 transform 이 있어 이 상자의 position:fixed 가
+    //   **화면이 아니라 페이지(높이 7,000px) 기준**으로 잡혔다 → 전송·취소 버튼이 화면 밖 수천 px 아래, 스크롤은 잠금.
+    //   9-02 전체화면 개편 때부터 그랬다(그 전엔 카드 안 인라인이라 무관). 크롭 창과 같은 해법 — 여는 동안 body 직속으로 뺀다.
+    //   id 로 찾는 코드(postBamboo·뒤로가기·_scrollRescue·renderBambooChips)는 그대로 동작한다.
+    if (f.parentElement !== document.body) {
+      f._bwHome = { parent: f.parentElement, next: f.nextSibling };
+      document.body.appendChild(f);
+    }
     f.style.display = 'block';
     f.classList.add('bw-open');
+    // 본문 아래 빈 자리(.bw-fields-row 여백)를 눌러도 본문에 포커스 — 9-02 의 .bw-fields-col 만으로는 행 바깥이 비어 있었다
+    const row = f.querySelector('.bw-fields-row');
+    if (row && !row._focusHooked) { row._focusHooked = true; row.addEventListener('click', function (e) { if (e.target === row) { const ta = document.getElementById('bamboo-input'); if (ta) ta.focus(); } }); }
     if (!f.querySelector('.bw-head')) {
       const h = document.createElement('div'); h.className = 'bw-head';
       h.innerHTML = '<b>익명으로 이야기 남기기</b><button onclick="window.collapseBambooCompose()">닫기</button>';
@@ -3945,7 +3956,12 @@ window.collapseBambooCompose = function () {
   const ti = document.getElementById('bamboo-title'); if (ti) ti.value = '';
   try { localStorage.removeItem('bamboo_draft'); } catch (e) {}   // 9-14 임시저장도 같이 비운다(올렸거나 버리기로 답한 뒤)
   if (window.clearBambooPhoto) window.clearBambooPhoto();   // 접을 때 붙인 사진도 비운다
-  if (f) { f.style.display = 'none'; f.classList.remove('bw-open'); }
+  if (f) {
+    f.style.display = 'none'; f.classList.remove('bw-open');
+    // 9-14: 열 때 body 로 뺀 상자를 원래 자리(대숲 카드 안)로 되돌린다
+    const h = f._bwHome;
+    if (h && h.parent && h.parent.isConnected) { try { h.parent.insertBefore(f, (h.next && h.next.parentElement === h.parent) ? h.next : null); } catch (e) {} f._bwHome = null; }
+  }
   try { unlockBodyScroll && unlockBodyScroll(); } catch (e) {}
   if (t) t.style.display = 'flex';
 };
