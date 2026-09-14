@@ -1,19 +1,17 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v1201';
-const STATIC_CACHE = 'murpy-static-v1201';
-const CDN_CACHE = 'murpy-cdn-v1201';
+const CACHE_NAME = 'murpy-v1202';
+const STATIC_CACHE = 'murpy-static-v1202';
+const CDN_CACHE = 'murpy-cdn-v1202';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img-v2';   // ★9-09 대표 폰에서 골프 에셋 전부 안 뜸 — 버전 없는 캐시에 깨진 항목이 박제되면 배포로도 안 지워진다 → 이름을 바꿔 한 번 전부 다시 받게
 
-// 앱 시작 시 즉시 캐시할 로컬 파일
+// 앱 시작 시 즉시 캐시할 로컬 파일 (HTML 은 아래 precacheHtml 이 버전 확인 후 따로 넣는다)
 const STATIC_ASSETS = [
-  './',
-  './index.html',
   './manifest.json',
   './favicon-32.png',
   './icon-192.png',
   './icon-512.png',
-  './logo-nukki.png',
+  './ob/logo-nukki-480.png',
 ];
 
 // CDN 스크립트 (버전 고정 → 영구 캐시)
@@ -22,12 +20,36 @@ const CDN_HOSTS = [
   't1.kakaocdn.net',
 ];
 
+// ===== HTML 캐시 (9-14 부팅 속도) =====
+// 이 워커 버전과 같은 index.html 만 STATIC_CACHE 의 HTML_KEY 에 둔다. 버전이 다른 HTML 은 절대 안 넣는다 —
+//   GitHub Pages CDN 이 10분쯤 옛 파일을 주는데, 그걸 새 워커가 캐시하면 새 워커 + 옛 화면 조합으로 굳는다.
+const HTML_KEY = './index.html';
+const SW_VER = CACHE_NAME.replace(/^murpy-v/, '');
+async function htmlMatchesThisWorker(res) {
+  try {
+    const t = await res.text();
+    const m = t.match(/window\._SW_V = '(\d+)'/);
+    return !!(m && m[1] === SW_VER);
+  } catch (e) { return false; }
+}
+async function fetchAndStoreHtml(req) {
+  const res = await fetch(req, { cache: 'no-cache' });
+  if (res && res.ok && await htmlMatchesThisWorker(res.clone())) {
+    const c = await caches.open(STATIC_CACHE);
+    await c.put(HTML_KEY, res.clone());
+  }
+  return res;
+}
+async function precacheHtml() {
+  try { await fetchAndStoreHtml(new Request('./index.html', { cache: 'no-cache' })); } catch (e) {}
+}
+
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
     caches.open(STATIC_CACHE).then(cache =>
       cache.addAll(STATIC_ASSETS).catch(() => {})
-    )
+    ).then(precacheHtml)
   );
 });
 
@@ -110,14 +132,31 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // HTML 파일 → 네트워크 우선 (항상 최신 버전)
-  // ★cache:'no-store' 로 받는다. 그냥 fetch 하면 브라우저 HTTP 캐시와 GitHub Pages CDN 이
-  //   옛 index.html 을 그대로 주기 때문에, sw 버전을 올려도 화면이 늦게 바뀌었다
-  //   (대표: "푸시한 게 계속 늦게 반영된다"). no-store 면 매번 원본까지 간다.
-  if (url.origin === self.location.origin && (url.pathname.endsWith('.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/')) {
+  // 앱 HTML → **캐시 우선 + 뒤에서 갱신** (9-14 부팅 속도)
+  // ★그 전(8-29~9-13)은 네트워크 우선이라 재방문마다 원본(gzip 1MB)을 다시 받았다 — 폰 4G 에서 4~11초,
+  //   실측 부팅 시간의 최대 단일 항목이었다. 이제는 이 워커 버전과 같은 HTML 이 캐시에 있으면 즉시 주고,
+  //   뒤에서 no-cache 로 한 번 더 받아 캐시를 갱신한다(버전이 같을 때만 저장 — 위 htmlMatchesThisWorker).
+  //   새 배포는 sw.js?v= 가 바뀌어 새 워커가 설치되고(install 이 새 HTML 을 미리 받음) controllerchange →
+  //   한 번 다시 들어가는 기존 흐름 그대로 반영된다. 워커 감지가 막혀도 _mwSelfHeal(version.txt) 이 있다.
+  //   privacy/terms/guide 같은 다른 .html 은 예전처럼 네트워크 우선.
+  const isAppHtml = url.origin === self.location.origin &&
+    (url.pathname.endsWith('/index.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/');
+  if (isAppHtml) {
+    e.respondWith((async () => {
+      let cached = null;
+      try { cached = await (await caches.open(STATIC_CACHE)).match(HTML_KEY); } catch (err) {}
+      const net = fetchAndStoreHtml(e.request);
+      if (cached) {
+        try { e.waitUntil(net.catch(() => {})); } catch (err) {}   // 워커 수명 연장이 안 되더라도 응답은 준다
+        return cached;
+      }
+      try { return await net; }
+      catch (err) { return fetch(e.request).catch(() => caches.match(HTML_KEY)); }
+    })());
+    return;
+  }
+  if (url.origin === self.location.origin && url.pathname.endsWith('.html')) {
     e.respondWith(
-      // ★8-29: no-store → **no-cache**. 매번 원본에 물어보는 건 같지만(ETag 재검증) 안 바뀌었으면 304 로
-      //   본문(gzip 740KB)을 안 받는다. 1,000명이면 월 66GB → 수 GB. 최신성은 그대로다.
       fetch(e.request, { cache: 'no-cache' }).then(res => {
         const clone = res.clone();
         caches.open(STATIC_CACHE).then(c => c.put(e.request, clone));
