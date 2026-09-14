@@ -22,21 +22,51 @@ def align_base(gender):
     그걸 기준으로 맞추면 11px 어긋나고 채점이 전부 '옷바뀜'으로 나온다(9-06 로컬 하네스 실측)."""
     return os.path.join(ASSETS, 'walk_female.png' if gender == '여' else 'walk.png')
 
+def retry_hint(s, attempt):
+    """직전 채점 결과 → 다음 생성 프롬프트에 덧붙일 교정 문장(영어, 모델용). OK 면 빈 문자열.
+    채점 항목마다 모델이 고칠 수 있는 말로 바꾼다. 방향 오류는 어느 행·칸이 틀렸는지까지 집어 준다."""
+    if not s or s.get('verdict') == 'OK': return ''
+    lines = ['RETRY #%d — the previous sheet was rejected by automatic inspection. Fix ALL of the following and keep everything else identical:' % attempt]
+    f = s.get('facing') or []
+    if f:
+        lines.append('- FACING DIRECTION: row 1 (top) = all 3 cells facing the viewer; row 3 = all 3 cells in LEFT profile '
+                     '(nose and eyes toward the LEFT edge of the cell); row 4 = all 3 cells in RIGHT profile. '
+                     'Every cell in a row must face the SAME way — never mirror a single walking frame. Wrong cells last time: %s.'
+                     % ', '.join(f))
+    if s.get('cells', 12) < 12: lines.append('- Exactly 12 cells in a 3x4 grid, one full character per cell, none missing or merged.')
+    if s.get('dy_max', 0) > 3 or s.get('dx_max', 0) > 3: lines.append('- Keep each character centered in its cell at the same position and scale as the reference sheet.')
+    if s.get('h_min', 1) < 0.93 or s.get('h_max', 1) > 1.07: lines.append('- Keep the character height exactly the same as the reference sheet (do not enlarge or shrink).')
+    if s.get('semi') or s.get('mag'): lines.append('- Flat solid magenta background only, hard pixel edges, no anti-aliasing, no gradients, no background tint on the character.')
+    if s.get('crown', 999) < 300: lines.append('- The top of the head must show hair (no bald or cut-off crown).')
+    if s.get('clipped'): lines.append('- Leave empty space above the head in every cell; the hair must never touch the top edge of the cell.')
+    if s.get('backface', 0) > 150: lines.append('- Row 2 is the BACK view: show only the back of the head and hair, no face or skin.')
+    if s.get('outfit', 0) > 45: lines.append('- Keep the exact same clothes and colors as the reference sheet; only the head changes.')
+    return '\n'.join(lines) if len(lines) > 1 else ''
+
 def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_fn=None, base_path=None, deadline=None):
     """base_png = 생성 참고용 시트(제미나이에 첨부) · base_path = 정합/채점 기준 앱 시트(기본 남성 walk.png).
     돌려주는 값 = dict(sheet, hair, skins{t:path}, eyes, verdict, attempts, scores[]). 파일은 out_dir 아래."""
     os.makedirs(out_dir, exist_ok=True)
     base_path = base_path or align_base('남')
-    gen_fn = gen_fn or (lambda i: generate(key, base_png, selfies, prompt,
-        timeout=max(1, min(180, deadline - time.monotonic() - 35)) if deadline else 300))
+    # ★9-14 재시도는 **같은 프롬프트로 다시 굴리지 않는다** (대표: "한 번에 못 뽑힌 경우엔 새 프롬프트로 다시").
+    #   직전 채점이 뭘 걸렀는지에 맞춰 교정 문장을 덧붙인 프롬프트로 다시 생성한다(retry_hint).
+    #   gen_fn 을 직접 주는 로컬 하네스(face_server_local)는 인자 1개짜리라 둘 다 받는다.
+    if gen_fn is None:
+        gen_fn = lambda i, hint='': generate(key, base_png, selfies, prompt if not hint else prompt.rstrip() + '\n\n' + hint,
+            timeout=max(1, min(180, deadline - time.monotonic() - 35)) if deadline else 300)
+    import inspect
+    try: _gen_takes_hint = len(inspect.signature(gen_fn).parameters) >= 2
+    except (TypeError, ValueError): _gen_takes_hint = False
     best = None; scores = []
+    hint = ''
     for i in range(attempts):
         if deadline and deadline - time.monotonic() < 45:
             scores.append({'error': 'generation time budget exhausted'})
             break
         raw_path = os.path.join(out_dir, 'raw_%d.png' % (i + 1))
+        if hint: log('  재시도 %d 프롬프트 교정: %s' % (i + 1, hint[:120].replace('\n', ' ')))
         try:
-            data = gen_fn(i)
+            data = gen_fn(i, hint) if _gen_takes_hint else gen_fn(i)
             Image.open(io.BytesIO(data)).convert('RGBA').save(raw_path)
         except Exception as e:
             log('  생성 %d 실패: %s' % (i + 1, e)); scores.append({'attempt': i + 1, 'error': str(e)[:200]}); continue
@@ -57,6 +87,7 @@ def process(key, base_png, prompt, selfies, out_dir, attempts=3, log=print, gen_
         s = score.score(grafted, base_path, hair_px, fringe_src=ai_path); v = score.verdict(s)
         s.update({'attempt': i + 1, 'verdict': v, 'hairKind': kind}); scores.append(s)
         log('  시도 %d: %s' % (i + 1, v))
+        hint = retry_hint(s, i + 1)
         bad = 0 if v == 'OK' else len(v.split())
         if best is None or bad < best['bad']:
             best = {'bad': bad, 'ai': grafted, 'hair': hair_path, 'verdict': v, 'attempt': i + 1}
