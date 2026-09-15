@@ -81,7 +81,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1205';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1206';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -27105,15 +27105,25 @@ window.kakaoLogin = async () => {
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     // ★9-15 유저 신고(파이어폭스): 버튼을 눌러도 무반응. 파이어폭스 추적 방지가 카카오 SDK 스크립트(t1.kakaocdn.net)를 막으면
     //   `Kakao` 가 없어서 여기서 조용히 죽었다. SDK 없이도 같은 주소로 바로 보낸다(SDK 의 authorize 도 결국 이 주소로 이동한다).
+    //   또 하나: throughTalk 는 카카오톡 앱을 커스텀 스킴(kakaotalk://)으로 부르는데, 파이어폭스는 그 이동을 **아무 표시 없이** 막는다.
+    //   → SDK 호출 뒤 2.5초 안에 화면이 안 바뀌면(앱으로 넘어가지도, 이동하지도 않음) 같은 인가 주소로 직접 이동한다.
+    const direct = 'https://kauth.kakao.com/oauth/authorize?client_id=' + _KAKAO_JS_KEY + '&redirect_uri=' + encodeURIComponent(_kakaoRedirectUri()) + '&response_type=code';
     try {
       if (typeof Kakao === 'undefined' || !Kakao || !Kakao.Auth) throw new Error('kakao sdk missing');
       if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
+      let left = false;
+      const mark = function () { left = true; };
+      window.addEventListener('pagehide', mark, { once: true });
+      document.addEventListener('visibilitychange', function () { if (document.hidden) mark(); }, { once: true });
       // ★인앱브라우저면 throughTalk 를 끈다. 켜두면 카톡 안에서 카톡을 또 부르다 멈춘다.
       Kakao.Auth.authorize({ redirectUri: _kakaoRedirectUri(), throughTalk: !window._isInApp() });
+      setTimeout(function () {
+        if (left || document.hidden) return;
+        console.warn('kakao authorize 무반응(2.5s) → 직접 이동');
+        location.href = direct;
+      }, 2500);
     } catch (e) {
       console.warn('kakao sdk 경로 실패 → 직접 이동', e && e.message);
-      const direct = 'https://kauth.kakao.com/oauth/authorize?client_id=' + _KAKAO_JS_KEY + '&redirect_uri=' + encodeURIComponent(_kakaoRedirectUri()) + '&response_type=code'
-        + (window._isInApp() ? '' : '&through_account=true');
       location.href = direct;
     }
     return;
