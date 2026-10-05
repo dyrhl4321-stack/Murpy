@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1212';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1213';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -2753,6 +2753,10 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
       <button id="growth-stats-btn" onclick="window.showGrowthStats && window.showGrowthStats()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
         성장 지표 · CC (관리자)
+      </button>
+      <button id="gbd-link-btn" onclick="window.gbdLinkOpen && window.gbdLinkOpen()" style="width:100%;background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer;margin-top:6px;padding:8px;font-family:inherit;display:none;align-items:center;justify-content:center;gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+        근방단 멤버 연결 (관리자)
       </button>
       <!-- ★관리자 테스트용 머피 충전(대표 8-12). 매칭 10 · 더보기 20 · 아이템 구매처럼
            돈이 빠지는 길을 계속 눌러봐야 하는데 잔액이 바닥나면 테스트가 거기서 멈춘다.
@@ -16604,6 +16608,8 @@ window.updateUI = function(user) {
     if (usageBtn) usageBtn.style.display = _adm ? 'flex' : 'none';
     const growthBtn = document.getElementById('growth-stats-btn');
     if (growthBtn) growthBtn.style.display = _adm ? 'flex' : 'none';
+    const gbdLinkBtn = document.getElementById('gbd-link-btn');
+    if (gbdLinkBtn) gbdLinkBtn.style.display = _adm ? 'flex' : 'none';
     const adminCreditBtn = document.getElementById('admin-credit-btn');
     if (adminCreditBtn) adminCreditBtn.style.display = _adm ? 'flex' : 'none';
     const feedHairBtn = document.getElementById('feed-hair-fix-btn');
@@ -41634,6 +41640,7 @@ window._sqRenderDetailInner = function () {
          멤버 줄마다 파란 버튼을 붙이니 입금 칩과 뒤엉켜 안 읽혔다. 누르면 팝업에서 여러 명을 한 번에. -->
     <div style="display:flex;align-items:center;gap:8px;margin:2px 2px 6px">
       <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${_joinedUids.length}</span>/${s.capacity}</div>
+      ${(typeof isAdmin === 'function' && isAdmin() && s.id !== 'preview') ? `<button onclick="window.gbdSendOpen&&window.gbdSendOpen('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.7);border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">근방단 앱으로</button>` : ''}
       ${isHost ? `<button onclick="window.sqStaffPicker&&window.sqStaffPicker('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,111,181,.5);color:#FF6FB5;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">운영진 임명</button>` : ''}
     </div>
     ${card(rows || '<div style="padding:14px;text-align:center;color:rgba(255,255,255,.3);font-size:12px">아직 아무도 없어요</div>')}
@@ -42325,6 +42332,340 @@ window.sqPartCopy = function () {
     navigator.clipboard.writeText(t).then(function () { showToast('명단을 복사했어요'); },
       function () { showToast('복사하지 못했어요'); });
   } catch (e) { showToast('복사하지 못했어요'); }
+};
+
+// ===== 근방단 출첵앱 연동 (대표 10-06) =====
+// ★왜: 대표가 스쿼드에서 출석·입금을 확인한 뒤 근방단 출첵앱(gbdcrew)에 **손으로 다시 옮겨 적고** 있었다.
+//   근방단 앱은 사람을 **실명 문자열 하나**로만 구분하고(gbd_members/{실명}), 머피는 uid·닉네임이라
+//   "이 머피 유저 = 근방단 누구" 짝이 먼저 있어야 한다. 짝은 **근방단 명단 쪽에서 출발**해 맞춘다 —
+//   근방단이 아닌 머피 가입자는 아예 후보에 안 뜨고, 스쿼드에 섞여 있어도 보낼 때 빠진다.
+// ★짝은 근방단 멤버 문서에 붙인다(murpyUid·murpyNick·murpyNone). 근방단 앱의 이름 변경은
+//   문서를 통째로 복사하므로 짝이 따라간다. 근방단 DB 는 규칙이 열려 있어 REST 로 바로 읽고 쓴다.
+// ★방향은 머피 → 근방단 한쪽뿐, **버튼을 눌렀을 때만**. 근방단 앱에서 손으로 고친 걸 몰래 덮지 않게.
+// ★지금은 관리자만 쓴다(멤버 머리줄 버튼·관리자 메뉴).
+window.GBD_API = 'https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents';
+window.GBD_KEY = 'AIzaSyBAdgC1pYJ9bAEWGTO_UoP4C84Q1d_jVtw';   // gbdcrew 웹앱 공개 키(그 앱 index.html 과 같다)
+
+// --- Firestore REST 값 변환 ---
+window._gbdDec = function (v) {
+  if (!v) return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return v.timestampValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(window._gbdDec);
+  if ('mapValue' in v) { const o = {}, f = v.mapValue.fields || {}; Object.keys(f).forEach(k => { o[k] = window._gbdDec(f[k]); }); return o; }
+  return null;
+};
+window._gbdEnc = function (x) {
+  if (x === null || x === undefined) return { nullValue: null };
+  if (typeof x === 'boolean') return { booleanValue: x };
+  if (typeof x === 'number') return Number.isInteger(x) ? { integerValue: String(x) } : { doubleValue: x };
+  if (typeof x === 'string') return { stringValue: x };
+  if (Array.isArray(x)) return { arrayValue: { values: x.map(window._gbdEnc) } };
+  const f = {}; Object.keys(x).forEach(k => { if (x[k] !== undefined) f[k] = window._gbdEnc(x[k]); });
+  return { mapValue: { fields: f } };
+};
+const _gbdUrl = (path, qs) => window.GBD_API + '/' + path.split('/').map(encodeURIComponent).join('/') + '?key=' + window.GBD_KEY + (qs || '');
+window._gbdGet = async function (path) {
+  const r = await fetch(_gbdUrl(path));
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('gbd get ' + r.status);
+  return window._gbdDec({ mapValue: { fields: (await r.json()).fields || {} } });
+};
+window._gbdList = async function (coll) {
+  const out = []; let tok = '';
+  for (let i = 0; i < 20; i++) {
+    const r = await fetch(_gbdUrl(coll, '&pageSize=300' + (tok ? '&pageToken=' + encodeURIComponent(tok) : '')));
+    if (!r.ok) throw new Error('gbd list ' + r.status);
+    const j = await r.json();
+    (j.documents || []).forEach(d => {
+      const o = window._gbdDec({ mapValue: { fields: d.fields || {} } });
+      o._id = decodeURIComponent(d.name.split('/').pop());
+      out.push(o);
+    });
+    if (!j.nextPageToken) break; tok = j.nextPageToken;
+  }
+  return out;
+};
+// fields 만 고친다(mask). mask 없이 부르면 문서를 통째로 바꾼다.
+window._gbdPatch = async function (path, obj, onlyFields) {
+  const qs = (onlyFields || []).map(f => '&updateMask.fieldPaths=' + encodeURIComponent(f)).join('');
+  const r = await fetch(_gbdUrl(path, qs), { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: window._gbdEnc(obj).mapValue.fields }) });
+  if (!r.ok) throw new Error('gbd patch ' + r.status);
+};
+
+// --- 명단 캐시 ---
+window._gbdMembersLoad = async function (force) {
+  const c = window._gbdMembersCache;
+  if (!force && c && Date.now() - c.at < 120000) return c.list;
+  const list = (await window._gbdList('gbd_members')).filter(m => m.status !== 'removed');
+  list.forEach(m => { if (!m.name) m.name = m._id; });
+  list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'ko'));
+  window._gbdMembersCache = { list: list, at: Date.now() };
+  return list;
+};
+window._gbdMurpyUsers = async function () {
+  const snap = await window._usersAll();
+  const out = [];
+  snap.forEach(d => { const u = d.data() || {}; if (u.nickname && !u.deleted) out.push({ uid: d.id, nickname: u.nickname, birth: u.birth || '', district: u.district || '', guest: !!u.guest }); });
+  return out;
+};
+
+// --- 짝 예측 점수 ---
+// 근방단은 출생'년도'만 있다(birth: 1994). 지역은 '송파구' 같은 구 이름.
+const _gbdN = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+window._gbdScore = function (gm, u, alias) {
+  const why = []; let sc = 0;
+  const nm = _gbdN(gm.name), gn = _gbdN(gm.nickname), un = _gbdN(u.nickname), al = _gbdN(alias);
+  if (al && al === nm) { sc += 70; why.push('실명 메모 같음'); }
+  if (un && (un === nm || (gn && un === gn))) { sc += 60; why.push(un === nm ? '닉네임=실명' : '소모임 닉네임 같음'); }
+  else {
+    const given = nm.length >= 3 ? nm.slice(1) : '';
+    if (nm.length >= 2 && un.length >= 2 && (un.indexOf(nm) >= 0 || nm.indexOf(un) >= 0)) { sc += 30; why.push('이름 비슷'); }
+    else if (gn.length >= 2 && un.length >= 2 && (un.indexOf(gn) >= 0 || gn.indexOf(un) >= 0)) { sc += 30; why.push('소모임 닉네임 비슷'); }
+    else if (given && un.indexOf(given) >= 0) { sc += 20; why.push('이름 끝 두 글자'); }
+  }
+  const by = Number(gm.birth) || 0, uy = Number(String(u.birth || '').slice(0, 4)) || 0;
+  // ★대표 10-06: 근방단 이름과 **닉네임만 같은 남**이 가입할 수 있다 → 출생년도가 다르면 후보에서 뺀다
+  //   (이름 일치 60 - 40 = 20 < 기준 25). 머피 쪽 생년이 없으면 표시만 해서 눈으로 보게 한다.
+  if (by && uy) { if (by === uy) { sc += 25; why.push(by + '년생'); } else { sc -= 40; why.push('출생년도 다름'); } }
+  else if (by && !uy) why.push('머피 생년 없음');
+  const rg = String(gm.region || '').trim();
+  if (rg && u.district && (u.district === rg || u.district.endsWith(' ' + rg))) { sc += 10; why.push(rg); }
+  return { score: sc, why: why };
+};
+window._gbdCandidates = function (gm, users, aliasOf, taken) {
+  const same = {}; users.forEach(u => { const k = _gbdN(u.nickname); same[k] = (same[k] || 0) + 1; });
+  return users.map(u => {
+    const r = Object.assign({ u: u }, window._gbdScore(gm, u, (aliasOf || {})[u.uid]));
+    if (same[_gbdN(u.nickname)] > 1) r.why.unshift('같은 닉네임 ' + same[_gbdN(u.nickname)] + '명');
+    return r;
+  })
+    .filter(x => x.score >= 25 && !(taken && taken[x.u.uid] && taken[x.u.uid] !== gm.name))
+    .sort((a, b) => b.score - a.score).slice(0, 3);
+};
+
+// --- 짝 저장 --- (문서 id = 실명이지만, 혹시 다를 때를 위해 불러온 id 로 쓴다)
+const _gbdIdOf = name => (((window._gbdMembersCache || {}).list || []).find(x => x.name === name) || {})._id || name;
+window._gbdLinkSave = async function (gbdName, user) {
+  const list = await window._gbdMembersLoad();
+  if (user) {
+    const dup = list.find(m => m.murpyUid === user.uid && m.name !== gbdName);
+    if (dup) {
+      if (!confirm('"' + user.nickname + '" 님은 이미 근방단 "' + dup.name + '" 님과 연결돼 있어요.\n그 연결을 풀고 "' + gbdName + '" 님으로 옮길까요?')) return false;
+      await window._gbdPatch('gbd_members/' + dup._id, { murpyUid: null, murpyNick: null }, ['murpyUid', 'murpyNick']);
+      dup.murpyUid = null; dup.murpyNick = null;
+    }
+  }
+  const val = user ? { murpyUid: user.uid, murpyNick: user.nickname, murpyNone: false } : { murpyUid: null, murpyNick: null, murpyNone: false };
+  await window._gbdPatch('gbd_members/' + _gbdIdOf(gbdName), val, ['murpyUid', 'murpyNick', 'murpyNone']);
+  const m = list.find(x => x.name === gbdName); if (m) Object.assign(m, val);
+  return true;
+};
+window._gbdNoneSave = async function (gbdName) {
+  await window._gbdPatch('gbd_members/' + _gbdIdOf(gbdName), { murpyUid: null, murpyNick: null, murpyNone: true }, ['murpyUid', 'murpyNick', 'murpyNone']);
+  const m = (await window._gbdMembersLoad()).find(x => x.name === gbdName);
+  if (m) Object.assign(m, { murpyUid: null, murpyNick: null, murpyNone: true });
+};
+
+// --- 공용 시트 ---
+const _gbdEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const _gbdJs = v => String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;');
+function _gbdSheet(id, title, sub, body, foot) {
+  let el = document.getElementById(id); if (el) el.remove();
+  el = document.createElement('div'); el.id = id;
+  el.style.cssText = 'position:fixed;inset:0;z-index:40030;background:rgba(0,0,0,.86);display:flex;align-items:flex-end;justify-content:center';
+  el.onclick = ev => { if (ev.target === el) el.remove(); };
+  el.innerHTML = '<div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:22px 18px 24px;max-height:90vh;display:flex;flex-direction:column">'
+    + '<div style="font-size:17px;font-weight:800;letter-spacing:-0.4px">' + title + '</div>'
+    + '<div style="font-size:12.5px;color:rgba(255,255,255,.45);margin-top:6px;line-height:1.6">' + sub + '</div>'
+    + '<div class="gbd-body" style="flex:1;overflow-y:auto;margin:14px 0 4px;min-height:80px">' + body + '</div>'
+    + (foot || '') + '</div>';
+  document.body.appendChild(el);
+  return el;
+}
+const _gbdBtn = (label, onclick, strong) => '<button onclick="' + onclick + '" style="flex-shrink:0;background:none;border:1px solid '
+  + (strong ? 'rgba(61,126,255,.6);color:#7aa8ff' : 'rgba(255,255,255,.14);color:rgba(255,255,255,.55)')
+  + ';border-radius:9px;padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">' + label + '</button>';
+
+// --- 관리자: 근방단 멤버 연결 화면 ---
+window.gbdLinkOpen = async function (onlyName, onDone) {
+  if (typeof isAdmin !== 'function' || !isAdmin()) { showToast('관리자만 쓸 수 있어요'); return; }
+  showToast('근방단 명단을 불러오는 중…');
+  let list, users;
+  try { [list, users] = await Promise.all([window._gbdMembersLoad(true), window._gbdMurpyUsers()]); }
+  catch (e) { console.warn(e); showToast('명단을 불러오지 못했어요'); return; }
+  window._gbdLinkUsers = users; window._gbdLinkDone = onDone || null;
+  window._gbdLinkFilter = onlyName ? 'one:' + onlyName : (window._gbdLinkFilter && window._gbdLinkFilter.indexOf('one:') !== 0 ? window._gbdLinkFilter : 'todo');
+  window._gbdLinkRender();
+};
+window._gbdLinkRender = function () {
+  const list = (window._gbdMembersCache || {}).list || [], users = window._gbdLinkUsers || [];
+  const aliasOf = window._gbdAliasOf || {};
+  const taken = {}; list.forEach(m => { if (m.murpyUid) taken[m.murpyUid] = m.name; });
+  const flt = window._gbdLinkFilter || 'todo';
+  const nLinked = list.filter(m => m.murpyUid).length, nNone = list.filter(m => m.murpyNone && !m.murpyUid).length;
+  const shown = flt.indexOf('one:') === 0 ? list.filter(m => m.name === flt.slice(4))
+    : flt === 'todo' ? list.filter(m => !m.murpyUid && !m.murpyNone) : list;
+  const row = m => {
+    const meta = [m.nickname, m.birth ? m.birth + '년생' : '', m.region].filter(Boolean).join(' · ');
+    let right = '';
+    if (m.murpyUid) right = '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:#7aa8ff;font-weight:700">' + _gbdEsc(m.murpyNick || '') + '</span>'
+      + _gbdBtn('풀기', "window._gbdLinkAct('unlink','" + _gbdJs(m.name) + "')") + '</div>';
+    else if (m.murpyNone) right = '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11.5px;color:rgba(255,255,255,.38)">머피 미가입</span>'
+      + _gbdBtn('되돌리기', "window._gbdLinkAct('unlink','" + _gbdJs(m.name) + "')") + '</div>';
+    const cands = (m.murpyUid || m.murpyNone) ? [] : window._gbdCandidates(m, users, aliasOf, taken);
+    const candHtml = cands.map(x => '<button onclick="window._gbdLinkAct(\'link\',\'' + _gbdJs(m.name) + '\',\'' + x.u.uid + '\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:1px solid rgba(61,126,255,.35);border-radius:10px;padding:8px 10px;margin-top:6px;cursor:pointer;font-family:inherit;color:#fff">'
+      + '<span style="font-size:13px;font-weight:700">' + _gbdEsc(x.u.nickname) + (x.u.guest ? ' <span style="font-size:10px;color:rgba(255,255,255,.4)">임시</span>' : '') + '</span>'
+      + '<span style="flex:1;font-size:10.5px;color:rgba(255,255,255,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _gbdEsc(x.why.join(' · ')) + '</span>'
+      + '<span style="font-size:11px;color:#7aa8ff;font-weight:800">연결</span></button>').join('');
+    const tools = (m.murpyUid || m.murpyNone) ? '' : '<div style="display:flex;gap:6px;margin-top:7px">'
+      + _gbdBtn('직접 찾기', "window._gbdLinkSearch('" + _gbdJs(m.name) + "')")
+      + _gbdBtn('머피 미가입', "window._gbdLinkAct('none','" + _gbdJs(m.name) + "')") + '</div>';
+    return '<div style="padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06)">'
+      + '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800">' + _gbdEsc(m.name) + '</div>'
+      + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">' + _gbdEsc(meta || '정보 없음') + '</div></div>' + right + '</div>'
+      + (cands.length ? candHtml : ((m.murpyUid || m.murpyNone) ? '' : '<div style="font-size:11px;color:rgba(255,255,255,.32);margin-top:6px">비슷한 머피 유저를 못 찾았어요</div>'))
+      + tools + '<div class="gbd-search" data-for="' + _gbdEsc(m.name) + '"></div></div>';
+  };
+  const tab = (k, label) => '<button onclick="window._gbdLinkFilter=\'' + k + '\';window._gbdLinkRender()" style="background:none;border:1px solid '
+    + (flt === k ? '#3D7EFF;color:#3D7EFF' : 'rgba(255,255,255,.14);color:rgba(255,255,255,.55)') + ';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">' + label + '</button>';
+  const tabs = flt.indexOf('one:') === 0 ? '' : '<div style="display:flex;gap:6px;margin-bottom:6px">' + tab('todo', '아직 안 맞춤') + tab('all', '전체') + '</div>';
+  const body = tabs + (shown.length ? shown.map(row).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">다 맞췄어요</div>');
+  const prevScroll = (document.querySelector('#gbd-link .gbd-body') || {}).scrollTop || 0;
+  const el = _gbdSheet('gbd-link', '근방단 멤버 연결',
+    '근방단 ' + list.length + '명 · 연결 ' + nLinked + ' · 머피 미가입 ' + nNone + '<br>후보는 실명 메모·닉네임·출생년도·지역으로 고른 예측이에요. 맞으면 눌러주세요.',
+    body, '<div style="display:flex;gap:8px;margin-top:12px"><button onclick="document.getElementById(\'gbd-link\').remove();window._gbdLinkDone&&window._gbdLinkDone()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit">닫기</button></div>');
+  const b = el.querySelector('.gbd-body'); if (b) b.scrollTop = prevScroll;
+};
+window._gbdLinkSearch = function (gbdName) {
+  const box = [...document.querySelectorAll('#gbd-link .gbd-search')].find(x => x.getAttribute('data-for') === gbdName);
+  if (!box) return;
+  box.innerHTML = '<input placeholder="머피 닉네임으로 찾기" style="width:100%;margin-top:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;color:#fff;font-size:16px;font-family:inherit;box-sizing:border-box;outline:none"><div class="gbd-hits"></div>';
+  const inp = box.querySelector('input'), hits = box.querySelector('.gbd-hits');
+  inp.oninput = function () {
+    const q = _gbdN(inp.value);
+    if (!q) { hits.innerHTML = ''; return; }
+    hits.innerHTML = (window._gbdLinkUsers || []).filter(u => _gbdN(u.nickname).indexOf(q) >= 0).slice(0, 8)
+      .map(u => '<button onclick="window._gbdLinkAct(\'link\',\'' + _gbdJs(gbdName) + '\',\'' + u.uid + '\')" style="display:flex;gap:8px;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.06);padding:9px 4px;cursor:pointer;font-family:inherit;color:#fff;font-size:13px">'
+        + _gbdEsc(u.nickname) + '<span style="color:rgba(255,255,255,.38);font-size:11px">' + _gbdEsc([u.birth ? String(u.birth).slice(0, 4) + '년생' : '', u.district, u.guest ? '임시' : ''].filter(Boolean).join(' · ')) + '</span></button>').join('')
+      || '<div style="font-size:11.5px;color:rgba(255,255,255,.35);padding:8px 4px">없어요</div>';
+  };
+  inp.focus();
+};
+window._gbdLinkAct = async function (act, gbdName, uid) {
+  try {
+    if (act === 'link') {
+      const u = (window._gbdLinkUsers || []).find(x => x.uid === uid); if (!u) return;
+      if (!(await window._gbdLinkSave(gbdName, u))) return;
+      showToast(gbdName + ' = ' + u.nickname + ' 연결했어요');
+    } else if (act === 'none') { await window._gbdNoneSave(gbdName); }
+    else if (act === 'unlink') { await window._gbdLinkSave(gbdName, null); }
+  } catch (e) { console.warn(e); showToast('저장하지 못했어요'); return; }
+  window._gbdLinkRender();
+};
+
+// --- 스쿼드 → 근방단 모임 보내기 ---
+const SQ2GBD = { present: { attend: true }, late: { late: true }, cancel: { cancel: true }, absent: { absent: true } };
+const _gbdStatLabel = st => st.absent ? '불참' : st.cancel ? '취소' : st.late ? '지각' : st.attend ? '출석' : '미체크';
+window.gbdSendOpen = async function (sid) {
+  if (typeof isAdmin !== 'function' || !isAdmin()) { showToast('관리자만 쓸 수 있어요'); return; }
+  const s = window._sqDoc, mem = window._sqMembers || {};
+  if (!s || s.id !== sid) return;
+  // 이 스쿼드의 실명 메모를 짝 예측에 같이 쓴다(가장 확실한 단서)
+  window._gbdAliasOf = window._gbdAliasOf || {};
+  Object.keys(mem).forEach(u => { if (mem[u].alias) window._gbdAliasOf[u] = mem[u].alias; });
+  showToast('근방단 명단을 불러오는 중…');
+  let list;
+  try { list = await window._gbdMembersLoad(true); } catch (e) { showToast('근방단 명단을 불러오지 못했어요'); return; }
+  const nameOf = {}; list.forEach(m => { if (m.murpyUid) nameOf[m.murpyUid] = m.name; });
+  const live = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
+  const linked = live.filter(u => nameOf[u]), others = live.filter(u => !nameOf[u]);
+  const d = new Date(Number(s.scheduledAt) || Date.now()), p2 = n => String(n).padStart(2, '0');
+  const date = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+  const startTime = p2(d.getHours()) + ':' + p2(d.getMinutes());
+  const rows = linked.map(u => {
+    const st = Object.assign({ pay: !!mem[u].paid }, SQ2GBD[window._sqCheckState(mem[u])] || {});
+    return { name: nameOf[u], st: st, nick: window._sqRealName(mem[u]) };
+  });
+  // 같은 날 근방단 앱에 이미 있는 모임 — 손으로 만든 모임에 합칠 수 있게 고르게 한다
+  let sameDay = [];
+  try {
+    const [cur, arc] = await Promise.all([window._gbdList('gbd_meetings'), window._gbdList('gbd_archive')]);
+    cur.forEach(m => { m._coll = 'gbd_meetings'; }); arc.forEach(m => { m._coll = 'gbd_archive'; });
+    sameDay = cur.concat(arc).filter(m => m.date === date || m._id === 'murpy_' + sid);
+  } catch (e) { console.warn(e); }
+  const mine = sameDay.find(m => m._id === 'murpy_' + sid);
+  window._gbdSend = { sid: sid, date: date, startTime: startTime, gym: String(s.location || s.title || ''), fee: Number(s.feeAmount) || 0,
+    rows: rows, sameDay: sameDay, target: mine ? mine._coll + '/' + mine._id : (sameDay.length === 1 ? sameDay[0]._coll + '/' + sameDay[0]._id : 'new'),
+    type: /정모/.test(String(s.title || '')) ? 'jeongmo' : 'beong' };
+  window._gbdSendOthers = others.map(u => ({ uid: u, nick: window._sqRealName(mem[u]) }));
+  window._gbdSendRender();
+};
+window._gbdSendRender = function () {
+  const g = window._gbdSend; if (!g) return;
+  const opt = (val, label) => '<label style="display:flex;align-items:center;gap:9px;padding:8px 2px;font-size:13px;cursor:pointer"><input type="radio" name="gbd-target" value="' + _gbdEsc(val) + '"'
+    + (g.target === val ? ' checked' : '') + ' onchange="window._gbdSend.target=this.value" style="accent-color:#3D7EFF">' + label + '</label>';
+  const targets = g.sameDay.map(m => opt(m._coll + '/' + m._id, _gbdEsc((m.type === 'jeongmo' ? '정모' : '번개') + ' · ' + (m.gym || '') + ' ' + (m.startTime || '') + ' · ' + ((m.members || []).length) + '명')
+    + (m._id.indexOf('murpy_') === 0 ? ' <span style="color:#7aa8ff;font-size:11px">이 스쿼드에서 보낸 것</span>' : '') + (m._coll === 'gbd_archive' ? ' <span style="color:rgba(255,255,255,.4);font-size:11px">지난 모임</span>' : ''))).join('')
+    + opt('new', '근방단 앱에 새 모임으로 만들기');
+  const typeBtn = (k, l) => '<button onclick="window._gbdSend.type=\'' + k + '\';window._gbdSendRender()" style="background:none;border:1px solid '
+    + (g.type === k ? '#3D7EFF;color:#3D7EFF' : 'rgba(255,255,255,.14);color:rgba(255,255,255,.55)') + ';border-radius:20px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">' + l + '</button>';
+  const list = g.rows.map(r => '<div style="display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px">'
+    + '<span style="flex:1;font-weight:700">' + _gbdEsc(r.name) + (r.nick && r.nick !== r.name ? ' <span style="font-weight:500;color:rgba(255,255,255,.38);font-size:11px">' + _gbdEsc(r.nick) + '</span>' : '') + '</span>'
+    + '<span style="color:rgba(255,255,255,.6);font-size:12px">' + _gbdStatLabel(r.st) + '</span>'
+    + '<span style="width:44px;text-align:right;font-size:12px;color:' + (r.st.pay ? '#F5C24B' : 'rgba(255,255,255,.3)') + '">' + (r.st.pay ? '입금' : '미입금') + '</span></div>').join('');
+  const others = (window._gbdSendOthers || []);
+  const othersHtml = others.length ? '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin:16px 2px 4px">근방단 명단과 연결 안 된 사람 ' + others.length + '명 <span style="font-weight:500;color:rgba(255,255,255,.32)">· 보내지 않아요</span></div>'
+    + '<div style="font-size:11.5px;color:rgba(255,255,255,.38);line-height:1.6;margin:0 2px 6px">근방단 멤버라면 \'근방단 멤버 연결\'에서 짝을 맞춘 뒤 다시 열어주세요.</div>'
+    + '<div style="font-size:12.5px;color:rgba(255,255,255,.55);line-height:1.8;margin:0 2px">' + others.map(o => _gbdEsc(o.nick)).join(', ') + '</div>'
+    + '<div style="margin-top:8px">' + _gbdBtn('근방단 멤버 연결 열기', "window.gbdLinkOpen(null,function(){window.gbdSendOpen('" + _gbdJs(g.sid) + "')})", true) + '</div>' : '';
+  const body = '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin:0 2px 4px">어디에 넣을까요</div>' + targets
+    + '<div style="display:flex;gap:6px;align-items:center;margin:10px 2px 4px"><span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">모임 종류</span>' + typeBtn('jeongmo', '정모') + typeBtn('beong', '번개') + '</div>'
+    + '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin:14px 2px 2px">보낼 사람 ' + g.rows.length + '명</div>'
+    + (list || '<div style="padding:14px 2px;font-size:12.5px;color:rgba(255,255,255,.35)">근방단 명단과 연결된 사람이 없어요</div>') + othersHtml;
+  _gbdSheet('gbd-send', '근방단 출첵앱으로 보내기',
+    _gbdEsc(g.date + ' ' + g.startTime + ' · ' + g.gym + (g.fee ? ' · 선입금 ' + g.fee.toLocaleString() + '원' : '')) + '<br>출석·지각·취소·불참과 입금을 근방단 앱 모임에 그대로 옮겨요. 근방단 앱에서 이 사람들 칸은 머피 기준으로 덮여요.',
+    body, '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button onclick="window._gbdSendGo()" ' + (g.rows.length ? '' : 'disabled ') + 'style="flex:1.4;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;opacity:' + (g.rows.length ? 1 : .4) + '">보내기</button>'
+      + '<button onclick="document.getElementById(\'gbd-send\').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button></div>');
+};
+// 합치기 규칙: 대상 모임의 다른 사람·게스트·비밀번호는 그대로 두고, 보낼 사람 칸만 머피 값으로 바꾼다.
+//   명단에 없던 사람은 뒤에 붙인다. status 는 members 와 같은 순서의 배열이다(근방단 앱 규칙).
+window._gbdMergeMeeting = function (prev, g) {
+  const blank = { attend: false, late: false, cancel: false, absent: false, pay: false };
+  const members = ((prev && prev.members) || []).slice();
+  const status = members.map((_, i) => Object.assign({}, blank, ((prev && prev.status) || [])[i] || {}));
+  g.rows.forEach(r => {
+    const st = Object.assign({}, blank, r.st);
+    const i = members.indexOf(r.name);
+    if (i >= 0) status[i] = st; else { members.push(r.name); status.push(st); }
+  });
+  const base = Object.assign({}, prev || {});
+  delete base._id; delete base._coll;
+  return Object.assign(base, prev ? {} : { date: g.date, startTime: g.startTime, gym: g.gym, fee: g.fee, gongeum: g.fee > 0, password: '', guestGroup: '', guests: [], guestStatus: [] },
+    { type: g.type, members: members, status: status, murpySquad: g.sid });
+};
+window._gbdSendGo = async function () {
+  const g = window._gbdSend; if (!g || !g.rows.length) return;
+  let path = g.target;
+  if (path === 'new') {
+    // 날짜가 지났으면 근방단 앱이 열릴 때 지난 모임으로 옮긴다 — 처음부터 그쪽에 넣으면 이중 이동이 없다
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    path = (new Date(g.date + 'T00:00:00') < today ? 'gbd_archive' : 'gbd_meetings') + '/murpy_' + g.sid;
+  }
+  try {
+    const prev = await window._gbdGet(path);   // 보내기 직전 최신본에 합친다(근방단 앱에서 방금 고친 것 보존)
+    const doc = window._gbdMergeMeeting(prev, g);
+    if (path.indexOf('gbd_archive/') === 0 && !doc.archivedAt) doc.archivedAt = new Date().toISOString();
+    await window._gbdPatch(path, doc);
+    const el = document.getElementById('gbd-send'); if (el) el.remove();
+    showToast('근방단 앱에 ' + g.rows.length + '명 보냈어요');
+  } catch (e) { console.warn(e); showToast('보내지 못했어요'); }
 };
 
 // ★입금 현황 (대표 8-14) — 상단 '입금 N/M' 을 누르면 **누가 냈는지** 보이고,
