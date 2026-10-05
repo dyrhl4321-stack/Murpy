@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1213';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1214';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -16785,6 +16785,7 @@ onAuthStateChanged(auth, async (user) => {
   userPhotoCache.clear();
   if (user) {
     window.currentUser = user;
+    if (window._guestProofTick) window._guestProofTick(user);
     closeModal('login-method-modal');
     updateUI(user);
     // 방 초대 링크에서 정식 계정으로 돌아온 경우, 내 프로필을 확인하는 동안
@@ -31950,6 +31951,54 @@ window.googleLoginOrLink = function () {
   if (window.isTempAccount && window.isTempAccount()) return window.guestUpgrade();
   return window.googleLogin();
 };
+// ★10-06 임시계정 → 본계정 스쿼드 기록 합치기 (대표: "계정이 2개씩 생성되어 스쿼드에 들어가 있는 경우가 많았음").
+//   임시계정으로 스쿼드에 들어왔다가 **이미 있던 본계정**(카카오·구글)으로 로그인하면 uid 가 갈라진다.
+//   카카오는 커스텀 토큰이라 익명 계정에 이어붙일 수 없고, 구글도 이미 가입한 계정이면 못 잇는다.
+//   → 임시계정일 때 그 계정의 로그인 증표(ID 토큰)를 폰에 적어 두고, 본계정으로 들어오면 서버(guestMerge)가
+//     증표를 확인한 뒤 스쿼드 멤버 문서를 옮긴다. 증표 없이는 남의 기록을 못 가져간다.
+//   ★같은 폰을 남이 쓴 경우를 막으려고 한 번 묻는다(기존 확인창 재사용). 스쿼드가 없으면 묻지 않는다.
+const GUEST_PROOF_KEY = 'murpy_guest_proof';
+window._guestProofTick = async function (user) {
+  try {
+    if (user.isAnonymous) {
+      const r = await user.getIdTokenResult();
+      localStorage.setItem(GUEST_PROOF_KEY, JSON.stringify({ uid: user.uid, token: r.token, exp: Date.parse(r.expirationTime) || 0 }));
+      return;
+    }
+    if (window._guestMergeBusy) return;
+    let p = null;
+    try { p = JSON.parse(localStorage.getItem(GUEST_PROOF_KEY) || 'null'); } catch (e) { p = null; }
+    if (!p || !p.uid || !p.token) return;
+    if (p.uid === user.uid || !(p.exp > Date.now() + 60000)) { localStorage.removeItem(GUEST_PROOF_KEY); return; }
+    window._guestMergeBusy = true;
+    const sq = await getDocs(query(collection(db, 'squads'), where('memberUids', 'array-contains', p.uid)));
+    if (sq.empty) { localStorage.removeItem(GUEST_PROOF_KEY); window._guestMergeBusy = false; return; }
+    let gNick = '';
+    try { const g = await getDoc(doc(db, 'users', p.uid)); gNick = (g.exists() && g.data().nickname) || ''; } catch (e) {}
+    // 처음 가입한 사람이면 온보딩이 먼저다 — 끝난 뒤에 묻는다
+    for (let i = 0; i < 300; i++) {
+      const ob = document.getElementById('onboarding-modal');
+      if (!ob || ob.style.display === 'none' || !ob.offsetParent) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    if (!(p.exp > Date.now() + 30000)) { localStorage.removeItem(GUEST_PROOF_KEY); window._guestMergeBusy = false; return; }
+    const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const ok = await window.murpyConfirm({
+      title: '임시계정 기록을 옮길까요?',
+      desc: '이 폰에서 <b>' + esc(gNick || '임시계정') + '</b>(으)로 참여한 스쿼드 ' + sq.size + '개의 출석·입금 기록을 지금 계정으로 옮겨요.',
+      confirmText: '옮기기', cancelText: '내 기록 아니에요' });
+    localStorage.removeItem(GUEST_PROOF_KEY);
+    if (!ok) { window._guestMergeBusy = false; return; }
+    const res = await httpsCallable(getFunctions(app, 'asia-northeast3'), 'guestMerge')({ guestToken: p.token });
+    showToast('스쿼드 ' + (((res && res.data) || {}).moved || 0) + '개 기록을 옮겼어요');
+  } catch (e) { console.warn('guest merge', e); }
+  window._guestMergeBusy = false;
+};
+// 임시계정인 채로 오래 켜 두면 증표가 만료된다 — 화면에 돌아올 때마다 새로 적는다(만료됐으면 SDK 가 갱신)
+document.addEventListener('visibilitychange', function () {
+  const u = auth.currentUser;
+  if (document.visibilityState === 'visible' && u && u.isAnonymous) window._guestProofTick(u);
+});
 // 게스트 → 정식 계정. uid 가 그대로라 오늘 기록이 전부 따라온다.
 window.guestUpgrade = async function () {
   const user = auth.currentUser;
@@ -41640,6 +41689,7 @@ window._sqRenderDetailInner = function () {
          멤버 줄마다 파란 버튼을 붙이니 입금 칩과 뒤엉켜 안 읽혔다. 누르면 팝업에서 여러 명을 한 번에. -->
     <div style="display:flex;align-items:center;gap:8px;margin:2px 2px 6px">
       <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${_joinedUids.length}</span>/${s.capacity}</div>
+      ${(typeof isAdmin === 'function' && isAdmin() && s.id !== 'preview') ? `<button onclick="window.sqMergeOpen&&window.sqMergeOpen('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.7);border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">같은 사람 합치기</button>` : ''}
       ${(typeof isAdmin === 'function' && isAdmin() && s.id !== 'preview') ? `<button onclick="window.gbdSendOpen&&window.gbdSendOpen('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.7);border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">근방단 앱으로</button>` : ''}
       ${isHost ? `<button onclick="window.sqStaffPicker&&window.sqStaffPicker('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,111,181,.5);color:#FF6FB5;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">운영진 임명</button>` : ''}
     </div>
@@ -42343,10 +42393,11 @@ window.sqPartCopy = function () {
 //   문서를 통째로 복사하므로 짝이 따라간다. 근방단 DB 는 규칙이 열려 있어 REST 로 바로 읽고 쓴다.
 // ★방향은 머피 → 근방단 한쪽뿐, **버튼을 눌렀을 때만**. 근방단 앱에서 손으로 고친 걸 몰래 덮지 않게.
 // ★지금은 관리자만 쓴다(멤버 머리줄 버튼·관리자 메뉴).
-window.GBD_API = 'https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents';
-window.GBD_KEY = 'AIzaSyBAdgC1pYJ9bAEWGTO_UoP4C84Q1d_jVtw';   // gbdcrew 웹앱 공개 키(그 앱 index.html 과 같다)
+// ★근방단 DB 에 직접 붙지 않는다 — 머피 서버(functions `gbd`)가 관리자 확인 뒤 대신 읽고 쓴다(10-06).
+//   폰에서 하는 관리자 확인은 우회될 수 있어서, 근방단 주소·열쇠를 앱 코드에서 뺐다.
+const _gbdCall = (data) => httpsCallable(getFunctions(app, 'asia-northeast3'), 'gbd')(data).then(r => r.data || {});
 
-// --- Firestore REST 값 변환 ---
+// --- Firestore REST 값 변환 (서버가 근방단 원본 형식 그대로 넘긴다) ---
 window._gbdDec = function (v) {
   if (!v) return null;
   if ('stringValue' in v) return v.stringValue;
@@ -42368,34 +42419,22 @@ window._gbdEnc = function (x) {
   const f = {}; Object.keys(x).forEach(k => { if (x[k] !== undefined) f[k] = window._gbdEnc(x[k]); });
   return { mapValue: { fields: f } };
 };
-const _gbdUrl = (path, qs) => window.GBD_API + '/' + path.split('/').map(encodeURIComponent).join('/') + '?key=' + window.GBD_KEY + (qs || '');
 window._gbdGet = async function (path) {
-  const r = await fetch(_gbdUrl(path));
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error('gbd get ' + r.status);
-  return window._gbdDec({ mapValue: { fields: (await r.json()).fields || {} } });
+  const r = await _gbdCall({ op: 'get', path: path });
+  if (r.missing) return null;
+  return window._gbdDec({ mapValue: { fields: r.fields || {} } });
 };
 window._gbdList = async function (coll) {
-  const out = []; let tok = '';
-  for (let i = 0; i < 20; i++) {
-    const r = await fetch(_gbdUrl(coll, '&pageSize=300' + (tok ? '&pageToken=' + encodeURIComponent(tok) : '')));
-    if (!r.ok) throw new Error('gbd list ' + r.status);
-    const j = await r.json();
-    (j.documents || []).forEach(d => {
-      const o = window._gbdDec({ mapValue: { fields: d.fields || {} } });
-      o._id = decodeURIComponent(d.name.split('/').pop());
-      out.push(o);
-    });
-    if (!j.nextPageToken) break; tok = j.nextPageToken;
-  }
-  return out;
+  const r = await _gbdCall({ op: 'list', path: coll });
+  return (r.documents || []).map(d => {
+    const o = window._gbdDec({ mapValue: { fields: d.fields || {} } });
+    o._id = decodeURIComponent(String(d.name || '').split('/').pop());
+    return o;
+  });
 };
-// fields 만 고친다(mask). mask 없이 부르면 문서를 통째로 바꾼다.
+// fields 만 고친다(mask). mask 없이 부르면 문서를 통째로 바꾼다. 멤버 문서는 서버가 짝 칸 3개만 허락한다.
 window._gbdPatch = async function (path, obj, onlyFields) {
-  const qs = (onlyFields || []).map(f => '&updateMask.fieldPaths=' + encodeURIComponent(f)).join('');
-  const r = await fetch(_gbdUrl(path, qs), { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: window._gbdEnc(obj).mapValue.fields }) });
-  if (!r.ok) throw new Error('gbd patch ' + r.status);
+  await _gbdCall({ op: 'patch', path: path, mask: onlyFields || [], fields: window._gbdEnc(obj).mapValue.fields });
 };
 
 // --- 명단 캐시 ---
@@ -42666,6 +42705,54 @@ window._gbdSendGo = async function () {
     const el = document.getElementById('gbd-send'); if (el) el.remove();
     showToast('근방단 앱에 ' + g.rows.length + '명 보냈어요');
   } catch (e) { console.warn(e); showToast('보내지 못했어요'); }
+};
+
+// --- 관리자: 같은 사람 합치기 (10-06) ---
+// 임시계정 줄과 본계정 줄을 하나씩 고르면, 서버(adminMergeGuest)가 그 임시계정이 든 **모든 스쿼드**에서
+// 멤버 문서를 본계정으로 옮긴다. 출석·입금은 '한 쪽이라도 했으면 한 것'으로 합친다.
+window.sqMergeOpen = async function (sid) {
+  if (typeof isAdmin !== 'function' || !isAdmin()) { showToast('관리자만 쓸 수 있어요'); return; }
+  const mem = window._sqMembers || {};
+  const live = Object.keys(mem).filter(u => mem[u].status !== 'left');
+  let guestOf = {};
+  try { const snap = await window._usersAll(); snap.forEach(d => { if ((d.data() || {}).guest === true) guestOf[d.id] = true; }); } catch (e) {}
+  window._sqMerge = { sid: sid, guest: '', real: '', guestOf: guestOf, live: live };
+  window._sqMergeRender();
+};
+window._sqMergeRender = function () {
+  const m = window._sqMerge; if (!m) return;
+  const mem = window._sqMembers || {};
+  const pick = (role, u) => "window._sqMerge." + role + "=(window._sqMerge." + role + "==='" + u + "'?'':'" + u + "');window._sqMergeRender()";
+  const col = (role, label, filt) => '<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);margin-bottom:6px">' + label + '</div>'
+    + m.live.filter(filt).map(u => {
+      const on = m[role] === u, nm = window._sqRealName(mem[u]);
+      return '<button onclick="' + pick(role, u) + '" style="display:block;width:100%;text-align:left;background:none;border:1px solid ' + (on ? '#3D7EFF' : 'rgba(255,255,255,.1)')
+        + ';color:' + (on ? '#7aa8ff' : '#fff') + ';border-radius:10px;padding:8px 10px;margin-bottom:6px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+        + _gbdEsc(nm) + (nm !== mem[u].nickname ? ' <span style="font-weight:500;color:rgba(255,255,255,.35);font-size:10.5px">' + _gbdEsc(mem[u].nickname || '') + '</span>' : '') + '</button>';
+    }).join('') + '</div>';
+  const body = '<div style="display:flex;gap:10px">'
+    + col('guest', '임시계정', u => m.guestOf[u] && u !== m.real)
+    + col('real', '본계정', u => !m.guestOf[u] && u !== m.guest) + '</div>';
+  const ready = m.guest && m.real;
+  _gbdSheet('sq-merge', '같은 사람 합치기',
+    '같은 사람의 임시계정과 본계정을 하나씩 고르세요. 그 임시계정이 들어간 <b>모든 스쿼드</b>에서 본계정으로 옮겨지고, 출석·입금은 둘 중 하나라도 했으면 한 것으로 남아요.',
+    body, '<div style="display:flex;gap:8px;margin-top:12px">'
+      + '<button onclick="window._sqMergeGo()" ' + (ready ? '' : 'disabled ') + 'style="flex:1.4;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:14.5px;font-weight:800;cursor:pointer;font-family:inherit;opacity:' + (ready ? 1 : .4) + '">합치기</button>'
+      + '<button onclick="document.getElementById(\'sq-merge\').remove()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.6);border-radius:12px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit">닫기</button></div>');
+};
+window._sqMergeGo = async function () {
+  const m = window._sqMerge, mem = window._sqMembers || {};
+  if (!m || !m.guest || !m.real) return;
+  const ok = await window.murpyConfirm({ title: '합칠까요?',
+    desc: '<b>' + _gbdEsc(window._sqRealName(mem[m.guest])) + '</b>(임시) → <b>' + _gbdEsc(window._sqRealName(mem[m.real])) + '</b><br>되돌릴 수 없어요.',
+    confirmText: '합치기', cancelText: '취소' });
+  if (!ok) return;
+  try {
+    const r = await httpsCallable(getFunctions(app, 'asia-northeast3'), 'adminMergeGuest')({ guestUid: m.guest, realUid: m.real });
+    const el = document.getElementById('sq-merge'); if (el) el.remove();
+    showToast('스쿼드 ' + (((r && r.data) || {}).moved || 0) + '개에서 합쳤어요');
+    if (window.openSquadDetail) window.openSquadDetail(m.sid);
+  } catch (e) { console.warn(e); showToast('합치지 못했어요'); }
 };
 
 // ★입금 현황 (대표 8-14) — 상단 '입금 N/M' 을 누르면 **누가 냈는지** 보이고,

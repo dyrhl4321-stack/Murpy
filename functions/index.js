@@ -448,3 +448,154 @@ exports.parkFriendAlert = onValueCreated(
     await batch.commit(); await rt.ref("plaza/alerted").update(upd);
     console.log(`park_friend field=${field} from=${uid} targets=${targets.size} sent=${n}`);
   });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★10-06 임시계정 → 본계정 스쿼드 기록 합치기 (대표: "계정이 2개씩 생성되어 스쿼드에 들어가 있는 경우가 많았음")
+//   초대 링크로 임시계정(익명)으로 들어왔다가, 나중에 **이미 있던 본계정**(카카오·구글)으로 로그인하면
+//   uid 가 갈라져 같은 사람이 스쿼드에 두 줄로 남았다. 카카오는 커스텀 토큰이라 익명 계정에 이어붙일 수 없다.
+//   → 그 폰에 남아 있던 **임시계정의 로그인 증표(ID 토큰)** 를 서버가 확인하고, 스쿼드 멤버 문서를 본계정으로 옮긴다.
+//   증표가 없으면 남의 임시계정 기록을 가져갈 수 없다. 이미 생긴 중복은 관리자가 adminMergeGuest 로 고른다.
+// ─────────────────────────────────────────────────────────────────────────────
+const { getAuth } = require("firebase-admin/auth");
+const MURPY_ADMIN_EMAILS = ["dyrhl4321@gmail.com"];   // index.html ADMIN_EMAILS 와 같게
+const _isAdminReq = (req) => !!(req.auth && req.auth.token && req.auth.token.email_verified !== false
+  && MURPY_ADMIN_EMAILS.includes(String(req.auth.token.email || "")));
+
+// 두 멤버 문서를 하나로. 몸이 온 기록·돈 낸 기록이 이긴다(지워지면 안 되는 쪽).
+const _CHECK_RANK = { present: 4, late: 3, cancel: 2, absent: 1, "": 0 };
+const _STATUS_RANK = { checkedIn: 4, accepted: 3, invited: 2, left: 1 };
+function _mergeMember(g, r, realNick) {
+  if (!r) return Object.assign({}, g, { nickname: realNick || g.nickname, mergedFrom: g._uid });
+  const out = Object.assign({}, g, r);
+  out.status = ((_STATUS_RANK[g.status] || 0) > (_STATUS_RANK[r.status] || 0)) ? g.status : r.status;
+  out.checkedIn = !!(g.checkedIn || r.checkedIn);
+  const gt = g.checkinType || "", rt = r.checkinType || "";
+  out.checkinType = (_CHECK_RANK[gt] || 0) > (_CHECK_RANK[rt] || 0) ? gt : rt;
+  if (!r.checkinTime && g.checkinTime) out.checkinTime = g.checkinTime;
+  out.paid = !!(g.paid || r.paid);
+  out.staff = !!(g.staff || r.staff);
+  ["alias", "part", "slot"].forEach((k) => { if (!r[k] && g[k]) out[k] = g[k]; });
+  out.after = !!(g.after || r.after);
+  out.mergedFrom = g._uid;
+  delete out._uid;
+  return out;
+}
+async function _mergeGuestInto(guestUid, realUid) {
+  const db = getFirestore();
+  const realSnap = await db.collection("users").doc(realUid).get();
+  const realNick = (realSnap.exists && realSnap.data().nickname) || "";
+  const realChar = (realSnap.exists && realSnap.data().character) || null;
+  const sq = await db.collection("squads").where("memberUids", "array-contains", guestUid).get();
+  let moved = 0;
+  for (const s of sq.docs) {
+    await db.runTransaction(async (tx) => {
+      const gRef = s.ref.collection("members").doc(guestUid);
+      const rRef = s.ref.collection("members").doc(realUid);
+      const [gSnap, rSnap, sSnap] = await Promise.all([tx.get(gRef), tx.get(rRef), tx.get(s.ref)]);
+      const sd = sSnap.data() || {};
+      const uids = (sd.memberUids || []).filter((u) => u !== guestUid);
+      if (!uids.includes(realUid)) uids.push(realUid);
+      const upd = { memberUids: uids };
+      if (gSnap.exists) {
+        const merged = _mergeMember(Object.assign({ _uid: guestUid }, gSnap.data()), rSnap.exists ? rSnap.data() : null, realNick);
+        delete merged._uid;
+        if (realChar) merged.character = realChar;   // 남이 볼 캐릭터는 본계정 것
+        tx.set(rRef, merged);
+        tx.delete(gRef);
+      }
+      if (sd.hostUid === guestUid) upd.hostUid = realUid;
+      tx.update(s.ref, upd);
+    });
+    moved++;
+  }
+  await db.collection("users").doc(guestUid).set({ mergedInto: realUid, mergedAt: FieldValue.serverTimestamp() }, { merge: true });
+  return moved;
+}
+
+exports.guestMerge = onCall({ region: "asia-northeast3" }, async (req) => {
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "login");
+  if (req.auth.token.firebase && req.auth.token.firebase.sign_in_provider === "anonymous")
+    throw new HttpsError("failed-precondition", "real account only");
+  let dec;
+  try { dec = await getAuth().verifyIdToken(String((req.data || {}).guestToken || "")); }
+  catch (e) { throw new HttpsError("permission-denied", "bad guest token"); }
+  if (!dec.firebase || dec.firebase.sign_in_provider !== "anonymous") throw new HttpsError("permission-denied", "not a guest");
+  if (dec.uid === uid) return { moved: 0 };
+  const moved = await _mergeGuestInto(dec.uid, uid);
+  return { moved };
+});
+
+// 이미 생긴 중복 정리 — 관리자가 임시계정 줄과 본계정 줄을 골라 합친다(그 임시계정의 모든 스쿼드).
+exports.adminMergeGuest = onCall({ region: "asia-northeast3" }, async (req) => {
+  if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
+  const d = req.data || {};
+  const guestUid = String(d.guestUid || ""), realUid = String(d.realUid || "");
+  if (!guestUid || !realUid || guestUid === realUid) throw new HttpsError("invalid-argument", "uids");
+  const gUser = await getAuth().getUser(guestUid).catch(() => null);
+  if (!gUser) throw new HttpsError("not-found", "guest");
+  if ((gUser.providerData || []).length) throw new HttpsError("failed-precondition", "not a guest");
+  const rUser = await getAuth().getUser(realUid).catch(() => null);
+  if (!rUser || !(rUser.providerData || []).length) {
+    // 카카오 커스텀 토큰 계정은 providerData 가 비어 있다 → users 문서로 정식 가입자인지 본다
+    const rd = await getFirestore().collection("users").doc(realUid).get();
+    if (!rd.exists || rd.data().guest === true) throw new HttpsError("failed-precondition", "real must be a member");
+  }
+  const moved = await _mergeGuestInto(guestUid, realUid);
+  return { moved };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★10-06 근방단 출첵앱(gbdcrew) 연동 창구 — 앱이 근방단 DB 에 직접 붙지 않게 서버를 거친다.
+//   관리자 확인을 여기서 한다(폰에서 하는 확인은 우회된다). 근방단 DB 는 규칙이 열려 있어 REST 로 닿는다.
+//   ★열어 주는 범위를 좁힌다: 읽기 = 근방단 세 컬렉션, 쓰기 = 멤버의 짝 칸 3개 + 모임 문서.
+// ─────────────────────────────────────────────────────────────────────────────
+const GBD_API = "https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents";
+const GBD_COLLS = ["gbd_members", "gbd_meetings", "gbd_archive"];
+const _gbdPathOk = (p, needDoc) => {
+  const parts = String(p || "").split("/");
+  return GBD_COLLS.includes(parts[0]) && (needDoc ? parts.length === 2 && parts[1] : parts.length === 1)
+    && !parts.some((x) => x === "" || x === "." || x === "..");
+};
+const _gbdUrl = (p, qs) => GBD_API + "/" + p.split("/").map(encodeURIComponent).join("/") + (qs ? "?" + qs : "");
+exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
+  if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
+  const d = req.data || {};
+  const op = String(d.op || "");
+  if (op === "list") {
+    if (!_gbdPathOk(d.path, false)) throw new HttpsError("invalid-argument", "path");
+    const docs = []; let tok = "";
+    for (let i = 0; i < 20; i++) {
+      const r = await fetch(_gbdUrl(d.path, "pageSize=300" + (tok ? "&pageToken=" + encodeURIComponent(tok) : "")));
+      if (!r.ok) throw new HttpsError("unavailable", "gbd list " + r.status);
+      const j = await r.json();
+      (j.documents || []).forEach((x) => docs.push({ name: x.name, fields: x.fields || {} }));
+      if (!j.nextPageToken) break; tok = j.nextPageToken;
+    }
+    return { documents: docs };
+  }
+  if (op === "get") {
+    if (!_gbdPathOk(d.path, true)) throw new HttpsError("invalid-argument", "path");
+    const r = await fetch(_gbdUrl(d.path));
+    if (r.status === 404) return { missing: true };
+    if (!r.ok) throw new HttpsError("unavailable", "gbd get " + r.status);
+    const j = await r.json();
+    return { fields: j.fields || {} };
+  }
+  if (op === "patch") {
+    if (!_gbdPathOk(d.path, true)) throw new HttpsError("invalid-argument", "path");
+    const fields = d.fields || {};
+    let mask = Array.isArray(d.mask) ? d.mask.map(String) : [];
+    if (d.path.indexOf("gbd_members/") === 0) {
+      // 멤버 문서는 짝 칸만 — 이름·생년 등 근방단 원본은 머피가 못 고친다
+      const allowed = ["murpyUid", "murpyNick", "murpyNone"];
+      mask = mask.filter((k) => allowed.includes(k));
+      if (!mask.length || Object.keys(fields).some((k) => !allowed.includes(k))) throw new HttpsError("invalid-argument", "member fields");
+    }
+    const qs = mask.map((f) => "updateMask.fieldPaths=" + encodeURIComponent(f)).join("&");
+    const r = await fetch(_gbdUrl(d.path, qs), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+    if (!r.ok) throw new HttpsError("unavailable", "gbd patch " + r.status);
+    return { ok: true };
+  }
+  throw new HttpsError("invalid-argument", "op");
+});
