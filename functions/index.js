@@ -550,7 +550,8 @@ exports.adminMergeGuest = onCall({ region: "asia-northeast3" }, async (req) => {
 //   관리자 확인을 여기서 한다(폰에서 하는 확인은 우회된다). 근방단 DB 는 규칙이 열려 있어 REST 로 닿는다.
 //   ★열어 주는 범위를 좁힌다: 읽기 = 근방단 세 컬렉션, 쓰기 = 멤버의 짝 칸 3개 + 모임 문서.
 // ─────────────────────────────────────────────────────────────────────────────
-const GBD_API = "https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents";
+const GBD_API = process.env.GBD_API_OVERRIDE   // 에뮬레이터 테스트 때만 바꾼다(.env.local)
+  || "https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents";
 const GBD_COLLS = ["gbd_members", "gbd_meetings", "gbd_archive"];
 const _gbdPathOk = (p, needDoc) => {
   const parts = String(p || "").split("/");
@@ -558,6 +559,10 @@ const _gbdPathOk = (p, needDoc) => {
     && !parts.some((x) => x === "" || x === "." || x === "..");
 };
 const _gbdUrl = (p, qs) => GBD_API + "/" + p.split("/").map(encodeURIComponent).join("/") + (qs ? "?" + qs : "");
+// ★스쿼드 → 근방단 모임 자동 연동(10-06) — 트리거 둘은 gbdsync.js
+const gbdsync = require("./gbdsync.js");
+exports.gbdSyncSquad = gbdsync.gbdSyncSquad;
+exports.gbdSyncMember = gbdsync.gbdSyncMember;
 exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
   if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
   const d = req.data || {};
@@ -592,9 +597,22 @@ exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
       mask = mask.filter((k) => allowed.includes(k));
       if (!mask.length || Object.keys(fields).some((k) => !allowed.includes(k))) throw new HttpsError("invalid-argument", "member fields");
     }
+    // 짝이 바뀌면(새로 맞음·풀림) 그 사람이 든 스쿼드를 근방단 모임에 다시 보낸다 — 이전 짝도 알아야 한다
+    let prevUid = "";
+    const isLink = d.path.indexOf("gbd_members/") === 0 && mask.includes("murpyUid");
+    if (isLink) {
+      const g = await fetch(_gbdUrl(d.path));
+      if (g.ok) prevUid = ((((await g.json()).fields || {}).murpyUid || {}).stringValue) || "";
+    }
     const qs = mask.map((f) => "updateMask.fieldPaths=" + encodeURIComponent(f)).join("&");
     const r = await fetch(_gbdUrl(d.path, qs), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
     if (!r.ok) throw new HttpsError("unavailable", "gbd patch " + r.status);
+    if (isLink) {
+      const nextUid = ((fields.murpyUid || {}).stringValue) || "";
+      if (nextUid !== prevUid) {
+        try { await gbdsync.resyncUid([prevUid, nextUid]); } catch (e) { console.warn("gbd resync", e.message); }
+      }
+    }
     return { ok: true };
   }
   throw new HttpsError("invalid-argument", "op");
