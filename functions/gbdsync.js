@@ -58,8 +58,12 @@ async function linkMap() {
       const m = dec({ mapValue: { fields: d.fields || {} } });
       if (!m.murpyUid) return;
       const name = m.name || idOf(d.name);
-      out.all[m.murpyUid] = name;
-      if (m.status !== "removed") out.active[m.murpyUid] = name;
+      // 보조 계정(murpyAlts, 같은 사람의 중복 계정)으로 출석해도 같은 이름으로 들어간다
+      [m.murpyUid].concat(Array.isArray(m.murpyAlts) ? m.murpyAlts : []).forEach((u) => {
+        if (!u || out.all[u]) return;
+        out.all[u] = name;
+        if (m.status !== "removed") out.active[u] = name;
+      });
     });
     if (!j.nextPageToken) break; tok = j.nextPageToken;
   }
@@ -95,7 +99,7 @@ const GBD_ROOT = GBD_API.replace(/\/documents$/, "");
 const docName = (path) => GBD_API.slice(GBD_API.indexOf("projects/")) + "/" + path;
 async function commit(w) {
   const r = await fetch(GBD_ROOT + "/documents:commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ writes: [w] }) });
-  if (r.ok) return;
+  if (r.ok) return r.json();
   const t = await r.text();
   if (/FAILED_PRECONDITION|ALREADY_EXISTS|NOT_FOUND/.test(t)) throw new Conflict(t.slice(0, 120));
   throw new Error("gbd commit " + r.status + " " + t.slice(0, 200));
@@ -211,5 +215,40 @@ exports.gbdSyncHourly = onSchedule({ region: "asia-northeast3", schedule: "every
   console.log("gbd hourly", q.size, JSON.stringify(r));
 });
 
+// 근방단 명단 통째로(짝 맞춤용) — 문서마다 _id·_updateTime 을 붙인다(쓸 때 전제조건)
+async function gbdMembers() {
+  const out = []; let tok = "";
+  for (let i = 0; i < 20; i++) {
+    const r = await fetch(docUrl("gbd_members", "pageSize=300" + (tok ? "&pageToken=" + encodeURIComponent(tok) : "")));
+    if (!r.ok) throw new Error("gbd members " + r.status);
+    const j = await r.json();
+    (j.documents || []).forEach((d) => {
+      const m = dec({ mapValue: { fields: d.fields || {} } });
+      m._id = idOf(d.name); m._updateTime = d.updateTime;
+      if (!m.name) m.name = m._id;
+      out.push(m);
+    });
+    if (!j.nextPageToken) break; tok = j.nextPageToken;
+  }
+  return out;
+}
+// 짝 저장 — 읽은 뒤 누가(관리자 화면 등) 먼저 바꿨으면 거절된다(Conflict)
+//   how = 'murpyAuto'(서버 자동) | 'murpySelf'(본인이 적음) — 언제 어떻게 이어졌는지 남긴다
+async function patchMember(m, f) {
+  const j = await commit({ update: { name: docName("gbd_members/" + m._id), fields: enc(f).mapValue.fields },
+    updateMask: { fieldPaths: Object.keys(f) }, currentDocument: { updateTime: m._updateTime } });
+  const t = j && j.writeResults && j.writeResults[0] && j.writeResults[0].updateTime;
+  if (t) m._updateTime = t;   // 같은 실행에서 한 멤버를 두 번 고쳐도 전제조건이 맞게
+}
+function linkMember(m, uid, nick, how, alts) {
+  const f = { murpyUid: uid, murpyNick: nick || "", murpyNone: false, murpyAlts: alts || [] };
+  f[how] = new Date().toISOString();
+  return patchMember(m, f);
+}
+
 exports.resyncUid = resyncUid;
+exports.gbdMembers = gbdMembers;
+exports.linkMember = linkMember;
+exports.patchMember = patchMember;
+exports.Conflict = Conflict;
 exports.syncSquad = syncSquad;

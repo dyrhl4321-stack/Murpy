@@ -110,4 +110,70 @@ function untouched(prev) {
   return members.every((n, i) => base[n] !== undefined && base[n] === code((prev.status || [])[i]));
 }
 
-module.exports = { FLAGS, BLANK, code, decode, checkState, isLive, kstDate, kstTime, squadMeta, oursFromMembers, mergeMeeting, untouched };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★10-07 근방단 이름 짝 자동 맞춤 — 관리자 화면(_gbdScore·_gbdSurePairs)과 같은 판정을 서버로 옮겼다.
+//   대표: "확실한 건 미리 등록해 놓고, 애매한 사람은 근방단 실제 이름이랑 지들이 연결하게".
+// ─────────────────────────────────────────────────────────────────────────────
+const nrm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+// '95김준성(운영진)' → 실명만 / 앞 두 자리 = 출생년도
+const core = (s) => nrm(s).replace(/\(.*?\)|\[.*?\]/g, "").replace(/^\d{2,4}/, "").replace(/[^0-9a-z가-힣]/g, "");
+const yy = (s) => { const m = nrm(s).match(/^(\d{2})(?=[가-힣a-z])/); if (!m) return 0; const y = +m[1]; return y > 30 ? 1900 + y : 2000 + y; };
+const gbdYear = (gm) => Number(gm.birth) || yy(gm.nickname) || 0;
+const userYear = (u, alias) => Number(String(u.birth || "").slice(0, 4)) || yy(u.nickname) || yy(alias) || 0;
+// 이름이 '정확히' 맞나 — 실명 메모·닉네임=실명·소모임 닉네임·닉네임 속 실명 중 하나
+function nameHit(gm, u, alias) {
+  const nm = nrm(gm.name), gn = nrm(gm.nickname), un = nrm(u.nickname), al = nrm(alias);
+  const nmC = core(gm.name), unC = core(u.nickname), alC = core(alias);
+  if (al && (al === nm || (alC && alC === nmC))) return true;
+  if (un && (un === nm || (gn && un === gn))) return true;
+  return !!(unC && unC.length >= 2 && unC === nmC);
+}
+// 출생년도: 'same' 둘 다 있고 같음 / 'diff' 다름 / 'unknown' 한쪽이라도 없음
+function yearCmp(gm, u, alias) {
+  const a = gbdYear(gm), b = userYear(u, alias);
+  if (!a || !b) return "unknown";
+  return a === b ? "same" : "diff";
+}
+// 활동 점수 — 근방단 스쿼드 출석이 제일 무겁고, 참여·피드 순. act[uid] = { sq, att, posts }
+const actScore = (a) => (a ? (a.att || 0) * 3 + (a.sq || 0) + Math.min(a.posts || 0, 20) * 0.5 : 0);
+// 이 근방단 멤버의 메인 계정 고르기 — 대표 10-07: "중복으로 몇 개 만든 사람은 실제 활동 내역 보고 그 아이디가 메인으로".
+//   후보 = 이름 정확히 + 출생년도 다르지 않음 + 근방단 스쿼드에 나온 정식 계정.
+//   후보 중 **하나라도 출생년도가 같아야**(같은 사람 증거) 하고, 활동 1등이 2등보다 높아야(동점이면 사람에게) 한다.
+//   보조 계정(alts) = 나머지 후보 중 출생년도까지 같은 것 — 어느 계정으로 출석해도 근방단에 들어가게.
+function pickMain(m, users, aliasOf, act, taken, keepUid) {
+  const hits = users.filter((u) => !u.guest && (!taken[u.uid] || u.uid === keepUid) && ((act[u.uid] || {}).sq || 0) > 0
+    && nameHit(m, u, aliasOf[u.uid]) && yearCmp(m, u, aliasOf[u.uid]) !== "diff");
+  if (!hits.length || !hits.some((u) => yearCmp(m, u, aliasOf[u.uid]) === "same")) return null;
+  hits.sort((a, b) => actScore(act[b.uid]) - actScore(act[a.uid]));
+  if (hits.length > 1 && actScore(act[hits[0].uid]) === actScore(act[hits[1].uid])) return null;
+  const main = hits[0];
+  const alts = hits.slice(1).filter((u) => yearCmp(m, u, aliasOf[u.uid]) === "same").map((u) => u.uid);
+  return { u: main, alts };
+}
+// 확실한 짝(사람 손 없이 바로 등록) — 미연결 근방단 멤버마다 pickMain, 그 계정이 딱 한 멤버에게만 걸릴 때.
+function surePairs(gbdList, users, aliasOf, act, taken) {
+  const per = {};
+  gbdList.filter((m) => !m.murpyUid && !m.murpyNone && m.status !== "removed").forEach((m) => {
+    const p = pickMain(m, users, aliasOf, act, taken);
+    if (p) per[m.name] = p;
+  });
+  const cnt = {};
+  Object.keys(per).forEach((n) => [per[n].u.uid].concat(per[n].alts).forEach((id) => { cnt[id] = (cnt[id] || 0) + 1; }));
+  return Object.keys(per).filter((n) => cnt[per[n].u.uid] === 1)
+    .map((n) => ({ name: n, u: per[n].u, alts: per[n].alts.filter((id) => cnt[id] === 1) }));
+}
+// 본인에게 물어볼 짐작 이름 — 이름 정확히 + 출생년도 다르지 않음 + 후보가 하나뿐일 때만. 없으면 "" (입력칸으로 묻는다)
+function guessFor(u, gbdList, alias) {
+  const c = gbdList.filter((m) => !m.murpyUid && m.status !== "removed" && nameHit(m, u, alias) && yearCmp(m, u, alias) !== "diff");
+  return c.length === 1 ? c[0].name : "";
+}
+// 본인이 적은 이름으로 연결해도 되나 → "" 이면 OK, 아니면 이유
+function claimCheck(gm, u) {
+  if (!gm || gm.status === "removed") return "not-found";
+  if (gm.murpyUid && gm.murpyUid !== u.uid) return "taken";
+  if (yearCmp(gm, u, "") === "diff") return "not-found";   // 남의 이름 막기 — 이유는 숨긴다
+  return "";
+}
+
+module.exports = { nrm, core, yy, nameHit, yearCmp, actScore, pickMain, surePairs, guessFor, claimCheck, FLAGS, BLANK, code, decode, checkState, isLive, kstDate, kstTime, squadMeta, oursFromMembers, mergeMeeting, untouched };

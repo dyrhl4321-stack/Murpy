@@ -564,6 +564,11 @@ const gbdsync = require("./gbdsync.js");
 exports.gbdSyncSquad = gbdsync.gbdSyncSquad;
 exports.gbdSyncMember = gbdsync.gbdSyncMember;
 exports.gbdSyncHourly = gbdsync.gbdSyncHourly;
+// ★근방단 실명 짝 — 확실한 건 서버가, 애매한 건 본인이(10-07) — gbdlink.js
+const gbdlink = require("./gbdlink.js");
+exports.gbdLinkHourly = gbdlink.gbdLinkHourly;
+exports.gbdAsk = gbdlink.gbdAsk;
+exports.gbdClaim = gbdlink.gbdClaim;
 exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
   if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
   const d = req.data || {};

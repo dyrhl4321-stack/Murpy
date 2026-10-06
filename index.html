@@ -16790,6 +16790,7 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     window.currentUser = user;
     if (window._guestProofTick) window._guestProofTick(user);
+    if (!user.isAnonymous && window._loginAsk) window._loginAsk(user);
     closeModal('login-method-modal');
     updateUI(user);
     // 방 초대 링크에서 정식 계정으로 돌아온 경우, 내 프로필을 확인하는 동안
@@ -32003,7 +32004,13 @@ window._guestProofTick = async function (user) {
 //   서버(guestSuggest)가 '같은 스쿼드에 함께 있고 이름이 맞는 임시계정'만 골라 준다. 앱을 켤 때 한 번.
 //   "제 기록 아니에요"를 고르면 이 폰에선 다시 묻지 않는다.
 const GUEST_DISMISS_KEY = 'murpy_guest_dismissed';
-window._guestClaimCheck = async function (user) {
+// ★10-07 이 확인은 원래 _guestProofTick 끝(같은 폰에 임시계정 증표가 있을 때)에서만 불려서
+//   대부분의 사람에겐 **한 번도 안 떴다**. 로그인마다 _loginAsk 가 부른다. 두 곳에서 불려도 한 번만 돈다.
+window._guestClaimCheck = function (user) {
+  if (!window._guestClaimP) window._guestClaimP = window._guestClaimRun(user);
+  return window._guestClaimP;
+};
+window._guestClaimRun = async function (user) {
   if (window._guestClaimDone || !user || user.isAnonymous) return;
   window._guestClaimDone = true;
   try {
@@ -32035,6 +32042,63 @@ window._guestClaimCheck = async function (user) {
     }
     if (moved) showToast('스쿼드 ' + moved + '개 기록을 합쳤어요');
   } catch (e) { console.warn('guest suggest', e); }
+};
+// ★10-07 근방단 실명 짝 — 대표: "애매한 사람들은 근방단 실제 이름이랑 지들이 연결하게".
+//   서버(gbdLinkHourly)가 **근방단 스쿼드에 나온 적 있고 아직 짝이 없는 정식 계정**만 골라 두고,
+//   gbdAsk 가 하루 한 번 "물어볼까"를 알려 준다. 일반 유저에겐 아무것도 안 뜬다(근방단 특별대우 X).
+//   짐작 이름이 있으면 "○○○님 맞으세요?", 아니면 실명 입력칸. 확인(명단·출생년도·이미 연결됨)은 서버 gbdClaim.
+//   ★'근방단 멤버가 아니에요'는 따로 누르게 한다 — 바깥을 눌러 닫은 걸 "아님"으로 저장하면 다시 못 묻는다.
+window._gbdAskCheck = async function (user) {
+  if (window._gbdAskDone || !user || user.isAnonymous) return;
+  window._gbdAskDone = true;
+  const fn = name => httpsCallable(getFunctions(app, 'asia-northeast3'), name);
+  try {
+    const r = ((await fn('gbdAsk')({})).data) || {};
+    if (!r.ask) return;
+    for (let i = 0; i < 300; i++) {   // 온보딩·다른 확인창이 먼저다
+      const ob = document.getElementById('onboarding-modal');
+      const mc = document.getElementById('murpy-confirm-modal');
+      const busy = (ob && ob.style.display !== 'none' && ob.offsetParent) || (mc && mc.classList.contains('open'));
+      if (!busy) break;
+      await new Promise(res => setTimeout(res, 2000));
+    }
+    const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const claim = d => fn('gbdClaim')(d).then(x => (x && x.data) || {});
+    const done = x => { showToast('근방단 ' + (x.name || '') + '님으로 연결됐어요'); };
+    if (r.guess) {
+      const yes = await window.murpyConfirm({ title: '근방단 ' + r.guess + '님 맞으세요?',
+        desc: '맞으면 머피 스쿼드 출석이 근방단 출석부에 자동으로 기록돼요.', confirmText: '맞아요', cancelText: '아니에요' });
+      if (yes) { const x = await claim({ name: r.guess }); if (x.ok) { done(x); return; } }
+    }
+    let miss = false;
+    for (let i = 0; i < 3; i++) {
+      window._gbdAskNo = false;
+      const ok = await window.murpyConfirm({ title: '근방단 실명을 알려주세요',
+        desc: '근방단 출석부에 올라가 있는 이름이에요.<br>적어주시면 머피 스쿼드 출석이 근방단에 자동으로 기록돼요.'
+          + '<input id="gbd-ask-name" maxlength="20" autocomplete="name" placeholder="예: 홍길동" style="display:block;width:100%;margin-top:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:13px 14px;color:#fff;font-size:16px;font-family:inherit;box-sizing:border-box;outline:none;text-align:center">'
+          + (miss ? '<div style="margin-top:8px;font-size:12px;color:#ff8a8a">근방단 명단에서 찾지 못했어요 · 띄어쓰기 없이 실명만 적어주세요</div>' : '')
+          + '<button type="button" onclick="window._gbdAskNo=true;window._murpyConfirmResolve&&window._murpyConfirmResolve(false)" style="display:block;margin:12px auto 0;background:none;border:none;color:rgba(255,255,255,.38);font-size:12px;cursor:pointer;font-family:inherit;text-decoration:underline">근방단 멤버가 아니에요</button>',
+        confirmText: '연결하기', cancelText: '나중에' });
+      if (!ok) { if (window._gbdAskNo) await claim({ no: true }); return; }
+      const name = ((document.getElementById('gbd-ask-name') || {}).value || '').trim();
+      if (!name) return;
+      const x = await claim({ name: name });
+      if (x.ok) { done(x); return; }
+      if (x.reason === 'taken') { showToast('이미 다른 계정과 연결된 이름이에요 · 운영진에게 알려주세요'); return; }
+      if (x.reason !== 'not-found') { showToast('잠시 뒤에 다시 해주세요'); return; }
+      miss = true;
+    }
+    showToast('명단에서 찾지 못했어요 · 운영진에게 알려주세요');
+  } catch (e) { console.warn('gbd ask', e); }
+};
+// 로그인 뒤 확인창은 하나씩 차례로 — 같은 폰 임시계정 옮기기(_guestProofTick) → 같은 스쿼드 임시계정 합치기 → 근방단 실명
+window._loginAsk = async function (user) {
+  if (window._loginAskOn) return;
+  window._loginAskOn = true;
+  await new Promise(res => setTimeout(res, 1500));
+  for (let i = 0; i < 150 && window._guestMergeBusy; i++) await new Promise(res => setTimeout(res, 2000));
+  try { await window._guestClaimCheck(user); } catch (e) { console.warn(e); }
+  try { await window._gbdAskCheck(user); } catch (e) { console.warn(e); }
 };
 // 임시계정인 채로 오래 켜 두면 증표가 만료된다 — 화면에 돌아올 때마다 새로 적는다(만료됐으면 SDK 가 갱신)
 document.addEventListener('visibilitychange', function () {
