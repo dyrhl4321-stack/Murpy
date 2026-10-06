@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ★10-06 스쿼드 → 근방단 출첵앱(gbdcrew) 자동 연동 — 버튼 없이, 스쿼드가 열리는 순간부터.
 //   대표: "모임 끝나고 옮기는 게 아니라 스쿼드 개설 이후 그냥 전부 다 연동이 되어야 한다".
-//   대상 = **근방단 명단과 연결된 사람이 연** 스쿼드(일반 머피 유저 스쿼드는 안 간다) · 2026-10-07 이후 일정만
+//   대상 = **근방단 명단과 연결된 사람·관리자가 연** 스쿼드(일반 머피 유저 스쿼드는 안 간다) · 2026-10-07 이후 일정만
 //          (그 전 스쿼드는 대표가 이미 근방단 앱에 손으로 옮겼다).
 //   명단 = 근방단 명단과 짝이 맞은 사람만. 짝이 안 맞은 사람은 빼 두고, 관리자가 짝을 맞추면
 //          그 사람의 스쿼드를 다시 보낸다(resyncUid — functions `gbd` 가 부른다).
@@ -14,12 +14,25 @@
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { getFirestore } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const L = require("./gbdsync_logic.js");
 
 const GBD_API = process.env.GBD_API_OVERRIDE   // 에뮬레이터 테스트 때만 바꾼다
   || "https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents";
 const SYNC_FROM = Date.parse(process.env.GBD_SYNC_FROM_OVERRIDE || "2026-10-07T00:00:00+09:00");   // override 는 테스트용
 const COLLS = ["gbd_meetings", "gbd_archive"];
+// ★10-07 대표는 관리자 계정(근방단 이름과 닉네임이 다르다)으로 근방단 스쿼드를 가장 많이 연다 →
+//   관리자가 연 스쿼드도 근방단 모임으로 본다. index.js MURPY_ADMIN_EMAILS 와 같게.
+const ADMIN_EMAILS = ["dyrhl4321@gmail.com"];
+const _adminCache = new Map();
+async function isAdminUid(uid) {
+  if (!uid) return false;
+  if (_adminCache.has(uid)) return _adminCache.get(uid);
+  let ok = false;
+  try { ok = ADMIN_EMAILS.includes(String((await getAuth().getUser(uid)).email || "")); } catch (e) { ok = false; }
+  _adminCache.set(uid, ok);
+  return ok;
+}
 
 // --- Firestore REST 값 변환 ---
 function dec(v) {
@@ -123,13 +136,15 @@ async function syncOnce(sid, links) {
   }
   if (!meeting) {
     if ((Number(s.scheduledAt) || 0) < SYNC_FROM) return "skip-old";
-    if (!links.active[s.hostUid]) return "skip-host";      // 근방단 사람이 연 스쿼드가 아니다
+    if (!links.active[s.hostUid] && !(await isAdminUid(s.hostUid))) return "skip-host";   // 근방단 사람·관리자가 연 스쿼드가 아니다
   }
   const mSnap = await sRef.collection("members").get();
   const members = {}; mSnap.forEach((d) => { members[d.id] = d.data(); });
   const meta = L.squadMeta(s);
   const past = meta.date < L.kstDate(Date.now());
   const ours = L.oursFromMembers(members, past ? links.all : links.active);
+  // 근방단 멤버가 한 명도 없으면 새 모임을 만들지 않는다(관리자 테스트 스쿼드가 빈 모임으로 생기지 않게)
+  if (!meeting && !Object.keys(ours).length) return "skip-empty";
   const patch = L.mergeMeeting(meeting && meeting.data, ours, meta, sid);
   if (!patch) return "same";
   if (meeting) {
@@ -247,6 +262,7 @@ function linkMember(m, uid, nick, how, alts) {
 }
 
 exports.resyncUid = resyncUid;
+exports.isAdminUid = isAdminUid;
 exports.gbdMembers = gbdMembers;
 exports.linkMember = linkMember;
 exports.patchMember = patchMember;

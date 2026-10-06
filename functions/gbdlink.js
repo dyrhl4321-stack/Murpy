@@ -6,7 +6,7 @@
 //      앱이 켜질 때 gbdAsk 로 묻고(짐작 이름이 있으면 "○○○님 맞으세요?", 없으면 실명 입력칸),
 //      gbdClaim 이 근방단 명단·출생년도·이미 연결됐는지 확인한 뒤 연결한다.
 //   ★일반 유저에겐 아무것도 안 뜬다(근방단 특별대우로 보이면 안 된다 — 대표 10-06).
-//   근방단 스쿼드 = 2026-10-07 전 스쿼드 전부(대표: "지금까지 연 스쿼드는 전부 근방단") + 그 뒤엔 근방단 사람이 연 것.
+//   근방단 스쿼드 = 2026-10-07 전 스쿼드 전부(대표: "지금까지 연 스쿼드는 전부 근방단") + 그 뒤엔 근방단 사람·관리자가 연 것.
 //   gbdAsk 컬렉션은 규칙에 없어서 앱이 직접 못 읽고 못 쓴다 — 서버만.
 // ─────────────────────────────────────────────────────────────────────────────
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -37,9 +37,10 @@ async function squadScan(active) {
   for (let i = 0; i < docs.length; i += 15) {
     const chunk = docs.slice(i, i + 15);
     const ms = await Promise.all(chunk.map((d) => d.ref.collection("members").get()));
+    const adm = await Promise.all(chunk.map((d) => S.isAdminUid((d.data() || {}).hostUid)));
     chunk.forEach((d, k) => {
       const s = d.data() || {};
-      const isGbd = (Number(s.scheduledAt) || 0) < ALL_GBD_BEFORE || !!active[s.hostUid];
+      const isGbd = (Number(s.scheduledAt) || 0) < ALL_GBD_BEFORE || !!active[s.hostUid] || adm[k];
       ms[k].forEach((md) => {
         const m = md.data() || {};
         if (m.alias && !alias[md.id]) alias[md.id] = m.alias;
