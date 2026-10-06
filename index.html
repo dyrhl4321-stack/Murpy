@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1214';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1215';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -31993,6 +31993,44 @@ window._guestProofTick = async function (user) {
     showToast('스쿼드 ' + (((res && res.data) || {}).moved || 0) + '개 기록을 옮겼어요');
   } catch (e) { console.warn('guest merge', e); }
   window._guestMergeBusy = false;
+  if (!user.isAnonymous && window._guestClaimCheck) window._guestClaimCheck(user);
+};
+// ★10-06 이미 생긴 중복은 **본인에게** 묻는다(대표: "내가 일일이 대조해서 어케 하냐").
+//   서버(guestSuggest)가 '같은 스쿼드에 함께 있고 이름이 맞는 임시계정'만 골라 준다. 앱을 켤 때 한 번.
+//   "제 기록 아니에요"를 고르면 이 폰에선 다시 묻지 않는다.
+const GUEST_DISMISS_KEY = 'murpy_guest_dismissed';
+window._guestClaimCheck = async function (user) {
+  if (window._guestClaimDone || !user || user.isAnonymous) return;
+  window._guestClaimDone = true;
+  try {
+    let dismissed = [];
+    try { dismissed = JSON.parse(localStorage.getItem(GUEST_DISMISS_KEY) || '[]') || []; } catch (e) { dismissed = []; }
+    const r = await httpsCallable(getFunctions(app, 'asia-northeast3'), 'guestSuggest')({});
+    const list = (((r && r.data) || {}).list || []).filter(c => dismissed.indexOf(c.guestUid) < 0);
+    if (!list.length) return;
+    for (let i = 0; i < 300; i++) {   // 온보딩·다른 확인창이 먼저다
+      const ob = document.getElementById('onboarding-modal');
+      const mc = document.getElementById('murpy-confirm-modal');
+      const busy = (ob && ob.style.display !== 'none' && ob.offsetParent) || (mc && mc.classList.contains('open'));
+      if (!busy) break;
+      await new Promise(res => setTimeout(res, 2000));
+    }
+    const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    let moved = 0;
+    for (const c of list) {
+      const ok = await window.murpyConfirm({
+        title: '이 기록, 본인 거예요?',
+        desc: '같은 스쿼드에 임시계정 <b>' + esc(c.nickname || '임시계정') + '</b>이(가) 함께 들어가 있어요'
+          + (c.shared > 1 ? ' (스쿼드 ' + c.shared + '개)' : '') + '.<br>본인이면 그 출석·입금 기록을 지금 계정으로 합칠게요.',
+        confirmText: '합치기', cancelText: '제 기록 아니에요' });
+      if (!ok) { dismissed.push(c.guestUid); try { localStorage.setItem(GUEST_DISMISS_KEY, JSON.stringify(dismissed)); } catch (e) {} continue; }
+      try {
+        const res = await httpsCallable(getFunctions(app, 'asia-northeast3'), 'claimGuest')({ guestUid: c.guestUid });
+        moved += (((res && res.data) || {}).moved || 0);
+      } catch (e) { console.warn('claim', e); showToast('합치지 못했어요'); }
+    }
+    if (moved) showToast('스쿼드 ' + moved + '개 기록을 합쳤어요');
+  } catch (e) { console.warn('guest suggest', e); }
 };
 // 임시계정인 채로 오래 켜 두면 증표가 만료된다 — 화면에 돌아올 때마다 새로 적는다(만료됐으면 SDK 가 갱신)
 document.addEventListener('visibilitychange', function () {
@@ -42449,9 +42487,45 @@ window._gbdMembersLoad = async function (force) {
 };
 window._gbdMurpyUsers = async function () {
   const snap = await window._usersAll();
-  const out = [];
-  snap.forEach(d => { const u = d.data() || {}; if (u.nickname && !u.deleted) out.push({ uid: d.id, nickname: u.nickname, birth: u.birth || '', district: u.district || '', guest: !!u.guest }); });
+  const out = [], merged = {};
+  snap.forEach(d => {
+    const u = d.data() || {};
+    if (u.mergedInto) { merged[d.id] = u.mergedInto; return; }   // 본계정으로 합쳐진 임시계정은 후보에서 뺀다
+    if (u.nickname && !u.deleted) out.push({ uid: d.id, nickname: u.nickname, birth: u.birth || '', district: u.district || '', guest: !!u.guest });
+  });
+  window._gbdMergedMap = merged;
   return out;
+};
+// ★임시계정에 연결해 뒀는데 그 임시계정이 본계정으로 합쳐졌으면 → 연결도 본계정으로 옮긴다(대표 10-06: 본계정이 제일 중요)
+window._gbdFollowMerged = async function (list, users) {
+  const merged = window._gbdMergedMap || {};
+  for (const m of list) {
+    let to = m.murpyUid && merged[m.murpyUid];
+    for (let i = 0; to && merged[to] && i < 5; i++) to = merged[to];
+    if (!to) continue;
+    const u = users.find(x => x.uid === to);
+    try { await window._gbdPatch('gbd_members/' + (m._id || m.name), { murpyUid: to, murpyNick: (u && u.nickname) || '' }, ['murpyUid', 'murpyNick']); m.murpyUid = to; m.murpyNick = (u && u.nickname) || ''; }
+    catch (e) { console.warn('gbd follow merged', e); }
+  }
+};
+// ★실명 메모는 스쿼드장이 붙인 진짜 이름이라 가장 확실한 단서다. 관리자 메뉴에서 열어도 쓰도록
+//   최근 1년 스쿼드의 실명 메모를 전부 모은다(관리자만, 5분 캐시).
+window._gbdAliasesLoad = async function () {
+  const c = window._gbdAliasCache;
+  if (c && Date.now() - c.at < 300000) return c.map;
+  const map = Object.assign({}, window._gbdAliasOf || {});
+  try {
+    const since = Date.now() - 365 * 86400000;
+    const sq = await getDocs(collection(db, 'squads'));
+    const ids = []; sq.forEach(d => { if ((Number(d.data().scheduledAt) || 0) >= since) ids.push(d.id); });
+    for (let i = 0; i < ids.length; i += 15) {
+      const snaps = await Promise.all(ids.slice(i, i + 15).map(id => getDocs(collection(db, 'squads', id, 'members'))));
+      snaps.forEach(ms => ms.forEach(d => { const a = (d.data() || {}).alias; if (a && !map[d.id]) map[d.id] = a; }));
+    }
+  } catch (e) { console.warn('gbd aliases', e); }
+  window._gbdAliasCache = { map: map, at: Date.now() };
+  window._gbdAliasOf = map;
+  return map;
 };
 
 // --- 짝 예측 점수 ---
@@ -42482,10 +42556,13 @@ window._gbdCandidates = function (gm, users, aliasOf, taken) {
   return users.map(u => {
     const r = Object.assign({ u: u }, window._gbdScore(gm, u, (aliasOf || {})[u.uid]));
     if (same[_gbdN(u.nickname)] > 1) r.why.unshift('같은 닉네임 ' + same[_gbdN(u.nickname)] + '명');
+    // 출생년도만 다르고 이름은 맞는 경우 — 동명이인일 수 있어 아래로 내리되 숨기지는 않는다(생년을 잘못 적은 본인일 수도)
+    r.weak = r.score < 25 && r.why.indexOf('출생년도 다름') >= 0 && r.score + 40 >= 25;
     return r;
   })
-    .filter(x => x.score >= 25 && !(taken && taken[x.u.uid] && taken[x.u.uid] !== gm.name))
-    .sort((a, b) => b.score - a.score).slice(0, 3);
+    .filter(x => (x.score >= 25 || x.weak) && !(taken && taken[x.u.uid] && taken[x.u.uid] !== gm.name))
+    // 확실한 것 먼저 → 점수 → 같은 점수면 **본계정이 임시계정보다 위**(대표 10-06)
+    .sort((a, b) => (a.weak - b.weak) || (b.score - a.score) || (a.u.guest - b.u.guest)).slice(0, 3);
 };
 
 // --- 짝 저장 --- (문서 id = 실명이지만, 혹시 다를 때를 위해 불러온 id 로 쓴다)
@@ -42536,8 +42613,9 @@ window.gbdLinkOpen = async function (onlyName, onDone) {
   if (typeof isAdmin !== 'function' || !isAdmin()) { showToast('관리자만 쓸 수 있어요'); return; }
   showToast('근방단 명단을 불러오는 중…');
   let list, users;
-  try { [list, users] = await Promise.all([window._gbdMembersLoad(true), window._gbdMurpyUsers()]); }
+  try { [list, users] = await Promise.all([window._gbdMembersLoad(true), window._gbdMurpyUsers(), window._gbdAliasesLoad()]); }
   catch (e) { console.warn(e); showToast('명단을 불러오지 못했어요'); return; }
+  await window._gbdFollowMerged(list, users);
   window._gbdLinkUsers = users; window._gbdLinkDone = onDone || null;
   window._gbdLinkFilter = onlyName ? 'one:' + onlyName : (window._gbdLinkFilter && window._gbdLinkFilter.indexOf('one:') !== 0 ? window._gbdLinkFilter : 'todo');
   window._gbdLinkRender();
@@ -42558,9 +42636,9 @@ window._gbdLinkRender = function () {
     else if (m.murpyNone) right = '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:11.5px;color:rgba(255,255,255,.38)">머피 미가입</span>'
       + _gbdBtn('되돌리기', "window._gbdLinkAct('unlink','" + _gbdJs(m.name) + "')") + '</div>';
     const cands = (m.murpyUid || m.murpyNone) ? [] : window._gbdCandidates(m, users, aliasOf, taken);
-    const candHtml = cands.map(x => '<button onclick="window._gbdLinkAct(\'link\',\'' + _gbdJs(m.name) + '\',\'' + x.u.uid + '\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:1px solid rgba(61,126,255,.35);border-radius:10px;padding:8px 10px;margin-top:6px;cursor:pointer;font-family:inherit;color:#fff">'
+    const candHtml = cands.map(x => '<button onclick="window._gbdLinkAct(\'link\',\'' + _gbdJs(m.name) + '\',\'' + x.u.uid + '\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;opacity:' + (x.weak ? .55 : 1) + ';border:1px solid ' + (x.weak ? 'rgba(255,255,255,.14)' : 'rgba(61,126,255,.35)') + ';border-radius:10px;padding:8px 10px;margin-top:6px;cursor:pointer;font-family:inherit;color:#fff">'
       + '<span style="font-size:13px;font-weight:700">' + _gbdEsc(x.u.nickname) + (x.u.guest ? ' <span style="font-size:10px;color:rgba(255,255,255,.4)">임시</span>' : '') + '</span>'
-      + '<span style="flex:1;font-size:10.5px;color:rgba(255,255,255,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _gbdEsc(x.why.join(' · ')) + '</span>'
+      + '<span style="flex:1;font-size:10.5px;color:rgba(255,255,255,.42);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _gbdEsc(x.why.join(' · ') + (x.weak ? ' · 확인 필요' : '')) + '</span>'
       + '<span style="font-size:11px;color:#7aa8ff;font-weight:800">연결</span></button>').join('');
     const tools = (m.murpyUid || m.murpyNone) ? '' : '<div style="display:flex;gap:6px;margin-top:7px">'
       + _gbdBtn('직접 찾기', "window._gbdLinkSearch('" + _gbdJs(m.name) + "')")
@@ -42620,7 +42698,10 @@ window.gbdSendOpen = async function (sid) {
   Object.keys(mem).forEach(u => { if (mem[u].alias) window._gbdAliasOf[u] = mem[u].alias; });
   showToast('근방단 명단을 불러오는 중…');
   let list;
-  try { list = await window._gbdMembersLoad(true); } catch (e) { showToast('근방단 명단을 불러오지 못했어요'); return; }
+  try {
+    let users; [list, users] = await Promise.all([window._gbdMembersLoad(true), window._gbdMurpyUsers()]);
+    await window._gbdFollowMerged(list, users);
+  } catch (e) { showToast('근방단 명단을 불러오지 못했어요'); return; }
   const nameOf = {}; list.forEach(m => { if (m.murpyUid) nameOf[m.murpyUid] = m.name; });
   const live = Object.keys(mem).filter(u => mem[u].status !== 'left' && mem[u].status !== 'invited');
   const linked = live.filter(u => nameOf[u]), others = live.filter(u => !nameOf[u]);

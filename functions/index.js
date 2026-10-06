@@ -599,3 +599,62 @@ exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
   }
   throw new HttpsError("invalid-argument", "op");
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★10-06 본인이 직접 합치기 (대표: "내가 일일이 대조해서 어케 하냐 — 실사용자 계정에서 뜨게 해줘")
+//   증표(guestMerge)가 없는 **이미 생긴 중복**을 본인에게 묻는다. 남의 기록을 가져가지 못하게
+//   두 조건을 **서버에서** 다 본다:
+//     ① 그 임시계정과 나(본계정)가 **같은 스쿼드에 함께** 들어가 있다 — 중복 가입의 전형
+//     ② 이름이 맞는다 — 임시계정 이름(닉네임·실명 메모)이 내 닉네임 또는 스쿼드장이 적은 내 실명 메모와 같다
+//   이름이 완전히 다른 경우는 묻지 않는다(관리자 '같은 사람 합치기'로).
+// ─────────────────────────────────────────────────────────────────────────────
+const _nm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+async function _guestCandidatesFor(uid) {
+  const db = getFirestore();
+  const me = await db.collection("users").doc(uid).get();
+  const myNames = new Set();
+  if (me.exists && me.data().nickname) myNames.add(_nm(me.data().nickname));
+  const sq = await db.collection("squads").where("memberUids", "array-contains", uid).get();
+  const found = {};   // guestUid → { names:Set, squads:Set }
+  for (const s of sq.docs) {
+    const mem = await s.ref.collection("members").get();
+    const mine = mem.docs.find((d) => d.id === uid);
+    if (mine && mine.data().alias) myNames.add(_nm(mine.data().alias));
+    mem.docs.forEach((d) => {
+      if (d.id === uid || d.data().status === "left") return;
+      const f = found[d.id] || (found[d.id] = { names: new Set(), squads: new Set() });
+      [d.data().nickname, d.data().alias].forEach((n) => { if (_nm(n)) f.names.add(_nm(n)); });
+      f.squads.add(s.id);
+    });
+  }
+  myNames.delete("");
+  const out = [];
+  for (const g of Object.keys(found)) {
+    const f = found[g];
+    if (![...f.names].some((n) => myNames.has(n))) continue;          // ② 이름
+    const u = await db.collection("users").doc(g).get();
+    const ud = u.exists ? u.data() : {};
+    if (ud.guest !== true || ud.mergedInto) continue;                  // 임시계정만, 이미 합친 건 빼고
+    const au = await getAuth().getUser(g).catch(() => null);
+    if (!au || (au.providerData || []).length) continue;               // 진짜 익명 계정만
+    out.push({ guestUid: g, nickname: ud.nickname || "", shared: f.squads.size });
+  }
+  return out;
+}
+exports.guestSuggest = onCall({ region: "asia-northeast3" }, async (req) => {
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "login");
+  if (req.auth.token.firebase && req.auth.token.firebase.sign_in_provider === "anonymous") return { list: [] };
+  return { list: await _guestCandidatesFor(uid) };
+});
+exports.claimGuest = onCall({ region: "asia-northeast3" }, async (req) => {
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "login");
+  if (req.auth.token.firebase && req.auth.token.firebase.sign_in_provider === "anonymous")
+    throw new HttpsError("failed-precondition", "real account only");
+  const g = String((req.data || {}).guestUid || "");
+  const ok = (await _guestCandidatesFor(uid)).some((c) => c.guestUid === g);   // 조건을 다시 본다 — 클라가 보낸 값을 믿지 않는다
+  if (!ok) throw new HttpsError("permission-denied", "not claimable");
+  const moved = await _mergeGuestInto(g, uid);
+  return { moved };
+});
