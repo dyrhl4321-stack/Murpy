@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1215';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1216';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -42518,10 +42518,25 @@ window._gbdAliasesLoad = async function () {
     const since = Date.now() - 365 * 86400000;
     const sq = await getDocs(collection(db, 'squads'));
     const ids = []; sq.forEach(d => { if ((Number(d.data().scheduledAt) || 0) >= since) ids.push(d.id); });
+    // ★대표 10-06: 지금까지 연 스쿼드는 전부 근방단 모임이다 → 스쿼드에 나온 계정 = 근방단 멤버.
+    //   활동이 계속 찍히는 계정(출석·피드)이 근방단 이름과 맞으면 그 계정이 맞다.
+    const act = {};
+    const A = uid => act[uid] || (act[uid] = { sq: 0, att: 0, posts: 0 });
     for (let i = 0; i < ids.length; i += 15) {
       const snaps = await Promise.all(ids.slice(i, i + 15).map(id => getDocs(collection(db, 'squads', id, 'members'))));
-      snaps.forEach(ms => ms.forEach(d => { const a = (d.data() || {}).alias; if (a && !map[d.id]) map[d.id] = a; }));
+      snaps.forEach(ms => ms.forEach(d => {
+        const md = d.data() || {};
+        if (md.alias && !map[d.id]) map[d.id] = md.alias;
+        if (md.status === 'left' || md.status === 'invited') return;
+        A(d.id).sq++;
+        if (md.checkedIn || md.checkinType === 'present' || md.checkinType === 'late') A(d.id).att++;
+      }));
     }
+    try {
+      const fs = await getDocs(query(collection(db, 'feed'), orderBy('createdAt', 'desc'), limit(1000)));
+      fs.forEach(d => { const u = (d.data() || {}).userId; if (u) A(u).posts++; });
+    } catch (e) { console.warn('gbd feed act', e); }
+    window._gbdAct = act;
   } catch (e) { console.warn('gbd aliases', e); }
   window._gbdAliasCache = { map: map, at: Date.now() };
   window._gbdAliasOf = map;
@@ -42531,24 +42546,36 @@ window._gbdAliasesLoad = async function () {
 // --- 짝 예측 점수 ---
 // 근방단은 출생'년도'만 있다(birth: 1994). 지역은 '송파구' 같은 구 이름.
 const _gbdN = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+// 근방단 소모임 닉네임은 '출생년도 두 자리 + 실명 + (역할)' 형식이 많다(예: 95김준성(운영진), 대표 10-06).
+//   앞 숫자와 괄호를 걷어 실명만, 앞 두 자리는 출생년도로 읽는다.
+const _gbdCore = s => _gbdN(s).replace(/\(.*?\)|\[.*?\]/g, '').replace(/^\d{2,4}/, '').replace(/[^0-9a-z가-힣]/g, '');
+const _gbdYY = s => { const m = _gbdN(s).match(/^(\d{2})(?=[가-힣a-z])/); if (!m) return 0; const y = +m[1]; return y > 30 ? 1900 + y : 2000 + y; };
 window._gbdScore = function (gm, u, alias) {
   const why = []; let sc = 0;
   const nm = _gbdN(gm.name), gn = _gbdN(gm.nickname), un = _gbdN(u.nickname), al = _gbdN(alias);
-  if (al && al === nm) { sc += 70; why.push('실명 메모 같음'); }
+  const nmC = _gbdCore(gm.name), unC = _gbdCore(u.nickname), alC = _gbdCore(alias);
+  if (al && (al === nm || (alC && alC === nmC))) { sc += 70; why.push('실명 메모 같음'); }
   if (un && (un === nm || (gn && un === gn))) { sc += 60; why.push(un === nm ? '닉네임=실명' : '소모임 닉네임 같음'); }
+  else if (unC && unC.length >= 2 && unC === nmC) { sc += 55; why.push('닉네임 속 실명 같음'); }
   else {
     const given = nm.length >= 3 ? nm.slice(1) : '';
     if (nm.length >= 2 && un.length >= 2 && (un.indexOf(nm) >= 0 || nm.indexOf(un) >= 0)) { sc += 30; why.push('이름 비슷'); }
     else if (gn.length >= 2 && un.length >= 2 && (un.indexOf(gn) >= 0 || gn.indexOf(un) >= 0)) { sc += 30; why.push('소모임 닉네임 비슷'); }
     else if (given && un.indexOf(given) >= 0) { sc += 20; why.push('이름 끝 두 글자'); }
   }
-  const by = Number(gm.birth) || 0, uy = Number(String(u.birth || '').slice(0, 4)) || 0;
+  const by = Number(gm.birth) || _gbdYY(gm.nickname) || 0;
+  const uy = Number(String(u.birth || '').slice(0, 4)) || _gbdYY(u.nickname) || _gbdYY(alias) || 0;
   // ★대표 10-06: 근방단 이름과 **닉네임만 같은 남**이 가입할 수 있다 → 출생년도가 다르면 후보에서 뺀다
   //   (이름 일치 60 - 40 = 20 < 기준 25). 머피 쪽 생년이 없으면 표시만 해서 눈으로 보게 한다.
   if (by && uy) { if (by === uy) { sc += 25; why.push(by + '년생'); } else { sc -= 40; why.push('출생년도 다름'); } }
   else if (by && !uy) why.push('머피 생년 없음');
   const rg = String(gm.region || '').trim();
   if (rg && u.district && (u.district === rg || u.district.endsWith(' ' + rg))) { sc += 10; why.push(rg); }
+  const ac = (window._gbdAct || {})[u.uid];
+  if (ac && (ac.sq || ac.posts)) {
+    sc += 10;
+    why.push([ac.att ? '출석 ' + ac.att + '회' : (ac.sq ? '스쿼드 ' + ac.sq + '회' : ''), ac.posts ? '피드 ' + ac.posts : ''].filter(Boolean).join(' · '));
+  }
   return { score: sc, why: why };
 };
 window._gbdCandidates = function (gm, users, aliasOf, taken) {
@@ -42620,6 +42647,56 @@ window.gbdLinkOpen = async function (onlyName, onDone) {
   window._gbdLinkFilter = onlyName ? 'one:' + onlyName : (window._gbdLinkFilter && window._gbdLinkFilter.indexOf('one:') !== 0 ? window._gbdLinkFilter : 'todo');
   window._gbdLinkRender();
 };
+// 확실 = 이름이 정확히 맞고(실명 메모·닉네임=실명·소모임 닉네임·닉네임 속 실명) + 활동이 찍히고 + 출생년도 충돌 없음
+//   + 그 근방단 멤버에게 그런 후보가 **딱 하나**이고, 그 계정도 다른 근방단 멤버의 확실 후보가 아닐 때만.
+const _GBD_NAME_HIT = ['실명 메모 같음', '닉네임=실명', '소모임 닉네임 같음', '닉네임 속 실명 같음'];
+window._gbdSurePairs = function (list, users, aliasOf, taken) {
+  const act = window._gbdAct || {};
+  const per = {};
+  list.filter(m => !m.murpyUid && !m.murpyNone).forEach(m => {
+    const hits = users.map(u => Object.assign({ u: u }, window._gbdScore(m, u, (aliasOf || {})[u.uid])))
+      .filter(x => !taken[x.u.uid] && x.why.some(w => _GBD_NAME_HIT.indexOf(w) >= 0) && x.why.indexOf('출생년도 다름') < 0
+        && act[x.u.uid] && (act[x.u.uid].sq || act[x.u.uid].posts));
+    // 같은 사람의 본계정+임시계정이 함께 걸리면 본계정을 고른다(임시는 나중에 본인 합치기로 따라온다)
+    const reals = hits.filter(x => !x.u.guest);
+    const pick = hits.length === 1 ? hits[0] : (reals.length === 1 ? reals[0] : null);
+    if (pick) per[m.name] = pick.u;
+  });
+  const cnt = {}; Object.keys(per).forEach(n => { cnt[per[n].uid] = (cnt[per[n].uid] || 0) + 1; });
+  return Object.keys(per).filter(n => cnt[per[n].uid] === 1).map(n => ({ name: n, u: per[n] }));
+};
+window._gbdBulkLink = async function () {
+  const pairs = window._gbdSureList || [];
+  if (!pairs.length) return;
+  const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const ok = await window.murpyConfirm({ title: '확실한 ' + pairs.length + '명 연결할까요?',
+    desc: '<div style="text-align:left;max-height:40vh;overflow:auto;font-size:12.5px;line-height:1.8">' + pairs.map(p => esc(p.name) + ' = ' + esc(p.u.nickname) + (p.u.guest ? ' (임시)' : '')).join('<br>') + '</div>',
+    confirmText: '연결', cancelText: '취소' });
+  if (!ok) return;
+  let n = 0;
+  for (const p of pairs) { try { if (await window._gbdLinkSave(p.name, p.u)) n++; } catch (e) { console.warn(e); } }
+  showToast(n + '명 연결했어요');
+  window._gbdLinkRender();
+};
+// 참여순 — 근방단과 아직 안 이어진 머피 계정을 스쿼드 출석이 많은 순으로. 줄에서 근방단 이름을 바로 고른다.
+window._gbdBusyPick = function (uid) {
+  const box = document.querySelector('#gbd-link .gbd-busy[data-uid="' + uid + '"]'); if (!box) return;
+  const list = (window._gbdMembersCache || {}).list || [];
+  const u = (window._gbdLinkUsers || []).find(x => x.uid === uid); if (!u) return;
+  const aliasOf = window._gbdAliasOf || {};
+  const free = list.filter(m => !m.murpyUid);
+  const top = free.map(m => ({ m: m, r: window._gbdScore(m, u, aliasOf[uid]) })).filter(x => x.r.score >= 20).sort((a, b) => b.r.score - a.r.score).slice(0, 3);
+  const btn = m => '<button onclick="window._gbdLinkAct(\'link\',\'' + _gbdJs(m.name) + '\',\'' + uid + '\')" style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.06);padding:9px 4px;cursor:pointer;font-family:inherit;color:#fff;font-size:13px">'
+    + _gbdEsc(m.name) + ' <span style="color:rgba(255,255,255,.38);font-size:11px">' + _gbdEsc([m.nickname, m.birth ? m.birth + '년생' : ''].filter(Boolean).join(' · ')) + '</span></button>';
+  box.innerHTML = (top.length ? '<div style="font-size:11px;color:rgba(255,255,255,.4);margin:8px 0 2px">추천</div>' + top.map(x => btn(x.m)).join('') : '')
+    + '<input placeholder="근방단 이름으로 찾기" style="width:100%;margin-top:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;color:#fff;font-size:16px;font-family:inherit;box-sizing:border-box;outline:none"><div class="gbd-hits"></div>';
+  const inp = box.querySelector('input'), hits = box.querySelector('.gbd-hits');
+  inp.oninput = function () {
+    const q = _gbdN(inp.value);
+    hits.innerHTML = q ? (free.filter(m => _gbdN(m.name).indexOf(q) >= 0 || _gbdN(m.nickname).indexOf(q) >= 0).slice(0, 8).map(btn).join('')
+      || '<div style="font-size:11.5px;color:rgba(255,255,255,.35);padding:8px 4px">없어요</div>') : '';
+  };
+};
 window._gbdLinkRender = function () {
   const list = (window._gbdMembersCache || {}).list || [], users = window._gbdLinkUsers || [];
   const aliasOf = window._gbdAliasOf || {};
@@ -42627,7 +42704,9 @@ window._gbdLinkRender = function () {
   const flt = window._gbdLinkFilter || 'todo';
   const nLinked = list.filter(m => m.murpyUid).length, nNone = list.filter(m => m.murpyNone && !m.murpyUid).length;
   const shown = flt.indexOf('one:') === 0 ? list.filter(m => m.name === flt.slice(4))
-    : flt === 'todo' ? list.filter(m => !m.murpyUid && !m.murpyNone) : list;
+    : flt === 'todo' ? list.filter(m => !m.murpyUid && !m.murpyNone) : flt === 'busy' ? [] : list;
+  const sure = flt.indexOf('one:') === 0 ? [] : window._gbdSurePairs(list, users, aliasOf, taken);
+  window._gbdSureList = sure;
   const row = m => {
     const meta = [m.nickname, m.birth ? m.birth + '년생' : '', m.region].filter(Boolean).join(' · ');
     let right = '';
@@ -42651,8 +42730,23 @@ window._gbdLinkRender = function () {
   };
   const tab = (k, label) => '<button onclick="window._gbdLinkFilter=\'' + k + '\';window._gbdLinkRender()" style="background:none;border:1px solid '
     + (flt === k ? '#3D7EFF;color:#3D7EFF' : 'rgba(255,255,255,.14);color:rgba(255,255,255,.55)') + ';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">' + label + '</button>';
-  const tabs = flt.indexOf('one:') === 0 ? '' : '<div style="display:flex;gap:6px;margin-bottom:6px">' + tab('todo', '아직 안 맞춤') + tab('all', '전체') + '</div>';
-  const body = tabs + (shown.length ? shown.map(row).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">다 맞췄어요</div>');
+  const tabs = flt.indexOf('one:') === 0 ? '' : '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">' + tab('todo', '아직 안 맞춤') + tab('busy', '참여순') + tab('all', '전체') + '</div>'
+    + (sure.length ? '<button onclick="window._gbdBulkLink()" style="width:100%;margin:6px 0 4px;background:none;border:1px solid rgba(61,126,255,.6);color:#7aa8ff;border-radius:12px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">확실한 ' + sure.length + '명 한 번에 연결</button>' : '');
+  let bodyList;
+  if (flt === 'busy') {
+    const act = window._gbdAct || {};
+    const busy = users.filter(u => !taken[u.uid] && act[u.uid] && (act[u.uid].sq || act[u.uid].posts))
+      .sort((a, b) => (act[b.uid].att - act[a.uid].att) || (act[b.uid].sq - act[a.uid].sq) || (act[b.uid].posts - act[a.uid].posts));
+    bodyList = busy.length ? busy.map(u => {
+      const ac = act[u.uid];
+      const meta = ['스쿼드 ' + ac.sq + '회', ac.att ? '출석 ' + ac.att : '', ac.posts ? '피드 ' + ac.posts : '', aliasOf[u.uid] ? '실명 메모 ' + aliasOf[u.uid] : ''].filter(Boolean).join(' · ');
+      return '<div style="padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0">'
+        + '<div style="font-size:14px;font-weight:800">' + _gbdEsc(u.nickname) + (u.guest ? ' <span style="font-size:10px;color:rgba(255,255,255,.4);font-weight:600">임시</span>' : '') + '</div>'
+        + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">' + _gbdEsc(meta) + '</div></div>'
+        + _gbdBtn('근방단 누구?', "window._gbdBusyPick('" + u.uid + "')", true) + '</div><div class="gbd-busy" data-uid="' + u.uid + '"></div></div>';
+    }).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">스쿼드에 나온 계정은 다 연결됐어요</div>';
+  } else bodyList = shown.length ? shown.map(row).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">다 맞췄어요</div>';
+  const body = tabs + bodyList;
   const prevScroll = (document.querySelector('#gbd-link .gbd-body') || {}).scrollTop || 0;
   const el = _gbdSheet('gbd-link', '근방단 멤버 연결',
     '근방단 ' + list.length + '명 · 연결 ' + nLinked + ' · 머피 미가입 ' + nNone + '<br>후보는 실명 메모·닉네임·출생년도·지역으로 고른 예측이에요. 맞으면 눌러주세요.',
