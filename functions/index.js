@@ -563,6 +563,7 @@ const _gbdUrl = (p, qs) => GBD_API + "/" + p.split("/").map(encodeURIComponent).
 const gbdsync = require("./gbdsync.js");
 exports.gbdSyncSquad = gbdsync.gbdSyncSquad;
 exports.gbdSyncMember = gbdsync.gbdSyncMember;
+exports.gbdSyncHourly = gbdsync.gbdSyncHourly;
 exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
   if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
   const d = req.data || {};

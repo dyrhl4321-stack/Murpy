@@ -12,12 +12,13 @@
 //     늦게 읽은 쪽이 항상 더 새 스쿼드를 본다.
 // ─────────────────────────────────────────────────────────────────────────────
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { getFirestore } = require("firebase-admin/firestore");
 const L = require("./gbdsync_logic.js");
 
 const GBD_API = process.env.GBD_API_OVERRIDE   // 에뮬레이터 테스트 때만 바꾼다
   || "https://firestore.googleapis.com/v1/projects/gbdcrewcheck-2af48/databases/(default)/documents";
-const SYNC_FROM = Date.parse("2026-10-07T00:00:00+09:00");
+const SYNC_FROM = Date.parse(process.env.GBD_SYNC_FROM_OVERRIDE || "2026-10-07T00:00:00+09:00");   // override 는 테스트용
 const COLLS = ["gbd_meetings", "gbd_archive"];
 
 // --- Firestore REST 값 변환 ---
@@ -45,17 +46,20 @@ function enc(x) {
 const docUrl = (path, qs) => GBD_API + "/" + path.split("/").map(encodeURIComponent).join("/") + (qs ? "?" + qs : "");
 const idOf = (name) => decodeURIComponent(String(name || "").split("/").pop());
 
-// 근방단 명단 → { 머피uid: 근방단실명 }
+// 근방단 명단 → { active: { 머피uid: 근방단실명 }, all: 나간 사람(removed)까지 }
+//   ★나간 사람: 다가오는 모임에선 빠지고, 지난 모임의 출석 기록은 그대로 남아야 한다(출석 통계·퇴출 판정 근거).
 async function linkMap() {
-  const out = {}; let tok = "";
+  const out = { active: {}, all: {} }; let tok = "";
   for (let i = 0; i < 20; i++) {
     const r = await fetch(docUrl("gbd_members", "pageSize=300" + (tok ? "&pageToken=" + encodeURIComponent(tok) : "")));
     if (!r.ok) throw new Error("gbd members " + r.status);
     const j = await r.json();
     (j.documents || []).forEach((d) => {
       const m = dec({ mapValue: { fields: d.fields || {} } });
-      if (m.status === "removed" || !m.murpyUid) return;
-      out[m.murpyUid] = m.name || idOf(d.name);
+      if (!m.murpyUid) return;
+      const name = m.name || idOf(d.name);
+      out.all[m.murpyUid] = name;
+      if (m.status !== "removed") out.active[m.murpyUid] = name;
     });
     if (!j.nextPageToken) break; tok = j.nextPageToken;
   }
@@ -115,12 +119,13 @@ async function syncOnce(sid, links) {
   }
   if (!meeting) {
     if ((Number(s.scheduledAt) || 0) < SYNC_FROM) return "skip-old";
-    if (!links[s.hostUid]) return "skip-host";      // 근방단 사람이 연 스쿼드가 아니다
+    if (!links.active[s.hostUid]) return "skip-host";      // 근방단 사람이 연 스쿼드가 아니다
   }
   const mSnap = await sRef.collection("members").get();
   const members = {}; mSnap.forEach((d) => { members[d.id] = d.data(); });
-  const ours = L.oursFromMembers(members, links);
   const meta = L.squadMeta(s);
+  const past = meta.date < L.kstDate(Date.now());
+  const ours = L.oursFromMembers(members, past ? links.all : links.active);
   const patch = L.mergeMeeting(meeting && meeting.data, ours, meta, sid);
   if (!patch) return "same";
   if (meeting) {
@@ -128,7 +133,6 @@ async function syncOnce(sid, links) {
     return "updated";
   }
   // 새 모임. 날짜가 지났으면 근방단 앱이 열릴 때 지난 모임으로 옮기니 처음부터 그쪽에 둔다
-  const past = meta.date < L.kstDate(Date.now());
   const doc = Object.assign({ gongeum: meta.fee > 0, password: "", guestGroup: "", guests: [], guestStatus: [] }, patch,
     past ? { archivedAt: new Date().toISOString() } : {});
   await write((past ? "gbd_archive" : "gbd_meetings") + "/murpy_" + sid, doc, null, null);
@@ -188,6 +192,19 @@ exports.gbdSyncMember = onDocumentWritten("squads/{sid}/members/{uid}", async (e
   if (s.exists && (Number(s.data().scheduledAt) || 0) < SYNC_FROM) return;
   const r = await syncSquad(ev.params.sid);
   console.log("gbd sync member", ev.params.sid, ev.params.uid, r);
+});
+
+// 매시간 다가오는 스쿼드를 다시 맞춘다 — 근방단 쪽 변화(멤버스에서 나감 처리 등)는 머피 트리거가
+//   못 듣는다. 트리거가 실패했던 것도 여기서 메워진다. 이미 시작한 스쿼드는 건드리지 않는다.
+exports.gbdSyncHourly = onSchedule({ region: "asia-northeast3", schedule: "every 60 minutes" }, async () => {
+  const q = await getFirestore().collection("squads").where("scheduledAt", ">=", Math.max(SYNC_FROM, Date.now())).get();
+  if (q.empty) return;
+  const links = await linkMap();
+  const r = {};
+  for (const d of q.docs) {
+    try { const x = await syncSquad(d.id, links); r[x] = (r[x] || 0) + 1; } catch (e) { console.warn("gbd hourly", d.id, e.message); }
+  }
+  console.log("gbd hourly", q.size, JSON.stringify(r));
 });
 
 exports.resyncUid = resyncUid;
