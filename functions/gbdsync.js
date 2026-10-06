@@ -194,10 +194,14 @@ exports.gbdSyncMember = onDocumentWritten("squads/{sid}/members/{uid}", async (e
   console.log("gbd sync member", ev.params.sid, ev.params.uid, r);
 });
 
-// 매시간 다가오는 스쿼드를 다시 맞춘다 — 근방단 쪽 변화(멤버스에서 나감 처리 등)는 머피 트리거가
-//   못 듣는다. 트리거가 실패했던 것도 여기서 메워진다. 이미 시작한 스쿼드는 건드리지 않는다.
+// 매시간 최근·다가오는 스쿼드를 다시 맞춘다 — 근방단 쪽 변화(멤버스에서 나감 처리 등)는 머피 트리거가
+//   못 듣는다. 트리거가 실패했던 것도 여기서 메워진다.
+//   ★시작 후 24시간까지 포함: 출첵앱의 일부 저장(모임 저장·지난 모임 편집·출석 초기화)은 화면에 들고 있던
+//     값을 통째로 다시 써서 방금 머피가 보낸 칸을 옛 값으로 되돌릴 수 있다 — 모임 도중이 제일 흔하다.
+//     옛 murpySent 도 같이 되돌아가므로 다음 맞춤에서 "머피 값 ≠ murpySent" 로 그 사람 칸만 복구된다.
+//     (나간 사람은 지난 모임이면 links.all 로 유지되니 출석 기록이 지워지지 않는다)
 exports.gbdSyncHourly = onSchedule({ region: "asia-northeast3", schedule: "every 60 minutes" }, async () => {
-  const q = await getFirestore().collection("squads").where("scheduledAt", ">=", Math.max(SYNC_FROM, Date.now())).get();
+  const q = await getFirestore().collection("squads").where("scheduledAt", ">=", Math.max(SYNC_FROM, Date.now() - 24 * 3600 * 1000)).get();
   if (q.empty) return;
   const links = await linkMap();
   const r = {};
