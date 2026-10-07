@@ -12,7 +12,6 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore } = require("firebase-admin/firestore");
-const { getAuth } = require("firebase-admin/auth");
 const S = require("./gbdsync.js");
 const L = require("./gbdsync_logic.js");
 
@@ -20,13 +19,8 @@ const REGION = "asia-northeast3";
 const ALL_GBD_BEFORE = Date.parse("2026-10-07T00:00:00+09:00");
 const ASK_GAP = 20 * 3600 * 1000;   // 하루에 한 번만 묻는다
 const MAX_TRIES = 5;                 // 하루에 이름 틀리게 적기 — 남의 이름 떠보기 막기
-// 절대 묻지 않을 계정 — 애플 심사 데모 계정 화면에 '근방단 실명'이 뜨면 안 된다
-const NEVER_ASK_EMAILS = ["applereview@murpy.app"];
-async function neverAskUids() {
-  const out = new Set();
-  for (const e of NEVER_ASK_EMAILS) { try { out.add((await getAuth().getUserByEmail(e)).uid); } catch (err) { /* 없으면 그만 */ } }
-  return out;
-}
+// ★특정 계정(심사 데모 계정 등)만 빼는 예외는 두지 않는다 — 9-15 "앱 == 웹, 심사·환경별로 다르게 동작하는 코드 금지".
+//   묻는 대상은 아래 조건(근방단 스쿼드에 나온 미연결 정식 계정)으로만 정한다.
 
 // 최근 1년 스쿼드에서: 실명 메모(스쿼드장이 붙인 진짜 이름), 근방단 스쿼드 참여 횟수·참여한 계정
 async function squadScan(active) {
@@ -130,7 +124,6 @@ async function linkRun() {
 
   // ② 물어볼 사람 갱신(바뀐 것만 쓴다)
   const taken = owner();
-  const never = await neverAskUids();
   const linkedActive = members.filter((m) => m.murpyUid && m.status !== "removed");
   const cur = {};
   (await db.collection("gbdAsk").get()).forEach((d) => { cur[d.id] = d.data() || {}; });
@@ -142,7 +135,7 @@ async function linkRun() {
     const c = cur[u.uid];
     // 이미 연결된 근방단 멤버와 이름이 같고 생년이 안 부딪히면 = 그 사람의 중복 계정일 가능성 → 묻지 않는다
     const dupOfLinked = linkedActive.some((m) => L.nameHit(m, u, scan.alias[u.uid]) && L.yearCmp(m, u, scan.alias[u.uid]) !== "diff");
-    const want = !u.guest && !taken[u.uid] && scan.inGbd.has(u.uid) && !dupOfLinked && !never.has(u.uid);
+    const want = !u.guest && !taken[u.uid] && scan.inGbd.has(u.uid) && !dupOfLinked;
     if (want) {
       asks++;
       const guess = L.guessFor(u, members, scan.alias[u.uid]);
