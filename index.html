@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1223';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1224';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -25809,10 +25809,16 @@ let _messaging = null;
 //   앱 → 웹: 같은 이름의 window CustomEvent(detail) + 'push-notification-click'(누른 알림의 data)
 // ★UA·환경으로 화면을 가르는 코드가 아니다(9-15 규칙). 'Notification' in window 와 같은 **기능 유무 확인**이고
 //   화면에 보이는 것은 웹과 같은 "알림 켜기" 한 줄이다. 다리가 없는 곳(사파리·크롬·안드로이드)에서는 아무 일도 안 한다.
+// ★껍데기 1.0(빌드 12)에도 push-* 핸들러는 있지만 파이어베이스가 꺼져 있어 **토큰이 영영 안 나온다**.
+//   v1221 이 핸들러만 보고 '켜기'를 내놓는 바람에 1.0 에서 "알림을 켜지 못했어요 · 토큰을 받지 못했어요"가 떴다(대표 10-13).
+//   토큰을 실제로 줄 수 있는 껍데기(1.0.1 빌드 15~)는 'push-ready' 핸들러를 표식으로 달고 나온다 → 그게 있을 때만 다리를 쓴다.
+const _nativeShell = () => {
+  try { const h = window.webkit && window.webkit.messageHandlers; return (h && h['push-token']) ? h : null; } catch (e) { return null; }
+};
 const _nativePush = () => {
   try {
-    const h = window.webkit && window.webkit.messageHandlers;
-    return (h && h['push-token'] && h['push-permission-request'] && h['push-permission-state']) ? h : null;
+    const h = _nativeShell();
+    return (h && h['push-ready'] && h['push-permission-request'] && h['push-permission-state']) ? h : null;
   } catch (e) { return null; }
 };
 const _nativePushPerm = () => {
@@ -25855,7 +25861,7 @@ try { const _h0 = _nativePush(); if (_h0) _h0['push-permission-state'].postMessa
 //   껍데기는 1.0.1(빌드 14~)에서 고쳤지만 **이미 깔린 1.0** 은 업데이트 전까지 이 조치가 필요하다. 그 뒤엔 지워도 된다.
 //   다리가 없는 곳(일반 브라우저·안드로이드)에서는 아무것도 안 한다. 화면에 보이는 것은 없다.
 (() => {
-  if (!_nativePush()) return;
+  if (!_nativeShell()) return;
   const ping = () => {
     try {
       const f = document.createElement('iframe');
@@ -25907,7 +25913,7 @@ window.enablePush = async function () {
   try {
     const nh = _nativePush();
     if (!nh && !('Notification' in window)) {
-      showToast('이 화면에선 알림을 켜지 못해요 · 홈 화면에 추가해서 열어주세요');
+      showToast(_nativeShell() ? '앱을 최신 버전으로 업데이트하면 알림을 받을 수 있어요' : '이 화면에선 알림을 켜지 못해요 · 홈 화면에 추가해서 열어주세요');
       return;
     }
     if ((nh ? _nativePushPerm() : Notification.permission) === 'denied') {
@@ -25933,6 +25939,8 @@ window._pushSettingPaint = function () {
   const has = !!nh || ('Notification' in window);
   const st = nh ? _nativePushPerm() : (has ? Notification.permission : 'none');
   if (!has) {
+    // 아이폰 앱 1.0 은 알림을 못 받는 껍데기다 — 켤 방법이 없으니 이 줄을 아예 안 보여준다(1.0.1 부터 보인다).
+    if (_nativeShell()) { box.style.display = 'none'; return; }
     // 아이폰 브라우저 탭은 알림 기능 자체가 없다 — 방법을 알려준다
     sub.textContent = '홈 화면에 추가한 뒤 그 아이콘으로 열면 받을 수 있어요';
     btn.style.display = 'none';
