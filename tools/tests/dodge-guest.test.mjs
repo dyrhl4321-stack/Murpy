@@ -180,7 +180,8 @@ console.log('  + URL 파라미터 충돌 방어 OK');
 
 // 18) ★옛 링크 구제 — 이미 카톡에 퍼진 링크에는 n=<닉> 이 남아 있다.
 //     알림 라우터가 game= 이 있으면 손을 떼야 그 링크들도 게임으로 간다.
-const router = grab(/\(function \(\) \{\s*\n\s*let q; try \{ q = new URLSearchParams\(location\.search\); \} catch \(e\) \{ return; \}[\s\S]*?const t = q\.get\('n'\); if \(!t\) return;/, '알림 라우터');
+//     (10-12 라우터가 window._notifRouteQuery 함수로 빠졌다 — 아이폰 앱 알림 탭과 같이 쓴다)
+const router = grab(/window\._notifRouteQuery = function \(q, fromUrl\) \{[\s\S]*?const t = q\.get\('n'\); if \(!t\) return;/, '알림 라우터');
 assert(/if \(q\.get\('game'\)\) return;/.test(router),
   '알림 라우터가 게임 링크에서 손을 떼지 않는다 → 옛 링크가 알림함을 연다');
 // 순서도 중요하다 — n 을 읽기 **전에** 빠져야 한다

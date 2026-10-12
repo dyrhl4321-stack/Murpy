@@ -236,10 +236,14 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
       fromPhoto: String(n.fromPhoto || ""),
       postId: String(n.postId || ""),
       squadId: String(n.squadId || n.crewId || ""),
+      // ★10-12 아이폰 앱은 주소로 열리지 않는다 — 껍데기가 누른 알림의 data 를 웹에 넘기고, 웹이 이 link 의 ?n= 으로 길을 찾는다.
+      link: linkFor(n),
       title,
       body,
     },
     notification: { title, body },
+    // 아이폰 앱(APNs): 소리를 명시하지 않으면 무음으로 온다.
+    apns: { payload: { aps: { sound: "default" } } },
     webpush: {
       headers: { Urgency: "high" },
       notification: {

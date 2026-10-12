@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1220';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1221';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -16901,18 +16901,19 @@ window._notifGoPost = function (postId) {
 // ★★푸시 알림을 누르면 **그 알림이 가리키는 곳**으로 간다 (대표 8-14: "푸시를 탭하면 항상 홈").
 //   서비스워커가 murpy.app/?n=<종류>&f=<보낸사람>&p=<글id>&sq=<스쿼드id> 로 열어준다.
 //   여기서 그 값을 읽어 해당 화면으로 보낸다. 주소는 바로 지운다 — 새로고침 때 또 튀면 안 된다.
-(function () {
-  let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+//   ★10-12 함수로 뺐다 — 아이폰 앱은 주소로 열리지 않고 껍데기가 'push-notification-click' 이벤트로 알려주므로
+//     같은 길 찾기를 주소(fromUrl=true)와 이벤트(false) 양쪽에서 쓴다.
+window._notifRouteQuery = function (q, fromUrl) {
   // ★게임 링크는 알림이 아니다. 8-20 에 덤벨 피하기 공유 링크가 닉네임을 n= 에 담는 바람에
   //   여기서 '모르는 알림'으로 읽혀 **알림함이 열렸다**(대표: "수락 누르니까 알림탭으로 간다").
   //   닉네임 자리는 nick= 으로 옮겼지만, **이미 카톡에 퍼진 옛 링크**에는 n= 이 그대로 남아 있다.
   //   그 링크들까지 살리려면 여기서 한 번 더 막아야 한다.
   if (q.get('game')) return;
   const go = q.get('go');   // 9-09 murpy.app/?go=park — 카톡에 "지금 공원 모여" 한 줄로 뿌리는 주소
-  if (go && ['park', 'walk', 'outgym'].indexOf(go) >= 0) { window._pendingGo = go; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+  if (go && ['park', 'walk', 'outgym'].indexOf(go) >= 0) { window._pendingGo = go; if (fromUrl) { try { history.replaceState(null, '', location.pathname); } catch (e) {} } }
   const t = q.get('n'); if (!t) return;
   const f = q.get('f') || '', pid = q.get('p') || '';
-  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (fromUrl) { try { history.replaceState(null, '', location.pathname); } catch (e) {} }
   setTimeout(function () {
     try {
       if (t === 'feed_like' || t === 'feed_comment') { window._notifGoPost(pid); return; }
@@ -16949,6 +16950,10 @@ window._notifGoPost = function (postId) {
       if (window.openPanel) openPanel('notif-panel');
     } catch (e) { console.warn('notif route', e); }
   }, 1200);
+};
+(function () {
+  let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+  window._notifRouteQuery(q, true);
 })();
 
 // ★★초대 시트 안전망 (대표 8-14: "다른 직원 폰에서 바로 입장하기를 눌러도 초대가 안 뜨고,
@@ -25798,13 +25803,83 @@ let _messaging = null;
 // ★★알림 켜기 — 반드시 **사용자 탭** 안에서 불려야 한다 (대표 8-14).
 //   iOS 는 페이지 로드 중의 requestPermission 을 조용히 무시한다 — 팝업이 아예 안 뜬다.
 //   그래서 "알림이 안 와요"가 되면 유저는 원인을 알 길이 없다.
+// ===== 아이폰 앱(WKWebView) 푸시 다리 (10-12) =====
+// 아이폰 앱 껍데기 안에는 웹 푸시(Notification)가 없다. 대신 껍데기가 FCM 토큰을 만들어 넘겨준다(murpy-ios PushNotifications.swift).
+//   웹 → 앱: webkit.messageHandlers['push-permission-state' | 'push-permission-request' | 'push-token'].postMessage('')
+//   앱 → 웹: 같은 이름의 window CustomEvent(detail) + 'push-notification-click'(누른 알림의 data)
+// ★UA·환경으로 화면을 가르는 코드가 아니다(9-15 규칙). 'Notification' in window 와 같은 **기능 유무 확인**이고
+//   화면에 보이는 것은 웹과 같은 "알림 켜기" 한 줄이다. 다리가 없는 곳(사파리·크롬·안드로이드)에서는 아무 일도 안 한다.
+const _nativePush = () => {
+  try {
+    const h = window.webkit && window.webkit.messageHandlers;
+    return (h && h['push-token'] && h['push-permission-request'] && h['push-permission-state']) ? h : null;
+  } catch (e) { return null; }
+};
+const _nativePushPerm = () => {
+  const s = window._nativePushState || '';
+  return (s === 'authorized' || s === 'provisional' || s === 'ephemeral') ? 'granted' : (s === 'denied' ? 'denied' : 'default');
+};
+// 앱이 보내는 이벤트를 한 번 기다린다. 토큰 발급이 실패하면 앱은 아무 이벤트도 안 보내므로 시간 제한이 필수다.
+const _nativePushWait = (name, ms) => new Promise(res => {
+  let tid = null;
+  const on = e => { clearTimeout(tid); window.removeEventListener(name, on); res(e ? e.detail : null); };
+  window.addEventListener(name, on);
+  tid = setTimeout(() => { window.removeEventListener(name, on); res(null); }, ms);
+});
+window.addEventListener('push-permission-state', e => {
+  window._nativePushState = String((e && e.detail) || '');
+  window._pushSettingPaint && window._pushSettingPaint();
+});
+// 앱은 켜질 때마다(그리고 토큰이 바뀔 때마다) 토큰을 쏜다 — 로그인 전에 올 수 있어 _pushTok 에 보관해 둔다.
+window.addEventListener('push-token', e => {
+  const t = e && e.detail;
+  if (typeof t !== 'string' || t.length < 20) return;
+  window._pushTok = t;
+  const uid = auth.currentUser && auth.currentUser.uid;
+  if (!uid) return;
+  _pushSaveToken(uid, t).then(() => { window._pushOk = true; window._pushSettingPaint && window._pushSettingPaint(); })
+    .catch(err => { window._pushErr = (err && (err.code || err.message)) || String(err); });
+});
+window.addEventListener('push-notification-click', e => {
+  try {
+    const d = (e && e.detail) || {};
+    if (d.link) window._notifRouteQuery(new URL(d.link).searchParams, false);
+  } catch (err) { console.warn('push click route', err); }
+});
+try { const _h0 = _nativePush(); if (_h0) _h0['push-permission-state'].postMessage(''); } catch (e) {}
+const _nativePushInit = async (h, uid, ask) => {
+  if (!window._nativePushState) { h['push-permission-state'].postMessage(''); await _nativePushWait('push-permission-state', 2000); }
+  const perm = _nativePushPerm();
+  if (perm === 'denied') { window._pushErr = '권한 denied'; return; }
+  if (perm !== 'granted') {
+    if (!ask) { window._pushErr = '권한 미허용 (사용자가 버튼을 눌러야 팝업이 뜬다)'; return; }
+    const w = _nativePushWait('push-permission-request', 60000);
+    h['push-permission-request'].postMessage('');
+    const r = await w;
+    if (r === 'granted') window._nativePushState = 'authorized';
+    else { if (r === 'denied') window._nativePushState = 'denied'; window._pushErr = '권한 ' + (r || '응답 없음'); return; }
+  }
+  // 방금 허용했다면 앱이 APNs 등록을 마친 뒤 스스로 토큰을 쏜다. 이미 허용된 상태면 달라고 한다.
+  let tok = window._pushTok || '';
+  if (!tok) {
+    const w = _nativePushWait('push-token', 8000);
+    h['push-token'].postMessage('');
+    const t = await w;
+    tok = (typeof t === 'string' && t.length >= 20) ? t : '';
+  }
+  if (!tok) { window._pushErr = '토큰을 받지 못했어요'; return; }   // 늦게 오면 위 'push-token' 리스너가 저장한다
+  window._pushTok = tok;
+  if (uid) await _pushSaveToken(uid, tok);
+  window._pushOk = true; window._pushErr = '';
+};
 window.enablePush = async function () {
   try {
-    if (!('Notification' in window)) {
+    const nh = _nativePush();
+    if (!nh && !('Notification' in window)) {
       showToast('이 화면에선 알림을 켜지 못해요 · 홈 화면에 추가해서 열어주세요');
       return;
     }
-    if (Notification.permission === 'denied') {
+    if ((nh ? _nativePushPerm() : Notification.permission) === 'denied') {
       showToast('알림이 꺼져 있어요 · 설정 > 알림 > 머피에서 켜주세요');
       return;
     }
@@ -25823,8 +25898,9 @@ window._pushSettingPaint = function () {
   if (!box || !sub || !btn) return;
   if (!window.currentUser) { box.style.display = 'none'; return; }
   box.style.display = 'flex';
-  const has = ('Notification' in window);
-  const st = has ? Notification.permission : 'none';
+  const nh = _nativePush();
+  const has = !!nh || ('Notification' in window);
+  const st = nh ? _nativePushPerm() : (has ? Notification.permission : 'none');
   if (!has) {
     // 아이폰 브라우저 탭은 알림 기능 자체가 없다 — 방법을 알려준다
     sub.textContent = '홈 화면에 추가한 뒤 그 아이콘으로 열면 받을 수 있어요';
@@ -25854,8 +25930,10 @@ window._pushBarMaybe = function () {
     if (document.getElementById('push-card')) return;
     if (localStorage.getItem('murpy_push_bar_off')) return;
     if (!window.currentUser) return;
-    if (!('Notification' in window)) return;              // 브라우저 탭은 안내해도 방법이 없다
-    if (Notification.permission !== 'default') return;    // 이미 허용/거부한 사람은 건드리지 않는다
+    const nh = _nativePush();
+    if (!nh && !('Notification' in window)) return;       // 브라우저 탭은 안내해도 방법이 없다
+    if (nh && !window._nativePushState) return;           // 앱이 권한 상태를 아직 안 알려줬으면 넘어간다
+    if ((nh ? _nativePushPerm() : Notification.permission) !== 'default') return;    // 이미 허용/거부한 사람은 건드리지 않는다
     const el = document.createElement('div');
     el.id = 'push-card';
     el.style.cssText = 'position:fixed;inset:0;z-index:40005;background:#0a0a0a;display:flex;flex-direction:column;padding:0 32px;box-sizing:border-box;overflow:hidden';
@@ -25876,9 +25954,35 @@ window._pushBarMaybe = function () {
     document.body.appendChild(el);
   } catch (e) {}
 };
+// 이 기기의 토큰을 계정에 올린다(웹 푸시·아이폰 앱 공용).
+const _pushSaveToken = async (uid, token) => {
+  // ★★이 기기가 **전에 올려둔 토큰을 먼저 지운다.**
+  //   서버는 fcmTokens 에 든 토큰마다 한 번씩 보낸다(sendEachForMulticast). 그런데 여기서
+  //   arrayUnion 으로 **더하기만** 했기 때문에, 토큰이 새로 발급될 때마다(사이트 데이터 삭제,
+  //   PWA 재설치, ?nuke=1, 브라우저 교체) 옛 토큰이 계정에 그대로 남았다.
+  //   -> 그 폰만 두 번, 세 번 울린다. 9-02 진단에서 실제로 **같은 기기 토큰 2개**를 가진
+  //      사용자가 있었다(두 토큰의 기기식별자 부분이 동일).
+  //   지우는 곳은 '그때 올린 계정'이다 — 한 폰에서 계정을 바꿔 로그인하면 옛 계정에 남는다.
+  try {
+    const prev = JSON.parse(localStorage.getItem('mw_fcm_prev') || 'null');
+    // ★지우는 대상은 **같은 계정에 남은 옛 토큰**뿐이다.
+    //   다른 계정 문서는 못 지운다 — 보안규칙이 users/{uid} 쓰기를 isOwner 로 막는다.
+    //   그래서 "한 폰에서 계정을 바꿔 쓰면 옛 계정에 토큰이 남는" 건은 여기서 못 푼다.
+    //   그건 **로그아웃할 때**(murpy-logout) 아직 그 계정으로 로그인돼 있는 동안 지운다.
+    if (prev && prev.token && prev.uid === uid && prev.token !== token) {
+      try {
+        await updateDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(prev.token) });
+      } catch (e) { console.warn('옛 푸시토큰 정리 실패(무시)', e); }
+    }
+  } catch (e) {}
+  await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+  try { localStorage.setItem('mw_fcm_prev', JSON.stringify({ uid, token })); } catch (e) {}
+};
 window.initPush = async (uid, ask) => {
   if (!FCM_VAPID_KEY) return; // VAPID 키 없으면 비활성 (지금은 인앱 팝업만 동작)
   try {
+    const nh = _nativePush();
+    if (nh) { await _nativePushInit(nh, uid, ask); return; }   // 아이폰 앱: 껍데기가 토큰을 만든다(위 '푸시 다리')
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
     if (!(await isSupported())) return;
     // ★★푸시 워커에도 **버전을 붙이고 캐시를 무시**한다 (대표 9-02: "유꾸미 폰만 알림이 두 개씩").
@@ -25907,29 +26011,7 @@ window.initPush = async (uid, ask) => {
     _messaging = getMessaging(app);
     const token = await getToken(_messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     window._pushTok = token || '';                     // ?diag=1 에서 이 기기의 토큰을 확인한다
-    if (token && uid) {
-      // ★★이 기기가 **전에 올려둔 토큰을 먼저 지운다.**
-      //   서버는 fcmTokens 에 든 토큰마다 한 번씩 보낸다(sendEachForMulticast). 그런데 여기서
-      //   arrayUnion 으로 **더하기만** 했기 때문에, 토큰이 새로 발급될 때마다(사이트 데이터 삭제,
-      //   PWA 재설치, ?nuke=1, 브라우저 교체) 옛 토큰이 계정에 그대로 남았다.
-      //   -> 그 폰만 두 번, 세 번 울린다. 9-02 진단에서 실제로 **같은 기기 토큰 2개**를 가진
-      //      사용자가 있었다(두 토큰의 기기식별자 부분이 동일).
-      //   지우는 곳은 '그때 올린 계정'이다 — 한 폰에서 계정을 바꿔 로그인하면 옛 계정에 남는다.
-      try {
-        const prev = JSON.parse(localStorage.getItem('mw_fcm_prev') || 'null');
-        // ★지우는 대상은 **같은 계정에 남은 옛 토큰**뿐이다.
-        //   다른 계정 문서는 못 지운다 — 보안규칙이 users/{uid} 쓰기를 isOwner 로 막는다.
-        //   그래서 "한 폰에서 계정을 바꿔 쓰면 옛 계정에 토큰이 남는" 건은 여기서 못 푼다.
-        //   그건 **로그아웃할 때**(murpy-logout) 아직 그 계정으로 로그인돼 있는 동안 지운다.
-        if (prev && prev.token && prev.uid === uid && prev.token !== token) {
-          try {
-            await updateDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(prev.token) });
-          } catch (e) { console.warn('옛 푸시토큰 정리 실패(무시)', e); }
-        }
-      } catch (e) {}
-      await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
-      try { localStorage.setItem('mw_fcm_prev', JSON.stringify({ uid, token })); } catch (e) {}
-    }
+    if (token && uid) await _pushSaveToken(uid, token);
     window._pushOk = !!token;
     onMessage(_messaging, payload => {
       const n = (payload && (payload.data || payload.notification)) || {};
@@ -41029,25 +41111,34 @@ window._sqLocPick = function (id) {
 //   스쿼드에 centerId 가 있고, GPS 로 잰 거리가 반경 안이면 checkins 문서를 만든다(source·squadId 를 남긴다).
 //   실내라 GPS 가 튀므로 일반 체크인(100m)보다 넓은 300m. 범위 밖·GPS 실패면 출석은 그대로, 도장만 건너뛴다.
 window.SQ_CHECKIN_RADIUS = 300;
-window._sqAutoCheckin = async function (sid, source) {
+// ★10-12 대표: "세 명 다 범프 출석했는데 지도엔 나만 떴다". 지도(오늘 체크인한 머피들·센터 필드)는 checkins 만 읽는데,
+//   이 도장은 **각자 폰에서 GPS 가 한 번에 잡혀야** 생겼고(실내 8초 1회), 빠져도 토스트 한 줄뿐 어디에도 안 남았다.
+//   → ① GPS 를 체크인 탭과 같은 _mwGeoBest 로 ② 빠진 이유를 내 멤버 문서 stampSkip 에 남기고
+//     ③ 스쿼드 화면을 다시 열면 한 번 더 시도(quiet = 토스트 없이, _sqRenderDetail) ④ 이미 출석된 사람이 범프해도 시도(bpAttend).
+window._sqAutoCheckin = async function (sid, source, quiet) {
   try {
     const user = auth.currentUser; if (!user || !sid) return;
+    const note = function (why) {
+      try { updateDoc(doc(db, 'squads', sid, 'members', user.uid), { stampSkip: why, stampSkipAt: Date.now() }).catch(function () {}); } catch (e) {}
+    };
     let s = (window._sqDoc && window._sqDoc.id === sid) ? window._sqDoc : null;
     if (!s) { const sn = await getDoc(doc(db, 'squads', sid)); if (!sn.exists()) return; s = Object.assign({ id: sid }, sn.data()); }
-    if (!s.centerId) return;
+    if (!s.centerId) { note('no-center'); return; }
     try { await window.ensureCenters([s.centerId]); } catch (e) {}
     const c = (window.centersData || []).find(function (x) { return String(x.id) === String(s.centerId); });
-    if (!c || !c.lat || !c.lng) return;
+    if (!c || !c.lat || !c.lng) { note('no-coords'); return; }
     const id = user.uid + '_' + c.id + '_' + mwTodayKey();
     try { if ((await getDoc(doc(db, 'checkins', id))).exists()) return; } catch (e) {}
-    const pos = await new Promise(function (res) {
-      if (!navigator.geolocation) return res(null);
-      navigator.geolocation.getCurrentPosition(function (p) { res(p); }, function () { res(null); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
-    });
-    if (!pos) { showToast('위치를 못 잡아 헬스장 도장은 건너뛰었어요'); return; }
+    let pos = null;
+    try { pos = await window._mwGeoBest(6000); } catch (e) {}
+    if (!pos) { note('gps-fail'); if (!quiet) showToast('위치를 못 잡아 헬스장 도장은 건너뛰었어요'); return; }
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
     const dist = Math.round(mwHaversine(lat, lng, c.lat, c.lng));
-    if (dist > window.SQ_CHECKIN_RADIUS) { showToast(c.name + '에서 ' + dist + 'm 떨어져 있어 도장은 건너뛰었어요'); return; }
+    if (dist > window.SQ_CHECKIN_RADIUS) {
+      note('far:' + dist + 'm/acc' + Math.round(pos.coords.accuracy || 0));
+      if (!quiet) showToast(c.name + '에서 ' + dist + 'm 떨어져 있어 도장은 건너뛰었어요');
+      return;
+    }
     let isNewCenter = false;
     try { const hist = await mwLoadCheckins(); isNewCenter = Array.isArray(hist) && !hist.some(function (k) { return String(k.centerId) === String(c.id); }); } catch (e) {}
     await setDoc(doc(db, 'checkins', id), {
@@ -41529,6 +41620,12 @@ window._sqRenderDetailInner = function () {
   //   출석까지 한 사람만 부른다 — 오늘 남길 기록이 있는 사람에게만 말이 되는 제안이다.
   if (done && me && window.isTempAccount && window.isTempAccount()
       && mem[me] && mem[me].checkedIn) { window.sqGuestOutro && window.sqGuestOutro(s.id, mem); }
+  // 출석은 됐는데 헬스장 도장이 빠진 사람(범프 순간 GPS 실패)은 오늘 스쿼드 화면을 열 때 한 번 더 조용히 시도한다.
+  if (!done && me && s.centerId && mem[me] && mem[me].checkedIn && !window['_sqStampRetry_' + s.id]
+      && new Date(s.scheduledAt).toDateString() === new Date().toDateString()) {
+    window['_sqStampRetry_' + s.id] = 1;
+    window._sqAutoCheckin && window._sqAutoCheckin(s.id, mem[me].checkinVia === 'bump' ? 'bump' : 'squad', true);
+  }
   // 연 사람은 자기 벙을 고칠 수 있어야 한다(대표 8-11). 관리자도 — 정기반은 첫 참가자가 벙주라
   // 대표가 만든 반인데도 대표가 못 고치는 일이 생긴다.
   const canEdit = !!(isHost || (typeof isAdmin === 'function' && isAdmin()));
@@ -46680,6 +46777,8 @@ async function bpAttend(sid, otherUid) {
       return got;
     };
     if (mData.checkedIn) {
+      // 스쿼드장이 명단에서 먼저 출석을 찍어 둔 사람도 헬스장 도장은 받아야 지도에 뜬다(문서 id 가 같아 두 번 생기지 않는다).
+      window._sqAutoCheckin && window._sqAutoCheckin(sid, 'bump');
       await grantBumpAttendReward();
       return 'already';
     }
