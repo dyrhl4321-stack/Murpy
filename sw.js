@@ -1,7 +1,7 @@
 // 배포마다 이 버전을 올려야 자동 새버전 적용(새로고침)이 동작함
-const CACHE_NAME = 'murpy-v1221';
-const STATIC_CACHE = 'murpy-static-v1221';
-const CDN_CACHE = 'murpy-cdn-v1221';
+const CACHE_NAME = 'murpy-v1222';
+const STATIC_CACHE = 'murpy-static-v1222';
+const CDN_CACHE = 'murpy-cdn-v1222';
 // 이미지 캐시는 버전 안 붙임 → 코드/HTML 배포해도 유지(URL이 곧 버전)
 const IMG_CACHE = 'murpy-img-v2';   // ★9-09 대표 폰에서 골프 에셋 전부 안 뜸 — 버전 없는 캐시에 깨진 항목이 박제되면 배포로도 안 지워진다 → 이름을 바꿔 한 번 전부 다시 받게
 
@@ -139,8 +139,12 @@ self.addEventListener('fetch', e => {
   //   새 배포는 sw.js?v= 가 바뀌어 새 워커가 설치되고(install 이 새 HTML 을 미리 받음) controllerchange →
   //   한 번 다시 들어가는 기존 흐름 그대로 반영된다. 워커 감지가 막혀도 _mwSelfHeal(version.txt) 이 있다.
   //   privacy/terms/guide 같은 다른 .html 은 예전처럼 네트워크 우선.
+  // ★10-12: 예전 조건은 "슬래시로 끝나는 주소 전부"라 /survey/ 까지 앱 본체로 돌려줬다 —
+  //   앱을 한 번 연 폰에서는 '버그 제보·설문' 버튼이 설문 대신 앱을 다시 띄웠다(9-14~).
+  //   앱 본체는 이 워커가 맡은 범위의 **첫 화면 주소 하나**뿐이다(murpy.app/ · 옛 github.io/Murpy/).
+  const scopePath = new URL(self.registration.scope).pathname;          // '/' 또는 '/Murpy/'
   const isAppHtml = url.origin === self.location.origin &&
-    (url.pathname.endsWith('/index.html') || url.pathname.endsWith('/') || url.pathname === '/Murpy' || url.pathname === '/Murpy/');
+    (url.pathname === scopePath || url.pathname === scopePath + 'index.html' || url.pathname + '/' === scopePath);
   if (isAppHtml) {
     e.respondWith((async () => {
       let cached = null;
