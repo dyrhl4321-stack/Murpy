@@ -1,0 +1,91 @@
+# murpy.app 배포 — index.html 을 압축해서 GitHub Pages 에 올린다
+#
+# ★왜 있나 (2026-10-12)
+#   index.html 이 3.5MB(전송 1.0MB)라 재방문 부팅의 가장 큰 덩어리였다. 주석·공백을 빼면 전송 0.55MB.
+#   저장소의 index.html 은 **원본 그대로** 둔다 — 테스트·문법 검사·다른 창은 전부 원본을 읽고 고친다.
+#   압축본은 여기서 만들어 Pages 에만 올라간다.
+#
+# ★배포 방법은 그대로다: main 에 푸시하면 이 워크플로가 돈다(1~3분).
+#
+# ★압축이 실패해도 배포는 된다 — 그때는 원본 index.html 을 그대로 올리고 경고만 남긴다.
+#
+# ★되돌리기 (5분): 저장소 Settings → Pages → Source 를 "Deploy from a branch"(main / root)로 바꾼다.
+#   그러면 예전처럼 저장소 파일이 그대로 나간다. 이 파일은 지우지 않아도 된다(배포 단계만 실패한다).
+#
+# ★Settings → Pages → Source 가 "GitHub Actions" 여야 배포 단계가 통한다.
+
+name: Pages 배포
+
+on:
+  push:
+    branches: [main, feat/html-minify]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 연달아 푸시되면 진행 중인 배포는 끝까지 가고, 기다리는 것 중 마지막 것만 이어서 돈다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 사이트 복사 + index.html 압축
+        run: |
+          SITE="$RUNNER_TEMP/site"
+          mkdir -p "$SITE"
+          # 지금까지 Pages 가 올리던 것과 같은 파일을 올린다(.nojekyll 이라 점으로 시작하는 것도 포함).
+          rsync -a --exclude='/.git/' --exclude='/.github/' --exclude='node_modules/' ./ "$SITE/"
+          if (cd tools/build && npm ci --no-audit --no-fund) \
+             && node tools/build/minify-index.mjs index.html "$SITE/index.html"; then
+            echo "::notice::index.html 압축 $(stat -c%s index.html) → $(stat -c%s "$SITE/index.html") B (v$(cat version.txt))"
+          else
+            cp index.html "$SITE/index.html"
+            echo "::warning::index.html 압축 실패 — 원본을 그대로 배포한다. tools/build/minify-index.mjs 로그를 볼 것"
+          fi
+
+      - name: 배포물 검사
+        run: |
+          SITE="$RUNNER_TEMP/site"
+          V="$(tr -d '[:space:]' < version.txt)"
+          # 서비스워커가 이 모양 그대로를 찾아 HTML 을 캐시한다(sw.js htmlMatchesThisWorker).
+          grep -q "window._SW_V = '$V'" "$SITE/index.html"
+          grep -q "murpy-v$V'" "$SITE/sw.js"
+          # 안드로이드 앱 주소창(assetlinks)·도메인·버전 표식이 빠지면 안 된다.
+          for f in .well-known/assetlinks.json CNAME version.txt sw.js manifest.json firebase-messaging-sw.js privacy.html terms.html; do
+            test -s "$SITE/$f" || { echo "::error::배포물에 $f 가 없다"; exit 1; }
+          done
+          tar --dereference --hard-dereference --directory "$SITE" -cf "$RUNNER_TEMP/artifact.tar" .
+          tar -tf "$RUNNER_TEMP/artifact.tar" | grep -q '^\./\.well-known/assetlinks\.json$'
+          echo "::notice::배포물 $(tar -tf "$RUNNER_TEMP/artifact.tar" | wc -l)개 항목 · $(du -m "$RUNNER_TEMP/artifact.tar" | cut -f1) MB"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
