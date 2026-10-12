@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1222';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1223';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -25847,6 +25847,37 @@ window.addEventListener('push-notification-click', e => {
   } catch (err) { console.warn('push click route', err); }
 });
 try { const _h0 = _nativePush(); if (_h0) _h0['push-permission-state'].postMessage(''); } catch (e) {}
+// ===== 아이폰 앱 1.0 의 왼쪽 위 '완료' 버튼 지우기 (10-13) =====
+// 대표: "앱스토어에서 설치한 사람 전부, 시계 자리에 파란 동그라미 + 흰 체크가 계속 뜬다".
+// 껍데기(murpy-ios WebView.swift decidePolicyFor)가 로그인 출처로 가는 **iframe**(파이어베이스 인증 도우미 — 켤 때마다 뜬다)까지
+//   '로그인 페이지로 이동'으로 보고 '완료' 툴바를 켠 뒤 다시 끄지 않았다. 그 버튼이 최신 아이폰에선 파란 원 + 체크다.
+// 껍데기는 우리 주소(murpy.app)로 가는 이동을 보면 툴바를 숨긴다 → 우리 주소의 빈 iframe 을 띄워 그 코드를 타게 한다.
+//   껍데기는 1.0.1(빌드 14~)에서 고쳤지만 **이미 깔린 1.0** 은 업데이트 전까지 이 조치가 필요하다. 그 뒤엔 지워도 된다.
+//   다리가 없는 곳(일반 브라우저·안드로이드)에서는 아무것도 안 한다. 화면에 보이는 것은 없다.
+(() => {
+  if (!_nativePush()) return;
+  const ping = () => {
+    try {
+      const f = document.createElement('iframe');
+      f.setAttribute('aria-hidden', 'true');
+      f.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+      f.src = './version.txt?tb=' + Date.now();
+      (document.body || document.documentElement).appendChild(f);
+      setTimeout(() => { try { f.remove(); } catch (e) {} }, 5000);
+    } catch (e) {}
+  };
+  const later = () => { setTimeout(ping, 1200); setTimeout(ping, 4500); };
+  const isAuthFrame = n => n && n.tagName === 'IFRAME' && /firebaseapp\.com|accounts\.google\.com|appleid\.apple\.com|kakao\.com/.test(n.src || '');
+  try {
+    new MutationObserver(list => {
+      for (const m of list) for (const n of m.addedNodes) {
+        if (isAuthFrame(n) || (n.querySelector && [...n.querySelectorAll('iframe')].some(isAuthFrame))) { later(); return; }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+  [2500, 7000, 15000].forEach(ms => setTimeout(ping, ms));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(ping, 800); });
+})();
 const _nativePushInit = async (h, uid, ask) => {
   if (!window._nativePushState) { h['push-permission-state'].postMessage(''); await _nativePushWait('push-permission-state', 2000); }
   const perm = _nativePushPerm();
