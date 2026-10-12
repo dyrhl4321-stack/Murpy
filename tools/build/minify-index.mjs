@@ -11,6 +11,7 @@
 //   module 블록만 맨 위 이름까지 줄인다(모듈 밖에서는 어차피 window.xxx 로만 닿는다).
 // ★실패하면 0 이 아닌 코드로 끝난다. 워크플로가 그때는 원본을 그대로 올린다 — 압축 때문에 배포가 막히면 안 된다.
 import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
 
 const [src, out] = process.argv.slice(2);
@@ -106,6 +107,7 @@ if (outBytes >= inBytes) throw new Error(`압축 결과가 원본보다 크다 (
 if (outBytes < inBytes * 0.35) throw new Error(`압축 결과가 너무 작다 (${outBytes} < 원본의 35%)`);
 if (!/<\/html>\s*$/i.test(result)) throw new Error('결과가 </html> 로 끝나지 않는다');
 
+fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, result);
 console.log(`v${version} · script ${stats.js}블록 · style ${stats.css}블록 · 그대로 둔 블록 ${stats.skipped}`);
 console.log(`원본 ${inBytes} B (gzip ${gz(html)}) → 압축 ${outBytes} B (gzip ${gz(result)})`);

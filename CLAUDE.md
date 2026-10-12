@@ -170,6 +170,7 @@ sw.js `'731'` 하드코딩 · `check_version.py` cp949 · C2 머피 잠금 · �
 ## 10. 작업 시 주의사항
 
 - **배포 = 푸시.** index.html 고치면 ①`node tools/module-syntax-check.mjs` + `node tools/dogam-syntax-check.mjs` 둘 다 ②`node tools/bump-version.mjs <N>` ③`python tools/check_version.py` ④`git add … && git commit && git push` **한 호출로**(두 창이 같은 저장소를 만진다 — 8-29에도 다른 창 커밋이 사이에 끼었다)
+- **라이브에 나가는 index.html 은 압축본이다(10-12~).** main 에 푸시하면 `.github/workflows/pages.yml` 이 `tools/build/minify-index.mjs` 로 압축해 Pages 에 올린다(반영 2~3분, 저장소 원본은 그대로). 압축이 실패하면 원본이 그대로 나가고 Actions 에 경고가 남는다. 라이브에서 오류 줄번호가 안 맞으면 압축본이라 그렇다 — 재현은 원본으로. 압축 스크립트를 고치면 `python tools/build/verify-build.py` 로 원본과 대조. 되돌리기 = 저장소 Settings → Pages → Source 를 "Deploy from a branch"(main)로
 - **Firebase 모듈 스코프** — onclick 에서 쓰려면 `window.xxx`. classic 블록에서 module const(`auth`, `db`)는 안 보인다 → `typeof` 로 감싸면 조용히 죽는다(펫 발행 사고)
 - **`x.f && x.f()` 는 오타를 삼킨다** — 정의 0건인 함수를 불러도 조용하다. "안 된다"면 정의부터 grep
 - **캐릭터는 `_charRenderTo` 하나로, 겹 순서는 `_charLayerOrder` 로만** (사본이 여섯 곳이었고 세 번 사고)
