@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1228';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1229';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -42862,6 +42862,7 @@ window.gbdLinkOpen = async function (onlyName, onDone) {
   catch (e) { console.warn(e); showToast('명단을 불러오지 못했어요'); return; }
   await window._gbdFollowMerged(list, users);
   window._gbdLinkUsers = users; window._gbdLinkDone = onDone || null;
+  window._gbdLinkQ = '';
   window._gbdLinkFilter = onlyName ? 'one:' + onlyName : (window._gbdLinkFilter && window._gbdLinkFilter.indexOf('one:') !== 0 ? window._gbdLinkFilter : 'todo');
   window._gbdLinkRender();
 };
@@ -42950,20 +42951,41 @@ window._gbdLinkRender = function () {
     + (flt === k ? '#3D7EFF;color:#3D7EFF' : 'rgba(255,255,255,.14);color:rgba(255,255,255,.55)') + ';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">' + label + '</button>';
   const tabs = flt.indexOf('one:') === 0 ? '' : '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">' + tab('todo', '아직 안 맞춤') + tab('busy', '참여순') + tab('all', '전체') + '</div>'
     + (sure.length ? '<button onclick="window._gbdBulkLink()" style="width:100%;margin:6px 0 4px;background:none;border:1px solid rgba(61,126,255,.6);color:#7aa8ff;border-radius:12px;padding:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">확실한 ' + sure.length + '명 한 번에 연결</button>' : '');
-  let bodyList;
-  if (flt === 'busy') {
-    const act = window._gbdAct || {};
-    const busy = users.filter(u => !taken[u.uid] && act[u.uid] && (act[u.uid].sq || act[u.uid].posts))
-      .sort((a, b) => (act[b.uid].att - act[a.uid].att) || (act[b.uid].sq - act[a.uid].sq) || (act[b.uid].posts - act[a.uid].posts));
-    bodyList = busy.length ? busy.map(u => {
-      const ac = act[u.uid];
-      const meta = ['스쿼드 ' + ac.sq + '회', ac.att ? '출석 ' + ac.att : '', ac.posts ? '피드 ' + ac.posts : '', aliasOf[u.uid] ? '실명 메모 ' + aliasOf[u.uid] : ''].filter(Boolean).join(' · ');
-      return '<div style="padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0">'
-        + '<div style="font-size:14px;font-weight:800">' + _gbdEsc(u.nickname) + (u.guest ? ' <span style="font-size:10px;color:rgba(255,255,255,.4);font-weight:600">임시</span>' : '') + '</div>'
-        + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">' + _gbdEsc(meta) + '</div></div>'
-        + _gbdBtn('근방단 누구?', "window._gbdBusyPick('" + u.uid + "')", true) + '</div><div class="gbd-busy" data-uid="' + u.uid + '"></div></div>';
-    }).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">스쿼드에 나온 계정은 다 연결됐어요</div>';
-  } else bodyList = shown.length ? shown.map(row).join('') : '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">다 맞췄어요</div>';
+  const act = window._gbdAct || {};
+  const busyRow = u => {
+    const ac = act[u.uid] || { sq: 0, att: 0, posts: 0 };
+    const meta = [ac.sq ? '스쿼드 ' + ac.sq + '회' : '', ac.att ? '출석 ' + ac.att : '', ac.posts ? '피드 ' + ac.posts : '', aliasOf[u.uid] ? '실명 메모 ' + aliasOf[u.uid] : '',
+      (!ac.sq && !ac.posts) ? [u.birth ? String(u.birth).slice(0, 4) + '년생' : '', u.district].filter(Boolean).join(' · ') : ''].filter(Boolean).join(' · ');
+    return '<div style="padding:11px 2px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0">'
+      + '<div style="font-size:14px;font-weight:800">' + _gbdEsc(u.nickname) + (u.guest ? ' <span style="font-size:10px;color:rgba(255,255,255,.4);font-weight:600">임시</span>' : '') + '</div>'
+      + '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">' + _gbdEsc(meta || '머피 계정') + '</div></div>'
+      + _gbdBtn('근방단 누구?', "window._gbdBusyPick('" + u.uid + "')", true) + '</div><div class="gbd-busy" data-uid="' + u.uid + '"></div></div>';
+  };
+  const empty = t => '<div style="padding:30px 0;text-align:center;color:rgba(255,255,255,.35);font-size:13px">' + t + '</div>';
+  // ★10-14 대표 "검색도 되게 해, 근방단 멤버 · 닉네임": 명부가 200명이라 줄을 못 찾는다. 탭과 상관없이 전체에서 찾는다.
+  //   대표는 사람을 **머피 닉네임**으로 기억하는데 명부는 실명이다 → ①명부 줄(실명·소모임 닉네임·연결된 머피 닉네임)과
+  //   ②아직 안 이어진 머피 계정(닉네임)을 같이 내고, ②는 '근방단 누구?'로 실명을 골라 바로 잇는다.
+  const rowsFor = function (q) {
+    q = _gbdN(q);
+    if (q) {
+      const ms = list.filter(m => _gbdN(m.name).indexOf(q) >= 0 || _gbdN(m.nickname).indexOf(q) >= 0 || _gbdN(m.murpyNick).indexOf(q) >= 0);
+      const us = users.filter(u => !taken[u.uid] && _gbdN(u.nickname).indexOf(q) >= 0).slice(0, 8);
+      const cap = t => '<div style="font-size:11px;color:rgba(255,255,255,.4);margin:10px 0 0">' + t + '</div>';
+      return (ms.length ? cap('근방단 명부 ' + ms.length + '명') + ms.slice(0, 30).map(row).join('') : '')
+        + (us.length ? cap('아직 안 이어진 머피 계정') + us.map(busyRow).join('') : '')
+        || empty('명부에도 머피 계정에도 없어요');
+    }
+    if (flt === 'busy') {
+      const busy = users.filter(u => !taken[u.uid] && act[u.uid] && (act[u.uid].sq || act[u.uid].posts))
+        .sort((a, b) => (act[b.uid].att - act[a.uid].att) || (act[b.uid].sq - act[a.uid].sq) || (act[b.uid].posts - act[a.uid].posts));
+      return busy.length ? busy.map(busyRow).join('') : empty('스쿼드에 나온 계정은 다 연결됐어요');
+    }
+    return shown.length ? shown.map(row).join('') : empty('다 맞췄어요');
+  };
+  window._gbdLinkRowsFor = rowsFor;
+  const one = flt.indexOf('one:') === 0;
+  const search = one ? '' : '<input id="gbd-link-q" placeholder="이름·닉네임으로 찾기" value="' + _gbdEsc(window._gbdLinkQ || '') + '" oninput="window._gbdLinkQ=this.value;var r=document.querySelector(&quot;#gbd-link .gbd-rows&quot;);if(r)r.innerHTML=window._gbdLinkRowsFor(this.value)" style="width:100%;margin:2px 0 4px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;color:#fff;font-size:16px;font-family:inherit;box-sizing:border-box;outline:none">';
+  const bodyList = search + '<div class="gbd-rows">' + rowsFor(one ? '' : window._gbdLinkQ) + '</div>';
   const body = tabs + bodyList;
   const prevScroll = (document.querySelector('#gbd-link .gbd-body') || {}).scrollTop || 0;
   const el = _gbdSheet('gbd-link', '근방단 멤버 연결',
