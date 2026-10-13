@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1227';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1228';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1296,7 +1296,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      우측 상단에 친구 초대가 또 뜬다 · 부르기로 통일한 거 아니었나").
      코덱스가 그림 칩(#mw-art-chip)은 숨겼는데 초대 칩은 안 숨겨서 둘이 같이 떴다.
      부르는 자리는 상단 바(#mw-party-invite) 하나로 통일한다. */
-  body.mw-party #mw-invite-chip { display:none !important }
+  body.mw-party #mw-invite-chip, body.mw-party #mw-quest-chip { display:none !important }
   #mw-memory { position:fixed; inset:0; z-index:40035; display:flex; align-items:flex-end;
     justify-content:center; background:rgba(5,7,12,.9); font-family:'Galmuri11',sans-serif }
   #mw-memory .mm-box { width:100%; max-width:390px; height:min(78vh,680px); display:flex;
@@ -8959,6 +8959,7 @@ window.charSetField = function (key) {
   window.tennisFieldBtn && window.tennisFieldBtn(key); // 테니스장에서만 테니스 버튼 (9-02)
   window.runFieldBtn && window.runFieldBtn(key);       // 러닝존에서만 머피런 버튼 (9-02)
   window.mwRoomInviteBtn && window.mwRoomInviteBtn(key); // 내 방=친구 초대 / 남의 방=나가기
+  window.mwParkQuestChip && window.mwParkQuestChip(key); // 내 방=공원 퀘스트 입구(오늘 다 끝내면 없음, 10-14)
   window.mwRoomFieldSync && window.mwRoomFieldSync(key);  // 홈 필드에 있는 동안만 실시간
 };
 window._charTileGeom = function () {
@@ -12200,6 +12201,7 @@ function goPage(name, navOpts) {
     //   초대칩이 안 생기고 주인 presence 도 안 붙었다(대표 8-20: "초대 버튼 어디 감").
     requestAnimationFrame(function () {
       window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField);
+      window.mwParkQuestChip && window.mwParkQuestChip(window._curField);
       window.mwArtChip && window.mwArtChip(window._curField);
       window.mwRoomFieldSync && window.mwRoomFieldSync(window._curField);
       // ★★★펫이 '꾸미기 저장'을 해야만 뜨던 진짜 원인 (대표 8-30, 세 번째 지적).
@@ -27579,6 +27581,32 @@ window.mwRoomInviteBtn = function (key) {
   b.textContent = '친구 초대';
   b.onclick = function (e) { e.stopPropagation(); window._mwRoomShut = 0; window.mwRoomInviteShare(); };
 };
+// ★10-14 대표: 내 방에 공원 퀘스트 입구 — "친구 초대 옆 · 누르면 바로 공원으로 · 퀘스트가 끝나면 없어지는 걸로".
+//   새 모양 없이 친구 초대와 같은 칩이고, 그 바로 왼쪽에 선다. 남의 방·공용룸에서는 초대 칩과 같이 안 뜬다.
+//   남은 수는 공원 퀘스트 창과 같은 기준(_mwQuestClaimed = 이 기기의 오늘 기록)이라 서버를 읽지 않는다.
+//   가입 여부는 초대 칩처럼 누를 때 판정한다(charSetField 가 오픈월드 입구에서 막는다).
+window.mwParkQuestChip = function (key) {
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  let b = document.getElementById('mw-quest-chip');
+  const N = window._MW_NPCS || [];
+  const done = window._mwQuestClaimed ? N.filter(function (n) { return window._mwQuestClaimed(n.q.id); }).length : 0;
+  const visiting = window._mwIsVisiting && window._mwIsVisiting();
+  if (key !== 'home' || visiting || !N.length || done >= N.length) { if (b) b.remove(); return; }
+  if (!b) {
+    b = document.createElement('button');
+    b.id = 'mw-quest-chip'; b.className = 'mw-fieldchip';
+    b.style.top = '9px';
+    room.appendChild(b);
+  }
+  const inv = document.getElementById('mw-invite-chip');
+  b.style.right = (9 + ((inv && inv.offsetWidth) || 77) + 6) + 'px';
+  b.innerHTML = '공원 퀘스트 <b style="color:#F5C24B;font-weight:400">' + done + '/' + N.length + '</b>';
+  b.onclick = function (e) {
+    e.stopPropagation();
+    window.track && window.track('room_quest_chip', { done: done });
+    window.charSetField && window.charSetField('park');
+  };
+};
 
 
 // 초대 카드 그림 — 카톡 썸네일용. 덤벨 피하기 기록 카드와 **같은 방식**이다.
@@ -29866,6 +29894,7 @@ window.mwRoomLeaveField = function () {
     window._mwRoomSess = (window._mwRoomSess || 0) + 1;
     window._charApplyPos && window._charApplyPos();
     window.mwRoomInviteBtn && window.mwRoomInviteBtn(window._curField || 'home');
+    window.mwParkQuestChip && window.mwParkQuestChip(window._curField || 'home');
     window.mwArtChip && window.mwArtChip(window._curField || 'home');
     showToast('방을 닫았어요 · 다시 초대할 수 있어요');
     return;
