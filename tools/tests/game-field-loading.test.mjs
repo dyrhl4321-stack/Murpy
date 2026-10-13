@@ -14,6 +14,7 @@ const flush=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
 vm.runInNewContext(grab('_mwWarmImage')+grab('_mwWarmField')+grab('_mwFieldReveal'),ctx);
 const p=window._mwWarmImage('field.png');assert.equal(window._mwWarmImage('field.png'),p);assert.equal(images.length,1);
 images[0].onload();assert.equal(await p,images[0]);assert.equal(decodes,1);assert.equal(window._mwWarmImage('field.png'),p);
+assert(window._mwWarmOk.has('field.png'),'decoded image is marked ready (charSetField asks before switching to an open field)');
 const failed=window._mwWarmImage('bad.png');images.at(-1).onerror();assert.equal(await failed,null);
 assert(!window._mwWarmCache.has('bad.png'));const retry=window._mwWarmImage('bad.png');assert.notEqual(retry,failed);images.at(-1).onload();await retry;
 const hung=window._mwWarmImage('hang.png');timers.get(timerId)();assert.equal(await hung,null);assert(!window._mwWarmCache.has('hang.png'));
