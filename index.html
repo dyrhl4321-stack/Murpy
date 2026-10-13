@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1226';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1227';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -36316,6 +36316,7 @@ window._npcRewardKid = async function (n) {
 // ★9-07 대표: 오픈월드 UI 에 퀘스트 목록 — 접었다 폈다, 체크표시. 픽셀 프레임(라운드 금지).
 window._mwQuestPanel = async function (on) {
   const old = document.getElementById('mw-quest'); if (old) old.remove();
+  const tok = window._mwQuestTok = (window._mwQuestTok || 0) + 1;
   if (!on) return;
   if (!document.getElementById('mw-quest-css')) {
     const st = document.createElement('style'); st.id = 'mw-quest-css';
@@ -36355,6 +36356,9 @@ window._mwQuestPanel = async function (on) {
   let doneN = 0;
   // 상태는 한꺼번에(순차 await 4번 → 병렬 1번, 9-07 로딩 지적)
   const states = await Promise.all(N.map(function (n) { const c = window._mwQuestClaimed(n.q.id); return c ? Promise.resolve({ claimed: true, ready: false }) : window._mwQuestDone(n.q.id).then(function (r) { return { claimed: false, ready: !!r }; }); }));
+  // ★10-14 대표 "머피월드 홈에서 갑자기 퀘스트창이 뜬다": 위 상태 확인(서버 조회)을 기다리는 사이 공원을 나가면
+  //   _mwParkNpcs(false) 가 지운 **뒤에** 이 창이 붙어 내 방 화면에 남았다. 나갔거나 더 새 호출이 있으면 붙이지 않는다.
+  if (tok !== window._mwQuestTok || !(window._mwIsOpenField && window._mwIsOpenField(window._curField))) return;
   for (let idx = 0; idx < N.length; idx++) {
     const n = N[idx], claimed = states[idx].claimed, ready = states[idx].ready;
     if (claimed) doneN++;
