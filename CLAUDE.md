@@ -132,6 +132,7 @@ Storage  uploads/{uid}/*.jpg (8MB, image만)
 **얼굴 커마(9-05~09)** — 커마권(`FACE_TICKET_PRICE=1000`, 규칙이 머피 차감과 짝 강제), 서버 생성(`functions-py` face), 도착 팝업·이름 변경·폐기·이의신청, 남이 볼 때는 `users.characterSheet`+**`characterHair`**(9-09: 없으면 상의가 뒷머리를 덮어 잘려 보였다)
 **보상 코스메틱(9-07~09)** — 이모트 27종(`_MW_EMOTES`, 할매 보상 23종·대숲 반응), **도트 이름표 6종**(`_MW_FRAMES` bunny/heart/sprout/ribbon/dumbbell/star, `tools/gen_nametags.py` 가 1배 픽셀로 찍음, 30머피 판매 · sprout=할매 전용), 나비 동행(관리인), 강코치 머피캠 도장, 민준이 노란 티·편지(슈퍼 좋아요), 칭호 4종, **보상 안내 팝업 6종**(`NPC_REWARD_INTRO`, 실제 필드 배경 위 애니메이션, `?rewarddemo=1`)
 **단체 게임** — OX 퀴즈·무궁화꽃이 피었습니다(스쿼드 필드). 1인 게임 = 덤벨 피하기·골프·테니스·러닝
+**10월(10-12~14, v1220~v1231)** — 라이브 압축 배포(§10) · iOS 앱 1.0 출시(10-12)·1.0.1 출시(10-14, 푸시 알림 켜기) · 내 방 **'공원 퀘스트 n/4' 칩**(`mwParkQuestChip`, 누르면 바로 공원, 다 끝내면 없음) · 관리자 '근방단 멤버 연결' 검색(`_gbdLinkRowsFor`, 제목 밑 큰 검색창) · **PC 넓은 창 3건(v1231)**: 닫힌 `.panel` 은 `visibility:hidden`(+500px↑ `clip-path`), 오픈월드 카메라는 `#charworld-headui` 기준(걸음 들썩임을 안 따라감), 방→오픈월드 직행은 그림이 아직이면 `_mwFieldCurtain`(막) + 칩이 보이면 공원 배경 미리 받기
 **인프라(8-29)** — XSS 이스케이프(`_escHtml/_escJs`), 대숲 limit 200, 알림 limit 100(복합 인덱스), users 5분 캐시(`_usersAll`), RTDB 방 child 구독 + pets live/scene 분리, sw HTML no-cache, Storage 전용 업로드(imgBB 폴백 제거), Analytics 이벤트 7종
 
 ## 8. 미완성 / 잔업 — ★상세는 `docs/prompts/2026-09-09-launch-checklist.txt`
@@ -143,7 +144,7 @@ sw.js `'731'` 하드코딩 · `check_version.py` cp949 · C2 머피 잠금 · �
 **출시를 막고 있는 것(대표만 가능)**
 - [ ] **Play 프로덕션 신청** — 비공개 테스트 12명·9일 경과(9-09), 14일 되는 **9-14 무렵** 버튼 활성.
       답변 초안 = `docs/prompts/2026-09-09-play-production-access-answers.txt`
-- [ ] **Apple** — Sign in with Apple 코드는 끝(9-07). 아이폰 실검증 · App Store Connect 심사 상태 확인 · 맥+Xcode 빌드
+- [x] **Apple** — 10-12 심사 통과·1.0 출시, 10-14 1.0.1(푸시 알림) 출시. 남은 것 = 아이폰 실기기 푸시 수신 확인. 1.0.2(시작 화면 애니메이션)는 대표 지시로 보류 — 다시 말씀하시기 전엔 제출·제안 금지
 - [ ] **실기기 검수** — 오픈월드 멀티(두 계정 동시 접속·푸시), 보상 팝업 `?rewarddemo=1`, 이름표, 체크인 100m
 - [ ] **결정** — 이름표 가격(임시 30머피) · 색상 파생 옷 15종 등록 여부(에셋만 있고 카탈로그 미등록) · 핑크 에디션 가격
 - [ ] **출시 당일** — `BETA_GIFT_ON=false` · MapTiler 키 도메인 제한 · imgBB 키 폐기
@@ -171,6 +172,8 @@ sw.js `'731'` 하드코딩 · `check_version.py` cp949 · C2 머피 잠금 · �
 
 - **배포 = 푸시.** index.html 고치면 ①`node tools/module-syntax-check.mjs` + `node tools/dogam-syntax-check.mjs` 둘 다 ②`node tools/bump-version.mjs <N>` ③`python tools/check_version.py` ④`git add … && git commit && git push` **한 호출로**(두 창이 같은 저장소를 만진다 — 8-29에도 다른 창 커밋이 사이에 끼었다)
 - **라이브에 나가는 index.html 은 압축본이다(10-12~).** main 에 푸시하면 `.github/workflows/pages.yml` 이 `tools/build/minify-index.mjs` 로 압축해 Pages 에 올린다(반영 2~3분, 저장소 원본은 그대로). 압축이 실패하면 원본이 그대로 나가고 Actions 에 경고가 남는다. 라이브에서 오류 줄번호가 안 맞으면 압축본이라 그렇다 — 재현은 원본으로. 압축 스크립트를 고치면 `python tools/build/verify-build.py` 로 원본과 대조. 되돌리기 = 저장소 Settings → Pages → Source 를 "Deploy from a branch"(main)로
+- **PC 넓은 창도 본다(10-14~, 대표가 PC 화면을 녹화해 홍보 영상을 만든다)** — 화면 밖으로 밀어 숨기는 요소는 폰 폭(390) 기준이라 넓은 창에서 그대로 보인다(닫힌 `.panel` 사고). 숨길 땐 `visibility`/`display` 까지. 오픈월드는 넓은 창에서 세로 카메라가 풀려 폰에서 안 보이던 떨림이 드러난다
+- **기존 화면으로 가는 지름길을 낼 땐 원래 길이 하던 준비를 확인** — 지도는 캐릭터가 걷는 동안 필드 그림을 미리 받는다. 직행은 `charSetField` 가 그림이 아직이면 막(`_mwFieldCurtain`)을 내리고 기다린다. 로컬에선 그림이 바로 와서 안 보이니 대역폭을 제한해 볼 것
 - **Firebase 모듈 스코프** — onclick 에서 쓰려면 `window.xxx`. classic 블록에서 module const(`auth`, `db`)는 안 보인다 → `typeof` 로 감싸면 조용히 죽는다(펫 발행 사고)
 - **`x.f && x.f()` 는 오타를 삼킨다** — 정의 0건인 함수를 불러도 조용하다. "안 된다"면 정의부터 grep
 - **캐릭터는 `_charRenderTo` 하나로, 겹 순서는 `_charLayerOrder` 로만** (사본이 여섯 곳이었고 세 번 사고)
@@ -196,4 +199,5 @@ sw.js `'731'` 하드코딩 · `check_version.py` cp949 · C2 머피 잠금 · �
 - 특허 초안·수익구조 문서를 공개 저장소에 두는 것
 
 ---
-*마지막 업데이트: 2026-09-09 (v1193) — 9월 작업(오픈월드 3맵·얼굴 커마·보상 코스메틱·홈 노출) 반영, 잔업 목록을 출시 체크리스트로 교체.*
+*마지막 업데이트: 2026-10-14 (v1231) — 10월 작업(공원 퀘스트 칩·근방단 연결 검색·PC 넓은 창 3건) 반영. §8 잔업 목록은 9-09 기준 그대로다(iOS 는 1.0·1.0.1 출시됨, 1.0.2 는 대표 지시로 보류) — 착수 전 코드·메모리 확인.*
+*이전: 2026-09-09 (v1193) — 9월 작업(오픈월드 3맵·얼굴 커마·보상 코스메틱·홈 노출) 반영, 잔업 목록을 출시 체크리스트로 교체.*
