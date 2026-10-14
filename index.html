@@ -77,7 +77,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1231';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1232';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -12355,9 +12355,11 @@ function closePanel(id) {
 // ===== 안드로이드 뒤로가기 · 마지막 화면 복원 =====
 // MURPY는 URL이 바뀌지 않는 단일 페이지 앱이라 기본 상태에서는 시스템 뒤로가기가
 // 내부 화면을 거치지 않고 브라우저/PWA 자체를 바로 닫는다. 앱 안의 방문 기록을 history에
-// 얹고, 마지막 메인 탭과 스크롤을 localStorage에 남겨 다음 실행에서도 이어서 보게 한다.
+// 얹고, 마지막 메인 탭과 스크롤을 localStorage에 남겨 같은 실행 안에서 다시 뜰 때(새 버전·새로고침) 이어서 보게 한다.
+// (10-14: 앱을 새로 켜면 항상 홈 — init 참고)
 (function () {
   const KEY = 'murpy_last_place_v1';
+  const SESS = 'murpy_place_sess';
   const PAGES = ['home', 'match', 'bamboo', 'crew', 'char'];
   let ready = false;
   let leaving = false;
@@ -12474,7 +12476,6 @@ function closePanel(id) {
       ok = window.murpyConfirm
         ? await window.murpyConfirm({
             title: '머피를 나갈까요?',
-            desc: '지금 보던 화면은 다음에 다시 열었을 때 이어서 보여드릴게요.',
             cancelText: '계속 볼게요',
             confirmText: '나가기'
           })
@@ -12517,10 +12518,15 @@ function closePanel(id) {
     let saved = null;
     // 초대·알림·공유 링크는 사용자가 명시적으로 연 목적지가 있으므로 마지막 화면보다 우선한다.
     let routed = false;
+    // ★10-14 대표: "아이폰앱 들어가니까 왜 첫화면 홈화면 아니냐 머피월드로 바로가는데" — **켜면 항상 홈.**
+    //   마지막 화면은 같은 실행 안에서 다시 뜰 때만(새 버전 재진입·새로고침) 되살린다 — 그때 홈으로 튀면 쓰던 자리를 잃는다.
+    //   sessionStorage 는 앱·탭을 끄면 비워지므로 표식이 없으면 새로 켠 것이다(막혀 있으면 늘 홈).
+    let resumed = false;
+    try { resumed = sessionStorage.getItem(SESS) === '1'; sessionStorage.setItem(SESS, '1'); } catch (e) {}
     try {
       const q = new URLSearchParams(location.search);
       routed = ['sq', 'room', 'art', 'n', 'game', 'code', 'from'].some(function (k) { return q.has(k); });
-      if (!routed) saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!routed && resumed) saved = JSON.parse(localStorage.getItem(KEY) || 'null');
     } catch (e) {}
     if (saved && validPage(saved.page)) {
       currentPage = saved.page;
