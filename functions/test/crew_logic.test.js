@@ -274,3 +274,14 @@ test("parseOcr: 숫자 자리 네모(0~1000) 정리, 이상한 값은 버림", (
   assert.deepEqual(o.boxes, { km: [100, 50, 200, 400], pace: [100, 500, 200, 1000] });
   assert.equal(L.parseOcr(JSON.stringify({ isRunCard: true, km: 5, sec: 1500 })).boxes, undefined);
 });
+
+// "지금 뜨는 크루"에서 들어온 사람 — 코드 없이 가입은 크루가 '누구나 가입'을 켰을 때만
+test("joinAllowed: 코드가 맞거나, 크루가 openJoin 일 때만", () => {
+  assert.equal(L.joinAllowed({ code: "abc" }, {}, "abc"), true);
+  assert.equal(L.joinAllowed({ code: "abc" }, {}, "abd"), false);
+  assert.equal(L.joinAllowed({ code: "abc" }, {}, ""), false);
+  assert.equal(L.joinAllowed(null, {}, "abc"), false);
+  assert.equal(L.joinAllowed({ code: "abc" }, { openJoin: true }, ""), true);
+  assert.equal(L.joinAllowed(null, { openJoin: true }, ""), true);
+  assert.equal(L.joinAllowed({ code: "abc" }, { openJoin: "yes" }, ""), false);   // 참(true)만
+});

@@ -274,7 +274,14 @@ function duelScore(a, b) {
   return { a: one(a), b: one(b) };
 }
 
+// 가입 허용 — 초대 코드가 맞거나, 크루가 '누구나 가입'(openJoin === true, 관리자만 켬)일 때
+function joinAllowed(join, crew, code) {
+  if (crew && crew.openJoin === true) return true;
+  return !!(join && code && join.code === code);
+}
+
 module.exports = {
+  joinAllowed,
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount, memberChallengeStep, settleChallenge,
 };

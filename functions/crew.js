@@ -159,8 +159,8 @@ exports.crewJoin = onCall({ region: REGION }, async (req) => {
   if (!crewId) throw new HttpsError("invalid-argument", "crewId");
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
-  const join = await cRef.collection("private").doc("join").get();
-  if (!join.exists || !code || join.data().code !== code) throw new HttpsError("permission-denied", "bad_code");
+  const [join, crew0] = await Promise.all([cRef.collection("private").doc("join").get(), cRef.get()]);
+  if (!L.joinAllowed(join.exists ? join.data() : null, crew0.exists ? crew0.data() : null, code)) throw new HttpsError("permission-denied", "bad_code");
   let name = "";
   await d.runTransaction(async (tx) => {
     const uRef = d.collection("users").doc(uid), mRef = cRef.collection("members").doc(uid);
