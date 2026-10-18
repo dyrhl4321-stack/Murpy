@@ -47967,16 +47967,28 @@ window.runScanFx = function (res, err) {
 
 // ── 초대 링크: https://murpy.app/?crew={id}&k={code} ─────────────────────────
 // ★코드는 k 로 받는다 — c 는 알림 링크(센터)·QR 출석(?sqa=&c=)이 이미 쓴다.
+// ★10-19 라이브 확인: 처음 오는 사람은 서비스워커가 자리를 잡는 순간 앱이 './?sw=…' 로 한 번 다시 열리며 주소 값이 다 사라진다.
+//   그래서 초대 값을 이 탭의 sessionStorage 에 들고 있다가, 시트를 띄운 뒤에 지운다(새로고침 한 번을 넘어 살아남게).
+const _CREW_INV_KEY = 'murpy_crew_invite';
 window._crewInvite = (function () {
-  try { const p = new URLSearchParams(location.search); const id = p.get('crew'); return id ? { id, code: p.get('k') || '' } : null; } catch (e) { return null; }
+  try {
+    const p = new URLSearchParams(location.search); const id = p.get('crew');
+    if (id) { const v = { id, code: p.get('k') || '' }; try { sessionStorage.setItem(_CREW_INV_KEY, JSON.stringify(v)); } catch (e) {} return v; }
+    const s = sessionStorage.getItem(_CREW_INV_KEY); return s ? JSON.parse(s) : null;
+  } catch (e) { return null; }
 })();
+// 초대 시트 닫기·가입 완료 — 보관해 둔 초대 값도 같이 지운다(다음 새로고침에 또 뜨지 않게)
+window._crewInviteDone = function () {
+  try { sessionStorage.removeItem(_CREW_INV_KEY); } catch (e) {}
+  const s = document.getElementById('crew-invite'); if (s) s.remove();
+};
 window.crewInviteHtml = function (c, profiles, members, id, code) {
   const s = c.stats || {}, sport = c.sport || 'running';
   const ms = (members || []).slice(0, 8), spots = _crewSpots(ms.map(m => m.uid), _crewKind(c));
   const chars = ms.map((m, i) => { const sp = spots[m.uid] || { x: 50, y: 80 };
     return '<div class="cw-ch" style="left:' + sp.x + '%;top:' + sp.y + '%;z-index:' + Math.round(sp.y) + '"><div class="cw-walk" style="--wd:-' + ((i % 4) * .23).toFixed(2) + 's">'
       + _crewMini(profiles[m.uid], 38, sp.face || 'down') + '</div><span class="nk">' + _cE((profiles[m.uid] && profiles[m.uid].nickname) || m.nickname || '크루원') + '</span></div>'; }).join('');
-  return _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "document.getElementById('crew-invite').remove()")
+  return _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "window._crewInviteDone()")
     + '<div class="cw-stage" style="background-image:url(\'' + _crewField(_crewKind(c)) + '\')">' + chars + '</div>'
     + '<div class="cw-sec" style="--i:1">' + (c.intro ? '<div style="font-size:14px;line-height:1.7;color:#cfd6e6">' + _cE(c.intro) + '</div>' : '')
     + '<div style="font-size:13px;line-height:1.7;color:#8a93a8;margin-top:' + (c.intro ? 16 : 0) + 'px">러닝 기록과 헬스장 출석이 내 기록과 크루 기록에 같이 쌓여요.</div></div>'
@@ -47999,7 +48011,7 @@ window.crewJoinFlow = async function (id, code) {
   try {
     await _crewCall('crewJoin', { crewId: id, code });
     window._crewMineCache = null;
-    const s = document.getElementById('crew-invite'); if (s) s.remove();
+    window._crewInviteDone();
     showToast('크루에 가입했어요');
     window.crewRenderMine && window.crewRenderMine();
     window.openCrewPage(id);
@@ -48011,13 +48023,13 @@ window.crewJoinFlow = async function (id, code) {
 };
 (function () {
   const inv = window._crewInvite; if (!inv) return;
-  // 주소창에서 초대 값을 지운다(새로고침해도 시트가 또 뜨지 않게)
-  try { const u = new URL(location.href); u.searchParams.delete('crew'); u.searchParams.delete('k'); history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash); } catch (e) {}
   let tries = 0;
   const t = setInterval(() => {
     tries++;
     if (window.currentUser || tries > 20) {   // 로그인 여부는 안 가린다 — 비로그인도 소개는 보고, 가입 버튼에서 로그인으로
       clearInterval(t);
+      // 주소창 값은 지금 지우고, 보관 값은 닫거나 가입할 때 지운다(_crewInviteDone) — 시트가 뜬 직후 업데이트 새로고침이 와도 다시 뜨게
+      try { const u = new URL(location.href); u.searchParams.delete('crew'); u.searchParams.delete('k'); history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash); } catch (e) {}
       window.crewInviteSheet(inv.id, inv.code);
     }
   }, 500);
