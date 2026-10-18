@@ -3,6 +3,21 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<script>/* ★10-19 크루 초대 링크를 카톡 안 브라우저로 열면 곧바로 카톡 밖으로 (대표 10-19 "애플이면 앱스토어, 플레이면 플레이스토어").
+   아이폰 카톡: kakaotalk://web/openExternal → 사파리가 이 주소(+via=kt)를 연다 → 앱이 있으면 유니버설 링크로 앱, 없으면 아래 줄이 앱스토어로.
+   안드로이드 카톡: intent:// → 앱(app.murpy.twa), 없으면 플레이스토어. 자동이 막히면 페이지가 그대로 떠서 초대장 버튼으로 간다.
+   앱 안(아이폰 앱 = push-token 핸들러, 설치된 웹앱 = standalone)에서는 아무것도 안 한다. 첫 방문 새로고침 때 두 번 나가지 않게 한 번만. */
+(function(){try{
+  var q=location.search; if(!/[?&]crew=/.test(q)||!/[?&]k=/.test(q)) return;
+  if((window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers['push-token'])||navigator.standalone) return;
+  var ua=navigator.userAgent||'', ios=/iPhone|iPad|iPod/i.test(ua), and=/Android/i.test(ua), kt=/KAKAOTALK/i.test(ua);
+  var qs=q.replace(/^\?/,'').replace(/(^|&)via=kt(?=&|$)/,'');
+  try{ if(sessionStorage.getItem('murpy_kt_out')===qs) return; sessionStorage.setItem('murpy_kt_out',qs); }catch(e){}
+  if(kt&&ios){ location.href='kakaotalk://web/openExternal?url='+encodeURIComponent('https://murpy.app/?'+qs+'&via=kt'); return; }
+  if(kt&&and){ location.href='intent://murpy.app/?'+qs+'#Intent;scheme=https;package=app.murpy.twa;S.browser_fallback_url='+encodeURIComponent('https://play.google.com/store/apps/details?id=app.murpy.twa')+';end'; return; }
+  if(ios&&/[?&]via=kt(&|$)/.test(q)) location.replace('https://apps.apple.com/kr/app/id6809371046');
+}catch(e){}})();
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -77,7 +92,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1237';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1238';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -47939,9 +47954,31 @@ window.openCrewPage = async function (id) {
 };
 window.crewRenderMine = async function () {
   const el = document.getElementById('crew-mine'); if (!el) return;
-  if (window._notMember && window._notMember()) { el.innerHTML = ''; return; }
   _crewCss();
-  try { el.innerHTML = window.crewRowHtml(await window.crewMine()); } catch (e) { el.innerHTML = ''; }
+  try {
+    // 설치 직후 첫 실행은 아직 로그인 전이다 — 비회원이면 크루 목록 대신 '초대 붙여넣기'만(가입은 초대장의 가입 버튼이 로그인으로 잇는다)
+    const guest = !!(window._notMember && window._notMember());
+    const mine = guest ? [] : await window.crewMine();
+    let html = guest ? '' : window.crewRowHtml(mine);
+    // 앱(웹뷰·TWA·설치본)에서 크루가 없으면 '초대 붙여넣기' — 카톡 초대 → 설치 → 첫 실행에서 초대를 이어받는 길(클립보드는 초대 화면이 복사해 둔다)
+    let closed = false; try { closed = localStorage.getItem('murpy_crew_paste_off') === '1'; } catch (e) {}
+    if (!mine.length && !closed && window._inAppShell && window._inAppShell()) {
+      html = '<div style="display:flex;align-items:center;gap:10px;margin:2px 0 16px;font-size:13px;color:rgba(255,255,255,0.6)">'
+        + '<span style="flex:1">크루 초대를 받으셨나요?</span>'
+        + '<button class="cw-pbtn" style="flex:none;padding:8px 12px" onclick="window.crewPasteInvite()">초대 링크 붙여넣기</button>'
+        + '<button onclick="try{localStorage.setItem(\'murpy_crew_paste_off\',\'1\')}catch(e){};window.crewRenderMine()" aria-label="닫기" style="background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;padding:4px;cursor:pointer">✕</button></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) { el.innerHTML = ''; }
+};
+window.crewPasteInvite = async function () {
+  let t = '';
+  try { t = await navigator.clipboard.readText(); } catch (e) {}
+  const m = String(t || '').match(/[?&]crew=([A-Za-z0-9_-]+)/), k = String(t || '').match(/[?&]k=([A-Za-z0-9]+)/), b = String(t || '').match(/[?&]by=([A-Za-z0-9_-]+)/);
+  if (!m || !k) { showToast('초대 링크를 복사한 뒤 다시 눌러 주세요'); return; }
+  // 로그인(리다이렉트)으로 다시 열려도 초대가 이어지게 링크로 연 것과 같은 자리에 보관
+  try { sessionStorage.setItem(_CREW_INV_KEY, JSON.stringify({ id: m[1], code: k[1], by: b ? b[1] : '' })); } catch (e) {}
+  window.crewInviteSheet(m[1], k[1], b ? b[1] : '');
 };
 window.myRunLinePaint = async function () {
   const el = document.getElementById('my-run-line'); if (!el) return;
@@ -48176,7 +48213,35 @@ window.crewInviteHtml = function (c, profiles, members, id, code, byUid) {
     +   '<p><i></i>내 러닝 기록과 헬스장 출석이 크루 기록에 같이 쌓여요</p>'
     +   '<p><i></i>2주 크루 챌린지를 채우면 함께 ' + window.CREW_CFG.CHALLENGE_REWARD_GROUP + '머피, 내 목표를 채우면 ' + window.CREW_CFG.CHALLENGE_REWARD_SOLO + '머피</p>'
     + '</div></div>'
-    + '<div class="cw-bar"><button class="cw-up" id="crew-join-btn" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">크루 가입하기</button></div>';
+    + (window._inAppShell && window._inAppShell()
+      ? '<div class="cw-bar"><button class="cw-up" id="crew-join-btn" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">크루 가입하기</button></div>'
+      // 웹 브라우저(사파리·크롬·카톡 안)에서 연 경우: 앱으로 열기 + 웹에서 바로 가입 둘 다(대표 10-19)
+      : '<div class="cw-bar" style="gap:10px"><button class="cw-up" style="flex:1" onclick="window.crewOpenInApp(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\',\'' + _cJ(byUid || '') + '\')">머피 앱으로 열기</button>'
+        + '<button class="cw-up" id="crew-join-btn" style="flex:1" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">웹에서 바로 가입</button></div>');
+};
+// ── 머피 앱으로 열기 — 웹 페이지(앱 밖)에서만 쓰인다. 앱 안(_inAppShell)에서는 이 버튼이 없다(애플 5.6: 앱 안에서 환경 분기 없음).
+//   안드로이드: intent:// 로 머피 앱(app.murpy.twa)에 초대 주소를 그대로 넘기고, 앱이 없으면 플레이스토어.
+//   아이폰 카톡 안: kakaotalk://web/openExternal 로 카톡 밖에서 연다 → 앱이 있으면 유니버설 링크로 앱, 없으면 사파리(웹 가입).
+//   아이폰 사파리: 같은 도메인 이동은 앱을 안 연다 → 앱스토어(설치·열기). 설치 뒤 이어받기용으로 누를 때 초대 주소를 클립보드에 복사해 둔다.
+window.crewOpenInApp = function (id, code, by) {
+  const url = 'https://murpy.app/?crew=' + encodeURIComponent(id) + '&k=' + encodeURIComponent(code) + (by ? '&by=' + encodeURIComponent(by) : '');
+  window._crewCopyText(url);
+  const ua = navigator.userAgent || '', android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua), kakao = /KAKAOTALK/i.test(ua);
+  const play = 'https://play.google.com/store/apps/details?id=app.murpy.twa', store = 'https://apps.apple.com/kr/app/murpy/id6809371046';
+  if (android) {
+    location.href = 'intent://murpy.app/?' + url.split('?')[1] + '#Intent;scheme=https;package=app.murpy.twa;S.browser_fallback_url=' + encodeURIComponent(play) + ';end';
+  } else if (ios && kakao) {
+    location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(url + '&via=kt');
+  } else if (ios) {
+    showToast('앱이 열리면 초대가 이어져요. 처음이면 설치 후 링크를 한 번 더 눌러 주세요');
+    setTimeout(function () { location.href = store; }, 600);
+  } else {
+    showToast('휴대폰에서 링크를 열면 앱으로 이어져요');
+  }
+};
+window._crewCopyText = function (t) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).catch(function () {}); return; } } catch (e) {}
+  try { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } catch (e) {}
 };
 window.crewInviteSheet = async function (id, code, by) {
   const el = _crewSheet('crew-invite', window.crewSkeletonHtml().replace(/crew-page/g, 'crew-invite'));
@@ -48251,8 +48316,49 @@ window.crewAdminOpen = async function () {
     + '<div class="cw-h" style="margin-top:40px">크루 ' + list.length + '곳</div><div class="cw-list">'
     + list.map(c => '<div class="cw-li"><span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">'
       + _cE([c.school, _crewSportKo[c.sport]].filter(Boolean).join(' ')) + ' ' + ((c.stats || {}).members || 0) + '명</span></span>'
+      + '<button class="cw-pbtn" onclick="window.crewIntroEdit(\'' + _cJ(c.id) + '\')">소개</button>'
       + '<button class="cw-pbtn" onclick="window.crewInviteCopy(\'' + _cJ(c.id) + '\')">링크</button>'
       + '<button class="cw-pbtn" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')">열기</button></div>').join('') + '</div></div>';
+};
+// ── 관리자: 크루 소개·최근 모임 사진(초대장에 보이는 칸) ──
+//   사진은 최대 2장, 크루장·운영진이 올린 실제 모임 사진만(예시 사진 넣지 않는다 — 대표 10-19). 1차는 운영자 계정만(규칙 isAdmin).
+window.crewIntroEdit = async function (id) {
+  if (!(typeof isAdmin === 'function' && isAdmin())) return;
+  let c = null;
+  try { const s = await getDoc(doc(db, 'crewsV2', id)); c = s.exists() ? s.data() : null; } catch (e) {}
+  if (!c) return;
+  window._crewIntroPhotos = (c.photos || []).slice(0, 2);
+  const paint = () => {
+    const box = document.getElementById('cri-photos'); if (!box) return;
+    box.innerHTML = window._crewIntroPhotos.map((u, i) => '<div style="position:relative;width:96px;height:72px;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;background:#121827 center/cover no-repeat;background-image:url(\'' + _cE(u) + '\')">'
+      + '<button onclick="window._crewIntroPhotos.splice(' + i + ',1);window._crewIntroPaint()" aria-label="빼기" style="position:absolute;right:-8px;top:-8px;width:22px;height:22px;background:#121827;border:2px solid #05070c;color:#fff;font-size:11px;cursor:pointer">✕</button></div>').join('')
+      + (window._crewIntroPhotos.length < 2 ? '<button class="cw-pbtn" style="flex:none;width:96px;height:72px" onclick="window._crewIntroPick()">사진 올리기</button>' : '');
+  };
+  window._crewIntroPaint = paint;
+  window._crewIntroPick = function () {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; inp.remove(); if (!f) return;
+      showToast('사진 올리는 중');
+      try { const url = await window.mwUploadImage(await window._compressImg(f), 'crew'); window._crewIntroPhotos.push(url); paint(); }
+      catch (e) { showToast('사진을 올리지 못했어요'); }
+    };
+    document.body.appendChild(inp); inp.click();
+  };
+  _crewSheet('crew-intro', _crewHead('크루 소개', _cE(c.name), "document.getElementById('crew-intro').remove()")
+    + '<div style="padding:0 20px"><label class="cw-lb" style="margin-top:8px">소개 (초대장에 보여요, 120자)</label>'
+    + '<textarea id="cri-intro" class="cw-in" rows="3" maxlength="120" style="resize:none">' + _cE(c.intro || '') + '</textarea>'
+    + '<label class="cw-lb">최근 모임 사진 (최대 2장)</label><div id="cri-photos" style="display:flex;gap:12px;margin-top:10px"></div>'
+    + '<button class="cw-up" style="max-width:none;margin-top:28px" onclick="window.crewIntroSave(\'' + _cJ(id) + '\')">저장</button></div>');
+  paint();
+};
+window.crewIntroSave = async function (id) {
+  const intro = String((document.getElementById('cri-intro') || {}).value || '').trim().slice(0, 120);
+  try {
+    await updateDoc(doc(db, 'crewsV2', id), { intro, photos: (window._crewIntroPhotos || []).slice(0, 2) });
+    const s = document.getElementById('crew-intro'); if (s) s.remove();
+    showToast('저장했어요');
+  } catch (e) { showToast('저장하지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }
 };
 // 초대 코드 10자(헷갈리는 글자 뺀 32종) — 6자리 숫자는 크루 id 가 공개라 맞혀 볼 수 있다(리뷰 10-19)
 const _crewCode = () => { const A = 'abcdefghjkmnpqrstuvwxyz23456789'; const a = new Uint32Array(10); crypto.getRandomValues(a); return Array.from(a, x => A[x % A.length]).join(''); };
