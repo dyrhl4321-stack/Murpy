@@ -1419,6 +1419,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     -webkit-tap-highlight-color:transparent; }
   .mw-wb-tabbtn:active { transform:translateY(4px); box-shadow:0 0 0 2px #2b3350, 0 1px 0 #05060a; }
   .mw-wb-tabbtn img { width:17px; height:17px; object-fit:contain; }
+  .mw-wb-tabs > .mw-wb-tabbtn:nth-last-child(4):first-child, .mw-wb-tabs > .mw-wb-tabbtn:nth-last-child(4):first-child ~ .mw-wb-tabbtn { gap:5px; }
   .mw-wb-live { width:7px; height:7px; background:#4ADE80; position:absolute; right:8px; top:8px;
     box-shadow:0 0 0 1px #05070c; animation:mwBlink 1.1s steps(2) infinite }
   /* 드래그 조이스틱: 평소 투명 → 방을 잡으면 등장, 미는 방향만 미세하게 흰색 */
@@ -2524,6 +2525,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   <!-- 콜드유저 대응 히어로 (자동 슬라이드). 스쿼드가 없어도 여기는 항상 뭔가 떠 있다. -->
   <!-- ★10-19 내 크루(소속 크루가 있을 때만 보인다 — 없으면 빈칸. crewRenderMine) -->
   <div id="crew-mine"></div>
+  <!-- ★10-19 지금 뜨는 크루(가입 안 한 사람도 본다 — crewHotRender). 이번 주 운동한 사람 많은 크루 순 -->
+  <div id="crew-hot"></div>
   <div id="squad-hero" style="padding-top:2px"></div>
   <!-- ★홍보 카드와 실제 목록 사이 구분선 + 섹션 제목. 없으니 둘이 섞여 난잡했다(대표 지적).
        '+ 만들기'도 여기로 내렸다 — 위 헤더에 두면 헤더가 두 줄이 되고, 목록 바로 위가
@@ -2581,6 +2584,10 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <button class="mw-wb-tabbtn" onclick="window.mwFreeCam()">
       <svg width="17" height="17" viewBox="0 0 16 16" shape-rendering="crispEdges"><path fill="#cfd6e6" d="M1 4h3l1-2h6l1 2h3v10H1z"/><path fill="#05070c" d="M8 6a3.2 3.2 0 100 6.4A3.2 3.2 0 008 6z"/><path fill="#3D7EFF" d="M8 7.2a2 2 0 100 4 2 2 0 000-4z"/><path fill="#E4472E" d="M12.5 5h1.6v1.6h-1.6z"/></svg>
       카메라
+    </button>
+    <!-- ★10-19 크루 입구(대표 A안) — 크루원은 내 크루, 없으면 크루 둘러보기 -->
+    <button class="mw-wb-tabbtn" onclick="window.mwCrewEntry()">
+      <img src="char/ui/ui_ic_crew.png?v=1" alt="" style="image-rendering:pixelated">크루
     </button>
   </div>
   <!-- 지도·체크인·카메라가 있던 자리. 방에서는 방에서 할 것만 있어야 한다(대표 8-20). -->
@@ -9043,6 +9050,7 @@ window.charSetField = function (key, _warmed) {
   window.runFieldBtn && window.runFieldBtn(key);       // 러닝존에서만 머피런 버튼 (9-02)
   window.mwRoomInviteBtn && window.mwRoomInviteBtn(key); // 내 방=친구 초대 / 남의 방=나가기
   window.mwParkQuestChip && window.mwParkQuestChip(key); // 내 방=공원 퀘스트 입구(오늘 다 끝내면 없음, 10-14)
+  window.crewRoomBadge && window.crewRoomBadge(key);     // 남의 방=방 주인 크루 배지(10-19)
   window.mwRoomFieldSync && window.mwRoomFieldSync(key);  // 홈 필드에 있는 동안만 실시간
 };
 window._charTileGeom = function () {
@@ -26348,6 +26356,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
         <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}${(window._milestoneBadge && window._milestoneBadge(totalCnt, 30)) || ''}</span>
       </div>
       ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta}</div>` : ''}
+      <div id="up-crew-badge"></div>
     </div>
     ${infoCard}
     ${styleChips ? `<div style="padding:18px 16px 2px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:10px">운동 스타일</div><div style="display:flex;gap:6px;flex-wrap:wrap">${styleChips}</div></div>` : ''}
@@ -26357,6 +26366,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     <div style="height:1px;background:rgba(255,255,255,0.06);margin:6px 16px 20px"></div>
     ${roomSection}
     <div style="padding:4px 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
+  window.crewBadgeFill && window.crewBadgeFill('up-crew-badge', userId);   // 크루 배지(10-19)
 
   // 방 주인 캐릭터 — 실제 방과 같은 축척(무대폭 × 3.3 ÷ 16타일). 무대 폭을 실측한 뒤 꽂는다.
   // 잠금 상태에선 캐릭터를 넣지 않는다(블러 뒤로 실루엣이 비치면 잠금의 의미가 없다).
@@ -40807,6 +40817,7 @@ window.renderSquadPage = async function () {
   //   살아 있는 벙 목록을 알고 있어야 한다. 먼저 그리면 그걸 모른 채 코드에 적힌 값만 쓴다.
   const root = document.getElementById('squad-list'); if (!root) return;
   try { window.crewRenderMine(); } catch (e) { console.warn('crew row', e); }   // 10-19 내 크루 줄(기다리지 않는다)
+  try { window.crewHotRender(); } catch (e) { console.warn('crew hot', e); }    // 10-19 지금 뜨는 크루
   root.innerHTML = '<div style="text-align:center;padding:34px;color:rgba(255,255,255,.35);font-size:13px">스쿼드 불러오는 중…</div>';
   let rows = [];
   try {
@@ -47622,6 +47633,28 @@ html.cw-open,html.cw-open body{overflow:hidden!important;overscroll-behavior:non
 .cw-segl{position:relative;height:16px;margin-top:6px}
 .cw-segl span{position:absolute;transform:translateX(-50%);font-family:'Galmuri11',sans-serif;font-size:10px;color:#6b7488;white-space:nowrap}
 .cw-more{position:absolute;left:66px;top:16px;font-family:'Galmuri11',sans-serif;font-weight:400;font-size:10px;color:#aeb6c8}
+.cw-row-mine .th{position:relative;overflow:hidden}
+.cw-dim{position:absolute;inset:0;background:rgba(5,7,12,.38)}
+.cw-logo{position:absolute;left:50%;top:50%;width:34%;transform:translate(-50%,-50%)}
+.cw-hot{display:flex;gap:12px;overflow-x:auto;scrollbar-width:none;margin:0 -20px 22px;padding:2px 20px 6px}
+.cw-hot::-webkit-scrollbar{display:none}
+.cw-hot.one,.cw-hot.col{flex-direction:column;overflow:visible}
+.cw-hot.col{margin:0;padding:0 20px}
+.cw-hotc{flex:0 0 78%;display:block;padding:0;text-align:left;background:#0e1320;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40,0 4px 0 #05060a;color:#e8ecf4;font-family:inherit;cursor:pointer}
+.cw-hot.one .cw-hotc,.cw-hot.col .cw-hotc{flex:none;width:100%}
+.cw-hotc:active{transform:translateY(2px)}
+.cw-hot-th{display:block;position:relative;aspect-ratio:1280/574;overflow:hidden;image-rendering:pixelated}
+.cw-hot-b{display:flex;align-items:center;gap:10px;padding:12px 14px 13px;border-top:2px solid #05070c}
+.cw-hot-b .nm{display:block;font-size:15px;font-weight:800;letter-spacing:-.3px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-hot-b small{display:block;font-size:12px;color:#8a93a8;margin-top:3px}
+.cw-hot-b small b{color:#e8ecf4;font-weight:700}
+.cw-hot-b em{font-style:normal;font-family:'Galmuri11',sans-serif;font-size:11px;color:#7aa8ff;flex:none}
+.cw-badge{display:inline-flex;align-items:center;gap:7px;max-width:100%;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #2b3350;color:#e8ecf4;
+  font-family:inherit;font-size:12.5px;padding:3px 10px 3px 3px;cursor:pointer}
+.cw-badge b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-badge span{color:#8a93a8;flex:none}
+.cw-badge-th{position:relative;flex:none;width:22px;height:22px;overflow:hidden;image-rendering:pixelated}
+.cw-badge-th .cw-logo{width:84%}
 .cw-tk{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;font-size:12px;color:#8a93a8;font-variant-numeric:tabular-nums}
 .cw-tk b{color:#e8ecf4;font-weight:700}
 .cw-tk .rw{color:#F5C24B;font-weight:600}
@@ -47848,9 +47881,106 @@ window.crewRowHtml = function (crews) {
     + crews.map(c => {
       const s = c.stats || {};
       const main = _crewKind(c) === 'gym' ? _crewMonthKo() + ' 출석 ' + _crewMonth(s, 'monthAttends') + '회' : _crewMonthKo() + ' ' + _crewKm(_crewMonth(s, 'monthKm')) + 'km';
-      return '<button class="cw-row-mine" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')"><span class="th" style="' + _crewBg() + '"></span>'
+      return '<button class="cw-row-mine" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')">' + _crewThumbHtml(c, 'th') 
         + '<span style="flex:1;min-width:0"><b>' + _cE(c.name) + '</b><small>' + (s.members || 0) + '명 · ' + main + '</small></span></button>';
     }).join('') + '</div>';
+};
+// ── 크루 썸네일(10-19 대표) — 예전 커버 사진 > 로고(공원 도트 위 흰 로고, 로고는 크기만 바꾼다) > 공원 도트 ──
+function _crewThumbHtml(c, cls) {
+  if (c.cover) return '<span class="' + cls + '" style="background:#05070c url(\'' + _cE(c.cover) + '\') center/cover no-repeat"></span>';
+  return '<span class="' + cls + '" style="' + _crewBg() + ';position:relative">'
+    + (c.logo ? '<i class="cw-dim"></i><img class="cw-logo" src="' + _cE(c.logo) + '" alt="">' : '') + '</span>';
+}
+// ── 지금 뜨는 크루 — 이번 주 운동한 사람 많은 순(같으면 인원 순), 5분 캐시 ──
+window.crewHotList = async function (force) {
+  const k = window._crewHotCache; if (!force && k && Date.now() - k.at < 300000) return k.list;
+  const sn = await getDocs(query(collection(db, 'crewsV2'), limit(30)));
+  const wk = window._crewWeekKey();
+  const list = sn.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(x => !x.hidden).map(x => {
+    const st = x.stats || {}; x._wk = st.weekKey === wk ? (st.weekActive || 0) : 0; return x;
+  }).sort((a, b) => (b._wk - a._wk) || (((b.stats || {}).members || 0) - ((a.stats || {}).members || 0))).slice(0, 10);
+  window._crewHotCache = { at: Date.now(), list };
+  return list;
+};
+function _crewHotCard(c) {
+  const st = c.stats || {};
+  const line = c._wk > 0 ? '이번 주 <b>' + c._wk + '명</b> 운동했어요' : '크루원 <b>' + (st.members || 0) + '명</b>';
+  return '<button class="cw-hotc" onclick="window.crewHotTap(\'' + _cJ(c.id) + '\')">' + _crewThumbHtml(c, 'cw-hot-th')
+    + '<span class="cw-hot-b"><span style="flex:1;min-width:0"><b class="nm">' + _cE(c.name) + '</b><small>' + line + '</small></span><em>초대장 보기</em></span></button>';
+}
+window.crewHotRender = async function () {
+  const el = document.getElementById('crew-hot'); if (!el) return;
+  _crewCss();
+  let list = []; try { list = await window.crewHotList(); } catch (e) { console.warn('crew hot', e); }
+  if (!list.length) { el.innerHTML = ''; return; }
+  // 스쿼드 탭 '요즘 뜨는 스쿼드' 제목과 같은 아이콘·크기
+  el.innerHTML = '<div style="display:flex;align-items:center;gap:9px;margin:2px 0 13px">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="none" style="flex-shrink:0"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>'
+    + '<span style="font-size:14px;font-weight:800;letter-spacing:-0.2px">지금 뜨는 크루</span></div>'
+    + '<div class="cw-hot' + (list.length === 1 ? ' one' : '') + '">' + list.map(_crewHotCard).join('') + '</div>';
+};
+// 카드·배지를 누르면 — 내 크루면 크루 화면, 아니면 그 크루 초대장(코드 없이: '누구나 가입' 크루만 가입 버튼)
+window.crewHotTap = async function (id) {
+  let mine = []; try { mine = await window.crewMine(); } catch (e) {}
+  if (mine.some(c => c.id === id)) window.openCrewPage(id);
+  else window.crewInviteSheet(id, '', '');
+};
+// ── 머피월드 '크루' 버튼 — 크루원은 첫 크루로, 없으면 크루 둘러보기 ──
+window.mwCrewEntry = async function () {
+  window.track && window.track('mw_crew_entry', {});
+  let mine = []; try { mine = await window.crewMine(); } catch (e) {}
+  if (mine.length) { window.openCrewPage(mine[0].id); return; }
+  window.crewBrowse();
+};
+window.crewBrowse = async function () {
+  const el = _crewSheet('crew-browse', _crewHead('크루 둘러보기', '', "document.getElementById('crew-browse').remove()") + '<div style="padding:0 20px"><div class="cw-sk" style="height:180px"></div></div>');
+  let list = []; try { list = await window.crewHotList(); } catch (e) {}
+  if (!document.body.contains(el)) return;
+  el.firstChild.innerHTML = _crewHead('크루 둘러보기', '', "document.getElementById('crew-browse').remove()")
+    + '<div class="cw-hot col" style="padding:0 20px">' + (list.length ? list.map(_crewHotCard).join('') : '<p class="cw-quiet" style="padding:40px 0;text-align:center">아직 크루가 없어요</p>') + '</div>';
+};
+// ── 크루 배지 — 대표 크루(가장 먼저 든 크루) + 외 n. users.crewIds 는 본인이 고칠 수 있어 멤버 문서로 다시 확인 ──
+window.crewBadgeOf = async function (uid) {
+  if (!uid) return null;
+  let ids = [];
+  try {
+    const k = window._usersAllCache, hit = k && k.snap && k.snap.docs.find(x => x.id === uid);   // 5분 캐시에 있으면 그걸로
+    ids = hit ? (hit.data().crewIds || []) : (await getDoc(doc(db, 'users', uid)).then(s => (s.exists() && s.data().crewIds) || []));
+  } catch (e) {}
+  ids = ids.filter(x => typeof x === 'string' && x).slice(0, 5);
+  if (!ids.length) return null;
+  const ok = (await Promise.all(ids.map(id => getDoc(doc(db, 'crewsV2', id, 'members', uid)).then(m => m.exists() && !m.data().left ? id : null).catch(() => null)))).filter(Boolean);
+  if (!ok.length) return null;
+  const cs = await getDoc(doc(db, 'crewsV2', ok[0])); if (!cs.exists()) return null;
+  return { crew: Object.assign({ id: ok[0] }, cs.data()), more: ok.length - 1 };
+};
+function _crewBadgeHtml(b) {
+  const c = b.crew;
+  return '<button class="cw-badge" onclick="event.stopPropagation();window.crewHotTap(\'' + _cJ(c.id) + '\')">'
+    + _crewThumbHtml(c, 'cw-badge-th') + '<b>' + _cE(c.name) + '</b>' + (b.more > 0 ? '<span>외 ' + b.more + '</span>' : '') + '</button>';
+}
+window.crewBadgeFill = async function (elId, uid) {
+  const el = document.getElementById(elId); if (!el) return;
+  _crewCss();
+  let b = null; try { b = await window.crewBadgeOf(uid); } catch (e) {}
+  const el2 = document.getElementById(elId); if (!el2 || !b) return;
+  el2.innerHTML = '<div style="margin-top:10px">' + _crewBadgeHtml(b) + '</div>';
+};
+// 남의 방(홈 필드에서 방문 중일 때) 왼쪽 위 — 방 주인의 크루
+window.crewRoomBadge = async function (key) {
+  const room = document.getElementById('charworld-room'); if (!room) return;
+  let el = document.getElementById('mw-crew-badge');
+  const v = window._mwVisit;
+  if (key !== 'home' || !v || !v.uid) { if (el) el.remove(); return; }
+  if (el && el.dataset.uid === v.uid) return;
+  if (el) el.remove();
+  _crewCss();
+  let b = null; try { b = await window.crewBadgeOf(v.uid); } catch (e) {}
+  if (!b || !window._mwVisit || window._mwVisit.uid !== v.uid || document.getElementById('mw-crew-badge')) return;
+  el = document.createElement('div'); el.id = 'mw-crew-badge'; el.dataset.uid = v.uid;
+  el.style.cssText = 'position:absolute;left:9px;top:9px;z-index:200';
+  el.innerHTML = _crewBadgeHtml(b);
+  room.appendChild(el);
 };
 function _crewChallengeHtml(ch, data, me) {
   if (!ch) return '';
@@ -48244,7 +48374,8 @@ window.crewInviteHtml = function (c, profiles, members, id, code, byUid) {
     +   '<p><i></i>내 러닝 기록과 헬스장 출석이 크루 기록에 같이 쌓여요</p>'
     +   '<p><i></i>2주 크루 챌린지를 채우면 함께 ' + window.CREW_CFG.CHALLENGE_REWARD_GROUP + '머피, 내 목표를 채우면 ' + window.CREW_CFG.CHALLENGE_REWARD_SOLO + '머피</p>'
     + '</div></div>'
-    + (window._inAppShell && window._inAppShell()
+    + (!code && c.openJoin !== true ? '<div class="cw-bar"><p class="cw-quiet" style="padding:16px 0;text-align:center">크루장에게 초대 링크를 받아 가입해요</p></div>'
+      : window._inAppShell && window._inAppShell()
       ? '<div class="cw-bar"><button class="cw-up" id="crew-join-btn" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">크루 가입하기</button></div>'
       // 웹 브라우저(사파리·크롬·카톡 안)에서 연 경우: 앱으로 열기 + 웹에서 바로 가입 둘 다(대표 10-19)
       : '<div class="cw-bar" style="gap:10px"><button class="cw-up" style="flex:1" onclick="window.crewOpenInApp(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\',\'' + _cJ(byUid || '') + '\')">머피 앱으로 열기</button>'
@@ -48359,7 +48490,27 @@ window.crewIntroEdit = async function (id) {
   try { const s = await getDoc(doc(db, 'crewsV2', id)); c = s.exists() ? s.data() : null; } catch (e) {}
   if (!c) return;
   window._crewIntroPhotos = (c.photos || []).slice(0, 2);
+  window._crewIntroCover = c.cover || ''; window._crewIntroLogo = c.logo || ''; window._crewIntroOpen = c.openJoin === true;
+  const one = (boxId, key, wide) => {
+    const box = document.getElementById(boxId); if (!box) return;
+    const u = window[key], w = wide ? 160 : 72, h = wide ? 72 : 72;
+    box.innerHTML = u ? '<div style="position:relative;width:' + w + 'px;height:' + h + 'px;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;background:#05070c center/' + (wide ? 'cover' : 'contain') + ' no-repeat;background-image:url(\'' + _cE(u) + '\')">'
+      + '<button onclick="window[\'' + key + '\']=\'\';window._crewIntroPaint()" aria-label="빼기" style="position:absolute;right:-8px;top:-8px;width:22px;height:22px;background:#121827;border:2px solid #05070c;color:#fff;font-size:11px;cursor:pointer">✕</button></div>'
+      : '<button class="cw-pbtn" style="flex:none;width:' + w + 'px;height:' + h + 'px" onclick="window._crewIntroPickOne(\'' + key + '\',' + (wide ? 'true' : 'false') + ')">올리기</button>';
+  };
+  window._crewIntroPickOne = function (key, compress) {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = compress ? 'image/*' : 'image/png,image/*'; inp.style.display = 'none';
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0]; inp.remove(); if (!f) return;
+      showToast('올리는 중');
+      try { window[key] = await window.mwUploadImage(compress ? await window._compressImg(f) : f, 'crew'); window._crewIntroPaint(); }   // 로고는 투명 유지 — 압축하지 않는다
+      catch (e) { showToast('올리지 못했어요'); }
+    };
+    document.body.appendChild(inp); inp.click();
+  };
   const paint = () => {
+    one('cri-cover', '_crewIntroCover', true); one('cri-logo', '_crewIntroLogo', false);
+    const ob = document.getElementById('cri-open'); if (ob) ob.textContent = window._crewIntroOpen ? '켜짐 — 초대 링크 없이도 가입' : '꺼짐 — 초대 링크로만 가입';
     const box = document.getElementById('cri-photos'); if (!box) return;
     box.innerHTML = window._crewIntroPhotos.map((u, i) => '<div style="position:relative;width:96px;height:72px;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;background:#121827 center/cover no-repeat;background-image:url(\'' + _cE(u) + '\')">'
       + '<button onclick="window._crewIntroPhotos.splice(' + i + ',1);window._crewIntroPaint()" aria-label="빼기" style="position:absolute;right:-8px;top:-8px;width:22px;height:22px;background:#121827;border:2px solid #05070c;color:#fff;font-size:11px;cursor:pointer">✕</button></div>').join('')
@@ -48380,13 +48531,19 @@ window.crewIntroEdit = async function (id) {
     + '<div style="padding:0 20px"><label class="cw-lb" style="margin-top:8px">소개 (초대장에 보여요, 120자)</label>'
     + '<textarea id="cri-intro" class="cw-in" rows="3" maxlength="120" style="resize:none">' + _cE(c.intro || '') + '</textarea>'
     + '<label class="cw-lb">최근 모임 사진 (최대 2장)</label><div id="cri-photos" style="display:flex;gap:12px;margin-top:10px"></div>'
+    // ★10-19 썸네일(지금 뜨는 크루·내 크루·배지): 커버가 있으면 커버, 없으면 공원 도트 위 로고. 로고는 정사각·투명 PNG, 크기만 바꾼다(픽셀 손대지 않음)
+    + '<label class="cw-lb">썸네일 커버 (가로 사진, 있으면 이게 먼저)</label><div id="cri-cover" style="display:flex;gap:12px;margin-top:10px"></div>'
+    + '<label class="cw-lb">로고 (정사각, 투명 PNG 가능)</label><div id="cri-logo" style="display:flex;gap:12px;margin-top:10px"></div>'
+    + '<label class="cw-lb">누구나 가입</label><button id="cri-open" class="cw-pbtn" style="flex:none;margin-top:10px;padding:10px 14px" onclick="window._crewIntroOpen=!window._crewIntroOpen;window._crewIntroPaint()"></button>'
     + '</div><div class="cw-bar"><button class="cw-up" onclick="window.crewIntroSave(\'' + _cJ(id) + '\')">저장</button></div>');
   paint();
 };
 window.crewIntroSave = async function (id) {
   const intro = String((document.getElementById('cri-intro') || {}).value || '').trim().slice(0, 120);
   try {
-    await updateDoc(doc(db, 'crewsV2', id), { intro, photos: (window._crewIntroPhotos || []).slice(0, 2) });
+    await updateDoc(doc(db, 'crewsV2', id), { intro, photos: (window._crewIntroPhotos || []).slice(0, 2),
+      cover: window._crewIntroCover || '', logo: window._crewIntroLogo || '', openJoin: window._crewIntroOpen === true });
+    window._crewHotCache = null; window._crewMineCache = null;
     const s = document.getElementById('crew-intro'); if (s) s.remove();
     showToast('저장했어요');
   } catch (e) { showToast('저장하지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }
