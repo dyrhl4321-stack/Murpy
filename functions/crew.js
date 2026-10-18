@@ -19,6 +19,8 @@ const REGION = "asia-northeast3";
 const GEMINI = defineSecret("GEMINI_API_KEY");
 const BUCKET = "murpyprototype.firebasestorage.app";
 const HEALTH_VERIFY_ON = false;          // 2차에서 true
+// ★러닝 카드 올리기는 개인정보 처리방침 개정 시행(10-26) 뒤에 연다(대표 확정 (가)). index.html CREW_CFG.RUN_UPLOAD_ON 과 같이 바꿔 배포.
+const RUN_UPLOAD_ON = false;
 const OCR_MODEL = "gemini-3.5-flash-lite";   // 10-19 실측: 2.5-flash-lite 는 새 키에 404(단종). 카드 1장 ≈1,300토큰·2초
 const TITLE_OF = { 100: "크루 100K", 500: "크루 500K", 1000: "크루 1000K" };
 
@@ -262,6 +264,7 @@ async function applyRunEverywhere(uid, run, verified, atMs) {
 
 exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 60, memory: "512MiB" }, async (req) => {
   const uid = needUser(req);
+  if (!RUN_UPLOAD_ON) return { ok: false, why: "not_yet" };
   const path = L.storagePathOf((req.data || {}).url, uid, BUCKET);
   // 앱이 올리는 카드 파일(uploads/{uid}/run_…)만 — 지울 때 프로필·피드 사진을 지우지 않게
   if (!path || !/^uploads\/[^/]+\/run_[^/]+$/.test(path)) throw new HttpsError("invalid-argument", "bad_url");
