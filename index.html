@@ -11183,8 +11183,8 @@ window.mwPortal = function () {
       <button onclick="window.openInExternalBrowser()" style="width:100%;background:#F5C24B;color:#3a2a00;border:none;border-radius:10px;padding:12px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">기본 브라우저로 열기</button>
     </div>
 
-    <!-- 2단계: 홈 화면에 추가 -->
-    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;margin-bottom:14px">
+    <!-- 2단계: 홈 화면에 추가 (앱 안·홈 화면 설치본에선 숨긴다 — openLoginHelp) -->
+    <div id="lh-home-box" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px;margin-bottom:14px">
       <div id="lh-home-title" style="font-size:12.5px;font-weight:800;color:#3D7EFF;margin-bottom:5px">홈 화면에 추가하면 앱처럼 쓸 수 있어요</div>
       <div style="font-size:11.5px;color:rgba(255,255,255,0.55);line-height:1.6;margin-bottom:10px">한 번만 해두면 다음부터는 아이콘을 눌러 바로 들어와요. 로그인도 유지됩니다.</div>
       <div id="lh-home-steps" style="font-size:12px;color:rgba(255,255,255,0.72);line-height:1.85"></div>
@@ -27236,6 +27236,18 @@ window._isInApp = function () {
 })();
 // ★도움 시트 UI 는 '작은 링크 → 시트'다. 로그인 화면에 상시 박스를 띄우면 로고를 가린다(대표 지적).
 //   누른 사람에게만 ①기본 브라우저로 열기(인앱일 때만) ②홈 화면 추가법 을 보여준다.
+// ★10-19 앱(아이폰 웹뷰 껍데기·안드로이드 TWA)이나 홈 화면 설치본 안인가 — **기기 종류(UA)가 아니라 기능으로만** 본다(애플 5.6).
+//   아이폰 앱 = 껍데기가 심어 둔 webkit.messageHandlers 가 있다(사파리 탭엔 없다). 안드로이드 앱·설치본 = display-mode standalone.
+//   이 안에서 "홈 화면에 추가하세요"·"설정 > Safari" 안내는 틀린 길이다.
+window._iosAppShell = function () {
+  try { return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers['push-token']); } catch (e) { return false; }
+};
+window._inAppShell = function () {
+  try {
+    if (window._iosAppShell()) return true;
+    return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
+  } catch (e) { return false; }
+};
 window.openLoginHelp = function () {
   const ua = navigator.userAgent || '';
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
@@ -27244,6 +27256,8 @@ window.openLoginHelp = function () {
   if (bs) bs.style.display = window._isInApp() ? 'block' : 'none';
   // 홈 화면 추가 절차는 OS 마다 완전히 달라서 쓰는 기기 것만 보여준다(둘 다 주면 헷갈린다)
   const steps = document.getElementById('lh-home-steps');
+  const homeBox = document.getElementById('lh-home-box');
+  if (homeBox) homeBox.style.display = window._inAppShell() ? 'none' : '';
   if (steps) {
     steps.innerHTML = isIOS
       ? '<b style="color:#fff;font-weight:700">아이폰 (사파리)</b><br>'
@@ -37102,7 +37116,10 @@ window._mwAddLocateBtn = function (map, mapEl, centers) {
 //   기기별로 경로가 달라서 둘 다 적어준다.
 window.mwGeoDeniedHelp = function () {
   const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const steps = ios
+  const steps = (window._iosAppShell && window._iosAppShell())
+    ? '설정 → <b style="color:#fff">Murpy</b> → 위치 → <b style="color:#fff">앱을 사용하는 동안</b><br>'
+      + '설정 → 개인정보 보호 → <b style="color:#fff">위치 서비스</b> 켜기'
+    : ios
     ? '설정 → Safari → 위치 → <b style="color:#fff">확인 후 허용</b><br>'
       + '설정 → 개인정보 보호 → 위치 서비스 → <b style="color:#fff">Safari 웹사이트</b> 켜기'
     : '주소창 왼쪽 <b style="color:#fff">자물쇠(또는 ⓘ)</b> 탭 → 권한 → <b style="color:#fff">위치 허용</b><br>'
@@ -46754,7 +46771,10 @@ window.bumpOpen = async function (sid) {
         + ((window._isInApp && window._isInApp())
           ? '<br><span style="font-size:11.5px;color:#8a93a8">카카오톡 안이라 막힌 것 같아요</span>'
             + '<br><button onclick="window.openInExternalBrowser&&window.openInExternalBrowser()" style="margin-top:12px;background:#F5C24B;color:#3a2a00;border:none;border-radius:11px;padding:12px 20px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit">기본 브라우저로 열기</button>'
-          : '<br><span style="font-size:11px">설정 > Safari > 동작 및 방향 접근</span>'));
+          : (window._iosAppShell && window._iosAppShell())
+            // 앱(웹뷰)의 센서 허락은 설정 앱에 칸이 없다 — 앱을 다시 열면 허락 창이 다시 뜬다
+            ? '<br><span style="font-size:11px">앱을 완전히 닫았다가 다시 열고 <b>허용</b>을 눌러 주세요</span>'
+            : '<br><span style="font-size:11px">설정 > Safari > 동작 및 방향 접근</span>'));
       return;
     }
     if (bpDbg) bpDbg.perm = 'granted';
