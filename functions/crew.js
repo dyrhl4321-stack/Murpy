@@ -33,11 +33,13 @@ function needUser(req) {
 }
 
 // ── 머피 지급 — functions earn 과 같은 장부 모양(키로 중복 차단) ──────────────
+const ledgerRef = (uid, reason, key) => db().collection("ledger").doc(("l_" + uid + "_" + reason + "_" + key).replace(/[^\w-]/g, "_").slice(0, 900));
+async function paidKey(uid, reason, key) { return (await ledgerRef(uid, reason, key).get()).exists; }
 async function payMurpy(uid, amount, reason, key) {
   if (!(amount > 0)) return 0;
   const d = db();
   const day = L.kstDay(now()).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
-  const ref = d.collection("ledger").doc(("l_" + uid + "_" + reason + "_" + key).replace(/[^\w-]/g, "_").slice(0, 900));
+  const ref = ledgerRef(uid, reason, key);
   try {
     await d.runTransaction(async (tx) => {
       const uRef = d.collection("users").doc(uid);
@@ -62,7 +64,7 @@ async function bumpCrew(crewId, uid, atMs, fn) {
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
   const mRef = cRef.collection("members").doc(uid);
-  const after = { challengeDone: null, milestones: [] };
+  const after = { applied: false, challengeDone: [], milestones: [] };
   await d.runTransaction(async (tx) => {
     const [c, m, chs] = await Promise.all([
       tx.get(cRef), tx.get(mRef),
@@ -80,7 +82,7 @@ async function bumpCrew(crewId, uid, atMs, fn) {
         const out = L.challengeStep(s.data(), Object.assign({ atMs }, r.step));
         if (out.ch.progress !== s.data().progress || out.justDone) {
           tx.update(s.ref, { progress: out.ch.progress, status: out.ch.status, doneAt: out.ch.doneAt || null });
-          if (out.justDone) after.challengeDone = s.id;
+          if (out.justDone) after.challengeDone.push(s.id);
         }
       });
     }
@@ -88,8 +90,9 @@ async function bumpCrew(crewId, uid, atMs, fn) {
     if (ms.length) { upd.milestones = FieldValue.arrayUnion(...ms); after.milestones = ms; }
     tx.update(cRef, upd);
     tx.set(mRef, r.member, { merge: true });
+    after.applied = true;
   });
-  if (after.challengeDone) await finishChallenge(crewId, after.challengeDone);
+  for (const chId of after.challengeDone) await finishChallenge(crewId, chId);
   if (after.milestones.length) await grantMilestones(crewId, after.milestones);
   return after;
 }
@@ -102,26 +105,25 @@ async function notify(toUid, n) {
   await db().collection("notifications").add(Object.assign({ toUid, fromUid: "murpy", fromNickname: "머피", read: false,
     createdAt: FieldValue.serverTimestamp() }, n));
 }
-// 달성 — 지급은 rewardPaid 를 트랜잭션으로 먼저 잡은 쪽만 한다(동시에 두 번 달성 처리돼도 한 번만).
+// 달성 지급 — payMurpy 는 (사람, 챌린지) 키라 두 번 불려도 한 번만 준다. 그래서 **다 준 뒤에** rewardPaid 를 찍는다.
+//   ★먼저 찍으면 중간에 끊겼을 때 남은 사람이 영영 못 받는다(리뷰 10-19). 못 끝낸 것은 crewHourly 가 다시 돈다.
+//   알림은 그 사람에게 처음 지급됐을 때만(다시 돌 때 중복 알림 없게).
 async function finishChallenge(crewId, chId) {
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
   const chRef = cRef.collection("challenges").doc(chId);
-  let mine = false, crewName = "", owner = "";
-  await d.runTransaction(async (tx) => {
-    const [ch, c] = await Promise.all([tx.get(chRef), tx.get(cRef)]);
-    if (!ch.exists || ch.data().rewardPaid || ch.data().status !== "done") return;
-    crewName = (c.data() || {}).name || "";
-    owner = (c.data() || {}).createdBy || "";   // 크루를 만든 운영자 계정(1차는 관리자만 만든다)
-    tx.update(chRef, { rewardPaid: true });
-    mine = true;
-  });
-  if (!mine) return;
+  const [ch, c] = await Promise.all([chRef.get(), cRef.get()]);
+  if (!ch.exists || ch.data().rewardPaid || ch.data().status !== "done") return;
+  const crewName = (c.data() || {}).name || "", owner = (c.data() || {}).createdBy || "";
   const uids = await activeMembers(crewId);
+  let missed = 0;
   for (const uid of uids) {
-    await payMurpy(uid, L.CFG.CHALLENGE_REWARD, "crew_challenge", chId);
-    await notify(uid, { type: "crew_challenge_done", crewId, text: crewName, amount: L.CFG.CHALLENGE_REWARD });
+    const r = await payMurpy(uid, L.CFG.CHALLENGE_REWARD, "crew_challenge", chId);
+    if (r > 0) await notify(uid, { type: "crew_challenge_done", crewId, text: crewName, amount: L.CFG.CHALLENGE_REWARD });
+    else if (!(await paidKey(uid, "crew_challenge", chId))) missed++;
   }
+  if (missed) { console.warn(`crew challenge payout incomplete crew=${crewId} ch=${chId} missed=${missed} — crewHourly 가 다시 돈다`); return; }
+  await chRef.update({ rewardPaid: true });
   if (owner) await notify(owner, { type: "crew_challenge_done", crewId, text: crewName, admin: true });
   console.log(`crew challenge done crew=${crewId} ch=${chId} members=${uids.length}`);
 }
@@ -132,7 +134,7 @@ async function grantMilestones(crewId, ms) {
   const d = db();
   for (let i = 0; i < uids.length; i += 400) {
     const b = d.batch();
-    uids.slice(i, i + 400).forEach((u) => b.update(d.collection("users").doc(u), { titles: FieldValue.arrayUnion(...titles) }));
+    uids.slice(i, i + 400).forEach((u) => b.set(d.collection("users").doc(u), { titles: FieldValue.arrayUnion(...titles) }, { merge: true }));
     await b.commit();
   }
   for (const uid of uids) await notify(uid, { type: "crew_milestone", crewId, text: titles[titles.length - 1] });
@@ -155,23 +157,25 @@ exports.crewJoin = onCall({ region: REGION }, async (req) => {
     if (!c.exists) throw new HttpsError("not-found", "crew");
     name = c.data().name || "";
     const nick = (u.exists && u.data().nickname) || "";
+    // crewIds 는 이미 멤버여도 다시 맞춘다 — users 문서가 덮어써져 배열이 비면 기록이 크루에 안 쌓인다(리뷰 10-19)
+    if (u.exists) tx.update(uRef, { crewIds: FieldValue.arrayUnion(crewId) });
     if (m.exists && !m.data().left) return;
     if (m.exists) tx.update(mRef, { left: false, leftAt: null, nickname: nick });
     else tx.set(mRef, { uid, nickname: nick, joinedAt: now(), left: false });
     tx.update(cRef, { "stats.members": FieldValue.increment(1) });
-    if (u.exists) tx.update(uRef, { crewIds: FieldValue.arrayUnion(crewId) });
   });
   return { ok: true, crew: { id: crewId, name } };
 });
 
-async function leaveCrew(uid, crewId) {
+async function leaveCrew(uid, crewId, anonymize) {
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
   await d.runTransaction(async (tx) => {
     const mRef = cRef.collection("members").doc(uid), uRef = d.collection("users").doc(uid);
     const [m, u] = await Promise.all([tx.get(mRef), tx.get(uRef)]);
+    if (m.exists && anonymize && m.data().left) tx.update(mRef, { nickname: "" });   // 이미 나간 크루에도 닉네임이 남아 있다
     if (m.exists && !m.data().left) {
-      tx.update(mRef, { left: true, leftAt: now() });
+      tx.update(mRef, Object.assign({ left: true, leftAt: now() }, anonymize ? { nickname: "" } : {}));
       tx.update(cRef, { "stats.members": FieldValue.increment(-1) });
     }
     if (u.exists) tx.update(uRef, { crewIds: FieldValue.arrayRemove(crewId) });
@@ -228,7 +232,14 @@ async function ocrCard(key, buf, mime) {
 
 async function myCrewIds(uid) {
   const u = await db().collection("users").doc(uid).get();
-  return ((u.exists && u.data().crewIds) || []).filter((x) => typeof x === "string").slice(0, 10);
+  return ((u.exists && u.data().crewIds) || []).filter((x) => typeof x === "string" && x && !x.includes("/")).slice(0, 10);
+}
+// ★users.crewIds 는 본인이 직접 고칠 수 있다 — 기록을 붙일 크루는 members 문서(서버만 씀)로 다시 확인한다.
+//   안 그러면 남의 크루 피드에 끼어들고, 지울 때 안 더한 숫자를 빼서 크루 숫자가 음수가 된다(리뷰 10-19).
+async function myActiveCrewIds(uid) {
+  const ids = await myCrewIds(uid);
+  const snaps = await Promise.all(ids.map((id) => db().collection("crewsV2").doc(id).collection("members").doc(uid).get()));
+  return ids.filter((id, i) => snaps[i].exists && !snaps[i].data().left);
 }
 
 // 개인 기록 + 소속 크루마다 반영. verified 면 챌린지·마일스톤·이번 주 참여까지.
@@ -252,23 +263,33 @@ async function applyRunEverywhere(uid, run, verified, atMs) {
 exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 60, memory: "512MiB" }, async (req) => {
   const uid = needUser(req);
   const path = L.storagePathOf((req.data || {}).url, uid, BUCKET);
-  if (!path) throw new HttpsError("invalid-argument", "bad_url");
+  // 앱이 올리는 카드 파일(uploads/{uid}/run_…)만 — 지울 때 프로필·피드 사진을 지우지 않게
+  if (!path || !/^uploads\/[^/]+\/run_[^/]+$/.test(path)) throw new HttpsError("invalid-argument", "bad_url");
+  const d = db();
+  // 하루 30번까지(제미나이 호출 비용·장난 방지). 안 넘으면 그대로 진행.
+  const qRef = d.collection("runQuota").doc(uid + "_" + L.kstDay(now()));
+  const used = await d.runTransaction(async (tx) => {
+    const q = await tx.get(qRef); const n = (q.exists && q.data().n) || 0;
+    if (n < 30) tx.set(qRef, { n: n + 1, at: now() });
+    return n;
+  });
+  if (used >= 30) return { ok: false, why: "too_many" };
   const file = getStorage().bucket(BUCKET).file(path);
+  const reject = async (why) => { await file.delete().catch(() => {}); return { ok: false, why }; };
   const [meta] = await file.getMetadata();
-  if (Number(meta.size) > 8 * 1024 * 1024) return { ok: false, why: "too_big" };
+  if (Number(meta.size) > 8 * 1024 * 1024) return reject("too_big");
   const [buf] = await file.download();
   const hash = crypto.createHash("sha256").update(buf).digest("hex");
-  const d = db();
   const runRef = d.collection("runs").doc("r_" + hash.slice(0, 32));   // 같은 카드 = 같은 문서 → 중복이 저절로 막힌다
-  if ((await runRef.get()).exists) return { ok: false, why: "dup_image" };
+  if ((await runRef.get()).exists) return reject("dup_image");
 
   const ocr = await ocrCard(GEMINI.value(), buf, meta.contentType || "image/jpeg");
   const chk = L.checkCard(ocr, { nowMs: now() });
-  if (!chk.ok) return { ok: false, why: chk.why };
+  if (!chk.ok) return reject(chk.why);
   const run = chk.run;
 
   const recent = await d.collection("runs").where("uid", "==", uid).orderBy("createdAt", "desc").limit(30).get();
-  if (L.isDupRun(run, recent.docs.map((s) => s.data()))) return { ok: false, why: "dup_run" };
+  if (L.isDupRun(run, recent.docs.map((s) => s.data()))) return reject("dup_run");
 
   let verified = false, source = null;
   const health = (req.data || {}).health;
@@ -276,11 +297,11 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
     const m = L.matchHealth(run, health.slice(0, 30));
     if (m.ok) { verified = true; source = m.source; }
   }
-  const crewIds = await myCrewIds(uid);
+  const crewIds = await myActiveCrewIds(uid);
   const doc = Object.assign({}, run, { uid, img: String(req.data.url), imgPath: path, imgHash: hash,
     status: verified ? "verified" : "unverified", source, crewIds, createdAt: now() });
   try { await runRef.create(doc); } catch (e) { return { ok: false, why: "dup_image" }; }
-  await applyRunEverywhere(uid, doc, verified, now());
+  await applyRunEverywhere(uid, doc, verified, L.runAtMs(run.runDay));   // 챌린지 기간은 '뛴 날' 기준(올린 시각 아님)
 
   let reward = 0;
   if (verified && (await paidToday(uid, "run_verified")) < L.CFG.RUN_REWARD_PER_DAY) {
@@ -292,15 +313,19 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
 });
 
 async function deleteRun(uid, snap) {
-  const r = snap.data();
-  const verified = r.status === "verified";
   const d = db();
-  await d.runTransaction(async (tx) => {
+  // ★트랜잭션 안에서 다시 읽는다 — 동시에 두 번 지우면 두 번 빼던 것을 막는다(리뷰 10-19)
+  const r = await d.runTransaction(async (tx) => {
     const ref = d.collection("runStats").doc(uid);
-    const s = await tx.get(ref);
-    if (s.exists) tx.set(ref, L.revertRun(s.data(), r, { verified, personal: true }));
+    const [cur, s] = await Promise.all([tx.get(snap.ref), tx.get(ref)]);
+    if (!cur.exists) return null;
+    const x = cur.data();
+    if (s.exists) tx.set(ref, L.revertRun(s.data(), x, { verified: x.status === "verified", personal: true }));
     tx.delete(snap.ref);
+    return x;
   });
+  if (!r) return;
+  const verified = r.status === "verified";
   for (const crewId of r.crewIds || []) {
     const cRef = d.collection("crewsV2").doc(crewId), mRef = cRef.collection("members").doc(uid);
     await d.runTransaction(async (tx) => {
@@ -309,7 +334,7 @@ async function deleteRun(uid, snap) {
       if (m.exists) tx.set(mRef, L.revertRun(m.data(), r, { verified }), { merge: true });
     });
   }
-  if (r.imgPath) await getStorage().bucket(BUCKET).file(r.imgPath).delete().catch(() => {});
+  if (r.imgPath && /^uploads\/[^/]+\/run_[^/]+$/.test(r.imgPath)) await getStorage().bucket(BUCKET).file(r.imgPath).delete().catch(() => {});
 }
 exports.runDelete = onCall({ region: REGION }, async (req) => {
   const uid = needUser(req);
@@ -326,7 +351,11 @@ exports.runPurgeMine = onCall({ region: REGION, timeoutSeconds: 120 }, async (re
   const runs = await d.collection("runs").where("uid", "==", uid).get();
   for (const s of runs.docs) await deleteRun(uid, s);
   await d.collection("runStats").doc(uid).delete().catch(() => {});
-  for (const crewId of await myCrewIds(uid)) await leaveCrew(uid, crewId);
+  // 지금 소속 + 예전에 나간 크루까지 — members 문서의 닉네임을 지운다(공개 읽기라서)
+  const all = await d.collectionGroup("members").where("uid", "==", uid).get().catch(() => null);
+  const ids = new Set(await myCrewIds(uid));
+  if (all) all.docs.forEach((m) => { const c = m.ref.parent.parent; if (c && c.parent.id === "crewsV2") ids.add(c.id); });
+  for (const crewId of ids) await leaveCrew(uid, crewId, true);
   return { ok: true, runs: runs.size };
 });
 
@@ -334,10 +363,13 @@ exports.runPurgeMine = onCall({ region: REGION, timeoutSeconds: 120 }, async (re
 exports.crewCheckin = onDocumentCreated({ region: REGION, document: "checkins/{id}" }, async (event) => {
   const c = event.data && event.data.data();
   if (!c || !c.uid || !c.day) return;
+  const created = (event.data.createTime && event.data.createTime.toMillis) ? event.data.createTime.toMillis() : Date.parse(event.time);
+  const okDay = L.checkinDay(event.params.id, c, created);
+  if (!okDay) { console.warn(`crewCheckin skip id=${event.params.id} day=${c.day}`); return; }
   const d = db();
   // 트리거는 드물게 두 번 올 수 있다 — 사건 id 로 한 번만
   try { await d.collection("crewEvents").doc(String(event.id)).create({ at: now(), kind: "checkin" }); } catch (e) { return; }
-  const day = String(c.day), wk = L.weekKey(day), atMs = now();
+  const day = okDay, wk = L.weekKey(day), atMs = created;
   for (const crewId of await myCrewIds(c.uid)) {
     await bumpCrew(crewId, c.uid, atMs, (stats, member) => {
       const a = L.applyAttend(member, day);
@@ -369,8 +401,18 @@ exports.crewHourly = onSchedule({ region: REGION, schedule: "every 60 minutes" }
   for (const c of crews.docs) {
     const chs = await c.ref.collection("challenges").where("status", "==", "active").get();
     for (const s of chs.docs) {
-      if (now() >= s.data().end) { await s.ref.update({ status: "failed" }); n++; }
+      if (now() < s.data().end) continue;
+      const failed = await d.runTransaction(async (tx) => {   // 막 달성된 것을 실패로 덮지 않게 다시 확인
+        const cur = await tx.get(s.ref);
+        if (!cur.exists || cur.data().status !== "active") return false;
+        tx.update(s.ref, { status: "failed" }); return true;
+      });
+      if (failed) n++;
     }
+    // 달성했는데 지급을 다 못 끝낸 것(중간에 끊김) — 다시 돈다. 같은 사람에게 두 번 주지 않는다(장부 키).
+    //   (rewardPaid 는 만들 때 없는 필드라 == false 로는 못 찾는다 → done 을 읽고 걸러낸다)
+    const done = await c.ref.collection("challenges").where("status", "==", "done").get().catch(() => null);
+    if (done) for (const s of done.docs) if (!s.data().rewardPaid) await finishChallenge(c.id, s.id);
   }
   if (n) console.log(`crewHourly failed=${n}`);
 });

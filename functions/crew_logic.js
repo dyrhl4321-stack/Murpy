@@ -100,8 +100,27 @@ function checkCard(ocr, { nowMs }) {
   return { ok: true, run: { km, sec, paceSec, runDay, dayFromCard, app: ocr.app || "unknown" } };
 }
 
+// 같은 날·같은 거리에 시간(반올림 오차 허용) 또는 페이스(1초)가 같으면 같은 기록.
+//   ★시간 줄을 잘라 내고 다시 올리면 시간이 '거리×페이스'로 되살아나 몇 초 어긋난다(리뷰 10-19) — 오차를 거리에 비례해 준다.
 function isDupRun(run, existing) {
-  return (existing || []).some((e) => e.runDay === run.runDay && Math.abs(e.km - run.km) < 0.01 && Math.abs(e.sec - run.sec) <= 1);
+  const tol = Math.max(2, run.km * 0.6);
+  return (existing || []).some((e) => e.runDay === run.runDay && Math.abs(e.km - run.km) < 0.01
+    && (Math.abs(e.sec - run.sec) <= tol || (e.paceSec > 0 && run.paceSec > 0 && Math.abs(e.paceSec - run.paceSec) <= 1)));
+}
+// 챌린지 기간 판정에 쓰는 '기록 시각' = 기록한 날 한국 시간 정오(올린 시각이 아니다 — 리뷰 10-19)
+function runAtMs(runDay) {
+  const d = String(runDay);
+  return Date.parse(d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8) + "T12:00:00+09:00");
+}
+// ★체크인은 클라이언트가 직접 쓴다(GPS 판정도 클라이언트). 날짜만큼은 믿지 않는다 —
+//   문서 id 가 앱이 쓰는 모양(uid_센터_날짜)이고 그 날짜가 서버 시각의 한국 날짜(자정 경계, 직전 하루까지)와 맞을 때만 센다.
+//   안 그러면 날짜만 바꾼 가짜 체크인 60개로 크루 출석·챌린지 머피·성주를 만들 수 있다(리뷰 10-19).
+function checkinDay(id, data, createMs) {
+  if (!data || !data.uid || !data.centerId || !data.day) return null;
+  const day = String(data.day);
+  if (String(id) !== data.uid + "_" + data.centerId + "_" + day) return null;
+  const today = kstDayUtc(createMs + 9 * 3600e3), yday = kstDayUtc(createMs + 9 * 3600e3 - DAY);
+  return day === today || day === yday ? day : null;
 }
 
 // ── 건강 앱 원본 대조(2차에서 씀) ─────────────────────────────────────────
@@ -204,6 +223,6 @@ function duelScore(a, b) {
 }
 
 module.exports = {
-  CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, matchHealth,
+  CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore,
 };

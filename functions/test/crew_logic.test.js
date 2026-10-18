@@ -179,3 +179,24 @@ test("storagePathOf 는 우리 버킷의 내 폴더만", () => {
   assert.equal(L.storagePathOf("https://evil.com/v0/b/" + B + "/o/uploads%2FU1%2Fa.jpg", "U1", B), null);
   assert.equal(L.storagePathOf("not a url", "U1", B), null);
 });
+
+// ── 리뷰 수정(10-19) ──
+test("checkinDay: 문서 id 모양과 서버 날짜가 맞는 것만", () => {
+  const t = Date.parse("2026-10-19T09:30:00+09:00");
+  assert.equal(L.checkinDay("U1_c9_20261019", { uid: "U1", centerId: "c9", day: "20261019" }, t), "20261019");
+  assert.equal(L.checkinDay("U1_c9_20261019", { uid: "U1", centerId: "c9", day: "20261019" }, Date.parse("2026-10-20T00:20:00+09:00")), "20261019"); // 자정 직후 하루 여유
+  assert.equal(L.checkinDay("U1_c9_20260801", { uid: "U1", centerId: "c9", day: "20260801" }, t), null);   // 지난 날짜 위조
+  assert.equal(L.checkinDay("U1_x_7", { uid: "U1", centerId: "c9", day: "20261019" }, t), null);          // id 모양 다름
+  assert.equal(L.checkinDay("U1_c9_20261019", { uid: "U2", centerId: "c9", day: "20261019" }, t), null);
+});
+
+test("runAtMs 는 기록한 날 한낮(한국 시간) — 올린 시각이 아니다", () => {
+  assert.equal(L.runAtMs("20261019"), Date.parse("2026-10-19T12:00:00+09:00"));
+});
+
+test("isDupRun: 시간 줄을 잘라 페이스로 되살린 재업로드도 잡는다", () => {
+  const orig = { runDay: "20261019", km: 10.03, sec: 3318, paceSec: 331 };
+  const cropped = { runDay: "20261019", km: 10.03, sec: Math.round(10.03 * 331), paceSec: 331 };   // 3320
+  assert.equal(L.isDupRun(cropped, [orig]), true);
+  assert.equal(L.isDupRun({ runDay: "20261019", km: 10.03, sec: 3500, paceSec: 349 }, [orig]), false);
+});
