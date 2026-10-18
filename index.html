@@ -47744,7 +47744,7 @@ function _crewChallengeHtml(ch, data, me) {
     + '<div class="cw-track"><div class="cw-flag"></div><div class="cw-lane"></div>'
     + '<div class="cw-done" style="width:calc((100% - 54px) * ' + p.toFixed(4) + ')"></div>'
     + '<div class="cw-runner" style="left:calc(14px + (100% - 54px) * ' + p.toFixed(4) + ')">' + _crewMini(who, 30, 'right') + '</div><div class="cw-chest"></div></div>'
-    + '<div class="cw-tk"><span><b>' + fmt(ch.progress) + '</b> / ' + fmt(ch.target) + unit + '</span><span class="rw">PT 3회 + ' + window.CREW_CFG.CHALLENGE_REWARD + '머피</span></div></div>';
+    + '<div class="cw-tk"><span><b>' + fmt(ch.progress) + '</b> / ' + fmt(ch.target) + unit + '</span><span class="rw">' + window.CREW_CFG.CHALLENGE_REWARD + '머피</span></div></div>';
 }
 window.crewPageHtml = function (data, me) {
   const c = data.crew, s = c.stats || {}, sport = c.sport || 'running', gym = sport === 'gym';
@@ -48068,16 +48068,25 @@ window.crewInviteCopy = async function (id) {
     showToast('초대 링크를 복사했어요');
   } catch (e) { showToast('복사하지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }
 };
-// 챌린지 만들기 — 시작 기본값 = 다음 월요일 00:00(한국 시간), 기간 14일, 목표 = 1인 목표 × 지금 인원(고정)
+// 챌린지 목표 인원 = 최근 2주 안에 한 번이라도 운동(러닝 기록·헬스장 출석)한 크루원, 최소 3명.
+//   ★전체 인원으로 잡으면 247명 크루가 '2주 함께 1482회' 가 된다(대표 10-19 "비현실적"). 서버 crew_logic.activeHeadcount 와 같은 규칙.
+async function _crewActiveHead(id) {
+  const t = new Date(); t.setDate(t.getDate() - 13);
+  const cutoff = t.getFullYear() + String(t.getMonth() + 1).padStart(2, '0') + String(t.getDate()).padStart(2, '0');
+  const ms = await getDocs(query(collection(db, 'crewsV2', id, 'members'), where('left', '==', false)));
+  const n = ms.docs.filter(d => (d.data().lastActiveDay || '') >= cutoff).length;
+  return Math.max(3, n);
+}
+// 챌린지 만들기 — 시작 기본값 = 다음 월요일 00:00(한국 시간), 기간 14일, 목표 = 1인 목표 × 최근 2주 운동한 인원(만들 때 고정)
 window.crewChallengeNew = async function (id) {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
-  let crew = null;
-  try { const s = await getDoc(doc(db, 'crewsV2', id)); crew = s.exists() ? s.data() : null; } catch (e) {}
+  let crew = null, head = 3;
+  try { const s = await getDoc(doc(db, 'crewsV2', id)); crew = s.exists() ? s.data() : null; head = await _crewActiveHead(id); } catch (e) {}
   if (!crew) return;
   const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
   const ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const gymFirst = crew.sport === 'gym', CF = window.CREW_CFG;
-  _crewSheet('crew-ch-new', _crewHead('챌린지 만들기', _cE(crew.name) + ' 지금 ' + ((crew.stats || {}).members || 0) + '명', "document.getElementById('crew-ch-new').remove()")
+  _crewSheet('crew-ch-new', _crewHead('챌린지 만들기', _cE(crew.name) + ' 최근 2주 운동한 ' + head + '명 기준', "document.getElementById('crew-ch-new').remove()")
     + '<div style="padding:0 20px"><label class="cw-lb" style="margin-top:8px">종류</label>'
     + '<select id="crc-kind" class="cw-in" onchange="document.getElementById(\'crc-per\').value=this.value===\'run_km\'?' + CF.RUN_PER_HEAD_KM + ':' + CF.GYM_PER_HEAD + '">'
     + '<option value="run_km"' + (gymFirst ? '' : ' selected') + '>러닝 거리 (인증된 기록만)</option><option value="gym_attend"' + (gymFirst ? ' selected' : '') + '>헬스 출석 (체크인)</option></select>'
@@ -48092,8 +48101,7 @@ window.crewChallengeCreate = async function (id) {
   const sd = String((document.getElementById('crc-start') || {}).value || '');
   if (!kind || !(per > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(sd)) { showToast('값을 확인해 주세요'); return; }
   try {
-    const cs = await getDoc(doc(db, 'crewsV2', id));
-    const head = Math.max(1, ((cs.data() || {}).stats || {}).members || 0);
+    const head = await _crewActiveHead(id);
     const start = Date.parse(sd + 'T00:00:00+09:00'), end = start + window.CREW_CFG.CHALLENGE_DAYS * 864e5;
     await addDoc(collection(db, 'crewsV2', id, 'challenges'), { kind, start, end, perHead: per, headcount: head, target: per * head,
       progress: 0, status: 'active', createdAt: Date.now() });

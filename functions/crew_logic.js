@@ -208,6 +208,20 @@ function challengeStep(ch, { kind, amount, atMs, verified }) {
   return { ch: c, justDone: false };
 }
 
+// ── 챌린지 목표 인원 — 전체 인원이 아니라 '최근 2주 안에 한 번이라도 운동한 사람'(대표 10-19: 247명×6회 = 1482회는 비현실적) ──
+//   운동 = 러닝 기록 올리기(인증·미인증 모두) 또는 헬스장 출석. 멤버 문서의 lastActiveDay 로 센다.
+const ACTIVE_DAYS = 14, MIN_HEAD = 3;
+function markActive(member, day) {
+  const m = Object.assign({}, member);
+  if (!m.lastActiveDay || String(day) > m.lastActiveDay) m.lastActiveDay = String(day);
+  return m;
+}
+function activeHeadcount(members, today) {
+  const cutoff = kstDayUtc(dayToUtc(today) - (ACTIVE_DAYS - 1) * DAY);
+  const n = (members || []).filter((m) => m && !m.left && m.lastActiveDay && m.lastActiveDay >= cutoff).length;
+  return Math.max(MIN_HEAD, n);
+}
+
 function newMilestones(prevKm, nextKm, reached) {
   return CFG.MILESTONES.filter((m) => prevKm < m && nextKm >= m && !(reached || []).includes(m));
 }
@@ -224,5 +238,5 @@ function duelScore(a, b) {
 
 module.exports = {
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
-  applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore,
+  applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount,
 };

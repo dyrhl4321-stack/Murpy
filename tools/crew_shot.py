@@ -46,7 +46,7 @@ FAKE = r'''
   };
   const mixed = Object.assign({}, running, {
     crew: { id: 'gbd', name: '근손실방지단', school: '서울', sport: 'mixed', stats: { members: 247, km: 0, attends: 1288, monthKey: ym, monthKm: 0, monthAttends: 412, weekKey: window._crewWeekKey(), weekActive: 63 } },
-    challenge: { kind: 'gym_attend', start: now - 5 * 864e5, end: now + 9 * 864e5, target: 1482, progress: 517, status: 'active' }, runs: [], past: [], myStats: null,
+    challenge: { kind: 'gym_attend', start: now - 5 * 864e5, end: now + 9 * 864e5, target: 378, progress: 217, status: 'active' }, runs: [], past: [], myStats: null,
   });
   const empty = { crew: { id: 'new', name: '달리샤', school: '서울대', sport: 'running', stats: { members: 1 } },
     members: [{ uid: 'me', nickname: '나' }], profiles: { me: profiles.me }, runs: [], challenge: null, past: [], myStats: null, isMember: true };

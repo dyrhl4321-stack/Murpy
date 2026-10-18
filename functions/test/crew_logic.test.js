@@ -200,3 +200,20 @@ test("isDupRun: 시간 줄을 잘라 페이스로 되살린 재업로드도 잡�
   assert.equal(L.isDupRun(cropped, [orig]), true);
   assert.equal(L.isDupRun({ runDay: "20261019", km: 10.03, sec: 3500, paceSec: 349 }, [orig]), false);
 });
+
+// ── 챌린지 목표 인원 = 최근 2주 안에 운동한 멤버(대표 10-19) ──
+test("markActive 는 더 최근 날짜만 남긴다", () => {
+  assert.equal(L.markActive({}, "20261019").lastActiveDay, "20261019");
+  assert.equal(L.markActive({ lastActiveDay: "20261019" }, "20261012").lastActiveDay, "20261019");
+});
+
+test("activeHeadcount: 최근 14일 안에 운동한 사람만, 최소 3명", () => {
+  const ms = [
+    { lastActiveDay: "20261019" }, { lastActiveDay: "20261006" }, { lastActiveDay: "20261005" },
+    { lastActiveDay: "20260901" }, {}, { lastActiveDay: "20261018", left: true },
+  ];
+  assert.equal(L.activeHeadcount(ms, "20261019"), 3);          // 19·06 → 2명이지만 최소 3
+  const many = Array.from({ length: 63 }, () => ({ lastActiveDay: "20261015" })).concat(Array.from({ length: 184 }, () => ({})));
+  assert.equal(L.activeHeadcount(many, "20261019"), 63);
+  assert.equal(L.activeHeadcount([], "20261019"), 3);
+});

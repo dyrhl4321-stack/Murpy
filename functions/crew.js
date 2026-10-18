@@ -255,7 +255,7 @@ async function applyRunEverywhere(uid, run, verified, atMs) {
   for (const crewId of run.crewIds || []) {
     await bumpCrew(crewId, uid, atMs, (stats, member) => {
       let st = L.applyRun(stats, run, { verified });
-      const mem = L.applyRun(member, run, { verified });
+      const mem = L.markActive(L.applyRun(member, run, { verified }), run.runDay);   // 챌린지 목표 인원(최근 2주 운동) 판정용
       if (verified) st = L.crewWeekAdd(st, L.weekKey(run.runDay), L.weekActiveDelta(mem, L.weekKey(run.runDay)));
       return { stats: st, member: mem, step: { kind: "run_km", amount: run.km, verified } };
     });
@@ -379,7 +379,7 @@ exports.crewCheckin = onDocumentCreated({ region: REGION, document: "checkins/{i
       if (!a.counted) return null;
       let st = L.addAttend(stats, day, 1);
       st = L.crewWeekAdd(st, wk, L.weekActiveDelta(a.member, wk));
-      return { stats: st, member: a.member, step: { kind: "gym_attend", amount: 1, verified: true } };
+      return { stats: st, member: L.markActive(a.member, day), step: { kind: "gym_attend", amount: 1, verified: true } };
     });
   }
   if (c.centerId) {
