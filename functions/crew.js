@@ -107,11 +107,12 @@ async function finishChallenge(crewId, chId) {
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
   const chRef = cRef.collection("challenges").doc(chId);
-  let mine = false, crewName = "";
+  let mine = false, crewName = "", owner = "";
   await d.runTransaction(async (tx) => {
     const [ch, c] = await Promise.all([tx.get(chRef), tx.get(cRef)]);
     if (!ch.exists || ch.data().rewardPaid || ch.data().status !== "done") return;
     crewName = (c.data() || {}).name || "";
+    owner = (c.data() || {}).createdBy || "";   // 크루를 만든 운영자 계정(1차는 관리자만 만든다)
     tx.update(chRef, { rewardPaid: true });
     mine = true;
   });
@@ -121,8 +122,7 @@ async function finishChallenge(crewId, chId) {
     await payMurpy(uid, L.CFG.CHALLENGE_REWARD, "crew_challenge", chId);
     await notify(uid, { type: "crew_challenge_done", crewId, text: crewName, amount: L.CFG.CHALLENGE_REWARD });
   }
-  const admins = await d.collection("users").where("email", "==", "dyrhl4321@gmail.com").limit(1).get();
-  admins.forEach((a) => notify(a.id, { type: "crew_challenge_done", crewId, text: crewName, admin: true }));
+  if (owner) await notify(owner, { type: "crew_challenge_done", crewId, text: crewName, admin: true });
   console.log(`crew challenge done crew=${crewId} ch=${chId} members=${uids.length}`);
 }
 async function grantMilestones(crewId, ms) {

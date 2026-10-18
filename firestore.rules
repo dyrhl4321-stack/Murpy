@@ -518,6 +518,49 @@ service cloud.firestore {
         && (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid));
     }
 
+    // ===== 크루 기록 (2026-10-19) — 설계 docs/superpowers/specs/2026-10-19-crew-records-design.md =====
+    //   ★숫자(stats·milestones·멤버·러닝 기록·개인 기록·성주)는 **서버(functions/crew.js)만** 쓴다.
+    //   관리자는 크루 이름·소개 같은 메타와 챌린지 틀만 만든다. 휴면 crews 컬렉션과는 별개.
+    match /crewsV2/{crewId} {
+      allow read: if true;
+      allow create: if isAdmin() && !('milestones' in request.resource.data);
+      allow update: if isAdmin()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['stats', 'milestones']);
+      allow delete: if isAdmin();
+      match /members/{uid} {
+        allow read: if true;
+        allow write: if false;
+      }
+      match /challenges/{chId} {
+        allow read: if true;
+        allow create: if isAdmin() && request.resource.data.status == 'active'
+                      && request.resource.data.get('progress', 0) == 0
+                      && !('rewardPaid' in request.resource.data);
+        allow update: if isAdmin()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['progress', 'status', 'doneAt', 'rewardPaid']);
+        allow delete: if isAdmin();
+      }
+      match /private/{docId} {
+        allow read, write: if isAdmin();
+      }
+    }
+    // 러닝 기록·개인 기록은 로그인한 사람만 본다(카드에 지도가 있을 수 있다). 쓰기는 서버만.
+    match /runs/{runId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /runStats/{uid} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /centerMonth/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /crewEvents/{id} {
+      allow read, write: if false;
+    }
+
     // ===== 1:1 채팅 — 당사자만 (8-29: 전엔 로그인만 하면 남의 대화를 읽고 지울 수 있었다) =====
     match /chats/{chatId} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid in resource.data.participants);
