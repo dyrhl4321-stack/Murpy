@@ -47610,6 +47610,18 @@ html.cw-open,html.cw-open body{overflow:hidden!important;overscroll-behavior:non
 .cw-flag:after{content:'';position:absolute;left:2px;top:0;width:7px;height:5px;background:#cfd6e6}
 .cw-runner{position:absolute;top:32px;transform:translate(-50%,-100%)}
 .cw-chest{position:absolute;right:6px;top:5px;width:32px;height:32px;background:url('char/rooms/season_box.png?v=2') center/contain no-repeat;image-rendering:pixelated}
+.cw-seg{position:absolute;top:22px;width:2px;height:14px;background:#3b4459}
+.cw-pv .cw-track{height:92px}
+.cw-pv .cw-track:before{top:18px}
+.cw-pv .cw-lane{top:70px;right:66px}
+.cw-pv .cw-seg{top:60px;height:22px}
+.cw-pv .cw-flag{top:34px;height:38px}
+.cw-pv .cw-runner{top:76px}
+.cw-pv .cw-chest{width:56px;height:56px;top:18px;right:6px}
+.cw-pv .cw-more{left:118px;top:52px;font-size:12px}
+.cw-segl{position:relative;height:16px;margin-top:6px}
+.cw-segl span{position:absolute;transform:translateX(-50%);font-family:'Galmuri11',sans-serif;font-size:10px;color:#6b7488;white-space:nowrap}
+.cw-more{position:absolute;left:66px;top:16px;font-family:'Galmuri11',sans-serif;font-weight:400;font-size:10px;color:#aeb6c8}
 .cw-tk{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;font-size:12px;color:#8a93a8;font-variant-numeric:tabular-nums}
 .cw-tk b{color:#e8ecf4;font-weight:700}
 .cw-tk .rw{color:#F5C24B;font-weight:600}
@@ -48022,7 +48034,7 @@ window.runDeleteAsk = function (runId, crewId) {
 
 // ── 러닝 인증샷 올리기 + 스캔 연출 ──────────────────────────────────────────
 const _runWhy = {
-  dup_image: '이미 올린 카드예요', dup_run: '같은 기록이 이미 있어요', too_old: '7일 안의 기록만 올릴 수 있어요',
+  dup_image: '이미 올린 카드예요', dup_run: '같은 기록이 이미 있어요', too_old: '오늘 달린 기록만 올릴 수 있어요', not_today: '오늘 달린 기록만 올릴 수 있어요',
   bad_date: '카드 날짜를 확인하지 못했어요', not_card: '스트라바나 나이키 러닝 기록 카드가 아니에요',
   km_range: '숫자가 맞지 않아요. 카드 원본을 올려 주세요', pace_range: '숫자가 맞지 않아요. 카드 원본을 올려 주세요',
   time_mismatch: '숫자가 맞지 않아요. 카드 원본을 올려 주세요', unreadable: '거리와 시간이 보이게 다시 올려 주세요',
@@ -48153,7 +48165,9 @@ window._runScanStart = async function (file, crewId) {
   const resP = (async () => {
     const blob = await window._compressImg(file);
     const up = await window.mwUploadImage(blob, 'run');
-    return _crewCall('runSubmit', { url: up });
+    // 카드에 날짜가 없을 때 '오늘 기록인가'를 서버가 판단할 사진 촬영 시각(EXIF, 없으면 파일 시각) — 대표 10-19 당일 기록만
+    let shotMs = 0; try { const d = await window._exifShotAt(file); shotMs = d ? d.getTime() : 0; } catch (e) {}
+    return _crewCall('runSubmit', { url: up, shotMs });
   })();
   resP.catch(e => console.warn('runSubmit', e));
   const out = await window.runScanPlay(resP);
@@ -48404,30 +48418,68 @@ window.crewInviteCopy = async function (id) {
 };
 // 챌린지 목표 인원 = 최근 2주 안에 한 번이라도 운동(러닝 기록·헬스장 출석)한 크루원, 최소 3명.
 //   ★전체 인원으로 잡으면 247명 크루가 '2주 함께 1482회' 가 된다(대표 10-19 "비현실적"). 서버 crew_logic.activeHeadcount 와 같은 규칙.
-async function _crewActiveHead(id) {
+async function _crewActiveInfo(id) {
   const t = new Date(); t.setDate(t.getDate() - 13);
   const cutoff = t.getFullYear() + String(t.getMonth() + 1).padStart(2, '0') + String(t.getDate()).padStart(2, '0');
   const ms = await getDocs(query(collection(db, 'crewsV2', id, 'members'), where('left', '==', false)));
-  const n = ms.docs.filter(d => (d.data().lastActiveDay || '') >= cutoff).length;
-  return Math.max(3, n);
+  const all = ms.docs.map(d => Object.assign({ uid: d.id }, d.data()));
+  const act = all.filter(m => (m.lastActiveDay || '') >= cutoff);
+  return { head: Math.max(3, act.length), act, all };
 }
+async function _crewActiveHead(id) { return (await _crewActiveInfo(id)).head; }
 // 챌린지 만들기 — 시작 기본값 = 다음 월요일 00:00(한국 시간), 기간 14일, 목표 = 1인 목표 × 최근 2주 운동한 인원(만들 때 고정)
 window.crewChallengeNew = async function (id) {
   if (!(typeof isAdmin === 'function' && isAdmin())) return;
-  let crew = null, head = 3;
-  try { const s = await getDoc(doc(db, 'crewsV2', id)); crew = s.exists() ? s.data() : null; head = await _crewActiveHead(id); } catch (e) {}
+  let crew = null, head = 3, uids = [], P = {};
+  try {
+    const s = await getDoc(doc(db, 'crewsV2', id)); crew = s.exists() ? s.data() : null;
+    const info = await _crewActiveInfo(id); head = info.head;
+    // 미리보기 출발선에 세울 3명 — 최근 2주 운동한 사람 먼저, 모자라면 다른 크루원
+    uids = info.act.concat(info.all.filter(m => info.act.indexOf(m) < 0)).slice(0, 3).map(m => m.uid);
+    P = await _crewProfiles(uids);
+  } catch (e) {}
   if (!crew) return;
+  window._crcPrev = { head, uids, P };
   const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
   const ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const gymFirst = crew.sport === 'gym', CF = window.CREW_CFG;
   _crewSheet('crew-ch-new', _crewHead('챌린지 만들기', _cE(crew.name) + ' 최근 2주 운동한 ' + head + '명 기준', "document.getElementById('crew-ch-new').remove()")
     + '<div style="padding:0 20px"><label class="cw-lb" style="margin-top:8px">종류</label>'
-    + '<select id="crc-kind" class="cw-in" onchange="document.getElementById(\'crc-per\').value=this.value===\'run_km\'?' + CF.RUN_PER_HEAD_KM + ':' + CF.GYM_PER_HEAD + '">'
+    + '<select id="crc-kind" class="cw-in" onchange="document.getElementById(\'crc-per\').value=this.value===\'run_km\'?' + CF.RUN_PER_HEAD_KM + ':' + CF.GYM_PER_HEAD + ';window._crcPaint()">'
     + '<option value="run_km"' + (gymFirst ? '' : ' selected') + '>러닝 거리 (인증된 기록만)</option><option value="gym_attend"' + (gymFirst ? ' selected' : '') + '>헬스 출석 (체크인)</option></select>'
-    + '<label class="cw-lb">시작일 (그날 0시부터 ' + CF.CHALLENGE_DAYS + '일)</label><input id="crc-start" type="date" value="' + ymd + '" class="cw-in">'
-    + '<label class="cw-lb">1인 목표 (km 또는 회)</label><input id="crc-per" type="number" value="' + (gymFirst ? CF.GYM_PER_HEAD : CF.RUN_PER_HEAD_KM) + '" class="cw-in">'
+    + '<label class="cw-lb">시작일 (그날 0시부터 ' + CF.CHALLENGE_DAYS + '일)</label><input id="crc-start" type="date" value="' + ymd + '" class="cw-in" onchange="window._crcPaint()" oninput="window._crcPaint()">'
+    + '<label class="cw-lb">1인 목표 (km 또는 회)</label><input id="crc-per" type="number" inputmode="decimal" value="' + (gymFirst ? CF.GYM_PER_HEAD : CF.RUN_PER_HEAD_KM) + '" class="cw-in" oninput="window._crcPaint()">'
     + '<div style="font-size:12px;color:#F5C24B;margin-top:16px;line-height:1.6">러닝 챌린지는 건강 앱 인증이 열린 뒤에 시작하세요. 지금은 인증된 러닝 기록이 없어 진행이 0으로 남아요.</div>'
-    + '</div><div class="cw-bar"><button class="cw-up" onclick="window.crewChallengeCreate(\'' + _cJ(id) + '\')">만들기</button></div>');
+    + '<button class="cw-up" style="max-width:none;margin-top:24px" onclick="window.crewChallengeCreate(\'' + _cJ(id) + '\')">만들기</button>'
+    + '<div id="crc-prev" class="cw-pv" style="margin-top:40px"></div></div>');
+  window._crcPaint();
+};
+// 챌린지 미리보기 — 출발선의 크루원, 1인 목표 한 칸씩(인원만큼), 끝에 선물상자. 크루 페이지 챌린지 트랙과 같은 그림.
+const _crewWd = ms => '일월화수목금토'[new Date(ms + 9 * 36e5).getUTCDay()];
+window._crcPaint = function () {
+  const box = document.getElementById('crc-prev'), v = window._crcPrev; if (!box || !v) return;
+  const kind = (document.getElementById('crc-kind') || {}).value, run = kind === 'run_km', unit = run ? 'km' : '회';
+  const per = Math.max(0, Number((document.getElementById('crc-per') || {}).value) || 0);
+  const sd = String((document.getElementById('crc-start') || {}).value || '');
+  const start = Date.parse(sd + 'T00:00:00+09:00'), CF = window.CREW_CFG, head = v.head;
+  const last = start + (CF.CHALLENGE_DAYS - 1) * 864e5;
+  const range = isNaN(start) ? '' : _crewMD(start) + '(' + _crewWd(start) + ') → ' + _crewMD(last) + '(' + _crewWd(last) + ')';
+  const fmt = x => run ? _crewKm(x) : String(Math.round(x));
+  const segs = Math.min(head, 10);
+  let marks = '', labels = '';
+  const at = f => 'calc(14px + (100% - 80px) * ' + f.toFixed(4) + ')';
+  for (let i = 1; i < segs; i++) marks += '<i class="cw-seg" style="left:' + at(i / segs) + '"></i>';
+  if (head <= 10) for (let i = 0; i < segs; i++) labels += '<span style="left:' + at((i + .5) / segs) + '">' + fmt(per) + unit + '</span>';
+  const runners = [0, 1, 2].map(k => {
+    const u = v.uids[k], pr = u ? v.P[u] : null;
+    return '<div class="cw-runner" style="left:' + (30 + k * 28) + 'px;z-index:' + (3 - k) + (u ? '' : ';opacity:.3') + '">' + _crewMini(pr, 56, 'right') + '</div>';
+  }).join('');
+  box.innerHTML = '<div class="cw-h">' + head + '명이 함께 ' + fmt(per * head) + unit + '<em>' + range + '</em></div>'
+    + '<div class="cw-track"><div class="cw-flag"></div><div class="cw-lane"></div>' + marks + runners
+    + (head > 3 ? '<b class="cw-more">+' + (head - 3) + '</b>' : '') + '<div class="cw-chest"></div></div>'
+    + '<div class="cw-segl">' + labels + '</div>'
+    + '<div class="cw-tk"><span>한 칸 = 1인 <b>' + fmt(per) + unit + '</b></span><span class="rw">함께 달성 ' + CF.CHALLENGE_REWARD_GROUP + '머피</span></div>'
+    + '<div class="cw-tk" style="margin-top:4px"><span>혼자 내 칸을 채워도</span><span class="rw">내 목표 ' + CF.CHALLENGE_REWARD_SOLO + '머피</span></div>';
 };
 window.crewChallengeCreate = async function (id) {
   const kind = (document.getElementById('crc-kind') || {}).value;
