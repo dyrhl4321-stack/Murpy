@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  아이폰 사파리 크루 초대 중간 화면 (10-19 대표 승인 '우회 1').
+  카톡 → 사파리로 나온 초대 링크(/?crew=..&k=..&via=kt)를 index.html 머리 스크립트가 여기로 보낸다.
+  이미 앱이 깔린 폰은 링크 연결 파일(AASA, 10-19 신규)을 앱 재설치·업데이트 전까지 모를 수 있어 앱이 안 열리고 사파리로 온다.
+  그래서 앱스토어로 바로 보내지 않고 버튼 한 번 — 그 탭에서 초대 주소를 클립보드에 넣는다 → 앱 스쿼드 탭 '초대 링크 붙여넣기'로 이어받기.
+  ★1.1.0 에 murpy:// 스킴이 생기면 이 우회는 정리(index.html 머리 스크립트의 c-ios.html 줄 포함).
+  ★주소는 반드시 .html (폴더형 주소 금지).
+-->
+<title>크루 초대 · Murpy</title>
+<meta name="theme-color" content="#0b0f1a">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/icon-192.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%;background:#0b0f1a}
+body{font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;color:#e8ecf4;background:#0b0f1a;
+  -webkit-font-smoothing:antialiased;line-height:1.5;word-break:keep-all;min-height:100dvh;display:flex;flex-direction:column}
+main{flex:1;width:100%;max-width:440px;margin:0 auto;padding:28px 20px 0}
+.top{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px}
+.top img{width:28px;height:28px;border-radius:7px}
+.letter{position:relative;margin-top:40px;background:#efe4c8;color:#1a1510;border:3px solid #2a2117;box-shadow:0 0 0 3px #05070c,6px 6px 0 3px #05070c;padding:22px 20px 24px}
+.letter .k{font-family:'GalmuriMono11',monospace;font-size:12px;letter-spacing:2.5px;color:#8a7a5c}
+.letter h1{font-family:'Galmuri14',sans-serif;font-weight:400;font-size:32px;line-height:1.15;margin-top:8px;letter-spacing:-.5px;min-height:37px;padding-right:76px;word-break:break-all}
+.letter .park{margin-top:16px;aspect-ratio:16/9;border:3px solid #2a2117;background:#6a8f4e url('/char/fields/field_park2.png?v=5') 50% 48%/300% auto no-repeat;image-rendering:pixelated}
+.seal{position:absolute;right:16px;top:18px;width:64px;height:64px;border-radius:50%;border:4px solid #E4472E;display:flex;align-items:center;justify-content:center;
+  transform:rotate(-12deg);font-family:'Galmuri14',sans-serif;font-size:13px;color:#E4472E}
+.seal:after{content:'';position:absolute;inset:4px;border-radius:50%;border:2px solid #E4472E}
+.note{margin-top:24px;font-size:15px;color:#aeb6c8}
+.cta{width:100%;max-width:440px;margin:28px auto 0;padding:14px 20px max(30px,calc(16px + env(safe-area-inset-bottom)))}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #3D7EFF,0 3px 0 #05060a;
+  color:#fff;font:inherit;font-weight:700;font-size:17px;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.btn:active{transform:translateY(2px);box-shadow:0 0 0 2px #3D7EFF,0 1px 0 #05060a}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><img src="/icon-192.png" alt="">Murpy</div>
+  <div class="letter">
+    <div class="k">CREW INVITATION</div>
+    <h1 id="nm">크루 초대</h1>
+    <div class="park" role="img" aria-label="머피월드 공원"></div>
+    <div class="seal">초대</div>
+  </div>
+  <p class="note">앱이 이미 있으면 열고 스쿼드 탭에서 '초대 링크 붙여넣기'를 눌러 주세요</p>
+</main>
+<div class="cta"><a class="btn" id="go" href="https://apps.apple.com/kr/app/id6809371046">App Store에서 열기</a></div>
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  var id = p.get('crew') || '', k = p.get('k') || '', by = p.get('by') || '';
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id) || !/^[A-Za-z0-9]{1,32}$/.test(k)) { location.replace('/'); return; }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(by)) by = '';
+  var invite = 'https://murpy.app/?crew=' + id + '&k=' + k + (by ? '&by=' + by : '');
+  // 크루 이름(크루 문서는 누구나 읽기)
+  fetch('https://firestore.googleapis.com/v1/projects/murpyprototype/databases/(default)/documents/crewsV2/' + id)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      var n = d && d.fields && d.fields.name && d.fields.name.stringValue;
+      if (n) { document.getElementById('nm').textContent = n; document.title = n + ' 크루 초대 · Murpy'; }
+    }).catch(function () {});
+  function copy(t) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).catch(function () {}); return; } } catch (e) {}
+    try { var a = document.createElement('textarea'); a.value = t; a.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(a); a.select(); document.execCommand('copy'); a.remove(); } catch (e) {}
+  }
+  // 복사가 끝날 틈을 주고 넘어간다
+  var go = document.getElementById('go');
+  go.addEventListener('click', function (e) { e.preventDefault(); copy(invite); setTimeout(function () { location.href = go.href; }, 180); });
+})();
+</script>
+</body>
+</html>
