@@ -95,6 +95,12 @@ window.track = function (name, params) {
   } catch (e) {}
 };
 window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c').replace(/>/g, '\\x3e').replace(/&/g, '\\x26').replace(/"/g, '\\x22').replace(/\r?\n/g, '\\n'); };
+  // ★10-19 첫 방문 주소 보관 — 서비스워커가 아직 없는 첫 방문은 곧 한 번 새로고침된다(_mwReloadUrl).
+  //   게임 링크(?game= ?tn ?rn)·?go= 는 열자마자 주소를 지우므로, 새로고침 전에 원래 주소 값을 60초만 들고 있는다.
+  try {
+    if ('serviceWorker' in navigator && !navigator.serviceWorker.controller && location.search)
+      sessionStorage.setItem('murpy_boot_qs', JSON.stringify({ qs: location.search, at: Date.now() }));
+  } catch (e) {}
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
   if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
   // 카카오 OAuth 콜백 감지
@@ -16168,8 +16174,16 @@ if ('serviceWorker' in navigator) {
     //   ?sq= 스쿼드·?room= 방·?art= 그림·?game= 게임·?crew= 크루 초대가 전부 사라졌다(라이브 첫 방문 확인).
     //   이미 처리하고 지운 값은 주소에 없으니 다시 돌지 않는다. 새로고침 표식(sw·fresh·try·t·nuke)만 빼고 다시 붙인다.
     window._mwReloadUrl = function (extra) {
-      var q = new URLSearchParams(location.search);
-      ['sw', 'fresh', 'try', 't', 'nuke'].forEach(function (k) { q.delete(k); });
+      // 첫 방문이면 보관해 둔 원래 주소(60초 안)를 쓴다 — 열자마자 주소를 지우는 게임 링크·?go= 도 살린다
+      var src = location.search;
+      try {
+        var b = JSON.parse(sessionStorage.getItem('murpy_boot_qs') || 'null');
+        sessionStorage.removeItem('murpy_boot_qs');
+        if (b && b.qs && Date.now() - (b.at || 0) < 60000) src = b.qs;
+      } catch (e) {}
+      var q = new URLSearchParams(src);
+      // 새로고침 표식 + 로그인 콜백 값(한 번 쓰면 끝인 카카오 인가코드 등)은 다시 싣지 않는다
+      ['sw', 'fresh', 'try', 't', 'nuke', 'code', 'state', 'access_token', 'error'].forEach(function (k) { q.delete(k); });
       Object.keys(extra || {}).forEach(function (k) { q.set(k, extra[k]); });
       return './?' + q.toString();
     };
