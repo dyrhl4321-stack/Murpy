@@ -65,7 +65,7 @@ with sync_playwright() as p:
     pg.goto('http://127.0.0.1:%d/index.html' % port, wait_until='domcontentloaded')
     pg.wait_for_function('typeof window.crewPageHtml === "function" && typeof window.mwMiniCharHtml === "function"', timeout=60000)
     pg.wait_for_timeout(6000)   # 부팅 스플래시·첫 화면 전환이 끝난 뒤 — 그 전에 붙이면 부팅이 몸통을 갈아 끼운다
-    pg.add_style_tag(content='body > *:not(#crw-shot){display:none!important}')
+    pg.add_style_tag(content='body > *:not(#crw-shot):not(#run-scan){display:none!important}')
     pg.evaluate('window._crewCss(); window.CREW_CFG.RUN_UPLOAD_ON = true')   # 하네스에서만 버튼을 켜서 본다
     pg.evaluate('([f, img]) => { window.__F = (eval(f))(img); }', [FAKE, IMG])
     shots = [
@@ -89,17 +89,16 @@ with sync_playwright() as p:
     # 오류
     mount(pg, '<div class="cw-hd"><div><b>크루</b></div><button class="cw-x">✕</button></div><div class="cw-err">크루를 불러오지 못했어요<br><button class="cw-pbtn">다시 불러오기</button></div>')
     pg.screenshot(path=os.path.join(OUT, 'crew_error.png'))
-    # 스캔: 성공(미인증) → 거절
-    mount(pg, pg.evaluate("window.runScanHtml('%s/card_strava.jpg')" % IMG))
-    pg.wait_for_timeout(500)
-    pg.screenshot(path=os.path.join(OUT, 'scan_1_start.png'))
-    pg.evaluate("window.runScanFx({ok:true, reward:0, run:{km:5.02, sec:1531, paceSec:305, runDay:'20261019', dayFromCard:true, status:'unverified'}}, '')")
-    pg.wait_for_timeout(1900)
+    # 스캔: 성공(미인증) 끝 장면 → 거절 끝 장면 (연출은 tools/crew_scan_rec.py 로 녹화)
+    pg.evaluate("document.getElementById('crw-shot') && document.getElementById('crw-shot').remove()")
+    pg.add_style_tag(content='#run-scan{visibility:visible!important} #run-scan *{visibility:visible}')
+    pg.evaluate("window.runScanDemo('%s/card_strava.jpg', {ok:true, reward:0, run:{km:5.02, sec:1531, paceSec:305, runDay:'20261019', dayFromCard:true, status:'unverified', boxes:{km:[381,76,516,270], pace:[380,525,514,726], date:[64,343,89,863], time:[569,75,616,472]}}}, 600)" % IMG)
+    pg.wait_for_timeout(4500)
     pg.screenshot(path=os.path.join(OUT, 'scan_2_ok.png'))
-    mount(pg, pg.evaluate("window.runScanHtml('%s/card_nrc.jpg')" % IMG))
-    pg.evaluate("window.runScanFx({ok:false, why:'not_card'}, '')")
-    pg.wait_for_timeout(700)
+    pg.evaluate("window.runScanDemo('%s/card_nrc.jpg', {ok:false, why:'not_card'}, 600)" % IMG)
+    pg.wait_for_timeout(3500)
     pg.screenshot(path=os.path.join(OUT, 'scan_3_fail.png'))
+    pg.evaluate("document.getElementById('run-scan') && document.getElementById('run-scan').remove()")
     # 스쿼드 탭 '내 크루' 줄
     mount(pg, '<div style="padding:16px 20px;font-family:Pretendard,sans-serif">' + pg.evaluate("window.crewRowHtml([__F.running.crew, __F.mixed.crew])") + '</div>')
     pg.screenshot(path=os.path.join(OUT, 'crew_row.png'), clip={'x': 0, 'y': 0, 'width': 390, 'height': 200})
