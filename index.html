@@ -16163,6 +16163,16 @@ if ('serviceWorker' in navigator) {
         clearInterval(t); fn();
       }, 3000);
     };
+    // ★10-19 업데이트 새로고침 주소 — 지금 주소의 값(초대·딥링크)을 그대로 들고 간다.
+    //   예전엔 './?sw=…' 로만 다시 열어서, **처음 오는 사람**(서비스워커가 자리 잡는 순간 한 번 새로고침된다)이 받은
+    //   ?sq= 스쿼드·?room= 방·?art= 그림·?game= 게임·?crew= 크루 초대가 전부 사라졌다(라이브 첫 방문 확인).
+    //   이미 처리하고 지운 값은 주소에 없으니 다시 돌지 않는다. 새로고침 표식(sw·fresh·try·t·nuke)만 빼고 다시 붙인다.
+    window._mwReloadUrl = function (extra) {
+      var q = new URLSearchParams(location.search);
+      ['sw', 'fresh', 'try', 't', 'nuke'].forEach(function (k) { q.delete(k); });
+      Object.keys(extra || {}).forEach(function (k) { q.set(k, extra[k]); });
+      return './?' + q.toString();
+    };
     window._mwForceFresh = function (v) {
       if (_mwReloadingForUpdate) return;
       if (window._mwIsTyping()) {   // 쓰는 중이면 이번엔 건너뛴다 — _mwSelfHeal 이 60초마다·화면 복귀마다 다시 부른다
@@ -16192,7 +16202,7 @@ if ('serviceWorker' in navigator) {
         }).catch(function () {}));
       }
       var done = function () {
-        location.replace('./?fresh=' + encodeURIComponent(v) + '&try=' + state.n + '&t=' + Date.now());
+        location.replace(window._mwReloadUrl({ fresh: v, try: String(state.n), t: String(Date.now()) }));
       };
       Promise.all(jobs).then(done, done);
     };
@@ -16235,7 +16245,7 @@ if ('serviceWorker' in navigator) {
       if (_mwReloadingForUpdate) return;
       _mwReloadingForUpdate = true;
       window._mwWhenNotTyping(function () {
-        location.replace('./?sw=' + encodeURIComponent(window._SW_V || '') + '&t=' + Date.now());
+        location.replace(window._mwReloadUrl({ sw: String(window._SW_V || ''), t: String(Date.now()) }));
       });
     });
     navigator.serviceWorker.addEventListener('message', function (e) {
@@ -48147,6 +48157,40 @@ window.crewChallengeCreate = async function (id) {
   const el = document.getElementById('policy-notice');
   if (el && !closed && Date.now() < UNTIL) el.style.display = 'flex';
 })();
+// ── 이용약관·개인정보처리방침을 앱 위 화면으로 연다(10-19 대표: 페이지로 넘어가면 '머피 시작하기'가 쥐콩만하고 나가기가 없어 불편) ──
+//   앱 안 어디서든(가입 안내·마이페이지·홈 공지 줄) /privacy·/terms 링크를 누르면 여기로 온다. 닫으면 보던 화면 그대로.
+//   약관 페이지는 스크립트를 넣지 않는 원칙(심사자용)이라, 그 페이지의 '머피로 돌아가기' 줄은 여기서 스타일을 꽂아 감춘다(같은 출처).
+window.openLegal = function (kind) {
+  const isTerms = kind === 'terms';
+  let el = document.getElementById('legal-view'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'legal-view';
+  el.style.cssText = 'position:fixed;inset:0;z-index:40050;background:#0B0B0D;display:flex;flex-direction:column';
+  el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0">'
+    + '<button onclick="document.getElementById(\'legal-view\').remove()" aria-label="닫기" style="background:none;border:none;color:#fff;font-size:22px;line-height:1;padding:8px 10px;cursor:pointer;font-family:inherit">←</button>'
+    + '<b style="font-size:16px;font-weight:700;letter-spacing:-0.3px;color:#fff">' + (isTerms ? '이용약관' : '개인정보처리방침') + '</b></div>'
+    + '<iframe src="/' + (isTerms ? 'terms' : 'privacy') + '.html" title="' + (isTerms ? '이용약관' : '개인정보처리방침') + '" style="flex:1;width:100%;border:0;background:#0B0B0D"></iframe>';
+  document.body.appendChild(el);
+  const fr = el.querySelector('iframe');
+  fr.addEventListener('load', function () {
+    try {
+      const d = fr.contentDocument; if (!d) return;
+      const st = d.createElement('style'); st.textContent = '.backbar{display:none!important}';
+      d.head.appendChild(st);
+      // 페이지 안의 서로 링크(약관 ↔ 처리방침)는 이 화면 안에서 바꿔 끼운다
+      d.addEventListener('click', function (ev) {
+        const a = ev.target.closest && ev.target.closest('a[href]'); if (!a) return;
+        const m = (a.getAttribute('href') || '').match(/^\/(privacy|terms)(\.html)?$/); if (!m) return;
+        ev.preventDefault(); window.openLegal(m[1]);
+      });
+    } catch (e) {}
+  });
+};
+document.addEventListener('click', function (ev) {
+  const a = ev.target && ev.target.closest && ev.target.closest('a[href]'); if (!a) return;
+  const m = (a.getAttribute('href') || '').match(/^\/(privacy|terms)(\.html)?$/); if (!m) return;
+  ev.preventDefault(); ev.stopPropagation();
+  window.openLegal(m[1]);
+}, true);
 </script>
 </body>
 </html>
