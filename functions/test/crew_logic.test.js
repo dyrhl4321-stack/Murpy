@@ -45,12 +45,32 @@ test("checkCard 거르기", () => {
   assert.equal(c({ km: 120, sec: 36000, paceSec: 300 }), "km_range");
   assert.equal(c({ km: 5, sec: 500, paceSec: 100 }), "pace_range");
   assert.equal(c({ km: 5, sec: 2000, paceSec: 300 }), "time_mismatch");
-  assert.equal(c({ dateISO: "2026-10-11" }), "too_old");
-  assert.equal(c({ dateISO: "2026-10-12" }), undefined);   // 7일 전은 통과
   assert.equal(c({ dateISO: "2026-10-22" }), "bad_date");  // 미래 날짜
   assert.equal(c({ km: null }), "unreadable");
   assert.equal(c({ sec: null, paceSec: null }), "unreadable");
   assert.equal(L.checkCard(null, { nowMs: NOW }).why, "unreadable");
+});
+
+// 대표 10-19 "그날 당일만 가능하게, 전 거는 안 됨"
+test("checkCard 당일 기록만 — 카드 날짜", () => {
+  const c = (o, now) => L.checkCard(Object.assign({ isRunCard: true, km: 5, sec: 1500, paceSec: 300 }, o), { nowMs: now || NOW });
+  assert.equal(c({ dateISO: "2026-10-19" }).ok, true);
+  assert.equal(c({ dateISO: "2026-10-18" }).why, "not_today");          // 어제
+  assert.equal(c({ dateISO: "2026-10-12" }).why, "not_today");          // 지난주
+  // 새벽 0~5시: 하루 경계(5시) 전이라 '오늘'은 어제 날짜지만, 카드에 찍힌 달력 날짜(오늘)도 받는다
+  const dawn = Date.parse("2026-10-20T00:30:00+09:00");
+  assert.equal(c({ dateISO: "2026-10-20" }, dawn).ok, true);
+  assert.equal(c({ dateISO: "2026-10-19" }, dawn).ok, true);            // 어젯밤 11시 반에 뛴 것
+  assert.equal(c({ dateISO: "2026-10-18" }, dawn).why, "not_today");
+});
+
+test("checkCard 당일 기록만 — 카드에 날짜가 없으면 사진 촬영 시각", () => {
+  const c = (shotMs) => L.checkCard({ isRunCard: true, km: 5, sec: 1500, paceSec: 300, dateISO: null }, { nowMs: NOW, shotMs });
+  assert.equal(c(Date.parse("2026-10-19T08:10:00+09:00")).ok, true);
+  assert.equal(c(Date.parse("2026-10-18T20:00:00+09:00")).why, "not_today");
+  const r = c(null);                                   // 촬영 시각도 없으면 올린 시각(오늘)
+  assert.equal(r.ok, true); assert.equal(r.run.runDay, "20261019"); assert.equal(r.run.dayFromCard, false);
+  assert.equal(c(Date.parse("2026-10-30T08:00:00+09:00")).ok, true);   // 미래 촬영 시각(기기 시계 틀림)은 믿지 않고 올린 시각
 });
 
 test("isDupRun 같은 날·같은 거리·같은 시간(1초 오차)", () => {

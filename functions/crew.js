@@ -304,7 +304,8 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
   if ((await runRef.get()).exists) return reject("dup_image");
 
   const ocr = await ocrCard(GEMINI.value(), buf, meta.contentType || "image/jpeg");
-  const chk = L.checkCard(ocr, { nowMs: now() });
+  const shotMs = Number((req.data || {}).shotMs) || 0;    // 카드에 날짜가 없을 때만 쓴다(당일 판정)
+  const chk = L.checkCard(ocr, { nowMs: now(), shotMs });
   if (!chk.ok) return reject(chk.why);
   const run = chk.run;
 

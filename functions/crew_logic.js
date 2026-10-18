@@ -9,7 +9,7 @@ const CFG = {
   CHALLENGE_REWARD_GROUP: 300, CHALLENGE_REWARD_SOLO: 200,   // 대표 확정 10-19: 함께 달성 300(기간 중 운동한 사람) · 내 목표 200
   MILESTONES: [100, 500, 1000],
   RUN_PER_HEAD_KM: 15, GYM_PER_HEAD: 6, CHALLENGE_DAYS: 14,
-  KM_MIN: 0.5, KM_MAX: 100, PACE_MIN: 150, PACE_MAX: 900, TIME_TOL: 0.12, MAX_AGE_DAYS: 7,
+  KM_MIN: 0.5, KM_MAX: 100, PACE_MIN: 150, PACE_MAX: 900, TIME_TOL: 0.12,
 };
 const DAY = 864e5;
 
@@ -81,7 +81,7 @@ function storagePathOf(url, uid, bucket) {
 }
 
 // ── 카드 판정 ───────────────────────────────────────────────────────────────
-function checkCard(ocr, { nowMs }) {
+function checkCard(ocr, { nowMs, shotMs }) {
   if (!ocr) return { ok: false, why: "unreadable" };
   if (!ocr.isRunCard) return { ok: false, why: "not_card" };
   const km = ocr.km;
@@ -98,14 +98,20 @@ function checkCard(ocr, { nowMs }) {
   if (!paceSec) paceSec = Math.round(sec / km);
   if (!sec) sec = Math.round(km * paceSec);
   if (paceSec < CFG.PACE_MIN || paceSec > CFG.PACE_MAX) return { ok: false, why: "pace_range" };
-  const today = kstDay(nowMs);
+  // ★대표 10-19 "그날 당일만, 전 거는 안 됨" — 오늘(한국) 기록만 받는다.
+  //   '오늘' = 하루 경계(새벽 5시) 기준 날짜, 그리고 새벽 0~5시엔 달력 날짜도(자정 넘겨 뛴 기록이 카드에 새 날짜로 찍힌다).
+  const today = kstDay(nowMs), calToday = kstDayUtc(nowMs + 9 * 3600e3);
+  const isToday = (d) => d === today || d === calToday;
   let runDay = today, dayFromCard = false;
   if (ocr.dateISO) {
     runDay = ocr.dateISO.replace(/-/g, "");
     dayFromCard = true;
-    const age = (dayToUtc(today) - dayToUtc(runDay)) / DAY;
-    if (age < -1) return { ok: false, why: "bad_date" };          // 미래(시차 하루는 봐준다)
-    if (age > CFG.MAX_AGE_DAYS) return { ok: false, why: "too_old" };
+    if (dayToUtc(runDay) > dayToUtc(calToday)) return { ok: false, why: "bad_date" };   // 미래
+    if (!isToday(runDay)) return { ok: false, why: "not_today" };
+  } else if (shotMs > 0 && shotMs <= nowMs + 3600e3) {
+    // 카드에 날짜가 없으면(예: "오늘"만 찍힌 화면) 사진 촬영 시각. 미래 시각(기기 시계 틀림)은 믿지 않고 올린 시각을 쓴다.
+    const sd = kstDay(shotMs), sc = kstDayUtc(shotMs + 9 * 3600e3);
+    if (!isToday(sd) && !isToday(sc)) return { ok: false, why: "not_today" };
   }
   return { ok: true, run: { km, sec, paceSec, runDay, dayFromCard, app: ocr.app || "unknown" } };
 }
