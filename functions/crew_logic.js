@@ -56,7 +56,17 @@ function parseOcr(text) {
   if (!o || typeof o !== "object") return null;
   const app = ["strava", "nrc"].includes(o.app) ? o.app : "unknown";
   const dateISO = typeof o.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.dateISO) ? o.dateISO : null;
-  return { isRunCard: o.isRunCard === true, app, km: toNum(o.km), sec: toSec(o.sec), paceSec: toSec(o.paceSec), dateISO };
+  const out = { isRunCard: o.isRunCard === true, app, km: toNum(o.km), sec: toSec(o.sec), paceSec: toSec(o.paceSec), dateISO };
+  // 스캔 연출용 숫자 자리 네모 [ymin,xmin,ymax,xmax] 0~1000 — 판정에는 안 쓴다
+  if (o.boxes && typeof o.boxes === "object") {
+    const b = {};
+    ["km", "pace", "date"].forEach((k) => {
+      const v = o.boxes[k];
+      if (Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === "number" && isFinite(x))) b[k] = v.map((x) => Math.max(0, Math.min(1000, Math.round(x))));
+    });
+    if (Object.keys(b).length) out.boxes = b;
+  }
+  return out;
 }
 
 // 우리 버킷의 uploads/{uid}/ 다운로드 URL 만 받는다 → Storage 경로

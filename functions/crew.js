@@ -210,6 +210,12 @@ const OCR_SCHEMA = {
     sec: { type: "INTEGER", nullable: true },
     paceSec: { type: "INTEGER", nullable: true },
     dateISO: { type: "STRING", nullable: true },
+    // 스캔 연출용 — 카드 위 숫자 자리 [ymin,xmin,ymax,xmax] 0~1000 (판정에는 안 쓴다)
+    boxes: { type: "OBJECT", nullable: true, properties: {
+      km: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
+      pace: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
+      date: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
+    } },
   },
   required: ["isRunCard", "app"],
 };
@@ -222,6 +228,7 @@ async function ocrCard(key, buf, mime) {
     "paceSec = average pace in seconds per km (convert per-mile pace), dateISO = the run date as YYYY-MM-DD if shown.",
     `Today is ${today} (Korea). If a date has no year, use the most recent past date. Korean words like '오늘' mean today, '어제' yesterday.`,
     "Use null for anything not visible. Never guess numbers that are not printed on the image.",
+    "Also return boxes: tight bounding boxes [ymin, xmin, ymax, xmax] on a 0-1000 scale around the printed distance value, the pace value and the date text (null for any that is not visible).",
   ].join(" ");
   const body = {
     contents: [{ parts: [{ inline_data: { mime_type: mime, data: buf.toString("base64") } }, { text: prompt }] }],
@@ -321,7 +328,7 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
   }
   console.log(`runSubmit uid=${uid} km=${run.km} sec=${run.sec} app=${run.app} status=${doc.status} crews=${crewIds.length}`);
   return { ok: true, reward, run: { id: runRef.id, km: run.km, sec: run.sec, paceSec: run.paceSec, runDay: run.runDay,
-    dayFromCard: run.dayFromCard, app: run.app, status: doc.status } };
+    dayFromCard: run.dayFromCard, app: run.app, status: doc.status, boxes: (ocr && ocr.boxes) || null } };
 });
 
 async function deleteRun(uid, snap) {

@@ -248,3 +248,9 @@ test("settleChallenge: 함께 300(활동한 사람만, 달성 때만) + 내 목�
   ]);
   assert.deepEqual(L.settleChallenge(Object.assign({}, ch, { status: "failed" }), ms), [{ uid: "a", amount: 200, key: "c1_i" }]);
 });
+
+test("parseOcr: 숫자 자리 네모(0~1000) 정리, 이상한 값은 버림", () => {
+  const o = L.parseOcr(JSON.stringify({ isRunCard: true, km: 5, sec: 1500, boxes: { km: [100, 50, 200, 400], pace: [100, 500, 200, 1200], date: "x" } }));
+  assert.deepEqual(o.boxes, { km: [100, 50, 200, 400], pace: [100, 500, 200, 1000] });
+  assert.equal(L.parseOcr(JSON.stringify({ isRunCard: true, km: 5, sec: 1500 })).boxes, undefined);
+});
