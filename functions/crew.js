@@ -215,6 +215,7 @@ const OCR_SCHEMA = {
       km: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
       pace: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
       date: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
+      time: { type: "ARRAY", nullable: true, items: { type: "INTEGER" } },
     } },
   },
   required: ["isRunCard", "app"],
@@ -228,7 +229,7 @@ async function ocrCard(key, buf, mime) {
     "paceSec = average pace in seconds per km (convert per-mile pace), dateISO = the run date as YYYY-MM-DD if shown.",
     `Today is ${today} (Korea). If a date has no year, use the most recent past date. Korean words like '오늘' mean today, '어제' yesterday.`,
     "Use null for anything not visible. Never guess numbers that are not printed on the image.",
-    "Also return boxes: tight bounding boxes [ymin, xmin, ymax, xmax] on a 0-1000 scale around the printed distance value, the pace value and the date text (null for any that is not visible).",
+    "Also return boxes: tight bounding boxes [ymin, xmin, ymax, xmax] on a 0-1000 scale around the printed distance value, the pace value, the total time value and the date text (null for any that is not visible).",
   ].join(" ");
   const body = {
     contents: [{ parts: [{ inline_data: { mime_type: mime, data: buf.toString("base64") } }, { text: prompt }] }],

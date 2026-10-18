@@ -60,7 +60,7 @@ function parseOcr(text) {
   // 스캔 연출용 숫자 자리 네모 [ymin,xmin,ymax,xmax] 0~1000 — 판정에는 안 쓴다
   if (o.boxes && typeof o.boxes === "object") {
     const b = {};
-    ["km", "pace", "date"].forEach((k) => {
+    ["km", "pace", "date", "time"].forEach((k) => {
       const v = o.boxes[k];
       if (Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === "number" && isFinite(x))) b[k] = v.map((x) => Math.max(0, Math.min(1000, Math.round(x))));
     });

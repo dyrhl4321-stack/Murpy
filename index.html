@@ -47675,17 +47675,17 @@ function _crewCss() {
 .cw-brk.bl{left:-8px;bottom:-8px;border-left:4px solid #e8ecf4;border-bottom:4px solid #e8ecf4;transform:translate(-10px,10px)}
 .cw-brk.br{right:-8px;bottom:-8px;border-right:4px solid #e8ecf4;border-bottom:4px solid #e8ecf4;transform:translate(10px,10px)}
 .cw-scan.lock .cw-brk{opacity:1;transform:none}
-.cw-scan .ln{position:absolute;left:2px;right:2px;top:2px;height:2px;background:#9cc0ff;opacity:0;pointer-events:none}
-.cw-scan .ln:after{content:'';position:absolute;left:0;right:0;bottom:2px;height:22px;background:rgba(61,126,255,.14)}
-.cw-scan.run .ln{opacity:1;animation:cwSweep 1.1s cubic-bezier(.45,0,.55,1) infinite alternate}
+.cw-scan .ln{position:absolute;left:0;right:0;top:0;height:2px;background:#3D7EFF;box-shadow:0 0 0 1px #0b0f1a;opacity:0;pointer-events:none}
+.cw-scan .ln:after{content:'';position:absolute;left:0;right:0;bottom:3px;height:26px;background:rgba(11,15,26,.26)}
+.cw-scan.run .ln{opacity:1;animation:cwSweep .8s cubic-bezier(.45,0,.55,1) infinite alternate}
 .cw-scan.run .ln.up:after{bottom:auto;top:2px}
 @keyframes cwSweep{from{transform:translateY(0)}to{transform:translateY(var(--sh,300px))}}
-.cw-box{position:absolute;border:2px solid #3D7EFF;opacity:0;transform:scale(1.25);transition:opacity .12s ease,transform .22s cubic-bezier(.2,1.6,.4,1)}
-.cw-box.on{opacity:1;transform:none}
-.cw-box b{position:absolute;left:-2px;top:-17px;background:#3D7EFF;color:#fff;font-family:'Galmuri11',sans-serif;font-weight:400;font-size:9px;line-height:15px;padding:0 4px;white-space:nowrap}
-.cw-scan .ink{position:absolute;left:50%;top:58%;width:92px;height:92px;margin:-46px 0 0 -46px;border-radius:50%;border:4px solid #E4472E;color:#E4472E;
-  font-family:'Galmuri14',sans-serif;font-size:19px;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none}
-.cw-scan .ink:after{content:'';position:absolute;inset:5px;border-radius:50%;border:2px solid #E4472E}
+.cw-box{position:absolute;border:3px solid #3D7EFF;box-shadow:0 0 0 1px #0b0f1a;opacity:0}
+.cw-box.on{opacity:1;animation:cwSnap .26s cubic-bezier(.2,1.6,.4,1)}
+@keyframes cwSnap{0%{transform:scale(1.22);opacity:0}55%{transform:scale(.96);opacity:1}100%{transform:none}}
+.cw-box b{position:absolute;left:-3px;top:-22px;background:#3D7EFF;color:#fff;font-family:'Galmuri11',sans-serif;font-weight:400;font-size:11.5px;line-height:19px;padding:0 6px;white-space:nowrap;box-shadow:0 0 0 1px #0b0f1a}
+.cw-scan .ink{position:absolute;border-radius:50%;border:6px solid #E4472E;color:#E4472E;font-family:'Galmuri14',sans-serif;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;-webkit-mask-image:var(--inkm);mask-image:var(--inkm);-webkit-mask-size:24px 24px;mask-size:24px 24px}
+.cw-scan .ink:after{content:'';position:absolute;inset:6px;border-radius:50%;border:3px solid #E4472E}
 .cw-scan .ink.ghost{border-color:#aeb6c8;color:#aeb6c8}.cw-scan .ink.ghost:after{border-color:#aeb6c8}
 .cw-scan .sp{position:absolute;width:5px;height:5px;background:#E4472E;pointer-events:none}
 .cw-chks{margin:24px 20px 0}
@@ -47698,7 +47698,9 @@ function _crewCss() {
 .cw-chk.on em{opacity:1;transform:none}
 .cw-res{margin:24px 20px 0;font-size:14px;line-height:1.6;opacity:0;transform:translateY(8px);transition:opacity .3s ease,transform .45s cubic-bezier(.16,1,.3,1)}
 .cw-res.in{opacity:1;transform:none}
-.cw-res b{display:block;font-size:17px;font-weight:800;letter-spacing:-.3px;margin-bottom:4px}
+.cw-res b{display:flex;align-items:baseline;gap:8px;font-size:30px;font-weight:800;letter-spacing:-.8px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.cw-res b em{font-style:normal;font-family:'Galmuri14',sans-serif;font-weight:400;font-size:15px;letter-spacing:0;color:#E4472E}
+.cw-res b em.g{color:#aeb6c8}
 .cw-res span{color:#8a93a8;font-size:13px}
 /* 입력(관리자) */
 .cw-in{width:100%;background:#0e1320;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;color:#fff;padding:11px 12px;font-size:14px;font-family:inherit;outline:none;margin-top:8px}
@@ -47987,6 +47989,30 @@ window.runScanHtml = function (imgUrl) {
     + '<div id="run-scan-out"></div>';
 };
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
+// 도장 자리 — 숫자 네모(거리·페이스·날짜·시간, 0~1000)와 가장 덜 겹치는 후보(오른쪽 아래부터).
+//   hw = 카드 세로/가로 — 도장은 원이라 세로 반지름(% 기준)은 가로 반지름 ÷ hw.
+function _inkSpot(bx, hw) {
+  const C = [[74, 78], [74, 58], [26, 78], [74, 32], [26, 32], [50, 50]], R = 19, Rv = R / (hw || 1.4);
+  const rects = Object.values(bx || {}).filter(b => Array.isArray(b) && b.length === 4).map(b => b.map(v => v / 10));
+  let best = C[0], bestHit = Infinity;
+  C.forEach(([x, y]) => {
+    let hit = 0;
+    rects.forEach(([y0, x0, y1, x1]) => { const ix = Math.max(0, Math.min(x + R, x1) - Math.max(x - R, x0)), iy = Math.max(0, Math.min(y + Rv, y1) - Math.max(y - Rv, y0)); hit += ix * iy; });
+    if (hit < bestHit) { bestHit = hit; best = [x, y]; }
+  });
+  return { x: best[0], y: best[1] };
+}
+// 인주 번짐 — 12×12 도트 무작위 구멍(85% 채움) 마스크. 한 번 만들어 둔다.
+let _inkMaskUrl = '';
+function _inkMask() {
+  if (_inkMaskUrl) return _inkMaskUrl;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 12; const g = c.getContext('2d');
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) if (Math.random() < .86) { g.fillStyle = '#000'; g.fillRect(x, y, 1, 1); }
+    _inkMaskUrl = c.toDataURL();
+  } catch (e) { _inkMaskUrl = ''; }
+  return _inkMaskUrl;
+}
 const _buzz = p => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} };
 // ★스캔 연출(대표 10-19 "범프급"). 결과 약속(resP)이 늦으면 줄 왕복을 이어서, 빨라도 최소 길이(약 2.6초)는 지킨다.
 //   타이밍: 0 카드 등장 → .34s 괄호 잡힘 → .56s 줄 왕복 시작 → (결과 + 최소 1.9초 왕복) → 숫자 네모·체크 3번(각 .3s, 짧은 진동)
@@ -48035,25 +48061,29 @@ window.runScanPlay = async function (resP) {
     await _sleep(300);
   }
   await _sleep(180);
-  // '딱' — 위에서 툭 내려와 찍힘, 카드가 눌림, 인주가 튐
+  // '딱' — 숫자를 안 가리는 빈자리에, 카드 폭 38% 크기로. 1.4배에서 줄어들며 찍히고 카드·화면이 눌린다.
   const v = r.status === 'verified', ink = document.getElementById('run-scan-ink');
+  const spot = _inkSpot(bx, img.clientHeight / Math.max(1, img.clientWidth)), sz = Math.round(img.clientWidth * .38);
   if (ink) {
     ink.textContent = v ? '인증' : '기록'; ink.classList.toggle('ghost', !v);
-    ink.animate([{ opacity: 0, transform: 'translateY(-70px) scale(2.3) rotate(-4deg)' },
-                 { opacity: 1, transform: 'translateY(0) scale(.94) rotate(-12deg)', offset: .62 },
-                 { opacity: 1, transform: 'translateY(0) scale(1.04) rotate(-12deg)', offset: .82 },
-                 { opacity: .9, transform: 'translateY(0) scale(1) rotate(-12deg)' }],
-      { duration: 260, easing: 'cubic-bezier(.2,.9,.3,1)', fill: 'forwards' });
+    ink.style.cssText += ';width:' + sz + 'px;height:' + sz + 'px;left:calc(' + spot.x + '% - ' + (sz / 2) + 'px);top:calc(' + spot.y + '% - ' + (sz / 2) + 'px);font-size:' + Math.round(sz * .24) + 'px;--inkm:url(' + _inkMask() + ')';
+    ink.animate([{ opacity: 0, transform: 'scale(1.4) rotate(-6deg)' },
+                 { opacity: 1, transform: 'scale(.95) rotate(-10deg)', offset: .7 },
+                 { opacity: 1, transform: 'scale(1) rotate(-10deg)' }],
+      { duration: 190, easing: 'cubic-bezier(.3,0,.8,.15)', fill: 'forwards' });
   }
-  await _sleep(160);
+  await _sleep(130);
   _buzz([30, 20, 14]);
-  box.animate([{ transform: 'scale(1)' }, { transform: 'scale(.975) translateY(3px)', offset: .3 }, { transform: 'scale(1.008)', offset: .7 }, { transform: 'scale(1)' }],
-    { duration: 220, easing: 'cubic-bezier(.2,.9,.3,1)' });
+  box.animate([{ transform: 'translateY(0) scale(1)' }, { transform: 'translateY(3px) scale(.985)', offset: .3 }, { transform: 'translateY(0) scale(1.004)', offset: .7 }, { transform: 'none' }],
+    { duration: 200, easing: 'cubic-bezier(.2,.9,.3,1)' });
+  const sc = box.closest('.cw-sc');
+  if (sc) sc.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(2px,-1px)' }, { transform: 'translate(-2px,1px)' }, { transform: 'translate(1px,0)' }, { transform: 'none' }],
+    { duration: 100, easing: 'steps(4)' });
   const col = v ? '#E4472E' : '#aeb6c8';
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 14; i++) {
     const p = document.createElement('i'); p.className = 'sp'; p.style.background = col;
-    p.style.left = '50%'; p.style.top = '58%'; box.appendChild(p);
-    const a = (i / 12) * Math.PI * 2 + Math.random() * .4, d = 54 + Math.random() * 30;
+    p.style.left = spot.x + '%'; p.style.top = spot.y + '%'; box.appendChild(p);
+    const a = (i / 14) * Math.PI * 2 + Math.random() * .4, d = sz * .55 + Math.random() * sz * .35;
     p.animate([{ transform: 'translate(-50%,-50%) scale(1.2)', opacity: 1 },
                { transform: 'translate(calc(-50% + ' + (Math.cos(a) * d).toFixed(1) + 'px), calc(-50% + ' + (Math.sin(a) * d).toFixed(1) + 'px)) scale(0)', opacity: 0 }],
       { duration: 340 + Math.random() * 160, easing: 'cubic-bezier(.15,.85,.35,1)' }).onfinish = () => p.remove();
@@ -48081,8 +48111,8 @@ window.runScanResult = function (res, err) {
   const close = '<div style="padding:32px 20px 0"><button class="cw-up" style="max-width:none" onclick="document.getElementById(\'run-scan\').remove()">닫기</button></div>';
   if (ok) {
     const v = r.status === 'verified';
-    out.innerHTML = '<div class="cw-res"><b>' + (v ? '인증됐어요' : '내 기록에 남겼어요') + '</b>'
-      + '<span>' + _crewKm(r.km) + 'km, ' + _crewDur(r.sec) + (v ? (res.reward ? '. ' + res.reward + '머피를 받았어요' : '') : '. 건강 앱 인증이 열리면 크루 점수에도 들어가요') + '</span></div>' + close;
+    out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (v ? '인증' : '기록') + '</em></b>'
+      + '<span>' + _crewDur(r.sec) + ', ' + _crewPace(r.paceSec) + '/km' + (v ? (res.reward ? '. ' + res.reward + '머피를 받았어요' : '. 크루 기록에 들어갔어요') : '. 건강 앱 인증이 열리면 크루 점수에도 들어가요') + '</span></div>' + close;
   } else {
     const why = (res && res.why) || (String(err).indexOf('member_only') >= 0 ? 'member_only' : '');
     out.innerHTML = '<div class="cw-res"><b>' + _cE(_runWhy[why] || '확인하지 못했어요') + '</b><span>' + (why ? '' : '잠시 뒤 다시 올려 주세요') + '</span></div>' + close;
