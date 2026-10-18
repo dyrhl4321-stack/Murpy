@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const CFG = {
   RUN_REWARD: 10, RUN_REWARD_PER_DAY: 3, HEALTH_LINK_REWARD: 100,
-  CHALLENGE_REWARD: 30,             // 대표 미정 — 임시값
+  CHALLENGE_REWARD: 100,            // 대표 확정 10-19(챌린지 달성 시 멤버 1인당)
   MILESTONES: [100, 500, 1000],
   RUN_PER_HEAD_KM: 15, GYM_PER_HEAD: 6, CHALLENGE_DAYS: 14,
   KM_MIN: 0.5, KM_MAX: 100, PACE_MIN: 150, PACE_MAX: 900, TIME_TOL: 0.12, MAX_AGE_DAYS: 7,
@@ -57,6 +57,17 @@ function parseOcr(text) {
   const app = ["strava", "nrc"].includes(o.app) ? o.app : "unknown";
   const dateISO = typeof o.dateISO === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.dateISO) ? o.dateISO : null;
   return { isRunCard: o.isRunCard === true, app, km: toNum(o.km), sec: toSec(o.sec), paceSec: toSec(o.paceSec), dateISO };
+}
+
+// 우리 버킷의 uploads/{uid}/ 다운로드 URL 만 받는다 → Storage 경로
+function storagePathOf(url, uid, bucket) {
+  let u;
+  try { u = new URL(String(url)); } catch (e) { return null; }
+  if (u.hostname !== "firebasestorage.googleapis.com") return null;
+  const m = u.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/);
+  if (!m || m[1] !== bucket) return null;
+  const path = decodeURIComponent(m[2]);
+  return path.startsWith("uploads/" + uid + "/") && !path.includes("..") ? path : null;
 }
 
 // ── 카드 판정 ───────────────────────────────────────────────────────────────
@@ -193,6 +204,6 @@ function duelScore(a, b) {
 }
 
 module.exports = {
-  CFG, kstDay, monthKey, weekKey, parseOcr, checkCard, isDupRun, matchHealth,
+  CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore,
 };

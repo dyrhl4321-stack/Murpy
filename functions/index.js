@@ -171,6 +171,15 @@ function compose(n) {
       return { title: `🔁 다음 ${post || "스쿼드"} 열까요?`,
                body: "지난 멤버들에게 알림이 가요 · 누르면 그대로 세팅돼요" };
 
+    // ── 크루 (10-19) ─────────────────────────────────────────
+    case "crew_challenge_done":
+      return n.admin
+        ? { title: `🏁 ${n.text || "크루"} 챌린지 달성`, body: "PT 3회 추가 대상이에요 · 크루 페이지에서 확인" }
+        : { title: `🏁 ${n.text || "우리 크루"} 챌린지 달성!`, body: `다 같이 해냈어요 · ${Number(n.amount || 0)}머피 받았어요` };
+
+    case "crew_milestone":
+      return { title: `🏅 크루 칭호 "${n.text || "크루"}"`, body: "크루 누적 기록이 새 단계를 넘었어요" };
+
     case "nag": {
       const d = Number(n.amount || 7);
       return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,
@@ -405,6 +414,9 @@ exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
   console.log(`earn live uid=${uid} reason=${reason} claimed=${claimed} granted=${allowed} why=${why}`);
   return { ok: true, allowed, granted: allowed, claimed, why, mode: "live", balance };
 });
+
+// ── 크루 기록 (2026-10-19) — 가입·러닝 인증샷·체크인 출석·챌린지. 별도 파일.
+Object.assign(exports, require("./crew.js"));
 
 // ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
 Object.assign(exports, require("./retention.js"));

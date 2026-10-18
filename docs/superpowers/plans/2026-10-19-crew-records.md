@@ -17,7 +17,7 @@
 - 머피 지급은 서버만, `ledger` 문서 같이(키로 중복 차단).
 - 휴면 `crews` 컬렉션·코드는 건드리지 않는다. 새 컬렉션 = `crewsV2`, `runs`, `runStats`, `centerMonth`.
 - 라이브 DB 에 시험 데이터 금지. 배포 전 브랜딩 세션에 캡처·문구 보고.
-- 설정값(서버·웹 같은 값): 인증 1회 10머피(하루 3회) · 건강 앱 첫 연결 100(2차) · `CREW_CHALLENGE_REWARD` 30(임시, 대표 미정) · 마일스톤 100/500/1000km · 러닝 1인 15km · 헬스 1인 6회 · 기간 14일.
+- 설정값(서버·웹 같은 값): 인증 1회 10머피(하루 3회) · 건강 앱 첫 연결 100(2차) · `CREW_CHALLENGE_REWARD` 100(대표 확정 10-19) · 마일스톤 100/500/1000km · 러닝 1인 15km · 헬스 1인 6회 · 기간 14일.
 - 카드 거르기: 거리 0.5~100km · 페이스 150~900초/km · 거리×페이스 vs 시간 ±12% · 카드 날짜 7일 이내 · 같은 해시 / 같은 uid+runDay+km(0.01)+sec 중복 거절.
 - 하루 경계 = KST 05:00(서버 `earn` 과 같음). 체크인 `day` 는 앱 `mwTodayKey()`(자정 경계) 값을 그대로 쓴다.
 - index.html 수정 후: `node tools/module-syntax-check.mjs` + `node tools/dogam-syntax-check.mjs`. 배포 때만 bump/check_version.

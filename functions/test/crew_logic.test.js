@@ -168,3 +168,14 @@ test("duelScore 참여율 50 + 1인당 평균 50", () => {
   assert.deepEqual(s, { a: 50, b: 100 });
   assert.deepEqual(L.duelScore({ members: 0, active: 0, total: 0 }, { members: 0, active: 0, total: 0 }), { a: 0, b: 0 });
 });
+
+test("storagePathOf 는 우리 버킷의 내 폴더만", () => {
+  const B = "murpyprototype.firebasestorage.app";
+  const u = (b, p) => `https://firebasestorage.googleapis.com/v0/b/${b}/o/${encodeURIComponent(p)}?alt=media&token=x`;
+  assert.equal(L.storagePathOf(u(B, "uploads/U1/run_1.jpg"), "U1", B), "uploads/U1/run_1.jpg");
+  assert.equal(L.storagePathOf(u(B, "uploads/U2/run_1.jpg"), "U1", B), null);
+  assert.equal(L.storagePathOf(u("evil.appspot.com", "uploads/U1/a.jpg"), "U1", B), null);
+  assert.equal(L.storagePathOf(u(B, "uploads/U1/../U2/a.jpg"), "U1", B), null);
+  assert.equal(L.storagePathOf("https://evil.com/v0/b/" + B + "/o/uploads%2FU1%2Fa.jpg", "U1", B), null);
+  assert.equal(L.storagePathOf("not a url", "U1", B), null);
+});
