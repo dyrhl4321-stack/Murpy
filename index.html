@@ -47543,6 +47543,9 @@ const _crewDay = d => { d = String(d || ''); return d.length === 8 ? (+d.slice(4
 // 이번 달 값은 monthKey 가 이번 달일 때만 — 지난달에 멈춘 숫자를 이번 달로 보여주지 않는다
 const _crewMonth = (o, f) => (o && o.monthKey === _crewYm()) ? (Number(o[f]) || 0) : 0;
 const _crewField = sport => sport === 'gym' ? 'char/fields/field_gym_wide.png?v=2' : 'char/fields/field_running_wide.png?v=1';
+// ★10-19 대표: 크루 화면에 헬스장·트랙은 "좀 그렇다" → 크루 아지트(큰 방)가 생기기 전까지 공원 가운데 광장(분수·벤치)으로 임시.
+//   field_park2.png(2048²) 에서 분수 주변 900×503 을 잘라 보여준다(크기·위치는 % 로 — 화면 폭이 달라도 같은 자리).
+const _crewBg = () => "background-image:url('char/fields/field_park2.png?v=5');background-size:227.6% auto;background-position:51.4% 52.3%";
 // 화면이 어느 쪽 크루로 보일지 — 러닝·헬스 섞인 크루는 인증된 거리가 쌓이기 전까지 헬스 쪽(출석·헬스장 필드)
 const _crewKind = c => (c.sport === 'gym' || (c.sport === 'mixed' && !((Number((c.stats || {}).km) || 0) > 0))) ? 'gym' : 'running';
 const _crewIcoUp = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="square"><path d="M12 19V6M6 11l6-6 6 6"/></svg>';
@@ -47743,7 +47746,8 @@ const _crewMini = (p, h, face) => (window.mwMiniCharHtml ? window.mwMiniCharHtml
 //   러닝 필드: 위 줄 = 차도 가운데(70%), 아래 줄 = 산책로(98%), 가로 9~91%
 //   헬스 필드: 위 줄 60%, 아래 줄 90%, 가로 24~76%(왼쪽 랙·오른쪽 트레드밀 피함)
 function _crewSpots(uids, kind) {
-  const G = kind === 'gym' ? { y: [60, 90], x0: 24, xs: 52 } : { y: [70, 98], x0: 9, xs: 82 };
+  //   공원 광장(임시 배경): 위 줄 = 분수 아래 길(62%), 아래 줄 = 돗자리 사이 잔디(94%), 가로 12~88%
+  const G = kind === 'gym' ? { y: [60, 90], x0: 24, xs: 52 } : kind === 'park' ? { y: [62, 94], x0: 12, xs: 76 } : { y: [70, 98], x0: 9, xs: 82 };
   const out = {}, H = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 131 + s.charCodeAt(i)) >>> 0; return h; };
   const top = uids.filter((_, i) => i % 2 === 0), bot = uids.filter((_, i) => i % 2 === 1);
   [[top, G.y[0], 1, 0], [bot, G.y[1], 0, .5]].forEach(([arr, y, run, off]) => arr.forEach((uid, i) => {
@@ -47759,7 +47763,7 @@ window.crewRowHtml = function (crews) {
     + crews.map(c => {
       const s = c.stats || {};
       const main = _crewKind(c) === 'gym' ? _crewMonthKo() + ' 출석 ' + _crewMonth(s, 'monthAttends') + '회' : _crewMonthKo() + ' ' + _crewKm(_crewMonth(s, 'monthKm')) + 'km';
-      return '<button class="cw-row-mine" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')"><span class="th" style="background-image:url(\'' + _crewField(_crewKind(c)) + '\')"></span>'
+      return '<button class="cw-row-mine" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')"><span class="th" style="' + _crewBg() + '"></span>'
         + '<span style="flex:1;min-width:0"><b>' + _cE(c.name) + '</b><small>' + (s.members || 0) + '명 · ' + main + '</small></span></button>';
     }).join('') + '</div>';
 };
@@ -47793,7 +47797,7 @@ window.crewPageHtml = function (data, me) {
   const key = useKm ? 'monthKm' : 'monthAttends';
   // 장면: 이번 달 기록 있는 사람부터, 최대 10명
   const ordered = (data.members || []).slice().sort((a, b) => _crewMonth(b, key) - _crewMonth(a, key)).slice(0, 10);
-  const spots = _crewSpots(ordered.map(m => m.uid), _crewKind(c));
+  const spots = _crewSpots(ordered.map(m => m.uid), 'park');
   const chars = ordered.map((m, i) => {
     const sp = spots[m.uid] || { x: 50, y: 80 };
     return '<div class="cw-ch' + (m.uid === meUid ? ' me' : '') + '" style="left:' + sp.x + '%;top:' + sp.y + '%;z-index:' + Math.round(sp.y) + '">'
@@ -47803,7 +47807,7 @@ window.crewPageHtml = function (data, me) {
   const wk = (s.weekKey === window._crewWeekKey()) ? (s.weekActive || 0) : 0;
   const led = useKm ? _crewKm(_crewMonth(s, 'monthKm')) + 'km' : '출석 ' + _crewMonth(s, 'monthAttends') + '회';
   let h = _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "document.getElementById('crew-page').remove()");
-  h += '<div class="cw-stage" style="background-image:url(\'' + _crewField(_crewKind(c)) + '\')">' + chars
+  h += '<div class="cw-stage" style="' + _crewBg() + '">' + chars
     + '<div class="cw-led"><span>' + _crewMonthKo() + '</span><b>' + led + '</b></div>'
     + '<div class="cw-wk">이번 주 <i>' + wk + '</i>/' + (s.members || 0) + (sport === 'running' ? ' 달림' : ' 운동') + '</div>'
     + (ordered.length ? '' : '<div class="cw-empty">아직 크루원이 없어요</div>') + '</div>';
@@ -48008,12 +48012,12 @@ window._crewInviteDone = function () {
 };
 window.crewInviteHtml = function (c, profiles, members, id, code) {
   const s = c.stats || {}, sport = c.sport || 'running';
-  const ms = (members || []).slice(0, 8), spots = _crewSpots(ms.map(m => m.uid), _crewKind(c));
+  const ms = (members || []).slice(0, 8), spots = _crewSpots(ms.map(m => m.uid), 'park');
   const chars = ms.map((m, i) => { const sp = spots[m.uid] || { x: 50, y: 80 };
     return '<div class="cw-ch" style="left:' + sp.x + '%;top:' + sp.y + '%;z-index:' + Math.round(sp.y) + '"><div class="cw-walk" style="--wd:-' + ((i % 4) * .23).toFixed(2) + 's">'
       + _crewMini(profiles[m.uid], 38, sp.face || 'down') + '</div><span class="nk">' + _cE((profiles[m.uid] && profiles[m.uid].nickname) || m.nickname || '크루원') + '</span></div>'; }).join('');
   return _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "window._crewInviteDone()")
-    + '<div class="cw-stage" style="background-image:url(\'' + _crewField(_crewKind(c)) + '\')">' + chars + '</div>'
+    + '<div class="cw-stage" style="' + _crewBg() + '">' + chars + '</div>'
     + '<div class="cw-sec" style="--i:1">' + (c.intro ? '<div style="font-size:14px;line-height:1.7;color:#cfd6e6">' + _cE(c.intro) + '</div>' : '')
     + '<div style="font-size:13px;line-height:1.7;color:#8a93a8;margin-top:' + (c.intro ? 16 : 0) + 'px">러닝 기록과 헬스장 출석이 내 기록과 크루 기록에 같이 쌓여요.</div></div>'
     + '<div class="cw-bar"><button class="cw-up" id="crew-join-btn" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">크루 가입하기</button></div>';
