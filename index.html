@@ -2225,6 +2225,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   </div>
 
   <!-- 글쓰기 트리거 + 운동 종목 필터 (sticky 한 덩어리) -->
+  <!-- ★10-19 개인정보처리방침 1.1 개정 안내(시행 10-26, 방침 14조 '7일 전 공지') — 시행일 전까지만, 닫으면 다시 안 뜸(_policyNoticePaint) -->
+  <div id="policy-notice" style="display:none;margin:12px 19px 0;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.5)">
+    <span><b style="color:rgba(255,255,255,0.75);font-weight:700;margin-right:5px">공지</b>10월 26일부터 개인정보처리방침이 바뀌어요</span>
+    <a href="/privacy.html" target="_blank" rel="noopener" style="color:#7aa8ff;text-decoration:none;flex-shrink:0">자세히</a>
+    <button onclick="window._policyNoticeClose()" aria-label="닫기" style="margin-left:auto;background:none;border:none;color:rgba(255,255,255,0.35);font-size:13px;padding:2px 4px;cursor:pointer;font-family:inherit">✕</button>
+  </div>
   <!-- 인증 스트릭 알림 카드 (sticky 밖 — 스크롤하면 함께 올라가 사라짐) -->
   <div id="streak-bar" onclick="window.openStreakInfo && window.openStreakInfo()" style="display:none;margin:13px 19px 1px;align-items:center;gap:7px;cursor:pointer"></div>
   <div style="position:sticky;top:57px;z-index:40;background:#0a0a0a;border-bottom:1px solid rgba(255,255,255,0.06)">
@@ -47492,7 +47498,8 @@ window.bumpDogam = async function () {
 //   숫자 카드 격자·둥근 카드 반복·버튼 밑 안내문·줄표 설명문·글로우·그라디언트·이모지 금지. 큰 면 무채색, 파랑은 작은 액센트만.
 // ★CREW_CFG 는 functions/crew_logic.js 의 CFG 와 같은 값이어야 한다. 바꾸면 양쪽을 같이.
 window.CREW_CFG = {
-  RUN_REWARD: 10, HEALTH_LINK_REWARD: 100, CHALLENGE_REWARD: 100,
+  RUN_REWARD: 10, HEALTH_LINK_REWARD: 100,
+  CHALLENGE_REWARD_GROUP: 300, CHALLENGE_REWARD_SOLO: 200,   // 대표 10-19: 함께 달성 300(기간 중 운동한 사람) · 내 목표 200(크루가 못 채워도)
   MILESTONES: [100, 500, 1000], RUN_PER_HEAD_KM: 15, GYM_PER_HEAD: 6, CHALLENGE_DAYS: 14,
   // ★러닝 카드 올리기 — 개인정보 처리방침 개정 시행일(10-26) 전에는 닫아 둔다(대표 확정 (가)).
   //   날짜로 저절로 열리게 하지 않는다 — 10-26 에 이 값과 functions/crew.js RUN_UPLOAD_ON 을 같이 true 로 바꿔 배포.
@@ -47557,7 +47564,7 @@ function _crewCss() {
 .cw-flag{position:absolute;left:8px;top:10px;width:2px;height:22px;background:#cfd6e6}
 .cw-flag:after{content:'';position:absolute;left:2px;top:0;width:7px;height:5px;background:#cfd6e6}
 .cw-runner{position:absolute;top:32px;transform:translate(-50%,-100%)}
-.cw-chest{position:absolute;right:7px;top:11px;width:27px;height:20px;background:url('char/rooms/mi_chest_jp.png') 0 0/27px 40px no-repeat;image-rendering:pixelated}
+.cw-chest{position:absolute;right:6px;top:5px;width:32px;height:32px;background:url('char/rooms/season_box.png?v=2') center/contain no-repeat;image-rendering:pixelated}
 .cw-tk{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;font-size:12px;color:#8a93a8;font-variant-numeric:tabular-nums}
 .cw-tk b{color:#e8ecf4;font-weight:700}
 .cw-tk .rw{color:#F5C24B;font-weight:600}
@@ -47740,11 +47747,18 @@ function _crewChallengeHtml(ch, data, me) {
   const when = now < ch.start ? _crewMD(ch.start) + ' 시작' : 'D-' + Math.max(0, Math.ceil((ch.end - now) / 864e5));
   const who = (me && data.profiles[me.uid]) || data.profiles[(data.members[0] || {}).uid] || null;
   const fmt = v => run ? _crewKm(v) : String(v || 0);
+  // 내 진행(멤버 문서 ch[챌린지id]) — 크루가 못 채워도 내 목표를 채우면 따로 받는다
+  const myM = me && (data.members || []).find(m => m.uid === me.uid);
+  const mine = myM ? Number(((myM.ch || {})[ch.id]) || 0) : null;
+  const CF = window.CREW_CFG;
   return '<div class="cw-sec" style="--i:1"><div class="cw-h">2주 함께 ' + fmt(ch.target) + unit + '<em>' + when + '</em></div>'
     + '<div class="cw-track"><div class="cw-flag"></div><div class="cw-lane"></div>'
     + '<div class="cw-done" style="width:calc((100% - 54px) * ' + p.toFixed(4) + ')"></div>'
     + '<div class="cw-runner" style="left:calc(14px + (100% - 54px) * ' + p.toFixed(4) + ')">' + _crewMini(who, 30, 'right') + '</div><div class="cw-chest"></div></div>'
-    + '<div class="cw-tk"><span><b>' + fmt(ch.progress) + '</b> / ' + fmt(ch.target) + unit + '</span><span class="rw">' + window.CREW_CFG.CHALLENGE_REWARD + '머피</span></div></div>';
+    + '<div class="cw-tk"><span><b>' + fmt(ch.progress) + '</b> / ' + fmt(ch.target) + unit + '</span><span class="rw">함께 달성 ' + CF.CHALLENGE_REWARD_GROUP + '머피</span></div>'
+    + (mine === null ? '' : '<div class="cw-tk" style="margin-top:4px"><span>나 <b>' + fmt(mine) + '</b> / ' + fmt(ch.perHead) + unit + '</span>'
+      + '<span class="rw"' + (mine >= ch.perHead ? '' : ' style="opacity:.6"') + '>내 목표 ' + CF.CHALLENGE_REWARD_SOLO + '머피</span></div>')
+    + '</div>';
 }
 window.crewPageHtml = function (data, me) {
   const c = data.crew, s = c.stats || {}, sport = c.sport || 'running', gym = sport === 'gym';
@@ -48110,6 +48124,17 @@ window.crewChallengeCreate = async function (id) {
     window.openCrewPage(id);
   } catch (e) { showToast('만들지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }
 };
+// ── 개인정보처리방침 1.1 개정 안내(홈 한 줄) — 시행일(10-26 0시) 전까지만, 닫으면 이 기기에선 다시 안 뜬다 ──
+(function () {
+  const UNTIL = Date.parse('2026-10-26T00:00:00+09:00'), KEY = 'murpy_policy_notice_1_1';
+  window._policyNoticeClose = function () {
+    try { localStorage.setItem(KEY, '1'); } catch (e) {}
+    const el = document.getElementById('policy-notice'); if (el) el.style.display = 'none';
+  };
+  let closed = false; try { closed = localStorage.getItem(KEY) === '1'; } catch (e) {}
+  const el = document.getElementById('policy-notice');
+  if (el && !closed && Date.now() < UNTIL) el.style.display = 'flex';
+})();
 </script>
 </body>
 </html>

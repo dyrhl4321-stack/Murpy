@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const CFG = {
   RUN_REWARD: 10, RUN_REWARD_PER_DAY: 3, HEALTH_LINK_REWARD: 100,
-  CHALLENGE_REWARD: 100,            // 대표 확정 10-19(챌린지 달성 시 멤버 1인당)
+  CHALLENGE_REWARD_GROUP: 300, CHALLENGE_REWARD_SOLO: 200,   // 대표 확정 10-19: 함께 달성 300(기간 중 운동한 사람) · 내 목표 200
   MILESTONES: [100, 500, 1000],
   RUN_PER_HEAD_KM: 15, GYM_PER_HEAD: 6, CHALLENGE_DAYS: 14,
   KM_MIN: 0.5, KM_MAX: 100, PACE_MIN: 150, PACE_MAX: 900, TIME_TOL: 0.12, MAX_AGE_DAYS: 7,
@@ -222,6 +222,28 @@ function activeHeadcount(members, today) {
   return Math.max(MIN_HEAD, n);
 }
 
+// ── 챌린지 보상(대표 10-19): 함께 달성 = 크루 목표를 채우면 기간 중 한 번이라도 운동한 크루원에게 GROUP,
+//   내 목표 = 기간 중 1인 목표(perHead)를 채운 사람에게 SOLO(크루가 실패해도). 지급은 기간이 끝난 뒤 한 번.
+//   멤버 문서에 chAct{챌린지id:true}(기간 중 활동) · ch{챌린지id:개인 진행}을 둔다.
+//   활동 = 러닝 올리기(미인증 포함)·출석 / 개인 진행 = 같은 종류의 인증된 기록만(크루 합산과 같은 기준).
+//   ★크루가 먼저 목표를 채워도(status done) 기간이 끝날 때까지 개인 진행은 계속 쌓는다.
+function memberChallengeStep(member, ch, { kind, amount, atMs, verified }) {
+  if (!ch || !(atMs >= ch.start && atMs < ch.end) || (ch.status !== "active" && ch.status !== "done")) return member;
+  const m = Object.assign({}, member);
+  m.chAct = Object.assign({}, m.chAct, { [ch.id]: true });
+  if (ch.kind === kind && verified) m.ch = Object.assign({}, m.ch, { [ch.id]: r2(((m.ch || {})[ch.id] || 0) + amount) });
+  return m;
+}
+function settleChallenge(ch, members) {
+  const out = [];
+  (members || []).forEach((m) => {
+    if (!m || m.left) return;
+    if (ch.status === "done" && (m.chAct || {})[ch.id]) out.push({ uid: m.uid, amount: CFG.CHALLENGE_REWARD_GROUP, key: ch.id + "_g" });
+    if (ch.perHead > 0 && ((m.ch || {})[ch.id] || 0) >= ch.perHead) out.push({ uid: m.uid, amount: CFG.CHALLENGE_REWARD_SOLO, key: ch.id + "_i" });
+  });
+  return out;
+}
+
 function newMilestones(prevKm, nextKm, reached) {
   return CFG.MILESTONES.filter((m) => prevKm < m && nextKm >= m && !(reached || []).includes(m));
 }
@@ -238,5 +260,5 @@ function duelScore(a, b) {
 
 module.exports = {
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
-  applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount,
+  applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount, memberChallengeStep, settleChallenge,
 };

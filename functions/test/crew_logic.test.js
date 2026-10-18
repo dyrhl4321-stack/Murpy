@@ -217,3 +217,34 @@ test("activeHeadcount: 최근 14일 안에 운동한 사람만, 최소 3명", ()
   assert.equal(L.activeHeadcount(many, "20261019"), 63);
   assert.equal(L.activeHeadcount([], "20261019"), 3);
 });
+
+// ── 챌린지 보상 = 함께 달성 300(기간 중 운동한 사람만) + 내 목표 200(개인, 크루 실패해도) — 대표 10-19 ──
+test("memberChallengeStep: 기간 안 활동 표시 + 같은 종류·인증만 개인 진행", () => {
+  const start = Date.parse("2026-10-26T00:00:00+09:00"), end = start + 14 * 864e5, at = start + 864e5;
+  const ch = { id: "c1", kind: "run_km", start, end, perHead: 15, status: "active" };
+  let m = L.memberChallengeStep({}, ch, { kind: "run_km", amount: 5, atMs: at, verified: false });
+  assert.equal(m.chAct.c1, true); assert.equal((m.ch || {}).c1 || 0, 0);            // 미인증 = 활동만
+  m = L.memberChallengeStep(m, ch, { kind: "run_km", amount: 5.5, atMs: at, verified: true });
+  assert.equal(m.ch.c1, 5.5);
+  m = L.memberChallengeStep(m, Object.assign({}, ch, { status: "done" }), { kind: "run_km", amount: 10, atMs: at, verified: true });
+  assert.equal(m.ch.c1, 15.5);                                                     // 크루가 먼저 달성해도 개인 진행은 계속
+  const g = L.memberChallengeStep({}, ch, { kind: "gym_attend", amount: 1, atMs: at, verified: true });
+  assert.equal(g.chAct.c1, true); assert.equal((g.ch || {}).c1 || 0, 0);           // 다른 종류 = 활동만
+  const out = L.memberChallengeStep({}, ch, { kind: "run_km", amount: 5, atMs: end + 1, verified: true });
+  assert.deepEqual(out, {});                                                        // 기간 밖 = 아무것도
+});
+
+test("settleChallenge: 함께 300(활동한 사람만, 달성 때만) + 내 목표 200(실패해도)", () => {
+  const ch = { id: "c1", perHead: 15, status: "done" };
+  const ms = [
+    { uid: "a", chAct: { c1: true }, ch: { c1: 16 } },
+    { uid: "b", chAct: { c1: true }, ch: { c1: 3 } },
+    { uid: "c" },
+    { uid: "d", chAct: { c1: true }, ch: { c1: 15 }, left: true },
+  ];
+  assert.deepEqual(L.settleChallenge(ch, ms), [
+    { uid: "a", amount: 300, key: "c1_g" }, { uid: "a", amount: 200, key: "c1_i" },
+    { uid: "b", amount: 300, key: "c1_g" },
+  ]);
+  assert.deepEqual(L.settleChallenge(Object.assign({}, ch, { status: "failed" }), ms), [{ uid: "a", amount: 200, key: "c1_i" }]);
+});

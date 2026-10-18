@@ -175,7 +175,9 @@ function compose(n) {
     case "crew_challenge_done":
       return n.admin
         ? { title: `🏁 ${n.text || "크루"} 챌린지 달성`, body: "크루 페이지에서 결과를 확인해 보세요" }   // PT 혜택은 앱에 안 쓴다(대표 10-19: 인스타·DM 에서만)
-        : { title: `🏁 ${n.text || "우리 크루"} 챌린지 달성!`, body: `다 같이 해냈어요 · ${Number(n.amount || 0)}머피 받았어요` };
+        : n.solo
+          ? { title: `🎯 내 목표 달성! ${n.text || "크루"} 챌린지`, body: `${Number(n.amount || 0)}머피 받았어요` }
+          : { title: `🏁 ${n.text || "우리 크루"} 챌린지 달성!`, body: `다 같이 해냈어요 · ${Number(n.amount || 0)}머피 받았어요` };
 
     case "crew_milestone":
       return { title: `🏅 크루 칭호 "${n.text || "크루"}"`, body: "크루 누적 기록이 새 단계를 넘었어요" };

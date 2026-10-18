@@ -70,7 +70,7 @@ async function bumpCrew(crewId, uid, atMs, fn) {
   await d.runTransaction(async (tx) => {
     const [c, m, chs] = await Promise.all([
       tx.get(cRef), tx.get(mRef),
-      tx.get(cRef.collection("challenges").where("status", "==", "active").limit(5)),
+      tx.get(cRef.collection("challenges").where("status", "in", ["active", "done"]).limit(10)),
     ]);
     if (!c.exists || !m.exists || m.data().left) return;
     const crew = c.data();
@@ -79,8 +79,12 @@ async function bumpCrew(crewId, uid, atMs, fn) {
     if (!r) return;
     const stats = r.stats;
     const upd = { stats };
+    let member = r.member;
     if (r.step) {
       chs.forEach((s) => {
+        const ch = Object.assign({ id: s.id }, s.data());
+        // 크루 합산은 진행 중(active)일 때만, 개인 진행·활동 표시는 기간 안이면 달성 뒤에도(보상 정산용)
+        member = L.memberChallengeStep(member, ch, Object.assign({ atMs }, r.step));
         const out = L.challengeStep(s.data(), Object.assign({ atMs }, r.step));
         if (out.ch.progress !== s.data().progress || out.justDone) {
           tx.update(s.ref, { progress: out.ch.progress, status: out.ch.status, doneAt: out.ch.doneAt || null });
@@ -91,10 +95,10 @@ async function bumpCrew(crewId, uid, atMs, fn) {
     const ms = L.newMilestones(prevKm, stats.km || 0, crew.milestones || []);
     if (ms.length) { upd.milestones = FieldValue.arrayUnion(...ms); after.milestones = ms; }
     tx.update(cRef, upd);
-    tx.set(mRef, r.member, { merge: true });
+    tx.set(mRef, member, { merge: true });
     after.applied = true;
   });
-  for (const chId of after.challengeDone) await finishChallenge(crewId, chId);
+  if (after.challengeDone.length) console.log(`crew challenge target reached crew=${crewId} ch=${after.challengeDone.join(",")} — 보상은 기간이 끝난 뒤 crewHourly 가 정산`);
   if (after.milestones.length) await grantMilestones(crewId, after.milestones);
   return after;
 }
@@ -107,27 +111,32 @@ async function notify(toUid, n) {
   await db().collection("notifications").add(Object.assign({ toUid, fromUid: "murpy", fromNickname: "머피", read: false,
     createdAt: FieldValue.serverTimestamp() }, n));
 }
-// 달성 지급 — payMurpy 는 (사람, 챌린지) 키라 두 번 불려도 한 번만 준다. 그래서 **다 준 뒤에** rewardPaid 를 찍는다.
-//   ★먼저 찍으면 중간에 끊겼을 때 남은 사람이 영영 못 받는다(리뷰 10-19). 못 끝낸 것은 crewHourly 가 다시 돈다.
-//   알림은 그 사람에게 처음 지급됐을 때만(다시 돌 때 중복 알림 없게).
+// 챌린지 보상 정산(대표 10-19) — 기간이 끝난 뒤 한 번: 함께 달성 GROUP(목표를 채웠을 때, 기간 중 운동한 사람) + 내 목표 SOLO(채운 사람, 크루가 실패해도).
+//   payMurpy 는 (사람, 키) 장부라 다시 돌아도 한 번만 준다 → **다 준 뒤에** rewardPaid. 끊기면 crewHourly 가 이어서.
+//   알림은 그 사람에게 이번에 처음 준 금액이 있을 때만(다시 돌 때 중복 알림 없게).
 async function finishChallenge(crewId, chId) {
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId);
   const chRef = cRef.collection("challenges").doc(chId);
-  const [ch, c] = await Promise.all([chRef.get(), cRef.get()]);
-  if (!ch.exists || ch.data().rewardPaid || ch.data().status !== "done") return;
+  const [chs, c] = await Promise.all([chRef.get(), cRef.get()]);
+  if (!chs.exists) return;
+  const ch = Object.assign({ id: chId }, chs.data());
+  if (ch.rewardPaid || !(ch.status === "done" || ch.status === "failed") || now() < ch.end) return;
   const crewName = (c.data() || {}).name || "", owner = (c.data() || {}).createdBy || "";
-  const uids = await activeMembers(crewId);
+  const mq = await cRef.collection("members").where("left", "==", false).get();
+  const pays = L.settleChallenge(ch, mq.docs.map((s) => Object.assign({ uid: s.id }, s.data())));
+  const got = {};
   let missed = 0;
-  for (const uid of uids) {
-    const r = await payMurpy(uid, L.CFG.CHALLENGE_REWARD, "crew_challenge", chId);
-    if (r > 0) await notify(uid, { type: "crew_challenge_done", crewId, text: crewName, amount: L.CFG.CHALLENGE_REWARD });
-    else if (!(await paidKey(uid, "crew_challenge", chId))) missed++;
+  for (const p of pays) {
+    const r = await payMurpy(p.uid, p.amount, "crew_challenge", p.key);
+    if (r > 0) got[p.uid] = (got[p.uid] || 0) + r;
+    else if (!(await paidKey(p.uid, "crew_challenge", p.key))) missed++;
   }
+  for (const uid in got) await notify(uid, { type: "crew_challenge_done", crewId, text: crewName, amount: got[uid], solo: ch.status !== "done" });
   if (missed) { console.warn(`crew challenge payout incomplete crew=${crewId} ch=${chId} missed=${missed} — crewHourly 가 다시 돈다`); return; }
   await chRef.update({ rewardPaid: true });
-  if (owner) await notify(owner, { type: "crew_challenge_done", crewId, text: crewName, admin: true });
-  console.log(`crew challenge done crew=${crewId} ch=${chId} members=${uids.length}`);
+  if (owner && ch.status === "done") await notify(owner, { type: "crew_challenge_done", crewId, text: crewName, admin: true });
+  console.log(`crew challenge settled crew=${crewId} ch=${chId} status=${ch.status} pays=${pays.length}`);
 }
 async function grantMilestones(crewId, ms) {
   const uids = await activeMembers(crewId);
@@ -412,10 +421,10 @@ exports.crewHourly = onSchedule({ region: REGION, schedule: "every 60 minutes" }
       });
       if (failed) n++;
     }
-    // 달성했는데 지급을 다 못 끝낸 것(중간에 끊김) — 다시 돈다. 같은 사람에게 두 번 주지 않는다(장부 키).
-    //   (rewardPaid 는 만들 때 없는 필드라 == false 로는 못 찾는다 → done 을 읽고 걸러낸다)
-    const done = await c.ref.collection("challenges").where("status", "==", "done").get().catch(() => null);
-    if (done) for (const s of done.docs) if (!s.data().rewardPaid) await finishChallenge(c.id, s.id);
+    // 기간이 끝난 챌린지 보상 정산(달성·실패 모두 — 내 목표 보상은 실패해도 준다). 끊긴 정산도 여기서 이어서 한다.
+    //   (rewardPaid 는 만들 때 없는 필드라 == false 로는 못 찾는다 → 읽고 걸러낸다)
+    const ended = await c.ref.collection("challenges").where("status", "in", ["done", "failed"]).get().catch(() => null);
+    if (ended) for (const s of ended.docs) if (!s.data().rewardPaid && now() >= s.data().end) await finishChallenge(c.id, s.id);
   }
   if (n) console.log(`crewHourly failed=${n}`);
 });

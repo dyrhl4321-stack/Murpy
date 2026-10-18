@@ -31,7 +31,7 @@ FAKE = r'''
     ['u8', '재원', C({hair:'hair_m_basic', top:'top_ringer', bottom:'bottom_trainpt'}), 0, 1],
   ];
   const profiles = {}; people.forEach(p => { profiles[p[0]] = { nickname: p[1], character: p[2] }; });
-  const members = people.map(p => ({ uid: p[0], nickname: p[1], monthKey: ym, monthKm: p[3], monthAttends: p[4], attends: p[4] + 11 }));
+  const members = people.map(p => ({ uid: p[0], nickname: p[1], monthKey: ym, monthKm: p[3], monthAttends: p[4], attends: p[4] + 11, ch: { c1: p[3], c2: p[4] } }));
   const running = {
     crew: { id: 'demo', name: '런어스', school: '연세대', sport: 'running', intro: '화요일과 목요일 저녁 8시, 신촌에서 한강까지',
             stats: { members: 18, km: 213.6, runs: 31, pKm: 41.2, pRuns: 8, monthKey: ym, monthKm: 61.8, weekKey: window._crewWeekKey(), weekActive: 7 }, milestones: [100] },
@@ -39,14 +39,14 @@ FAKE = r'''
     runs: [{ id: 'r1', uid: 'me', img: IMG + '/card_nrc.jpg', km: 10.03, runDay: day, status: 'verified' },
            { id: 'r2', uid: 'u1', img: IMG + '/card_strava.jpg', km: 5.02, runDay: day, status: 'unverified' },
            { id: 'r3', uid: 'u2', img: IMG + '/card_strava.jpg', km: 7.41, runDay: day, status: 'unverified' }],
-    challenge: { kind: 'run_km', start: now - 3 * 864e5, end: now + 11 * 864e5, target: 270, progress: 96.4, status: 'active' },
+    challenge: { id: 'c1', kind: 'run_km', start: now - 3 * 864e5, end: now + 11 * 864e5, perHead: 15, target: 270, progress: 96.4, status: 'active' },
     past: [{ kind: 'gym_attend', start: now - 30 * 864e5, target: 90, status: 'done' }],
     myStats: { runs: 6, km: 38.2, vRuns: 2, monthKey: ym, monthKm: 9.6, weekStreak: 3, bestKm: 10.03, bestPaceSec: 305 },
     isMember: true,
   };
   const mixed = Object.assign({}, running, {
     crew: { id: 'gbd', name: '근손실방지단', school: '서울', sport: 'mixed', stats: { members: 247, km: 0, attends: 1288, monthKey: ym, monthKm: 0, monthAttends: 412, weekKey: window._crewWeekKey(), weekActive: 63 } },
-    challenge: { kind: 'gym_attend', start: now - 5 * 864e5, end: now + 9 * 864e5, target: 378, progress: 217, status: 'active' }, runs: [], past: [], myStats: null,
+    challenge: { id: 'c2', kind: 'gym_attend', start: now - 5 * 864e5, end: now + 9 * 864e5, perHead: 6, target: 378, progress: 217, status: 'active' }, runs: [], past: [], myStats: null,
   });
   const empty = { crew: { id: 'new', name: '달리샤', school: '서울대', sport: 'running', stats: { members: 1 } },
     members: [{ uid: 'me', nickname: '나' }], profiles: { me: profiles.me }, runs: [], challenge: null, past: [], myStats: null, isMember: true };
