@@ -47644,6 +47644,23 @@ function _crewCss() {
 @keyframes cwSk{from{opacity:.55}to{opacity:1}}
 .cw-err{padding:64px 20px;text-align:center;font-size:13px;color:#8a93a8}
 .cw-err .cw-pbtn{flex:none;margin-top:16px;padding:10px 18px}
+/* 초대장(길드 초대) */
+.cw-by{display:flex;align-items:center;gap:14px;padding:0 20px 16px}
+.cw-by p{margin:0;font-size:15px;line-height:1.5;color:#aeb6c8}
+.cw-by b{color:#fff;font-weight:700}
+.cw-letter{margin:0 20px;background:#efe6cf;border:3px solid #2b2318;box-shadow:inset 0 0 0 3px #d9cba7,0 4px 0 #05060a;position:relative}
+.cw-letter-in{padding:18px 16px 20px}
+.cw-letter-k{font-family:'Galmuri11',sans-serif;font-size:9px;letter-spacing:2px;color:#8b7a5a}
+.cw-letter-n{font-family:'Galmuri14',sans-serif;font-size:24px;color:#2b2318;margin-top:6px;letter-spacing:.5px}
+.cw-letter-s{font-size:12.5px;color:#6b5d44;margin-top:4px}
+.cw-letter-stage{margin:14px 0 0;border:2px solid #2b2318;box-shadow:none}
+.cw-letter-t{font-size:13.5px;line-height:1.7;color:#4a3f2e;margin-top:14px;padding-right:56px}
+.cw-seal{position:absolute;right:12px;bottom:12px;width:56px;height:56px;border-radius:50%;border:3px solid #E4472E;color:#E4472E;display:flex;align-items:center;justify-content:center;
+  transform:rotate(-10deg);opacity:.82;font-family:'Galmuri11',sans-serif;font-size:11px}
+.cw-seal:after{content:'';position:absolute;inset:4px;border-radius:50%;border:1px solid #E4472E}
+.cw-seal b{font-weight:400;max-width:40px;text-align:center;line-height:1.2;word-break:keep-all}
+.cw-gets p{display:flex;gap:10px;align-items:baseline;margin:0 0 10px;font-size:13px;line-height:1.6;color:#aeb6c8}
+.cw-gets i{width:6px;height:6px;background:#3D7EFF;flex-shrink:0;transform:translateY(-2px)}
 /* 스캔 화면 */
 .cw-scan{position:relative;margin:0 20px;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;background:#121827;display:flex;justify-content:center;overflow:hidden;max-height:46vh}
 .cw-scan img{display:block;max-width:100%;max-height:46vh;object-fit:contain}
@@ -48001,7 +48018,7 @@ const _CREW_INV_KEY = 'murpy_crew_invite';
 window._crewInvite = (function () {
   try {
     const p = new URLSearchParams(location.search); const id = p.get('crew');
-    if (id) { const v = { id, code: p.get('k') || '' }; try { sessionStorage.setItem(_CREW_INV_KEY, JSON.stringify(v)); } catch (e) {} return v; }
+    if (id) { const v = { id, code: p.get('k') || '', by: p.get('by') || '' }; try { sessionStorage.setItem(_CREW_INV_KEY, JSON.stringify(v)); } catch (e) {} return v; }
     const s = sessionStorage.getItem(_CREW_INV_KEY); return s ? JSON.parse(s) : null;
   } catch (e) { return null; }
 })();
@@ -48010,28 +48027,48 @@ window._crewInviteDone = function () {
   try { sessionStorage.removeItem(_CREW_INV_KEY); } catch (e) {}
   const s = document.getElementById('crew-invite'); if (s) s.remove();
 };
-window.crewInviteHtml = function (c, profiles, members, id, code) {
-  const s = c.stats || {}, sport = c.sport || 'running';
-  const ms = (members || []).slice(0, 8), spots = _crewSpots(ms.map(m => m.uid), 'park');
+// ★10-19 대표 "초대 화면 밋밋하고 짜쳐" → 길드 초대장: 초대한 사람 + 도트 편지지(크루 이름·장면·소개·인주 도장) + 벙 사진 폴라로이드 + 가입하면 생기는 것.
+//   초대한 사람 = 링크의 by(초대 링크를 복사한 사람), 없으면 크루를 만든 사람. 필드에 크루원이 적으면 초대한 사람을 세운다.
+//   사진(c.photos)·소개(c.intro)는 크루장이 넣는 칸 — 없으면 그 칸은 감춘다.
+window.crewInviteHtml = function (c, profiles, members, id, code, byUid) {
+  const s = c.stats || {}, by = byUid || c.createdBy || '';
+  const byP = profiles[by] || null, byName = (byP && byP.nickname) || '';
+  let ms = (members || []).slice(0, 8);
+  if (by && byP && !ms.some(m => m.uid === by)) ms = [{ uid: by, nickname: byName }].concat(ms).slice(0, 8);
+  const spots = _crewSpots(ms.map(m => m.uid), 'park');
   const chars = ms.map((m, i) => { const sp = spots[m.uid] || { x: 50, y: 80 };
     return '<div class="cw-ch" style="left:' + sp.x + '%;top:' + sp.y + '%;z-index:' + Math.round(sp.y) + '"><div class="cw-walk" style="--wd:-' + ((i % 4) * .23).toFixed(2) + 's">'
-      + _crewMini(profiles[m.uid], 38, sp.face || 'down') + '</div><span class="nk">' + _cE((profiles[m.uid] && profiles[m.uid].nickname) || m.nickname || '크루원') + '</span></div>'; }).join('');
-  return _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "window._crewInviteDone()")
-    + '<div class="cw-stage" style="' + _crewBg() + '">' + chars + '</div>'
-    + '<div class="cw-sec" style="--i:1">' + (c.intro ? '<div style="font-size:14px;line-height:1.7;color:#cfd6e6">' + _cE(c.intro) + '</div>' : '')
-    + '<div style="font-size:13px;line-height:1.7;color:#8a93a8;margin-top:' + (c.intro ? 16 : 0) + 'px">러닝 기록과 헬스장 출석이 내 기록과 크루 기록에 같이 쌓여요.</div></div>'
+      + _crewMini(profiles[m.uid], 34, sp.face || 'down') + '</div><span class="nk">' + _cE((profiles[m.uid] && profiles[m.uid].nickname) || m.nickname || '크루원') + '</span></div>'; }).join('');
+  const seal = _cE(String(c.name || '').replace(/\s/g, '').slice(0, 3));
+  const photos = (c.photos || []).filter(Boolean).slice(0, 2);
+  return '<div class="cw-hd" style="padding-bottom:8px"><button class="cw-x" style="margin-left:auto" onclick="window._crewInviteDone()" aria-label="닫기">✕</button></div>'
+    + (byName ? '<div class="cw-by">' + _crewMini(byP, 44, 'down') + '<p><b>' + _cE(byName) + '</b>님이<br><b>' + _cE(c.name) + '</b>에 초대했어요</p></div>' : '')
+    + '<div class="cw-letter"><div class="cw-letter-in">'
+    +   '<div class="cw-letter-k">CREW INVITATION</div>'
+    +   '<div class="cw-letter-n">' + _cE(c.name) + '</div>'
+    +   '<div class="cw-letter-s">' + _cE([c.school, _crewSportKo[c.sport || 'running']].filter(Boolean).join(' ')) + ' ' + ((s.members || 0) > 0 ? (s.members + '명') : '첫 크루원을 기다려요') + '</div>'
+    +   '<div class="cw-stage cw-letter-stage" style="' + _crewBg() + '">' + chars + '</div>'
+    +   (c.intro ? '<div class="cw-letter-t">' + _cE(c.intro) + '</div>' : '')
+    +   '<div class="cw-seal"><b>' + seal + '</b></div>'
+    + '</div></div>'
+    + (photos.length ? '<div class="cw-sec" style="--i:1"><div class="cw-h">최근 모임</div><div class="cw-pols" style="padding-top:0">'
+      + photos.map((u, i) => '<div class="cw-pol" style="width:150px;transform:rotate(' + (i ? 1.8 : -2.2) + 'deg)"><img src="' + _cE(u) + '" alt="" style="width:138px;height:104px"><p></p></div>').join('') + '</div></div>' : '')
+    + '<div class="cw-sec" style="--i:2"><div class="cw-gets">'
+    +   '<p><i></i>내 러닝 기록과 헬스장 출석이 크루 기록에 같이 쌓여요</p>'
+    +   '<p><i></i>2주 크루 챌린지를 채우면 함께 ' + window.CREW_CFG.CHALLENGE_REWARD_GROUP + '머피, 내 목표를 채우면 ' + window.CREW_CFG.CHALLENGE_REWARD_SOLO + '머피</p>'
+    + '</div></div>'
     + '<div class="cw-bar"><button class="cw-up" id="crew-join-btn" onclick="window.crewJoinFlow(\'' + _cJ(id) + '\',\'' + _cJ(code) + '\')">크루 가입하기</button></div>';
 };
-window.crewInviteSheet = async function (id, code) {
+window.crewInviteSheet = async function (id, code, by) {
   const el = _crewSheet('crew-invite', window.crewSkeletonHtml().replace(/crew-page/g, 'crew-invite'));
   let c = null, members = [], profiles = {};
   try {
     const s = await getDoc(doc(db, 'crewsV2', id)); c = s.exists() ? s.data() : null;
-    if (c) { const ms = await getDocs(query(collection(db, 'crewsV2', id, 'members'), where('left', '==', false), limit(12))); members = ms.docs.map(d => Object.assign({ uid: d.id }, d.data())); profiles = await _crewProfiles(members.map(m => m.uid)); }
+    if (c) { const ms = await getDocs(query(collection(db, 'crewsV2', id, 'members'), where('left', '==', false), limit(12))); members = ms.docs.map(d => Object.assign({ uid: d.id }, d.data())); by = by || c.createdBy || ''; profiles = await _crewProfiles(members.map(m => m.uid).concat(by ? [by] : [])); }
   } catch (e) { console.warn('crew invite', e); }
   if (!document.body.contains(el)) return;
   if (!c) { el.remove(); showToast('크루를 찾지 못했어요'); return; }
-  el.firstChild.innerHTML = window.crewInviteHtml(c, profiles, members, id, code);
+  el.firstChild.innerHTML = window.crewInviteHtml(c, profiles, members, id, code, by);
 };
 window.crewJoinFlow = async function (id, code) {
   if (window.requireRealAccount && window.requireRealAccount('크루에 가입하려면 로그인이 필요해요')) return;
@@ -48057,8 +48094,8 @@ window.crewJoinFlow = async function (id, code) {
     if (window.currentUser || tries > 20) {   // 로그인 여부는 안 가린다 — 비로그인도 소개는 보고, 가입 버튼에서 로그인으로
       clearInterval(t);
       // 주소창 값은 지금 지우고, 보관 값은 닫거나 가입할 때 지운다(_crewInviteDone) — 시트가 뜬 직후 업데이트 새로고침이 와도 다시 뜨게
-      try { const u = new URL(location.href); u.searchParams.delete('crew'); u.searchParams.delete('k'); history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash); } catch (e) {}
-      window.crewInviteSheet(inv.id, inv.code);
+      try { const u = new URL(location.href); u.searchParams.delete('crew'); u.searchParams.delete('k'); u.searchParams.delete('by'); history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash); } catch (e) {}
+      window.crewInviteSheet(inv.id, inv.code, inv.by);
     }
   }, 500);
 })();
@@ -48117,7 +48154,8 @@ window.crewInviteCopy = async function (id) {
     const s = await getDoc(doc(db, 'crewsV2', id, 'private', 'join'));
     let code = s.exists() && s.data().code;
     if (!code) { code = _crewCode(); await setDoc(doc(db, 'crewsV2', id, 'private', 'join'), { code }); }
-    const link = 'https://murpy.app/?crew=' + encodeURIComponent(id) + '&k=' + code;
+    const me = (window.currentUser && window.currentUser.uid) || '';
+    const link = 'https://murpy.app/?crew=' + encodeURIComponent(id) + '&k=' + code + (me ? '&by=' + encodeURIComponent(me) : '');
     await navigator.clipboard.writeText(link);
     showToast('초대 링크를 복사했어요');
   } catch (e) { showToast('복사하지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }

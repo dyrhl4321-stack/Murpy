@@ -73,7 +73,8 @@ with sync_playwright() as p:
         ('crew_page_mixed', 'window.crewPageHtml(__F.mixed, __F.me)'),
         ('crew_page_empty', 'window.crewPageHtml(__F.empty, {uid:"me", admin:false})'),
         ('crew_loading', 'window.crewSkeletonHtml()'),
-        ('crew_invite', 'window.crewInviteHtml(__F.running.crew, __F.running.profiles, __F.running.members, "demo", "k")'),
+        ('crew_invite', 'window.crewInviteHtml(Object.assign({}, __F.running.crew, {photos:["/ob/onboarding1.jpg","/ob/feed2.jpg"]}), __F.running.profiles, __F.running.members, "demo", "k", "u1")'),
+        ('crew_invite_sparse', 'window.crewInviteHtml({name:"근손실방지단", sport:"mixed", stats:{members:0}, intro:"강남·서초 헬스장 모임. 평일 저녁 같이 하체하고 주말엔 한강 뜁니다.", createdBy:"u2"}, {u2: __F.running.profiles.u2}, [], "gbd", "k", "")'),
     ]
     for name, expr in shots:
         mount(pg, pg.evaluate(expr))
