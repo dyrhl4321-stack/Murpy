@@ -16334,7 +16334,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAnalytics, logEvent, isSupported as gaSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, OAuthProvider, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, linkWithPopup, linkWithRedirect, linkWithCredential, EmailAuthProvider, deleteUser, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, getDocsFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, deleteField, limitToLast as fsLimitToLast, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, orderBy, query, serverTimestamp, updateDoc, doc, increment, getDoc, getDocFromServer, getDocsFromServer, setDoc, arrayUnion, arrayRemove, onSnapshot, where, limit, startAfter, endBefore, deleteDoc, runTransaction, documentId } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getDatabase, ref as rtRef, set as rtSet, update as rtUpdate, runTransaction as rtRunTransaction, onValue as rtOnValue, onDisconnect as rtOnDisconnect, remove as rtRemove, get as rtGet, onChildAdded as rtOnChildAdded, onChildChanged as rtOnChildChanged, onChildRemoved as rtOnChildRemoved, push as rtPush, query as rtQuery, limitToLast as rtLimitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 import { getStorage, ref as stRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
@@ -17828,18 +17828,20 @@ window.openFeedPost = async function (postId) {
 // ===== 오늘 운동 인증 라이브 바 (고유 유저 집계, 콜드스타트 3단 폴백) =====
 const LIVE_MIN = 3; // 이 수 미만이면 다음 범위로 폴백 (가짜 숫자 금지)
 
-function _liveBarAgg(snap) {
-  const seen = new Set();
-  const recentPhotos = [];
-  snap.docs.forEach(d => {
-    const p = d.data();
-    if (!p.userId || seen.has(p.userId)) return;
-    seen.add(p.userId);
-    if (recentPhotos.length < 3) {
-      recentPhotos.push(window._cdnImg(userPhotoCache.get(p.userId) || p.userPhoto || '', 60));
-    }
+// ★10-20 렉 근본 수정 a — 예전엔 켤 때마다 feed 를 오늘·최근 7일 두 번 limit 400 으로 읽어 여기서 셌다.
+//   이제 서버(functions/homestats.js)가 글이 생기거나 지워질 때 그날(자정 KST) 집계 문서 stats/day_YYYYMMDD 를 쓴다.
+//   문서 = { n, uids[], recent[{uid,photo}] }. 문서가 없는 날 = 아직 집계 전 → 숫자를 만들지 않는다.
+const _liveDayKey = ms => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
+function _liveBarAgg(days) {
+  const seen = new Set(), recentPhotos = [];
+  days.forEach(d => {
+    (d.uids || []).forEach(u => seen.add(u));
+    (d.recent || []).forEach(r => {
+      if (recentPhotos.length >= 3 || !r || !r.uid || recentPhotos.some(x => x.uid === r.uid)) return;
+      recentPhotos.push({ uid: r.uid, ph: window._cdnImg(userPhotoCache.get(r.uid) || r.photo || '', 60) });
+    });
   });
-  return { n: seen.size, recentPhotos };
+  return { n: seen.size, recentPhotos: recentPhotos.map(x => x.ph) };
 }
 
 function _liveBarHTML(recentPhotos, label) {
@@ -17858,21 +17860,20 @@ async function renderHomeLiveBar() {
   const bar = document.getElementById('home-live-bar');
   if (!bar) return;
   try {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    // Tier 1: 오늘
-    // ★9-14: limit 이 없었다 — 오늘/이번 주 인증이 늘수록 부팅마다 통째로 읽는다. 400개면 "N명" 집계에 충분하다
-    //   (하루 400장이 넘는 날이 오면 집계 문서로 바꿀 것).
-    const todaySnap = await getDocs(query(collection(db, 'feed'), where('createdAt', '>=', today), orderBy('createdAt', 'desc'), limit(400)));
-    const t = _liveBarAgg(todaySnap);
+    const keys = Array.from({ length: 7 }, (_, i) => _liveDayKey(Date.now() - i * 864e5));
+    const day = k => getDoc(doc(db, 'stats', 'day_' + k)).then(x => x.exists() ? x.data() : null, () => null);
+    // Tier 1: 오늘 — 집계 문서 1개
+    const td = await day(keys[0]);
+    const t = _liveBarAgg(td ? [td] : []);
     if (t.n >= LIVE_MIN) {
       bar.innerHTML = _liveBarHTML(t.recentPhotos, `오늘 <span style="color:#fff;font-weight:800;font-size:13px">${t.n}명</span>이 운동 인증했어요`);
       bar.style.display = 'block';
       return;
     }
-    // Tier 2: 최근 7일
-    const weekStart = new Date(today); weekStart.setDate(weekStart.getDate() - 6);
-    const weekSnap = await getDocs(query(collection(db, 'feed'), where('createdAt', '>=', weekStart), orderBy('createdAt', 'desc'), limit(400)));
-    const w = _liveBarAgg(weekSnap);
+    // Tier 2: 최근 7일 — 날짜 문서 7개(작다). 하나도 없으면 아직 집계 전이라 숨긴다.
+    const ds = [td].concat(await Promise.all(keys.slice(1).map(day))).filter(Boolean);
+    if (!ds.length) { bar.style.display = 'none'; return; }
+    const w = _liveBarAgg(ds);
     if (w.n >= LIVE_MIN) {
       bar.innerHTML = _liveBarHTML(w.recentPhotos, `이번 주 <span style="color:#fff;font-weight:800;font-size:13px">${w.n}명</span>이 운동 인증 중`);
       bar.style.display = 'block';
@@ -25648,6 +25649,36 @@ window._usersAll = async function (maxAge) {
     return snap;
   }, function (e) { window._usersAllPending = null; throw e; });
   return window._usersAllPending;
+};
+// ★10-20 렉 근본 수정 b — 화면에 필요한 사람만 읽는다(크루원·오늘 체크인한 사람 등). 결과 = { uid: 문서 data }.
+//   이미 받은 사람은 캐시(전원 스냅샷이 신선하면 거기서, 아니면 낱개 캐시)를 쓰고, 없는 사람만 30명씩 'in' 으로 읽는다.
+//   남의 커마 몸통 등록은 _usersAll 과 똑같이 받은 스냅샷마다 지난다(안 하면 커마가 기본 캐릭터로 보인다).
+window._userDocCache = window._userDocCache || new Map();
+const _usersAllIdx = typeof WeakMap === 'function' ? new WeakMap() : null;
+window._usersByIds = async function (uids, maxAge) {
+  const age = maxAge || 300000, now = Date.now(), out = {}, miss = [];
+  const all = window._usersAllCache;
+  let idx = null;
+  if (all && all.snap && now - all.at < age) {
+    window._charRegisterFaceBodiesFrom(all.snap);
+    idx = _usersAllIdx && _usersAllIdx.get(all.snap);
+    if (!idx) { idx = new Map(); all.snap.docs.forEach(d => idx.set(d.id, d)); if (_usersAllIdx) _usersAllIdx.set(all.snap, idx); }
+  }
+  Array.from(new Set((uids || []).filter(Boolean).map(String))).forEach(u => {
+    if (idx) { const d = idx.get(u); if (d) out[u] = d.data(); return; }
+    const h = window._userDocCache.get(u);
+    if (h && now - h.at < age) { if (h.d) out[u] = h.d; return; }
+    miss.push(u);
+  });
+  for (let i = 0; i < miss.length; i += 30) {
+    const part = miss.slice(i, i + 30);
+    const snap = await getDocs(query(collection(db, 'users'), where(documentId(), 'in', part)));
+    window._charRegisterFaceBodiesFrom(snap);
+    const got = new Set();
+    snap.forEach(d => { const v = d.data(); out[d.id] = v; got.add(d.id); window._userDocCache.set(d.id, { d: v, at: Date.now() }); });
+    part.forEach(u => { if (!got.has(u)) window._userDocCache.set(u, { d: null, at: Date.now() }); });
+  }
+  return out;
 };
 window.loadMatchCandidates = async function () {
   const me = window.currentUser?.uid;
@@ -36718,8 +36749,7 @@ window._mwFmParade = async function () {
     const uids = []; (rows || []).forEach(function (r) { const u = String(r.id || '').split('_')[0]; if (u && uids.indexOf(u) < 0) uids.push(u); });
     const nEl = document.getElementById('mw-fm-murpys-n'); if (nEl) nEl.textContent = uids.length ? uids.length + '명' : '';
     if (!uids.length) { box.innerHTML = '<span style="font-size:10.5px;color:#4a5266">오늘 첫 도장의 주인공이 되어보세요 — 도감 → 체크인</span>'; return; }
-    const snap = await window._usersAll(60000);
-    const byId = {}; snap.docs.forEach(function (d) { byId[d.id] = d.data(); });
+    const byId = await window._usersByIds(uids, 60000);   // ★10-20 b: 오늘 체크인한 사람만 읽는다(예전 = 전원)
     const E = window._escHtml || function (t) { return String(t); };
     const J = window._escJs || function (t) { return String(t); };
     box.innerHTML = uids.slice(0, 10).map(function (u) {
@@ -38739,12 +38769,16 @@ window._homeOpenBuildKnown = async function () {
     const me = (window.currentUser || {}).uid, prof = window._cachedProfile || {};
     const myGyms = new Set([].concat(prof.gyms || [], prof.gym ? [prof.gym] : []).filter(Boolean));
     const bumped = new Set(Object.keys(prof.bumpers || {}));
-    const snap = await window._usersAll(); const known = new Set();
-    snap.forEach(function (d) {
-      if (d.id === me) return; const u = d.data() || {};
-      if (bumped.has(d.id)) { known.add(d.id); return; }
-      if ([].concat(u.gyms || [], u.gym ? [u.gym] : []).some(function (g) { return g && myGyms.has(g); })) known.add(d.id);
-    });
+    // ★10-20 b: 전원 대신 같은 헬스장만 조건으로 찾는다(gyms 배열 + 옛 gym 칸 둘 다). 범프한 사람은 id 만 있으면 된다.
+    const known = new Set();
+    bumped.forEach(function (u) { if (u !== me) known.add(u); });
+    const g = Array.from(myGyms).slice(0, 10);
+    if (g.length) {
+      const qs = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('gyms', 'array-contains-any', g))),
+        getDocs(query(collection(db, 'users'), where('gym', 'in', g)))]);
+      qs.forEach(function (snap) { snap.forEach(function (d) { if (d.id !== me) known.add(d.id); }); });
+    }
     window._homeOpenKnown = known; window._homeOpenPaint();
   } catch (e) { console.warn('home open known', e); }
 };
@@ -43314,7 +43348,7 @@ window.sqMergeOpen = async function (sid) {
   const mem = window._sqMembers || {};
   const live = Object.keys(mem).filter(u => mem[u].status !== 'left');
   let guestOf = {};
-  try { const snap = await window._usersAll(); snap.forEach(d => { if ((d.data() || {}).guest === true) guestOf[d.id] = true; }); } catch (e) {}
+  try { const snap = await getDocs(query(collection(db, 'users'), where('guest', '==', true))); snap.forEach(d => { guestOf[d.id] = true; }); } catch (e) {}   // ★10-20 b: 임시계정만
   window._sqMerge = { sid: sid, guest: '', real: '', guestOf: guestOf, live: live };
   window._sqMergeRender();
 };
@@ -47929,9 +47963,7 @@ window.crewMine = async function (force) {
 async function _crewProfiles(uids) {
   const out = {};
   try {
-    const snap = await window._usersAll();
-    const want = new Set(uids);
-    snap.docs.forEach(d => { if (want.has(d.id)) out[d.id] = d.data(); });
+    Object.assign(out, await window._usersByIds(uids));   // ★10-20 b: 크루원만 읽는다(예전 = 전원)
   } catch (e) { console.warn('crew profiles', e && e.message); }
   return out;
 }

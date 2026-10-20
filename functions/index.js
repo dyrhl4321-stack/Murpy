@@ -420,6 +420,9 @@ exports.earn = onCall({ region: "asia-northeast3" }, async (req) => {
 // ── 크루 기록 (2026-10-19) — 가입·러닝 인증샷·체크인 출석·챌린지. 별도 파일.
 Object.assign(exports, require("./crew.js"));
 
+// ── 홈 "오늘 n명 운동" 하루 집계 (2026-10-20 렉 수정) — feed 글 생김/지움 + 매시 정각. 별도 파일.
+Object.assign(exports, require("./homestats.js"));
+
 // ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
 Object.assign(exports, require("./retention.js"));
 
