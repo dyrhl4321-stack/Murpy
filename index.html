@@ -48579,6 +48579,7 @@ window.runScanDemo = async function (imgUrl, fakeRes, delayMs) {
 // ★10-19 라이브 확인: 처음 오는 사람은 서비스워커가 자리를 잡는 순간 앱이 './?sw=…' 로 한 번 다시 열리며 주소 값이 다 사라진다.
 //   그래서 초대 값을 이 탭의 sessionStorage 에 들고 있다가, 시트를 띄운 뒤에 지운다(새로고침 한 번을 넘어 살아남게).
 const _CREW_INV_KEY = 'murpy_crew_invite';
+const _CREW_GBD_ID = 'FSuECLq2EanaXSrBQxdz';   // 근손실방지단 — 초대 링크는 c-gbd.html(카톡 미리보기 카드)
 window._crewInvite = (function () {
   try {
     const p = new URLSearchParams(location.search); const id = p.get('crew');
@@ -48644,7 +48645,7 @@ function _crewJoinBar(c, id, code, byUid) {
 }
 window._crewLinkTry = function (id, t) {
   t = String(t || '');
-  const m = t.match(/[?&]crew=([A-Za-z0-9_-]+)/), k = t.match(/[?&]k=([A-Za-z0-9]+)/), b = t.match(/[?&]by=([A-Za-z0-9_-]+)/);
+  const m = t.match(/[?&]crew=([A-Za-z0-9_-]+)/) || (/\/c-gbd\.html/.test(t) ? [0, _CREW_GBD_ID] : null), k = t.match(/[?&]k=([A-Za-z0-9]+)/), b = t.match(/[?&]by=([A-Za-z0-9_-]+)/);
   if (!m || !k) return false;
   try { sessionStorage.setItem(_CREW_INV_KEY, JSON.stringify({ id: m[1], code: k[1], by: b ? b[1] : '' })); } catch (e) {}
   if (m[1] === id) window.crewJoinFlow(id, k[1]);
@@ -48847,7 +48848,11 @@ window.crewInviteCopy = async function (id) {
     let code = s.exists() && s.data().code;
     if (!code) { code = _crewCode(); await setDoc(doc(db, 'crewsV2', id, 'private', 'join'), { code }); }
     const me = (window.currentUser && window.currentUser.uid) || '';
-    const link = 'https://murpy.app/?crew=' + encodeURIComponent(id) + '&k=' + code + (me ? '&by=' + encodeURIComponent(me) : '');
+    // ★10-21 대표: 카톡 미리보기는 붙여 넣은 주소의 페이지 그림을 읽는다 — 앱 주소(/?crew=)면 기본 광고 그림이 뜬다.
+    //   근방단은 초대 카드가 붙은 c-gbd.html 로 준다(그 페이지가 같은 /?crew= 초대로 넘긴다). 다른 크루는 아직 앱 주소.
+    const by = me ? '&by=' + encodeURIComponent(me) : '';
+    const link = id === _CREW_GBD_ID ? 'https://murpy.app/c-gbd.html?k=' + code + by
+      : 'https://murpy.app/?crew=' + encodeURIComponent(id) + '&k=' + code + by;
     await navigator.clipboard.writeText(link);
     showToast('초대 링크를 복사했어요');
   } catch (e) { showToast('복사하지 못했어요 (' + ((e && (e.code || e.message)) || '') + ')'); }
