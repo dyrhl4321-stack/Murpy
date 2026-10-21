@@ -423,6 +423,9 @@ Object.assign(exports, require("./crew.js"));
 // ── 홈 "오늘 n명 운동" 하루 집계 (2026-10-20 렉 수정) — feed 글 생김/지움 + 매시 정각. 별도 파일.
 Object.assign(exports, require("./homestats.js"));
 
+// ── 홈 "지금 인기" 매시 집계 (2026-10-21 렉 수정) — stats/home_trending 1개. 계산식 = hometrending_logic.js.
+exports.homeTrendingHourly = require("./hometrending.js").homeTrendingHourly;
+
 // ── 리텐션 알림 (2026-08-30) — 별도 파일. notifications 문서만 만들고 발송은 위 sendNotifPush 가 한다.
 Object.assign(exports, require("./retention.js"));
 

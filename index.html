@@ -38843,7 +38843,7 @@ window.loadHomeTrending = async () => {
     // ★크루 → 스쿼드로 교체(크루는 휴면). 캐릭터·센터 체크인 카드 추가 (대표 지시 2026-08-03).
     //   실패해도 나머지 카드는 뜨게 각각 catch 로 감싼다.
     const safe = (p) => p.then(s => s).catch(() => null);
-    const [squadSnap, bambooSnap, usersSnap, ckSnap] = await Promise.all([
+    const [squadSnap, bambooSnap, trSnap, ckSnap] = await Promise.all([
       // ★★limit(12) 만 걸어놨더니 **아무 12개**(사실상 가장 오래된 것들)를 읽었다. 벙이 50개가
       //   되면서 살아 있는 벙은 한 개도 안 들어왔고, 홈 카드가 7월 벙에 굳어 있었다(대표 8-11).
       //   → 스쿼드 목록과 똑같이 **안 끝난 것만** 읽는다(부등호 필드로 정렬해야 한다).
@@ -38855,10 +38855,14 @@ window.loadHomeTrending = async () => {
       //   회원이 46명이 넘으니 뒤쪽 사람은 **후보에 아예 안 들어왔다.** 아무리 잘 꾸며도
       //   계산 대상이 아니었다. 바로 위 스쿼드 쿼리에 같은 버그를 8-11 에 고친 기록이 있는데
       //   users 는 그대로 뒀다. → 전부 읽는다(46명이면 한 번에 읽어도 무시할 수준).
-      //   ※사람이 500명쯤 되면 상위 20명만 담은 집계 문서로 바꿀 것.
-      safe(window._usersAll()),
+      // ★10-21 렉 수정(대표 OK): 그 '전부 읽기'가 켤 때마다 회원 수만큼 나갔다 → 서버가 매시 같은 식으로 계산해 둔
+      //   stats/home_trending 1개만 읽는다(functions/hometrending.js). 없거나 2시간 넘게 오래되면 아래에서 예전 방식으로.
+      safe(getDoc(doc(db, 'stats', 'home_trending'))),
       safe(getDocs(query(collection(db, 'checkins'), limit(80))))
     ]);
+    const tr = trSnap && trSnap.exists() ? trSnap.data() : null;
+    const trOk = !!(tr && Date.now() - Number(tr.atMs || 0) < 2 * 3600e3);
+    const usersSnap = trOk ? null : await safe(window._usersAll());
 
     const BLUE = '#3D7EFF', GREEN = '#4ADE80';
     const esc = (s) => (s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -38952,7 +38956,27 @@ window.loadHomeTrending = async () => {
     //    사진이 아니라 캐릭터를 그린다(mwMiniCharHtml 재사용).
     const PURPLE = '#A78BFA';
     const icoStar = `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
-    if (usersSnap && window.mwMiniCharHtml) {
+    // '갖춰 입은 슬롯 수' — 기본 지급 의상과 **다른** 것을 입은 칸만 센다.
+    //   보유 수(wardrobe)로 줄을 세우면 '많이 가진 사람'이 이긴다(주석에도 그렇게 적혀 있는데
+    //   후보를 좁힐 때 결국 그 기준을 썼다). 카드가 해야 할 일은 "저렇게 되고 싶다"를 만드는
+    //   것이라, 사놓고 안 입은 사람이 아니라 **실제로 갖춰 입은 사람**이 떠야 한다.
+    //   ★functions/hometrending_logic.js 에 같은 식이 있다 — 고치면 둘 다.
+    const DRESS_SLOTS = ['bottom', 'shoes', 'top', 'hair', 'hat', 'acc', 'mask'];
+    const dressedN = (c) => {
+      if (!c) return 0;
+      const d = window.CHAR_DEFAULT || {};
+      return DRESS_SLOTS.filter(k => c[k] && c[k] !== d[k]).length;
+    };
+    let charPool = [], roomTop = null;
+    if (trOk) {
+      // 서버 문서에는 그릴 사람의 커마 몸통 재료(characterSheet·characterHair·gender)가 같이 온다 — 전원 스냅샷이 없으니 여기서 등록
+      const reg = (u) => {
+        const k = u && u.character && u.character.body;
+        if (k && String(k).indexOf(window.FACE_BODY_PREFIX) === 0 && u.characterSheet) window._charEnsureFaceBody(k, u.characterSheet, u.gender, u.characterHair || null);
+      };
+      charPool = (tr.charPool || []).map(x => { reg(x); return { u: x, like: x.like || 0 }; });
+      if (tr.room) { reg(tr.room); roomTop = { u: tr.room, like: tr.room.like || 0, vis: tr.room.vis || 0 }; }
+    } else if (usersSnap) {
       // ★누적 좋아요 1등을 그대로 고정하면 한 사람이 영구 노출된다. 인기의 의미는 유지하되
       //   상위권 안에서는 날짜별로 순환시켜 여러 코디가 발견되게 한다.
       // ★좋아요 조회 전 후보를 8명만 자르면 실제 인기 후보가 탈락할 수 있어 20명으로 넓힌다.
@@ -39000,16 +39024,6 @@ window.loadHomeTrending = async () => {
       //   ※uid 가 더 튼튼하지만 지금 손에 없어 닉네임으로 건다 — uid 를 받으면 바로 교체할 것.
       //   ※★닉네임 중복 검사가 앱에 없다(온보딩은 길이만 본다) → 같은 닉을 남이 만들면
       //     그 사람도 같이 빠진다. 중복 검사를 넣기 전까지 남는 구멍이다.
-      // '갖춰 입은 슬롯 수' — 기본 지급 의상과 **다른** 것을 입은 칸만 센다.
-      //   보유 수(wardrobe)로 줄을 세우면 '많이 가진 사람'이 이긴다(주석에도 그렇게 적혀 있는데
-      //   후보를 좁힐 때 결국 그 기준을 썼다). 카드가 해야 할 일은 "저렇게 되고 싶다"를 만드는
-      //   것이라, 사놓고 안 입은 사람이 아니라 **실제로 갖춰 입은 사람**이 떠야 한다.
-      const DRESS_SLOTS = ['bottom', 'shoes', 'top', 'hair', 'hat', 'acc', 'mask'];
-      const dressedN = (c) => {
-        if (!c) return 0;
-        const d = window.CHAR_DEFAULT || {};
-        return DRESS_SLOTS.filter(k => c[k] && c[k] !== d[k]).length;
-      };
       const all = usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
         .filter(u => u.nickname && !u.deleted && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0);
 
@@ -39036,26 +39050,7 @@ window.loadHomeTrending = async () => {
       dressed.sort((a, b) => cScore(b.u, b.like) - cScore(a.u, a.like)
         || String(a.u.uid).localeCompare(String(b.u.uid)));
 
-      // 상위 5명 안에서 하루 한 명을 공통 선택한다. 무작위 새로고침이 아니라 날짜 기반이라
-      // 모든 사용자에게 같은 캐릭터가 보이고, 같은 날 화면을 다시 열어도 카드가 흔들리지 않는다.
-      const charPool = dressed.slice(0, CHAR_ROTATE_POOL);
-      const dayKey = window.mwTodayKey ? window.mwTodayKey() : new Date().toISOString().slice(0, 10);
-      let dayHash = 0;
-      for (let i = 0; i < dayKey.length; i++) dayHash = ((dayHash * 31) + dayKey.charCodeAt(i)) >>> 0;
-      const featuredChar = charPool.length ? charPool[dayHash % charPool.length] : null;
-      (featuredChar ? [featuredChar] : []).forEach(({ u, like }) => {
-        let charHtml = '';
-        try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
-        if (!charHtml) return;
-        cards.push(card({
-          click: `window.mwVisitRoom && mwVisitRoom('${u.uid}')`,
-          color: PURPLE, icon: icoStar, label: '인기 캐릭터', aria: '인기 캐릭터',
-          inner: `<div style="position:absolute;inset:0;background:linear-gradient(165deg,#232a3d,#0d1018);display:flex;align-items:flex-end;justify-content:center;padding-bottom:38px">${charHtml}</div>`,
-          title: esc(u.nickname || ''),
-          // 좋아요가 아직 0이면 숫자를 자랑할 게 없다 → 보유 아이템으로 대체
-          meta: like > 0 ? `<span>좋아요 ${like}</span>` : `<span>${dressedN(u.character)}칸 갖춰 입음</span>`
-        }));
-      });
+      charPool = dressed.slice(0, CHAR_ROTATE_POOL);
 
       // 인기 룸 — ★캐릭터만 꾸미기 대상이 아니다. 방도 꾸미기 대상이다(대표 지적).
       //   ★그 사람 캐릭터를 보여주는 게 아니라 **실제 방을 축소해 미리보기**로 띄운다
@@ -39075,8 +39070,31 @@ window.loadHomeTrending = async () => {
       //     늘리려면 머피를 쓴다(COST_SLOT_EXT). 상한이 곧 브레이크다.
       const rScore = (x) => x.like * 3 + x.vis * 1 + nFurn(x.u.room) * 1.0;
       roomy.sort((a, b) => rScore(b) - rScore(a));
-      if (roomy[0]) {
-        const { u, like, vis } = roomy[0];
+      roomTop = roomy[0] || null;
+    }
+    if (window.mwMiniCharHtml) {
+      // 상위 5명 안에서 하루 한 명을 공통 선택한다. 무작위 새로고침이 아니라 날짜 기반이라
+      // 모든 사용자에게 같은 캐릭터가 보이고, 같은 날 화면을 다시 열어도 카드가 흔들리지 않는다.
+      const dayKey = window.mwTodayKey ? window.mwTodayKey() : new Date().toISOString().slice(0, 10);
+      let dayHash = 0;
+      for (let i = 0; i < dayKey.length; i++) dayHash = ((dayHash * 31) + dayKey.charCodeAt(i)) >>> 0;
+      const featuredChar = charPool.length ? charPool[dayHash % charPool.length] : null;
+      (featuredChar ? [featuredChar] : []).forEach(({ u, like }) => {
+        let charHtml = '';
+        try { charHtml = window.mwMiniCharHtml(u.character, 104) || ''; } catch (e) {}
+        if (!charHtml) return;
+        cards.push(card({
+          click: `window.mwVisitRoom && mwVisitRoom('${u.uid}')`,
+          color: PURPLE, icon: icoStar, label: '인기 캐릭터', aria: '인기 캐릭터',
+          inner: `<div style="position:absolute;inset:0;background:linear-gradient(165deg,#232a3d,#0d1018);display:flex;align-items:flex-end;justify-content:center;padding-bottom:38px">${charHtml}</div>`,
+          title: esc(u.nickname || ''),
+          // 좋아요가 아직 0이면 숫자를 자랑할 게 없다 → 보유 아이템으로 대체
+          meta: like > 0 ? `<span>좋아요 ${like}</span>` : `<span>${dressedN(u.character)}칸 갖춰 입음</span>`
+        }));
+      });
+      if (roomTop) {
+        const nFurn = (r) => (r && Array.isArray(r.f)) ? r.f.length : 0;
+        const { u, like, vis } = roomTop;
         let ch = '', furn = '';
         try { ch = window.mwMiniCharHtml(u.character, 34) || ''; } catch (e) {}
         try { furn = window.mwFurnHtml ? (window.mwFurnHtml(u.room, false) || '') : ''; } catch (e) {}
@@ -39162,7 +39180,8 @@ window.loadHomeTrending = async () => {
     const icoFlame = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`;
     const mFlame = '<span style="color:#F5C24B;display:inline-flex;flex-shrink:0"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span>';
     const _me = window.currentUser && window.currentUser.uid;
-    const runners = !usersSnap ? [] : usersSnap.docs.map(d => ({ uid: d.id, ...d.data() }))
+    // 서버 문서는 상위 3명을 준다(여기서 본인을 빼고 2명을 쓴다)
+    const runners = (trOk ? (tr.runners || []) : !usersSnap ? [] : usersSnap.docs.map(d => ({ uid: d.id, ...d.data() })))
       .filter(u => u.uid !== _me && (u.photoURL || u.firestorePhotoURL) && u.nickname && (u.streak || 0) >= 2
                 && !u.deleted && window.HOF_EXCLUDE_UID.indexOf(u.uid) < 0)
       .sort((a, b) => (b.streak || 0) - (a.streak || 0));
