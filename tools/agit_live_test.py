@@ -69,7 +69,11 @@ PICK = r'''
 async () => {
   for (let i = 0; i < 60 && typeof window.crewHotList !== 'function'; i++) await new Promise(r => setTimeout(r, 500));
   const list = await window.crewHotList(); const c = list.find(x => (x.name || '').includes('근손실')) || list[0];
-  window.__AG = await window.crewAgitLoad(c.id);
+  for (let i = 0; i < 4; i++) {   // 프로필 읽기가 가끔 늦게/비어서 온다 — 5명 다 올 때까지 다시
+    window.__AG = await window.crewAgitLoad(c.id);
+    if (Object.keys(window.__AG.profiles).length >= 4) break;
+    await new Promise(r => setTimeout(r, 1500));
+  }
   return Object.keys(window.__AG.profiles);
 }
 '''
@@ -160,6 +164,46 @@ with sync_playwright() as p:
       return [f({ createdBy: 'L', staff: ['S'] }, 'L'), f({ createdBy: 'L', staff: ['S'] }, 'S'), f({ createdBy: 'L', staff: ['S'] }, 'M'),
               f({ leaderUid: 'N', createdBy: 'L' }, 'L'), f({ leaderUid: 'N', createdBy: 'L' }, 'N'), f({ createdBy: 'L' }, '')]; }''')
     check('역할: 크루장·운영진 O / 크루원 X / leaderUid 가 createdBy 보다 먼저 / 로그인 전 X', r == [True, True, False, False, True, False], r)
+    # 입장 판정 — 크루 없음(크루원 아님)·크루원·승인 대기·닫힘·관리자
+    g = pb.evaluate('''() => { const G = window.crewAgitGate;
+      return [G({ crew: {}, isMember: false }, false), G({ crew: {}, isMember: true }, false), G({ crew: { status: 'approved' }, isMember: true }, false),
+              G({ crew: { status: 'pending' }, isMember: true }, false), G({ crew: { status: 'closed' }, isMember: true }, false),
+              G({ crew: { status: 'closed' }, isMember: false }, true)]; }''')
+    check('입장: 크루원 아님 X · 크루원 O · 승인 O · 승인 대기 X · 닫힘 X · 관리자 O',
+          g == ['크루원만 들어갈 수 있어요', '', '', '승인된 크루만 아지트가 열려요', '닫힌 크루예요', ''], g)
+    # 잘못된 입력 — 대화
+    cnt = "() => Object.keys(((window.__mockTree.crewLive || {})[window.__AG.crew.id] || {}).chat || {}).length"
+    n0 = pb.evaluate(cnt)
+    pb.evaluate("() => { window._agit.lastSay = 0; window.crewAgitSay(''); window.crewAgitSay('    '); }")
+    check('입력: 빈 말·공백만은 안 보낸다', pb.evaluate(cnt) == n0)
+    pb.evaluate("() => { window._agit.lastSay = 0; window.crewAgitSay('가'.repeat(200)); }")
+    last = pb.evaluate("() => { const c = window.__mockTree.crewLive[window.__AG.crew.id].chat; return Object.values(c).sort((a, b) => a.t - b.t).pop().text.length; }")
+    check('입력: 긴 말은 60자로 자른다', last == 60, last)
+    n1 = pb.evaluate(cnt)
+    pb.evaluate("() => { window.crewAgitSay('연타1'); window.crewAgitSay('연타2'); }")
+    check('입력: 1.2초 안 연타는 막는다', pb.evaluate(cnt) == n1, pb.evaluate(cnt) - n1)
+    # 잘못된 입력 — 크루 이름(배너)·저장된 배치
+    r = pb.evaluate('''() => { const d = window.__AG, P = d.profiles, u = Object.keys(P)[0];
+      const bad = Object.assign({}, d, { crew: Object.assign({}, d.crew, { name: '<img src=x onerror=window.__y=1>아주아주긴크루이름입니다' }),
+        hideout: { theme: 'nope', v: 3, f: [{ id: 'bogus', x: 1, y: 1 }, { id: 'cz_flag', x: 'abc', y: 5 }, { id: 'cz_flag', x: 99999, y: -500 }, null,
+          { id: 'cz_banner', x: 600, y: 900 }].concat(Array.from({ length: 300 }, (_, i) => ({ id: 'pi_plant', x: (i * 50) % 1400, y: 300 + (i % 20) * 70 }))) } });
+      window.crewAgitMount(bad, { uid: u, nick: P[u].nickname, cfg: P[u].character });
+      const f = window._agit.room.f, lbl = document.querySelector('.ag-lbl');
+      const ban = f.find(x => x.id === 'cz_banner'), fl = f.find(x => x.id === 'cz_flag');
+      return [f.length, f.some(x => x.id === 'bogus'), !!document.querySelector('.ag-lbl img') || !!window.__y, lbl ? lbl.textContent : '',
+              ban ? ban.y + 160 <= 176 : null, fl ? (fl.x <= 1536 - 92 && fl.y >= 0) : null, window._agit.room.theme]; }''')
+    check('입력: 배치 120개 상한 · 모르는 소품 버림', r[0] <= 120 and not r[1], r[:2])
+    check('입력: 크루 이름 HTML 은 글자로만 · 8자 넘으면 자름', (not r[2]) and r[3].endswith('…'), r[2:4])
+    check('입력: 벽걸이는 벽 안으로 · 바닥 물건은 판 안으로 · 모르는 테마는 클럽하우스', r[4] is True and r[5] is True and r[6] == 'club', r[4:])
+    # 크루원 목록·변경 기록 목록(규칙이 아직 없어 기록 읽기는 거부 → 안내 문장)
+    pb.evaluate('''() => { const d = window.__AG, P = d.profiles, u = Object.keys(P)[1];
+      window.crewAgitMount(Object.assign({}, d, { crew: Object.assign({}, d.crew, { staff: [u] }) }), { uid: u, nick: P[u].nickname, cfg: P[u].character }); window.crewAgitMembers(); }''')
+    m = pb.evaluate("() => [...document.querySelectorAll('.ag-mr .nm small')].map(e => e.textContent)")
+    check('크루원 목록: 크루장·운영진 표시', '크루장' in m and '운영진' in m, m)
+    if OUT: pb.screenshot(path=os.path.join(OUT, 'members.png'))
+    pb.evaluate('() => window.crewAgitHistory()'); pb.wait_for_timeout(2500)
+    h = pb.evaluate("() => (document.querySelector('.ag-shw .ls') || {}).textContent || ''")
+    check('변경 기록 목록: 읽기 실패해도 안내 문장', h in ('기록을 불러오지 못했어요', '아직 꾸민 기록이 없어요') or '님이' in h, h)
     # 로그인 전 — 아지트를 안 열고 로그인 안내로
     pd = ctx.new_page(); pd.goto('http://127.0.0.1:%d/index.html' % port, wait_until='domcontentloaded')
     pd.wait_for_function('typeof window.crewAgitOpen === "function"', timeout=60000); pd.wait_for_timeout(5000)

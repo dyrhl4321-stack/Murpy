@@ -83,6 +83,9 @@ def shoot(b, w, h, tag, edit=False, full=False):
     pg.screenshot(path=os.path.join(OUT, 'agit_%s.png' % tag))
     pg.evaluate(CHAT); pg.wait_for_timeout(600)
     pg.screenshot(path=os.path.join(OUT, 'agit_%s_chat.png' % tag))
+    pg.evaluate("() => window.crewAgitMembers()"); pg.wait_for_timeout(700)
+    pg.screenshot(path=os.path.join(OUT, 'agit_%s_members.png' % tag))
+    pg.evaluate("() => { const w = document.querySelector('.ag-shw'); if (w) w.remove(); }")
     if edit:
         pg.evaluate(EDIT); pg.wait_for_timeout(900)
         pg.screenshot(path=os.path.join(OUT, 'agit_%s_edit.png' % tag))

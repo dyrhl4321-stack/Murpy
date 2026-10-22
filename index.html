@@ -49313,7 +49313,7 @@ function _agShellHtml(c) {
     + '<div id="ag-items"></div><div id="ag-chars"></div></div>'
     + '<div class="ag-joy"><b></b><i class="u">▲</i><i class="d">▼</i><i class="l">◀</i><i class="r">▶</i></div></div>'
     + '<div class="ag-hud"><button class="ag-btn" onclick="window.crewAgitClose()" aria-label="나가기">✕</button>'
-    + '<div class="ag-tt"><b></b><span></span></div><div class="sp"></div><span class="ag-edit-slot"></span></div>'
+    + '<div class="ag-tt" onclick="window.crewAgitMembers()"><b></b><span></span></div><div class="sp"></div><span class="ag-edit-slot"></span></div>'
     + '<div class="ag-log"></div>';
 }
 function _agPaintRoom() {
@@ -49331,7 +49331,7 @@ function _agHud() {
   const slot = S.el.querySelector('.ag-edit-slot');
   slot.innerHTML = S.canEdit ? '<button class="ag-btn" onclick="window.crewAgitEdit && window.crewAgitEdit()">꾸미기</button>' : '';
   const log = S.el.querySelector('.ag-log'), L = S.lastLog;
-  log.innerHTML = L && L.text ? '<span>' + L.text + '</span>' : '';
+  log.innerHTML = L && L.text ? '<span onclick="window.crewAgitHistory()">' + L.text + '</span>' : '';
 }
 // 아지트 데이터: 크루 문서 · 크루원 · 프로필 · 꾸민 배치(없으면 첫 배치)
 window.crewAgitLoad = async function (id) {
@@ -49354,7 +49354,7 @@ window.crewAgitMount = function (data, me) {
   const el = document.createElement('div'); el.id = 'crew-agit'; el.className = 'ag';
   el.innerHTML = _agShellHtml(data.hideout || {});
   document.body.appendChild(el);
-  const room = (data.hideout && Array.isArray(data.hideout.f)) ? { theme: data.hideout.theme || 'club', f: data.hideout.f.slice(0, 200) } : _agDefault();
+  const room = (data.hideout && Array.isArray(data.hideout.f)) ? _agSanitize(data.hideout) : _agDefault();
   const S = window._agit = {
     id: data.crew.id, crew: data.crew, el, room, uid: me.uid, nick: me.nick, cfg: me.cfg,
     me: { tc: 16, tr: 9, face: 'down' }, others: {}, members: data.members || [], profiles: data.profiles || {},
@@ -49381,6 +49381,14 @@ window.crewAgitClose = function (quiet) {
   const el = document.getElementById('crew-agit'); if (el) el.remove();
 };
 // 입구 — 크루 화면 버튼·딥링크가 이걸 부른다. 승인된 크루의 크루원만(관리자는 지원용).
+// 들어갈 수 있나 — 막히면 안내 문장, 되면 ''. 관리자는 지원용으로 통과. closed = 크루 닫기 승인(개발 창 10-27)
+window.crewAgitGate = function (data, admin) {
+  if (admin) return '';
+  const st = data && data.crew && data.crew.status;
+  if (st && st !== 'approved') return st === 'closed' ? '닫힌 크루예요' : '승인된 크루만 아지트가 열려요';
+  if (!data || !data.isMember) return '크루원만 들어갈 수 있어요';
+  return '';
+};
 window.crewAgitOpen = async function (id) {
   if (!id) return;
   if (window._notMember && window._notMember()) { (window.memberGate || window.requireLogin)('가입하면 크루 아지트에 들어갈 수 있어요'); return; }
@@ -49391,9 +49399,8 @@ window.crewAgitOpen = async function (id) {
   let data = null; try { data = await window.crewAgitLoad(id); } catch (e) { console.warn('agit', e); }
   el.remove();
   if (!data) { showToast('아지트를 불러오지 못했어요'); return; }
-  const admin = typeof isAdmin === 'function' && isAdmin();
-  if (data.crew.status && data.crew.status !== 'approved' && !admin) { showToast('승인된 크루만 아지트가 열려요'); return; }
-  if (!data.isMember && !admin) { showToast('크루원만 들어갈 수 있어요'); return; }
+  const why = window.crewAgitGate(data, typeof isAdmin === 'function' && isAdmin());
+  if (why) { showToast(why); return; }
   window.track && window.track('crew_agit_open', {});
   const me = { uid: u.uid, nick: window._mwMyNick || (data.profiles[u.uid] || {}).nickname || '머피', cfg: window.getMyCharacter ? window.getMyCharacter() : null };
   window.crewAgitMount(data, me);
@@ -49592,7 +49599,7 @@ window.crewAgitEditDone = async function (save) {
         const curV = cur && cur.exists() ? (cur.data().v || 0) : 0;
         if (curV !== (E.v || 0)) {
           showToast('다른 운영진이 먼저 바꿨어요 · 지금 모습으로 다시 불러올게요');
-          S.room = { theme: cur.data().theme || 'club', f: (cur.data().f || []).slice(0, 200) }; S.ver = curV;
+          S.room = _agSanitize(cur.data()); S.ver = curV;
           _agEditClose(); _agPaintRoom(); _agMeRender(); return;
         }
         const f = S.room.f.map(it => { const o = { id: it.id, x: Math.round(it.x), y: Math.round(it.y) }; if (it.d) o.d = it.d | 0; return o; });
@@ -49630,7 +49637,7 @@ function _agWatchRoom() {
       S.ver = v.v || 0;
       if (v.last) S.lastLog = { text: _agLogText(v.last) };
       if (S.editing) return;
-      S.room = { theme: v.theme || 'club', f: (v.f || []).slice(0, 200) };
+      S.room = _agSanitize(v);
       _agPaintRoom(); _agHud(); _agMeRender();
     }, e => console.warn('agit watch', e && e.message));
   } catch (e) {}
@@ -49804,6 +49811,8 @@ window.crewAgitSay = function (text) {
   text = String(text || '').trim().slice(0, 60); if (!text) return;
   if (S.full || !S.meRef) { showToast('구경 중에는 말할 수 없어요'); return; }
   const now = Date.now();
+  if (now - (S.lastSay || 0) < 1200) { showToast('조금 천천히 보내 주세요'); return; }   // 연타 막기(대화 줄이 한 사람 말로 덮이지 않게)
+  S.lastSay = now;
   S.myMsg = text; S.myMsgObj = { text, t: now }; _agMeRender();
   try {
     R.update(S.meRef, { msg: S.myMsgObj, t: now });
@@ -49813,6 +49822,93 @@ window.crewAgitSay = function (text) {
   // 남의 말풍선은 6초 뒤 지운다(새 스냅샷이 안 와도)
   clearTimeout(S.othersMsgT); S.othersMsgT = setTimeout(_agComposeOthers, AG_MSG_MS + 50);
 };
+// ── 크루 아지트: 크루원 목록 · 변경 기록 목록 ──
+//   크루원 = 위 제목 칸을 누르면. 크루장·운영진 표시와 지금 아지트에 있는지/최근 다녀간 때(읽기만).
+//   운영진 임명·해제는 크루 화면(개발 창, crewSetStaff)에 있다 — 여기서 또 만들지 않는다.
+//   변경 기록 = 아래 한 줄을 누르면 최근 20줄(hideoutLog).
+function _agSheetCss() {
+  if (document.getElementById('agit-sheet-css')) return;
+  const st = document.createElement('style'); st.id = 'agit-sheet-css';
+  st.textContent = `
+.ag-shw{position:absolute;inset:0;z-index:9;background:rgba(5,7,12,.55);display:flex;align-items:flex-end}
+.ag-sh2{width:100%;max-height:72%;display:flex;flex-direction:column;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding-bottom:env(safe-area-inset-bottom)}
+.ag-sh2 .hd{display:flex;align-items:center;gap:8px;padding:12px 12px 10px}
+.ag-sh2 .hd b{font:13px 'Galmuri14',sans-serif;color:#fff;font-weight:400}
+.ag-sh2 .hd span{font-size:10px;color:#8a93a8}
+.ag-sh2 .hd .ag-btn{margin-left:auto;height:30px;min-width:30px}
+.ag-sh2 .ls{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 12px}
+.ag-mr{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #161d2e}
+.ag-mr .ch{width:24px;height:38px;flex-shrink:0;display:flex;justify-content:center;overflow:hidden}
+.ag-mr .nm{flex:1;min-width:0;font-size:11px;color:#e8ecf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-mr .nm small{font-size:9px;color:#8a93a8;margin-left:6px}
+.ag-mr .st{font-size:9px;color:#8a93a8;white-space:nowrap}
+.ag-mr .st.on{color:#7aa8ff}
+.ag-lg{padding:8px 0;border-bottom:1px solid #161d2e;font-size:10.5px;color:#cfd6e6;line-height:1.4}
+.ag-lg b{font-weight:400;color:#fff}
+.ag-lg i{font-style:normal;color:#5d6680;margin-left:6px;font-size:9px}
+.ag-sh2 .em{padding:18px 0 22px;text-align:center;font-size:10.5px;color:#8a93a8}
+.ag-tt{cursor:pointer}
+.ag-log span{pointer-events:auto;cursor:pointer}
+`;
+  document.head.appendChild(st);
+}
+function _agSheet(title, sub, body) {
+  const S = window._agit; if (!S) return null;
+  _agSheetCss();
+  const old = S.el.querySelector('.ag-shw'); if (old) old.remove();
+  S.stopJoy && S.stopJoy();
+  const w = document.createElement('div'); w.className = 'ag-shw';
+  w.innerHTML = '<div class="ag-sh2"><div class="hd"><b>' + title + '</b><span>' + sub + '</span><button class="ag-btn" aria-label="닫기">✕</button></div><div class="ls">' + body + '</div></div>';
+  const close = () => w.remove();
+  w.addEventListener('click', e => { if (e.target === w) close(); });
+  w.querySelector('.hd .ag-btn').onclick = close;
+  ['touchstart', 'mousedown'].forEach(ev => w.addEventListener(ev, e => e.stopPropagation()));   // 무대 조이스틱으로 안 새게
+  S.el.appendChild(w);
+  return w;
+}
+window.crewAgitMembers = function () {
+  const S = window._agit; if (!S || S.editing) return;
+  const c = S.crew, lead = c.leaderUid || c.createdBy || '', staff = Array.isArray(c.staff) ? c.staff : [], P = S.profiles || {};
+  const now = Date.now(), live = new Set(Object.keys(S.others || {}).filter(k => !S.others[k].ghost)); if (!S.full) live.add(S.uid);
+  const seen = S.seen || {};
+  const role = u => u === lead ? 0 : staff.includes(u) ? 1 : 2;
+  const rows = (S.members || []).map(m => m.uid).filter(u => P[u] || u === S.uid)
+    .sort((a, b) => role(a) - role(b) || (live.has(b) - live.has(a)) || ((seen[b] || 0) - (seen[a] || 0)));
+  const body = rows.map(u => {
+    const p = P[u] || {}, r = role(u), on = live.has(u), t = seen[u];
+    return '<div class="ag-mr"><span class="ch">' + window.mwMiniCharHtml(u === S.uid ? S.cfg : (p.character || null), 224 / 6, 'down') + '</span>'
+      + '<span class="nm">' + _cE(u === S.uid ? (S.nick || '나') + ' (나)' : (p.nickname || '크루원')) + (r < 2 ? '<small>' + (r === 0 ? '크루장' : '운영진') + '</small>' : '') + '</span>'
+      + '<span class="st' + (on ? ' on' : '') + '">' + (on ? '지금 아지트' : (t && now - t < 30 * 864e5 ? _agAgo(t) : '')) + '</span></div>';
+  }).join('') || '<div class="em">크루원을 불러오지 못했어요</div>';
+  _agSheet('크루원', (S.members || []).length + '명 · 지금 ' + live.size + '명', body);
+};
+window.crewAgitHistory = async function () {
+  const S = window._agit; if (!S || S.editing) return;
+  const w = _agSheet('변경 기록', '최근 20개', '<div class="em">불러오는 중</div>'); if (!w) return;
+  let rows = [];
+  try {
+    const sn = await getDocs(query(collection(db, 'crewsV2', S.id, 'hideoutLog'), orderBy('at', 'desc'), limit(20)));
+    rows = sn.docs.map(d => d.data());
+  } catch (e) { console.warn('agit history', e && e.message); rows = null; }
+  if (!document.body.contains(w)) return;
+  const ls = w.querySelector('.ls');
+  if (rows === null) { ls.innerHTML = '<div class="em">기록을 불러오지 못했어요</div>'; return; }
+  ls.innerHTML = rows.length ? rows.map(L => {
+    const t = L.at && L.at.toMillis ? L.at.toMillis() : (Number(L.at) || 0);
+    return '<div class="ag-lg">' + _agLogText(L) + (t ? '<i>' + _agAgo(t) + '</i>' : '') + '</div>';
+  }).join('') : '<div class="em">아직 꾸민 기록이 없어요</div>';
+};
+// 저장된 배치를 그대로 믿지 않는다 — 모르는 소품·이상한 좌표·너무 많은 개수는 걸러서 그린다(서버 규칙도 개수는 막는다)
+function _agSanitize(h) {
+  const f = (h && Array.isArray(h.f) ? h.f : []).filter(it => it && typeof it.id === 'string' && isFinite(it.x) && isFinite(it.y)).slice(0, AG_MAX_ITEMS);
+  const out = [];
+  f.forEach(it => {
+    const o = { id: it.id, x: +it.x, y: +it.y }; if (it.d) o.d = Math.max(0, Math.min(3, it.d | 0));
+    const d = _agDef(o); if (!d) return;
+    out.push(_agClamp(o, d));
+  });
+  return { theme: AG_THEMES[h && h.theme] ? h.theme : 'club', f: out };
+}
 </script>
 </body>
 </html>
