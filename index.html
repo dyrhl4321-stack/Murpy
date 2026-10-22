@@ -33880,58 +33880,62 @@ window._switchInterestTab = (tab) => {
   window._renderInterestList();
 };
 
+// ★10-22 속도(대표 "좋아요 목록이 한참 걸린다"): 예전엔 좋아요 한 건마다 isMatched(getDoc)를 **차례로** 기다렸다 —
+//   대표 계정 실측 받은 24 + 보낸 46 + 대숲 1 = 71번 왕복을 줄 서서 한 뒤에야 첫 줄이 그려졌다. 패널을 열 때·매칭 탭 진입·좋아요 실시간 신호마다 매번.
+//   → 내 매칭 상대를 matches(users array-contains 나)로 **한 번에** 받고, 네 가지 읽기를 동시에. 판정 결과는 예전과 같다
+//     (matches 134건 전부 users 두 명 + id = _pairKey 확인, 10-22). 동시에 여러 번 불려도 읽기는 한 번(_interestLoading).
+window._interestMatchedSet = async function (me) {
+  const sn = await getDocs(query(collection(db, 'matches'), where('users', 'array-contains', me)));
+  const s = new Set();
+  sn.forEach(d => (d.data().users || []).forEach(u => { if (u && u !== me) s.add(u); }));
+  return s;
+};
+window._interestSkel = n => Array.from({ length: n }, () => '<div class="card" style="display:flex;gap:12px;align-items:center">'
+  + '<div style="width:52px;height:52px;border-radius:50%;flex-shrink:0;background:rgba(255,255,255,0.06)"></div>'
+  + '<div style="flex:1"><div style="width:42%;height:13px;border-radius:6px;background:rgba(255,255,255,0.07)"></div>'
+  + '<div style="width:28%;height:10px;border-radius:5px;background:rgba(255,255,255,0.05);margin-top:8px"></div></div></div>').join('');
 // silent=true 면 목록은 건드리지 않고 **헤더 하트/배지 숫자만** 갱신한다.
 // (실시간 리스너에서 부르는 용도 — 패널이 닫혀 있는데 프로필 사진까지 읽어올 필요는 없다)
 window._loadInterestPanel = async (silent) => {
   const user = auth.currentUser || window.currentUser;
   const el = document.getElementById('interest-list');
   if (!el || !user) return;
+  const me = user.uid;
   const panelOpen = !!document.getElementById('interest-panel')?.classList.contains('open');
-  if (!silent && panelOpen) el.innerHTML = '<div style="text-align:center;padding:30px;color:#444">불러오는 중...</div>';
-
-  // 1) 매칭 좋아요 받은 사람: likes 컬렉션에서 to==me 인 문서
-  const likeDocs = [], bambooDocs = [];
-  try {
-    const q = query(collection(db, 'likes'), where('to', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
-    const snap = await getDocs(q);
-    // ★제외 기준은 **매칭**이다 (2026-08-07 수정). 예전엔 _isConnected(채팅만 있어도 true)로
-    //   걸렀는데, 그러면 대숲 익명채팅 등으로 대화방만 열려 있는 상대가 보낸 좋아요가
-    //   **목록에서 통째로 사라진다.** 아직 매칭 전이므로 받은 좋아요에 남아 있어야 한다.
-    for (const d of snap.docs) {
-      const fromUid = d.data().from;
-      if (await window.isMatched(fromUid)) continue;
-      likeDocs.push({ uid: fromUid, createdAt: d.data().createdAt, letter: d.data().letter || '' });   // 9-08 민준이 편지
-    }
-  } catch(e) {}
-
-  // 2) 대숲 저에요 누른 사람: bamboo_request 알림 (이미 연결된 사이는 제외)
-  try {
-    const q = query(collection(db, 'notifications'), where('toUid','==',user.uid), where('type','==','bamboo_request'));
-    const snap = await getDocs(q);
-    const seenUid = new Set();
-    for (const d of snap.docs) {
-      const n = d.data();
-      if (seenUid.has(n.fromUid)) continue;
-      seenUid.add(n.fromUid);
-      // ★여기는 위(매칭 좋아요)와 달리 _isConnected 가 맞다 — 일부러 그대로 둔다.
-      //   대숲 '저에요'는 **채팅이 열리면 끝난 일**이다. isMatched 로 바꾸면 이미 처리한
-      //   대숲 신청이 목록에 영원히 남는다.
-      if (await window._isConnected(n.fromUid)) continue;
-      bambooDocs.push(n);
-    }
-  } catch(e) {}
-
-  // 3) 내가 보낸 좋아요: likes 컬렉션에서 from==me (이미 연결/매칭된 사람 제외 = 대기중만)
-  const sentDocs = [];
-  try {
-    const q = query(collection(db, 'likes'), where('from', '==', user.uid), orderBy('createdAt', 'desc'), limit(100));
-    const snap = await getDocs(q);
-    for (const d of snap.docs) {
-      const toUid = d.data().to;
-      if (await window.isMatched(toUid)) continue;   // 위와 같은 이유 — 매칭 전이면 '수락 대기중'이 맞다
-      sentDocs.push({ uid: toUid, createdAt: d.data().createdAt });
-    }
-  } catch(e) {}
+  // 열 때: 1분 안에 받아 둔 목록이 있으면 **바로** 그리고 뒤에서 새로 받는다. 없으면 회색 뼈대.
+  const fresh = window._interestUid === me && Date.now() - (window._interestAt || 0) < 60000;
+  if (!silent && panelOpen) { if (fresh) window._renderInterestList(); else el.innerHTML = window._interestSkel(4); }
+  if (!window._interestLoading) {
+    window._interestLoading = (async () => {
+      const safe = p => p.catch(e => { console.warn('interest', e && e.message); return null; });
+      const [likeSn, bamSn, sentSn, matched] = await Promise.all([
+        // 1) 매칭 좋아요 받은 사람  2) 대숲 저에요  3) 내가 보낸 좋아요  4) 이미 매칭된 상대(한 번에)
+        safe(getDocs(query(collection(db, 'likes'), where('to', '==', me), orderBy('createdAt', 'desc'), limit(100)))),
+        safe(getDocs(query(collection(db, 'notifications'), where('toUid', '==', me), where('type', '==', 'bamboo_request'), limit(100)))),
+        safe(getDocs(query(collection(db, 'likes'), where('from', '==', me), orderBy('createdAt', 'desc'), limit(100)))),
+        window._interestMatchedSet(me).catch(e => { console.warn('interest matches', e && e.message); return new Set(); }),
+      ]);
+      // ★제외 기준은 **매칭**이다 (2026-08-07 수정). 예전엔 _isConnected(채팅만 있어도 true)로
+      //   걸렀는데, 그러면 대숲 익명채팅 등으로 대화방만 열려 있는 상대가 보낸 좋아요가
+      //   **목록에서 통째로 사라진다.** 아직 매칭 전이므로 받은 좋아요에 남아 있어야 한다.
+      const likeDocs = likeSn ? likeSn.docs.map(d => d.data()).filter(v => v.from && !matched.has(v.from))
+        .map(v => ({ uid: v.from, createdAt: v.createdAt, letter: v.letter || '' })) : [];   // 9-08 민준이 편지
+      const sentDocs = sentSn ? sentSn.docs.map(d => d.data()).filter(v => v.to && !matched.has(v.to))   // 매칭 전이면 '수락 대기중'
+        .map(v => ({ uid: v.to, createdAt: v.createdAt })) : [];
+      // ★대숲은 위(매칭 좋아요)와 달리 _isConnected(매칭 **또는 채팅방**)가 맞다 — 일부러 그대로 둔다.
+      //   대숲 '저에요'는 **채팅이 열리면 끝난 일**이다. 매칭된 사람은 위 집합으로, 나머지만 채팅방을 **동시에** 확인한다.
+      const bamAll = [], seenUid = new Set();
+      if (bamSn) bamSn.docs.forEach(d => { const n = d.data(); if (!n.fromUid || seenUid.has(n.fromUid)) return; seenUid.add(n.fromUid); bamAll.push(n); });
+      const conn = await Promise.all(bamAll.map(n => matched.has(n.fromUid) ? true
+        : getDoc(doc(db, 'chats', _pairKey(me, n.fromUid))).then(c => c.exists(), () => false)));
+      const bambooDocs = bamAll.filter((n, i) => !conn[i]);
+      return { likeDocs, sentDocs, bambooDocs };
+    })();
+  }
+  let r;
+  try { r = await window._interestLoading; } finally { window._interestLoading = null; }
+  if ((auth.currentUser || window.currentUser || {}).uid !== me) return;   // 그 사이 로그아웃·계정 바뀜
+  const { likeDocs, sentDocs, bambooDocs } = r;
 
   // 카운트 표시 (받은 = 매칭 좋아요 + 대숲 저에요, 보낸 = 내가 보낸 좋아요)
   const recCnt = document.getElementById('itab-received-cnt');
@@ -33950,23 +33954,38 @@ window._loadInterestPanel = async (silent) => {
   }
   if (headerBadge) { headerBadge.textContent = total; headerBadge.style.display = total > 0 ? 'flex' : 'none'; }
 
+  const sameList = JSON.stringify([likeDocs, sentDocs, bambooDocs].map(a => a.map(x => x.uid || x.fromUid)))
+    === JSON.stringify([window._interestLikeDocs, window._interestSentDocs, window._interestBambooDocs].map(a => (a || []).map(x => x.uid || x.fromUid)));
   window._interestLikeDocs = likeDocs;
   window._interestSentDocs = sentDocs;
   window._interestBambooDocs = bambooDocs;
-  // 패널이 닫혀 있으면 목록은 안 그린다(다음에 열 때 openPanel 이 다시 부른다)
-  if (panelOpen) window._renderInterestList();
+  window._interestUid = me; window._interestAt = Date.now();
+  // 패널이 닫혀 있으면 목록은 안 그린다(다음에 열 때 openPanel 이 다시 부른다). 이미 같은 목록을 그려 놨으면 다시 안 그린다(깜빡임 없음).
+  const nowOpen = !!document.getElementById('interest-panel')?.classList.contains('open');
+  if (nowOpen && !(silent && sameList) && !(fresh && sameList)) window._renderInterestList();
 };
 
-window._renderInterestList = async () => {
+// 목록은 **처음 20명**만 프로필을 받아 그리고, 나머지는 '더 보기'로 20명씩(대표 10-22). 프로필은 _usersByIds(캐시 + 30명씩 묶어 읽기).
+window.INTEREST_PAGE = 20;
+window._interestMore = function () {
+  window._interestShown = (window._interestShown || window.INTEREST_PAGE) + window.INTEREST_PAGE;
+  window._renderInterestList(true);
+};
+window._renderInterestList = async (more) => {
   const el = document.getElementById('interest-list');
   const user = auth.currentUser || window.currentUser;
   if (!el || !user) return;
+  const tok = window._interestTok = (window._interestTok || 0) + 1;
+  if (!more) window._interestShown = window.INTEREST_PAGE;
+  const shown = window._interestShown;
 
   const _empty = (t1, t2) => `<div style="text-align:center;padding:44px 20px"><div style="font-size:13px;color:#444">${t1}</div><div style="font-size:12px;color:#333;margin-top:6px">${t2}</div></div>`;
-  const _fetchProfiles = async (docs) => Promise.all(docs.map(async d => {
-    try { const us = await getDoc(doc(db, 'users', d.uid)); return us.exists() ? { uid: d.uid, ...us.data(), letter: d.letter || '' } : { uid: d.uid, letter: d.letter || '' }; }
-    catch(e) { return { uid: d.uid }; }
-  }));
+  const _fetchProfiles = async (docs) => {
+    let P = {};
+    try { P = await window._usersByIds(docs.map(d => d.uid)); } catch (e) { console.warn('interest profiles', e && e.message); }
+    return docs.map(d => P[d.uid] ? { uid: d.uid, ...P[d.uid], letter: d.letter || '' } : { uid: d.uid, letter: d.letter || '' });
+  };
+  const _moreBtn = (rest) => rest > 0 ? `<button onclick="window._interestMore()" style="width:100%;margin-top:4px;padding:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:12px;color:rgba(255,255,255,0.6);font-size:13px;font-family:inherit;cursor:pointer">더 보기 (${rest})</button>` : '';
   const _section = (txt, color) => `<div style="font-size:12px;font-weight:700;color:${color};padding:14px 4px 8px;letter-spacing:-0.2px">${txt}</div>`;
   const _heart = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
   const _profileCard = (p, right) => {
@@ -33977,7 +33996,7 @@ window._renderInterestList = async () => {
     const district = p.district || '';
     return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openUserProfile('${p.uid}','${nickJs}','${photo}')">
       <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06)">
-        ${photo ? `<img src="${window._cdnImg(photo,104)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${photo}'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></div>'}
+        ${photo ? `<img src="${window._cdnImg(photo,104)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${photo}'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></div>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px;margin-bottom:2px">${nick}</div>
@@ -33992,8 +34011,12 @@ window._renderInterestList = async () => {
   if (_interestTab === 'sent') {
     const docs = window._interestSentDocs || [];
     if (!docs.length) { el.innerHTML = _empty('아직 좋아요를 보낸 사람이 없어요', '매칭 탭에서 \'같이 운동해요\'를 누르면 여기 모여요'); return; }
-    const profiles = await _fetchProfiles(docs);
-    el.innerHTML = profiles.map(p => _profileCard(p, '<span style="font-size:11px;color:rgba(255,255,255,0.45);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:4px 9px;white-space:nowrap">수락 대기중</span>')).join('');
+    const page = docs.slice(0, shown);
+    if (!more) el.innerHTML = window._interestSkel(Math.min(page.length, 4));
+    const profiles = await _fetchProfiles(page);
+    if (tok !== window._interestTok) return;   // 그 사이 탭을 바꿨거나 다시 그렸다
+    el.innerHTML = profiles.map(p => _profileCard(p, '<span style="font-size:11px;color:rgba(255,255,255,0.45);background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:4px 9px;white-space:nowrap">수락 대기중</span>')).join('')
+      + _moreBtn(docs.length - page.length);
     return;
   }
 
@@ -34004,11 +34027,14 @@ window._renderInterestList = async () => {
     el.innerHTML = _empty('아직 받은 좋아요가 없어요', '매칭 탭에서 상대가 좋아요를 보내거나<br>대숲에서 누가 \'저에요\'를 누르면 여기 표시돼요');
     return;
   }
+  const page = likeDocs.slice(0, shown);
+  if (!more && page.length) el.innerHTML = _section('매칭 좋아요', '#3D7EFF') + window._interestSkel(Math.min(page.length, 4));
   let html = '';
   if (likeDocs.length) {
-    const profiles = await _fetchProfiles(likeDocs);
+    const profiles = await _fetchProfiles(page);
+    if (tok !== window._interestTok) return;
     html += _section('매칭 좋아요', '#3D7EFF');
-    html += profiles.map(p => _profileCard(p, _heart)).join('');
+    html += profiles.map(p => _profileCard(p, _heart)).join('') + _moreBtn(likeDocs.length - page.length);
   }
   if (bambooDocs.length) {
     html += _section('대숲 저에요', '#4ADE80');
