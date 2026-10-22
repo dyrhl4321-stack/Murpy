@@ -47802,6 +47802,10 @@ button.cw-hr:active{transform:scale(.98)}
 /* ★10-21 대표 "출발선이 느낌표 같다" → 세로 흰 줄·깃발 없이 트랙 막대 시작점만(B안 확정) */
 .cw-hr-done{position:absolute;left:0;top:0;height:4px;background:repeating-linear-gradient(90deg,#3D7EFF 0 4px,#2f63cc 4px 5px)}
 .cw-hr-r{position:absolute;bottom:4px;transform:translateX(-50%);line-height:0;cursor:pointer}
+.cw-hr-n{position:absolute;left:calc(50% + 3px);bottom:22px;z-index:2;min-width:13px;height:12px;padding:0 2px;box-sizing:border-box;background:#3a4152;box-shadow:0 0 0 1px #0b0f1a;
+  color:#fff;font:400 10px/12px 'Galmuri11',sans-serif;text-align:center;font-style:normal;pointer-events:none}
+.cw-hr-n.l{left:auto;right:calc(50% + 3px)}
+.cw-hr-none{position:absolute;left:0;bottom:8px;font-size:11px;line-height:14px;color:#6f788c;white-space:nowrap}
 .cw-tip{position:absolute;left:50%;bottom:31px;transform:translateX(-50%);z-index:30;white-space:nowrap;pointer-events:none;font-style:normal;
   font:600 11px/1.2 Pretendard,sans-serif;color:#e8ecf4;background:#0b0f1a;border:1px solid #2b3346;border-radius:6px;padding:4px 7px;animation:cwTipIn .16s ease-out both}
 @keyframes cwTipIn{from{opacity:0}to{opacity:1}}
@@ -48097,32 +48101,40 @@ function _crewHeroBand(c, big) {
   const ch = c._ch; if (!ch) return '';
   const p = Math.min(1, (Number(ch.progress) || 0) / Math.max(1, Number(ch.target) || 1));
   // ★10-22 브랜딩 "트랙이 화면마다 다르면 또 지적받는다" — 줄 카드·크루 화면·만들기 미리보기와 같은 _crewTrack 하나로(안쪽 여백 14)
-  return '<span class="cw-hp-band' + (p >= 1 ? ' done' : '') + '">' + _crewTrack(p, (c._run || (c._uids || []).map(u => ({ uid: u, v: 0 }))), c._P || {}, ch) + '</span>';
+  return '<span class="cw-hp-band' + (p >= 1 ? ' done' : '') + '">' + _crewTrack(p, (c._run || (c._uids || []).map(u => ({ uid: u, v: 0 }))), c._P || {}, ch, 68) + '</span>';
 }
 // 걷는 3명의 left — 앞사람(k=0) 발 가운데 = 진행 위치. 단 맨 뒷사람 왼쪽이 출발선 바로 안쪽보다, 앞사람 오른쪽이 상자 3px 앞보다 나가지 않게 막는다.
 //   o.x0 = 출발선(트랙 시작) px, o.end = 오른쪽 끝에서 트랙 끝(상자 왼쪽)까지 px, o.cw = 캐릭터 폭, o.s = 사람 간격
 // 챌린지 트랙 하나(줄 카드·크루 화면 같은 모양) — 막대 시작점이 출발(세로 줄 없음, 대표 10-21 B안), 크루원 3명 28px, 끝 선물상자 22(달성 24)
-//   ★10-22 대표 "셋이 우르르 있으니 한 명은 뒤처진 것 같다" → 파란 막대 = 크루 전체 진행(p), 캐릭터 3명(이번 챌린지 상위 3명) = 각자
-//   '1인 목표(perHead) 대비 내 진행' 자리. 목표를 넘으면 상자 바로 앞. 같은 바닥선, 겹치면 가로로만(최소 10px), 더 간 사람이 위 레이어.
-//   runs = [{ uid, v }] (v = 이번 챌린지 내 km 또는 출석 회수). 누르면 '닉네임 9.6km / 15km' 말풍선.
-function _crewTrack(p, runs, P, ch) {
+//   ★10-22 대표 "셋이 우르르 있으니 한 명은 뒤처진 것 같다" → 파란 막대 = 크루 전체 진행(p), 캐릭터 = 이번 챌린지 상위 3명이
+//   각자 '1인 목표(perHead) 대비 내 진행' 자리(목표를 넘으면 상자 바로 앞), 같은 바닥선.
+//   ★10-22 대표 "3명 겹쳐 있는 거 짜쳐 보인다" → 기록 있는 사람만 세운다(0명이면 캐릭터 없이 '첫 기록을 올려 보세요').
+//   두 사람이 캐릭터 폭(28px)보다 가까우면 겹치지 않고 하나로 묶는다 — 더 간 사람 1명 + 머리 오른쪽 위 '+n', 누르면 묶인 사람 전부.
+//   runs = [{ uid, v }] (v = 이번 챌린지 내 km 또는 출석 회수). inset = 화면 폭에서 트랙 폭을 뺀 값(묶을지 판단할 때만 쓴다).
+function _crewTrack(p, runs, P, ch, inset) {
   const done = p >= 1, per = Number(ch && ch.perHead) || 0, gym = !!(ch && ch.kind === 'gym_attend'), unit = gym ? '회' : 'km';
   const fmt = v => gym ? String(Math.round(Number(v) || 0)) : _crewKm(v);
-  const rs = (runs || []).slice(0, 3).map(r => ({ uid: r.uid, v: Number(r.v) || 0 })).sort((a, b) => b.v - a.v)
+  const nick = u => ((P || {})[u] && P[u].nickname) || '크루원';
+  const rs = (runs || []).slice(0, 3).map(r => ({ uid: r.uid, v: Number(r.v) || 0 })).filter(r => r.v > 0).sort((a, b) => b.v - a.v)
     .map(r => Object.assign(r, { q: per > 0 ? Math.min(1, r.v / per) : 0 }));
-  const n = rs.length, CW = 18, GAP = 10, lo = 3 + CW / 2, hi = 22 + 3 + CW / 2;   // 발 가운데가 움직이는 범위 = 트랙 시작+3 ~ 상자 3px 앞
+  const CW = 18, NEAR = 28, lo = 3 + CW / 2, hi = 22 + 3 + CW / 2;   // 발 가운데가 움직이는 범위 = 트랙 시작+3 ~ 상자 3px 앞
+  const run = Math.max(80, Math.min(window.innerWidth || 390, 390) - (inset || 40) - lo - hi);   // 지금 화면에서 움직이는 거리(px)
+  const groups = [];
+  rs.forEach(r => { const g = groups[groups.length - 1]; if (g && (g[0].q - r.q) * run < NEAR) g.push(r); else groups.push([r]); });
   let prev = '';
-  const lefts = rs.map((r, k) => {
-    const raw = 'calc(' + lo + 'px + (100% - ' + (lo + hi) + 'px) * ' + r.q.toFixed(4) + ')';
-    const minL = (lo + (n - 1 - k) * GAP) + 'px', maxL = prev ? 'calc(' + prev + ' - ' + GAP + 'px)' : 'calc(100% - ' + hi + 'px)';
+  const lefts = groups.map((g, k) => {   // 묶음 사이도 28px 아래로는 붙지 않게(화면 폭 짐작이 빗나가도 겹치지 않는다)
+    const raw = 'calc(' + lo + 'px + (100% - ' + (lo + hi) + 'px) * ' + g[0].q.toFixed(4) + ')';
+    const minL = (lo + (groups.length - 1 - k) * NEAR) + 'px', maxL = prev ? 'calc(' + prev + ' - ' + NEAR + 'px)' : 'calc(100% - ' + hi + 'px)';
     return (prev = 'max(' + minL + ', min(' + raw + ', ' + maxL + '))');
   });
   return '<span class="cw-hr-tr"><i class="cw-hr-lane"></i><i class="cw-hr-done" style="width:calc((100% - 22px) * ' + p.toFixed(4) + ')"></i>'
-    + rs.map((r, k) => {
-      const nick = ((P || {})[r.uid] && P[r.uid].nickname) || '크루원';
-      const tip = nick + ' ' + fmt(r.v) + unit + (per > 0 ? ' / ' + fmt(per) + unit : '');
+    + (groups.length ? '' : '<span class="cw-hr-none">첫 기록을 올려 보세요</span>')
+    + groups.map((g, k) => {
+      const tip = g.length > 1 ? g.map(r => nick(r.uid) + ' ' + fmt(r.v)).join(' · ') + unit
+        : nick(g[0].uid) + ' ' + fmt(g[0].v) + unit + (per > 0 ? ' / ' + fmt(per) + unit : '');
       return '<span class="cw-hr-r" data-t="' + _cE(tip) + '" onclick="event.stopPropagation();window._crewTip(this)" style="left:' + lefts[k] + ';z-index:' + (4 - k) + '">'
-        + '<span class="' + (r.q < .05 ? 'cw-idle' : 'cw-walk') + '" style="--wd:-' + (k * .23).toFixed(2) + 's">' + _crewMini((P || {})[r.uid], 28, 'right') + '</span></span>';
+        + '<span class="' + (g[0].q < .05 ? 'cw-idle' : 'cw-walk') + '" style="--wd:-' + (k * .23).toFixed(2) + 's">' + _crewMini((P || {})[g[0].uid], 28, 'right') + '</span>'
+        + (g.length > 1 ? '<b class="cw-hr-n' + ((1 - g[0].q) * run < NEAR ? ' l' : '') + '">+' + (g.length - 1) + '</b>' : '') + '</span>';   // 상자 앞이면 배지를 머리 왼쪽에(상자와 겹치지 않게)
     }).join('')
     + '<i class="cw-hr-box"></i>' + (done ? '<i class="cw-hr-sk" style="right:27px;bottom:18px"></i><i class="cw-hr-sk" style="right:1px;bottom:30px;animation-delay:.12s"></i><i class="cw-hr-sk" style="right:12px;bottom:34px;animation-delay:.24s"></i>' : '')
     + '</span>';
@@ -48220,7 +48232,7 @@ function _crewHotCard(c) {
     // ★10-21 대표: 트랙 끝 = 상자(22) 왼쪽 가장자리, 3명은 트랙 시작~상자 사이로 막는다(0% 에서 카드 밖으로 나가 잘렸다)
     // ★10-21 대표 "캐릭터 콩만하다": 16 → 28(서 있는 3명과 같은 크기, 224 의 1/8 정수 배율). 폭 18, 간격 14
     if (p > 0) fill = '<i class="cw-hr-fill" style="width:' + (done ? '100%' : 'calc(var(--hp) + (100% - 2 * var(--hp) - 22px) * ' + p.toFixed(4) + ')') + '"></i>';
-    bar = _crewTrack(p, (c._run || (c._uids || []).map(u => ({ uid: u, v: 0 }))), c._P || {}, ch);
+    bar = _crewTrack(p, (c._run || (c._uids || []).map(u => ({ uid: u, v: 0 }))), c._P || {}, ch, (window.innerWidth || 390) < 360 ? 64 : 72);
   } else line = wk > 0 ? '이번 주 ' + wk + '명 운동' : '크루원 ' + (st.members || 0) + '명';
   return '<button class="cw-hr' + cls + '" onclick="window.crewHotTap(\'' + _cJ(c.id) + '\',this)">' + fill + _crewRowThumb(c)
     + '<span class="cw-hr-t"><b>' + _cE(c.name) + '</b><small>' + line + '</small></span>'
@@ -48338,7 +48350,7 @@ function _crewChallengeHtml(ch, data, me) {
   const mine = myM ? Number(((myM.ch || {})[ch.id]) || 0) : null;
   const CF = window.CREW_CFG;
   return '<div class="cw-sec" style="--i:1"><div class="cw-h">2주 함께 ' + fmt(ch.target) + unit + '<em>' + when + '</em></div>'
-    + '<div class="cw-ptr' + (p >= 1 ? ' done' : p >= .8 ? ' near' : '') + '">' + _crewTrack(p, trk, data.profiles, ch) + '</div>'
+    + '<div class="cw-ptr' + (p >= 1 ? ' done' : p >= .8 ? ' near' : '') + '">' + _crewTrack(p, trk, data.profiles, ch, 40) + '</div>'
     + '<div class="cw-tk"><span><b>' + fmt(ch.progress) + '</b> / ' + fmt(ch.target) + unit + '</span><span class="rw">함께 달성 ' + CF.CHALLENGE_REWARD_GROUP + '머피</span></div>'
     + (mine === null ? '' : '<div class="cw-tk" style="margin-top:4px"><span>나 <b>' + fmt(mine) + '</b> / ' + fmt(ch.perHead) + unit + '</span>'
       + '<span class="rw"' + (mine >= ch.perHead ? '' : ' style="opacity:.6"') + '>내 목표 ' + CF.CHALLENGE_REWARD_SOLO + '머피</span></div>')
@@ -49059,7 +49071,7 @@ window._crcPaint = function () {
   if (head <= 10) for (let i = 0; i < segs; i++) labels += '<span style="left:' + at((i + .5) / segs) + '">' + fmt(per) + unit + '</span>';
   // ★10-22 줄 카드·크루 화면과 같은 트랙(출발선 없음·3명 28px·상자 22) — 시작 전이라 0% 에서 제자리
   box.innerHTML = '<div class="cw-h">' + head + '명이 함께 ' + fmt(per * head) + unit + '<em>' + range + '</em></div>'
-    + '<div class="cw-ptr"><span class="cw-hr-tr" style="z-index:0">' + marks + '</span>' + _crewTrack(0, (v.uids || []).map(u => ({ uid: u, v: 0 })), v.P || {}, { kind, perHead: per }) + '</div>'
+    + '<div class="cw-ptr"><span class="cw-hr-tr" style="z-index:0">' + marks + '</span>' + _crewTrack(0, [], v.P || {}, { kind, perHead: per }, 40) + '</div>'
     + '<div class="cw-segl">' + labels + '</div>'
     + '<div class="cw-tk"><span>한 칸 = 1인 <b>' + fmt(per) + unit + '</b></span><span class="rw">함께 달성 ' + CF.CHALLENGE_REWARD_GROUP + '머피</span></div>'
     + '<div class="cw-tk" style="margin-top:4px"><span>혼자 내 칸을 채워도</span><span class="rw">내 목표 ' + CF.CHALLENGE_REWARD_SOLO + '머피</span></div>';
