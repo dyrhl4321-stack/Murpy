@@ -95,6 +95,8 @@ async function bumpCrew(crewId, uid, atMs, fn) {
         }
       });
     }
+    // ★10-22 대표: 트랙에서 묶인 자리엔 '가장 최근에 인증한 사람'을 보여 준다 — 크루에 들어간 기록(인증 러닝·출석)의 마지막 시각
+    if (r.step && r.step.verified) member = Object.assign({}, member, { lastCountAt: now() });
     const ms = L.newMilestones(prevKm, stats.km || 0, crew.milestones || []);
     if (ms.length) { upd.milestones = FieldValue.arrayUnion(...ms); after.milestones = ms; }
     tx.update(cRef, upd);
