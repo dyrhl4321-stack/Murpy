@@ -47651,6 +47651,8 @@ window.CREW_CFG = {
   // ★러닝 카드 올리기 — 개인정보 처리방침 개정 시행일(10-26) 전에는 닫아 둔다(대표 확정 (가)).
   //   날짜로 저절로 열리게 하지 않는다 — 10-26 에 이 값과 functions/crew.js RUN_UPLOAD_ON 을 같이 true 로 바꿔 배포.
   RUN_UPLOAD_ON: false,
+  // ★10-22 크루 승인제(누구나 만들기 → 관리자 승인, 닫기 신청, 시험 크루) — 서버 함수 crewCreate·crewReview·crewCloseRequest·crewSetTest 배포와 같이 true
+  APPROVAL_ON: false,
 };
 const _crewCall = (name, data) => httpsCallable(getFunctions(app, 'asia-northeast3'), name)(data || {}).then(r => r.data || {});
 const _cE = v => window._escHtml(v), _cJ = v => window._escJs(v);
@@ -47830,9 +47832,9 @@ button.cw-hr:active{transform:scale(.98)}
 /* ★10-21 대표 "출발선이 느낌표 같다" → 세로 흰 줄·깃발 없이 트랙 막대 시작점만(B안 확정) */
 .cw-hr-done{position:absolute;left:0;top:0;height:4px;background:repeating-linear-gradient(90deg,#3D7EFF 0 4px,#2f63cc 4px 5px)}
 .cw-hr-r{position:absolute;bottom:4px;transform:translateX(-50%);line-height:0;cursor:pointer}
-.cw-hr-n{position:absolute;left:calc(50% + 3px);bottom:22px;z-index:2;min-width:13px;height:12px;padding:0 2px;box-sizing:border-box;background:#3a4152;box-shadow:0 0 0 1px #0b0f1a;
+.cw-hr-plus{position:absolute;left:calc(50% + 3px);bottom:22px;z-index:2;min-width:13px;height:12px;padding:0 2px;box-sizing:border-box;background:#3a4152;box-shadow:0 0 0 1px #0b0f1a;
   color:#fff;font:400 10px/12px 'Galmuri11',sans-serif;text-align:center;font-style:normal;pointer-events:none}
-.cw-hr-n.l{left:auto;right:calc(50% + 3px)}
+.cw-hr-plus.l{left:auto;right:calc(50% + 3px)}
 .cw-hr-none{position:absolute;left:0;bottom:8px;font-size:11px;line-height:14px;color:#6f788c;white-space:nowrap}
 .cw-tip{position:absolute;left:50%;bottom:31px;transform:translateX(-50%);z-index:30;white-space:nowrap;pointer-events:none;font-style:normal;
   font:600 11px/1.2 Pretendard,sans-serif;color:#e8ecf4;background:#0b0f1a;border:1px solid #2b3346;border-radius:6px;padding:4px 7px;animation:cwTipIn .16s ease-out both}
@@ -48033,8 +48035,16 @@ window.crewMine = async function (force) {
   if (!force && c && c.uid === u.uid && Date.now() - c.at < 60000) return c.list;
   let ids = [];
   try { const s = await getDoc(doc(db, 'users', u.uid)); ids = ((s.exists() && s.data().crewIds) || []).slice(0, 10); } catch (e) {}
-  const list = (await Promise.all(ids.map(id => getDoc(doc(db, 'crewsV2', id))
-    .then(s => s.exists() ? Object.assign({ id: s.id }, s.data()) : null).catch(() => null)))).filter(Boolean);
+  let list = (await Promise.all(ids.map(id => getDoc(doc(db, 'crewsV2', id))
+    .then(s => s.exists() ? Object.assign({ id: s.id }, s.data()) : null).catch(() => null)))).filter(c => c && _crewSt(c) !== 'closed');
+  // ★10-22 승인제: 내가 신청한 크루(승인 대기·반려)는 나에게만 '내 크루' 맨 앞에 보인다(아직 크루원이 아니라 crewIds 에 없다)
+  if (window.CREW_CFG.APPROVAL_ON) {
+    try {
+      const sn = await getDocs(query(collection(db, 'crewsV2'), where('createdBy', '==', u.uid), limit(10)));
+      const asked = sn.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(c => c.status === 'pending' || c.status === 'rejected');
+      list = asked.concat(list.filter(c => !asked.some(a => a.id === c.id)));
+    } catch (e) { console.warn('crew asked', e && e.message); }
+  }
   window._crewMineCache = { uid: u.uid, at: Date.now(), list };
   return list;
 };
@@ -48078,6 +48088,11 @@ window.crewLoad = async function (id) {
 // ★10-22 판정 3단계: scan 스캔 인증 · verified 원본 확인(아이폰 1.1.0 뒤) · unverified 미인증 — 크루에 들어가는 건 앞의 둘
 const _crewCounts = st => st === 'scan' || st === 'verified';
 const _crewLeader = c => (c && (c.leaderUid || c.createdBy)) || '';
+// ★10-22 승인제: 상태 없는 예전 크루 = 승인. 공개 목록(지금 뜨는 크루·둘러보기)엔 승인된 것만, 숨김·시험 크루는 뺀다(서버 L.crewListed 와 같게)
+const _crewSt = c => (c && c.status) || 'approved';
+const _crewListed = c => _crewSt(c) === 'approved' && !(c && (c.hidden || c.test));
+// 시험 크루는 이름 뒤에 (시험) — 관리자만 켠다
+const _crewName = c => String((c && c.name) || '') + (c && c.test ? ' (시험)' : '');
 // 크루원 마지막 인증 시각 — 서버 lastCountAt(10-26~), 없으면 마지막 운동한 날(lastActiveDay) 정오
 const _crewLastAt = m => Number(m && m.lastCountAt) || (m && /^\d{8}$/.test(String(m.lastActiveDay || '')) ? Date.parse(String(m.lastActiveDay).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3') + 'T12:00:00+09:00') : 0);
 const _crewMini = (p, h, face) => (window.mwMiniCharHtml ? window.mwMiniCharHtml((p && p.character) || null, h, face) : '');
@@ -48166,7 +48181,7 @@ function _crewTrack(p, runs, P, ch, inset) {
       const face = g.reduce((a, r) => (r.at > a.at ? r : a), g[0]);
       return '<span class="cw-hr-r" data-t="' + _cE(tip) + '" onclick="event.stopPropagation();window._crewTip(this)" style="left:' + lefts[k] + ';z-index:' + (4 - k) + '">'
         + '<span class="' + (g[0].q < .05 ? 'cw-idle' : 'cw-walk') + '" style="--wd:-' + (k * .23).toFixed(2) + 's">' + _crewMini((P || {})[face.uid], 28, 'right') + '</span>'
-        + (g.length > 1 ? '<b class="cw-hr-n' + ((1 - g[0].q) * run < NEAR ? ' l' : '') + '">+' + (g.length - 1) + '</b>' : '') + '</span>';   // 상자 앞이면 배지를 머리 왼쪽에(상자와 겹치지 않게)
+        + (g.length > 1 ? '<b class="cw-hr-plus' + ((1 - g[0].q) * run < NEAR ? ' l' : '') + '">+' + (g.length - 1) + '</b>' : '') + '</span>';   // 상자 앞이면 배지를 머리 왼쪽에(상자와 겹치지 않게)
     }).join('')
     + '<i class="cw-hr-box"></i>' + (done ? '<i class="cw-hr-sk" style="right:27px;bottom:18px"></i><i class="cw-hr-sk" style="right:1px;bottom:30px;animation-delay:.12s"></i><i class="cw-hr-sk" style="right:12px;bottom:34px;animation-delay:.24s"></i>' : '')
     + '</span>';
@@ -48224,7 +48239,7 @@ window.crewHotList = async function (force) {
   const k = window._crewHotCache; if (!force && k && Date.now() - k.at < 300000) return k.list;
   const sn = await getDocs(query(collection(db, 'crewsV2'), limit(30)));
   const wk = window._crewWeekKey();
-  const list = sn.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(x => !x.hidden).map(x => {
+  const list = sn.docs.map(d => Object.assign({ id: d.id }, d.data())).filter(_crewListed).map(x => {
     const st = x.stats || {}; x._wk = st.weekKey === wk ? (st.weekActive || 0) : 0; return x;
   }).sort((a, b) => (b._wk - a._wk) || (((b.stats || {}).members || 0) - ((a.stats || {}).members || 0))).slice(0, 10);
   await Promise.all(list.map(_crewEnrich));
@@ -48249,6 +48264,12 @@ function _crewHrFaces(c) {
     + (n > 0 ? '<span class="cw-hr-n">외 ' + n + '</span>' : '') + '<span class="cw-hr-ar">›</span></span>';
 }
 function _crewHotCard(c) {
+  if (c.status === 'pending' || c.status === 'rejected') {   // ★10-22 내가 신청한 크루 — 나에게만 보인다
+    const rj = c.status === 'rejected';
+    return '<button class="cw-hr" onclick="window.crewAskedInfo(\'' + _cJ(c.id) + '\')">' + _crewRowThumb(c)
+      + '<span class="cw-hr-t"><b>' + _cE(_crewName(c)) + '</b><small>' + (rj ? '반려됐어요' + (c.rejectReason ? ' · ' + _cE(c.rejectReason) : '') : '승인되면 초대 링크가 열려요') + '</small></span>'
+      + '<span class="cw-hr-dd"><b class="pre">' + (rj ? '반려' : '승인 대기') + '</b><span class="cw-hr-ar">›</span></span></button>';
+  }
   const st = c.stats || {}, wk = c._wk || 0, ch = c._ch;
   let line, bar = '', cls = '', fill = '', right = '';
   if (ch) {
@@ -48267,7 +48288,7 @@ function _crewHotCard(c) {
     bar = _crewTrack(p, (c._run || (c._uids || []).map(u => ({ uid: u, v: 0 }))), c._P || {}, ch, (window.innerWidth || 390) < 360 ? 64 : 72);
   } else line = wk > 0 ? '이번 주 ' + wk + '명 운동' : '크루원 ' + (st.members || 0) + '명';
   return '<button class="cw-hr' + cls + '" onclick="window.crewHotTap(\'' + _cJ(c.id) + '\',this)">' + fill + _crewRowThumb(c)
-    + '<span class="cw-hr-t"><b>' + _cE(c.name) + '</b><small>' + line + '</small></span>'
+    + '<span class="cw-hr-t"><b>' + _cE(_crewName(c)) + '</b><small>' + line + '</small></span>'
     + (right || _crewHrFaces(c)) + bar + '</button>';
 }
 const _crewHotHead = '<div style="display:flex;align-items:center;gap:9px;margin:2px 0 13px">'
@@ -48323,7 +48344,69 @@ window.crewBrowse = async function () {
   let list = []; try { list = await window.crewHotList(); } catch (e) {}
   if (!document.body.contains(el)) return;
   el.firstChild.innerHTML = _crewHead('크루 둘러보기', '', "document.getElementById('crew-browse').remove()")
-    + '<div class="cw-hrs" style="padding:0 20px">' + (list.length ? list.map(_crewHotCard).join('') : '<p class="cw-quiet" style="padding:40px 0;text-align:center">아직 크루가 없어요</p>') + '</div>';
+    + '<div class="cw-hrs" style="padding:0 20px">' + (list.length ? list.map(_crewHotCard).join('') : '<p class="cw-quiet" style="padding:40px 0;text-align:center">아직 크루가 없어요</p>') + '</div>'
+    + (window.CREW_CFG.APPROVAL_ON ? '<div class="cw-bar"><button class="cw-up" onclick="window.crewCreateOpen()">크루 만들기</button></div>' : '');
+};
+// ── ★10-22 크루 만들기 신청(누구나) → 관리자 승인 ───────────────────────────────
+const _crewAskWhy = {
+  name_short: '크루 이름은 2자 이상이에요', name_long: '크루 이름은 20자까지예요', name_banned: '쓸 수 없는 말이 들어 있어요', name_dup: '같은 이름의 크루가 있어요',
+  pending_exists: '승인을 기다리는 크루가 이미 있어요', too_many: '크루는 3개까지 만들 수 있어요', member_only: '정식 가입 후 만들 수 있어요',
+};
+window.crewCreateOpen = function () {
+  if (window.requireRealAccount && window.requireRealAccount('크루는 가입 후 만들 수 있어요')) return;
+  const close = "document.getElementById('crew-create').remove()";
+  _crewSheet('crew-create', _crewHead('크루 만들기', '관리자가 확인한 뒤 열려요', close)
+    + '<div style="padding:0 20px">'
+    + '<label class="cw-lb" style="margin-top:0">크루 이름</label><input id="crc2-name" class="cw-in" maxlength="20" placeholder="2~20자">'
+    + '<label class="cw-lb">학교나 지역</label><input id="crc2-school" class="cw-in" maxlength="30">'
+    + '<label class="cw-lb">종목</label><select id="crc2-sport" class="cw-in"><option value="running">러닝</option><option value="gym">헬스</option><option value="mixed">러닝과 헬스</option></select>'
+    + '<label class="cw-lb">소개 (선택)</label><textarea id="crc2-intro" class="cw-in" rows="2" maxlength="120" style="resize:none"></textarea>'
+    + '<label class="cw-lb">로고 (선택)</label><label class="cw-in" style="display:flex;align-items:center;gap:10px;cursor:pointer"><span id="crc2-logo-v" style="width:36px;height:36px;border-radius:8px;background:#121827 center/cover no-repeat;flex-shrink:0"></span><span id="crc2-logo-t" style="color:#8a93a8;font-size:13px">사진 고르기 · 사람 얼굴 사진은 반려돼요</span><input id="crc2-logo" type="file" accept="image/*" style="display:none" onchange="window._crcLogoPick(this)"></label>'
+    + '<button class="cw-up" id="crc2-go" style="max-width:none;margin-top:24px" onclick="window.crewCreateSend()">만들기 신청</button>'
+    + '<p class="cw-quiet" style="margin:12px 0 0;text-align:center">승인되면 알림으로 알려 드리고, 그때부터 초대 링크로 크루원을 모을 수 있어요</p></div>');
+};
+window._crcLogoPick = function (inp) {
+  const f = inp.files && inp.files[0]; window._crcLogoFile = f || null;
+  const v = document.getElementById('crc2-logo-v'), t = document.getElementById('crc2-logo-t');
+  if (f && v) { v.style.backgroundImage = 'url(' + URL.createObjectURL(f) + ')'; if (t) t.textContent = '바꾸려면 다시 누르세요'; }
+};
+window.crewCreateSend = async function () {
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const btn = document.getElementById('crc2-go'); if (!btn || btn.disabled) return;
+  if (v('crc2-name').replace(/\s/g, '').length < 2) { showToast(_crewAskWhy.name_short); return; }
+  btn.disabled = true; btn.textContent = '보내는 중';
+  try {
+    let logo = '';
+    if (window._crcLogoFile) logo = await window.mwUploadImage(await window._compressImg(window._crcLogoFile), 'crewlogo');
+    const r = await _crewCall('crewCreate', { name: v('crc2-name'), school: v('crc2-school'), sport: v('crc2-sport'), intro: v('crc2-intro'), logo });
+    if (!r.ok) { showToast(_crewAskWhy[r.why] || '신청하지 못했어요'); return; }
+    window._crcLogoFile = null; window._crewMineCache = null;
+    const el = document.getElementById('crew-create'); if (el) el.remove();
+    showToast('신청했어요. 승인되면 알려 드릴게요');
+    window.crewRenderMine && window.crewRenderMine();
+  } catch (e) {
+    const m = String((e && e.message) || '');
+    showToast(m.indexOf('member_only') >= 0 ? _crewAskWhy.member_only : '신청하지 못했어요 (' + m + ')');
+  } finally { if (document.body.contains(btn)) { btn.disabled = false; btn.textContent = '만들기 신청'; } }
+};
+window.crewAskedInfo = function (id) {
+  const c = ((window._crewMineCache && window._crewMineCache.list) || []).find(x => x.id === id) || {};
+  const rj = c.status === 'rejected', close = "document.getElementById('crew-asked').remove()";
+  _crewSheet('crew-asked', _crewHead(_cE(_crewName(c) || '크루'), rj ? '반려' : '승인 대기', close)
+    + '<div style="padding:8px 20px 0;font-size:14px;line-height:1.6;color:#cfd6e6">'
+    + (rj ? '관리자가 이 신청을 반려했어요.' + (c.rejectReason ? '<br><span style="color:#8a93a8">사유: ' + _cE(c.rejectReason) + '</span>' : '') + '<br>내용을 고쳐 다시 신청할 수 있어요.'
+      : '관리자가 확인하고 있어요. 승인되면 알림으로 알려 드리고, 그때부터 초대 링크로 크루원을 모을 수 있어요.<br><span style="color:#8a93a8">승인 전에는 다른 사람에게 보이지 않아요.</span>')
+    + (rj ? '<button class="cw-up" style="max-width:none;margin-top:24px" onclick="' + close + ';window.crewCreateOpen()">다시 신청하기</button>' : '') + '</div>');
+};
+window.crewCloseAsk = function (id) {
+  const why = prompt('크루를 닫는 이유를 짧게 적어 주세요(관리자가 확인한 뒤 닫혀요). 기록은 지워지지 않아요.', '');
+  if (why === null) return;
+  _crewCall('crewCloseRequest', { crewId: id, reason: why }).then(() => { showToast('닫기를 신청했어요'); window.openCrewPage(id); })
+    .catch(e => showToast('신청하지 못했어요 (' + ((e && e.message) || '') + ')'));
+};
+window.crewTestToggle = function (id, on) {
+  _crewCall('crewSetTest', { crewId: id, on: !!on }).then(() => { window._crewHotCache = null; showToast(on ? '시험 크루로 표시했어요' : '시험 표시를 껐어요'); window.openCrewPage(id); })
+    .catch(e => showToast('바꾸지 못했어요 (' + ((e && e.message) || '') + ')'));
 };
 // ── 크루 배지 — 대표 크루(가장 먼저 든 크루) + 외 n. users.crewIds 는 본인이 고칠 수 있어 멤버 문서로 다시 확인 ──
 window.crewBadgeOf = async function (uid) {
@@ -48408,7 +48491,7 @@ window.crewPageHtml = function (data, me) {
   const wk = thisWk ? (s.weekActive || 0) : 0, wkKm = thisWk ? (s.weekKm || 0) : 0, wkAt = thisWk ? (s.weekAttends || 0) : 0;
   const wkSum = [sport !== 'gym' && wkKm > 0 ? _crewKm(wkKm) + 'km' : '', sport !== 'running' && wkAt > 0 ? '출석 ' + wkAt + '회' : ''].filter(Boolean).map(x => ' · ' + x).join('');
   const led = useKm ? _crewKm(_crewMonth(s, 'monthKm')) + 'km' : '출석 ' + _crewMonth(s, 'monthAttends') + '회';
-  let h = _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "document.getElementById('crew-page').remove()");
+  let h = _crewHead(_cE(_crewName(c)), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "document.getElementById('crew-page').remove()");
   h += '<div class="cw-stage" style="' + _crewBg() + '">' + chars
     + '<div class="cw-led"><span>' + _crewMonthKo() + '</span><b>' + led + '</b></div>'
     + '<div class="cw-wk">이번 주 <i>' + wk + '</i>/' + (s.members || 0) + (sport === 'running' ? ' 달림' : ' 운동') + wkSum + '</div>'
@@ -48502,7 +48585,13 @@ window.crewPageHtml = function (data, me) {
     h += '<div class="cw-adm"><button class="cw-pbtn gold" onclick="window.crewChallengeNew(\'' + _cJ(c.id) + '\')">챌린지 만들기</button>'
       + '<button class="cw-pbtn gold" onclick="window.crewInviteCopy(\'' + _cJ(c.id) + '\')">초대 링크 복사</button></div>';
   }
-  if (data.isMember) h += '<button class="cw-leave" onclick="window.crewLeaveAsk(\'' + _cJ(c.id) + '\')">크루 나가기</button>';
+  if (window.CREW_CFG.APPROVAL_ON && meUid && _crewLeader(c) === meUid && _crewSt(c) === 'approved') {
+    h += c.closeReq ? '<p class="cw-quiet" style="text-align:center;margin:18px 0 0">크루 닫기를 신청했어요 · 관리자가 확인하고 있어요</p>'
+      : '<button class="cw-leave" onclick="window.crewCloseAsk(\'' + _cJ(c.id) + '\')">크루 닫기 신청</button>';
+  } else if (data.isMember) h += '<button class="cw-leave" onclick="window.crewLeaveAsk(\'' + _cJ(c.id) + '\')">크루 나가기</button>';
+  if (window.CREW_CFG.APPROVAL_ON && me && me.admin) {
+    h += '<button class="cw-leave" onclick="window.crewTestToggle(\'' + _cJ(c.id) + '\',' + (!c.test) + ')">' + (c.test ? '시험 크루 표시 끄기' : '시험 크루로 표시(관리자)') + '</button>';
+  }
   if (data.isMember && !gym && window.CREW_CFG.RUN_UPLOAD_ON) {
     h += '<div class="cw-bar"><button class="cw-up" onclick="window.runUploadOpen(\'' + _cJ(c.id) + '\')"><i>' + _crewIcoUp + '</i>러닝 기록 올리기</button></div>';
   }
@@ -48942,8 +49031,12 @@ window.crewAdminOpen = async function () {
   let list = [];
   try { list = (await getDocs(collection(db, 'crewsV2'))).docs.map(s => Object.assign({ id: s.id }, s.data())); } catch (e) {}
   if (!document.body.contains(el)) return;
+  // ★10-22 승인제 — 승인 대기·닫기 신청을 맨 위에
+  const asks = list.filter(c => c.status === 'pending'), closes = list.filter(c => c.closeReq && _crewSt(c) === 'approved');
+  let who = {}; try { who = await _crewProfiles(asks.map(c => c.createdBy).concat(closes.map(c => c.closeReq.by)).filter(Boolean)); } catch (e) {}
+  const reviewHtml = window.crewReviewListHtml(list, who);
   el.firstChild.innerHTML = _crewHead('크루 관리', '관리자', close)
-    + '<div style="padding:0 20px"><div class="cw-h" style="margin-top:8px">새 크루</div>'
+    + '<div style="padding:0 20px">' + reviewHtml + '<div class="cw-h" style="margin-top:' + (reviewHtml ? 32 : 8) + 'px">새 크루</div>'
     + '<label class="cw-lb" style="margin-top:0">이름</label><input id="cra-name" class="cw-in" maxlength="30">'
     + '<label class="cw-lb">학교나 지역</label><input id="cra-school" class="cw-in" maxlength="30">'
     + '<label class="cw-lb">종목</label><select id="cra-sport" class="cw-in"><option value="running">러닝</option><option value="gym">헬스</option><option value="mixed">러닝과 헬스</option></select>'
@@ -48951,10 +49044,24 @@ window.crewAdminOpen = async function () {
     + '<button class="cw-up" style="max-width:none;margin-top:24px" onclick="window.crewAdminCreate()">만들고 초대 링크 복사</button>'
     + '<div class="cw-h" style="margin-top:40px">크루 ' + list.length + '곳</div><div class="cw-list">'
     + list.map(c => '<div class="cw-li"><span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">'
-      + _cE([c.school, _crewSportKo[c.sport]].filter(Boolean).join(' ')) + ' ' + ((c.stats || {}).members || 0) + '명</span></span>'
+      + _cE([c.school, _crewSportKo[c.sport]].filter(Boolean).join(' ')) + ' ' + ((c.stats || {}).members || 0) + '명'
+      + ({ pending: ' · 승인 대기', rejected: ' · 반려', closed: ' · 닫힘' }[c.status] || '') + (c.test ? ' · 시험' : '') + '</span></span>'
       + '<button class="cw-pbtn" onclick="window.crewIntroEdit(\'' + _cJ(c.id) + '\')">소개</button>'
       + '<button class="cw-pbtn" onclick="window.crewInviteCopy(\'' + _cJ(c.id) + '\')">링크</button>'
       + '<button class="cw-pbtn" onclick="window.openCrewPage(\'' + _cJ(c.id) + '\')">열기</button></div>').join('') + '</div></div>';
+};
+window.crewReviewListHtml = function (list, who) {
+  const asks = list.filter(c => c.status === 'pending'), closes = list.filter(c => c.closeReq && _crewSt(c) === 'approved');
+  const nk = u => (who[u] && who[u].nickname) || '회원';
+  const lc = c => c.logoCheck ? (c.logoCheck.face ? ' · <b style="color:#E4472E">얼굴 있음</b>' : '') + (c.logoCheck.unsafe ? ' · <b style="color:#E4472E">부적절</b>' : '') : (c.logo ? ' · 로고 검사 못 함' : '');
+  return !window.CREW_CFG.APPROVAL_ON ? '' : '<div class="cw-h" style="margin-top:8px">승인 대기 ' + asks.length + '</div><div class="cw-list">'
+    + (asks.length ? asks.map(c => '<div class="cw-li">' + (c.logo ? '<img src="' + _cE(c.logo) + '" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0">' : '')
+      + '<span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">' + _cE(nk(c.createdBy)) + ' · ' + _cE(_crewSportKo[c.sport] || '') + lc(c) + '</span></span>'
+      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'create\',true)">승인</button>'
+      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'create\',false)">반려</button></div>').join('') : '<p class="cw-quiet">없어요</p>') + '</div>'
+    + (closes.length ? '<div class="cw-h" style="margin-top:24px">닫기 신청 ' + closes.length + '</div><div class="cw-list">' + closes.map(c => '<div class="cw-li"><span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">' + _cE(nk(c.closeReq.by)) + (c.closeReq.reason ? ' · ' + _cE(c.closeReq.reason) : '') + '</span></span>'
+      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'close\',true)">닫기</button>'
+      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'close\',false)">반려</button></div>').join('') + '</div>' : '');
 };
 // ── 관리자: 크루 소개·최근 모임 사진(초대장에 보이는 칸) ──
 //   사진은 최대 2장, 크루장·운영진이 올린 실제 모임 사진만(예시 사진 넣지 않는다 — 대표 10-19). 1차는 운영자 계정만(규칙 isAdmin).
@@ -49020,6 +49127,12 @@ window.crewIntroSave = async function (id) {
 };
 // 초대 코드 10자(헷갈리는 글자 뺀 32종) — 6자리 숫자는 크루 id 가 공개라 맞혀 볼 수 있다(리뷰 10-19)
 const _crewCode = () => { const A = 'abcdefghjkmnpqrstuvwxyz23456789'; const a = new Uint32Array(10); crypto.getRandomValues(a); return Array.from(a, x => A[x % A.length]).join(''); };
+window.crewReviewDo = async function (id, kind, ok) {
+  let reason = '';
+  if (!ok) { reason = prompt('반려 사유를 한 줄로 적어 주세요(크루장에게 알림으로 가요)', ''); if (reason === null) return; }
+  try { await _crewCall('crewReview', { crewId: id, kind, ok: !!ok, reason }); showToast(ok ? (kind === 'close' ? '크루를 닫았어요' : '승인했어요') : '반려했어요'); window._crewHotCache = null; window.crewAdminOpen(); }
+  catch (e) { showToast('처리하지 못했어요 (' + ((e && e.message) || '') + ')'); }
+};
 window.crewAdminCreate = async function () {
   const v = id => ((document.getElementById(id) || {}).value || '').trim();
   const name = v('cra-name').slice(0, 30);
