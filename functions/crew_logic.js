@@ -10,6 +10,7 @@ const CFG = {
   MILESTONES: [100, 500, 1000],
   RUN_PER_HEAD_KM: 15, GYM_PER_HEAD: 6, CHALLENGE_DAYS: 14,
   KM_MIN: 0.5, KM_MAX: 100, PACE_MIN: 150, PACE_MAX: 900, TIME_TOL: 0.12,
+  SCAN_PER_DAY: 2, DAY_KM_MAX: 60,   // ★10-22 대표: 스캔 인증은 한 사람 하루 2건·하루 60km 까지(넘으면 미인증)
 };
 const DAY = 864e5;
 
@@ -81,7 +82,12 @@ function storagePathOf(url, uid, bucket) {
 }
 
 // ── 카드 판정 ───────────────────────────────────────────────────────────────
-function checkCard(ocr, { nowMs, shotMs }) {
+//   soft:true(★10-22 스캔 인증) — 거리·페이스 범위, 당일, 카드 양식(스트라바·나이키)에 걸리면 거절하지 않고 flags 에 담는다
+//   → runGrade 가 '미인증'(개인 기록만)으로 둔다. 읽을 수 없음·카드 아님·미래 날짜·시간 불일치는 그대로 거절.
+function checkCard(ocr, { nowMs, shotMs, soft }) {
+  const flags = [];
+  const flag = (why) => { if (!soft) return { ok: false, why }; if (!flags.includes(why)) flags.push(why); return null; };
+  let r;
   if (!ocr) return { ok: false, why: "unreadable" };
   if (!ocr.isRunCard) return { ok: false, why: "not_card" };
   const km = ocr.km;
@@ -89,15 +95,15 @@ function checkCard(ocr, { nowMs, shotMs }) {
   let sec = ocr.sec > 0 ? Math.round(ocr.sec) : null;
   let paceSec = ocr.paceSec > 0 ? Math.round(ocr.paceSec) : null;
   if (!sec && !paceSec) return { ok: false, why: "unreadable" };
-  if (km < CFG.KM_MIN || km > CFG.KM_MAX) return { ok: false, why: "km_range" };
+  if (km < CFG.KM_MIN || km > CFG.KM_MAX) if ((r = flag("km_range"))) return r;
   if (sec && paceSec && Math.abs(km * paceSec - sec) / sec > CFG.TIME_TOL) {
     // 페이스 범위 밖이 먼저 보이면 그걸 이유로
-    if (paceSec < CFG.PACE_MIN || paceSec > CFG.PACE_MAX) return { ok: false, why: "pace_range" };
+    if (!soft && (paceSec < CFG.PACE_MIN || paceSec > CFG.PACE_MAX)) return { ok: false, why: "pace_range" };
     return { ok: false, why: "time_mismatch" };
   }
   if (!paceSec) paceSec = Math.round(sec / km);
   if (!sec) sec = Math.round(km * paceSec);
-  if (paceSec < CFG.PACE_MIN || paceSec > CFG.PACE_MAX) return { ok: false, why: "pace_range" };
+  if (paceSec < CFG.PACE_MIN || paceSec > CFG.PACE_MAX) if ((r = flag(soft ? (paceSec < CFG.PACE_MIN ? "pace_fast" : "pace_slow") : "pace_range"))) return r;
   // ★대표 10-19 "그날 당일만, 전 거는 안 됨" — 오늘(한국) 기록만 받는다.
   //   '오늘' = 하루 경계(새벽 5시) 기준 날짜, 그리고 새벽 0~5시엔 달력 날짜도(자정 넘겨 뛴 기록이 카드에 새 날짜로 찍힌다).
   const today = kstDay(nowMs), calToday = kstDayUtc(nowMs + 9 * 3600e3);
@@ -107,14 +113,29 @@ function checkCard(ocr, { nowMs, shotMs }) {
     runDay = ocr.dateISO.replace(/-/g, "");
     dayFromCard = true;
     if (dayToUtc(runDay) > dayToUtc(calToday)) return { ok: false, why: "bad_date" };   // 미래
-    if (!isToday(runDay)) return { ok: false, why: "not_today" };
+    if (!isToday(runDay)) if ((r = flag("not_today"))) return r;
   } else if (shotMs > 0 && shotMs <= nowMs + 3600e3) {
     // 카드에 날짜가 없으면(예: "오늘"만 찍힌 화면) 사진 촬영 시각. 미래 시각(기기 시계 틀림)은 믿지 않고 올린 시각을 쓴다.
     const sd = kstDay(shotMs), sc = kstDayUtc(shotMs + 9 * 3600e3);
-    if (!isToday(sd) && !isToday(sc)) return { ok: false, why: "not_today" };
+    if (!isToday(sd) && !isToday(sc)) { if ((r = flag("not_today"))) return r; runDay = sd; }
   }
-  return { ok: true, run: { km, sec, paceSec, runDay, dayFromCard, app: ocr.app || "unknown" } };
+  const app = ocr.app || "unknown";
+  if (soft && app !== "strava" && app !== "nrc") flag("unknown_app");
+  const out = { ok: true, run: { km, sec, paceSec, runDay, dayFromCard, app } };
+  if (soft) out.flags = flags;
+  return out;
 }
+// 스캔 인증 판정(★10-22 대표) — 거르기 통과 + 오늘(새벽 5시 경계) 인증 2건 미만 + 하루 합계 60km 이하면 '스캔 인증'.
+//   today = 같은 날 이미 크루에 들어간(스캔 인증·원본 확인) 내 기록 수·km.
+function runGrade(run, flags, today) {
+  if (flags && flags.length) return { status: "unverified", why: flags[0] };
+  const t = today || {};
+  if ((t.todayRuns || 0) >= CFG.SCAN_PER_DAY) return { status: "unverified", why: "daily_cap" };
+  if ((t.todayKm || 0) + run.km > CFG.DAY_KM_MAX + 1e-9) return { status: "unverified", why: "day_km" };
+  return { status: "scan", why: "" };
+}
+// 크루 누적·챌린지·칭호·인증 보상에 들어가는 기록인가(스캔 인증 또는 건강 앱 원본 확인)
+function counts(status) { return status === "scan" || status === "verified"; }
 
 // 같은 날·같은 거리에 시간(반올림 오차 허용) 또는 페이스(1초)가 같으면 같은 기록.
 //   ★시간 줄을 잘라 내고 다시 올리면 시간이 '거리×페이스'로 되살아나 몇 초 어긋난다(리뷰 10-19) — 오차를 거리에 비례해 준다.
@@ -209,6 +230,15 @@ function weekActiveDelta(member, wk) {
   member.weekKey = wk;
   return 1;
 }
+// 크루 이번 주 합계(km·출석) — 주가 바뀌면 0부터. 지난주에 늦게 온 기록·제외는 이번 주를 건드리지 않는다.
+function crewWeekSum(stats, wk, { km, attends }) {
+  const s = Object.assign({}, stats);
+  if (s.weekKey && s.weekKey > wk) return s;
+  if (s.weekKey !== wk) { s.weekKey = wk; s.weekActive = 0; s.weekKm = 0; s.weekAttends = 0; }
+  s.weekKm = Math.max(0, r2((s.weekKm || 0) + (km || 0)));
+  s.weekAttends = Math.max(0, (s.weekAttends || 0) + (attends || 0));
+  return s;
+}
 function crewWeekAdd(stats, wk, delta) {
   const s = Object.assign({}, stats);
   if (s.weekKey !== wk) { if (s.weekKey && s.weekKey > wk) return s; s.weekKey = wk; s.weekActive = 0; }
@@ -216,6 +246,20 @@ function crewWeekAdd(stats, wk, delta) {
   return s;
 }
 
+// 크루에서 뺀 기록(★10-22 신고·제외)을 챌린지에서 되돌린다. 이미 보상을 정산한 챌린지는 건드리지 않는다.
+function challengeUnstep(ch, { kind, amount, atMs, verified }) {
+  const c = Object.assign({}, ch);
+  if (c.rewardPaid || (c.status !== "active" && c.status !== "done") || c.kind !== kind || !verified || !(atMs >= c.start && atMs < c.end)) return c;
+  c.progress = Math.max(0, r2((c.progress || 0) - amount));
+  if (c.status === "done" && c.progress < c.target) { c.status = "active"; c.doneAt = null; }
+  return c;
+}
+function memberChallengeUnstep(member, ch, { kind, amount, atMs, verified }) {
+  if (!ch || ch.rewardPaid || ch.kind !== kind || !verified || !(atMs >= ch.start && atMs < ch.end)) return member;
+  const m = Object.assign({}, member);
+  m.ch = Object.assign({}, m.ch, { [ch.id]: Math.max(0, r2(((m.ch || {})[ch.id] || 0) - amount)) });
+  return m;
+}
 function challengeStep(ch, { kind, amount, atMs, verified }) {
   const c = Object.assign({}, ch);
   if (c.status !== "active" || c.kind !== kind || !verified || !(atMs >= c.start && atMs < c.end)) return { ch: c, justDone: false };
@@ -274,6 +318,10 @@ function duelScore(a, b) {
   return { a: one(a), b: one(b) };
 }
 
+// 크루장 = leaderUid(★10-22 승인제), 예전 크루는 만든 사람(createdBy). 운영진 = staff[]
+function leaderOf(crew) { return (crew && (crew.leaderUid || crew.createdBy)) || ""; }
+function canModerate(crew, uid) { return !!(crew && uid && (leaderOf(crew) === uid || (crew.staff || []).includes(uid))); }
+
 // 가입 허용 — 초대 코드가 맞거나, 크루가 '누구나 가입'(openJoin === true, 관리자만 켬)일 때
 function joinAllowed(join, crew, code) {
   if (crew && crew.openJoin === true) return true;
@@ -281,7 +329,7 @@ function joinAllowed(join, crew, code) {
 }
 
 module.exports = {
-  joinAllowed,
+  joinAllowed, runGrade, counts, crewWeekSum, challengeUnstep, memberChallengeUnstep, leaderOf, canModerate,
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount, memberChallengeStep, settleChallenge,
 };

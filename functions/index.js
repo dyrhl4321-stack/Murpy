@@ -182,6 +182,13 @@ function compose(n) {
     case "crew_milestone":
       return { title: `🏅 크루 칭호 "${n.text || "크루"}"`, body: "크루 누적 기록이 새 단계를 넘었어요" };
 
+    // ★10-22 러닝 신고(크루장·운영진에게) · 운영진 임명
+    case "crew_run_report":
+      return { title: `${n.text || "크루"} 러닝 기록 신고`, body: "크루원이 기록을 신고했어요 · 크루 화면에서 확인하고 뺄 수 있어요" };
+
+    case "crew_staff":
+      return { title: `${n.text || "크루"} 운영진`, body: n.amount ? "운영진으로 임명됐어요" : "운영진에서 해제됐어요" };
+
     case "nag": {
       const d = Number(n.amount || 7);
       return { title: `⏰ 마지막 운동이 ${d}일 전이에요`,

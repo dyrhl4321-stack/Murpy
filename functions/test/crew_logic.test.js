@@ -285,3 +285,86 @@ test("joinAllowed: 코드가 맞거나, 크루가 openJoin 일 때만", () => {
   assert.equal(L.joinAllowed(null, { openJoin: true }, ""), true);
   assert.equal(L.joinAllowed({ code: "abc" }, { openJoin: "yes" }, ""), false);   // 참(true)만
 });
+
+// ★10-22 대표 확정 — 스캔 인증 3단계(스캔 인증 / 원본 확인 / 미인증). 거르기에 걸린 러닝은 버리지 않고 '미인증'(개인 기록만).
+//   중복(같은 사진·같은 기록)·읽을 수 없음·카드 아님·미래 날짜·시간 불일치는 기록 자체가 못 믿을 것이라 지금처럼 거절.
+test("checkCard soft — 거르기에 걸리면 flags 로 돌려준다", () => {
+  const c = (o, now) => L.checkCard(Object.assign({ isRunCard: true, app: "strava", km: 5, sec: 1500, paceSec: 300, dateISO: "2026-10-19" }, o), { nowMs: now || NOW, soft: true });
+  const ok = c({});
+  assert.equal(ok.ok, true); assert.deepEqual(ok.flags, []);
+  const y = c({ dateISO: "2026-10-18" });
+  assert.equal(y.ok, true); assert.deepEqual(y.flags, ["not_today"]); assert.equal(y.run.runDay, "20261018");
+  assert.deepEqual(c({ km: 5, sec: 700, paceSec: 140 }).flags, ["pace_fast"]);      // 1km 2분 20초
+  assert.deepEqual(c({ km: 2, sec: 2000, paceSec: 1000 }).flags, ["pace_slow"]);    // 1km 16분 40초(걷기)
+  assert.deepEqual(c({ km: 0.3, sec: 90, paceSec: 300 }).flags, ["km_range"]);
+  assert.deepEqual(c({ km: 120, sec: 36000, paceSec: 300 }).flags, ["km_range"]);
+  assert.deepEqual(c({ app: "unknown" }).flags, ["unknown_app"]);
+  assert.deepEqual(c({ app: "unknown", dateISO: "2026-10-18" }).flags, ["not_today", "unknown_app"]);
+  // 그대로 거절
+  assert.equal(c({ dateISO: "2026-10-22" }).why, "bad_date");
+  assert.equal(c({ km: 5, sec: 2000, paceSec: 300 }).why, "time_mismatch");
+  assert.equal(c({ isRunCard: false }).why, "not_card");
+  assert.equal(c({ km: null }).why, "unreadable");
+});
+
+test("runGrade — 스캔 인증 / 미인증(사유)", () => {
+  const run = { km: 5, sec: 1500, paceSec: 300, runDay: "20261019" };
+  assert.deepEqual(L.runGrade(run, [], { todayRuns: 0, todayKm: 0 }), { status: "scan", why: "" });
+  assert.deepEqual(L.runGrade(run, ["pace_fast"], { todayRuns: 0, todayKm: 0 }), { status: "unverified", why: "pace_fast" });
+  // 한 사람 하루 인증 2건까지
+  assert.deepEqual(L.runGrade(run, [], { todayRuns: 1, todayKm: 5 }), { status: "scan", why: "" });
+  assert.deepEqual(L.runGrade(run, [], { todayRuns: 2, todayKm: 10 }), { status: "unverified", why: "daily_cap" });
+  // 하루 60km 초과
+  assert.deepEqual(L.runGrade({ km: 21.1, sec: 7000, paceSec: 332 }, [], { todayRuns: 1, todayKm: 42.2 }), { status: "unverified", why: "day_km" });
+  assert.deepEqual(L.runGrade({ km: 60, sec: 20000, paceSec: 333 }, [], { todayRuns: 0, todayKm: 0 }), { status: "scan", why: "" });
+  assert.deepEqual(L.runGrade({ km: 61, sec: 20000, paceSec: 328 }, [], { todayRuns: 0, todayKm: 0 }), { status: "unverified", why: "day_km" });
+});
+
+test("counts — 스캔 인증·원본 확인만 크루·챌린지에 들어간다", () => {
+  assert.equal(L.counts("scan"), true);
+  assert.equal(L.counts("verified"), true);
+  assert.equal(L.counts("unverified"), false);
+  assert.equal(L.counts(undefined), false);
+});
+
+test("주간 합계 — 이번 주 km·출석, 주가 바뀌면 0부터, 지난주 늦은 기록은 이번 주를 안 건드림", () => {
+  let s = L.crewWeekSum({}, "2026-W43", { km: 5 });
+  assert.equal(s.weekKey, "2026-W43"); assert.equal(s.weekKm, 5); assert.equal(s.weekAttends, 0);
+  s = L.crewWeekSum(s, "2026-W43", { attends: 1 });
+  s = L.crewWeekSum(s, "2026-W43", { km: 3.25 });
+  assert.equal(s.weekKm, 8.25); assert.equal(s.weekAttends, 1);
+  const late = L.crewWeekSum(s, "2026-W42", { km: 10 });
+  assert.equal(late.weekKm, 8.25);
+  s = L.crewWeekSum(s, "2026-W44", { km: 2 });
+  assert.equal(s.weekKey, "2026-W44"); assert.equal(s.weekKm, 2); assert.equal(s.weekAttends, 0);
+  s = L.crewWeekSum(s, "2026-W44", { km: -2 });                    // 제외(되돌리기)
+  assert.equal(s.weekKm, 0);
+  assert.equal(L.crewWeekSum(s, "2026-W43", { km: -5 }).weekKm, 0); // 지난주 기록을 빼도 이번 주는 그대로
+});
+
+test("크루장·운영진 판정 — leaderUid 없으면 createdBy", () => {
+  assert.equal(L.leaderOf({ createdBy: "a" }), "a");
+  assert.equal(L.leaderOf({ createdBy: "a", leaderUid: "b" }), "b");
+  assert.equal(L.canModerate({ createdBy: "a" }, "a"), true);
+  assert.equal(L.canModerate({ createdBy: "a", staff: ["s"] }, "s"), true);
+  assert.equal(L.canModerate({ createdBy: "a", staff: ["s"] }, "x"), false);
+  assert.equal(L.canModerate(null, "a"), false);
+  assert.equal(L.canModerate({ createdBy: "a" }, ""), false);
+});
+
+test("challengeUnstep — 제외한 기록을 챌린지에서 빼고, 그 때문에 달성이었다면 진행 중으로", () => {
+  const start = Date.parse("2026-10-13T00:00:00+09:00"), end = Date.parse("2026-10-27T00:00:00+09:00"), at = Date.parse("2026-10-19T12:00:00+09:00");
+  const ch = { kind: "run_km", status: "done", target: 30, progress: 32, start, end, doneAt: at };
+  const a = L.challengeUnstep(ch, { kind: "run_km", amount: 5, atMs: at, verified: true });
+  assert.equal(a.progress, 27); assert.equal(a.status, "active"); assert.equal(a.doneAt, null);
+  const b = L.challengeUnstep(ch, { kind: "run_km", amount: 1, atMs: at, verified: true });
+  assert.equal(b.progress, 31); assert.equal(b.status, "done");
+  assert.equal(L.challengeUnstep(ch, { kind: "run_km", amount: 5, atMs: at, verified: false }).progress, 32);   // 원래 안 들어간 기록
+  assert.equal(L.challengeUnstep(ch, { kind: "gym_attend", amount: 1, atMs: at, verified: true }).progress, 32);
+  assert.equal(L.challengeUnstep(ch, { kind: "run_km", amount: 5, atMs: end + 1, verified: true }).progress, 32);
+  const paid = L.challengeUnstep(Object.assign({}, ch, { rewardPaid: true }), { kind: "run_km", amount: 5, atMs: at, verified: true });
+  assert.equal(paid.progress, 32); assert.equal(paid.status, "done");   // 이미 정산한 챌린지는 그대로
+  assert.equal(L.challengeUnstep(Object.assign({}, ch, { progress: 3, status: "active" }), { kind: "run_km", amount: 5, atMs: at, verified: true }).progress, 0);
+  const m = L.memberChallengeUnstep({ ch: { c1: 12 } }, Object.assign({ id: "c1" }, ch), { kind: "run_km", amount: 5, atMs: at, verified: true });
+  assert.equal(m.ch.c1, 7);
+});

@@ -537,6 +537,14 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+      // ★10-22 러닝 신고 — 서버(runReport)만 쓰고, 크루장·운영진·관리자만 읽는다(신고한 사람 이름이 들어 있다)
+      match /reports/{rid} {
+        allow read: if isAdmin() || (request.auth != null && (
+          request.auth.uid == get(/databases/$(database)/documents/crewsV2/$(crewId)).data.get('leaderUid',
+            get(/databases/$(database)/documents/crewsV2/$(crewId)).data.get('createdBy', ''))
+          || request.auth.uid in get(/databases/$(database)/documents/crewsV2/$(crewId)).data.get('staff', [])));
+        allow write: if false;
+      }
       match /challenges/{chId} {
         allow read: if true;
         allow create: if isAdmin() && request.resource.data.status == 'active'

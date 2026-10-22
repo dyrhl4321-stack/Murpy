@@ -2,8 +2,9 @@
 // ★10-19 크루 기록 — 서버 함수(가입·탈퇴, 러닝 인증샷 판정, 체크인 → 크루 출석·성주, 챌린지).
 //   설계 = docs/superpowers/specs/2026-10-19-crew-records-design.md · 숫자 계산 = crew_logic.js
 //   ★크루 숫자(stats)·러닝 기록(runs)·개인 기록(runStats)은 **서버만** 쓴다(규칙이 클라이언트 쓰기를 막는다).
-//   ★인증됨은 건강 앱 원본 대조로만 준다. 1차(웹)는 HEALTH_VERIFY_ON=false — 앱이 원본을 못 보내는 동안
-//     클라이언트가 health 를 지어내 보내도 무시한다. 2차(아이폰 1.1.0)에서 켠다.
+//   ★판정 3단계(10-22 대표): 'scan' 스캔 인증(카드 스캔 + 거르기 통과) · 'verified' 원본 확인(건강 앱 대조, 아이폰 1.1.0 뒤)
+//     · 'unverified' 미인증(거르기에 걸림 → 개인 기록만). 크루 누적·챌린지·칭호·인증 보상 = scan·verified(L.counts).
+//     1차(웹)는 HEALTH_VERIFY_ON=false — 앱이 원본을 못 보내는 동안 클라이언트가 health 를 지어내 보내도 무시한다.
 //   ★휴면 `crews` 컬렉션과는 별개다(새 컬렉션 crewsV2).
 // ─────────────────────────────────────────────────────────────────────────────
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
@@ -24,6 +25,8 @@ const RUN_UPLOAD_ON = false;
 const OCR_MODEL = "gemini-3.5-flash-lite";   // 10-19 실측: 2.5-flash-lite 는 새 키에 404(단종). 카드 1장 ≈1,300토큰·2초
 const TITLE_OF = { 100: "크루 100K", 500: "크루 500K", 1000: "크루 1000K" };
 
+const ADMIN_EMAILS = ["dyrhl4321@gmail.com"];   // index.js MURPY_ADMIN_EMAILS 와 같게
+const isAdminReq = (req) => !!(req.auth && req.auth.token && req.auth.token.email_verified !== false && ADMIN_EMAILS.includes(String(req.auth.token.email || "")));
 const db = () => getFirestore();
 const now = () => Date.now();
 function needUser(req) {
@@ -273,7 +276,11 @@ async function applyRunEverywhere(uid, run, verified, atMs) {
     await bumpCrew(crewId, uid, atMs, (stats, member) => {
       let st = L.applyRun(stats, run, { verified });
       const mem = L.markActive(L.applyRun(member, run, { verified }), run.runDay);   // 챌린지 목표 인원(최근 2주 운동) 판정용
-      if (verified) st = L.crewWeekAdd(st, L.weekKey(run.runDay), L.weekActiveDelta(mem, L.weekKey(run.runDay)));
+      if (verified) {
+        const wk = L.weekKey(run.runDay);
+        st = L.crewWeekSum(st, wk, { km: run.km });   // ★주간 합계가 먼저(주가 바뀌면 weekActive 도 0부터)
+        st = L.crewWeekAdd(st, wk, L.weekActiveDelta(mem, wk));
+      }
       return { stats: st, member: mem, step: { kind: "run_km", amount: run.km, verified } };
     });
   }
@@ -305,32 +312,36 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
 
   const ocr = await ocrCard(GEMINI.value(), buf, meta.contentType || "image/jpeg");
   const shotMs = Number((req.data || {}).shotMs) || 0;    // 카드에 날짜가 없을 때만 쓴다(당일 판정)
-  const chk = L.checkCard(ocr, { nowMs: now(), shotMs });
+  const chk = L.checkCard(ocr, { nowMs: now(), shotMs, soft: true });
   if (!chk.ok) return reject(chk.why);
   const run = chk.run;
 
-  const recent = await d.collection("runs").where("uid", "==", uid).orderBy("createdAt", "desc").limit(30).get();
-  if (L.isDupRun(run, recent.docs.map((s) => s.data()))) return reject("dup_run");
+  const recent = (await d.collection("runs").where("uid", "==", uid).orderBy("createdAt", "desc").limit(30).get()).docs.map((s) => s.data());
+  if (L.isDupRun(run, recent)) return reject("dup_run");
 
-  let verified = false, source = null;
+  // 같은 날 이미 크루에 들어간 내 기록(하루 2건·60km 상한)
+  const sameDay = recent.filter((x) => x.runDay === run.runDay && L.counts(x.status));
+  const grade = L.runGrade(run, chk.flags, { todayRuns: sameDay.length, todayKm: sameDay.reduce((a, x) => a + (x.km || 0), 0) });
+  let status = grade.status, source = null;
   const health = (req.data || {}).health;
-  if (HEALTH_VERIFY_ON && Array.isArray(health)) {
+  if (HEALTH_VERIFY_ON && status === "scan" && Array.isArray(health)) {
     const m = L.matchHealth(run, health.slice(0, 30));
-    if (m.ok) { verified = true; source = m.source; }
+    if (m.ok) { status = "verified"; source = m.source; }
   }
+  const counted = L.counts(status);
   const crewIds = await myActiveCrewIds(uid);
   const doc = Object.assign({}, run, { uid, img: String(req.data.url), imgPath: path, imgHash: hash,
-    status: verified ? "verified" : "unverified", source, crewIds, createdAt: now() });
+    status, why: grade.why, source, crewIds, excluded: [], createdAt: now() });
   try { await runRef.create(doc); } catch (e) { return { ok: false, why: "dup_image" }; }
-  await applyRunEverywhere(uid, doc, verified, L.runAtMs(run.runDay));   // 챌린지 기간은 '뛴 날' 기준(올린 시각 아님)
+  await applyRunEverywhere(uid, doc, counted, L.runAtMs(run.runDay));   // 챌린지 기간은 '뛴 날' 기준(올린 시각 아님)
 
   let reward = 0;
-  if (verified && (await paidToday(uid, "run_verified")) < L.CFG.RUN_REWARD_PER_DAY) {
+  if (counted && (await paidToday(uid, "run_verified")) < L.CFG.RUN_REWARD_PER_DAY) {
     reward = await payMurpy(uid, L.CFG.RUN_REWARD, "run_verified", runRef.id);
   }
   console.log(`runSubmit uid=${uid} km=${run.km} sec=${run.sec} app=${run.app} status=${doc.status} crews=${crewIds.length}`);
   return { ok: true, reward, run: { id: runRef.id, km: run.km, sec: run.sec, paceSec: run.paceSec, runDay: run.runDay,
-    dayFromCard: run.dayFromCard, app: run.app, status: doc.status, boxes: (ocr && ocr.boxes) || null } };
+    dayFromCard: run.dayFromCard, app: run.app, status: doc.status, why: grade.why, boxes: (ocr && ocr.boxes) || null } };
 });
 
 async function deleteRun(uid, snap) {
@@ -341,13 +352,13 @@ async function deleteRun(uid, snap) {
     const [cur, s] = await Promise.all([tx.get(snap.ref), tx.get(ref)]);
     if (!cur.exists) return null;
     const x = cur.data();
-    if (s.exists) tx.set(ref, L.revertRun(s.data(), x, { verified: x.status === "verified", personal: true }));
+    if (s.exists) tx.set(ref, L.revertRun(s.data(), x, { verified: L.counts(x.status), personal: true }));
     tx.delete(snap.ref);
     return x;
   });
   if (!r) return;
-  const verified = r.status === "verified";
-  for (const crewId of r.crewIds || []) {
+  const verified = L.counts(r.status);
+  for (const crewId of (r.crewIds || []).filter((c) => !(r.excluded || []).includes(c))) {   // 이미 뺀 크루는 다시 빼지 않는다
     const cRef = d.collection("crewsV2").doc(crewId), mRef = cRef.collection("members").doc(uid);
     await d.runTransaction(async (tx) => {
       const [c, m] = await Promise.all([tx.get(cRef), tx.get(mRef)]);
@@ -364,6 +375,96 @@ exports.runDelete = onCall({ region: REGION }, async (req) => {
   await deleteRun(uid, snap);
   return { ok: true };
 });
+// ── 크루 신고 · 제외 · 운영진(★10-22 대표) ──────────────────────────────────────
+//   신고 = 같은 크루의 크루원이 남의 기록을 신고 → 크루장·운영진에게 알림(crewsV2/{c}/reports, 서버만 씀).
+//   제외 = 크루장·운영진·관리자가 그 기록을 이 크루 합계·챌린지·이번 주 합계에서 뺀다. 개인 기록(runStats)은 그대로 둔다.
+//   운영진 = crewsV2.staff[], 임명·해제는 크루장(또는 관리자)만.
+const STAFF_MAX = 10;
+async function crewOf(crewId) {
+  const c = await db().collection("crewsV2").doc(crewId).get();
+  if (!c.exists) throw new HttpsError("not-found", "crew");
+  return c.data();
+}
+exports.runReport = onCall({ region: REGION }, async (req) => {
+  const uid = needUser(req);
+  const runId = String((req.data || {}).runId || ""), crewId = String((req.data || {}).crewId || "");
+  const why = String((req.data || {}).why || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!runId || !crewId || crewId.includes("/") || runId.includes("/")) throw new HttpsError("invalid-argument", "args");
+  const d = db();
+  const cRef = d.collection("crewsV2").doc(crewId);
+  const [r, me, crew] = await Promise.all([d.collection("runs").doc(runId).get(), cRef.collection("members").doc(uid).get(), crewOf(crewId)]);
+  if (!r.exists || !(r.data().crewIds || []).includes(crewId)) throw new HttpsError("not-found", "run");
+  if (!me.exists || me.data().left) throw new HttpsError("permission-denied", "not_member");
+  if (r.data().uid === uid) throw new HttpsError("failed-precondition", "own_run");
+  const ref = cRef.collection("reports").doc(runId + "_" + uid);   // 한 사람이 같은 기록을 두 번 신고하지 못하게
+  try {
+    await ref.create({ runId, crewId, by: uid, byNick: me.data().nickname || "", runUid: r.data().uid, km: r.data().km || 0,
+      runDay: r.data().runDay || "", why, status: "open", at: now() });
+  } catch (e) { return { ok: true, again: true }; }
+  const to = new Set([L.leaderOf(crew)].concat(crew.staff || []).filter(Boolean));
+  for (const t of to) await notify(t, { type: "crew_run_report", crewId, text: crew.name || "", runId });
+  console.log(`runReport crew=${crewId} run=${runId} by=${uid} to=${to.size}`);
+  return { ok: true };
+});
+exports.runExclude = onCall({ region: REGION }, async (req) => {
+  const uid = needUser(req);
+  const runId = String((req.data || {}).runId || ""), crewId = String((req.data || {}).crewId || "");
+  if (!runId || !crewId || crewId.includes("/") || runId.includes("/")) throw new HttpsError("invalid-argument", "args");
+  const crew = await crewOf(crewId);
+  if (!(isAdminReq(req) || L.canModerate(crew, uid))) throw new HttpsError("permission-denied", "not_staff");
+  const d = db();
+  const cRef = d.collection("crewsV2").doc(crewId), runRef = d.collection("runs").doc(runId);
+  const res = await d.runTransaction(async (tx) => {
+    const r0 = await tx.get(runRef);
+    if (!r0.exists) return "gone";
+    const r = r0.data();
+    if (!(r.crewIds || []).includes(crewId)) return "not_in_crew";
+    if ((r.excluded || []).includes(crewId)) return "already";
+    const mRef = cRef.collection("members").doc(r.uid);
+    const [c, m, chs] = await Promise.all([tx.get(cRef), tx.get(mRef),
+      tx.get(cRef.collection("challenges").where("status", "in", ["active", "done"]).limit(10))]);
+    const counted = L.counts(r.status), atMs = L.runAtMs(r.runDay);
+    const step = { kind: "run_km", amount: r.km, atMs, verified: counted };
+    let stats = L.revertRun((c.exists && c.data().stats) || {}, r, { verified: counted });
+    if (counted) stats = L.crewWeekSum(stats, L.weekKey(r.runDay), { km: -r.km });
+    let member = m.exists ? L.revertRun(m.data(), r, { verified: counted }) : null;
+    chs.forEach((s) => {
+      const ch = Object.assign({ id: s.id }, s.data());
+      const out = L.challengeUnstep(s.data(), step);
+      if (out.progress !== s.data().progress) tx.update(s.ref, { progress: out.progress, status: out.status, doneAt: out.doneAt || null });
+      if (member) member = L.memberChallengeUnstep(member, ch, step);
+    });
+    if (c.exists) tx.update(cRef, { stats });
+    if (member) tx.set(mRef, member, { merge: true });
+    tx.update(runRef, { excluded: FieldValue.arrayUnion(crewId), excludedBy: FieldValue.arrayUnion(uid) });
+    return "ok";
+  });
+  if (res === "gone" || res === "not_in_crew") throw new HttpsError("not-found", "run");
+  // 이 기록에 걸린 신고는 처리됨으로
+  const reps = await cRef.collection("reports").where("runId", "==", runId).get().catch(() => null);
+  if (reps) for (const s of reps.docs) await s.ref.update({ status: "excluded", doneBy: uid, doneAt: now() }).catch(() => {});
+  console.log(`runExclude crew=${crewId} run=${runId} by=${uid} res=${res}`);
+  return { ok: true, already: res === "already" };
+});
+exports.crewSetStaff = onCall({ region: REGION }, async (req) => {
+  const uid = needUser(req);
+  const crewId = String((req.data || {}).crewId || ""), who = String((req.data || {}).uid || ""), on = (req.data || {}).on === true;
+  if (!crewId || !who || crewId.includes("/") || who.includes("/")) throw new HttpsError("invalid-argument", "args");
+  const d = db();
+  const cRef = d.collection("crewsV2").doc(crewId);
+  const crew = await crewOf(crewId);
+  if (!(isAdminReq(req) || L.leaderOf(crew) === uid)) throw new HttpsError("permission-denied", "not_leader");
+  if (who === L.leaderOf(crew)) throw new HttpsError("failed-precondition", "leader");
+  const m = await cRef.collection("members").doc(who).get();
+  if (on && (!m.exists || m.data().left)) throw new HttpsError("failed-precondition", "not_member");
+  const staff = (crew.staff || []).filter((x) => x !== who);
+  if (on) { if (staff.length >= STAFF_MAX) throw new HttpsError("resource-exhausted", "staff_max"); staff.push(who); }
+  await cRef.update({ staff });
+  await notify(who, { type: "crew_staff", crewId, text: crew.name || "", amount: on ? 1 : 0 });
+  console.log(`crewSetStaff crew=${crewId} who=${who} on=${on} by=${uid}`);
+  return { ok: true, staff };
+});
+
 // 탈퇴할 때 앱(deleteMyAccount)이 부른다 — 내 러닝 기록·카드 이미지 삭제, 크루는 나간 것으로.
 exports.runPurgeMine = onCall({ region: REGION, timeoutSeconds: 120 }, async (req) => {
   const uid = req.auth && req.auth.uid;
@@ -396,6 +497,7 @@ exports.crewCheckin = onDocumentCreated({ region: REGION, document: "checkins/{i
       const a = L.applyAttend(member, day);
       if (!a.counted) return null;
       let st = L.addAttend(stats, day, 1);
+      st = L.crewWeekSum(st, wk, { attends: 1 });
       st = L.crewWeekAdd(st, wk, L.weekActiveDelta(a.member, wk));
       return { stats: st, member: L.markActive(a.member, day), step: { kind: "gym_attend", amount: 1, verified: true } };
     });
