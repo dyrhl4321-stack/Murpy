@@ -379,7 +379,7 @@ exports.runDelete = onCall({ region: REGION }, async (req) => {
 //   신고 = 같은 크루의 크루원이 남의 기록을 신고 → 크루장·운영진에게 알림(crewsV2/{c}/reports, 서버만 씀).
 //   제외 = 크루장·운영진·관리자가 그 기록을 이 크루 합계·챌린지·이번 주 합계에서 뺀다. 개인 기록(runStats)은 그대로 둔다.
 //   운영진 = crewsV2.staff[], 임명·해제는 크루장(또는 관리자)만.
-const STAFF_MAX = 10;
+const STAFF_MAX = 10, STAFF_CAN_EXCLUDE = false;
 async function crewOf(crewId) {
   const c = await db().collection("crewsV2").doc(crewId).get();
   if (!c.exists) throw new HttpsError("not-found", "crew");
@@ -411,7 +411,9 @@ exports.runExclude = onCall({ region: REGION }, async (req) => {
   const runId = String((req.data || {}).runId || ""), crewId = String((req.data || {}).crewId || "");
   if (!runId || !crewId || crewId.includes("/") || runId.includes("/")) throw new HttpsError("invalid-argument", "args");
   const crew = await crewOf(crewId);
-  if (!(isAdminReq(req) || L.canModerate(crew, uid))) throw new HttpsError("permission-denied", "not_staff");
+  // ★10-22 대표: 10-26 오픈 땐 제외는 크루장·관리자만(운영진은 신고 알림만 받는다). 운영진에게 열 땐 STAFF_CAN_EXCLUDE 만 true.
+  const okMod = STAFF_CAN_EXCLUDE ? L.canModerate(crew, uid) : L.leaderOf(crew) === uid;
+  if (!(isAdminReq(req) || okMod)) throw new HttpsError("permission-denied", "not_leader");
   const d = db();
   const cRef = d.collection("crewsV2").doc(crewId), runRef = d.collection("runs").doc(runId);
   const res = await d.runTransaction(async (tx) => {
