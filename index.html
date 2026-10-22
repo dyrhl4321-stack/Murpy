@@ -47854,6 +47854,14 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-pol .ink{position:absolute;right:-5px;top:100px;width:34px;height:34px;border-radius:50%;border:2px solid #E4472E;color:#E4472E;font-family:'Galmuri11',sans-serif;
   font-size:9px;display:flex;align-items:center;justify-content:center;transform:rotate(-14deg);opacity:.85}
 .cw-pol a{position:absolute;left:0;right:0;bottom:-20px;text-align:center;font-size:10.5px;color:#4f586c;cursor:pointer}
+.cw-pol .ink.sc{font-size:8px;line-height:1.05;text-align:center}
+.cw-pol.out{opacity:.45}.cw-pol .outk{position:absolute;left:6px;top:10px;font-size:10px;color:#f3ead2;background:#0b0e15;padding:1px 5px}
+.cw-mod{display:flex;flex-direction:column}
+.cw-mod .r{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid #1d2331;font-size:12.5px;color:#cfd6e6}
+.cw-mod .r:first-child{border-top:none}.cw-mod .r .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-mod .r small{color:#6f788c;font-size:11px}
+.cw-mod .r button{background:none;border:1px solid #2b3346;color:#cfd6e6;font:inherit;font-size:11.5px;padding:5px 10px;border-radius:7px;cursor:pointer;flex-shrink:0}
+.cw-mod .r button.on{border-color:#3d6fd6;color:#7aa8ff}
 .cw-ms{display:flex;gap:16px;font-family:'Galmuri11',sans-serif;font-size:10px;color:#3b4459}
 .cw-ms .on{color:#F5C24B}
 .cw-past{font-size:12.5px;color:#8a93a8;line-height:2;font-variant-numeric:tabular-nums}
@@ -47915,7 +47923,7 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-box b{position:absolute;left:-3px;top:-22px;background:#3D7EFF;color:#fff;font-family:'Galmuri11',sans-serif;font-weight:400;font-size:11.5px;line-height:19px;padding:0 6px;white-space:nowrap;box-shadow:0 0 0 1px #0b0f1a}
 .cw-scan .ink{position:absolute;border-radius:50%;border:6px solid #E4472E;color:#E4472E;font-family:'Galmuri14',sans-serif;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;-webkit-mask-image:var(--inkm);mask-image:var(--inkm);-webkit-mask-size:24px 24px;mask-size:24px 24px}
 .cw-scan .ink:after{content:'';position:absolute;inset:6px;border-radius:50%;border:3px solid #E4472E}
-.cw-scan .ink.ghost{border-color:#aeb6c8;color:#aeb6c8}.cw-scan .ink.ghost:after{border-color:#aeb6c8}
+.cw-scan .ink.ghost{border-color:#aeb6c8;color:#aeb6c8}.cw-scan .ink{text-align:center;line-height:1.05}.cw-scan .ink.ghost:after{border-color:#aeb6c8}
 .cw-scan .sp{position:absolute;width:5px;height:5px;background:#E4472E;pointer-events:none}
 .cw-chks{margin:24px 20px 0}
 .cw-chk{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:14px;color:#4f586c;transition:color .2s;font-variant-numeric:tabular-nums}
@@ -48006,7 +48014,11 @@ window.crewLoad = async function (id) {
   ]);
   const members = ms ? ms.docs.map(s => Object.assign({ uid: s.id }, s.data())) : [];
   const chList = chs ? chs.docs.map(s => Object.assign({ id: s.id }, s.data())) : [];
+  // ★10-22 신고된 기록 — 크루장·운영진·관리자만 읽는다(규칙도 같음)
+  const c0 = cs.data(), isMod = !!(u && (_crewLeader(c0) === u.uid || (c0.staff || []).includes(u.uid) || (typeof isAdmin === 'function' && isAdmin())));
+  const rp = isMod ? await safe(getDocs(query(collection(db, 'crewsV2', id, 'reports'), where('status', '==', 'open'), limit(20)))) : null;
   return {
+    reports: rp ? rp.docs.map(s => Object.assign({ id: s.id }, s.data())).sort((a, b) => (b.at || 0) - (a.at || 0)) : [],
     crew: Object.assign({ id }, cs.data()), members,
     profiles: await _crewProfiles(members.map(m => m.uid).slice(0, 60)),
     runs: rs ? rs.docs.map(s => Object.assign({ id: s.id }, s.data())) : [],
@@ -48018,6 +48030,9 @@ window.crewLoad = async function (id) {
 };
 
 // ── 화면 조각(순수 문자열 — 하네스가 가짜 데이터로 찍어 본다) ──────────────
+// ★10-22 판정 3단계: scan 스캔 인증 · verified 원본 확인(아이폰 1.1.0 뒤) · unverified 미인증 — 크루에 들어가는 건 앞의 둘
+const _crewCounts = st => st === 'scan' || st === 'verified';
+const _crewLeader = c => (c && (c.leaderUid || c.createdBy)) || '';
 const _crewMini = (p, h, face) => (window.mwMiniCharHtml ? window.mwMiniCharHtml((p && p.character) || null, h, face) : '');
 // 장면 배치: 러닝 필드는 위 길(트랙)과 아래 산책로 두 줄, 헬스 필드는 센터 필드와 같은 배치(mwFieldPlace)
 // ★두 줄로만 세운다 — 센터 필드의 6×4 격자(mwFieldPlace)는 줄 간격이 캐릭터 키보다 좁아 8명만 돼도 이름표가 겹쳤다.
@@ -48302,17 +48317,19 @@ window.crewPageHtml = function (data, me) {
       + '<div class="cw-walk" style="--wd:-' + ((i % 4) * .23).toFixed(2) + 's">' + _crewMini(P[m.uid], 34, sp.face || 'down') + '</div>'
       + '<span class="nk">' + _cE(m.uid === meUid ? '나' : nickOf(m)) + '</span></div>';
   }).join('');
-  const wk = (s.weekKey === window._crewWeekKey()) ? (s.weekActive || 0) : 0;
+  const thisWk = s.weekKey === window._crewWeekKey();
+  const wk = thisWk ? (s.weekActive || 0) : 0, wkKm = thisWk ? (s.weekKm || 0) : 0, wkAt = thisWk ? (s.weekAttends || 0) : 0;
+  const wkSum = [sport !== 'gym' && wkKm > 0 ? _crewKm(wkKm) + 'km' : '', sport !== 'running' && wkAt > 0 ? '출석 ' + wkAt + '회' : ''].filter(Boolean).map(x => ' · ' + x).join('');
   const led = useKm ? _crewKm(_crewMonth(s, 'monthKm')) + 'km' : '출석 ' + _crewMonth(s, 'monthAttends') + '회';
   let h = _crewHead(_cE(c.name), _cE([c.school, _crewSportKo[sport]].filter(Boolean).join(' ')) + ' ' + (s.members || 0) + '명', "document.getElementById('crew-page').remove()");
   h += '<div class="cw-stage" style="' + _crewBg() + '">' + chars
     + '<div class="cw-led"><span>' + _crewMonthKo() + '</span><b>' + led + '</b></div>'
-    + '<div class="cw-wk">이번 주 <i>' + wk + '</i>/' + (s.members || 0) + (sport === 'running' ? ' 달림' : ' 운동') + '</div>'
+    + '<div class="cw-wk">이번 주 <i>' + wk + '</i>/' + (s.members || 0) + (sport === 'running' ? ' 달림' : ' 운동') + wkSum + '</div>'
     + (ordered.length ? '' : '<div class="cw-empty">아직 크루원이 없어요</div>') + '</div>';
   const meta = [];
   if (useKm) meta.push('누적 <b>' + _crewKm(s.km) + 'km</b>');
   if (sport !== 'running') meta.push('누적 출석 <b>' + (s.attends || 0) + '회</b>');
-  if (!gym && (s.pRuns || 0) > 0) meta.push('인증 대기 <b>' + _crewKm(s.pKm) + 'km</b>');
+  if (!gym && (s.pRuns || 0) > 0) meta.push('미인증 <b>' + _crewKm(s.pKm) + 'km</b>');
   h += '<div class="cw-meta">' + meta.map(x => '<span>' + x + '</span>').join('') + '</div>';
   h += _crewChallengeHtml(data.challenge, data, me);
   // 이번 달 순위 — ★10-20 대표 "단상·판 다 별로": 머피월드 장면처럼 벽·바닥 타일 위에 클럽하우스 나무 단상(대표 A안 확정), 그 위에 크루원(정면),
@@ -48351,13 +48368,38 @@ window.crewPageHtml = function (data, me) {
       + '<div class="cw-sub">' + _crewMonthKo() + ' ' + _crewMonth(myM, 'monthAttends') + '회</div></div>';
   }
   // 최근 기록 — 카드 그대로(인증된 것만 인주 도장)
-  if (!gym && (data.runs || []).length) {
-    h += '<div class="cw-sec" style="--i:4"><div class="cw-h">최근 기록</div><div class="cw-pols">' + data.runs.map((r, i) => {
-      const v = r.status === 'verified', who = P[r.uid] && P[r.uid].nickname;
-      return '<div class="cw-pol" style="transform:rotate(' + (i % 2 ? 1.6 : -1.8) + 'deg);margin-bottom:' + (r.uid === meUid ? 22 : 0) + 'px"><img loading="lazy" src="' + _cE(r.img) + '" alt="">'
-        + '<p>' + _cE(r.uid === meUid ? '나' : (who || '크루원')) + '<span>' + _crewKm(r.km) + 'km</span></p>' + (v ? '<div class="ink">인증</div>' : '')
-        + (r.uid === meUid ? '<a onclick="window.runDeleteAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">지우기</a>' : '') + '</div>';
+  //   ★10-22 크루원은 남의 기록을 '신고', 크루장·관리자는 '빼기'(크루 합계에서만 빠지고 그 사람 기록엔 남는다). 뺀 기록은 크루장·관리자에게만 흐리게.
+  //   신고·빼기·운영진은 서버 함수(runReport·runExclude·crewSetStaff)와 같이 연다 — RUN_UPLOAD_ON(10-26) 전엔 안 보인다.
+  const modOn = !!window.CREW_CFG.RUN_UPLOAD_ON;
+  const lead = modOn && !!(meUid && (_crewLeader(c) === meUid || (me && me.admin)));
+  const runs = (data.runs || []).filter(r => lead || !(r.excluded || []).includes(c.id));
+  if (!gym && runs.length) {
+    h += '<div class="cw-sec" style="--i:4"><div class="cw-h">최근 기록</div><div class="cw-pols">' + runs.map((r, i) => {
+      const v = _crewCounts(r.status), out = (r.excluded || []).includes(c.id), who = P[r.uid] && P[r.uid].nickname;
+      const act = r.uid === meUid ? '<a onclick="window.runDeleteAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">지우기</a>'
+        : (out || !v) ? '' : lead ? '<a onclick="window.runExcludeAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">크루에서 빼기</a>'
+        : (data.isMember && modOn) ? '<a onclick="window.runReportAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">신고</a>' : '';
+      return '<div class="cw-pol' + (out ? ' out' : '') + '" style="transform:rotate(' + (i % 2 ? 1.6 : -1.8) + 'deg);margin-bottom:' + (act ? 22 : 0) + 'px"><img loading="lazy" src="' + _cE(r.img) + '" alt="">'
+        + '<p>' + _cE(r.uid === meUid ? '나' : (who || '크루원')) + '<span>' + _crewKm(r.km) + 'km</span></p>' + (v && !out ? '<div class="ink sc">스캔<br>인증</div>' : '')
+        + (out ? '<span class="outk">뺀 기록</span>' : '') + act + '</div>';
     }).join('') + '</div></div>';
+  }
+  // 신고된 기록(크루장·운영진·관리자) · 운영진 관리(크루장·관리자)
+  if (modOn && (data.reports || []).length) {
+    h += '<div class="cw-sec" style="--i:5"><div class="cw-h">신고된 기록 ' + data.reports.length + '</div><div class="cw-mod">' + data.reports.map(x => {
+      const r = (data.runs || []).find(y => y.id === x.runId), who = (P[x.runUid] && P[x.runUid].nickname) || '크루원';
+      const day = String(x.runDay || ''), md = day.length === 8 ? (+day.slice(4, 6)) + '.' + (+day.slice(6, 8)) : '';
+      return '<div class="r"><span class="nm">' + _cE(who) + ' ' + _crewKm(x.km) + 'km <small>' + md + ' · 신고 ' + _cE(x.byNick || '크루원') + '</small></span>'
+        + (lead && !(r && (r.excluded || []).includes(c.id)) ? '<button onclick="window.runExcludeAsk(\'' + _cJ(x.runId) + '\',\'' + _cJ(c.id) + '\')">빼기</button>' : '') + '</div>';
+    }).join('') + '</div></div>';
+  }
+  if (lead && (data.members || []).length > 1) {
+    const staff = c.staff || [];
+    h += '<div class="cw-sec" style="--i:6"><button class="cw-ps-more" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.classList.toggle(\'on\')">운영진 ' + staff.length + '명 <span>›</span></button>'
+      + '<div class="cw-mod" hidden>' + (data.members || []).filter(m => m.uid !== _crewLeader(c)).slice(0, 60).map(m => {
+        const on = staff.includes(m.uid);
+        return '<div class="r"><span class="nm">' + _cE(nickOf(m)) + '</span><button class="' + (on ? 'on' : '') + '" onclick="window.crewStaffSet(\'' + _cJ(c.id) + '\',\'' + _cJ(m.uid) + '\',' + (!on) + ')">' + (on ? '운영진 해제' : '운영진 지정') + '</button></div>';
+      }).join('') + '</div></div>';
   }
   // 크루 누적 칭호 · 지난 챌린지
   if (useKm && (Number(s.km) || 0) > 0) {   // 첫 인증 거리가 쌓이기 전엔 회색 칭호 줄만 남으니 감춘다
@@ -48445,6 +48487,21 @@ window.runDeleteAsk = function (runId, crewId) {
     .catch(e => showToast('지우지 못했어요 (' + ((e && e.message) || '') + ')'));
 };
 
+window.runReportAsk = function (runId, crewId) {
+  if (!confirm('이 기록을 크루장에게 신고할까요?')) return;
+  _crewCall('runReport', { runId, crewId }).then(r => showToast(r && r.again ? '이미 신고한 기록이에요' : '신고했어요. 크루장이 확인해요'))
+    .catch(e => showToast('신고하지 못했어요 (' + ((e && e.message) || '') + ')'));
+};
+window.runExcludeAsk = function (runId, crewId) {
+  if (!confirm('이 기록을 크루 합계와 챌린지에서 뺄까요? 그 사람의 내 기록에는 남아요.')) return;
+  _crewCall('runExclude', { runId, crewId }).then(() => { showToast('크루 기록에서 뺐어요'); window.openCrewPage(crewId); })
+    .catch(e => showToast('빼지 못했어요 (' + ((e && e.message) || '') + ')'));
+};
+window.crewStaffSet = function (crewId, uid, on) {
+  _crewCall('crewSetStaff', { crewId, uid, on: !!on }).then(() => { showToast(on ? '운영진으로 지정했어요' : '운영진에서 해제했어요'); window.openCrewPage(crewId); })
+    .catch(e => showToast('바꾸지 못했어요 (' + ((e && e.message) || '') + ')'));
+};
+
 // ── 러닝 인증샷 올리기 + 스캔 연출 ──────────────────────────────────────────
 const _runWhy = {
   dup_image: '이미 올린 카드예요', dup_run: '같은 기록이 이미 있어요', too_old: '오늘 달린 기록만 올릴 수 있어요', not_today: '오늘 달린 기록만 올릴 수 있어요',
@@ -48452,6 +48509,12 @@ const _runWhy = {
   km_range: '숫자가 맞지 않아요. 카드 원본을 올려 주세요', pace_range: '숫자가 맞지 않아요. 카드 원본을 올려 주세요',
   time_mismatch: '숫자가 맞지 않아요. 카드 원본을 올려 주세요', unreadable: '거리와 시간이 보이게 다시 올려 주세요',
   too_big: '사진이 너무 커요', member_only: '정식 가입 후 올릴 수 있어요', too_many: '오늘은 더 올릴 수 없어요', not_yet: '아직 열리지 않았어요',
+};
+// ★10-22 미인증 사유 — 거르기에 걸려도 기록은 남는다(내 기록만, 크루·챌린지엔 안 들어감)
+const _runSoftWhy = {
+  not_today: '오늘 달린 기록이 아니에요', pace_fast: '페이스가 1km 2분 30초보다 빨라요', pace_slow: '페이스가 1km 15분보다 느려요',
+  km_range: '거리가 0.5km~100km 밖이에요', unknown_app: '스트라바·나이키 카드가 아니에요',
+  daily_cap: '스캔 인증은 하루 2건까지예요', day_km: '하루 60km를 넘었어요',
 };
 window.runUploadOpen = function (crewId) {
   if (window.requireRealAccount && window.requireRealAccount('러닝 기록은 가입 후 올릴 수 있어요')) return;
@@ -48525,7 +48588,7 @@ window.runScanPlay = async function (resP) {
     return { res, err, ok: false };
   }
   // 숫자 자리 네모(서버가 준 위치, 0~1000 비율) + 체크리스트
-  const vals = [_crewKm(r.km) + 'km', _crewPace(r.paceSec) + '/km', r.dayFromCard ? _crewDay(r.runDay) : '오늘'];
+  const vals = [_crewKm(r.km) + 'km', _crewPace(r.paceSec) + '/km', (r.dayFromCard || r.why === 'not_today') ? _crewDay(r.runDay) : '오늘'];
   const keys = ['km', 'pace', 'date'], labels = ['거리', '페이스', '날짜'], bx = (r.boxes || {});
   const layer = document.getElementById('run-scan-boxes');
   for (let i = 0; i < 3; i++) {
@@ -48544,10 +48607,11 @@ window.runScanPlay = async function (resP) {
   }
   await _sleep(180);
   // '딱' — 숫자를 안 가리는 빈자리에, 카드 폭 38% 크기로. 1.4배에서 줄어들며 찍히고 카드·화면이 눌린다.
-  const v = r.status === 'verified', ink = document.getElementById('run-scan-ink');
+  const v = _crewCounts(r.status), ink = document.getElementById('run-scan-ink');
   const spot = _inkSpot(bx, img.clientHeight / Math.max(1, img.clientWidth)), sz = Math.round(img.clientWidth * .38);
   if (ink) {
-    ink.textContent = v ? '인증' : '기록'; ink.classList.toggle('ghost', !v);
+    if (v) ink.innerHTML = '스캔<br>인증'; else ink.textContent = '기록';
+    ink.classList.toggle('ghost', !v);
     ink.style.cssText += ';width:' + sz + 'px;height:' + sz + 'px;left:calc(' + spot.x + '% - ' + (sz / 2) + 'px);top:calc(' + spot.y + '% - ' + (sz / 2) + 'px);font-size:' + Math.round(sz * .24) + 'px;--inkm:url(' + _inkMask() + ')';
     ink.animate([{ opacity: 0, transform: 'scale(1.4) rotate(-6deg)' },
                  { opacity: 1, transform: 'scale(.95) rotate(-10deg)', offset: .7 },
@@ -48594,9 +48658,10 @@ window.runScanResult = function (res, err) {
   const ok = !!(res && res.ok), r = (res && res.run) || {};
   const close = '<div style="padding:32px 20px 0"><button class="cw-up" style="max-width:none" onclick="document.getElementById(\'run-scan\').remove()">닫기</button></div>';
   if (ok) {
-    const v = r.status === 'verified';
-    out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (v ? '인증' : '기록') + '</em></b>'
-      + '<span>' + _crewDur(r.sec) + ', ' + _crewPace(r.paceSec) + '/km' + (v ? (res.reward ? '. ' + res.reward + '머피를 받았어요' : '. 크루 기록에 들어갔어요') : '. 건강 앱 인증이 열리면 크루 점수에도 들어가요') + '</span></div>' + close;
+    const v = _crewCounts(r.status);
+    out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (v ? '스캔 인증' : '미인증') + '</em></b>'
+      + '<span>' + _crewDur(r.sec) + ', ' + _crewPace(r.paceSec) + '/km' + (v ? (res.reward ? '. ' + res.reward + '머피를 받았어요' : '. 크루 기록에 들어갔어요')
+        : '. ' + _cE(_runSoftWhy[r.why] || '확인하지 못했어요') + '. 내 기록에만 남았어요') + '</span></div>' + close;
   } else {
     const why = (res && res.why) || (String(err).indexOf('member_only') >= 0 ? 'member_only' : '');
     out.innerHTML = '<div class="cw-res"><b>' + _cE(_runWhy[why] || '확인하지 못했어요') + '</b><span>' + (why ? '' : '잠시 뒤 다시 올려 주세요') + '</span></div>' + close;
