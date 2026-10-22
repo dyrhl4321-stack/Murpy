@@ -26246,43 +26246,43 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     return;
   }
 
-  let d = {};
-  try { const us = await getDoc(doc(db, 'users', userId)); if (us.exists()) d = us.data(); } catch (e) {}
-  // ★탈퇴한 사람은 프로필을 열지 않는다 — 문서는 남아 있지만(남의 화면이 깨지지 않게)
-  //   빈 껍데기라 열어봐야 아무것도 없다.
-  if (d.deleted) {
-    closePanel('user-profile-panel');
-    showToast('탈퇴한 사용자예요');
-    return;
-  }
-  const name = d.nickname || userName || '익명';
-  const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
+  // ★10-23 속도 (대표 실폰: "좋아요 목록에서 상대 프로필을 누르면 로딩이 너무 느리다").
+  //   예전엔 읽기 다섯 개를 **차례로** 기다렸다 — 상대 문서 → 매칭 → 받은 좋아요 → 보낸 좋아요 → 피드 전체.
+  //   LTE 에선 왕복 다섯 번이 그대로 쌓였다. 이제 다섯 개를 한꺼번에 시작한다.
+  //   목록에서 이미 받아 둔 문서(_usersAll·_userDocCache)가 있으면 사진·이름부터 바로 그리고 아래는 회색 뼈대,
+  //   다 오면 사진 칸은 그대로 두고 나머지만 채운다(같은 화면, 순서만 앞당김).
+  const _tok = window._upOpenTok = (window._upOpenTok || 0) + 1;
   const isSelf = userId === window.currentUser?.uid;
-  const matched = isSelf || await window.isMatched(userId);
+  const _me = (window.currentUser && window.currentUser.uid) || '';
+  const _cachedD = window._upCachedUser(userId);
+  const pUser = getDoc(doc(db, 'users', userId)).then(us => (us.exists() ? us.data() : {}), () => _cachedD || {});
+  const pMatched = isSelf ? Promise.resolve(true) : window.isMatched(userId);
   // ★상대가 나에게 이미 '같이 운동해요'를 보냈는가 (대표 지적 2026-08-07).
   //   받은 좋아요에서 들어왔는데 버튼이 '같이 운동해요'로 뜨면, 이미 온 신청에
   //   내가 또 신청하는 꼴이라 말이 안 맞는다. 이건 **수락**이고, 수락은 머피를 안 쓴다.
-  let _theyLiked = false;
   // ★내가 이미 보냈는가 (대표 8-12). 예전엔 이걸 안 봐서, 피드에서 보내고 프로필에 들어가면
   //   '같이 운동해요'가 그대로 있었고 **한 번 더 눌러졌다**(머피가 또 나갈 뻔했다).
   //   서버에서 직접 확인한다 — 화면 상태(_rel)만 믿으면 다른 기기에서 보낸 건 못 잡는다.
-  let _iSent = false;
-  if (!isSelf && !matched && window.currentUser) {
-    try { _theyLiked = (await getDoc(doc(db, 'likes', userId + '_' + window.currentUser.uid))).exists(); }
-    catch (e) {}
-    try { _iSent = (await getDoc(doc(db, 'likes', window.currentUser.uid + '_' + userId))).exists(); }
-    catch (e) {}
-    if (_iSent && window.relMark) window.relMark(userId, 'sent');   // 피드 버튼도 같이 맞춰둔다
-  }
+  //   (매칭 결과를 기다리지 않고 같이 읽는다 — 매칭된 사이면 아래에서 버린다. 문서 2개를 더 읽는 대신 왕복 2번을 아낀다)
+  const pLike = id => ((!isSelf && _me) ? getDoc(doc(db, 'likes', id)).then(s => s.exists(), () => false) : Promise.resolve(false));
+  const pTheyLiked = pLike(userId + '_' + _me), pISent = pLike(_me + '_' + userId);
+  const pFeed = window._upFeedAll(userId, isSelf);
   // 상호 사진 잠금: 내가 올린 프로필 사진 수만큼만 상대 사진 열람 가능
   const _myP = window._cachedProfile || {};
   const myPhotoCount = [_myP.photoURL, ...(_myP.photos || []), ...(_myP.workoutPhotos || [])].filter(Boolean).length;
+
+  // st = null 이면 1단계(캐시 문서로 사진·이름만), 있으면 다 온 것
+  const paint = function (d, st) {
+  const name = d.nickname || userName || '익명';
+  const cards = [d.photoURL || userPhoto, ...(d.photos || []), ...(d.workoutPhotos || [])].filter(Boolean);
+  const matched = !!(st && st.matched);
+  const _theyLiked = !!(st && !matched && st.theyLiked);
+  const _iSent = !!(st && !matched && st.iSent);
   const visibleCount = isSelf ? cards.length : Math.max(1, myPhotoCount);
   let posts = [], totalCnt = 0, monthCnt = 0;
-  try {
-    const fsnap = await getDocs(query(collection(db, 'feed'), where('userId', '==', userId)));
+  if (st && st.all) {
     // ★문서 id(`_id`)를 같이 담는다 — 인증 사진을 탭해 원본 글을 열려면 id 가 있어야 한다(대표 8-13).
-    const all = fsnap.docs.map(x => ({ _id: x.id, ...x.data() }));
+    const all = st.all;
     totalCnt = all.length;
     const mStart = new Date(); mStart.setDate(1); mStart.setHours(0, 0, 0, 0);
     monthCnt = all.filter(p => p.createdAt && p.createdAt.seconds * 1000 >= mStart.getTime()).length;
@@ -26290,7 +26290,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     posts = window._visiblePosts(all.filter(p => p.photoURL)).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).slice(0, 9);
     // 상세를 바로 그릴 수 있게 캐시에 넣어둔다(탭하고 나서 다시 조회하면 잠깐 비어 보인다)
     if (window._feedPostCache) posts.forEach(p => { window._feedPostCache[p._id] = p; });
-  } catch (e) {}
+  }
 
   const esc = s => String(s || '').replace(/'/g, "\\'");
   const verifiedBadge = d.faceVerified
@@ -26316,6 +26316,37 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   const counterHTML = cards.length > 1
     ? `<div id="up-counter" style="position:absolute;top:12px;left:12px;z-index:3;background:rgba(0,0,0,0.5);backdrop-filter:blur(8px);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:700;color:#fff">1 / ${cards.length}</div>`
     : '';
+  // 사진 칸이 1단계와 같으면 다시 만들지 않는다(사진이 깜빡이거나 넘기던 위치가 처음으로 돌아가지 않게)
+  const _swKey = cards.join('|') + '#' + visibleCount + '#' + (d.faceVerified ? 1 : 0);
+  const _put = function (rest) {
+    if (bodyEl._upKey === _swKey && document.getElementById('up-swipe') && document.getElementById('up-rest')) {
+      document.getElementById('up-rest').innerHTML = rest;
+      return;
+    }
+    bodyEl.innerHTML = `
+    <div id="up-swipe" style="position:relative;overflow:hidden;touch-action:pan-y">
+      <div id="up-track" style="display:flex;transition:transform .35s cubic-bezier(.22,1,.36,1);will-change:transform">${slidesHTML}</div>
+      ${verifiedBadge}${counterHTML}${dotsHTML}
+    </div><div id="up-rest">${rest}</div>`;
+    bodyEl._upKey = _swKey;
+    _initProfileSwiper(cards.length);
+  };
+  if (!st) {
+    const meta1 = [d.age ? d.age + '세' : '', d.gender].filter(Boolean).join(' · ');
+    const sk = (st2) => `<div class="skeleton" style="${st2}"></div>`;
+    _put(`
+    <div style="padding:18px 16px 4px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}</span>
+      </div>
+      ${meta1 ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta1}</div>` : ''}
+    </div>
+    <div style="margin:10px 16px 0">${sk('height:142px;border-radius:14px')}</div>
+    <div style="height:1px;background:rgba(255,255,255,0.06);margin:18px 16px"></div>
+    <div style="padding:0 16px 16px">${sk('height:16px;width:130px;margin-bottom:11px')}
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">${sk('aspect-ratio:1;border-radius:12px').repeat(3)}</div></div>`);
+    return;
+  }
 
   const I_DUMBBELL = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M3.5 9v5M17.5 6.5v11M20.5 9v5M6.5 12h11"/></svg>';
   const I_CLOCK = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -26393,11 +26424,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     ? `<button disabled style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:15px;font-size:15px;font-weight:700;cursor:default;font-family:inherit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>수락 기다리는 중</button>`
     : `<button onclick="window.sendLike('${userId}','${esc(name)}','${esc(cards[0])}')" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2.3" y="8" width="2.6" height="8" rx="1.3"/><rect x="5.4" y="6.5" width="2.7" height="11" rx="1.35"/><path d="M8.1 12h7.8"/><rect x="15.9" y="6.5" width="2.7" height="11" rx="1.35"/><rect x="19.1" y="8" width="2.6" height="8" rx="1.3"/></svg>같이 운동해요</button>`;
 
-  bodyEl.innerHTML = `
-    <div id="up-swipe" style="position:relative;overflow:hidden;touch-action:pan-y">
-      <div id="up-track" style="display:flex;transition:transform .35s cubic-bezier(.22,1,.36,1);will-change:transform">${slidesHTML}</div>
-      ${verifiedBadge}${counterHTML}${dotsHTML}
-    </div>
+  _put(`
     <div style="padding:18px 16px 4px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}${(window._milestoneBadge && window._milestoneBadge(totalCnt, 30)) || ''}</span>
@@ -26412,7 +26439,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     ${feedSection}
     <div style="height:1px;background:rgba(255,255,255,0.06);margin:6px 16px 20px"></div>
     ${roomSection}
-    <div style="padding:4px 16px 24px;display:flex;gap:8px">${actionHTML}</div>`;
+    <div style="padding:4px 16px 24px;display:flex;gap:8px">${actionHTML}</div>`);
   window.crewBadgeFill && window.crewBadgeFill('up-crew-badge', userId);   // 크루 배지(10-19)
 
   // 방 주인 캐릭터 — 실제 방과 같은 축척(무대폭 × 3.3 ÷ 16타일). 무대 폭을 실측한 뒤 꽂는다.
@@ -26439,8 +26466,37 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
       if (rs.clientWidth) put(); else requestAnimationFrame(put);
     }
   }
+  };
 
-  _initProfileSwiper(cards.length);
+  if (_cachedD && !_cachedD.deleted) paint(_cachedD, null);
+  const [d, matched, theyLiked, iSent, all] = await Promise.all([pUser, pMatched, pTheyLiked, pISent, pFeed]);
+  if (_tok !== window._upOpenTok) return;   // 기다리는 사이 다른 프로필을 열었다 — 그 화면을 덮지 않는다
+  // ★탈퇴한 사람은 프로필을 열지 않는다 — 문서는 남아 있지만(남의 화면이 깨지지 않게)
+  //   빈 껍데기라 열어봐야 아무것도 없다.
+  if (d.deleted) {
+    closePanel('user-profile-panel');
+    showToast('탈퇴한 사용자예요');
+    return;
+  }
+  if (!matched && iSent && window.relMark) window.relMark(userId, 'sent');   // 피드 버튼도 같이 맞춰둔다
+  paint(d, { matched, theyLiked, iSent, all });
+};
+// 목록에서 이미 받아 둔 남의 문서(5분 안) — 프로필 1단계를 바로 그리는 데만 쓴다
+window._upCachedUser = function (uid) {
+  const now = Date.now(), all = window._usersAllCache;
+  if (all && all.snap && now - all.at < 300000) { const x = all.snap.docs.find(s => s.id === uid); if (x) return x.data(); }
+  const h = window._userDocCache && window._userDocCache.get(uid);
+  return (h && h.d && now - h.at < 300000) ? h.d : null;
+};
+// 프로필의 운동 인증 기록(그 사람 피드 전체) — 1분 안에 다시 열면 다시 안 읽는다. 내 프로필은 방금 올린 글이 보여야 하니 늘 새로.
+window._upFeedCache = window._upFeedCache || new Map();
+window._upFeedAll = function (uid, fresh) {
+  const h = window._upFeedCache.get(uid);
+  if (!fresh && h && Date.now() - h.at < 60000) return h.p;
+  const p = getDocs(query(collection(db, 'feed'), where('userId', '==', uid)))
+    .then(s => s.docs.map(x => ({ _id: x.id, ...x.data() })), () => { window._upFeedCache.delete(uid); return null; });
+  window._upFeedCache.set(uid, { at: Date.now(), p: p });
+  return p;
 };
 
 function _initProfileSwiper(n) {
