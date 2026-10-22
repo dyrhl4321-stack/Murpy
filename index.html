@@ -49032,7 +49032,7 @@ AG.HANG = AG.WALL - 16;                                            // 벽걸이 
 const AG_THEMES = { club: { name: '클럽하우스', floor: 'char/crews/agit_floor_club.png?v=1', wall: 'char/crews/agit_wall_club.png?v=1' } };
 // 아지트 전용 소품(대표 10-19 선택본, key_defringe --check 통과). foot = 바닥 발자국 가로 구간(그림 안 좌표) — 깃대처럼 한쪽에 몰린 것만.
 const AG_OWN = [
-  { id: 'cz_flag', name: '크루 깃발', src: 'char/rooms/cz_flag.png?v=1', w: 92, h: 199, foot: [0, 30], blockBand: 0.1, sbw: 34, sx: 2 },
+  { id: 'cz_flag', name: '크루 깃발', src: 'char/rooms/cz_flag.png?v=1', w: 92, h: 199, foot: [0, 30], blockBand: 0.1, sbw: 34, sx: 2, emblem: [38, 16, 36, 34] },   // emblem = 흰 문양 자리(크루 로고)
   { id: 'cz_banner', name: '이름 배너', src: 'char/rooms/cz_banner.png?v=1', w: 144, h: 160, wall: true, label: [34, 54, 76, 50] },   // 2배(이름 글자 자리)
   { id: 'cz_cork', name: '코르크 게시판', src: 'char/rooms/cz_cork.png?v=1', w: 119, h: 65, wall: true },
   { id: 'cz_shoes', name: '벽걸이 러닝화', src: 'char/rooms/cz_shoes.png?v=1', w: 104, h: 75, wall: true },
@@ -49123,7 +49123,7 @@ function _agCss() {
 .ag-btn{height:34px;min-width:34px;padding:0 10px;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;color:#cfd6e6;
   display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;font:11px 'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent}
 .ag-btn:active{transform:translateY(1px)}
-.ag-btn.pri{background:#3D7EFF;color:#fff;box-shadow:0 0 0 2px #1d3f8f}
+.ag-btn.pri{color:#7aa8ff}   /* 큰 면 파랑 금지(머피 색 규칙, 브랜딩 10-22) — 무채색 픽셀 버튼 + 파란 글자 */
 .ag-tt{min-width:0;background:rgba(9,12,22,.86);border:2px solid #05070c;padding:5px 8px 6px;line-height:1}
 .ag-tt b{display:block;font:13px 'Galmuri14',sans-serif;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
 .ag-tt span{display:block;font-size:9px;color:#8a93a8;margin-top:4px}
@@ -49175,11 +49175,17 @@ function _agShadow(it, d) {
   return '<div class="ag-sh" style="left:' + (sx * AG.S) + 'px;top:' + (sy * AG.S) + 'px;width:' + (bw * AG.S) + 'px;height:' + (sh * AG.S) + 'px;z-index:' + (_agZ(it, d) - 1) + ';'
     + 'background:radial-gradient(ellipse at center,rgba(0,0,0,' + a + ') 0%,rgba(0,0,0,' + a + ') 48%,rgba(0,0,0,' + (a * 0.35).toFixed(2) + ') 78%,rgba(0,0,0,0) 100%)"></div>';
 }
-function _agItemsHtml(room, crewName) {
+// 깃발 문양 자리에 크루 로고(없으면 기본 문양 그대로). 깃발 남색으로 문양을 덮고 그 위에 로고.
+function _agEmblemHtml(logo, d, it) {
+  const E = d.emblem; if (!E || !logo) return '';
+  return '<div class="ag-it" style="left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + (E[2] * AG.S) + 'px;height:' + (E[3] * AG.S) + 'px;'
+    + 'background:#232f6b url(\'' + _cE(logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
+}
+function _agItemsHtml(room, crew) {
   return (room.f || []).map((it, i) => {
     const d = _agDef(it); if (!d) return '';
     return _agShadow(it, d) + '<img class="ag-it" data-i="' + i + '" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
-      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.label ? _agLabelHtml(crewName, d, it) : '');
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.label ? _agLabelHtml(crew.name, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
   }).join('');
 }
 // 사람 하나 그리기(나·같이 있는 사람·흐린 최근 방문자). p = {tc,tr,face,cfg,nick,me,ghost,ago,msg}
@@ -49216,7 +49222,22 @@ function _agCam(snap) {
   const st = S.el.querySelector('.ag-stage'), w = S.el.querySelector('.ag-world'); if (!st || !w) return;
   const sw = st.clientWidth, sh = st.clientHeight, ww = AG.W * AG.S, wh = AG.H * AG.S;
   const p = S.me, fx = (p.tc + 0.5) * AG.T * AG.S, fy = ((p.tr + 1) * AG.T - 70) * AG.S;
-  const ox = ww <= sw ? Math.round((sw - ww) / 2) : Math.round(Math.min(0, Math.max(sw - ww, sw / 2 - fx)));
+  let ox = ww <= sw ? Math.round((sw - ww) / 2) : Math.round(Math.min(0, Math.max(sw - ww, sw / 2 - fx)));
+  // ★처음 들어올 때는 화면 양끝에 반쯤 걸친 사람이 없게 가로만 조금(±60px) 비켜 선다(브랜딩 10-22 "320 에서 왼쪽 캐릭터가 반 잘림").
+  //   내가 한 걸음이라도 걸으면 S.moved — 그때부터는 늘 나를 가운데에.
+  if (!S.moved && ww > sw) {
+    if (snap) {
+      const hw = AG.CHH * 141 / 224 / 2 + 2, xs = Object.values(S.others || {}).map(o => (o.tc + 0.5) * AG.T * AG.S);
+      const cut = x0 => xs.filter(x => (x - hw + x0 < 0 && x + hw + x0 > 0) || (x - hw + x0 < sw && x + hw + x0 > sw)).length;
+      let best = 0, bs = cut(ox);
+      for (let dx = 4; dx <= 60 && bs; dx += 4) for (const d of [-dx, dx]) {
+        const x0 = ox + d; if (x0 > 0 || x0 < sw - ww || fx + x0 < 60 || fx + x0 > sw - 60) continue;
+        const c = cut(x0); if (c < bs) { bs = c; best = d; }
+      }
+      S.camDx = best;
+    }
+    ox += S.camDx || 0;
+  }
   // 위쪽은 버튼 줄(HUD)만큼 더 내려올 수 있다 — 안 그러면 벽 맨 위 소품(문·게시판)이 버튼 밑에 깔린다
   const top = AG.HUD + (parseFloat(getComputedStyle(S.el).getPropertyValue('--sat')) || 0);
   const oy = wh + top <= sh ? Math.round((sh - wh + top) / 2) : Math.round(Math.min(top, Math.max(sh - wh, sh / 2 - fy)));
@@ -49243,6 +49264,7 @@ window.crewAgitStep = function (dx, dy) {
   p.face = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down';
   const ok = _agWalkable(p.tc + dx, p.tr + dy);
   if (ok) { p.tc += dx; p.tr += dy; }
+  if (dx || dy) S.moved = true;
   S.walking = true;
   clearTimeout(S.walkT); S.walkT = setTimeout(() => { S.walking = false; _agMeRender(); }, 300);
   _agMeRender(); _agCam();
@@ -49297,7 +49319,7 @@ function _agShellHtml(c) {
 function _agPaintRoom() {
   const S = window._agit; if (!S) return;
   S.blocked = _agBlocked(S.room.f);
-  S.el.querySelector('#ag-items').innerHTML = _agItemsHtml(S.room, S.crew.name);
+  S.el.querySelector('#ag-items').innerHTML = _agItemsHtml(S.room, S.crew);
   _agUnstick();
 }
 function _agHud() {
@@ -49469,15 +49491,21 @@ window.crewAgitAdd = function (id) {
 function _agFree(it, d) {
   const S = window._agit, rect = (o, od) => od.wall ? [o.x, o.y, o.x + od.w, o.y + od.h]
     : [o.x + od.w * 0.1, o.y + od.h * (1 - Math.max(0.3, od.blockBand || 0)), o.x + od.w * 0.9, o.y + od.h];
-  const others = (S.room.f || []).map(o => ({ o, od: _agDef(o) })).filter(x => x.od && !!x.od.wall === !!d.wall && !x.od.flat && !(d.prop && x.od.surface));
-  const hit = c => { const a = rect(c, d); return others.some(x => { const b = rect(x.o, x.od); return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]; }); };
+  // 벽걸이는 벽까지 솟은 바닥 물건(깃발 천·책장 윗부분)도 피한다 — 그림 전체로 비교
+  const tall = (o, od) => !od.wall && o.y < AG.HANG;
+  const others = (S.room.f || []).map(o => ({ o, od: _agDef(o) })).filter(x => x.od && !x.od.flat && !(d.prop && x.od.surface)
+    && (!!x.od.wall === !!d.wall || (d.wall && tall(x.o, x.od))))
+    .map(x => (d.wall && !x.od.wall) ? { o: x.o, od: Object.assign({}, x.od, { wall: true }) } : x);
+  // 겹친 넓이 합 — 0 이면 바로 그 자리, 끝까지 없으면(벽이 꽉 찼을 때) 가장 덜 겹치는 자리
+  const over = c => { const a = rect(c, d); return others.reduce((s, x) => { const b = rect(x.o, x.od);
+    return s + Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])); }, 0); };
   const cand = (dx, dy) => _agClamp({ id: it.id, x: it.x + dx, y: it.y + dy, d: it.d }, d);
-  for (let r = 0; r <= 14; r++) for (let k = -r; k <= r; k++) {
-    const offs = d.wall ? [[k * 48, 0]] : [[k * 48, -r * 48], [k * 48, r * 48], [-r * 48, k * 48], [r * 48, k * 48]];
-    for (const [dx, dy] of offs) { const c = cand(dx, dy); if (!hit(c)) return c; }
-    if (d.wall && r > 0) { const c = cand(k * 48, 0); if (!hit(c)) return c; }
+  let best = it, bo = over(it);
+  for (let r = 0; r <= 14 && bo; r++) for (let k = -r; k <= r; k++) {
+    const offs = d.wall ? [[k * 24, 0], [k * 24, -r * 12], [k * 24, r * 12]] : [[k * 48, -r * 48], [k * 48, r * 48], [-r * 48, k * 48], [r * 48, k * 48]];
+    for (const [dx, dy] of offs) { const c = cand(dx, dy), o = over(c); if (o < bo) { bo = o; best = c; if (!o) return c; } }
   }
-  return it;
+  return best;
 }
 window.crewAgitTurn = function () {
   const S = window._agit; if (!S || !S.editing) return;
@@ -49547,7 +49575,7 @@ function _agLogText(L) {
   return '<b>' + _cE(L.nick || '크루원') + '</b>님이 ' + _cE(obj) + ' ' + verb;
 }
 window.crewAgitLogText = _agLogText;
-window.crewAgitTest = { chatPaint: () => _agChatPaint(), compose: () => _agComposeOthers() };   // 하네스용(그림만 다시 그린다)
+window.crewAgitTest = { chatPaint: () => _agChatPaint(), compose: () => _agComposeOthers(), fit: () => _agCam(true) };   // 하네스용(그림만 다시 그린다)
 window.crewAgitEditDone = async function (save) {
   const S = window._agit; if (!S || !S.editing) return;
   const E = S.editing;
@@ -49644,6 +49672,7 @@ function _agComposeOthers() {
   });
   S.others = live;
   _agMeRender(); _agHud();
+  if (!S.moved && !S.fitDone && Object.keys(live).length) { S.fitDone = true; _agCam(true); }   // 사람들이 처음 보일 때 한 번 더 자리 맞추기
   // 걷던 사람은 멈춘 모습으로, 말풍선은 6초 뒤에 — 새 스냅샷이 안 와도 다시 그린다
   const nexts = Object.keys(S.liveAll || {}).map(k => { const v = S.liveAll[k]; if (!v) return Infinity;
     const a = now - (v.mt || 0) < 400 ? (v.mt + 420) : Infinity, b = v.msg && now - (v.msg.t || 0) < AG_MSG_MS ? v.msg.t + AG_MSG_MS + 30 : Infinity; return Math.min(a, b); });

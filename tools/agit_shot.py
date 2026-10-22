@@ -27,7 +27,7 @@ async (NAME) => {
   const ms = data.members.filter(m => data.profiles[m.uid] && data.profiles[m.uid].character);
   window.__AG = { data, ms: ms.map(m => m.uid) };
   return { id: c.id, name: data.crew.name, members: data.members.length, withChar: ms.length,
-           leader: data.crew.leaderUid || data.crew.createdBy || '', hideout: !!data.hideout };
+           leader: data.crew.leaderUid || data.crew.createdBy || '', hideout: !!data.hideout, logo: data.crew.logo || '' };
 }
 '''
 MOUNT = r'''
@@ -50,7 +50,7 @@ MOUNT = r'''
   Object.values(others).forEach(o => { for (let r = 0; r < 6 && !window.crewAgitWalkable(o.tc, o.tr); r++) { if (window.crewAgitWalkable(o.tc, o.tr + 1)) o.tr++; else if (window.crewAgitWalkable(o.tc + 1, o.tr)) o.tc++; else o.tr++; } });
   S.others = others;
   S.lastLog = { text: window.crewAgitLogText({ act: 'place', item: 'cz_flag', n: 1, nick: (P[lead] || meP).nickname }) };
-  window.crewAgitStep(0, 0);
+  window.crewAgitStep(0, 0); window.crewAgitTest.fit();   // 처음 들어올 때와 같은 자리 맞추기
   const n = 1 + Object.keys(others).filter(k => !others[k].ghost).length;
   document.querySelector('.ag-tt span').innerHTML = '아지트 · 지금 <i>' + n + '</i>명';
   document.querySelector('.ag-log').innerHTML = '<span>' + S.lastLog.text + '</span>';
