@@ -186,6 +186,15 @@ function compose(n) {
     case "crew_run_report":
       return { title: `${n.text || "크루"} 러닝 기록 신고`, body: "크루원이 기록을 신고했어요 · 크루 화면에서 확인하고 뺄 수 있어요" };
 
+    // ★10-22 크루 승인제 — 관리자에게 승인 요청, 만든 사람(크루장)에게 결과
+    case "crew_review_req":
+      return { title: n.close ? `크루 닫기 신청 · ${n.text || ""}` : `새 크루 승인 요청 · ${n.text || ""}`, body: "관리자 › 크루 관리에서 확인해 주세요" };
+
+    case "crew_reviewed":
+      return n.kind === "close"
+        ? { title: `${n.text || "크루"} 닫기 ${n.ok ? "승인" : "반려"}`, body: n.ok ? "크루가 닫혔어요 · 기록은 그대로 남아요" : (n.reason || "크루장에게 사유를 알려 드렸어요") }
+        : { title: `${n.text || "크루"} ${n.ok ? "승인됐어요" : "반려됐어요"}`, body: n.ok ? "이제 초대 링크로 크루원을 모을 수 있어요" : (n.reason || "다시 신청할 수 있어요") };
+
     case "crew_staff":
       return { title: `${n.text || "크루"} 운영진`, body: n.amount ? "운영진으로 임명됐어요" : "운영진에서 해제됐어요" };
 

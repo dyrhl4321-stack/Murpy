@@ -318,6 +318,43 @@ function duelScore(a, b) {
   return { a: one(a), b: one(b) };
 }
 
+// ── 크루 만들기·승인·닫기(★10-22 대표: 누구나 만들되 관리자 승인, 닫기도 크루장 신청 → 관리자 승인, 지우지 않고 숨김) ──
+//   상태 없는 예전 크루는 승인된 것으로 본다.
+const CREW_NAME_MIN = 2, CREW_NAME_MAX = 20, CREW_OWN_MAX = 3;
+const CREW_BANNED = ["씨발", "시발", "ㅅㅂ", "병신", "ㅂㅅ", "좆", "개새", "새끼", "니미", "섹스", "야동", "머피 공식", "머피공식", "murpy official", "운영자", "관리자"];
+const _nameKey = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+function crewNameCheck(raw, existing) {
+  const name = String(raw || "").replace(/\s+/g, " ").trim();
+  if (name.length < CREW_NAME_MIN) return { ok: false, why: "short", name };
+  if (name.length > CREW_NAME_MAX) return { ok: false, why: "long", name };
+  const k = _nameKey(name);
+  if (CREW_BANNED.some((w) => k.includes(_nameKey(w)))) return { ok: false, why: "banned", name };
+  if ((existing || []).some((e) => _nameKey(e) === k)) return { ok: false, why: "dup", name };
+  return { ok: true, why: "", name };
+}
+const _st = (c) => (c && c.status) || "approved";
+// mine = 내가 크루장인 크루들
+function createAllowed(mine) {
+  const live = (mine || []).filter((c) => _st(c) === "pending" || _st(c) === "approved");
+  if (live.some((c) => _st(c) === "pending")) return { ok: false, why: "pending_exists" };
+  if (live.length >= CREW_OWN_MAX) return { ok: false, why: "too_many" };
+  return { ok: true, why: "" };
+}
+function reviewPatch(crew, { kind, ok, reason, now }) {
+  const why = String(reason || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (kind === "create") {
+    if (_st(crew) !== "pending") return { patch: null, err: "not_pending" };
+    return { patch: ok ? { status: "approved", approvedAt: now } : { status: "rejected", rejectReason: why, rejectedAt: now }, err: "" };
+  }
+  if (kind === "close") {
+    if (!(crew && crew.closeReq) || _st(crew) !== "approved") return { patch: null, err: "no_request" };
+    return { patch: ok ? { status: "closed", closedAt: now, closeReq: null } : { closeReq: null, closeRejectReason: why }, err: "" };
+  }
+  return { patch: null, err: "bad_kind" };
+}
+// 지금 뜨는 크루·둘러보기·배지 같은 공개 목록에 나와도 되나
+function crewListed(c) { return _st(c) === "approved" && !(c && (c.hidden || c.test)); }
+
 // 크루장 = leaderUid(★10-22 승인제), 예전 크루는 만든 사람(createdBy). 운영진 = staff[]
 function leaderOf(crew) { return (crew && (crew.leaderUid || crew.createdBy)) || ""; }
 function canModerate(crew, uid) { return !!(crew && uid && (leaderOf(crew) === uid || (crew.staff || []).includes(uid))); }
@@ -329,7 +366,7 @@ function joinAllowed(join, crew, code) {
 }
 
 module.exports = {
-  joinAllowed, runGrade, counts, crewWeekSum, challengeUnstep, memberChallengeUnstep, leaderOf, canModerate,
+  joinAllowed, crewNameCheck, createAllowed, reviewPatch, crewListed, runGrade, counts, crewWeekSum, challengeUnstep, memberChallengeUnstep, leaderOf, canModerate,
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount, memberChallengeStep, settleChallenge,
 };

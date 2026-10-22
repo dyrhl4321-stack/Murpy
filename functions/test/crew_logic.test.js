@@ -368,3 +368,48 @@ test("challengeUnstep — 제외한 기록을 챌린지에서 빼고, 그 때문
   const m = L.memberChallengeUnstep({ ch: { c1: 12 } }, Object.assign({ id: "c1" }, ch), { kind: "run_km", amount: 5, atMs: at, verified: true });
   assert.equal(m.ch.c1, 7);
 });
+
+// ★10-22 대표 확정 — 크루는 누구나 만들되 관리자 승인. 닫기도 크루장 신청 → 관리자 승인(지우지 않고 숨김).
+test("crewNameCheck — 2~20자, 금칙어, 같은 이름(띄어쓰기·대소문자 무시)", () => {
+  assert.deepEqual(L.crewNameCheck("  런어스  ", []), { ok: true, why: "", name: "런어스" });
+  assert.equal(L.crewNameCheck("런", []).why, "short");
+  assert.equal(L.crewNameCheck("가".repeat(21), []).why, "long");
+  assert.equal(L.crewNameCheck("씨발 러닝", []).why, "banned");
+  assert.equal(L.crewNameCheck("머피 공식 크루", []).why, "banned");    // 공식 사칭
+  assert.equal(L.crewNameCheck("런 어스", ["런어스"]).why, "dup");
+  assert.equal(L.crewNameCheck("RunUs", ["runus"]).why, "dup");
+  assert.equal(L.crewNameCheck("런어스2", ["런어스"]).ok, true);
+});
+
+test("createAllowed — 승인 대기 1개, 크루장인 크루(대기·승인) 3개까지", () => {
+  const mine = (st) => st.map((s) => ({ status: s }));
+  assert.equal(L.createAllowed(mine([])).ok, true);
+  assert.equal(L.createAllowed(mine(["pending"])).why, "pending_exists");
+  assert.equal(L.createAllowed(mine(["approved", "approved"])).ok, true);
+  assert.equal(L.createAllowed(mine(["approved", "approved", "approved"])).why, "too_many");
+  assert.equal(L.createAllowed(mine(["approved", "approved", "closed", "rejected"])).ok, true);   // 닫힘·반려는 안 센다
+  assert.equal(L.createAllowed([{}, {}, {}]).why, "too_many");                                    // 상태 없는 예전 크루 = 승인
+});
+
+test("reviewPatch — 만들기 승인·반려, 닫기 승인·반려", () => {
+  const now = 1000;
+  assert.deepEqual(L.reviewPatch({ status: "pending" }, { kind: "create", ok: true, now }), { patch: { status: "approved", approvedAt: now }, err: "" });
+  assert.deepEqual(L.reviewPatch({ status: "pending" }, { kind: "create", ok: false, reason: " 로고에 얼굴 ", now }),
+    { patch: { status: "rejected", rejectReason: "로고에 얼굴", rejectedAt: now }, err: "" });
+  assert.equal(L.reviewPatch({ status: "approved" }, { kind: "create", ok: true, now }).err, "not_pending");
+  const req = { status: "approved", closeReq: { by: "a", at: 1, reason: "" } };
+  assert.deepEqual(L.reviewPatch(req, { kind: "close", ok: true, now }), { patch: { status: "closed", closedAt: now, closeReq: null }, err: "" });
+  assert.deepEqual(L.reviewPatch(req, { kind: "close", ok: false, reason: "진행 중 챌린지", now }), { patch: { closeReq: null, closeRejectReason: "진행 중 챌린지" }, err: "" });
+  assert.equal(L.reviewPatch({ status: "approved" }, { kind: "close", ok: true, now }).err, "no_request");
+  assert.equal(L.reviewPatch({}, { kind: "close", ok: true, now }).err, "no_request");
+  assert.equal(L.reviewPatch({ closeReq: { by: "a" } }, { kind: "close", ok: true, now }).err, "");   // 상태 없는 예전 크루 = 승인
+  assert.equal(L.reviewPatch({ status: "pending" }, { kind: "x", ok: true, now }).err, "bad_kind");
+});
+
+test("crewListed — 승인(또는 상태 없음)이고 숨김·시험 아님", () => {
+  assert.equal(L.crewListed({}), true);
+  assert.equal(L.crewListed({ status: "approved" }), true);
+  for (const s of ["pending", "rejected", "closed"]) assert.equal(L.crewListed({ status: s }), false);
+  assert.equal(L.crewListed({ hidden: true }), false);
+  assert.equal(L.crewListed({ test: true }), false);
+});

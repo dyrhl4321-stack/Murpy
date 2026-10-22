@@ -13,6 +13,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
+const { getAuth } = require("firebase-admin/auth");
 const crypto = require("crypto");
 const L = require("./crew_logic.js");
 
@@ -467,6 +468,115 @@ exports.crewSetStaff = onCall({ region: REGION }, async (req) => {
   await notify(who, { type: "crew_staff", crewId, text: crew.name || "", amount: on ? 1 : 0 });
   console.log(`crewSetStaff crew=${crewId} who=${who} on=${on} by=${uid}`);
   return { ok: true, staff };
+});
+
+// ── 크루 만들기 · 승인 · 닫기 · 시험 크루(★10-22 대표) ───────────────────────────
+//   누구나 만들면 status:'pending'(만든 사람에게만 보임, 초대 코드 없음 = 가입 불가) → 관리자 crewReview 승인 때
+//   만든 사람이 크루장·첫 크루원이 되고 초대 코드가 생긴다. 닫기 = 크루장 신청(closeReq) → 관리자 승인(status:'closed',
+//   초대 코드 삭제, 기록은 남김). 상태는 서버만 바꾼다(규칙: crewsV2 쓰기는 관리자만).
+const CODE_CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+const newJoinCode = () => Array.from(crypto.randomBytes(10), (x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+async function adminUids() {
+  const out = [];
+  for (const e of ADMIN_EMAILS) { try { out.push((await getAuth().getUserByEmail(e)).uid); } catch (x) { /* 없는 계정 */ } }
+  return out;
+}
+// 로고에 얼굴·부적절한 그림이 있는지 Gemini 가 표시만 한다(반려는 관리자가 직접). 실패하면 null(관리자가 눈으로 본다).
+async function logoCheck(key, url, uid) {
+  const path = L.storagePathOf(url, uid, BUCKET);
+  if (!path) return null;
+  try {
+    const file = getStorage().bucket(BUCKET).file(path);
+    const [meta] = await file.getMetadata();
+    if (Number(meta.size) > 8 * 1024 * 1024) return { tooBig: true };
+    const [buf] = await file.download();
+    const body = {
+      contents: [{ parts: [{ inline_data: { mime_type: meta.contentType || "image/jpeg", data: buf.toString("base64") } },
+        { text: "This image is a club logo uploaded to a fitness app. Answer face: true if a real human face or recognizable person photo is visible; unsafe: true if it contains nudity, violence, hate symbols or profanity. Otherwise false." }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0, thinkingConfig: { thinkingLevel: "minimal" },
+        responseSchema: { type: "OBJECT", properties: { face: { type: "BOOLEAN" }, unsafe: { type: "BOOLEAN" } }, required: ["face", "unsafe"] } },
+    };
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${OCR_MODEL}:generateContent`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify(body) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const t = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts.map((x) => x.text || "").join("");
+    const o = JSON.parse(t || "{}");
+    return { face: o.face === true, unsafe: o.unsafe === true };
+  } catch (e) { console.warn("logoCheck", e && e.message); return null; }
+}
+exports.crewCreate = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 60 }, async (req) => {
+  const uid = needUser(req);
+  const d0 = req.data || {};
+  const sport = ["running", "gym", "mixed"].includes(d0.sport) ? d0.sport : "running";
+  const d = db();
+  const all = (await d.collection("crewsV2").select("name", "createdBy", "leaderUid", "status").get()).docs.map((x) => x.data());
+  const nm = L.crewNameCheck(d0.name, all.filter((c) => c.status !== "rejected").map((c) => c.name));
+  if (!nm.ok) return { ok: false, why: "name_" + nm.why };
+  const allowed = L.createAllowed(all.filter((c) => (c.leaderUid || c.createdBy) === uid));
+  if (!allowed.ok) return { ok: false, why: allowed.why };
+  const logo = d0.logo ? String(d0.logo) : "";
+  if (logo && !L.storagePathOf(logo, uid, BUCKET)) throw new HttpsError("invalid-argument", "bad_logo");
+  const lc = logo ? await logoCheck(GEMINI.value(), logo, uid) : null;
+  const ref = d.collection("crewsV2").doc();
+  await ref.set({ name: nm.name, school: String(d0.school || "").trim().slice(0, 30), sport, intro: String(d0.intro || "").trim().slice(0, 120),
+    logo, logoCheck: lc, status: "pending", createdBy: uid, leaderUid: uid, staff: [], createdAt: now(), stats: { members: 0 } });
+  for (const a of await adminUids()) await notify(a, { type: "crew_review_req", crewId: ref.id, text: nm.name, admin: true });
+  console.log(`crewCreate ${ref.id} by=${uid} name=${nm.name} logoCheck=${JSON.stringify(lc)}`);
+  return { ok: true, id: ref.id };
+});
+exports.crewReview = onCall({ region: REGION }, async (req) => {
+  needUser(req);
+  if (!isAdminReq(req)) throw new HttpsError("permission-denied", "admin_only");
+  const { crewId, kind, ok, reason } = req.data || {};
+  if (!crewId || String(crewId).includes("/")) throw new HttpsError("invalid-argument", "crewId");
+  const d = db(), cRef = d.collection("crewsV2").doc(String(crewId));
+  let crew = null, patch = null;
+  await d.runTransaction(async (tx) => {
+    const c = await tx.get(cRef);
+    if (!c.exists) throw new HttpsError("not-found", "crew");
+    crew = c.data();
+    const r = L.reviewPatch(crew, { kind, ok: ok === true, reason, now: now() });
+    if (r.err) throw new HttpsError("failed-precondition", r.err);
+    patch = r.patch;
+    const leader = L.leaderOf(crew), joinNow = kind === "create" && ok === true && !!leader;
+    const uRef = joinNow ? d.collection("users").doc(leader) : null;
+    const u = joinNow ? await tx.get(uRef) : null;   // ★트랜잭션은 읽기를 쓰기보다 먼저
+    tx.update(cRef, patch);
+    if (joinNow) {   // 만든 사람 = 크루장·첫 크루원, 초대 코드 생성
+      const mRef = cRef.collection("members").doc(leader);
+      tx.set(mRef, { uid: leader, nickname: (u.exists && u.data().nickname) || "", joinedAt: now(), left: false });
+      tx.update(cRef, { "stats.members": FieldValue.increment(1) });
+      if (u.exists) tx.update(uRef, { crewIds: FieldValue.arrayUnion(String(crewId)) });
+      tx.set(cRef.collection("private").doc("join"), { code: newJoinCode() });
+    }
+    if (kind === "close" && ok === true) tx.delete(cRef.collection("private").doc("join"));   // 닫힌 크루는 새로 못 들어온다
+  });
+  const leader = L.leaderOf(crew);
+  if (leader) await notify(leader, { type: "crew_reviewed", crewId: String(crewId), text: crew.name || "", kind, ok: ok === true,
+    reason: String(reason || "").slice(0, 60) });
+  console.log(`crewReview ${crewId} kind=${kind} ok=${ok === true}`);
+  return { ok: true, status: (patch && patch.status) || crew.status || "approved" };
+});
+exports.crewCloseRequest = onCall({ region: REGION }, async (req) => {
+  const uid = needUser(req);
+  const crewId = String((req.data || {}).crewId || ""), reason = String((req.data || {}).reason || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!crewId || crewId.includes("/")) throw new HttpsError("invalid-argument", "crewId");
+  const cRef = db().collection("crewsV2").doc(crewId);
+  const crew = await crewOf(crewId);
+  if (L.leaderOf(crew) !== uid) throw new HttpsError("permission-denied", "not_leader");
+  if ((crew.status || "approved") !== "approved") throw new HttpsError("failed-precondition", "not_open");
+  await cRef.update({ closeReq: { by: uid, at: now(), reason } });
+  for (const a of await adminUids()) await notify(a, { type: "crew_review_req", crewId, text: crew.name || "", close: true, admin: true });
+  return { ok: true };
+});
+exports.crewSetTest = onCall({ region: REGION }, async (req) => {
+  needUser(req);
+  if (!isAdminReq(req)) throw new HttpsError("permission-denied", "admin_only");
+  const crewId = String((req.data || {}).crewId || "");
+  if (!crewId || crewId.includes("/")) throw new HttpsError("invalid-argument", "crewId");
+  await db().collection("crewsV2").doc(crewId).update({ test: (req.data || {}).on === true });
+  return { ok: true };
 });
 
 // 탈퇴할 때 앱(deleteMyAccount)이 부른다 — 내 러닝 기록·카드 이미지 삭제, 크루는 나간 것으로.
