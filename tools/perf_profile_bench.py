@@ -3,6 +3,7 @@
 #   가짜 DB = 읽기 한 번마다 왕복(RTT)만큼 기다림 + 문서 하나당 전송 시간(LTE 약 10Mbps, 1KB 문서 ≈ 0.8ms).
 #   장면: ① 받은 좋아요 목록에서(문서 캐시 있음·매칭 안 됨·상대가 먼저 보냄·인증 40개)
 #         ② 매칭된 사람(캐시 없음·인증 120개) ③ 처음 보는 사람(캐시 없음·인증 10개)
+#         ④ 색인이 아직 없을 때(배포 직후) — 예전처럼 전체 읽기로 되돌아가는지
 #   측정 = 이름·사진이 보일 때까지(첫 화면) / 버튼까지 다 그려질 때까지(완성) / 읽기 수 / 완성 화면 글자가 옛 코드와 같은지.
 #   사용: python tools/perf_profile_bench.py [옛 index.html] [새 index.html] [RTT ms(기본 150 = LTE 80 + 서버)]
 import sys, os, json, re, subprocess
@@ -32,10 +33,17 @@ const USER = { nickname: '상대닉', age: 29, gender: '여성', district: '강�
 window.currentUser = { uid: ME }; window._cachedProfile = { photoURL: 'me.jpg', photos: ['m1.jpg'] };
 window.db = {};
 window.collection = (db, name) => ({ name }); window.where = (f, op, v) => ({ w: [f, op, v] });
-window.query = (c, ...cl) => ({ name: c.name, w: cl.filter(x => x.w).map(x => x.w) });
+window.orderBy = (f, dir) => ({ o: [f, dir] }); window.limit = n => ({ lim: n });
+window.query = (c, ...cl) => ({ name: c.name, w: cl.filter(x => x.w).map(x => x.w), o: cl.filter(x => x.o).length, lim: (cl.find(x => x.lim) || {}).lim });
+const NOW = Math.floor(Date.now() / 1000);
+const FEED = () => Array.from({ length: S.posts }, (_, i) => docOf('f' + i, { userId: S.uid, photoURL: (i % 7 === 3 ? '' : 'f' + i + '.jpg'), createdAt: { seconds: NOW - i * 86400 * 1.3 }, likes: i % 3 }));
+const feedMatch = q => FEED().filter(d => q.w.every(([f, op, v]) => op === '==' ? d.data()[f] === v : (op === '>=' ? d.data()[f].seconds * 1000 >= v.getTime() : true)));
+window.getCountFromServer = async q => { await wait(1); window.__reads++; if (S.noIndex && q.o) { const e = new Error('index'); e.code = 'failed-precondition'; throw e; } const n = feedMatch(q).length; return { data: () => ({ count: n }) }; };
 window.doc = (db, name, id) => ({ name, id });
 window.getDocs = async q => {
-  const out = q.name === 'feed' ? Array.from({ length: S.posts }, (_, i) => docOf('f' + i, { userId: S.uid, photoURL: 'f' + i + '.jpg', createdAt: { seconds: 1760000000 - i * 86400 }, likes: i % 3 })) : [];
+  if (S.noIndex && q.o) { await wait(1); const e = new Error('index'); e.code = 'failed-precondition'; throw e; }
+  let out = q.name === 'feed' ? feedMatch(q) : [];
+  if (q.lim) out = out.slice(0, q.lim);
   await wait(out.length); window.__reads += Math.max(1, out.length); return snapOf(out);
 };
 window.getDoc = async d => {
@@ -57,7 +65,8 @@ window.mwFurnHtml = () => ''; window.mwMiniCharHtml = () => '<i></i>';
 
 SCENES = [('좋아요 목록에서', dict(uid='u1', cached=True, matched=False, theyLiked=True, posts=40)),
           ('매칭된 사람', dict(uid='u2', cached=False, matched=True, theyLiked=False, posts=120)),
-          ('처음 보는 사람', dict(uid='u3', cached=False, matched=False, theyLiked=False, posts=10))]
+          ('처음 보는 사람', dict(uid='u3', cached=False, matched=False, theyLiked=False, posts=10)),
+          ('색인 없을 때(매칭·120)', dict(uid='u4', cached=False, matched=True, theyLiked=False, posts=120, noIndex=True))]
 
 def run(b, code, sc, cpu):
     ctx = b.new_context(viewport={'width': 360, 'height': 780})
