@@ -48074,6 +48074,23 @@ input.cw-in[type=date]::-webkit-date-and-time-value{text-align:left}
 .cw-lb{display:block;font-size:12px;color:#8a93a8;margin-top:16px}
 .cw-list{border-top:1px solid rgba(255,255,255,.05)}
 .cw-li{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+/* ★10-22 승인 대기·반려 안내 = 화면 가운데 작은 카드(전체 시트에 글 3줄만 있던 빈 화면 → 브랜딩 검수) */
+.cw-modal{position:fixed;inset:0;z-index:9000;background:rgba(5,7,12,.72);display:flex;align-items:center;justify-content:center;padding:20px;animation:cwTipIn .16s ease-out both}
+.cw-mcard{width:min(320px,100%);background:#0f141f;border:1px solid #232b40;border-radius:16px;padding:18px;box-sizing:border-box;color:#cfd6e6}
+.cw-mcard .hd{display:flex;gap:12px;align-items:center}
+.cw-mcard .th{width:56px;height:56px;border-radius:12px;flex-shrink:0;background-color:#121827;background-position:center;background-size:cover;background-repeat:no-repeat}
+.cw-mcard .nm{font-size:16px;font-weight:800;color:#e8ecf4;line-height:1.3;word-break:keep-all}
+.cw-mcard .sb{font-size:12px;color:#8a93a8;margin-top:3px}
+.cw-mcard .st{display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;color:#8a93a8;border:1px solid #2b3346;border-radius:6px;padding:2px 7px}
+.cw-mcard .st.rj{color:#c97a6d;border-color:#5a2f2a}
+.cw-mcard .tx{font-size:13.5px;line-height:1.6;margin-top:14px}
+.cw-mcard .tx small{display:block;color:#8a93a8;font-size:12px;margin-top:4px}
+.cw-mcard .bt{display:flex;gap:8px;margin-top:16px}
+.cw-mcard .bt button{flex:1;padding:11px 0;border-radius:10px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid #2b3346;background:#141925;color:#cfd6e6}
+.cw-mcard .bt button.go{border-color:#3d6fd6;color:#7aa8ff}
+.cw-li .lg{width:64px;height:64px;border-radius:12px;object-fit:cover;flex-shrink:0;background:#121827;cursor:zoom-in}
+.cw-lgbig{position:fixed;inset:0;z-index:9100;background:rgba(5,7,12,.9);display:flex;align-items:center;justify-content:center;padding:24px}
+.cw-lgbig img{max-width:100%;max-height:80vh;border-radius:12px;background:#121827}
 .cw-li .cw-pbtn{flex:none;padding:7px 10px}
 /* 스쿼드 탭 '내 크루' 줄 */
 .cw-row-mine{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;border-bottom:1px solid rgba(255,255,255,.06);padding:10px 0;cursor:pointer;color:#e8ecf4;text-align:left;font-family:inherit}
@@ -48469,11 +48486,18 @@ window.crewCreateSend = async function () {
 window.crewAskedInfo = function (id) {
   const c = ((window._crewMineCache && window._crewMineCache.list) || []).find(x => x.id === id) || {};
   const rj = c.status === 'rejected', close = "document.getElementById('crew-asked').remove()";
-  _crewSheet('crew-asked', _crewHead(_cE(_crewName(c) || '크루'), rj ? '반려' : '승인 대기', close)
-    + '<div style="padding:8px 20px 0;font-size:14px;line-height:1.6;color:#cfd6e6">'
-    + (rj ? '관리자가 이 신청을 반려했어요.' + (c.rejectReason ? '<br><span style="color:#8a93a8">사유: ' + _cE(c.rejectReason) + '</span>' : '') + '<br>내용을 고쳐 다시 신청할 수 있어요.'
-      : '관리자가 확인하고 있어요. 승인되면 알림으로 알려 드리고, 그때부터 초대 링크로 크루원을 모을 수 있어요.<br><span style="color:#8a93a8">승인 전에는 다른 사람에게 보이지 않아요.</span>')
-    + (rj ? '<button class="cw-up" style="max-width:none;margin-top:24px" onclick="' + close + ';window.crewCreateOpen()">다시 신청하기</button>' : '') + '</div>');
+  const old = document.getElementById('crew-asked'); if (old) old.remove();
+  const th = c.logo ? 'background-image:url(\'' + _cE(c.logo) + '\')' : _crewBg();
+  const el = document.createElement('div'); el.id = 'crew-asked'; el.className = 'cw-modal';
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  el.innerHTML = '<div class="cw-mcard" role="dialog" aria-label="' + _cE(_crewName(c) || '크루') + '">'
+    + '<div class="hd"><span class="th" style="' + th + '"></span><div style="min-width:0"><div class="nm">' + _cE(_crewName(c) || '크루') + '</div>'
+    + '<div class="sb">' + _cE([c.school, _crewSportKo[c.sport]].filter(Boolean).join(' · ')) + '</div>'
+    + '<span class="st' + (rj ? ' rj' : '') + '">' + (rj ? '반려' : '승인 대기') + '</span></div></div>'
+    + '<div class="tx">' + (rj ? '관리자가 이 신청을 반려했어요.' + (c.rejectReason ? '<small>사유: ' + _cE(c.rejectReason) + '</small>' : '') + '<small>내용을 고쳐 다시 신청할 수 있어요.</small>'
+      : '관리자가 확인하고 있어요. 승인되면 알림으로 알려 드리고, 그때부터 초대 링크로 크루원을 모을 수 있어요.<small>승인 전에는 다른 사람에게 보이지 않아요.</small>') + '</div>'
+    + '<div class="bt"><button onclick="' + close + '">닫기</button>' + (rj ? '<button class="go" onclick="' + close + ';window.crewCreateOpen()">다시 신청하기</button>' : '') + '</div></div>';
+  document.body.appendChild(el);
 };
 window.crewCloseAsk = function (id) {
   const why = prompt('크루를 닫는 이유를 짧게 적어 주세요(관리자가 확인한 뒤 닫혀요). 기록은 지워지지 않아요.', '');
@@ -49132,12 +49156,12 @@ window.crewReviewListHtml = function (list, who) {
   const nk = u => (who[u] && who[u].nickname) || '회원';
   const lc = c => c.logoCheck ? (c.logoCheck.face ? ' · <b style="color:#E4472E">얼굴 있음</b>' : '') + (c.logoCheck.unsafe ? ' · <b style="color:#E4472E">부적절</b>' : '') : (c.logo ? ' · 로고 검사 못 함' : '');
   return !window.CREW_CFG.APPROVAL_ON ? '' : '<div class="cw-h" style="margin-top:8px">승인 대기 ' + asks.length + '</div><div class="cw-list">'
-    + (asks.length ? asks.map(c => '<div class="cw-li">' + (c.logo ? '<img src="' + _cE(c.logo) + '" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0">' : '')
+    + (asks.length ? asks.map(c => '<div class="cw-li">' + (c.logo ? '<img class="lg" src="' + _cE(c.logo) + '" alt="로고" onclick="window.crewLogoBig(this.src)">' : '<span class="lg" style="' + _crewBg() + '"></span>')
       + '<span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">' + _cE(nk(c.createdBy)) + ' · ' + _cE(_crewSportKo[c.sport] || '') + lc(c) + '</span></span>'
       + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'create\',true)">승인</button>'
       + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'create\',false)">반려</button></div>').join('') : '<p class="cw-quiet">없어요</p>') + '</div>'
     + (closes.length ? '<div class="cw-h" style="margin-top:24px">닫기 신청 ' + closes.length + '</div><div class="cw-list">' + closes.map(c => '<div class="cw-li"><span style="flex:1;min-width:0"><b style="font-size:14px">' + _cE(c.name) + '</b><br><span style="font-size:12px;color:#8a93a8">' + _cE(nk(c.closeReq.by)) + (c.closeReq.reason ? ' · ' + _cE(c.closeReq.reason) : '') + '</span></span>'
-      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'close\',true)">닫기</button>'
+      + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'close\',true)">닫기 승인</button>'
       + '<button class="cw-pbtn" onclick="window.crewReviewDo(\'' + _cJ(c.id) + '\',\'close\',false)">반려</button></div>').join('') + '</div>' : '');
 };
 // ── 관리자: 크루 소개·최근 모임 사진(초대장에 보이는 칸) ──
@@ -49204,6 +49228,10 @@ window.crewIntroSave = async function (id) {
 };
 // 초대 코드 10자(헷갈리는 글자 뺀 32종) — 6자리 숫자는 크루 id 가 공개라 맞혀 볼 수 있다(리뷰 10-19)
 const _crewCode = () => { const A = 'abcdefghjkmnpqrstuvwxyz23456789'; const a = new Uint32Array(10); crypto.getRandomValues(a); return Array.from(a, x => A[x % A.length]).join(''); };
+window.crewLogoBig = function (src) {
+  const el = document.createElement('div'); el.className = 'cw-lgbig'; el.onclick = () => el.remove();
+  el.innerHTML = '<img src="' + _cE(src) + '" alt="로고 크게">'; document.body.appendChild(el);
+};
 window.crewReviewDo = async function (id, kind, ok) {
   let reason = '';
   if (!ok) { reason = prompt('반려 사유를 한 줄로 적어 주세요(크루장에게 알림으로 가요)', ''); if (reason === null) return; }
