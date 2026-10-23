@@ -9307,6 +9307,12 @@ window._mwParkCamTick = function () {
     const ox = Math.round(Math.min(0, Math.max(sr.width - rr.width, sr.width / 2 - relX)));
     const oy = Math.round(Math.min(0, Math.max(sr.height - rr.height, visH / 2 - relY)));
     room.style.transform = 'translate3d(' + ox + 'px,' + oy + 'px,0)';
+    // ★10-23 속도: 가만히 서 있어도 매 프레임 위치를 읽어(꽃잎·구름·오리 애니메이션 때문에 매번 문서 전체 스타일 재계산)
+    //   CPU×4 에서 8초에 3.2초를 썼다. 카메라 위치가 30프레임(약 0.5초) 연속 같으면 쉰다 — 걸음 트랜지션은 0.15초라 걷는 중엔 안 쉰다.
+    //   다시 켜는 곳: 캐릭터를 그릴 때(charRender 끝)·창 크기·키보드(visualViewport)·body 클래스(채팅 입력·전체화면) 변화.
+    const _ck = ox + ',' + oy + ',' + sr.width + ',' + sr.height;
+    if (_ck === window._mwParkCamKey) { if (++window._mwParkCamSame >= 30) { window._mwParkCamSame = 0; window._mwParkCamKey = ''; return; } }
+    else { window._mwParkCamKey = _ck; window._mwParkCamSame = 0; }
   }
   window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
 };
@@ -9315,6 +9321,9 @@ window._mwParkCam = function () {
   if (!window._mwParkCamRAF) window._mwParkCamRAF = requestAnimationFrame(window._mwParkCamTick);
 };
 window.addEventListener('resize', function () { window._mwParkCam && window._mwParkCam(); });
+// 쉬는 카메라를 깨우는 곳(위 10-23 참고) — 키보드가 올라오거나 채팅 입력·전체화면 클래스가 바뀌면 보이는 영역이 달라진다
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', function () { window._mwParkCam && window._mwParkCam(); }); window.visualViewport.addEventListener('scroll', function () { window._mwParkCam && window._mwParkCam(); }); }
+try { new MutationObserver(function () { window._mwParkCam && window._mwParkCam(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
 window.charMove = function (dx, dy) {
   if (window._mwPlateBusy) return;   // 합판 컷신 중엔 조작을 막는다(드래그로 구멍을 뚫고 지나간다)
   const prev = window._charPos.face;
@@ -36155,8 +36164,9 @@ window._mwParkAmbient = function (on) {
       .pk-fx-fount>i{width:2400%;background-image:url('char/fields/anim/fount_loop.png?v=1');animation-duration:2.4s;animation-timing-function:steps(24)}
       .pk-fx-pond{left:17.92%;top:19.97%;width:20.80%;height:13.38%}
       .pk-fx-pond>i{width:2400%;background-image:url('char/fields/anim/pond_loop.png?v=1');animation-duration:3.6s;animation-timing-function:steps(24)}
-      @keyframes pkCloud{0%{left:-45%}100%{left:115%}}
-      .pk-cloud{width:42%;height:20%;background:radial-gradient(ellipse at center,rgba(10,15,40,.085),rgba(10,15,40,0) 68%);animation:pkCloud 80s linear infinite}`;
+      /* ★10-23 속도: left 로 움직이면 매 프레임 레이아웃이 돈다 → 같은 거리를 transform 으로(부모 폭 160% = 자기 폭 42% 의 380.952%) */
+      @keyframes pkCloud{0%{transform:translateX(0)}100%{transform:translateX(380.952%)}}
+      .pk-cloud{left:-45%;width:42%;height:20%;background:radial-gradient(ellipse at center,rgba(10,15,40,.085),rgba(10,15,40,0) 68%);animation:pkCloud 80s linear infinite}`;
     document.head.appendChild(st);
   }
   const amb = document.createElement('div'); amb.id = 'mw-park-amb';
@@ -36314,7 +36324,7 @@ window._mwDucks = function (n) {
       .mw-dk.l>b{transform:scaleX(-1)}
       .mw-dk.dip>b>i{animation:none;transform:translateX(-75%)}
       @keyframes mwDkSwim{from{transform:translateX(0)}to{transform:translateX(-75%)}}
-      @keyframes mwDkBob{0%,100%{margin-top:0}50%{margin-top:1px}}`;
+      @keyframes mwDkBob{0%,100%{translate:0 0}50%{translate:0 1px}}`;   /* ★10-23 margin-top → translate(매 프레임 레이아웃 없이 같은 1px 둥실) */
     document.head.appendChild(st);
   }
   const set = new Set(cells.map(function (c) { return c[0] + ',' + c[1]; }));
