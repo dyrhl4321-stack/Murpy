@@ -12306,7 +12306,7 @@ function goPage(name, navOpts) {
     document.getElementById('nav-' + n).classList.toggle('active', n === name);
     document.getElementById('navl-' + n).classList.toggle('active', n === name);
   });
-  if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo(); }
+  if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo({ swr: true }); }
   if (name === 'crew') { if (window.renderSquadPage) window.renderSquadPage(); else renderCrews(); }   // 크루 탭 → 스쿼드 (크루 렌더는 휴면)
   // ★진입 팝업은 뺐다(대표 8-12) — 탭을 열 때마다 막아서는 창은 정보값이 없다.
   //   알릴 내용은 카드 화면과 '다 봤어요' 화면 안에서 이미 다 보인다.
@@ -13394,9 +13394,9 @@ function switchBambooTab(tab, btn) {
   renderBamboo();
 }
 
-function renderBamboo() {
+function renderBamboo(opts) {
   window.bambooTab = bambooTab;
-  if (window.loadBamboo) { window.loadBamboo(bambooTab); return; }
+  if (window.loadBamboo) { window.loadBamboo(bambooTab, opts); return; }
   document.getElementById('bamboo-list').innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
 }
 
@@ -33050,7 +33050,8 @@ window.filterBambooCat = function (c) {
   window.loadBamboo(tab);
 };
 
-window.loadBamboo = async (tab) => {
+window._bambooSig = s => JSON.stringify(s.docs.map(d => [d.id, d.data()]));
+window.loadBamboo = async (tab, opts) => {
   const user = auth.currentUser || window.currentUser;
   const list = document.getElementById('bamboo-list');
   if (!list) return;
@@ -33064,13 +33065,27 @@ window.loadBamboo = async (tab) => {
   if (_append) { tab = window._bambooTab || 'all'; }
   else { window._bambooAll = []; window._bambooLast = null; window._bambooDone = false; }
   window._bambooTab = tab;
-  if (!_append) list.innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
+  // ★10-23 속도: 탭에 다시 들어올 때(goPage → opts.swr) 2분 안에 받은 첫 장이 있으면 회색 뼈대 없이 **바로** 그리고,
+  //   뒤에서 새로 받아 내용이 달라졌을 때만 다시 그린다. 예전엔 들어올 때마다 60개를 다시 읽으며 뼈대부터 보였다.
+  //   글쓰기·삭제·좋아요 뒤에 부르는 곳은 opts 가 없어 예전처럼 늘 새로 읽는다(그 결과가 캐시도 갱신한다).
+  const _bf = window._bambooFirst;
+  const _useCache = !_append && !!(opts && opts.swr) && !!_bf && Date.now() - _bf.at < 120000;
+  if (!_append && !_useCache) list.innerHTML = '<div>' + [1,2,3].map(() => `<div class="skeleton-card"><div class="skeleton" style="height:56px;margin-bottom:12px"></div><div style="display:flex;justify-content:space-between"><div class="skeleton" style="width:50px;height:14px"></div><div class="skeleton" style="width:90px;height:14px"></div></div></div>`).join('') + '</div>';
   try {
     // ★8-31: 60개씩 끊어 읽는다(8-29의 '더 보기는 나중 과제'가 이것). 바닥에 닿으면 다음 장.
     const q = window._bambooLast
       ? query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'), startAfter(window._bambooLast), limit(60))
       : query(collection(db, 'bamboo'), orderBy('createdAt', 'desc'), limit(60));
-    const snap = await getDocs(q);
+    const snap = _useCache ? _bf.snap : await getDocs(q);
+    if (!_append && !_useCache) window._bambooFirst = { at: Date.now(), snap: snap, sig: window._bambooSig(snap) };
+    if (_useCache && !opts.noReval) getDocs(q).then(function (s2) {
+      const sig = window._bambooSig(s2);
+      if (sig === _bf.sig) { _bf.at = Date.now(); return; }
+      window._bambooFirst = { at: Date.now(), snap: s2, sig: sig };
+      // 그사이 다른 탭으로 갔거나 아래로 더 불러왔으면(다시 그리면 스크롤이 처음으로 간다) 다음에 들어올 때 반영
+      const pg = document.getElementById('page-bamboo');
+      if (window._bambooTab === tab && pg && pg.classList.contains('active') && (window._bambooAll || []).length <= 60) window.loadBamboo(tab, { swr: true, noReval: true });
+    }).catch(function () {});
     if (snap.docs.length) window._bambooLast = snap.docs[snap.docs.length - 1];
     if (snap.docs.length < 60) window._bambooDone = true;
     window._bambooAll = (window._bambooAll || []).concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -34152,7 +34167,11 @@ window._renderInterestList = async (more) => {
 const _origRenderMatch = window.renderMatch;
 window.renderMatch = function(...args) {
   if (_origRenderMatch) _origRenderMatch.apply(this, args);
-  if (window.currentUser) setTimeout(() => window._loadInterestPanel && window._loadInterestPanel(), 500);
+  // ★10-23 읽기 줄이기: 매칭 탭에 들어올 때마다 받은·보낸 좋아요·대숲 요청(각 최대 100)·매칭 전부를 다시 읽었다.
+  //   새 좋아요·대숲 요청은 이미 실시간 구독(likes limit 1 · notifications)이 하트를 바로 갱신한다.
+  //   여기서는 그 밖의 변화(취소·다른 기기 수락 등)만 맞추면 되므로 5분 안에 읽었으면 건너뛴다. 관심 패널을 열 때는 늘 새로 읽는다.
+  if (window.currentUser && !(window._interestUid === window.currentUser.uid && Date.now() - (window._interestAt || 0) < 300000))
+    setTimeout(() => window._loadInterestPanel && window._loadInterestPanel(), 500);
 };
 
 window.markAllFirestoreRead = async () => {
