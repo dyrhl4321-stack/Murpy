@@ -8,7 +8,8 @@
 //   ★휴면 `crews` 컬렉션과는 별개다(새 컬렉션 crewsV2).
 // ─────────────────────────────────────────────────────────────────────────────
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { getDatabase } = require("firebase-admin/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -630,6 +631,36 @@ exports.crewCheckin = onDocumentCreated({ region: REGION, document: "checkins/{i
   }
 });
 
+// ── 크루 아지트(★10-22) — RTDB crewLive/{crewId} 는 크루원만 읽고 쓴다(규칙이 _m/{uid} 거울을 본다) ──
+//   거울은 서버만 쓴다: 크루원 문서(members/{uid})가 바뀔 때마다 left 를 따라 넣고 뺀다.
+//   crewJoin 은 openJoin 대표 결정 전이라 배포가 묶여 있어, 가입 함수 대신 문서 트리거로 한다.
+const CHAT_KEEP_DAYS = 14, CHAT_KEEP_N = 200;
+exports.crewMemberMirror = onDocumentWritten({ region: REGION, document: "crewsV2/{crewId}/members/{uid}" }, async (event) => {
+  const { crewId, uid } = event.params;
+  const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+  const ref = getDatabase().ref("crewLive/" + crewId + "/_m/" + uid);
+  if (after && !after.left) await ref.set(true); else await ref.remove();
+});
+// 처음 한 번(또는 거울이 비었을 때) 기존 크루원을 채운다 — crewHourly 가 크루마다 _mv 표시를 보고 부른다
+async function mirrorBackfill(crewId) {
+  const rt = getDatabase();
+  const ms = await db().collection("crewsV2").doc(crewId).collection("members").where("left", "==", false).get();
+  const m = {}; ms.docs.forEach((s) => { m[s.id] = true; });
+  await rt.ref("crewLive/" + crewId + "/_m").set(Object.keys(m).length ? m : null);
+  await rt.ref("crewLive/" + crewId + "/_mv").set(1);
+  return ms.size;
+}
+// 아지트 채팅 — 14일이 지났거나 200줄을 넘은 옛 줄을 지운다
+async function chatTrim(crewId) {
+  const rt = getDatabase(), ref = rt.ref("crewLive/" + crewId + "/chat");
+  const snap = await ref.orderByKey().once("value");
+  const rows = []; snap.forEach((c) => { rows.push({ k: c.key, at: Number((c.val() || {}).t) || 0 }); });   // 앱이 쓰는 시각 필드는 t
+  const cut = now() - CHAT_KEEP_DAYS * 864e5, drop = {};
+  rows.forEach((r, i) => { if (r.at && r.at < cut) drop[r.k] = null; if (rows.length - i > CHAT_KEEP_N) drop[r.k] = null; });
+  if (Object.keys(drop).length) await ref.update(drop);
+  return Object.keys(drop).length;
+}
+
 // ── 기간이 끝난 챌린지 정리 ───────────────────────────────────────────────────
 exports.crewHourly = onSchedule({ region: REGION, schedule: "every 60 minutes" }, async () => {
   const d = db();
@@ -650,6 +681,12 @@ exports.crewHourly = onSchedule({ region: REGION, schedule: "every 60 minutes" }
     //   (rewardPaid 는 만들 때 없는 필드라 == false 로는 못 찾는다 → 읽고 걸러낸다)
     const ended = await c.ref.collection("challenges").where("status", "in", ["done", "failed"]).get().catch(() => null);
     if (ended) for (const s of ended.docs) if (!s.data().rewardPaid && now() >= s.data().end) await finishChallenge(c.id, s.id);
+    // 아지트: 명단 거울 처음 채우기 · 채팅 정리 — 실패해도 챌린지 정리는 계속
+    try {
+      const mv = await getDatabase().ref("crewLive/" + c.id + "/_mv").once("value");
+      if (mv.val() !== 1) console.log(`crew mirror backfill ${c.id} n=${await mirrorBackfill(c.id)}`);
+      const t = await chatTrim(c.id); if (t) console.log(`crew chat trim ${c.id} n=${t}`);
+    } catch (e) { console.warn("crew agit hourly", c.id, e && e.message); }
   }
   if (n) console.log(`crewHourly failed=${n}`);
 });

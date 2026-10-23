@@ -537,6 +537,26 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+      // ★10-22 크루 아지트 — 꾸미기(hideout/main)·변경 기록은 크루장·운영진·관리자만 쓴다, 읽기는 공개(방 구경)
+      //   v 는 1씩만 올라가야 한다(늦게 연 사람이 앞선 저장을 덮지 않게). 소품은 120개까지.
+      function crewMod() {
+        let c = get(/databases/$(database)/documents/crewsV2/$(crewId)).data;
+        return request.auth != null && (request.auth.uid == c.get('leaderUid', c.get('createdBy', ''))
+          || request.auth.uid in c.get('staff', []) || isAdmin());
+      }
+      match /hideout/{docId} {
+        allow read: if true;
+        allow write: if docId == 'main' && crewMod()
+          && request.resource.data.keys().hasOnly(['theme', 'f', 'v', 'by', 'at', 'last'])
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.f is list && request.resource.data.f.size() <= 120
+          && request.resource.data.v == (resource == null ? 1 : resource.data.get('v', 0) + 1);
+      }
+      match /hideoutLog/{logId} {
+        allow read: if true;
+        allow create: if crewMod() && request.resource.data.by == request.auth.uid;
+        allow update, delete: if false;
+      }
       // ★10-22 러닝 신고 — 서버(runReport)만 쓰고, 크루장·운영진·관리자만 읽는다(신고한 사람 이름이 들어 있다)
       match /reports/{rid} {
         allow read: if isAdmin() || (request.auth != null && (
