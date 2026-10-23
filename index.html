@@ -315,6 +315,10 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      overscroll-behavior:contain 은 패널 끝까지 스크롤했을 때 뒷화면으로 넘어가는 것을 막는다. */
   .panel { position: fixed; inset: 0; height: 100dvh; overscroll-behavior: contain; background: #0a0a0a; z-index: 100; display: flex; flex-direction: column; max-width: 390px; margin: 0 auto; transform: translateX(100%); visibility: hidden; transition: transform 0.3s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.3s; pointer-events: none; }
   .panel.open { transform: translateX(0); visibility: visible; transition: transform 0.3s cubic-bezier(0.32,0.72,0,1), visibility 0s; pointer-events: all; }
+  /* ★10-23 속도: 닫힌 패널 31개는 안 보이는데도(visibility:hidden) 매 레이아웃마다 안쪽을 다 계산했다(부팅 레이아웃의 ~30%).
+     닫혀 있는 동안은 안쪽 렌더를 건너뛴다. 닫히며 미끄러져 나가는 0.3초 동안은 closePanel 이 .panel-closing 을 붙여 그대로 보이게 한다.
+     열린 패널에는 아무 영향 없다. 지원 안 하는 브라우저는 그냥 무시(예전과 같음). */
+  .panel:not(.open):not(.panel-closing) { content-visibility: hidden; }
   /* ★10-14 대표 "PC 로 켜면 메인 화면 옆에 검은 화면이 항상 떠 있다": 닫힌 패널은 자기 폭만큼만 오른쪽으로 밀려 있어서,
      창이 390px 보다 넓으면 가운데 화면 바로 옆에 21장이 그대로 보였다(맨 위가 댓글 입력칸이 있는 패널).
      → 닫힌 동안은 visibility 로 감춘다(닫히는 0.3초가 끝난 뒤에 꺼지게 지연). 넓은 창에서는 밀려 들어오는 동안에도
@@ -12388,7 +12392,11 @@ function openPanel(id) {
 function closePanel(id) {
   const _el = document.getElementById(id);
   const _wasOpen = _el && _el.classList.contains('open');
-  if (_el) _el.classList.remove('open');
+  if (_el) {
+    // 미끄러져 나가는 동안은 안쪽이 보여야 한다(닫힌 패널 렌더 건너뛰기 — .panel CSS 참고)
+    if (_wasOpen) { _el.classList.add('panel-closing'); setTimeout(() => _el.classList.remove('panel-closing'), 320); }
+    _el.classList.remove('open');
+  }
   // 열려 있던 것만 센다 — 안 열린 패널에 closePanel 을 부르는 곳이 있어서
   // 그냥 빼면 카운트가 음수가 되고 스크롤이 영영 잠긴다
   if (_wasOpen) {
