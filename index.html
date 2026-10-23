@@ -12307,7 +12307,7 @@ function goPage(name, navOpts) {
     document.getElementById('navl-' + n).classList.toggle('active', n === name);
   });
   if (name === 'bamboo') { bambooTab = 'all'; document.querySelectorAll('#bamboo-tab-bar .bamboo-tab-btn').forEach((b,i) => b.classList.toggle('active', i===0)); renderBamboo({ swr: true }); }
-  if (name === 'crew') { if (window.renderSquadPage) window.renderSquadPage(); else renderCrews(); }   // 크루 탭 → 스쿼드 (크루 렌더는 휴면)
+  if (name === 'crew') { if (window.renderSquadPage) window.renderSquadPage({ swr: true }); else renderCrews(); }   // 크루 탭 → 스쿼드 (크루 렌더는 휴면)
   // ★진입 팝업은 뺐다(대표 8-12) — 탭을 열 때마다 막아서는 창은 정보값이 없다.
   //   알릴 내용은 카드 화면과 '다 봤어요' 화면 안에서 이미 다 보인다.
   if (name === 'match') renderMatch();
@@ -41016,14 +41016,18 @@ window._sqHeroStart = function () {
 };
 
 // ---------- 피드 ----------
-window.renderSquadPage = async function () {
+window.renderSquadPage = async function (opts) {
   // ★히어로는 **목록을 읽은 뒤에** 그린다. 위 카드가 아래 목록과 같은 벙을 가리켜야 하는데
   //   (대표 8-11: "위에껀 근방단 지정 헬스장, 밑에껀 짐박스 강남2호점"), 그러려면 히어로가
   //   살아 있는 벙 목록을 알고 있어야 한다. 먼저 그리면 그걸 모른 채 코드에 적힌 값만 쓴다.
   const root = document.getElementById('squad-list'); if (!root) return;
   try { window.crewRenderMine(); } catch (e) { console.warn('crew row', e); }   // 10-19 내 크루 줄(기다리지 않는다)
   try { window.crewHotRender(); } catch (e) { console.warn('crew hot', e); }    // 10-19 지금 뜨는 크루
-  root.innerHTML = [0, 1, 2].map(() => '<div class="skeleton" style="height:58px;border-radius:14px;margin-bottom:10px"></div>').join('');   // 10-20 글자 대신 목록 모양 뼈대
+  // ★10-23 속도: 탭에 다시 들어올 때(goPage → opts.swr) 2분 안에 받은 벙 목록이 있으면 뼈대 없이 바로 그리고,
+  //   뒤에서 새로 받아 달라졌을 때만 다시 그린다(대숲과 같은 방식). 만들기·참가·나가기 뒤 호출은 opts 가 없어 늘 새로 읽는다.
+  const _sc = window._sqListFirst;
+  const _useCache = !!(opts && opts.swr) && !!_sc && Date.now() - _sc.at < 120000;
+  if (!_useCache) root.innerHTML = [0, 1, 2].map(() => '<div class="skeleton" style="height:58px;border-radius:14px;margin-bottom:10px"></div>').join('');   // 10-20 글자 대신 목록 모양 뼈대
   let rows = [];
   try {
     // ★★목록이 통째로 비던 버그(대표 8-11, 누리쌤이 연 벙이 안 떴다).
@@ -41032,8 +41036,17 @@ window.renderSquadPage = async function () {
     //   한 개도 안 읽혔다 — 실측 결과 살아있는 9개 전부가 40개 밖으로 밀려나 있었다.
     //   → 아예 **안 끝난 것만** 읽는다. 부등호 필드와 첫 정렬 기준이 같아야 해서 expiresAt 로 읽고,
     //     화면에 보이는 순서(시간순)는 아래에서 다시 정렬한다.
-    const qs = await getDocs(query(collection(db,'squads'),
-      where('expiresAt','>', Date.now()), orderBy('expiresAt','asc'), limit(60)));
+    const _q = () => query(collection(db,'squads'),
+      where('expiresAt','>', Date.now()), orderBy('expiresAt','asc'), limit(60));
+    const qs = _useCache ? _sc.qs : await getDocs(_q());
+    if (!_useCache) window._sqListFirst = { at: Date.now(), qs: qs, sig: window._bambooSig(qs) };
+    if (_useCache && !opts.noReval) getDocs(_q()).then(function (s2) {
+      const sig = window._bambooSig(s2);
+      if (sig === _sc.sig) { _sc.at = Date.now(); return; }
+      window._sqListFirst = { at: Date.now(), qs: s2, sig: sig };
+      const pg = document.getElementById('page-crew');
+      if (pg && pg.classList.contains('active')) window.renderSquadPage({ swr: true, noReval: true });
+    }).catch(function () {});
     rows = qs.docs.map(d => ({ id:d.id, ...d.data() }))
                   .filter(s => !['completed','cancelled','expired'].includes(s.status));
   } catch(e) { console.warn('squad feed', e); }
