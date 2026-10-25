@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1259';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1260';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -12702,6 +12702,7 @@ function closeModal(id) {
 
 // ===== TOAST =====
 function showToast(msg) {
+  if (window._noticeHold && window._noticeHold('t', msg)) return;
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
@@ -17361,6 +17362,7 @@ window.mStars = function (score, size) {
 
 // 머피 적립 중앙 축하 연출
 window.celebrateMurpy = function (balance, opts) {
+  if (window._noticeHold && window._noticeHold('c', balance, opts)) return;
   opts = opts || {};
   const el = document.getElementById('murpy-celebrate');
   if (!el) return;
@@ -48931,7 +48933,7 @@ window.runUploadOpen = function (crewId) {
   inp.click();
 };
 window.runScanHtml = function (imgUrl) {
-  return _crewHead('기록 확인', '', "document.getElementById('run-scan').remove()")
+  return _crewHead('기록 확인', '', "window.runScanDone()")
     + '<div class="cw-scanwrap"><div class="cw-scan" id="run-scan-box"><img id="run-scan-img" src="' + _cE(imgUrl) + '" alt="">'
     + '<i class="cw-brk tl"></i><i class="cw-brk tr"></i><i class="cw-brk bl"></i><i class="cw-brk br"></i>'
     + '<div class="ln" id="run-scan-ln"></div><div id="run-scan-boxes"></div><div class="ink" id="run-scan-ink"></div></div></div>'
@@ -49057,14 +49059,30 @@ window._runScanStart = async function (file, crewId) {
   resP.catch(e => console.warn('runSubmit', e));
   const out = await window.runScanPlay(resP);
   if (!document.body.contains(el) || !out) return;
+  window._runScanCrew = out.ok ? (crewId || null) : null;
+  if (out.ok) window._crewMineCache = null;
   window.runScanResult(out.res, out.err);
-  if (out.ok) { window._crewMineCache = null; if (crewId && document.getElementById('crew-page')) window.openCrewPage(crewId); }
+};
+// ★10-26 대표 "도장 찍고 바로 다른 창으로 넘어가고 뒤에 뭐가 또 뜬다" → 한 번에 하나씩:
+//   스캔 연출 → 결과 카드([확인] 까지 그대로) → 크루 화면 새로 그림 → 미뤄 둔 안내는 마지막 1개만.
+//   결과 카드가 떠 있는 동안 들어온 토스트·축하(알림 도착 등)는 여기 쌓아 둔다. 머피 지급은 결과 카드 안 한 줄로 끝.
+window._noticeQ = [];
+window._noticeHold = function (kind, a, b) {
+  if (!document.getElementById('run-scan')) return false;
+  window._noticeQ.push([kind, a, b]); return true;
+};
+window.runScanDone = function () {
+  const s = document.getElementById('run-scan'); if (s) s.remove();
+  const crewId = window._runScanCrew; window._runScanCrew = null;
+  if (crewId && document.getElementById('crew-page')) window.openCrewPage(crewId);
+  const q = window._noticeQ.splice(0), last = q[q.length - 1];
+  if (last) setTimeout(() => { if (last[0] === 'c') window.celebrateMurpy(last[1], last[2]); else showToast(last[1]); }, 450);
 };
 // 결과 문구 + 닫기(연출이 끝난 뒤 아래에서 떠오름)
 window.runScanResult = function (res, err) {
   const out = document.getElementById('run-scan-out'); if (!out) return;
   const ok = !!(res && res.ok), r = (res && res.run) || {};
-  const close = '<div style="padding:32px 20px 0"><button class="cw-up" style="max-width:none" onclick="document.getElementById(\'run-scan\').remove()">닫기</button></div>';
+  const close = '<div style="padding:32px 20px 0"><button class="cw-up" style="max-width:none" onclick="window.runScanDone()">확인</button></div>';
   if (ok) {
     const v = _crewCounts(r.status);
     out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (r.status === 'verified' ? '원본 확인' : v ? '스캔 인증' : '미인증') + '</em></b>'
