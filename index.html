@@ -91,8 +91,11 @@
 <!-- 원칙: 앱과 웹은 같은 화면을 보여준다. 접속 환경(UA 등)을 가려내 내용을 바꾸는 분기를 만들지 않는다.
      아직 실제로 동작하지 않는 결제·가격·"준비 중" 기능은 화면에 두지 않는다. -->
 
-<!-- 카카오 SDK -->
-<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
+<!-- 카카오 SDK — ★10-23 속도: 예전엔 <head> 에서 HTML 해석을 멈추고 받았다(느린 망에선 첫 화면이 그만큼 늦음). 이제 async.
+     공유·로그인은 SDK 가 없을 때의 길(링크 복사·공유 시트·인가 주소 직접 이동)이 이미 있어 그대로 동작하고,
+     로그인 콜백(_kakaoLegacyAuth)만 window._kakaoSdkReady 를 기다린다. 받아지면 _kakaoSdkInit 이 init 한다(순서 무관). -->
+<script>window._kakaoSdkReady = new Promise(function (res) { window._kakaoSdkLoaded = res; });</script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous" async onload="window._kakaoSdkInit && window._kakaoSdkInit()" onerror="window._kakaoSdkLoaded && window._kakaoSdkLoaded(false)"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
 window._SW_V = '1265';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
@@ -120,7 +123,11 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
       sessionStorage.setItem('murpy_boot_qs', JSON.stringify({ qs: location.search, at: Date.now() }));
   } catch (e) {}
   const KAKAO_JS_KEY = '3d256cbf4e2e4ab5abe26db25f57950d';
-  if (typeof Kakao !== 'undefined') Kakao.init(KAKAO_JS_KEY);
+  window._kakaoSdkInit = function () {
+    try { if (typeof Kakao !== 'undefined' && !Kakao.isInitialized()) Kakao.init(KAKAO_JS_KEY); } catch (e) { console.warn('kakao init', e); }
+    if (window._kakaoSdkLoaded) window._kakaoSdkLoaded(typeof Kakao !== 'undefined');
+  };
+  if (typeof Kakao !== 'undefined') window._kakaoSdkInit();   // 이 줄보다 SDK 가 먼저 받아졌으면(캐시) 여기서
   // 카카오 OAuth 콜백 감지
   (function(){
     // 팝업 implicit flow: #access_token=xxx
@@ -27388,6 +27395,9 @@ async function _kakaoCustomAuth(data) {
 
 async function _kakaoLegacyAuth(accessToken) {
   window._kakaoMode = 'legacy';
+  // ★10-23 SDK 가 async 라 콜백으로 막 열린 페이지에선 아직 없을 수 있다 — 받아질 때까지(최대 10초) 기다린다
+  if (typeof Kakao === 'undefined' && window._kakaoSdkReady) await Promise.race([window._kakaoSdkReady, new Promise(function (r) { setTimeout(r, 10000); })]);
+  if (typeof Kakao === 'undefined') throw new Error('kakao sdk missing');
   if (!Kakao.isInitialized()) Kakao.init(_KAKAO_JS_KEY);
   Kakao.Auth.setAccessToken(accessToken);
   const kakaoUser = await Kakao.API.request({ url: '/v2/user/me' });
