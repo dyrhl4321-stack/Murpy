@@ -21,7 +21,7 @@ const L = require("./crew_logic.js");
 const REGION = "asia-northeast3";
 const GEMINI = defineSecret("GEMINI_API_KEY");
 const BUCKET = "murpyprototype.firebasestorage.app";
-const HEALTH_VERIFY_ON = false;          // 2차에서 true
+const HEALTH_VERIFY_ON = true;           // ★10-26 아이폰 1.1.0 건강 앱 다리(health-workouts) — 웹이 health 를 보낼 때만 대조
 // ★러닝 카드 올리기는 개인정보 처리방침 개정 시행(10-26) 뒤에 연다(대표 확정 (가)). index.html CREW_CFG.RUN_UPLOAD_ON 과 같이 바꿔 배포.
 // ★10-25 배포를 앞당겨도 시행 전에 열리지 않게 시각으로 막는다 — 10-26 0시(한국)부터 받는다. 웹 CREW_CFG 와 같은 시각.
 const RUN_OPEN_AT = Date.parse("2026-10-26T00:00:00+09:00");
@@ -331,7 +331,10 @@ exports.runSubmit = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds: 
   let status = grade.status, source = null;
   const health = (req.data || {}).health;
   if (HEALTH_VERIFY_ON && status === "scan" && Array.isArray(health)) {
-    const m = L.matchHealth(run, health.slice(0, 30));
+    // 처리방침 항목만 받아 숫자로 다시 만든다(앱이 보낸 다른 필드는 버린다)
+    const hs = health.slice(0, 30).map((w) => ({ start: Number(w && w.start) || 0, end: Number(w && w.end) || 0, km: Number(w && w.km) || 0,
+      sec: Number(w && w.sec) || 0, app: String((w && w.app) || "").slice(0, 40), kind: "health", userEntered: !!(w && w.userEntered) }));
+    const m = L.matchHealth(run, hs);
     if (m.ok) { status = "verified"; source = m.source; }
   }
   const counted = L.counts(status);

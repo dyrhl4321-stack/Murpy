@@ -48062,6 +48062,11 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-pbtn.gold{color:#F5C24B}
 .cw-leave{display:block;margin:32px auto 0;background:none;border:none;color:#4f586c;font-size:12px;cursor:pointer;font-family:inherit}
 .cw-bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:12px 20px max(30px,calc(14px + env(safe-area-inset-bottom)));background:#0b0f1a;border-top:2px solid #121827}
+/* 건강 앱 버튼 = 올리기 버튼과 같은 각진 픽셀 틀(둥근·각진 섞지 않게), 두 버튼은 한 줄 — 좁은 폰에서도 글자 한 줄 */
+.cw-bar .cw-hk{flex:none;margin-right:10px;background:#0b0f1a;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40,0 4px 0 #05060a;color:#cfd6e6;font-family:'Galmuri11',sans-serif;font-size:12px;padding:12px 10px;cursor:pointer;white-space:nowrap}
+.cw-bar .cw-hk.on{box-shadow:0 0 0 2px #3d6fd6,0 4px 0 #05060a;color:#7aa8ff}
+.cw-bar .cw-up{white-space:nowrap}
+@media (max-width:359px){.cw-bar .cw-up{gap:6px;padding:12px 8px;font-size:12px}.cw-bar .cw-hk{padding:12px 8px}}
 .cw-up{width:100%;max-width:350px;display:flex;align-items:center;justify-content:center;gap:10px;background:#121827;border:2px solid #05070c;
   box-shadow:0 0 0 2px #232b40,0 4px 0 #05060a;color:#fff;font-family:'Galmuri11',sans-serif;font-size:13px;padding:12px 14px;cursor:pointer;transition:transform .08s}
 .cw-up:active{transform:translateY(3px)}
@@ -48723,7 +48728,7 @@ window.crewPageHtml = function (data, me) {
         : (out || !v) ? '' : lead ? '<a onclick="window.runExcludeAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">크루에서 빼기</a>'
         : (data.isMember && modOn) ? '<a onclick="window.runReportAsk(\'' + _cJ(r.id) + '\',\'' + _cJ(c.id) + '\')">신고</a>' : '';
       return '<div class="cw-pol' + (out ? ' out' : '') + '" style="transform:rotate(' + (i % 2 ? 1.6 : -1.8) + 'deg);margin-bottom:' + (act ? 22 : 0) + 'px"><img loading="lazy" src="' + _cE(r.img) + '" alt="">'
-        + '<p>' + _cE(r.uid === meUid ? '나' : (who || '크루원')) + '<span>' + _crewKm(r.km) + 'km</span></p>' + (v && !out ? '<div class="ink sc">스캔<br>인증</div>' : '')
+        + '<p>' + _cE(r.uid === meUid ? '나' : (who || '크루원')) + '<span>' + _crewKm(r.km) + 'km</span></p>' + (v && !out ? '<div class="ink sc">' + (r.status === 'verified' ? '원본<br>확인' : '스캔<br>인증') + '</div>' : '')
         + (out ? '<span class="outk">뺀 기록</span>' : '') + act + '</div>';
     }).join('') + '</div></div>';
   }
@@ -48766,7 +48771,10 @@ window.crewPageHtml = function (data, me) {
     h += '<button class="cw-leave" onclick="window.crewTestToggle(\'' + _cJ(c.id) + '\',' + (!c.test) + ')">' + (c.test ? '시험 크루 표시 끄기' : '시험 크루로 표시(관리자)') + '</button>';
   }
   if (data.isMember && !gym && window.CREW_CFG.RUN_UPLOAD_ON) {
-    h += '<div class="cw-bar"><button class="cw-up" onclick="window.runUploadOpen(\'' + _cJ(c.id) + '\')"><i>' + _crewIcoUp + '</i>러닝 기록 올리기</button></div>';
+    // ★10-26 아이폰 1.1.0(건강 앱 연결이 있는 앱)에서만 [건강 앱 기록 불러오기] — 앱 → 웹 다리가 있는지로만 가른다(UA 분기 금지, 애플 5.6)
+    const hk = window._hkReady(), hr = window._hkRuns;
+    h += '<div class="cw-bar">' + (hk ? '<button class="cw-hk' + (hr ? ' on' : '') + '" id="cw-hk-btn" onclick="window.hkLoad()">' + (hr ? '건강 앱 ' + hr.runs.length + '개' : '건강 앱 기록') + '</button>' : '')
+      + '<button class="cw-up" onclick="window.runUploadOpen(\'' + _cJ(c.id) + '\')"><i>' + _crewIcoUp + '</i>러닝 기록 올리기</button></div>';
   }
   return h;
 };
@@ -48849,6 +48857,42 @@ window.runExcludeAsk = function (runId, crewId) {
 window.crewStaffSet = function (crewId, uid, on) {
   _crewCall('crewSetStaff', { crewId, uid, on: !!on }).then(() => { showToast(on ? '운영진으로 지정했어요' : '운영진에서 해제했어요'); window.openCrewPage(crewId); })
     .catch(e => showToast('바꾸지 못했어요 (' + ((e && e.message) || '') + ')'));
+};
+
+// ── ★10-26 건강 앱(HealthKit) 다리 — 아이폰 1.1.0 앱이 messageHandlers['health-ready'] 를 달아 둔다 ─────────
+//   요청 'health-workouts' {reqId, kind, days, limit}(반드시 사용자 탭 안 — 첫 호출에 권한 시트) → window 이벤트 'health-workouts'
+//   detail {reqId, ok, workouts:[{startMs,endMs,durationSec,distanceM,sourceName,userEntered,…}]} 또는 {ok:false,error}.
+//   서버(runSubmit health)에는 처리방침 항목(시각·거리·시간·앱 이름·직접 입력 여부)만 넘긴다.
+window._hkReady = () => !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers['health-ready'] && window.webkit.messageHandlers['health-workouts']);
+window._hkWait = {};
+window.addEventListener('health-workouts', function (e) {
+  let d = e && e.detail; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
+  const w = d && window._hkWait[d.reqId]; if (!w) return;
+  delete window._hkWait[d.reqId]; clearTimeout(w.t); w.res(d);
+});
+window.hkLoad = function () {
+  if (!window._hkReady()) return;
+  const btn = document.getElementById('cw-hk-btn'); if (btn) { btn.disabled = true; btn.textContent = '불러오는 중'; }
+  const reqId = 'hk' + Date.now();
+  new Promise(res => {
+    window._hkWait[reqId] = { res, t: setTimeout(() => { delete window._hkWait[reqId]; res({ ok: false, error: 'timeout' }); }, 20000) };
+    try { window.webkit.messageHandlers['health-workouts'].postMessage({ reqId, kind: 'running', days: 14, limit: 20 }); }
+    catch (e) { delete window._hkWait[reqId]; res({ ok: false, error: 'failed' }); }
+  }).then(d => {
+    const b = document.getElementById('cw-hk-btn');
+    if (!d || !d.ok) {
+      if (b) { b.disabled = false; b.textContent = '건강 앱 기록'; }
+      showToast(d && d.error === 'unavailable' ? '이 기기에서는 건강 앱을 쓸 수 없어요' : '건강 앱 기록을 불러오지 못했어요');
+      return;
+    }
+    const runs = (d.workouts || []).filter(w => w && !w.userEntered && Number(w.startMs) > 0 && Number(w.distanceM) > 0)
+      .map(w => ({ start: Number(w.startMs), end: Number(w.endMs) || 0, km: Math.round(Number(w.distanceM)) / 1000, sec: Math.round(Number(w.durationSec) || 0),
+        app: String(w.sourceName || '').slice(0, 40), kind: 'running', userEntered: false })).slice(0, 30);
+    if (!runs.length) { window._hkRuns = null; if (b) { b.disabled = false; b.textContent = '건강 앱 기록'; } showToast('건강 앱 > 머피 > 운동 읽기 허용을 확인해 주세요'); return; }
+    window._hkRuns = { at: Date.now(), runs };
+    if (b) { b.disabled = false; b.classList.add('on'); b.textContent = '건강 앱 ' + runs.length + '개'; }
+    showToast('건강 앱 러닝 ' + runs.length + '개를 불러왔어요. 이제 카드를 올리면 원본과 맞춰 봐요');
+  });
 };
 
 // ── 러닝 인증샷 올리기 + 스캔 연출 ──────────────────────────────────────────
@@ -48961,7 +49005,7 @@ window.runScanPlay = async function (resP) {
   const v = _crewCounts(r.status), ink = document.getElementById('run-scan-ink');
   const spot = _inkSpot(bx, img.clientHeight / Math.max(1, img.clientWidth)), sz = Math.round(img.clientWidth * .38);
   if (ink) {
-    if (v) ink.innerHTML = '스캔<br>인증'; else ink.textContent = '기록';
+    if (v) ink.innerHTML = r.status === 'verified' ? '원본<br>확인' : '스캔<br>인증'; else ink.textContent = '기록';
     ink.classList.toggle('ghost', !v);
     ink.style.cssText += ';width:' + sz + 'px;height:' + sz + 'px;left:calc(' + spot.x + '% - ' + (sz / 2) + 'px);top:calc(' + spot.y + '% - ' + (sz / 2) + 'px);font-size:' + Math.round(sz * .24) + 'px;--inkm:url(' + _inkMask() + ')';
     ink.animate([{ opacity: 0, transform: 'scale(1.4) rotate(-6deg)' },
@@ -48995,7 +49039,8 @@ window._runScanStart = async function (file, crewId) {
     const up = await window.mwUploadImage(blob, 'run');
     // 카드에 날짜가 없을 때 '오늘 기록인가'를 서버가 판단할 사진 촬영 시각(EXIF, 없으면 파일 시각) — 대표 10-19 당일 기록만
     let shotMs = 0; try { const d = await window._exifShotAt(file); shotMs = d ? d.getTime() : 0; } catch (e) {}
-    return _crewCall('runSubmit', { url: up, shotMs });
+    const hr = window._hkRuns;   // 1시간 안에 불러온 건강 앱 러닝(원본 대조용) — 없으면 스캔 인증만
+    return _crewCall('runSubmit', Object.assign({ url: up, shotMs }, hr && Date.now() - hr.at < 3600e3 ? { health: hr.runs } : {}));
   })();
   resP.catch(e => console.warn('runSubmit', e));
   const out = await window.runScanPlay(resP);
@@ -49010,7 +49055,7 @@ window.runScanResult = function (res, err) {
   const close = '<div style="padding:32px 20px 0"><button class="cw-up" style="max-width:none" onclick="document.getElementById(\'run-scan\').remove()">닫기</button></div>';
   if (ok) {
     const v = _crewCounts(r.status);
-    out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (v ? '스캔 인증' : '미인증') + '</em></b>'
+    out.innerHTML = '<div class="cw-res"><b>' + _crewKm(r.km) + 'km<em' + (v ? '' : ' class="g"') + '>' + (r.status === 'verified' ? '원본 확인' : v ? '스캔 인증' : '미인증') + '</em></b>'
       + '<span>' + _crewDur(r.sec) + ', ' + _crewPace(r.paceSec) + '/km' + (v ? (res.reward ? '. ' + res.reward + '머피를 받았어요' : '. 크루 기록에 들어갔어요')
         : '. ' + _cE(_runSoftWhy[r.why] || '확인하지 못했어요') + '. 내 기록에만 남았어요') + '</span></div>' + close;
   } else {
