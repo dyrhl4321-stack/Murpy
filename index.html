@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1260';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1261';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -47971,6 +47971,9 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-hr.pg{min-height:124px;padding-bottom:46px}
 .cw-hr-fill{position:absolute!important;left:0;top:0;bottom:0;background:#1a2234}
 .cw-hr-t small .lf{margin-left:5px}
+.cw-hr-dd .chn{font-size:11px;line-height:14px;font-weight:600;color:#6f7789;white-space:nowrap}
+.cw-hr-dd .chn em{font-style:normal}
+@media (max-width:359px){.cw-hr-dd .chn em{display:none}}   /* 320 에선 '+2' 만 — 오른쪽 칸이 넓어지면 '남음' 글줄이 넘친다 */
 .cw-hr-dd{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
 .cw-hr-dd b{font-size:14px;line-height:18px;font-weight:800;color:#7aa8ff;font-variant-numeric:tabular-nums}
 .cw-hr-dd .cw-hr-ar{margin:0}
@@ -48247,8 +48250,8 @@ window.crewLoad = async function (id) {
     crew: Object.assign({ id }, cs.data()), members,
     profiles: await _crewProfiles(members.map(m => m.uid).slice(0, 60)),
     runs: rs ? rs.docs.map(s => Object.assign({ id: s.id }, s.data())) : [],
-    challenge: chList.find(c => c.status === 'active') || null,
-    past: chList.filter(c => c.status !== 'active'),
+    challenge: _crewChSort(chList)[0] || null,
+    past: chList.filter(c => c.status === 'done' || c.status === 'failed'),
     myStats: (mine && mine.exists()) ? mine.data() : null,
     isMember: !!(u && members.some(m => m.uid === u.uid)),
   };
@@ -48327,32 +48330,22 @@ function _crewHeroBand(c, big) {
 //   두 사람이 캐릭터 폭(28px)보다 가까우면 겹치지 않고 하나로 묶는다 — 더 간 사람 1명 + 머리 오른쪽 위 '+n', 누르면 묶인 사람 전부.
 //   runs = [{ uid, v }] (v = 이번 챌린지 내 km 또는 출석 회수). inset = 화면 폭에서 트랙 폭을 뺀 값(묶을지 판단할 때만 쓴다).
 function _crewTrack(p, runs, P, ch, inset) {
-  const done = p >= 1, per = Number(ch && ch.perHead) || 0, gym = !!(ch && ch.kind === 'gym_attend'), unit = gym ? '회' : 'km';
+  // ★10-26 대표 "4km 뛰었는데 캐릭터가 4km 자리가 아니라 바 오른쪽 멀리" — 바는 크루 진행(4/45), 캐릭터는 개인 목표(4/15)라 기준이 달랐다.
+  //   → 캐릭터도 바와 같은 기준: 파란 바 끝에 한 명(가장 최근에 인증한 사람) + 함께 올린 사람 수 +n. 누르면 사람마다 km.
+  const done = p >= 1, gym = !!(ch && ch.kind === 'gym_attend'), unit = gym ? '회' : 'km';
   const fmt = v => gym ? String(Math.round(Number(v) || 0)) : _crewKm(v);
   const nick = u => ((P || {})[u] && P[u].nickname) || '크루원';
-  const rs = (runs || []).slice(0, 3).map(r => ({ uid: r.uid, v: Number(r.v) || 0, at: Number(r.at) || 0 })).filter(r => r.v > 0).sort((a, b) => b.v - a.v)
-    .map(r => Object.assign(r, { q: per > 0 ? Math.min(1, r.v / per) : 0 }));
+  const rs = (runs || []).map(r => ({ uid: r.uid, v: Number(r.v) || 0, at: Number(r.at) || 0 })).filter(r => r.v > 0).sort((a, b) => b.v - a.v);
   const CW = 18, NEAR = 28, lo = 3 + CW / 2, hi = 22 + 3 + CW / 2;   // 발 가운데가 움직이는 범위 = 트랙 시작+3 ~ 상자 3px 앞
-  const run = Math.max(80, Math.min(window.innerWidth || 390, 390) - (inset || 40) - lo - hi);   // 지금 화면에서 움직이는 거리(px)
-  const groups = [];
-  rs.forEach(r => { const g = groups[groups.length - 1]; if (g && (g[0].q - r.q) * run < NEAR) g.push(r); else groups.push([r]); });
-  let prev = '';
-  const lefts = groups.map((g, k) => {   // 묶음 사이도 28px 아래로는 붙지 않게(화면 폭 짐작이 빗나가도 겹치지 않는다)
-    const raw = 'calc(' + lo + 'px + (100% - ' + (lo + hi) + 'px) * ' + g[0].q.toFixed(4) + ')';
-    const minL = (lo + (groups.length - 1 - k) * NEAR) + 'px', maxL = prev ? 'calc(' + prev + ' - ' + NEAR + 'px)' : 'calc(100% - ' + hi + 'px)';
-    return (prev = 'max(' + minL + ', min(' + raw + ', ' + maxL + '))');
-  });
+  const run = Math.max(80, Math.min(window.innerWidth || 390, 390) - (inset || 40) - lo - hi);
+  const face = rs.reduce((a, r) => (!a || r.at > a.at ? r : a), null);
+  const tip = rs.map(r => nick(r.uid) + ' ' + fmt(r.v) + unit).join(', ');
+  const left = 'max(' + lo + 'px, min(calc((100% - 22px) * ' + p.toFixed(4) + '), calc(100% - ' + hi + 'px)))';   // 파란 바 끝 = 발 가운데
   return '<span class="cw-hr-tr"><i class="cw-hr-lane"></i><i class="cw-hr-done" style="width:calc((100% - 22px) * ' + p.toFixed(4) + ')"></i>'
-    + (groups.length ? '' : '<span class="cw-hr-none">첫 기록을 올려 보세요</span>')
-    + groups.map((g, k) => {
-      const tip = g.length > 1 ? g.map(r => nick(r.uid) + ' ' + fmt(r.v)).join(' · ') + unit
-        : nick(g[0].uid) + ' ' + fmt(g[0].v) + unit + (per > 0 ? ' / ' + fmt(per) + unit : '');
-      // ★10-22 대표: 묶인 자리의 얼굴 = 그 묶음에서 가장 최근에 인증한 사람(같으면 더 간 사람). 자리는 더 간 사람 기준 그대로.
-      const face = g.reduce((a, r) => (r.at > a.at ? r : a), g[0]);
-      return '<span class="cw-hr-r" data-t="' + _cE(tip) + '" onclick="event.stopPropagation();window._crewTip(this)" style="left:' + lefts[k] + ';z-index:' + (4 - k) + '">'
-        + '<span class="' + (g[0].q < .05 ? 'cw-idle' : 'cw-walk') + '" style="--wd:-' + (k * .23).toFixed(2) + 's">' + _crewMini((P || {})[face.uid], 28, 'right') + '</span>'
-        + (g.length > 1 ? '<b class="cw-hr-plus' + ((1 - g[0].q) * run < NEAR ? ' l' : '') + '">+' + (g.length - 1) + '</b>' : '') + '</span>';   // 상자 앞이면 배지를 머리 왼쪽에(상자와 겹치지 않게)
-    }).join('')
+    + (face ? '<span class="cw-hr-r" data-t="' + _cE(tip) + '" onclick="event.stopPropagation();window._crewTip(this)" style="left:' + left + ';z-index:4">'
+        + '<span class="' + (p < .05 ? 'cw-idle' : 'cw-walk') + '">' + _crewMini((P || {})[face.uid], 28, 'right') + '</span>'
+        + (rs.length > 1 ? '<b class="cw-hr-plus' + ((1 - p) * run < NEAR ? ' l' : '') + '">+' + (rs.length - 1) + '</b>' : '') + '</span>'   // 상자 앞이면 배지를 머리 왼쪽에
+      : '<span class="cw-hr-none">첫 기록을 올려 보세요</span>')
     + '<i class="cw-hr-box"></i>' + (done ? '<i class="cw-hr-sk" style="right:27px;bottom:18px"></i><i class="cw-hr-sk" style="right:1px;bottom:30px;animation-delay:.12s"></i><i class="cw-hr-sk" style="right:12px;bottom:34px;animation-delay:.24s"></i>' : '')
     + '</span>';
 }
@@ -48387,21 +48380,30 @@ function _crewCardText(c) {
   return '<span style="flex:1;min-width:0"><span class="nm">' + _cE(c.name) + '</span><span class="sub">' + line + '</span></span>';
 }
 // 카드·초대장에 필요한 것 채우기 — 진행 중 챌린지, 출발선에 세울 크루원 3명, 최근 소식(로그인한 사람만 러닝 목록을 읽을 수 있다)
+// ★10-26 대표: 진행 중 챌린지가 여럿이면 보여 줄 순서 = 마감이 가까운 것 → 같으면 러닝 먼저. 나머지는 '+n 챌린지'로 작게.
+function _crewChSort(list) {
+  const dl = c => Math.floor(((Number(c.end) || 0) + 9 * 36e5) / 864e5);   // 마감 날짜(한국 시간) — 같은 날이면 '같은 마감'
+  return (list || []).filter(c => c && c.status === 'active')
+    .sort((a, b) => dl(a) - dl(b) || (a.kind === 'run_km' ? 0 : 1) - (b.kind === 'run_km' ? 0 : 1) || (Number(a.end) || 0) - (Number(b.end) || 0));
+}
 async function _crewEnrich(c) {
   const id = c.id, M = collection(db, 'crewsV2', id, 'members'), rows = sn => sn.docs.map(d => Object.assign({ uid: d.id }, d.data())).filter(m => !m.left);
-  const [ch, recent] = await Promise.all([
-    getDocs(query(collection(db, 'crewsV2', id, 'challenges'), where('status', '==', 'active'), limit(1))).then(sn => sn.docs.length ? Object.assign({ id: sn.docs[0].id }, sn.docs[0].data()) : null).catch(() => null),
+  const [chs, recent] = await Promise.all([
+    getDocs(query(collection(db, 'crewsV2', id, 'challenges'), where('status', '==', 'active'), limit(6))).then(sn => _crewChSort(sn.docs.map(d => Object.assign({ id: d.id }, d.data())))).catch(() => []),
     getDocs(query(M, where('left', '==', false), limit(6))).then(rows).catch(() => []),
   ]);
-  c._ch = ch;
+  const ch = chs[0] || null;
+  c._ch = ch; c._chMore = Math.max(0, chs.length - 1);
   // ★10-22 트랙 3명 = 이번 챌린지 개인 진행 많은 순(멤버 문서 ch.{챌린지id}), 모자라면 최근 운동한 사람
   const top = ch ? await getDocs(query(M, orderBy('ch.' + ch.id, 'desc'), limit(5))).then(rows).catch(() => []) : [];
   recent.sort((x, y) => String(y.lastActiveDay || '').localeCompare(String(x.lastActiveDay || '')));
   const seen = new Set(), pick = [];
   top.concat(recent).forEach(m => { if (pick.length < 3 && !seen.has(m.uid)) { seen.add(m.uid); pick.push(m); } });
   c._uids = pick.map(m => m.uid);
-  c._run = pick.map(m => ({ uid: m.uid, v: ch ? Number((m.ch || {})[ch.id]) || 0 : 0, at: _crewLastAt(m) }));
-  c._P = await _crewProfiles(c._uids).catch(() => ({}));
+  // 트랙(★10-26 바 끝 한 명 + n) = 이번 챌린지에 올린 사람(최대 5) — 얼굴은 그중 가장 최근, +n 은 나머지 수
+  const ran = ch ? top.filter(m => Number((m.ch || {})[ch.id]) > 0) : [];
+  c._run = (ran.length ? ran : pick).map(m => ({ uid: m.uid, v: ch ? Number((m.ch || {})[ch.id]) || 0 : 0, at: _crewLastAt(m) }));
+  c._P = await _crewProfiles([...new Set(c._uids.concat(c._run.map(r => r.uid)))]).catch(() => ({}));
   return c;
 }
 // ── 지금 뜨는 크루 — 이번 주 운동한 사람 많은 순(같으면 인원 순), 5분 캐시 ──
@@ -48451,7 +48453,7 @@ function _crewHotCard(c) {
     const pre = now < ch.start;
     line = '<b>' + fmt(ch.progress) + '</b><span class="of">/ ' + fmt(ch.target) + unit + '</span>' + (near ? '<span class="lf">· ' + fmt(run ? Math.round(left * 10) / 10 : left) + unit + ' 남음</span>' : '');
     // 시작 전 = 오른쪽에 회색 작게 'M.D 시작'(파랑 큰 글씨는 진행 중 D-n·달성만, 대표 10-21)
-    right = '<span class="cw-hr-dd"><b' + (pre ? ' class="pre"' : '') + '>' + (done ? '달성' : when) + '</b><span class="cw-hr-ar">›</span></span>';
+    right = '<span class="cw-hr-dd"><b' + (pre ? ' class="pre"' : '') + '>' + (done ? '달성' : when) + '</b>' + (c._chMore ? '<span class="chn">+' + c._chMore + '<em> 챌린지</em></span>' : '') + '<span class="cw-hr-ar">›</span></span>';   // 다른 챌린지 수는 오른쪽 D-n 아래 작게(글줄은 '남음'까지 쓰면 320 에서 넘친다)
     // ★10-21 대표: 트랙 끝 = 상자(22) 왼쪽 가장자리, 3명은 트랙 시작~상자 사이로 막는다(0% 에서 카드 밖으로 나가 잘렸다)
     // ★10-21 대표 "캐릭터 콩만하다": 16 → 28(서 있는 3명과 같은 크기, 224 의 1/8 정수 배율). 폭 18, 간격 14
     if (p > 0) fill = '<i class="cw-hr-fill" style="width:' + (done ? '100%' : 'calc(var(--hp) + (100% - 2 * var(--hp) - 22px) * ' + p.toFixed(4) + ')') + '"></i>';
