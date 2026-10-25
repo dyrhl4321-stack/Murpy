@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1258';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1259';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -48149,7 +48149,7 @@ input.cw-in[type=date]::-webkit-date-and-time-value{text-align:left}
 .cw-list{border-top:1px solid rgba(255,255,255,.05)}
 .cw-li{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 /* ★10-22 승인 대기·반려 안내 = 화면 가운데 작은 카드(전체 시트에 글 3줄만 있던 빈 화면 → 브랜딩 검수) */
-.cw-modal{position:fixed;inset:0;z-index:9000;background:rgba(5,7,12,.72);display:flex;align-items:center;justify-content:center;padding:20px;animation:cwTipIn .16s ease-out both}
+.cw-modal{position:fixed;inset:0;z-index:40100;background:rgba(5,7,12,.72);display:flex;align-items:center;justify-content:center;padding:20px;animation:cwTipIn .16s ease-out both}
 .cw-mcard{width:min(320px,100%);background:#0f141f;border:1px solid #232b40;border-radius:16px;padding:18px;box-sizing:border-box;color:#cfd6e6}
 .cw-mcard .hd{display:flex;gap:12px;align-items:center}
 .cw-mcard .th{width:56px;height:56px;border-radius:12px;flex-shrink:0;background-color:#121827;background-position:center;background-size:cover;background-repeat:no-repeat}
@@ -48163,7 +48163,7 @@ input.cw-in[type=date]::-webkit-date-and-time-value{text-align:left}
 .cw-mcard .bt button{flex:1;padding:11px 0;border-radius:10px;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid #2b3346;background:#141925;color:#cfd6e6}
 .cw-mcard .bt button.go{border-color:#3d6fd6;color:#7aa8ff}
 .cw-li .lg{width:64px;height:64px;border-radius:12px;object-fit:cover;flex-shrink:0;background:#121827;cursor:zoom-in}
-.cw-lgbig{position:fixed;inset:0;z-index:9100;background:rgba(5,7,12,.9);display:flex;align-items:center;justify-content:center;padding:24px}
+.cw-lgbig{position:fixed;inset:0;z-index:40110;background:rgba(5,7,12,.9);display:flex;align-items:center;justify-content:center;padding:24px}
 .cw-lgbig img{max-width:100%;max-height:80vh;border-radius:12px;background:#121827}
 .cw-li .cw-pbtn{flex:none;padding:7px 10px}
 /* 스쿼드 탭 '내 크루' 줄 */
@@ -48773,7 +48773,7 @@ window.crewPageHtml = function (data, me) {
   if (data.isMember && !gym && window.CREW_CFG.RUN_UPLOAD_ON) {
     // ★10-26 아이폰 1.1.0(건강 앱 연결이 있는 앱)에서만 [건강 앱 기록 불러오기] — 앱 → 웹 다리가 있는지로만 가른다(UA 분기 금지, 애플 5.6)
     const hk = window._hkReady(), hr = window._hkRuns;
-    h += '<div class="cw-bar">' + (hk ? '<button class="cw-hk' + (hr ? ' on' : '') + '" id="cw-hk-btn" onclick="window.hkLoad()">' + (hr ? '건강 앱 ' + hr.runs.length + '개' : '건강 앱 기록') + '</button>' : '')
+    h += '<div class="cw-bar">' + (hk ? '<button class="cw-hk' + (hr ? ' on' : '') + '" id="cw-hk-btn" onclick="window.hkLoad(\'' + _cJ(c.id) + '\')">' + (hr ? '건강 앱 ' + hr.runs.length + '개' : '건강 앱 기록') + '</button>' : '')
       + '<button class="cw-up" onclick="window.runUploadOpen(\'' + _cJ(c.id) + '\')"><i>' + _crewIcoUp + '</i>러닝 기록 올리기</button></div>';
   }
   return h;
@@ -48870,7 +48870,19 @@ window.addEventListener('health-workouts', function (e) {
   const w = d && window._hkWait[d.reqId]; if (!w) return;
   delete window._hkWait[d.reqId]; clearTimeout(w.t); w.res(d);
 });
-window.hkLoad = function () {
+// ★10-26 아이패드 심사(건강 앱은 있는데 운동 기록이 없음) — 비었거나 실패하면 막다른 화면 대신 작은 카드 + [캡처로 올리기]
+window._hkEmpty = function (crewId, failed) {
+  const old = document.getElementById('hk-empty'); if (old) old.remove();
+  const close = "document.getElementById('hk-empty').remove()";
+  const el = document.createElement('div'); el.id = 'hk-empty'; el.className = 'cw-modal';
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  el.innerHTML = '<div class="cw-mcard" role="dialog" aria-label="건강 앱 기록">'
+    + '<div class="nm">' + (failed ? '건강 앱 기록을 불러오지 못했어요' : '건강 앱에 아직 러닝 기록이 없어요') + '</div>'
+    + '<div class="tx" style="margin-top:8px">' + (failed ? '잠시 뒤 다시 눌러 주세요. 지금은 러닝 기록 캡처로 올릴 수 있어요.' : '러닝을 기록하거나, 건강 앱 &rsaquo; 머피 &rsaquo; 운동 읽기 허용을 확인해 주세요. 지금은 러닝 기록 캡처로 올릴 수 있어요.') + '</div>'
+    + '<div class="bt"><button onclick="' + close + '">닫기</button><button class="go" onclick="' + close + ';window.runUploadOpen(\'' + _cJ(crewId || '') + '\')">캡처로 올리기</button></div></div>';
+  document.body.appendChild(el);
+};
+window.hkLoad = function (crewId) {
   if (!window._hkReady()) return;
   const btn = document.getElementById('cw-hk-btn'); if (btn) { btn.disabled = true; btn.textContent = '불러오는 중'; }
   const reqId = 'hk' + Date.now();
@@ -48882,13 +48894,13 @@ window.hkLoad = function () {
     const b = document.getElementById('cw-hk-btn');
     if (!d || !d.ok) {
       if (b) { b.disabled = false; b.textContent = '건강 앱 기록'; }
-      showToast(d && d.error === 'unavailable' ? '이 기기에서는 건강 앱을 쓸 수 없어요' : '건강 앱 기록을 불러오지 못했어요');
+      window._hkEmpty(crewId, true);
       return;
     }
     const runs = (d.workouts || []).filter(w => w && !w.userEntered && Number(w.startMs) > 0 && Number(w.distanceM) > 0)
       .map(w => ({ start: Number(w.startMs), end: Number(w.endMs) || 0, km: Math.round(Number(w.distanceM)) / 1000, sec: Math.round(Number(w.durationSec) || 0),
         app: String(w.sourceName || '').slice(0, 40), kind: 'running', userEntered: false })).slice(0, 30);
-    if (!runs.length) { window._hkRuns = null; if (b) { b.disabled = false; b.textContent = '건강 앱 기록'; } showToast('건강 앱 > 머피 > 운동 읽기 허용을 확인해 주세요'); return; }
+    if (!runs.length) { window._hkRuns = null; if (b) { b.disabled = false; b.textContent = '건강 앱 기록'; } window._hkEmpty(crewId, false); return; }
     window._hkRuns = { at: Date.now(), runs };
     if (b) { b.disabled = false; b.classList.add('on'); b.textContent = '건강 앱 ' + runs.length + '개'; }
     showToast('건강 앱 러닝 ' + runs.length + '개를 불러왔어요. 이제 카드를 올리면 원본과 맞춰 봐요');
