@@ -23,7 +23,7 @@ const GEMINI = defineSecret("GEMINI_API_KEY");
 const BUCKET = "murpyprototype.firebasestorage.app";
 const HEALTH_VERIFY_ON = false;          // 2차에서 true
 // ★러닝 카드 올리기는 개인정보 처리방침 개정 시행(10-26) 뒤에 연다(대표 확정 (가)). index.html CREW_CFG.RUN_UPLOAD_ON 과 같이 바꿔 배포.
-const RUN_UPLOAD_ON = false;
+const RUN_UPLOAD_ON = true;   // ★10-26 0시 처리방침 1.1 시행 → 대표 지시로 켬(웹 CREW_CFG.RUN_UPLOAD_ON 과 같이)
 const OCR_MODEL = "gemini-3.5-flash-lite";   // 10-19 실측: 2.5-flash-lite 는 새 키에 404(단종). 카드 1장 ≈1,300토큰·2초
 const TITLE_OF = { 100: "크루 100K", 500: "크루 500K", 1000: "크루 1000K" };
 
