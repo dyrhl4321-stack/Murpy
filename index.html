@@ -36224,7 +36224,8 @@ window._mwJoggers = function (n, h, ar) {
     const st = document.createElement('style'); st.id = 'mw-jog-css';
     st.textContent = `
       #mw-joggers{position:absolute;inset:0;pointer-events:none}
-      .mw-jg{position:absolute;transition:left .42s linear,top .42s linear;will-change:left,top}
+      /* ★10-23 속도: left/top 트랜지션은 매 프레임 레이아웃이라 공원에 서 있기만 해도 CPU 를 다 썼다(동물 이동만 꺼도 8초 7.6→0.9초). 같은 자리를 transform 으로 — translate % 는 자기 크기 기준이라 자기 크기(방의 몇 %)로 나눠 계산 */
+      .mw-jg{position:absolute;left:0;top:0;transition:transform .42s linear;will-change:transform}
       .mw-jg>b{display:block;position:relative;width:100%;height:100%;overflow:hidden}
       .mw-jg>b>i{display:block;position:absolute;left:0;width:300%;height:400%;background:url('char/npc/anim/jogger.png?v=1') 0 0/100% 100% no-repeat;image-rendering:pixelated;animation:mwStrip3 .45s steps(3) infinite}`;
     document.head.appendChild(st);
@@ -36233,16 +36234,18 @@ window._mwJoggers = function (n, h, ar) {
   const lay = document.createElement('div'); lay.id = 'mw-joggers'; room.appendChild(lay);
   const g = window._charTileGeom ? window._charTileGeom() : null, t = g ? g.t : (room.clientWidth / 48);
   const H = Math.round(t * h), W = Math.round(H * ar);
+  // 크기를 방 대비 %로 둔다(위치를 자기 크기 기준 translate % 로 옮기기 위해) — px 로 잡던 W·H 와 같은 크기
+  const WP = W / Math.max(1, room.clientWidth) * 100, HP = H / Math.max(1, room.clientHeight) * 100;
   const ROW = { down: 0, up: 1, left: 2, right: 3 };
   const jog = [];
   for (let i = 0; i < n; i++) {
     const c = road[Math.floor(Math.random() * road.length)];
-    const el = document.createElement('div'); el.className = 'mw-jg'; el.style.width = W + 'px'; el.style.height = H + 'px'; el.innerHTML = '<b><i></i></b>';
+    const el = document.createElement('div'); el.className = 'mw-jg'; el.style.width = WP + '%'; el.style.height = HP + '%'; el.innerHTML = '<b><i></i></b>';
     const j = { el, tc: c[0], tr: c[1], dir: [1, 0], face: 'right' }; lay.appendChild(el); jog.push(j); place(j);
   }
   function place(j) {
-    j.el.style.left = ((j.tc + 0.5) * 100 / 48) + '%'; j.el.style.top = ((j.tr + 1) * 100 / 48) + '%';
-    j.el.style.marginLeft = (-W / 2) + 'px'; j.el.style.marginTop = (-H) + 'px'; j.el.style.zIndex = 10 + j.tr * 10 + 3;
+    const x = (j.tc + 0.5) * 100 / 48 - WP / 2, y = (j.tr + 1) * 100 / 48 - HP;   // 예전 left/top % + 음수 margin 과 같은 자리
+    j.el.style.transform = 'translate(' + (x / WP * 100) + '%,' + (y / HP * 100) + '%)'; j.el.style.zIndex = 10 + j.tr * 10 + 3;
     j.el.querySelector('i').style.top = (-ROW[j.face] * 100) + '%';
   }
   const DIRS = [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'down'], [0, -1, 'up']];
@@ -36295,7 +36298,7 @@ window._mwCompanions = function (on) {
     const st = document.createElement('style'); st.id = 'mw-comp-css';
     st.textContent = `
       #mw-comps{position:absolute;inset:0;pointer-events:none;z-index:40}
-      .mw-bf{position:absolute;width:1.6%;height:1.6%;transition:left 1.1s ease-in-out,top 1.1s ease-in-out;will-change:left,top}
+      .mw-bf{position:absolute;left:0;top:0;width:1.6%;height:1.6%;transition:transform 1.1s ease-in-out;will-change:transform}   /* ★10-23 속도: left/top 트랜지션은 매 프레임 레이아웃이라 공원에 서 있기만 해도 CPU 를 다 썼다(동물 이동만 꺼도 8초 7.6→0.9초). 같은 자리를 transform 으로 — translate % 는 자기 크기 기준이라 자기 크기(방의 몇 %)로 나눠 계산 */
       .mw-bf>b{display:block;width:100%;height:100%;overflow:hidden;animation:mwBfBob 1.9s ease-in-out infinite}
       .mw-bf>b>i{display:block;width:400%;height:100%;background:url('char/npc/anim/butterfly4.png?v=2') 0 0/100% 100% no-repeat;image-rendering:pixelated;animation:mwBfFlap .6s steps(4) infinite}
       .mw-bf.l>b{transform:scaleX(-1)}
@@ -36313,7 +36316,7 @@ window._mwCompanions = function (on) {
     // 머리 위 1.4칸, 좌우로 살짝 떠돌기(-0.9~0.9칸) — 목적지는 2~4초마다 바뀌고 transition 이 부드럽게 옮긴다
     const x = (o.tc + 0.5 + b.dx) * 100 / 48, y = (o.tr - 1.4 + b.dy) * 100 / 48;
     if (b.dx < b.pdx - 0.05) b.el.classList.add('l'); else if (b.dx > b.pdx + 0.05) b.el.classList.remove('l');
-    b.pdx = b.dx; b.el.style.left = (x - 0.8) + '%'; b.el.style.top = (y - 0.8) + '%';
+    b.pdx = b.dx; b.el.style.transform = 'translate(' + ((x - 0.8) / 1.6 * 100) + '%,' + ((y - 0.8) / 1.6 * 100) + '%)';   // = left/top (x-0.8)%,(y-0.8)%
   };
   window._mwCompT = setInterval(function () {
     if (!lay.isConnected) { clearInterval(window._mwCompT); window._mwCompT = 0; return; }
@@ -36344,7 +36347,7 @@ window._mwDucks = function (n) {
     const st = document.createElement('style'); st.id = 'mw-duck-css';
     st.textContent = `
       #mw-ducks{position:absolute;inset:0;pointer-events:none;z-index:5}
-      .mw-dk{position:absolute;width:3.2%;height:2.3%;transition:left 1.8s linear,top 1.8s linear;will-change:left,top}
+      .mw-dk{position:absolute;left:0;top:0;width:3.2%;height:2.3%;transition:transform 1.8s linear;will-change:transform}   /* ★10-23 속도: left/top 트랜지션은 매 프레임 레이아웃이라 공원에 서 있기만 해도 CPU 를 다 썼다(동물 이동만 꺼도 8초 7.6→0.9초). 같은 자리를 transform 으로 — translate % 는 자기 크기 기준이라 자기 크기(방의 몇 %)로 나눠 계산 */
       .mw-dk>b{display:block;width:100%;height:100%;overflow:hidden;transform-origin:50% 100%;animation:mwDkBob 2.2s ease-in-out infinite}
       .mw-dk>b>i{display:block;width:400%;height:100%;background:url('char/fields/anim/duck4.png?v=2') 0 0/100% 100% no-repeat;image-rendering:pixelated;animation:mwDkSwim 1.05s steps(3) infinite}
       .mw-dk.l>b{transform:scaleX(-1)}
@@ -36356,7 +36359,7 @@ window._mwDucks = function (n) {
   const set = new Set(cells.map(function (c) { return c[0] + ',' + c[1]; }));
   const lay = document.createElement('div'); lay.id = 'mw-ducks'; room.appendChild(lay);
   const ducks = [];
-  const place = function (d) { d.el.style.left = (d.tc * 100 / 48 - 0.5) + '%'; d.el.style.top = ((d.tr + 1) * 100 / 48 - 2.3) + '%'; };
+  const place = function (d) { d.el.style.transform = 'translate(' + ((d.tc * 100 / 48 - 0.5) / 3.2 * 100) + '%,' + (((d.tr + 1) * 100 / 48 - 2.3) / 2.3 * 100) + '%)'; };   // = left/top 예전 값
   for (let i = 0; i < n; i++) {
     const c = cells[Math.floor(Math.random() * cells.length)];
     const el = document.createElement('div'); el.className = 'mw-dk'; el.innerHTML = '<b><i></i></b>';
@@ -36395,7 +36398,7 @@ window._mwPigeons = function (n) {
     const st = document.createElement('style'); st.id = 'mw-pigeon-css';
     st.textContent = `
       #mw-pigeons{position:absolute;inset:0;pointer-events:none;z-index:5}
-      .mw-pg{position:absolute;width:2.2%;height:2.2%;transition:left .9s linear,top .9s linear;will-change:left,top}
+      .mw-pg{position:absolute;left:0;top:0;width:2.2%;height:2.2%;transition:transform .9s linear;will-change:transform}   /* ★10-23 속도: left/top 트랜지션은 매 프레임 레이아웃이라 공원에 서 있기만 해도 CPU 를 다 썼다(동물 이동만 꺼도 8초 7.6→0.9초). 같은 자리를 transform 으로 — translate % 는 자기 크기 기준이라 자기 크기(방의 몇 %)로 나눠 계산 */
       .mw-pg>b{display:block;width:100%;height:100%;overflow:hidden;transform-origin:50% 100%}
       .mw-pg>b>i{display:block;width:600%;height:100%;background:url('char/fields/anim/pigeon6.png?v=2') 0 0/100% 100% no-repeat;image-rendering:pixelated}
       .mw-pg.l>b{transform:scaleX(-1)}
@@ -36415,7 +36418,7 @@ window._mwPigeons = function (n) {
     for (let t = 0; t < 60; t++) { const tc = 2 + Math.floor(Math.random() * 44), tr = 2 + Math.floor(Math.random() * 44); if (W(tc, tr)) return { tc, tr }; }
     return null;
   };
-  const place = function (b) { b.el.style.left = (b.tc * 100 / 48) + '%'; b.el.style.top = ((b.tr + 1) * 100 / 48 - 2.2) + '%'; };
+  const place = function (b) { b.el.style.transform = 'translate(' + ((b.tc * 100 / 48) / 2.2 * 100) + '%,' + (((b.tr + 1) * 100 / 48 - 2.2) / 2.2 * 100) + '%)'; };   // = left/top 예전 값
   for (let i = 0; i < n; i++) {
     const p0 = randFree(); if (!p0) break;
     const el = document.createElement('div'); el.className = 'mw-pg stand'; el.innerHTML = '<b><i></i></b>';
