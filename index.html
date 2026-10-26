@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1262';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1263';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -154,6 +154,11 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
 </script>
 <style>
   :root {
+    /* ★10-26 하단 안전 여백(대표 "입력창이 아이폰 둥근 모서리에 갈린다" 반복 지적) — 바닥에 붙는 입력 줄·버튼·시트는 전부 var(--safe-b) 이상.
+       기준 = 센터 대숲 입력창 40px(7-24 대표 OK) → 46px(모서리 곡선이 끝나는 높이). 앱 웹뷰는 env()=0 이라 이 최소값이 곧 여백이다.
+       검사: python tools/check_safe_bottom.py (배포 전 필수). env(safe-area-inset-bottom) 을 맨몸으로 쓰면 검사가 막는다. */
+    --safe-b: max(46px, calc(env(safe-area-inset-bottom) + 14px));
+    --safe-x: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
     --accent: #3D7EFF;
     --accent-dim: rgba(61,126,255,0.15);
     --accent-border: rgba(61,126,255,0.3);
@@ -1011,11 +1016,11 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* ★하단탭 **위**에 앉힌다. bottom:24px 은 탭바(높이 78 + 안전영역) 한가운데라
      매칭·홈 아이콘을 통째로 덮었다(대표 8-20). 탭바가 없는 초대 모드에서만 바닥에 붙는다. */
   #mw-dev-strip { display:none; position:fixed; left:50%; transform:translateX(-50%);
-    bottom:calc(86px + env(safe-area-inset-bottom, 0px));
+    bottom:max(var(--safe-b), calc(86px + env(safe-area-inset-bottom)));
     z-index:40020; background:rgba(5,7,12,.9); border:2px solid #05070c; color:#e8ddc8;
     font-family:'Galmuri11',sans-serif; font-size:11.5px; padding:7px 13px; white-space:nowrap;
     box-shadow:0 4px 0 rgba(0,0,0,.4) }
-  body.mw-party #mw-dev-strip { bottom:calc(20px + env(safe-area-inset-bottom, 0px)) }
+  body.mw-party #mw-dev-strip { bottom:max(var(--safe-b), calc(20px + env(safe-area-inset-bottom))) }
   #mw-dev-strip.on { display:block }
   #mw-dev-strip .dot { display:inline-block; animation:mwDevDot 1.2s steps(4,end) infinite }
   @keyframes mwDevDot { 0%{opacity:.25} 50%{opacity:1} 100%{opacity:.25} }
@@ -1098,7 +1103,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      가 대화 상자 밑에 띠처럼 남는다. 덩어리째 감춘다(대표 8-20에 정한 규칙과 같다). */
   body.mw-party #mw-hub-wrap { display:none }
   body.mw-party #mw-party-chat { flex:1; min-height:0; overflow:hidden;
-    padding-bottom:calc(78px + env(safe-area-inset-bottom, 0px)) }
+    padding-bottom:max(var(--safe-b), calc(78px + env(safe-area-inset-bottom))) }
   /* ★★★★★★★★★★★8-25 — **구조를 스쿼드와 같게 바꾼다** (대표: "차라리 스쿼드 톡처럼
      기능 만들던가. 머피룸도 스쿼드 참가자처럼 명단 뜨고, 공용 톡은 따로 빼두고").
 
@@ -1165,8 +1170,14 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   #mw-rtalk .rt-log .pl b { color:#7aa8ff; margin-right:6px; font-weight:400 }
   #mw-rtalk .rt-log .pl-empty { font-size:11px; color:#4a5266; text-align:center; padding:20px 0 }
   #mw-rtalk .rt-row { flex-shrink:0; display:flex; gap:4px; padding:10px 16px;
-    padding-bottom:max(30px, calc(10px + env(safe-area-inset-bottom))); border-top:2px solid #0e1320 }
-  #mw-rtalk .rt-row:focus-within { padding-bottom:8px }   /* 10-26 앱 웹뷰 env=0 → 홈 표시줄 자리 30px, 치는 중엔 키보드 위라 8px */
+    padding-bottom:max(var(--safe-b), calc(10px + env(safe-area-inset-bottom))); border-top:2px solid #0e1320 }
+  #mw-rtalk .rt-row:focus-within { padding-bottom:8px }
+  /* 10-26 DM·스쿼드 톡도 같은 이유(앱 웹뷰 env=0)로 홈 표시줄 자리 30px — 치는 중엔 키보드 위라 원래 여백 */
+  #dm-input-row:focus-within { padding-bottom:16px !important }
+  .safe-in { padding-bottom:var(--safe-b) !important; padding-left:var(--safe-x) !important; padding-right:var(--safe-x) !important }
+  .safe-in:focus-within { padding-bottom:12px !important }
+  .safe-in input, .safe-in textarea { min-width:0 }   /* 320 폭에서 입력칸이 안 줄어 [보내기]가 오른쪽 16px 선 밖으로 밀렸다 */
+  #sq-chat-row:focus-within { padding-bottom:10px !important }   /* 10-26 앱 웹뷰 env=0 → 홈 표시줄 자리 30px, 치는 중엔 키보드 위라 8px */
   #mw-rtalk .rt-row input { flex:1; min-width:0; box-sizing:border-box; height:34px;
     background:rgba(255,255,255,.06); border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     color:#fff; padding:0 9px; font-size:16px; outline:none; font-family:inherit; border-radius:0 }
@@ -1221,7 +1232,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
      위아래 카드에 눌려 3줄짜리 칸에서 스크롤했다. 같은 요소(#bamboo-compose-full)를 그대로
      붙박이로 띄운다 — 입력칸 id 가 안 바뀌니 postBamboo 는 손댈 게 없다. */
   #bamboo-compose-full.bw-open { position:fixed; inset:0; z-index:900; background:#0a0a0a; max-width:390px;
-    margin:0 auto; padding:14px 16px calc(16px + env(safe-area-inset-bottom)); overflow-y:auto;
+    margin:0 auto; padding:14px 16px max(var(--safe-b), calc(16px + env(safe-area-inset-bottom))); overflow-y:auto;
     display:flex !important; flex-direction:column }
   #bamboo-compose-full.bw-open .bw-head { display:flex; align-items:center; gap:10px; padding:2px 0 12px }
   #bamboo-compose-full.bw-open .bw-head b { flex:1; font-size:16px; font-weight:800; color:#fff }
@@ -1354,7 +1365,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   #mw-memory .mm-tabs button.on { background:#24345a; color:#fff; box-shadow:inset 0 -3px 0 #3D7EFF }
   #mw-memory .mm-list { flex:1; min-height:0; overflow-y:auto; display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr)); align-content:start; gap:10px; padding:4px 16px;
-    padding-bottom:max(18px,env(safe-area-inset-bottom)); overscroll-behavior:contain }
+    padding-bottom:max(var(--safe-b), 18px, env(safe-area-inset-bottom)); overscroll-behavior:contain }
   #mw-memory .mm-card { min-width:0; border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     background:#0b0e16; padding:6px; color:#cfd6e6; font:10px Galmuri11,sans-serif; cursor:pointer; text-align:left }
   #mw-memory .mm-card img { display:block; width:100%; max-height:210px; object-fit:contain; image-rendering:pixelated; background:#05070c }
@@ -1566,7 +1577,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   /* 지우개 = 색이 아니라 '없음'이다. 색칩처럼 보이면 흰색과 헷갈린다(흰색도 팔레트에 있다). */
   #mw-jam .jam-sw.era { background:#1b2233; color:#cfd6e6; font-size:9px; display:flex;
     align-items:center; justify-content:center; font-family:'Galmuri11',sans-serif }
-  #mw-jam .jam-foot { padding:14px 16px; padding-bottom:max(14px, env(safe-area-inset-bottom));
+  #mw-jam .jam-foot { padding:14px 16px; padding-bottom:max(var(--safe-b), 14px, env(safe-area-inset-bottom));
     display:flex; gap:8px }
   #mw-jam .jam-hint { font-size:10.5px; color:#4a5266; text-align:center; padding:9px 16px 0; line-height:1.6 }
   /* ★그리면서 이야기한다 (대표 8-25). **머피룸 대화와 같은 데이터**를 쓴다 —
@@ -1749,7 +1760,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .mw-wpanel-head .mw-headic { flex-shrink:0; color:#3D7EFF; display:flex; align-items:center }
   /* 제목 밑줄(head의 border-bottom)과 첫 콘텐츠가 붙어 보이던 문제 → 위 여백 확보.
      체크인의 FITNESS PASSPORT 줄, 지도의 지도 상자가 선에 딱 붙어 답답했다(대표 지적 7-24). */
-  .mw-wpanel-body { flex:1; overflow-y:auto; padding:16px 16px calc(30px + env(safe-area-inset-bottom)) }
+  .mw-wpanel-body { flex:1; overflow-y:auto; padding:16px 16px max(var(--safe-b), calc(30px + env(safe-area-inset-bottom))) }
   /* ★경매는 꾸미기의 한 분류가 아니다 (대표 8-26: "경매가 그냥 단순 꾸미기로 소비되선 안 됨").
      앞으로 히든 아이템·한정 의류까지 올라갈 자리라 **독립된 입구**가 있어야 한다.
      그래서 칩 맨 끝이 아니라 **패널 제목 줄, X 왼쪽**에 둔다.
@@ -1988,7 +1999,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .mw-crn.bl{ left:14px; bottom:14px; border-left-width:4px; border-bottom-width:4px }
   .mw-crn.br{ right:14px; bottom:14px; border-right-width:4px; border-bottom-width:4px }
   .mw-cam-bottom { display:flex; align-items:center; justify-content:space-between; padding:18px 34px;
-    padding-bottom:max(20px, env(safe-area-inset-bottom)) }
+    padding-bottom:max(var(--safe-b), 20px, env(safe-area-inset-bottom)) }
   .mw-cam-x { width:46px; height:46px; background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     color:#8a93a8; font-size:16px; cursor:pointer }
   .mw-shutter { width:74px; height:74px; background:#141a28; border:3px solid #05070c; box-shadow:0 0 0 3px #2b3350, 0 5px 0 #05060a;
@@ -2320,12 +2331,12 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
         <!-- 네이티브 사진 선택기에서 돌아온 직후 원본 디코딩이 끝날 때까지 홈 화면이 비치지 않게 한다. -->
         <div id="crop-loading" style="position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:#0b0b0d;color:rgba(255,255,255,.58);font-size:12.5px;font-weight:600;letter-spacing:-.2px;pointer-events:none">사진 불러오는 중…</div>
       </div>
-      <div style="padding:14px 20px calc(14px + env(safe-area-inset-bottom));text-align:center">
+      <div style="padding:14px 20px max(var(--safe-b), calc(14px + env(safe-area-inset-bottom)));text-align:center">
         <span style="display:inline-flex;align-items:center;font-size:12px;color:rgba(255,255,255,0.4);background:rgba(255,255,255,0.06);padding:8px 14px;border-radius:20px;letter-spacing:-0.2px">핀치로 크기 조정 · 드래그로 위치 이동</span>
       </div>
     </div>
     <!-- 게시물 작성 (2단계): 사진+캡션 메인 / 태그 서브 (공유는 헤더). 단일 스크롤러 -->
-    <div id="crop-step-2" style="display:none;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:14px 20px calc(28px + env(safe-area-inset-bottom))">
+    <div id="crop-step-2" style="display:none;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:14px 20px max(var(--safe-b), calc(28px + env(safe-area-inset-bottom)))">
       <!-- 사진(메인) + 머피캠 필터 토글. ★토글은 사진 위 오버레이 칩 한 줄 —
            별도 카드로 아래에 쌓으면 세로가 길어져 "우다다 난잡"해진다(대표 리포트). -->
       <div style="position:relative;width:100%;max-width:min(74vw,268px);aspect-ratio:4/5;margin:0 auto;border-radius:16px;overflow:hidden;background:#111;border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 26px rgba(0,0,0,0.5)">
@@ -3196,7 +3207,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <span id="comment-panel-title" style="font-weight:700;font-size:16px">댓글</span>
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px 20px" id="comment-list"></div>
-  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06)">
+  <div class="safe-in" style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06)">
     <input id="bamboo-anon-name" maxlength="12" placeholder="1회용 닉네임 (선택 · 비우면 익명)" style="display:none;width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:8px 12px;color:#fff;font-size:12.5px;outline:none;font-family:inherit;margin-bottom:8px">
     <div style="display:flex;gap:10px">
       <input id="comment-input" placeholder="댓글 입력... (연락처 불가)" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 14px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229)handleCommentSubmit()">
@@ -3357,9 +3368,9 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   <div id="golf-me" style="position:absolute;pointer-events:none"></div>
     <div id="golf-hud" style="display:none;position:absolute;left:12px;top:12px;z-index:5;font-size:15px;color:#fff;text-shadow:0 2px 4px #000;text-align:left">홀 <span id="golf-hole-n">1</span>/3 · <span id="golf-strokes">0</span>타<span id="golf-score-wrap" style="margin-left:9px;font-size:12.5px;color:rgba(255,255,255,.62);font-variant-numeric:tabular-nums"><span id="golf-score">0</span>점</span><div id="golf-wind" style="font-size:11.5px;color:rgba(255,255,255,.75);margin-top:3px"></div></div>
   <button onclick="window.golfClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
-    <div id="golf-club" onclick="window.golfClubNext()" style="display:none;position:absolute;left:12px;bottom:calc(112px + env(safe-area-inset-bottom));z-index:5;background:rgba(13,19,34,.82);border:2px solid #05070c;color:#fff;font-family:inherit;font-size:12px;padding:7px 11px;cursor:pointer">드라이버</div>
-  <div id="golf-hint" style="display:none;position:absolute;left:0;right:0;bottom:calc(78px + env(safe-area-inset-bottom));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
-  <div id="golf-gauge" style="display:none;position:absolute;left:22px;right:22px;bottom:calc(44px + env(safe-area-inset-bottom));height:26px;z-index:5;pointer-events:none">
+    <div id="golf-club" onclick="window.golfClubNext()" style="display:none;position:absolute;left:12px;bottom:max(var(--safe-b), calc(112px + env(safe-area-inset-bottom)));z-index:5;background:rgba(13,19,34,.82);border:2px solid #05070c;color:#fff;font-family:inherit;font-size:12px;padding:7px 11px;cursor:pointer">드라이버</div>
+  <div id="golf-hint" style="display:none;position:absolute;left:0;right:0;bottom:max(var(--safe-b), calc(78px + env(safe-area-inset-bottom)));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
+  <div id="golf-gauge" style="display:none;position:absolute;left:22px;right:22px;bottom:max(var(--safe-b), calc(44px + env(safe-area-inset-bottom)));height:26px;z-index:5;pointer-events:none">
     <div class="gg-track"><div class="gg-zone"></div><div class="gg-power"></div><div class="gg-needle"></div></div>
   </div>
   <div id="golf-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background-color:#05070c;flex-direction:column;align-items:center;justify-content:flex-end;gap:16px;padding:26px;text-align:center;overflow:hidden">
@@ -3440,7 +3451,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   <div id="tennis-flash" class="tennis-flash"></div>
   <div id="tennis-hud" style="display:none;position:absolute;left:12px;top:12px;z-index:5;font-size:15px;color:#fff;text-shadow:0 2px 4px #000;text-align:left"><span id="tennis-score">0</span>점<span style="margin-left:9px;font-size:12.5px;color:rgba(255,255,255,.62)">랠리 <span id="tennis-rally">0</span></span><div id="tennis-lives" style="margin-top:4px"></div></div>
   <button onclick="window.tennisClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
-  <div id="tennis-hint" style="display:none;position:absolute;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
+  <div id="tennis-hint" style="display:none;position:absolute;left:0;right:0;bottom:max(var(--safe-b), calc(64px + env(safe-area-inset-bottom)));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
   <div id="tennis-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background-color:#05070c;flex-direction:column;align-items:center;justify-content:flex-end;gap:16px;padding:26px;text-align:center;overflow:hidden">
     <div id="tennis-art-bg" style="display:none;position:absolute;inset:0;background:center/cover no-repeat;pointer-events:none"></div>
     <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(5,7,12,0) 34%,rgba(5,7,12,.62) 62%,rgba(5,7,12,.9) 100%)"></div>
@@ -3494,7 +3505,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   <div id="run-flash" class="run-flash"></div>
   <div id="run-hud" style="display:none;position:absolute;left:12px;top:12px;z-index:5;font-size:15px;color:#fff;text-shadow:0 2px 4px #000;text-align:left"><span id="run-m">0</span>m<div style="margin-top:4px;display:flex;align-items:center;gap:5px"><span style="width:15px;height:15px;background:url('char/game/protein.png') center/contain no-repeat;image-rendering:pixelated;display:inline-block"></span><span id="run-prot-n" style="font-size:12.5px">0</span><span id="run-pump-gauge" style="display:inline-flex;align-items:center;gap:2px;margin-left:3px"></span></div><div id="run-lives" style="margin-top:4px"></div></div>
   <button onclick="window.runClose()" style="position:absolute;right:10px;top:10px;z-index:5;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.16);border-radius:9px;color:rgba(255,255,255,.7);font-size:11px;font-family:inherit;cursor:pointer;padding:7px 11px">나가기</button>
-  <div id="run-hint" style="display:none;position:absolute;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
+  <div id="run-hint" style="display:none;position:absolute;left:0;right:0;bottom:max(var(--safe-b), calc(64px + env(safe-area-inset-bottom)));z-index:5;text-align:center;font-size:12px;color:#fff;text-shadow:0 2px 4px #000;pointer-events:none"></div>
   <div id="run-start-screen" style="display:none;position:absolute;inset:0;z-index:7;background-color:#05070c;flex-direction:column;align-items:center;justify-content:flex-end;gap:16px;padding:26px;text-align:center;overflow:hidden">
     <div id="run-art-bg" style="display:none;position:absolute;inset:0;background:center/cover no-repeat;pointer-events:none"></div>
     <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(5,7,12,0) 34%,rgba(5,7,12,.62) 62%,rgba(5,7,12,.9) 100%)"></div>
@@ -3600,7 +3611,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <button id="chat-detail-menu" aria-label="더보기" onclick="window._openChatPartnerMenu()" style="background:none;border:none;padding:7px;margin-left:6px;flex-shrink:0;color:rgba(255,255,255,0.38);cursor:pointer;font-family:inherit;display:flex;align-items:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></button>
   </div>
   <div id="chat-messages" style="flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:3px"></div>
-  <div style="padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:9px;align-items:flex-end;background:rgba(12,12,14,0.7);backdrop-filter:blur(14px)">
+  <div id="dm-input-row" style="padding:12px 16px max(var(--safe-b), calc(16px + env(safe-area-inset-bottom)));border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:9px;align-items:flex-end;background:rgba(12,12,14,0.7);backdrop-filter:blur(14px)">
     <input id="chat-input" placeholder="메시지 입력" autocomplete="off" style="flex:1;min-width:0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:21px;padding:11px 16px;color:#fff;font-size:14px;line-height:1.3;outline:none" oninput="window._chatInputToggle&&window._chatInputToggle()" onkeydown="if(event.key==='Enter'){event.preventDefault();sendChat()}">
     <button id="chat-send-btn" class="chat-send-btn" onclick="sendChat()" aria-label="전송">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -3788,7 +3799,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <!-- 채팅 탭 -->
     <div id="crew-chat-tab" style="position:absolute;inset:0;flex-direction:column;display:none">
       <div id="crew-chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:6px"></div>
-      <div id="crew-chat-input-row" style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;flex-shrink:0;background:#0a0a0a">
+      <div id="crew-chat-input-row" class="safe-in" style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;flex-shrink:0;background:#0a0a0a">
         <input id="crew-chat-input" placeholder="메시지 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();window.sendCrewChatFirestore&&window.sendCrewChatFirestore()}">
         <button onclick="window.sendCrewChatFirestore&&window.sendCrewChatFirestore()" style="background:#fff;color:#000;border:none;border-radius:50%;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
       </div>
@@ -11202,7 +11213,7 @@ window.mwPortal = function () {
       <img src="./ob/logo-nukki-480.png" style="width:160px;height:160px;object-fit:contain;margin-bottom:2px;flex-shrink:0">
       <div style="font-size:13px;font-weight:500;letter-spacing:4px;color:rgba(255,255,255,0.4);text-transform:uppercase">Move together</div>
     </div>
-    <div class="lg-btns" style="flex-shrink:0;padding:0 0 env(safe-area-inset-bottom);display:flex;flex-direction:column;gap:10px;z-index:1;box-sizing:border-box">
+    <div class="lg-btns" style="flex-shrink:0;padding:0 0 max(var(--safe-b), env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;z-index:1;box-sizing:border-box">
       <button onclick="window.kakaoLogin()" style="width:100%;background:#FEE500;color:#000;border:none;border-radius:14px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:-0.3px;display:flex;align-items:center;justify-content:center;gap:8px">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#000"><path d="M12 3C6.48 3 2 6.48 2 10.8c0 2.7 1.55 5.08 3.9 6.5l-.97 3.6 4.18-2.77c.93.18 1.89.27 2.89.27 5.52 0 10-3.48 10-7.8S17.52 3 12 3z"/></svg>
         카카오로 시작하기
@@ -11560,7 +11571,7 @@ window.mwPortal = function () {
     <span style="font-weight:700;font-size:16px;flex:1" id="crew-post-detail-title"></span>
   </div>
   <div style="flex:1;overflow-y:auto" id="crew-post-detail-body"></div>
-  <div style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;background:#0a0a0a">
+  <div class="safe-in" style="padding:12px 20px 32px;border-top:1px solid rgba(255,255,255,0.06);display:flex;gap:10px;background:#0a0a0a">
     <input id="crew-post-comment-input" placeholder="댓글 입력..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:10px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')window.submitCrewComment&&window.submitCrewComment()">
     <button onclick="window.submitCrewComment&&window.submitCrewComment()" style="background:#fff;color:#000;border:none;border-radius:50%;width:40px;height:40px;font-weight:700;cursor:pointer;flex-shrink:0;font-size:16px">↑</button>
   </div>
@@ -11583,7 +11594,7 @@ window.mwPortal = function () {
 <!-- 운동 종목 필터 바텀 시트 (최상위 — .page transform 영향 안 받게) -->
 <div id="feed-filter-sheet" style="display:none;position:fixed;inset:0;z-index:9997">
   <div onclick="window.closeFeedFilterSheet && window.closeFeedFilterSheet()" style="position:absolute;inset:0;background:rgba(0,0,0,0.5)"></div>
-  <div style="position:absolute;left:0;right:0;bottom:0;max-width:390px;margin:0 auto;background:#141414;border-top-left-radius:20px;border-top-right-radius:20px;padding:14px 18px calc(22px + env(safe-area-inset-bottom));max-height:72vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:absolute;left:0;right:0;bottom:0;max-width:390px;margin:0 auto;background:#141414;border-top-left-radius:20px;border-top-right-radius:20px;padding:14px 18px max(var(--safe-b), calc(22px + env(safe-area-inset-bottom)));max-height:72vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
     <div style="width:36px;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;margin:0 auto 16px"></div>
     <div style="font-size:15px;font-weight:800;letter-spacing:-0.3px;margin-bottom:14px">운동 종목 필터</div>
     <div id="feed-filter-chips" style="display:flex;flex-wrap:wrap;gap:8px"></div>
@@ -17693,7 +17704,7 @@ function _drawCoach(cfg, t) {
     ov.style.background = 'rgba(0,0,0,0.5)';
     hole.style.display = 'none'; hole.classList.remove('coach-neon');
     card.style.left = '20px'; card.style.right = '20px'; card.style.margin = '0 auto'; card.style.maxWidth = '260px';
-    card.style.top = 'auto'; card.style.bottom = 'calc(96px + env(safe-area-inset-bottom))'; tail = 'tail-down';
+    card.style.top = 'auto'; card.style.bottom = 'max(var(--safe-b), calc(96px + env(safe-area-inset-bottom)))'; tail = 'tail-down';
   }
   card.innerHTML = '<div class="coach-bubble ' + tail + '" style="font-weight:700">' + (cfg.text || '') + '</div>';
   ov.style.display = 'block';
@@ -21964,7 +21975,7 @@ setTimeout(function () {
       + 'font-size:12px;font-weight:700;text-decoration:none;font-family:inherit;white-space:nowrap';
     const el = document.createElement('div');
     el.id = 'store-nudge';
-    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:9500;'
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:max(var(--safe-b), calc(74px + env(safe-area-inset-bottom)));z-index:9500;'
       + 'background:#10151f;border:1px solid rgba(61,126,255,.35);border-radius:14px;padding:12px 10px 12px 14px;'
       + 'display:flex;align-items:center;gap:7px;max-width:366px;margin:0 auto;box-shadow:0 8px 30px rgba(0,0,0,.5)';
     el.innerHTML =
@@ -27455,7 +27466,7 @@ window._isInApp = function () {
     if (!window._isInApp()) return;
     // ★버튼 묶음이 흐름 안으로 바뀌었으므로(8-12) bottom 이 아니라 아래 여백을 키운다.
     const btns = document.querySelector('#login-method-modal .lg-btns') || document.querySelector('.lg-btns');
-    if (btns) btns.style.paddingBottom = 'calc(70px + env(safe-area-inset-bottom))';
+    if (btns) btns.style.paddingBottom = 'max(var(--safe-b), calc(70px + env(safe-area-inset-bottom)))';
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
@@ -30098,7 +30109,7 @@ window._mwRoomWaitPaint = function (all) {
     el = document.getElementById('mw-room-wait-card');
     if (!window._mwRl.waiting || window._mwWaitCardHidden) { if (el) el.remove(); return; }
     if (!el) { el = document.createElement('div'); el.id = 'mw-room-wait-card'; document.body.appendChild(el); }
-    el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:40015;width:calc(100% - 24px);max-width:366px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 8px 22px rgba(0,0,0,.45);padding:12px;font-family:Galmuri11,sans-serif';
+    el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:max(var(--safe-b), calc(88px + env(safe-area-inset-bottom)));z-index:40015;width:calc(100% - 24px);max-width:366px;box-sizing:border-box;background:#0e1320;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350,0 8px 22px rgba(0,0,0,.45);padding:12px;font-family:Galmuri11,sans-serif';
     el.innerHTML = '<div style="color:#F5C24B;font-size:12px;margin-bottom:6px">방주 승인 대기 중</div>'
       + '<div style="color:#8a93a8;font-size:10.5px;line-height:1.6">방주가 밀어서 승인하면 둘 다 공용 머피룸으로 바로 전환돼요.</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">'
@@ -32213,7 +32224,7 @@ window.sqInviteSheet = function (sid) {
   const when = window._sqFmtTime ? window._sqFmtTime(s.scheduledAt) : '';
   const sub = [when, s.location].filter(Boolean).join(' · ');
   el.innerHTML = `
-    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom))">
+    <div style="width:100%;max-width:390px;background:#0d1016;border-radius:20px 20px 0 0;padding:10px 18px max(var(--safe-b), calc(22px + env(safe-area-inset-bottom)))">
       <div style="width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.14);margin:0 auto 16px"></div>
       <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px">
         ${thumb ? `<div style="flex-shrink:0;width:46px;height:46px;border-radius:12px;background:url('${thumb}') center/cover;border:1px solid rgba(255,255,255,.1)"></div>` : ''}
@@ -36038,7 +36049,7 @@ window._mwParkBar = function (on) {
   bar.id = 'mw-park-bar';
   // ★바닥에서 26px 띄운다 — 10px 로 붙였더니 아이폰 라운드 코너·홈 인디케이터에 걸렸다(대표 9-04)
   // ★9-07 대표: 채팅창 때문에 그 뒤의 NPC(민준이)가 안 눌림 → 채팅 로그는 탭을 통과시키고(치는 중에만 잡음), 입력줄만 받는다
-  bar.style.cssText = 'position:fixed;left:14px;right:14px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:950;pointer-events:none;'
+  bar.style.cssText = 'position:fixed;left:var(--safe-x);right:var(--safe-x);bottom:max(var(--safe-b), calc(26px + env(safe-area-inset-bottom)));z-index:950;pointer-events:none;'
     + "max-width:366px;margin:0 auto;display:flex;flex-direction:column;font-family:'Galmuri11',sans-serif";
   bar.innerHTML =
       '<div id="mw-park-log" style="height:92px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;pointer-events:none;'
@@ -36065,8 +36076,8 @@ window._mwParkBar = function (on) {
       //   선제 부양값(46vh)을 유지한다 — iOS 는 키보드가 올라오는 순간 입력칸이 가려질 것
       //   같으면 화면 전체를 밀어버리는데, 미리 올려두면 밀 이유가 없어 필드가 안 흔들린다.
       const typing = document.activeElement && document.activeElement.id === 'mw-park-in';
-      if (kb > 0) b.style.bottom = 'calc(' + (26 + kb) + 'px + env(safe-area-inset-bottom))';
-      else b.style.bottom = typing ? '46vh' : 'calc(26px + env(safe-area-inset-bottom))';
+      if (kb > 0) b.style.bottom = 'calc(' + (26 + kb) + 'px + env(safe-area-inset-bottom))';   // safe-b-ok: 키보드 위(홈 표시줄과 무관)
+      else b.style.bottom = typing ? '46vh' : 'max(var(--safe-b), calc(26px + env(safe-area-inset-bottom)))';
       try {
         window.scrollTo(0, 0);
         if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
@@ -36574,7 +36585,7 @@ window._mwNpcDialog = function (n, pages, mode) {
   if (!document.getElementById('mw-npc-dlg-css')) {
     const st = document.createElement('style'); st.id = 'mw-npc-dlg-css';
     st.textContent = `
-      #mw-npc-talk{position:fixed;left:10px;right:10px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:956;max-width:380px;margin:0 auto;
+      #mw-npc-talk{position:fixed;left:10px;right:10px;bottom:max(var(--safe-b), calc(120px + env(safe-area-inset-bottom)));z-index:956;max-width:380px;margin:0 auto;
         font-family:'Galmuri11',sans-serif;-webkit-tap-highlight-color:transparent}
       #mw-npc-talk .box{position:relative;background:rgba(9,12,20,.95);border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;padding:14px 12px 10px 122px;min-height:98px;cursor:pointer}
       /* ★9-07 대표: 던파식 — 네모 틀에 넣지 말고 누끼 상반신이 왼쪽에 서서 채팅창 위로 솟게 */
@@ -37496,7 +37507,7 @@ window.mwCenterField = async function (centerId) {
       <div id="mw-ctalk-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:10px;padding:6px 2px 13px;min-height:80px">
         <div style="color:#4a5266;font-size:11.5px;text-align:center;padding:12px">불러오는 중…</div>
       </div>
-      <div style="display:flex;gap:7px;padding-top:12px;margin:0 0 calc(40px + env(safe-area-inset-bottom));flex-shrink:0;border-top:1px solid #141a2a">
+      <div style="display:flex;gap:7px;padding-top:12px;margin:0 0 max(var(--safe-b), calc(40px + env(safe-area-inset-bottom)));flex-shrink:0;border-top:1px solid #141a2a">
         <input id="mw-ctalk-input" maxlength="200" disabled placeholder="확인 중…" style="flex:1;background:#0e1320;border:3px solid #05070c;color:#fff;padding:11px 12px;font-size:13px;outline:none;font-family:inherit;min-width:0" onkeydown="if(event.key==='Enter')window.mwCtalkSend('${c.id}')">
         <button id="mw-ctalk-send" class="mw-btn mw-btn-sm" disabled onclick="window.mwCtalkSend('${c.id}')">보내기</button>
       </div>
@@ -40494,7 +40505,7 @@ window.sqClassPreview = function (clsId) {
         <div style="font-size:19px;font-weight:800;color:#fff">${esc(c.name)}</div>
       </div>
     </div>
-    <div style="padding:14px 18px calc(26px + env(safe-area-inset-bottom))">
+    <div style="padding:14px 18px max(var(--safe-b), calc(26px + env(safe-area-inset-bottom)))">
       ${c.memo ? `<div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.65;margin-bottom:14px">${esc(c.memo)}</div>` : ''}
       ${row('다음 회차', window._sqFmtTime(sched))}
       ${row('장소', esc(c.location))}
@@ -41231,7 +41242,7 @@ window.openSquadCreate = function (preset) {
       <span style="font-size:17px;font-weight:800;color:#fff">스쿼드 만들기</span>
       <span style="margin-left:auto;font-size:11px;color:rgba(255,255,255,.35)">30초면 끝나요</span>
     </div>
-    <div style="padding:0 18px calc(30px + env(safe-area-inset-bottom))">
+    <div style="padding:0 18px max(var(--safe-b), calc(30px + env(safe-area-inset-bottom)))">
       <div id="sq-c-mine"></div>
       ${lbl('무슨 운동인가요?')}
       <div id="sq-c-types" style="display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none">
@@ -41681,7 +41692,7 @@ window.sqEditOpen = function (sid) {
       <button onclick="document.getElementById('sq-edit').remove()" style="background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px">←</button>
       <span style="font-size:17px;font-weight:800;color:#fff">스쿼드 수정</span>
     </div>
-    <div style="padding:0 18px calc(30px + env(safe-area-inset-bottom))">
+    <div style="padding:0 18px max(var(--safe-b), calc(30px + env(safe-area-inset-bottom)))">
       ${lbl('제목')}
       <input id="sq-e-title" maxlength="40" value="${esc(s.title)}" style="${inputCss}">
       ${lbl('장소')}
@@ -41995,7 +42006,7 @@ window.openSquadDetail = function (sid, preview) {
   el.style.cssText = 'position:fixed;inset:0;z-index:890;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain';
   el.innerHTML = `
     <div id="sq-d-hero" style="position:relative;flex-shrink:0"></div>
-    <div style="padding:0 16px calc(26px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px">
+    <div style="padding:0 16px max(var(--safe-b), calc(26px + env(safe-area-inset-bottom)));display:flex;flex-direction:column;gap:14px">
       <!-- ★필드를 sticky 로 붙여놨었는데 걷어냈다(대표 8-11). 스크롤하면 아래 내용이 필드 뒤로
            들어가서 **[범프로 출석]이 가려졌다.** 원래 sticky 를 단 이유는 '톡방까지 내려가도
            말풍선이 보이게'였는데, 톡방을 별도 화면으로 뺀 뒤로 상세가 짧아져서 그럴 일이 없다. -->
@@ -43847,7 +43858,7 @@ window._sqTalkOpen = function () {
          그걸 앱이 모아 주고 '명단 보기'에서 그 형식 그대로 복사할 수 있다. -->
     <div id="sq-part-board" style="flex-shrink:0">${window._sqPartBoardHtml ? window._sqPartBoardHtml(s, window._sqMembers || {}) : ''}</div>
     <div id="sq-chat-list" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:9px;padding:12px 14px"></div>
-    <div style="display:flex;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
+    <div id="sq-chat-row" style="display:flex;gap:7px;padding:10px var(--safe-x) max(var(--safe-b), calc(10px + env(safe-area-inset-bottom)));border-top:1px solid rgba(255,255,255,.07);flex-shrink:0">
       <input id="sq-chat-input" maxlength="120" placeholder="확인 중…" style="flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:#fff;border-radius:11px;padding:12px 13px;font-size:16px;outline:none;font-family:inherit;min-width:0" inputmode="text" enterkeyhint="send">
       <button id="sq-chat-send" onmousedown="event.preventDefault()" onclick="window.sqChatSend('${sid}')" style="background:var(--accent);color:#fff;border:none;border-radius:11px;padding:0 16px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">보내기</button>
     </div>`;
@@ -45807,7 +45818,7 @@ window.sqGamePicker = function () {
       +   '<button onclick="window.sfx.play(\'btn\');window.sfx.bgm(null);document.getElementById(\'sq-game-picker\').remove();' + g.start + '" style="align-self:flex-end;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px">시작</button>'
       + '</div></div>';
   }).join('');
-  d.innerHTML = '<div style="width:100%;max-width:440px;background:#05070c;border-top:2px solid #2b3350;border-radius:18px 18px 0 0;padding:16px 14px calc(18px + env(safe-area-inset-bottom));font-family:Galmuri11,sans-serif">'
+  d.innerHTML = '<div style="width:100%;max-width:440px;background:#05070c;border-top:2px solid #2b3350;border-radius:18px 18px 0 0;padding:16px 14px max(var(--safe-b), calc(18px + env(safe-area-inset-bottom)));font-family:Galmuri11,sans-serif">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
     +   '<div style="font-size:15px;font-weight:800;color:#F5C24B;font-family:\'Galmuri14\',sans-serif">스쿼드 운동회</div>'
     +   '<div style="display:flex;gap:4px">'
@@ -47830,7 +47841,7 @@ function _crewCss() {
 .cw{position:fixed;inset:-80px 0;padding:80px 0;z-index:40020;background:#0b0f1a;display:flex;justify-content:center;overflow:hidden;overscroll-behavior:none;color:#e8ecf4;
   font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 .cw *{box-sizing:border-box}
-.cw-sc{position:relative;width:100%;max-width:390px;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:calc(124px + env(safe-area-inset-bottom))}
+.cw-sc{position:relative;width:100%;max-width:390px;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:max(var(--safe-b), calc(124px + env(safe-area-inset-bottom)))}
 html.cw-open,html.cw-open body{overflow:hidden!important;overscroll-behavior:none}
 .cw-hd{display:flex;align-items:center;gap:12px;padding:16px 20px 16px;padding-top:max(16px,env(safe-area-inset-top))}
 .cw-hd b{display:block;font-size:20px;font-weight:800;letter-spacing:-.5px}
@@ -47938,7 +47949,7 @@ html.cw-open,html.cw-open body{overflow:hidden!important;overscroll-behavior:non
 .cw-inv-m .nk{font-family:'Galmuri11',sans-serif;font-size:8px;color:#fff;background:rgba(9,12,22,.74);padding:1px 4px 2px;margin-top:2px;white-space:nowrap;max-width:46px;overflow:hidden;text-overflow:ellipsis}
 .cw-inv-more{align-self:center;font-size:12px;color:#8a93a8;margin-left:4px}
 .cw-bar.inl{position:static;background:none;border-top:0;padding:22px 20px 32px}
-#crew-invite .cw-sc{padding-bottom:env(safe-area-inset-bottom)}
+#crew-invite .cw-sc{padding-bottom:max(var(--safe-b), env(safe-area-inset-bottom))}
 .cw-hc{transition:transform .15s cubic-bezier(.16,1,.3,1)}
 button.cw-hc:active{transform:scale(.98)}
 .cw-up,.cw-pbtn,.cw-badge{transition:transform .15s cubic-bezier(.16,1,.3,1)}
@@ -48067,7 +48078,7 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-pbtn:active{transform:translateY(2px)}
 .cw-pbtn.gold{color:#F5C24B}
 .cw-leave{display:block;margin:32px auto 0;background:none;border:none;color:#4f586c;font-size:12px;cursor:pointer;font-family:inherit}
-.cw-bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:12px 20px max(30px,calc(14px + env(safe-area-inset-bottom)));background:#0b0f1a;border-top:2px solid #121827}
+.cw-bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:12px 20px max(var(--safe-b), calc(14px + env(safe-area-inset-bottom)));background:#0b0f1a;border-top:2px solid #121827}
 /* 건강 앱 버튼 = 올리기 버튼과 같은 각진 픽셀 틀(둥근·각진 섞지 않게), 두 버튼은 한 줄 — 좁은 폰에서도 글자 한 줄 */
 .cw-bar .cw-hk{flex:none;margin-right:10px;background:#0b0f1a;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40,0 4px 0 #05060a;color:#cfd6e6;font-family:'Galmuri11',sans-serif;font-size:12px;padding:12px 10px;cursor:pointer;white-space:nowrap}
 .cw-bar .cw-hk.on{box-shadow:0 0 0 2px #3d6fd6,0 4px 0 #05060a;color:#7aa8ff}
@@ -49647,7 +49658,7 @@ function _agCss() {
 .ag-tt span{display:block;font-size:9px;color:#8a93a8;margin-top:4px}
 .ag-tt span i{font-style:normal;color:#7aa8ff}
 .ag-hud .sp{flex:1}
-.ag-log{position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
+.ag-log{position:absolute;left:12px;right:12px;bottom:max(var(--safe-b), calc(14px + env(safe-area-inset-bottom)));display:flex;justify-content:center;pointer-events:none}
 .ag-log span{background:rgba(9,12,22,.86);border:2px solid #05070c;padding:5px 8px 6px;font-size:10px;color:#cfd6e6;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ag-log b{font-weight:400;color:#fff}
 .ag-joy{position:absolute;width:128px;height:128px;margin:-64px 0 0 -64px;opacity:0;pointer-events:none;transition:opacity .13s;z-index:5}
@@ -49656,7 +49667,7 @@ function _agCss() {
 .ag-joy i{position:absolute;font-style:normal;font-size:15px;color:rgba(255,255,255,.34);width:22px;text-align:center;transition:color .08s}
 .ag-joy i.u{left:53px;top:2px}.ag-joy i.d{left:53px;bottom:2px}.ag-joy i.l{left:6px;top:53px}.ag-joy i.r{right:6px;top:53px}
 .ag-joy i.on{color:rgba(255,255,255,.95)}
-.ag-coach{position:absolute;left:50%;bottom:calc(104px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(9,12,22,.86);border:2px solid #05070c;
+.ag-coach{position:absolute;left:50%;bottom:max(var(--safe-b), calc(104px + env(safe-area-inset-bottom)));transform:translateX(-50%);background:rgba(9,12,22,.86);border:2px solid #05070c;
   padding:6px 9px 7px;font-size:10px;color:#cfd6e6;white-space:nowrap;pointer-events:none}
 .ag-coach b{font-weight:400;color:#7aa8ff}
 .ag-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#8a93a8}
@@ -49948,7 +49959,7 @@ function _agEditCss() {
 .ag.editing .ag-it{pointer-events:auto;cursor:grab}
 .ag.editing .ag-ch{opacity:.25}
 .ag-it.sel{outline:2px solid #3D7EFF;outline-offset:1px}
-.ag-tray{position:absolute;left:0;right:0;bottom:0;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding:10px 0 calc(10px + env(safe-area-inset-bottom))}
+.ag-tray{position:absolute;left:0;right:0;bottom:0;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding:10px 0 max(var(--safe-b), calc(10px + env(safe-area-inset-bottom)))}
 .ag-tray .row{display:flex;gap:8px;overflow-x:auto;padding:0 12px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .ag-tray .row::-webkit-scrollbar{display:none}
 .ag-tray button{flex:0 0 auto;width:64px;height:76px;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;margin:2px 0;
@@ -50281,7 +50292,7 @@ function _agChatCss() {
   if (document.getElementById('agit-chat-css')) return;
   const st = document.createElement('style'); st.id = 'agit-chat-css';
   st.textContent = `
-.ag-bar{position:absolute;left:0;right:0;bottom:0;padding:8px 12px max(30px, calc(12px + env(safe-area-inset-bottom)));display:flex;gap:8px;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40}
+.ag-bar{position:absolute;left:0;right:0;bottom:0;padding:8px var(--safe-x) max(var(--safe-b), calc(12px + env(safe-area-inset-bottom)));display:flex;gap:8px;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40}
 .ag-bar:focus-within{padding-bottom:8px}
 .ag-bar input{flex:1;min-width:0;height:36px;background:#05070c;border:2px solid #232b40;color:#fff;padding:0 10px;font:16px 'Pretendard Variable',Pretendard,sans-serif;border-radius:0;outline:none;-webkit-appearance:none}
 .ag-bar input::placeholder{color:#5d6680;font-size:13px}
@@ -50360,7 +50371,7 @@ function _agSheetCss() {
   const st = document.createElement('style'); st.id = 'agit-sheet-css';
   st.textContent = `
 .ag-shw{position:absolute;inset:0;z-index:9;background:rgba(5,7,12,.55);display:flex;align-items:flex-end}
-.ag-sh2{width:100%;max-height:72%;display:flex;flex-direction:column;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding-bottom:env(safe-area-inset-bottom)}
+.ag-sh2{width:100%;max-height:72%;display:flex;flex-direction:column;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding-bottom:max(var(--safe-b), env(safe-area-inset-bottom))}
 .ag-sh2 .hd{display:flex;align-items:center;gap:8px;padding:12px 12px 10px}
 .ag-sh2 .hd b{font:13px 'Galmuri14',sans-serif;color:#fff;font-weight:400}
 .ag-sh2 .hd span{font-size:10px;color:#8a93a8}
