@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1264';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1265';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -49657,7 +49657,7 @@ function _agCss() {
   font-family:'Galmuri11','Pretendard Variable',sans-serif;-webkit-font-smoothing:none;-webkit-user-select:none;user-select:none}
 .ag *{box-sizing:border-box}
 .ag-stage{position:absolute;inset:0;overflow:hidden}
-.ag-world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;transition:transform .15s linear}
+.ag-world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
 .ag-world.snap{transition:none}
 .ag-wall,.ag-floor{position:absolute;left:0;right:0;image-rendering:pixelated;background-repeat:repeat}
 .ag-it{position:absolute;image-rendering:pixelated;pointer-events:none}
@@ -49665,6 +49665,7 @@ function _agCss() {
 .ag-lbl{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#2a2117;line-height:1;text-align:center;
   font-family:'Galmuri11',sans-serif;letter-spacing:-.3px;white-space:nowrap;pointer-events:none}
 .ag-ch{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;transition:left .15s linear,top .15s linear;pointer-events:none}
+.ag-ch.me{left:0;top:0;transition:none;will-change:transform}
 .ag-ch.ghost{opacity:.42}
 .ag-ch .nk{order:2;font-size:8px;color:#fff;background:rgba(9,12,22,.74);padding:1px 4px 2px;margin-top:1px;white-space:nowrap;max-width:72px;overflow:hidden;text-overflow:ellipsis}
 .ag-ch.me .nk{color:#9cc0ff}
@@ -49748,7 +49749,20 @@ function _agCharHtml(p) {
     + '<span class="nk">' + _cE(p.me ? '나' : (p.nick || '크루원')) + '</span>' + (p.ghost && p.ago ? '<span class="ago">' + _cE(p.ago) + '</span>' : '')
     + (p.msg ? '<div class="bb">' + _cE(p.msg) + '</div>' : '');
 }
+// 내 캐릭터 화면 위치(월드 px) — 걸음 사이를 0.15초 선형 보간(카메라와 같은 루프에서 쓴다)
+const AG_STEP_MS = 150;
+function _agMeTarget(S) { return [(S.me.tc + 0.5) * AG.T * AG.S, (S.me.tr + 1) * AG.T * AG.S - 2]; }
+function _agMeNow(S, now) {
+  const m = S.mv, t = _agMeTarget(S); if (!m) return t;
+  const k = Math.max(0, Math.min(1, ((now || performance.now()) - m.t0) / AG_STEP_MS)); if (k >= 1) { S.mv = null; return t; }   // rAF 시각이 걸음 시작보다 이르면 0(뒤로 튀지 않게)
+  return [m.fx + (t[0] - m.fx) * k, m.fy + (t[1] - m.fy) * k];
+}
+function _agMeApply(el, pos) {
+  const tf = 'translate3d(' + Math.round(pos[0]) + 'px,' + Math.round(pos[1]) + 'px,0) translate(-50%,-100%)';   // 정수 픽셀(도트 흔들림 없게)
+  if (el.style.transform !== tf) el.style.transform = tf;
+}
 function _agPlace(el, p) {
+  if (p.me && window._agit) { const S = window._agit; _agMeApply(el, _agMeNow(S)); el.style.zIndex = 1000 + Math.round((p.tr + 1) * AG.T) * 2 + 1; return; }
   const fx = (p.tc + 0.5) * AG.T, fy = (p.tr + 1) * AG.T;
   el.style.left = (fx * AG.S) + 'px'; el.style.top = (fy * AG.S - 2) + 'px';
   el.style.zIndex = 1000 + Math.round(fy) * 2 + 1;
@@ -49770,12 +49784,16 @@ window._agPeopleRender = function (people) {
   });
   host.querySelectorAll('.ag-ch').forEach(el => { if (!seen[el.dataset.u]) el.remove(); });
 };
-// 카메라 — 내 발끝을 화면 가운데로(맵 끝에서는 멈춘다). 캐릭터와 같은 .15s linear 로 같이 흐른다.
+// 카메라 — 내 발끝을 화면 가운데로(맵 끝에서는 멈춘다).
+// ★10-26 대표 "아지트에서 움직일 때 엄청 버벅인다, 좌우 이동 때 특히 — 필드가 따라와서": 예전엔 캐릭터(left/top .15s)와 월드(transform .15s)가
+//   각자 따로 미끄러져 걸음마다 두 전환이 한 프레임씩 어긋났다(가운데에서 캐릭터가 프레임당 최대 7~21px 흔들림).
+//   → 공원 카메라(_mwParkCamTick)처럼 한 rAF 루프에서 캐릭터와 카메라를 같이 옮긴다. 다만 레이아웃을 읽지 않는다(소품 50여 개라 매 프레임 읽으면 CPU×4 에서 오히려 느려졌다):
+//     내 캐릭터 = 걸음 사이 보간 위치를 자기 겹 transform 으로, 월드 = 같은 위치로 translate3d. 둘 다 정수 픽셀. 위치가 30프레임 같으면 쉬고 걸음에서 깬다.
 function _agCam(snap) {
   const S = window._agit; if (!S) return;
   const st = S.el.querySelector('.ag-stage'), w = S.el.querySelector('.ag-world'); if (!st || !w) return;
   const sw = st.clientWidth, sh = st.clientHeight, ww = AG.W * AG.S, wh = AG.H * AG.S;
-  const p = S.me, fx = (p.tc + 0.5) * AG.T * AG.S, fy = ((p.tr + 1) * AG.T - 70) * AG.S;
+  const pos = snap ? _agMeTarget(S) : _agMeNow(S, S.camNow), fx = pos[0], fy = pos[1] + 2 - 70 * AG.S;
   let ox = ww <= sw ? Math.round((sw - ww) / 2) : Math.round(Math.min(0, Math.max(sw - ww, sw / 2 - fx)));
   // ★처음 들어올 때는 화면 양끝에 반쯤 걸친 사람이 없게 가로만 조금(±60px) 비켜 선다(브랜딩 10-22 "320 에서 왼쪽 캐릭터가 반 잘림").
   //   내가 한 걸음이라도 걸으면 S.moved — 그때부터는 늘 나를 가운데에.
@@ -49801,10 +49819,20 @@ function _agCam(snap) {
     oy = Math.round(Math.min(top, Math.max(sh - wh - th, S.editing.cam.y)));
     S.editing.cam = { x: ox, y: oy };
   }
-  w.classList.toggle('snap', !!snap);
-  w.style.transform = 'translate3d(' + ox + 'px,' + oy + 'px,0)';
-  if (snap) { w.offsetWidth; w.classList.remove('snap'); }
+  const tf = 'translate3d(' + Math.round(ox) + 'px,' + Math.round(oy) + 'px,0)';
+  if (w.style.transform !== tf) w.style.transform = tf;
 }
+function _agCamTick(now) {
+  const S = window._agit; if (!S) return; S.camRAF = 0;
+  if (!document.body.contains(S.el)) return;
+  S.camNow = now;
+  const me = S.el.querySelector('#ag-chars .ag-ch.me'); if (me) _agMeApply(me, _agMeNow(S, now));
+  _agCam(false);
+  const k = S.el.querySelector('.ag-world').style.transform + (S.mv ? '~' : '');
+  if (k === S.camKey) { if (++S.camSame >= 30) { S.camSame = 0; S.camKey = ''; return; } } else { S.camKey = k; S.camSame = 0; }
+  S.camRAF = requestAnimationFrame(_agCamTick);
+}
+function _agCamWake() { const S = window._agit; if (S && !S.camRAF) S.camRAF = requestAnimationFrame(_agCamTick); }
 function _agMeRender() {
   const S = window._agit; if (!S) return;
   const ppl = Object.assign({}, S.others || {});
@@ -49823,11 +49851,11 @@ window.crewAgitStep = function (dx, dy) {
   const p = S.me;
   p.face = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down';
   const ok = _agWalkable(p.tc + dx, p.tr + dy);
-  if (ok) { p.tc += dx; p.tr += dy; }
+  if (ok) { const t = performance.now(), cur = _agMeNow(S, t); p.tc += dx; p.tr += dy; S.mv = { fx: cur[0], fy: cur[1], t0: t }; }
   if (dx || dy) S.moved = true;
   S.walking = true;
   clearTimeout(S.walkT); S.walkT = setTimeout(() => { S.walking = false; _agMeRender(); }, 300);
-  _agMeRender(); _agCam();
+  _agMeRender(); _agCamWake();
   window._agLiveMove && window._agLiveMove();
   return ok;
 };
@@ -50276,6 +50304,7 @@ function _agEditClose() {
   const b = S.el.querySelector('.ag-sel'); if (b) b.remove();
   const hud = S.el.querySelector('.ag-hud'); if (hud.dataset.html) { hud.innerHTML = hud.dataset.html; delete hud.dataset.html; }
   S.el.querySelector('.ag-log').style.display = '';
+  _agCam(true);   // 꾸미기 중 옮겨 둔 화면을 내 자리로 되돌린다
 }
 // 남이 꾸민 것도 바로 보인다 — 아지트에 있는 동안 배치 문서를 지켜본다(꾸미는 중엔 내 편집을 덮지 않는다).
 function _agWatchRoom() {
@@ -50348,7 +50377,8 @@ window._agLiveJoin = function () {
   const upd = () => { clearTimeout(S.composeT); S.composeT = setTimeout(_agComposeOthers, 30); };
   const onErr = e => console.warn('crewLive', e && e.message);
   subs.push(R.onChildAdded(pRef, sn => { S.liveAll[sn.key] = Object.assign({ mt: Date.now() }, sn.val()); upd(); }, onErr));
-  subs.push(R.onChildChanged(pRef, sn => { const o = S.liveAll[sn.key] || {}, v = sn.val() || {}; v.mt = (o.tc !== v.tc || o.tr !== v.tr) ? Date.now() : o.mt; S.liveAll[sn.key] = v; upd(); }, onErr));
+  subs.push(R.onChildChanged(pRef, sn => { if (sn.key === S.uid) { S.liveAll[sn.key] = sn.val(); return; }   // 내 걸음이 되돌아온 것 — 다시 그리지 않는다
+    const o = S.liveAll[sn.key] || {}, v = sn.val() || {}; v.mt = (o.tc !== v.tc || o.tr !== v.tr) ? Date.now() : o.mt; S.liveAll[sn.key] = v; upd(); }, onErr));
   subs.push(R.onChildRemoved(pRef, sn => { delete S.liveAll[sn.key]; upd(); }, onErr));
   subs.push(R.onValue(R.ref(R.db, base + '/seen'), sn => { S.seen = sn.val() || {}; upd(); }, onErr));   // 크루원 수만큼만(작다) — 누가 나가면 바로 흐린 방문자로
   // 대화
