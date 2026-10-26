@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1263';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1264';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1177,6 +1177,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   .safe-in { padding-bottom:var(--safe-b) !important; padding-left:var(--safe-x) !important; padding-right:var(--safe-x) !important }
   .safe-in:focus-within { padding-bottom:12px !important }
   .safe-in input, .safe-in textarea { min-width:0 }   /* 320 폭에서 입력칸이 안 줄어 [보내기]가 오른쪽 16px 선 밖으로 밀렸다 */
+  /* 10-26 '앱으로 설치하기' 안내는 입력 화면(톡·DM·댓글·아지트·센터 대숲)이 열려 있거나 치는 중엔 숨긴다 — 입력 줄을 덮었다 */
+  body:has(.ag, #mw-rtalk, #sq-talk, #chat-detail-panel.open, #comment-panel.open, #crew-detail-panel.open, #crew-post-detail-panel.open, #mw-wpanel, input:focus, textarea:focus) #store-nudge { display:none !important }
   #sq-chat-row:focus-within { padding-bottom:10px !important }   /* 10-26 앱 웹뷰 env=0 → 홈 표시줄 자리 30px, 치는 중엔 키보드 위라 8px */
   #mw-rtalk .rt-row input { flex:1; min-width:0; box-sizing:border-box; height:34px;
     background:rgba(255,255,255,.06); border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
@@ -49570,11 +49572,29 @@ const AG_OWN = [
 const AG_ROOM_IDS = ['pi_cabinet_tall', 'pi_bookshelf', 'pi_armchair_blue', 'pi_armchair_teal', 'pi_armchair_rose', 'pi_lowtable', 'pi_table', 'pi_chair',
   'pi_rug', 'pi_window', 'pi_door', 'pi_shelf_book', 'pi_plant', 'pi_floorlamp', 'pi_clock', 'pi_mug_blue', 'pi_mug_red', 'pi_tv',
   'mi_speaker', 'mi_lampstand', 'mi_dumbbell', 'mi_barbell', 'mp_yogamat', 'mp_pullupbar', 'pi_cabinet', 'pi_counter_s', 'pi_nightstand'];
+// ★10-26 대표 "머피월드 홈탭처럼 구현하라고, 디테일 싹 다" → 아지트 목록 = 내 방 꾸미기 목록(ROOM_ITEMS) 그대로.
+//   빼는 것 = 펫·펫 용품(가구가 아님)·숨김·예전(legacy, 대표가 뺀 LimeZu 운동기구 포함). 아지트는 크루 공용이라 무료(대표 10-26).
+//   AG_ROOM_IDS 는 예전 저장본이 깨지지 않게 계속 허용한다.
+const AG_SKIP_CATS = ['pet', 'petitem'];
+const _agRoomOk = r => !!(r && !r.legacy && !r.hidden && !r.pet && !AG_SKIP_CATS.includes(r.cat));
+function _agRoomItem(id) { return (window.ROOM_ITEMS || []).find(r => r.id === id) || null; }
 function _agDef(it) {
   if (!it) return null;
   const own = AG_OWN.find(o => o.id === it.id); if (own) return own;
-  if (!AG_ROOM_IDS.includes(it.id) || !window.mwDefFor) return null;
+  if (!window.mwDefFor || !(AG_ROOM_IDS.includes(it.id) || _agRoomOk(_agRoomItem(it.id)))) return null;
   return window.mwDefFor(it);
+}
+// 꾸미기 칩 — 크루 · 탁상 소품(상판 위에 올리는 것) · 내 방 분류 그대로(핑크 에디션은 맨 뒤)
+function _agCats() {
+  const R = (window.ROOM_ITEMS || []).filter(_agRoomOk), out = [{ id: 'crew', name: '크루', ids: AG_OWN.map(o => o.id) }];
+  out.push({ id: 'table', name: '탁상 소품', ids: R.filter(r => r.prop && r.h <= 80).map(r => r.id) });   // 키 80 이하 — 플로어 램프·화분은 바닥 소품
+  const cats = (window.ROOM_CATS || []).filter(c => !AG_SKIP_CATS.includes(c.id));
+  cats.filter(c => c.id !== 'pink').concat(cats.filter(c => c.id === 'pink')).forEach(c => {
+    const ids = R.filter(r => r.cat === c.id).map(r => r.id); if (ids.length) out.push({ id: c.id, name: c.name, ids });
+  });
+  const known = new Set(cats.map(c => c.id)), rest = R.filter(r => !known.has(r.cat)).map(r => r.id);
+  if (rest.length) out.push({ id: '_etc', name: '그 외', ids: rest });
+  return out;
 }
 // 새 아지트 첫 배치(클럽하우스). 벽 가운데 = 이름 배너와 깃발 둘, 양쪽 = 소파 자리, 가운데 = 모임 탁자, 아래 왼쪽 = 운동 구석.
 function _agDefault() {
@@ -49596,6 +49616,10 @@ function _agDefault() {
     { id: 'mp_yogamat', x: 96, y: 1250 }, { id: 'mp_yogamat', x: 290, y: 1250 }, { id: 'mi_dumbbell', x: 120, y: 1420 }, { id: 'mi_dumbbell', x: 210, y: 1410, d: 1 },
     { id: 'mi_barbell', x: 330, y: 1430 }, { id: 'mp_pullupbar', x: 520, y: 1170 },
     { id: 'mi_speaker', x: 1250, y: 1290 }, { id: 'pi_plant', x: 1340, y: 1262 }, { id: 'pi_bookshelf', x: 1420, y: 1186 },
+    // ★10-26 대표 "가운데 바닥이 너무 비었다" — 아래 가운데에 라운지 하나(러그·낮은 탁자·머그·안락의자 둘·화분 둘). 저장본이 있는 크루는 그대로.
+    { id: 'pi_rug', x: 824, y: 1200 }, { id: 'pi_lowtable', x: 844, y: 1192 }, { id: 'pi_mug_red', x: 874, y: 1150 },
+    { id: 'pi_armchair_blue', x: 716, y: 1164, d: 3 }, { id: 'pi_armchair_teal', x: 980, y: 1164, d: 2 },
+    { id: 'pi_plant', x: 650, y: 1096 }, { id: 'pi_plant', x: 1150, y: 1096 },
     { id: 'pi_plant', x: 30, y: 1780 }, { id: 'pi_plant', x: 1450, y: 1780 }, { id: 'pi_plant', x: 700, y: 1780 }, { id: 'pi_plant', x: 780, y: 1780 },
   ];
   return { theme: 'club', f };
@@ -49608,7 +49632,8 @@ function _agBlocked(f) {
     if (d.prop && window._mwRestsOn && f.some(o => o !== it && window._mwRestsOn(it, d, o, _agDef(o)))) return;
     const band = d.walkBand != null ? d.walkBand : (d.blockBand || 0.30);
     const bot = it.y + d.h, top = bot - d.h * band;
-    const x0 = d.foot ? it.x + d.foot[0] : it.x + d.w * 0.10, x1 = d.foot ? it.x + d.foot[1] : it.x + d.w * 0.90;
+    const ft = d.foot && it.m ? [d.w - d.foot[1], d.w - d.foot[0]] : d.foot;   // 뒤집은 깃대는 발자국도 반대쪽
+    const x0 = ft ? it.x + ft[0] : it.x + d.w * 0.10, x1 = ft ? it.x + ft[1] : it.x + d.w * 0.90;
     const c0 = Math.max(0, Math.floor(x0 / AG.T)), c1 = Math.min(AG.C - 1, Math.floor((x1 - 1) / AG.T));
     const r0 = Math.max(0, Math.floor(top / AG.T)), r1 = Math.min(AG.R - 1, Math.floor((bot - 1) / AG.T));
     for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) set.add(r * AG.C + c);
@@ -49700,7 +49725,7 @@ function _agShadow(it, d) {
   if (d.flat || d.wall || d.noShadow) return '';
   const bw = (d.sbw || d.w * 0.82) * 1.04, a = d.shAlpha || 0.40;
   const sh = Math.max(6, Math.min(26, bw * 0.19));
-  const sx = it.x + (d.sx != null ? d.sx : (d.w - bw) / 2), sy = it.y + d.h - sh * 0.72;
+  const sx = it.x + (d.sx != null ? (it.m ? d.w - bw - d.sx : d.sx) : (d.w - bw) / 2), sy = it.y + d.h - sh * 0.72;   // 뒤집으면 한쪽에 몰린 그림자도 반대쪽
   return '<div class="ag-sh" style="left:' + (sx * AG.S) + 'px;top:' + (sy * AG.S) + 'px;width:' + (bw * AG.S) + 'px;height:' + (sh * AG.S) + 'px;z-index:' + (_agZ(it, d) - 1) + ';'
     + 'background:radial-gradient(ellipse at center,rgba(0,0,0,' + a + ') 0%,rgba(0,0,0,' + a + ') 48%,rgba(0,0,0,' + (a * 0.35).toFixed(2) + ') 78%,rgba(0,0,0,0) 100%)"></div>';
 }
@@ -49714,7 +49739,7 @@ function _agItemsHtml(room, crew) {
   return (room.f || []).map((it, i) => {
     const d = _agDef(it); if (!d) return '';
     return _agShadow(it, d) + '<img class="ag-it" data-i="' + i + '" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
-      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.label ? _agLabelHtml(crew.name, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + (it.m ? ';transform:scaleX(-1)' : '') + '">' + (d.label ? _agLabelHtml(crew.name, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
   }).join('');
 }
 // 사람 하나 그리기(나·같이 있는 사람·흐린 최근 방문자). p = {tc,tr,face,cfg,nick,me,ghost,ago,msg}
@@ -49769,7 +49794,13 @@ function _agCam(snap) {
   }
   // 위쪽은 버튼 줄(HUD)만큼 더 내려올 수 있다 — 안 그러면 벽 맨 위 소품(문·게시판)이 버튼 밑에 깔린다
   const top = AG.HUD + (parseFloat(getComputedStyle(S.el).getPropertyValue('--sat')) || 0);
-  const oy = wh + top <= sh ? Math.round((sh - wh + top) / 2) : Math.round(Math.min(top, Math.max(sh - wh, sh / 2 - fy)));
+  let oy = wh + top <= sh ? Math.round((sh - wh + top) / 2) : Math.round(Math.min(top, Math.max(sh - wh, sh / 2 - fy)));
+  if (S.editing && S.editing.cam) {   // 꾸미기 중 끌어서 옮긴 화면 — 아래는 꾸미기 받침 높이만큼 더 올라갈 수 있다
+    const tray = S.el.querySelector('.ag-tray'), th = tray ? tray.offsetHeight : 0;
+    if (ww > sw) ox = Math.round(Math.min(0, Math.max(sw - ww, S.editing.cam.x)));
+    oy = Math.round(Math.min(top, Math.max(sh - wh - th, S.editing.cam.y)));
+    S.editing.cam = { x: ox, y: oy };
+  }
   w.classList.toggle('snap', !!snap);
   w.style.transform = 'translate3d(' + ox + 'px,' + oy + 'px,0)';
   if (snap) { w.offsetWidth; w.classList.remove('snap'); }
@@ -49962,14 +49993,18 @@ function _agEditCss() {
 .ag-tray{position:absolute;left:0;right:0;bottom:0;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40;padding:10px 0 max(var(--safe-b), calc(10px + env(safe-area-inset-bottom)))}
 .ag-tray .row{display:flex;gap:8px;overflow-x:auto;padding:0 12px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .ag-tray .row::-webkit-scrollbar{display:none}
-.ag-tray button{flex:0 0 auto;width:64px;height:76px;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;margin:2px 0;
+.ag-tray .mw-redit-chips{padding:0 12px 8px;margin:0}
+.ag-tray .cnt{display:flex;align-items:center;justify-content:space-between}
+.ag-tray .cnt .ag-btn{height:26px;font-size:10px}
+.ag-tray .cnt .ag-btn:disabled{opacity:.35}
+.ag-tray .row button{flex:0 0 auto;width:64px;height:76px;background:#121827;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;margin:2px 0;
   display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;padding:4px 2px 6px;cursor:pointer;color:#aeb6c8;font:9px 'Galmuri11',sans-serif}
-.ag-tray button:active{transform:translateY(1px)}
-.ag-tray button img{max-width:52px;max-height:42px;image-rendering:pixelated;object-fit:contain}
-.ag-tray button span{max-width:58px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-tray .row button:active{transform:translateY(1px)}
+.ag-tray .row button img{max-width:52px;max-height:42px;image-rendering:pixelated;object-fit:contain}
+.ag-tray .row button span{max-width:58px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ag-tray .cnt{padding:0 14px 8px;font-size:9px;color:#8a93a8}
 .ag-sel{position:absolute;display:flex;gap:6px;transform:translate(-50%,-100%);z-index:99999}
-.ag-sel .ag-btn{height:30px;font-size:10px}
+.ag-sel .ag-btn{height:30px;font-size:10px;white-space:nowrap}
 `;
   document.head.appendChild(st);
 }
@@ -49983,19 +50018,42 @@ window.crewAgitEdit = function () {
   hud.dataset.html = hud.innerHTML;
   hud.innerHTML = '<button class="ag-btn" onclick="window.crewAgitEditDone(false)">취소</button><div class="ag-tt"><b>아지트 꾸미기</b><span>끌어서 옮겨요</span></div><div class="sp"></div>'
     + '<button class="ag-btn pri" onclick="window.crewAgitEditDone(true)">저장</button>';
+  S.editing.hist = [];
   const tray = document.createElement('div'); tray.className = 'ag-tray';
-  tray.innerHTML = '<div class="cnt"></div><div class="row">' + _agTrayIds().map(id => {
-    const d = _agDef({ id }); if (!d) return '';
-    return '<button onclick="window.crewAgitAdd(\'' + id + '\')"><img src="' + d.src + '" alt=""><span>' + _cE(d.name) + '</span></button>';
-  }).join('') + '</div>';
+  tray.innerHTML = '<div class="cnt"><span></span><button class="ag-btn" id="ag-undo" onclick="window.crewAgitUndo()" disabled>되돌리기</button></div>'
+    + '<div class="mw-redit-chips" id="ag-chips"></div><div class="row" id="ag-row"></div>';
   S.el.appendChild(tray);
+  _agTrayPaint();
   S.el.querySelector('.ag-log').style.display = 'none';
   _agEditBind(S); _agEditCount();
 };
 function _agEditCount() {
-  const S = window._agit, c = S && S.el.querySelector('.ag-tray .cnt'); if (!c) return;
+  const S = window._agit, c = S && S.el.querySelector('.ag-tray .cnt span'); if (!c) return;
   c.textContent = '놓은 소품 ' + S.room.f.length + ' / ' + AG_MAX_ITEMS;
+  const u = S.el.querySelector('#ag-undo'); if (u) u.disabled = !(S.editing && S.editing.hist && S.editing.hist.length);
 }
+// 칩을 누르면 목록만 다시 그린다(내 방 _reditCatPaint 와 같은 문법)
+function _agTrayPaint() {
+  const S = window._agit; if (!S || !S.editing) return;
+  const cats = _agCats(); if (!cats.some(c => c.id === S.edCat)) S.edCat = cats[0].id;
+  const chips = S.el.querySelector('#ag-chips'), row = S.el.querySelector('#ag-row'); if (!chips || !row) return;
+  chips.innerHTML = cats.map(c => '<button class="mw-redit-chip' + (c.id === S.edCat ? ' on' : '') + '" onclick="window.crewAgitCat(\'' + c.id + '\')">' + _cE(c.name) + '<b>' + c.ids.length + '</b></button>').join('');
+  const cur = cats.find(c => c.id === S.edCat) || cats[0];
+  row.innerHTML = cur.ids.map(id => {
+    const d = _agDef({ id }); if (!d) return '';
+    return '<button onclick="window.crewAgitAdd(\'' + id + '\')"><img src="' + d.src + '" alt="" loading="lazy"><span>' + _cE(d.name) + '</span></button>';
+  }).join('');
+  row.scrollLeft = 0;
+  const on = chips.querySelector('.mw-redit-chip.on');   // 고른 칩이 칩 줄 밖(핑크 에디션은 맨 끝)에 숨지 않게
+  if (on) chips.scrollLeft = Math.max(0, on.offsetLeft - (chips.clientWidth - on.offsetWidth) / 2);
+}
+window.crewAgitCat = function (id) { const S = window._agit; if (!S) return; S.edCat = id; _agTrayPaint(); };
+// 되돌리기 — 놓기·옮기기·돌리기·뒤집기·빼기 한 번씩(편집을 열 때부터 쌓인다)
+function _agPush() { const S = window._agit; if (!S || !S.editing) return; S.editing.hist.push(JSON.stringify(S.room.f)); if (S.editing.hist.length > 60) S.editing.hist.shift(); }
+window.crewAgitUndo = function () {
+  const S = window._agit; if (!S || !S.editing || !S.editing.hist.length) return;
+  S.room.f = JSON.parse(S.editing.hist.pop()); S.editing.sel = -1; _agRepaintEdit();
+};
 function _agSelPaint() {
   const S = window._agit; if (!S || !S.editing) return;
   S.el.querySelectorAll('.ag-it.sel').forEach(e => e.classList.remove('sel'));
@@ -50008,8 +50066,12 @@ function _agSelPaint() {
   // 벽걸이는 막대를 아래에(위에 두면 버튼 줄에 깔린다), 바닥 물건은 위에
   bar.style.left = ((it.x + d.w / 2) * AG.S) + 'px'; bar.style.top = (d.wall ? (it.y + d.h) * AG.S + 40 : it.y * AG.S - 6) + 'px';
   bar.innerHTML = (turn ? '<button class="ag-btn" onclick="window.crewAgitTurn()">' + _cE((base.flip && base.flip[(it.d | 0) === 0 ? 0 : 1]) || '돌리기') + '</button>' : '')
+    + (d.label || d.emblem ? '' : '<button class="ag-btn" onclick="window.crewAgitFlip()">뒤집기</button>')   // 이름 글자·로고가 얹히는 것은 거울상이 되면 안 된다
     + '<button class="ag-btn" onclick="window.crewAgitRemove()">빼기</button>';
   S.el.querySelector('.ag-world').appendChild(bar);
+  const st = S.el.querySelector('.ag-stage').getBoundingClientRect(), br = bar.getBoundingClientRect();   // 화면 양끝 8px 안으로 민다
+  const dx = br.left < st.left + 8 ? st.left + 8 - br.left : br.right > st.right - 8 ? st.right - 8 - br.right : 0;
+  if (dx) bar.style.marginLeft = dx + 'px';
 }
 function _agRepaintEdit() { _agPaintRoom(); _agSelPaint(); _agEditCount(); }
 window.crewAgitAdd = function (id) {
@@ -50020,9 +50082,44 @@ window.crewAgitAdd = function (id) {
   const st = S.el.querySelector('.ag-stage'), m = (S.el.querySelector('.ag-world').style.transform.match(/-?[\d.]+px/g) || ['0px', '0px']).map(parseFloat);
   const cx = (st.clientWidth / 2 - m[0]) / AG.S, cy = (st.clientHeight * 0.42 - m[1]) / AG.S;
   const it = _agFree(_agClamp({ id, x: cx - d.w / 2, y: d.wall ? AG.HANG - d.h - 20 : cy - d.h / 2 }, d), d);
-  S.room.f.push(it); S.editing.sel = S.room.f.length - 1;
+  _agPush(); S.room.f.push(it); S.editing.sel = S.room.f.length - 1;
   _agRepaintEdit();
 };
+// 놓는 순간 맞춤 — 내 방 _reditSnap 과 같은 규칙(대표 10-26 "식탁에 올릴 수 있게").
+//   ①소품(prop)은 가로 가운데가 상판 안 + 세로로 겹치면 그 상판 윗면 띠(뒤끝~앞끝)로 얹는다(가장 위 상판).
+//   ②바닥 물건끼리 발자국이 겹치면 원래 자리로("가구가 겹쳐요"). 상판 위 소품·러그·벽걸이는 겹침 무관.
+function _agFootRect(it, d) {
+  const band = d.blockBand || 0.30;
+  return { l: it.x + d.w * 0.10, r: it.x + d.w * 0.90, t: it.y + d.h - d.h * band, b: it.y + d.h };
+}
+function _agOnSurface(it, d, f) { return !!(d.prop && window._mwRestsOn && f.some(o => window._mwRestsOn(it, d, o, _agDef(o)))); }
+function _agOverlaps(it, d, f) {
+  if (d.flat || d.wall || _agOnSurface(it, d, f)) return false;
+  const a = _agFootRect(it, d);
+  return f.some(o => {
+    if (o === it) return false; const od = _agDef(o);
+    if (!od || od.flat || od.wall || _agOnSurface(o, od, f)) return false;
+    const b = _agFootRect(o, od); return a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+  });
+}
+function _agSnap(it, prev) {
+  const S = window._agit, f = S.room.f, d = _agDef(it); if (!d) return;
+  if (d.prop && !d.wall) {
+    const cx = it.x + d.w / 2; let best = null;
+    f.forEach(o => {
+      if (o === it) return; const od = _agDef(o); if (!od || !od.surface) return;
+      if (cx < o.x || cx > o.x + od.w) return;
+      if (it.y < o.y + od.h && it.y + d.h > o.y && (!best || o.y < best.y)) best = o;
+    });
+    if (best) {
+      const bd = _agDef(best), back = best.y + (window._SURFACE_TOP || 10), front = best.y + (bd.topDepth != null ? bd.topDepth : Math.round(bd.h * 0.42));
+      it.y = Math.max(back, Math.min(front, it.y + d.h)) - d.h;
+      it.x = Math.round(Math.max(best.x, Math.min(best.x + bd.w - d.w, it.x)));
+      return;   // 상판 위 — 칸 맞춤(_agClamp)을 다시 하면 띠 밖으로 밀릴 수 있다
+    }
+  }
+  if (prev && _agOverlaps(it, d, f)) { it.x = prev.x; it.y = prev.y; showToast('가구가 겹쳐요'); }
+}
 // 겹치지 않는 가까운 자리 — 벽걸이는 그림끼리, 바닥 물건은 발자국(아래 밴드)끼리 본다. 못 찾으면 처음 자리.
 function _agFree(it, d) {
   const S = window._agit, rect = (o, od) => od.wall ? [o.x, o.y, o.x + od.w, o.y + od.h]
@@ -50047,30 +50144,49 @@ window.crewAgitTurn = function () {
   const S = window._agit; if (!S || !S.editing) return;
   const it = S.room.f[S.editing.sel], base = it && window.mwItemDef && window.mwItemDef(it.id); if (!base || !base.dirs) return;
   const old = _agDef(it), cx = it.x + old.w / 2, bot = it.y + old.h;
+  _agPush();
   it.d = ((it.d | 0) + 1) % base.dirs.length;
   const d = _agDef(it); it.x = cx - d.w / 2; it.y = bot - d.h; _agClamp(it, d);   // 밑변 가운데를 축으로 돈다
+  _agRepaintEdit();
+};
+window.crewAgitFlip = function () {
+  const S = window._agit; if (!S || !S.editing) return;
+  const it = S.room.f[S.editing.sel], d = it && _agDef(it); if (!d || d.label || d.emblem) return;
+  _agPush(); if (it.m) delete it.m; else it.m = 1;
   _agRepaintEdit();
 };
 window.crewAgitRemove = function () {
   const S = window._agit; if (!S || !S.editing) return;
   if (S.editing.sel < 0) return;
-  S.room.f.splice(S.editing.sel, 1); S.editing.sel = -1;
+  _agPush(); S.room.f.splice(S.editing.sel, 1); S.editing.sel = -1;
   _agRepaintEdit();
 };
 function _agEditBind(S) {
   const world = S.el.querySelector('.ag-world');
-  let drag = null;
+  let drag = null, pan = null;
   const pt = e => (e.touches ? e.touches[0] : e);
   S.edDown = e => {
     if (!S.editing) return;
     const img = e.target.closest && e.target.closest('.ag-it');
-    if (!img) { if (!e.target.closest('.ag-sel,.ag-tray,.ag-hud')) { S.editing.sel = -1; _agSelPaint(); } return; }
+    if (!img) {
+      if (e.target.closest('.ag-sel,.ag-tray,.ag-hud')) return;
+      const t = pt(e), m = (world.style.transform.match(/-?[\d.]+px/g) || ['0px', '0px']).map(parseFloat);
+      pan = { sx: t.clientX, sy: t.clientY, x: m[0], y: m[1], moved: false };
+      if (e.cancelable) e.preventDefault(); return;
+    }
     const i = +img.dataset.i, it = S.room.f[i]; if (!it) return;
-    const t = pt(e); drag = { i, sx: t.clientX, sy: t.clientY, x: it.x, y: it.y, moved: false };
+    const t = pt(e); drag = { i, sx: t.clientX, sy: t.clientY, x: it.x, y: it.y, moved: false, before: JSON.stringify(S.room.f) };
     S.editing.sel = i; _agSelPaint();
     if (e.cancelable) e.preventDefault();
   };
   S.edMove = e => {
+    if (pan && S.editing) {
+      const t = pt(e), dx = t.clientX - pan.sx, dy = t.clientY - pan.sy;
+      if (!pan.moved && Math.abs(dx) + Math.abs(dy) < 6) return;
+      pan.moved = true; S.editing.cam = { x: pan.x + dx, y: pan.y + dy }; _agCam(true);
+      const bar = S.el.querySelector('.ag-sel'); if (bar && S.editing.sel >= 0) _agSelPaint();
+      if (e.cancelable) e.preventDefault(); return;
+    }
     if (!drag || !S.editing) return;
     const t = pt(e), it = S.room.f[drag.i], d = _agDef(it);
     const dx = (t.clientX - drag.sx) / AG.S, dy = (t.clientY - drag.sy) / AG.S;
@@ -50082,7 +50198,12 @@ function _agEditBind(S) {
     const bar = S.el.querySelector('.ag-sel'); if (bar) bar.remove();
     if (e.cancelable) e.preventDefault();
   };
-  S.edUp = () => { if (!drag) return; const m = drag.moved; drag = null; if (m) _agRepaintEdit(); };
+  S.edUp = () => {
+    if (pan) { const p = pan; pan = null; if (!p.moved && S.editing) { S.editing.sel = -1; _agSelPaint(); } return; }   // 빈 바닥을 톡 = 고른 것 풀기
+    if (!drag) return; const g = drag; drag = null; if (!g.moved) return;
+    const it = S.room.f[g.i]; if (it) { S.editing.hist.push(g.before); _agSnap(it, { x: g.x, y: g.y }); }
+    _agRepaintEdit();
+  };
   world.addEventListener('touchstart', S.edDown, { passive: false }); world.addEventListener('mousedown', S.edDown);
   window.addEventListener('touchmove', S.edMove, { passive: false }); window.addEventListener('mousemove', S.edMove);
   window.addEventListener('touchend', S.edUp); window.addEventListener('mouseup', S.edUp);
@@ -50094,7 +50215,7 @@ function _agEditBind(S) {
 }
 // 무엇이 바뀌었나 — 변경 기록 한 줄용. 같은 id 는 개수로 맞춰 본다(옮김은 좌표·방향이 다른 것).
 function _agDiff(a, b) {
-  const key = it => it.id + '@' + it.x + ',' + it.y + ',' + (it.d | 0);
+  const key = it => it.id + '@' + it.x + ',' + it.y + ',' + (it.d | 0) + (it.m ? 'm' : '');
   const cnt = arr => arr.reduce((m, it) => (m[it.id] = (m[it.id] || 0) + 1, m), {});
   const ca = cnt(a), cb = cnt(b), placed = [], removed = [];
   Object.keys(cb).forEach(id => { for (let k = 0; k < cb[id] - (ca[id] || 0); k++) placed.push(id); });
@@ -50131,7 +50252,7 @@ window.crewAgitEditDone = async function (save) {
           S.room = _agSanitize(cur.data()); S.ver = curV;
           _agEditClose(); _agPaintRoom(); _agMeRender(); return;
         }
-        const f = S.room.f.map(it => { const o = { id: it.id, x: Math.round(it.x), y: Math.round(it.y) }; if (it.d) o.d = it.d | 0; return o; });
+        const f = S.room.f.map(it => { const o = { id: it.id, x: Math.round(it.x), y: Math.round(it.y) }; if (it.d) o.d = it.d | 0; if (it.m) o.m = 1; return o; });
         await setDoc(ref, { theme: S.room.theme || 'club', f, v: curV + 1, by: S.uid, at: serverTimestamp(), last });
         S.ver = curV + 1; S.lastLog = { text: _agLogText(last) };
         addDoc(collection(db, 'crewsV2', S.id, 'hideoutLog'), Object.assign({}, last, { at: serverTimestamp() })).catch(e => console.warn('agit log', e && e.message));
@@ -50443,7 +50564,7 @@ function _agSanitize(h) {
   const f = (h && Array.isArray(h.f) ? h.f : []).filter(it => it && typeof it.id === 'string' && isFinite(it.x) && isFinite(it.y)).slice(0, AG_MAX_ITEMS);
   const out = [];
   f.forEach(it => {
-    const o = { id: it.id, x: +it.x, y: +it.y }; if (it.d) o.d = Math.max(0, Math.min(3, it.d | 0));
+    const o = { id: it.id, x: +it.x, y: +it.y }; if (it.d) o.d = Math.max(0, Math.min(3, it.d | 0)); if (it.m) o.m = 1;
     const d = _agDef(o); if (!d) return;
     out.push(_agClamp(o, d));
   });
