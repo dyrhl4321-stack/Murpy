@@ -95,7 +95,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1261';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
+window._SW_V = '1262';   // ★sw.js 의 murpy-vNNN 과 같이 올릴 것 (안 올리면 진단이 못 잡는다)
 // ★8-29 XSS: 유저가 쓴 글·닉네임을 innerHTML 에 꽂는 곳은 이 둘로만 감싼다.
 //   _escHtml = 태그 자리(텍스트)  /  _escJs = onclick="f('…')" 처럼 **속성 안 JS 문자열** 자리.
 //   (파일 곳곳의 지역 esc 10개는 두되, 새 코드는 이걸 쓴다)
@@ -1165,7 +1165,8 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   #mw-rtalk .rt-log .pl b { color:#7aa8ff; margin-right:6px; font-weight:400 }
   #mw-rtalk .rt-log .pl-empty { font-size:11px; color:#4a5266; text-align:center; padding:20px 0 }
   #mw-rtalk .rt-row { flex-shrink:0; display:flex; gap:4px; padding:10px 16px;
-    padding-bottom:max(10px, env(safe-area-inset-bottom)); border-top:2px solid #0e1320 }
+    padding-bottom:max(30px, calc(10px + env(safe-area-inset-bottom))); border-top:2px solid #0e1320 }
+  #mw-rtalk .rt-row:focus-within { padding-bottom:8px }   /* 10-26 앱 웹뷰 env=0 → 홈 표시줄 자리 30px, 치는 중엔 키보드 위라 8px */
   #mw-rtalk .rt-row input { flex:1; min-width:0; box-sizing:border-box; height:34px;
     background:rgba(255,255,255,.06); border:2px solid #05070c; box-shadow:0 0 0 2px #2b3350;
     color:#fff; padding:0 9px; font-size:16px; outline:none; font-family:inherit; border-radius:0 }
@@ -50280,7 +50281,8 @@ function _agChatCss() {
   if (document.getElementById('agit-chat-css')) return;
   const st = document.createElement('style'); st.id = 'agit-chat-css';
   st.textContent = `
-.ag-bar{position:absolute;left:0;right:0;bottom:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40}
+.ag-bar{position:absolute;left:0;right:0;bottom:0;padding:8px 12px max(30px, calc(12px + env(safe-area-inset-bottom)));display:flex;gap:8px;background:#0d1220;border-top:3px solid #05070c;box-shadow:0 -2px 0 #232b40}
+.ag-bar:focus-within{padding-bottom:8px}
 .ag-bar input{flex:1;min-width:0;height:36px;background:#05070c;border:2px solid #232b40;color:#fff;padding:0 10px;font:16px 'Pretendard Variable',Pretendard,sans-serif;border-radius:0;outline:none;-webkit-appearance:none}
 .ag-bar input::placeholder{color:#5d6680;font-size:13px}
 .ag-bar input:focus{border-color:#3D7EFF}
@@ -50303,9 +50305,19 @@ function _agChatMount(S) {
   const send = () => { const v = inp.value.trim(); if (!v) return; inp.value = ''; window.crewAgitSay(v); };
   bar.querySelector('button').onclick = send;
   inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
-  // 키보드가 올라오면 입력 줄을 키보드 위로(보이는 영역 기준)
+  // 키보드가 올라오면 입력 줄을 키보드 바로 위로 — 보이는 영역(visualViewport) 바닥 기준, 내려가면 제자리
   const vv = window.visualViewport;
-  S.onVV = () => { const kb = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0; bar.style.bottom = kb + 'px'; _agChatPos(); };
+  S.onVV = () => {
+    const v = window.visualViewport, visB = v ? (v.offsetTop || 0) + v.height : window.innerHeight;
+    const cur = parseFloat(bar.style.bottom) || 0, raw = bar.getBoundingClientRect().bottom + cur;   // 올려 둔 만큼 되돌린 '원래' 바닥
+    let lift = Math.ceil(raw - visB);
+    if (!(lift > 0) || lift > window.innerHeight) lift = 0;
+    if (lift !== cur) bar.style.bottom = lift + 'px';
+    _agChatPos();
+  };
+  const watch = () => [0, 120, 260, 420, 650, 900].forEach(t => setTimeout(() => { if (window._agit === S) S.onVV(); }, t));
+  inp.addEventListener('focus', () => { S.sy = window.scrollY; watch(); });
+  inp.addEventListener('blur', () => { watch(); setTimeout(() => { if (window.scrollY !== (S.sy || 0)) window.scrollTo(0, S.sy || 0); }, 300); });
   if (vv) { vv.addEventListener('resize', S.onVV); vv.addEventListener('scroll', S.onVV); }
   _agChatPos();
 }
