@@ -49600,10 +49600,17 @@ const AG_THEMES = { club: { name: '클럽하우스', floor: 'char/crews/agit_flo
 // 아지트 전용 소품(대표 10-19 선택본, key_defringe --check 통과). foot = 바닥 발자국 가로 구간(그림 안 좌표) — 깃대처럼 한쪽에 몰린 것만.
 const AG_OWN = [
   { id: 'cz_flag', name: '크루 깃발', src: 'char/rooms/cz_flag.png?v=1', w: 92, h: 199, foot: [0, 30], blockBand: 0.1, sbw: 34, sx: 2, emblem: [38, 16, 36, 34] },   // emblem = 흰 문양 자리(크루 로고)
-  { id: 'cz_banner', name: '이름 배너', src: 'char/rooms/cz_banner.png?v=1', w: 144, h: 160, wall: true, label: [34, 54, 76, 50] },   // 2배(이름 글자 자리)
+  { id: 'cz_banner', name: '이름 배너', src: 'char/rooms/cz_banner_crest.png?v=1', w: 144, h: 160, wall: true, crest: [22, 20, 100, 102] },   // 2배 · crest = 로고+이름 자리(크림 이름판을 천으로 덮은 그림)
   { id: 'cz_cork', name: '코르크 게시판', src: 'char/rooms/cz_cork.png?v=1', w: 119, h: 65, wall: true },
   { id: 'cz_shoes', name: '벽걸이 러닝화', src: 'char/rooms/cz_shoes.png?v=1', w: 104, h: 75, wall: true },
 ];
+// ★10-27 대표 "깃발·이름 배너는 꾸미기 소품이 아니다 — 움직이면 안 되고 로고와 한 묶음, 글도 따로 떠 있지 말고 붙어가야지":
+//   [깃발 | 로고+크루 이름 배너 | 깃발] 한 세트를 벽 가운데에 고정해 그린다(월드 안이라 화면을 끌어도 같이 움직인다).
+//   꾸미기 목록·집기·옮기기·뒤집기·보관 대상이 아니고, 다른 가구는 이 자리(AG_CREST_BOX)에 못 놓는다.
+//   예전에 저장된 깃발·배너 줄은 지우지 않고(S.room.keep 으로 들고 있다가 저장 때 그대로 돌려 쓴다) 그리지만 않는다.
+const AG_CREST = [{ id: 'cz_flag', x: 606, y: 30 }, { id: 'cz_banner', x: 696, y: 14 }, { id: 'cz_flag', x: 874, y: 30 }];
+const AG_CREST_BOX = { l: 606, t: 0, r: 966, b: 229 };   // 세 개를 감싼 자리(깃발 그림 오른끝·깃대 밑까지)
+const _agIsCrest = id => id === 'cz_flag' || id === 'cz_banner';
 // 내 방 카탈로그에서 클럽하우스에 어울리는 것만(핑크 시리즈·주방·침대 제외). 정의는 mwDefFor 로 그대로 빌린다.
 const AG_ROOM_IDS = ['pi_cabinet_tall', 'pi_bookshelf', 'pi_armchair_blue', 'pi_armchair_teal', 'pi_armchair_rose', 'pi_lowtable', 'pi_table', 'pi_chair',
   'pi_rug', 'pi_window', 'pi_door', 'pi_shelf_book', 'pi_plant', 'pi_floorlamp', 'pi_clock', 'pi_mug_blue', 'pi_mug_red', 'pi_tv',
@@ -49622,7 +49629,7 @@ function _agDef(it) {
 }
 // 꾸미기 칩 — 크루 · 탁상 소품(상판 위에 올리는 것) · 내 방 분류 그대로(핑크 에디션은 맨 뒤)
 function _agCats() {
-  const R = (window.ROOM_ITEMS || []).filter(_agRoomOk), out = [{ id: 'crew', name: '크루', ids: AG_OWN.map(o => o.id) }];
+  const R = (window.ROOM_ITEMS || []).filter(_agRoomOk), out = [{ id: 'crew', name: '크루', ids: AG_OWN.filter(o => !_agIsCrest(o.id)).map(o => o.id) }];
   out.push({ id: 'table', name: '탁상 소품', ids: R.filter(r => r.prop && r.h <= 80).map(r => r.id) });   // 키 80 이하 — 플로어 램프·화분은 바닥 소품
   const cats = (window.ROOM_CATS || []).filter(c => !AG_SKIP_CATS.includes(c.id));
   cats.filter(c => c.id !== 'pink').concat(cats.filter(c => c.id === 'pink')).forEach(c => {
@@ -49632,12 +49639,11 @@ function _agCats() {
   if (rest.length) out.push({ id: '_etc', name: '그 외', ids: rest });
   return out;
 }
-// 새 아지트 첫 배치(클럽하우스). 벽 가운데 = 이름 배너와 깃발 둘, 양쪽 = 소파 자리, 가운데 = 모임 탁자, 아래 왼쪽 = 운동 구석.
+// 새 아지트 첫 배치(클럽하우스). 벽 가운데 = 고정 세트(AG_CREST, 여기 안 넣는다), 양쪽 = 소파 자리, 가운데 = 모임 탁자, 아래 왼쪽 = 운동 구석.
 function _agDefault() {
   const f = [
     { id: 'pi_door', x: 72, y: 52 }, { id: 'cz_cork', x: 216, y: 74 }, { id: 'pi_window', x: 420, y: 44 },
-    { id: 'cz_banner', x: 696, y: 14 }, { id: 'pi_window', x: 1004, y: 44 }, { id: 'pi_shelf_book', x: 1170, y: 66 }, { id: 'cz_shoes', x: 1330, y: 64 },
-    { id: 'cz_flag', x: 606, y: 30 }, { id: 'cz_flag', x: 874, y: 30 },
+    { id: 'pi_window', x: 1004, y: 44 }, { id: 'pi_shelf_book', x: 1170, y: 66 }, { id: 'cz_shoes', x: 1330, y: 64 },
     { id: 'pi_bookshelf', x: 20, y: 196 }, { id: 'pi_bookshelf', x: 1420, y: 196 }, { id: 'pi_plant', x: 128, y: 278 }, { id: 'pi_plant', x: 1352, y: 278 },
     { id: 'pi_rug', x: 180, y: 556 }, { id: 'pi_lowtable', x: 200, y: 548 }, { id: 'pi_armchair_blue', x: 70, y: 520, d: 3 }, { id: 'pi_armchair_teal', x: 330, y: 520, d: 2 },
     { id: 'pi_mug_blue', x: 222, y: 528 }, { id: 'pi_floorlamp', x: 30, y: 470 },
@@ -49698,8 +49704,10 @@ function _agCss() {
 .ag-wall,.ag-floor{position:absolute;left:0;right:0;image-rendering:pixelated;background-repeat:repeat}
 .ag-it{position:absolute;image-rendering:pixelated;pointer-events:none}
 .ag-sh{position:absolute;pointer-events:none}
-.ag-lbl{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#2a2117;line-height:1;text-align:center;
-  font-family:'Galmuri11',sans-serif;letter-spacing:-.3px;white-space:nowrap;pointer-events:none}
+.ag-fx{position:absolute;image-rendering:pixelated;pointer-events:none}
+.ag-crest{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;pointer-events:none}
+.ag-crest i{display:block;flex-shrink:0;background:center/contain no-repeat}
+.ag-crest b{display:flex;flex-direction:column;align-items:center;gap:2px;color:#f3f1ea;font-weight:400;line-height:1;letter-spacing:-.3px;white-space:nowrap;text-shadow:0 1px 0 #161a3a}
 .ag-ch{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;transition:left .15s linear,top .15s linear;pointer-events:none}
 .ag-ch.me{left:0;top:0;transition:none;will-change:transform}
 .ag-ch.ghost{opacity:.42}
@@ -49736,17 +49744,26 @@ function _agCss() {
 `;
   document.head.appendChild(st);
 }
-// 이름 배너 글자 — 라벨(76×50 단위 = 38×25px)에 맞춰 1~2줄. 8자 넘으면 자른다.
-function _agLabelHtml(name, d, it) {
-  const L = d.label; if (!L) return '';
-  let s = String(name || '').trim(); const ch = Array.from(s);
+// 배너 천 위 = 크루 로고 + 크루 이름(흰 픽셀 글자) 한 덩어리. 이름은 4자까지 한 줄, 넘으면 두 줄, 8자 넘으면 자른다. 로고가 없으면 이름만 크게.
+function _agCrestBannerHtml(crew, d, it) {
+  const C = d.crest; if (!C) return '';
+  let s = String((crew && crew.name) || '').trim(); const ch = Array.from(s);
   if (ch.length > 8) s = ch.slice(0, 7).join('') + '…';
-  const arr = Array.from(s), two = arr.length >= 4;
+  const arr = Array.from(s), two = arr.length > 4, logo = crew && crew.logo;
   const lines = two ? [arr.slice(0, Math.ceil(arr.length / 2)).join(''), arr.slice(Math.ceil(arr.length / 2)).join('')] : [s];
-  const wpx = L[2] * AG.S, hpx = L[3] * AG.S, n = Math.max(...lines.map(l => Array.from(l).length));
-  const fs = Math.max(5, Math.min(two ? 9 : 11, Math.floor(wpx / Math.max(1, n)), Math.floor(hpx / (two ? 2.3 : 1.3))));
-  return '<div class="ag-lbl" style="left:' + ((it.x + L[0]) * AG.S) + 'px;top:' + ((it.y + L[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;font-size:' + fs + 'px;z-index:' + _agZ(it, d, 1) + '">'
-    + lines.map(l => '<span>' + _cE(l) + '</span>').join('<span style="height:2px"></span>') + '</div>';
+  const wpx = C[2] * AG.S, hpx = C[3] * AG.S, n = Math.max(1, ...lines.map(l => Array.from(l).length)), lg = logo ? 26 : 0;
+  const fs = Math.max(7, Math.min(two || logo ? 9 : 11, Math.floor((wpx - 2) / n)));
+  return '<div class="ag-crest" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;z-index:' + _agZ(it, d, 1) + '">'
+    + (logo ? '<i style="width:' + lg + 'px;height:' + lg + 'px;background-image:url(\'' + _cE(logo) + '\')"></i>' : '')
+    + '<b style="font-size:' + fs + 'px;font-family:' + (fs < 11 ? 'Galmuri9' : 'Galmuri11') + ',sans-serif">' + lines.map(l => '<span>' + _cE(l) + '</span>').join('') + '</b></div>';
+}
+// 고정 세트(깃발·로고+이름 배너·깃발) — 소품 목록(room.f) 밖에서 늘 같은 자리에. 집히지 않는다(.ag-it 아님).
+function _agCrestHtml(crew) {
+  return AG_CREST.map(it => {
+    const d = _agDef(it);
+    return _agShadow(it, d) + '<img class="ag-fx" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.crest ? _agCrestBannerHtml(crew, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
+  }).join('');
 }
 // 앞뒤: 벽걸이 < 러그 < (바닥 물건·사람, 밑변 순). 사람은 같은 줄이면 가구보다 앞.
 function _agZ(it, d, extra) {
@@ -49769,14 +49786,14 @@ function _agShadow(it, d) {
 // 깃발 문양 자리에 크루 로고(없으면 기본 문양 그대로). 깃발 남색으로 문양을 덮고 그 위에 로고.
 function _agEmblemHtml(logo, d, it) {
   const E = d.emblem; if (!E || !logo) return '';
-  return '<div class="ag-it" style="left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + (E[2] * AG.S) + 'px;height:' + (E[3] * AG.S) + 'px;'
+  return '<div class="ag-fx" style="left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + (E[2] * AG.S) + 'px;height:' + (E[3] * AG.S) + 'px;'
     + 'background:#232f6b url(\'' + _cE(logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
 }
 function _agItemsHtml(room, crew) {
-  return (room.f || []).map((it, i) => {
-    const d = _agDef(it); if (!d) return '';
+  return _agCrestHtml(crew) + (room.f || []).map((it, i) => {
+    const d = _agDef(it); if (!d || _agIsCrest(it.id)) return '';
     return _agShadow(it, d) + '<img class="ag-it" data-i="' + i + '" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
-      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + (it.m ? ';transform:scaleX(-1)' : '') + '">' + (d.label ? _agLabelHtml(crew.name, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + (it.m ? ';transform:scaleX(-1)' : '') + '">';
   }).join('');
 }
 // 사람 하나 그리기(나·같이 있는 사람·흐린 최근 방문자). p = {tc,tr,face,cfg,nick,me,ghost,ago,msg}
@@ -49942,7 +49959,7 @@ function _agShellHtml(c) {
 }
 function _agPaintRoom() {
   const S = window._agit; if (!S) return;
-  S.blocked = _agBlocked(S.room.f);
+  S.blocked = _agBlocked(S.room.f.concat(AG_CREST));   // 고정 세트 깃대 밑도 못 지나간다
   S.el.querySelector('#ag-items').innerHTML = _agItemsHtml(S.room, S.crew);
   _agUnstick();
 }
@@ -50035,6 +50052,12 @@ window.crewAgitOpen = async function (id) {
 //   저장 = crewsV2/{id}/hideout/main 한 문서(배치 + 마지막 변경 한 줄 last) + hideoutLog 에 한 줄. 서버 규칙이 크루장·운영진만 쓰게 막는다.
 //   ★다른 사람이 먼저 저장했으면(v 가 바뀜) 덮어쓰지 않고 지금 모습으로 다시 불러온다.
 const AG_MAX_ITEMS = 120;
+const _agCap = S => AG_MAX_ITEMS - ((S && S.room && S.room.keep) || []).length;   // 예전 깃발·배너 줄(keep)도 서버 규칙 120 안에 같이 저장된다
+// 고정 세트 자리에 걸치는가 — 벽걸이는 그림 전체, 바닥 물건은 발자국(아래 밴드)으로 본다
+function _agHitsCrest(it, d) {
+  const B = AG_CREST_BOX, a = d.wall ? { l: it.x, r: it.x + d.w, t: it.y, b: it.y + d.h } : _agFootRect(it, d);
+  return !d.flat && a.l < B.r && B.l < a.r && a.t < B.b && B.t < a.b;
+}
 const AG_SNAP = 12;   // 끌기 칸(단위) = 화면 6px
 const _agTrayIds = () => AG_OWN.map(o => o.id).concat(AG_ROOM_IDS);
 const _agName = id => { const d = _agDef({ id }); return (d && d.name) || '소품'; };
@@ -50093,7 +50116,7 @@ window.crewAgitEdit = function () {
 };
 function _agEditCount() {
   const S = window._agit, c = S && S.el.querySelector('.ag-tray .cnt span'); if (!c) return;
-  c.textContent = '놓은 소품 ' + S.room.f.length + ' / ' + AG_MAX_ITEMS;
+  c.textContent = '놓은 소품 ' + S.room.f.length + ' / ' + _agCap(S);
   const u = S.el.querySelector('#ag-undo'); if (u) u.disabled = !(S.editing && S.editing.hist && S.editing.hist.length);
 }
 // 칩을 누르면 목록만 다시 그린다(내 방 _reditCatPaint 와 같은 문법)
@@ -50130,7 +50153,7 @@ function _agSelPaint() {
   // 벽걸이는 막대를 아래에(위에 두면 버튼 줄에 깔린다), 바닥 물건은 위에
   bar.style.left = ((it.x + d.w / 2) * AG.S) + 'px'; bar.style.top = (d.wall ? (it.y + d.h) * AG.S + 40 : it.y * AG.S - 6) + 'px';
   bar.innerHTML = (turn ? '<button class="ag-btn" onclick="window.crewAgitTurn()">' + _cE((base.flip && base.flip[(it.d | 0) === 0 ? 0 : 1]) || '돌리기') + '</button>' : '')
-    + (d.label || d.emblem ? '' : '<button class="ag-btn" onclick="window.crewAgitFlip()">뒤집기</button>')   // 이름 글자·로고가 얹히는 것은 거울상이 되면 안 된다
+    + (d.crest || d.emblem ? '' : '<button class="ag-btn" onclick="window.crewAgitFlip()">뒤집기</button>')   // 이름 글자·로고가 얹히는 것은 거울상이 되면 안 된다
     + '<button class="ag-btn" onclick="window.crewAgitRemove()">빼기</button>';
   S.el.querySelector('.ag-world').appendChild(bar);
   const st = S.el.querySelector('.ag-stage').getBoundingClientRect(), br = bar.getBoundingClientRect();   // 화면 양끝 8px 안으로 민다
@@ -50140,7 +50163,7 @@ function _agSelPaint() {
 function _agRepaintEdit() { _agPaintRoom(); _agSelPaint(); _agEditCount(); }
 window.crewAgitAdd = function (id) {
   const S = window._agit; if (!S || !S.editing) return;
-  if (S.room.f.length >= AG_MAX_ITEMS) { showToast('소품은 ' + AG_MAX_ITEMS + '개까지 놓을 수 있어요'); return; }
+  if (S.room.f.length >= _agCap(S)) { showToast('소품은 ' + _agCap(S) + '개까지 놓을 수 있어요'); return; }
   const d = _agDef({ id }); if (!d) return;
   // 지금 보이는 화면 가운데(벽걸이는 보이는 벽 가운데)
   const st = S.el.querySelector('.ag-stage'), m = (S.el.querySelector('.ag-world').style.transform.match(/-?[\d.]+px/g) || ['0px', '0px']).map(parseFloat);
@@ -50182,6 +50205,7 @@ function _agSnap(it, prev) {
       return;   // 상판 위 — 칸 맞춤(_agClamp)을 다시 하면 띠 밖으로 밀릴 수 있다
     }
   }
+  if (prev && _agHitsCrest(it, d)) { it.x = prev.x; it.y = prev.y; showToast('크루 깃발·배너 자리예요'); return; }
   if (prev && _agOverlaps(it, d, f)) { it.x = prev.x; it.y = prev.y; showToast('가구가 겹쳐요'); }
 }
 // 겹치지 않는 가까운 자리 — 벽걸이는 그림끼리, 바닥 물건은 발자국(아래 밴드)끼리 본다. 못 찾으면 처음 자리.
@@ -50193,9 +50217,11 @@ function _agFree(it, d) {
   const others = (S.room.f || []).map(o => ({ o, od: _agDef(o) })).filter(x => x.od && !x.od.flat && !(d.prop && x.od.surface)
     && (!!x.od.wall === !!d.wall || (d.wall && tall(x.o, x.od))))
     .map(x => (d.wall && !x.od.wall) ? { o: x.o, od: Object.assign({}, x.od, { wall: true }) } : x);
+  const B = AG_CREST_BOX;   // 고정 세트 자리는 벽걸이·바닥 물건 모두 피한다(겹치면 훨씬 비싸게 — 꽉 찬 벽이어도 이 자리는 안 고른다)
+  others.push({ o: { x: B.l, y: B.t }, od: { w: B.r - B.l, h: B.b - B.t, wall: true }, k: 1000 });
   // 겹친 넓이 합 — 0 이면 바로 그 자리, 끝까지 없으면(벽이 꽉 찼을 때) 가장 덜 겹치는 자리
   const over = c => { const a = rect(c, d); return others.reduce((s, x) => { const b = rect(x.o, x.od);
-    return s + Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])); }, 0); };
+    return s + (x.k || 1) * Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1])); }, 0); };
   const cand = (dx, dy) => _agClamp({ id: it.id, x: it.x + dx, y: it.y + dy, d: it.d }, d);
   let best = it, bo = over(it);
   for (let r = 0; r <= 14 && bo; r++) for (let k = -r; k <= r; k++) {
@@ -50215,7 +50241,7 @@ window.crewAgitTurn = function () {
 };
 window.crewAgitFlip = function () {
   const S = window._agit; if (!S || !S.editing) return;
-  const it = S.room.f[S.editing.sel], d = it && _agDef(it); if (!d || d.label || d.emblem) return;
+  const it = S.room.f[S.editing.sel], d = it && _agDef(it); if (!d || d.crest || d.emblem) return;
   _agPush(); if (it.m) delete it.m; else it.m = 1;
   _agRepaintEdit();
 };
@@ -50316,7 +50342,8 @@ window.crewAgitEditDone = async function (save) {
           S.room = _agSanitize(cur.data()); S.ver = curV;
           _agEditClose(); _agPaintRoom(); _agMeRender(); return;
         }
-        const f = S.room.f.map(it => { const o = { id: it.id, x: Math.round(it.x), y: Math.round(it.y) }; if (it.d) o.d = it.d | 0; if (it.m) o.m = 1; return o; });
+        const f = S.room.f.map(it => { const o = { id: it.id, x: Math.round(it.x), y: Math.round(it.y) }; if (it.d) o.d = it.d | 0; if (it.m) o.m = 1; return o; })
+          .concat(S.room.keep || []).slice(0, AG_MAX_ITEMS);   // 예전 깃발·배너 줄은 지우지 않고 그대로(그리지는 않는다)
         await setDoc(ref, { theme: S.room.theme || 'club', f, v: curV + 1, by: S.uid, at: serverTimestamp(), last });
         S.ver = curV + 1; S.lastLog = { text: _agLogText(last) };
         addDoc(collection(db, 'crewsV2', S.id, 'hideoutLog'), Object.assign({}, last, { at: serverTimestamp() })).catch(e => console.warn('agit log', e && e.message));
@@ -50628,13 +50655,14 @@ window.crewAgitHistory = async function () {
 // 저장된 배치를 그대로 믿지 않는다 — 모르는 소품·이상한 좌표·너무 많은 개수는 걸러서 그린다(서버 규칙도 개수는 막는다)
 function _agSanitize(h) {
   const f = (h && Array.isArray(h.f) ? h.f : []).filter(it => it && typeof it.id === 'string' && isFinite(it.x) && isFinite(it.y)).slice(0, AG_MAX_ITEMS);
-  const out = [];
+  const out = [], keep = [];
   f.forEach(it => {
     const o = { id: it.id, x: +it.x, y: +it.y }; if (it.d) o.d = Math.max(0, Math.min(3, it.d | 0)); if (it.m) o.m = 1;
+    if (_agIsCrest(o.id)) { keep.push(o); return; }   // 깃발·배너 = 고정 세트로 그린다. 저장된 줄은 지우지 않고 따로 들고만 있는다
     const d = _agDef(o); if (!d) return;
     out.push(_agClamp(o, d));
   });
-  return { theme: AG_THEMES[h && h.theme] ? h.theme : 'club', f: out };
+  return { theme: AG_THEMES[h && h.theme] ? h.theme : 'club', f: out, keep };
 }
 </script>
 </body>
