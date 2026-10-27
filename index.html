@@ -49600,7 +49600,7 @@ const AG_THEMES = { club: { name: '클럽하우스', floor: 'char/crews/agit_flo
 // 아지트 전용 소품(대표 10-19 선택본, key_defringe --check 통과). foot = 바닥 발자국 가로 구간(그림 안 좌표) — 깃대처럼 한쪽에 몰린 것만.
 const AG_OWN = [
   { id: 'cz_flag', name: '크루 깃발', src: 'char/rooms/cz_flag.png?v=1', w: 92, h: 199, foot: [0, 30], blockBand: 0.1, sbw: 34, sx: 2, emblem: [38, 16, 36, 34] },   // emblem = 흰 문양 자리(크루 로고)
-  { id: 'cz_banner', name: '이름 배너', src: 'char/rooms/cz_banner_crest.png?v=1', w: 144, h: 160, wall: true, crest: [22, 20, 100, 102] },   // 2배 · crest = 로고+이름 자리(크림 이름판을 천으로 덮은 그림)
+  { id: 'cz_banner', name: '이름 배너', src: 'char/rooms/cz_banner_crest.png?v=1', w: 144, h: 160, wall: true, crest: [24, 20, 96, 102] },   // 2배 · crest = 로고+이름 자리 = 천 안쪽 폭 그대로(48px, 크림 이름판을 천으로 덮은 그림)
   { id: 'cz_cork', name: '코르크 게시판', src: 'char/rooms/cz_cork.png?v=1', w: 119, h: 65, wall: true },
   { id: 'cz_shoes', name: '벽걸이 러닝화', src: 'char/rooms/cz_shoes.png?v=1', w: 104, h: 75, wall: true },
 ];
@@ -49762,9 +49762,31 @@ function _agCrestBannerHtml(crew, d, it) {
   //   크기를 줄여 맞추지 않고, 위치도 정수 px 로 직접 계산한다(가운데 정렬의 0.5px 가 번짐을 만든다).
   const wpx = C[2] * AG.S, hpx = C[3] * AG.S, lg = logo ? 24 : 0, small = two || logo, fs = small ? 10 : 12;
   const tot = (logo ? lg + 3 : 0) + lines.length * fs + (lines.length - 1) * 2;
-  return '<div class="ag-crest" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;padding-top:' + Math.floor((hpx - tot) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '">'
+  return '<div class="ag-crest" data-n="' + _cE(String((crew && crew.name) || '').trim()) + '" data-lg="' + (logo ? lg + 3 : 0) + '" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;padding-top:' + Math.floor((hpx - tot) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '">'
     + (logo ? '<i style="width:' + lg + 'px;height:' + lg + 'px;background-image:url(\'' + _cE(logo) + '\')"></i>' : '')
     + '<b style="font-size:' + fs + 'px;font-family:' + (small ? 'Galmuri9' : 'Galmuri11') + ',sans-serif">' + lines.map(l => '<span>' + _cE(l) + '</span>').join('') + '</b></div>';
+}
+// 그린 뒤 실제 폭으로 다시 맞춘다(브랜딩 10-27 "Run Club 의 R 이 테두리에 붙는다"):
+//   한 줄이라도 (안쪽 폭 − 좌우 3px) 보다 길면 → 한 단어씩 세 줄까지(Galmuri9 10px) → 그래도 넘치거나 높이가 모자라면 맨 앞 단어만.
+//   끝으로 줄 폭이 홀수 px 이면 1px 보태 정수 자리(가운데 정렬 0.5px 번짐 방지).
+function _agCrestFit(root) {
+  root.querySelectorAll('.ag-crest').forEach(box => {
+    const b = box.querySelector('b'); if (!b) return;
+    const max = box.clientWidth - 6, H = box.clientHeight, lg = +box.dataset.lg || 0;
+    const wide = () => [...b.children].some(s => s.getBoundingClientRect().width > max);
+    const set = ls => {
+      b.style.fontSize = '10px'; b.style.fontFamily = 'Galmuri9,sans-serif';
+      b.innerHTML = ls.map(l => '<span>' + _cE(l) + '</span>').join('');
+      box.style.paddingTop = Math.max(0, Math.floor((H - lg - ls.length * 10 - (ls.length - 1) * 2) / 2)) + 'px';
+    };
+    if (wide()) {
+      const ws = String(box.dataset.n || '').split(/\s+/).filter(Boolean);
+      const fits = n => lg + n * 10 + (n - 1) * 2 <= H;
+      if (ws.length > 1 && ws.length <= 3 && fits(ws.length)) set(ws);
+      if (ws.length && (ws.length > 3 || !fits(ws.length) || wide())) set([ws[0]]);
+    }
+  });
+  root.querySelectorAll('.ag-crest b span, .ag-init span').forEach(s => { s.style.paddingRight = ''; if (Math.round(s.getBoundingClientRect().width) % 2) s.style.paddingRight = '1px'; });
 }
 // 크루 첫 글자(로고 없는 크루의 깃발 문양) — 영문이면 대문자 한 자
 const _agInitial = name => { const c = Array.from(String(name || '').trim())[0] || ''; return /[a-z]/.test(c) ? c.toUpperCase() : c; };
@@ -49974,8 +49996,7 @@ function _agPaintRoom() {
   const S = window._agit; if (!S) return;
   S.blocked = _agBlocked(S.room.f.concat(AG_CREST));   // 고정 세트 깃대 밑도 못 지나간다
   S.el.querySelector('#ag-items').innerHTML = _agItemsHtml(S.room, S.crew);
-  // 세트 글자 줄 폭이 홀수 px 이면 가운데 정렬이 0.5px 에 걸려 번진다(영문 Galmuri) — 1px 보태 정수 자리로
-  S.el.querySelectorAll('.ag-crest b span, .ag-init span').forEach(s => { if (Math.round(s.getBoundingClientRect().width) % 2) s.style.paddingRight = '1px'; });
+  _agCrestFit(S.el);   // 세트 글자 — 실제 폭으로 줄 다시 나누기 · 홀수 폭 1px 보정
   _agUnstick();
 }
 function _agHud() {
