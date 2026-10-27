@@ -49780,17 +49780,21 @@ function _agCrestBannerHtml(crew, d, it) {
   const u = c => /[ㄱ-힣]/.test(c) ? 1 : 0.55;
   let arr = Array.from(String((crew && crew.name) || '').trim()), tu = 0;
   if (arr.reduce((t, c) => t + u(c), 0) > 8) { const o = []; for (const c of arr) { if (tu + u(c) > 7.4) break; tu += u(c); o.push(c); } arr = o.concat('…'); }
-  const total = arr.reduce((t, c) => t + u(c), 0), two = total > 4, logo = crew && crew.logo;
-  let cut = 0; for (let t = 0; cut < arr.length && t + u(arr[cut]) / 2 < total / 2; cut++) t += u(arr[cut]);   // 폭 절반에서 나눈다
+  const total = arr.reduce((t, c) => t + u(c), 0), em = _agEmblemOf(crew), sk = _agSplit(crew, arr);
+  let two = total > 4, cut = 0;
+  for (let t = 0; cut < arr.length && t + u(arr[cut]) / 2 < total / 2; cut++) t += u(arr[cut]);   // 폭 절반에서 나눈다
   const sp = arr.map((c, i) => c === ' ' ? i : -1).filter(i => i > 0);   // 띄어쓰기가 있으면 단어 중간 대신 절반에 가장 가까운 띄어쓰기에서
   if (sp.length) cut = sp.reduce((b, i) => Math.abs(i - cut) < Math.abs(b - cut) ? i : b, sp[0]);
+  if (sk === -1) two = false; else if (sk > 0) { two = true; cut = sk; }   // 크루장이 고른 줄 나눔(깃발 만들기)
   const lines = two ? [arr.slice(0, cut).join('').trim(), arr.slice(cut).join('').trim()] : [arr.join('')];
   // ★글자는 Galmuri 제 크기(9→10px · 11→12px)에서만 픽셀이 또렷하다(WebKit 실측: 9·11px 은 회색 번짐 85~88%, 10·12px 은 0%).
   //   크기를 줄여 맞추지 않고, 위치도 정수 px 로 직접 계산한다(가운데 정렬의 0.5px 가 번짐을 만든다).
-  const wpx = C[2] * AG.S, hpx = C[3] * AG.S, lg = logo ? 24 : 0, small = two || logo, fs = small ? 10 : 12;
-  const tot = (logo ? lg + 3 : 0) + lines.length * fs + (lines.length - 1) * 2;
-  return '<div class="ag-crest" data-n="' + _cE(String((crew && crew.name) || '').trim()) + '" data-lg="' + (logo ? lg + 3 : 0) + '" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;padding-top:' + Math.floor((hpx - tot) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '">'
-    + (logo ? '<i style="width:' + lg + 'px;height:' + lg + 'px;background-image:url(\'' + _cE(logo) + '\')"></i>' : '')
+  //   문양 도장(16×16)은 정수 배율만: 이름이 한 줄이면 2배(32px), 두 줄이면 1배(16px) — 2배 + 두 줄은 천(52px)에 안 들어간다.
+  const lg = em.hex ? (two ? 16 : 32) : em.logo ? 24 : 0, small = two || lg, fs = small ? 10 : 12;
+  const wpx = C[2] * AG.S, hpx = C[3] * AG.S, tot = (lg ? lg + 3 : 0) + lines.length * fs + (lines.length - 1) * 2;
+  const pic = em.hex ? 'background-image:url(\'' + _agStampUrl(em.hex) + '\');background-size:' + lg + 'px ' + lg + 'px;image-rendering:pixelated' : em.logo ? 'background-image:url(\'' + _cE(em.logo) + '\')' : '';
+  return '<div class="ag-crest" data-n="' + _cE(String((crew && crew.name) || '').trim()) + '" data-lg="' + (lg ? lg + 3 : 0) + '" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;padding-top:' + Math.floor((hpx - tot) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '">'
+    + (lg ? '<i style="width:' + lg + 'px;height:' + lg + 'px;' + pic + '"></i>' : '')
     + '<b style="font-size:' + fs + 'px;font-family:' + (small ? 'Galmuri9' : 'Galmuri11') + ',sans-serif">' + lines.map(l => '<span>' + _cE(l) + '</span>').join('') + '</b></div>';
 }
 // 그린 뒤 실제 폭으로 다시 맞춘다(브랜딩 10-27 "Run Club 의 R 이 테두리에 붙는다"):
@@ -49817,13 +49821,204 @@ function _agCrestFit(root) {
 }
 // 크루 첫 글자(로고 없는 크루의 깃발 문양) — 영문이면 대문자 한 자
 const _agInitial = name => { const c = Array.from(String(name || '').trim())[0] || ''; return /[a-z]/.test(c) ? c.toUpperCase() : c; };
+
+// ── ★10-27 크루 깃발 만들기(대표 지시) — 크루장이 천 색 8 · 문양(첫 글자 / 기본 문양 12 / 사진 → 16×16 흰 도장) · 배너 줄 나눔을 고른다.
+//   저장 = crewsV2/{id}.crest { color, emblemType('letter'|'pattern'|'photo'), emblemKey, emblemBits(16진 64자), split } — 서버 함수 crewSetCrest(크루장·관리자, 값 검사)만 쓴다.
+//   사진 원본은 올리지 않는다: 폰 안에서 16×16 1비트로 바꿔 64자만 보낸다. crest 가 없는 크루는 예전대로(크루 로고 → 없으면 첫 글자).
+const AG_CREST_COLORS = [   // 채도 낮은 천 색 — 남색 천(밝기 기준)을 이 색으로 바꿔 칠한다. 형광·그라디언트 없음
+  { k: 'navy', name: '남색', c: [44, 51, 97] }, { k: 'wine', name: '와인', c: [98, 40, 48] }, { k: 'forest', name: '숲', c: [40, 78, 56] },
+  { k: 'slate', name: '먹', c: [58, 64, 78] }, { k: 'plum', name: '자두', c: [76, 48, 92] }, { k: 'ochre', name: '황토', c: [122, 92, 42] },
+  { k: 'teal', name: '청록', c: [34, 80, 86] }, { k: 'char', name: '숯', c: [42, 42, 46] },
+];
+const AG_EMBLEMS = {   // 16×16 1비트 = 줄마다 16진 4자리(64자). 주먹은 16칸에서 로봇 얼굴처럼 읽혀 케틀벨로 바꿨다
+  dumbbell: ['덤벨', '00000000000000006006781e781e7ffe7ffe781e781e60060000000000000000'],
+  shoe: ['러닝화', '00000000000000003c003e0037003b803df03ff83ffc3ffe00007ffe7ffe0000'],
+  bolt: ['번개', '00f001e003c007800f001ff81ff001e003c007800e0018002000000000000000'],
+  star: ['별', '0000018003c003c007e07ffe3ffc1ff80ff00ff01e781c38381c300c00000000'],
+  mountain: ['산', '00000000020007000f800f801fd83ff87ffc7ffeffffffffffffffff00000000'],
+  wave: ['파도', '0000000038386c6cc6c601c00000000038386c6cc6c601c00000000000000000'],
+  bike: ['자전거', '000000000000003c0e1007f0043002307a5e86a985a99f218421781e00000000'],
+  kettlebell: ['케틀벨', '000007e00ff00c3008100c301ff83ffc7ffe7ffe7ffe7ffe7ffe3ffc1ff80000'],
+  heart: ['하트', '000000003c3c7e7e7ffe7ffe7ffe3ffc1ff80ff007e003c00180000000000000'],
+  crown: ['왕관', '000000000000418263c677ee7ffe7ffe66667ffe00007ffe7ffe000000000000'],
+  flame: ['불꽃', '01000300038007880fd81ff83ff83ef83c78383839381bb00fe007c000000000'],
+  taegeuk: ['태극', '00000ff01c1838047986798278027c027fc27fe27e627e663fe41fd80ff00000'],
+};
+const _agHexOk = h => /^[0-9a-f]{64}$/.test(h || '');
+function _agEmblemOf(crew) {   // → { hex } 도장 · { logo } 예전 로고 그림 · { init } 첫 글자
+  const c = crew && crew.crest;
+  if (c && c.emblemType === 'photo' && _agHexOk(c.emblemBits)) return { hex: c.emblemBits };
+  if (c && c.emblemType === 'pattern' && AG_EMBLEMS[c.emblemKey]) return { hex: AG_EMBLEMS[c.emblemKey][1] };
+  if (!(c && c.emblemType === 'letter') && crew && crew.logo) return { logo: crew.logo };
+  return { init: _agInitial(crew && crew.name) };
+}
+function _agSplit(crew, arr) { const k = crew && crew.crest && crew.crest.split; return k === -1 || (k > 0 && k < arr.length && !arr.includes('…')) ? k : 0; }
+const _agFabric = crew => AG_CREST_COLORS.find(o => o.k === (crew && crew.crest && crew.crest.color)) || AG_CREST_COLORS[0];
+const _agCover = col => col.k === 'navy' ? '#232f6b' : 'rgb(' + col.c.map(v => Math.round(v * 0.93)).join(',') + ')';   // 깃발 문양 자리 덮개(천 밝기)
+const _agStampCache = {};
+function _agStampUrl(hex) {   // 흰 1비트 도장 16×16 PNG(투명 바탕) — 깃발 1배·배너 2배로 그린다(pixelated)
+  if (_agStampCache[hex]) return _agStampCache[hex];
+  const cv = document.createElement('canvas'); cv.width = cv.height = 16; const x = cv.getContext('2d'); x.fillStyle = '#f3f1ea';
+  for (let y = 0; y < 16; y++) { const row = parseInt(hex.substr(y * 4, 4), 16); for (let i = 0; i < 16; i++) if (row >> (15 - i) & 1) x.fillRect(i, y, 1, 1); }
+  return (_agStampCache[hex] = cv.toDataURL());
+}
+const _agTintCache = {};
+function _agTinted(src, col) {   // 남색 천 픽셀만 고른 색으로(흰 테두리·나무 봉·깃대는 그대로). 처음엔 원래 그림, 다 칠하면 다시 그린다
+  if (col.k === 'navy') return src;
+  const key = src + '|' + col.k; if (_agTintCache[key]) return _agTintCache[key];
+  _agTintCache[key] = src;
+  const im = new Image(); im.onload = () => {
+    const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+    const x = cv.getContext('2d'); x.drawImage(im, 0, 0); const d = x.getImageData(0, 0, cv.width, cv.height), p = d.data;
+    const nv = i => p[i + 3] && p[i + 2] >= p[i] + 25 && p[i + 2] >= p[i + 1] + 20, L = i => 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+    const cnt = {}; for (let i = 0; i < p.length; i += 4) if (nv(i)) { const k = Math.round(L(i)); cnt[k] = (cnt[k] || 0) + 1; }
+    const base = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || 50;   // 가장 많은 남색 밝기 = 천 기본 밝기
+    for (let i = 0; i < p.length; i += 4) if (nv(i)) { const k = L(i) / base; for (let j = 0; j < 3; j++) p[i + j] = Math.min(255, Math.round(col.c[j] * k)); }
+    x.putImageData(d, 0, 0); _agTintCache[key] = cv.toDataURL();
+    if (window._agit) _agPaintRoom();
+  };
+  im.src = src; return src;
+}
+const _agCrestLead = S => !!S && (S.uid === _crewLeader(S.crew) || (typeof isAdmin === 'function' && isAdmin()));
+// 사진 → 16×16 도장. 64칸에 그려 '잉크'(배경과 다른 쪽) 범위를 찾아 정사각으로 잘라 16칸에 줄이고 밝기 기준선으로 1비트.
+//   투명 PNG 로고 = 불투명한 곳이 잉크(밝기 막대는 옅은 가장자리를 얼마나 넣을지) · 사진 = 테두리 평균 밝기 반대쪽이 잉크.
+function _agPhotoHex(img, level) {
+  const grab = (n, sx, sy, sw, sh) => { const cv = document.createElement('canvas'); cv.width = cv.height = n; const x = cv.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(img, sx, sy, sw, sh, 0, 0, n, n); return x.getImageData(0, 0, n, n).data; };
+  const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height, s = Math.max(W, H);
+  const sq = [(W - s) / 2, (H - s) / 2, s, s], a = grab(64, ...sq);
+  let tr = 0, bl = 0, bn = 0;
+  for (let i = 0; i < 64; i++) for (const [x, y] of [[i, 0], [i, 63], [0, i], [63, i]]) { const k = (y * 64 + x) * 4; if (a[k + 3] < 128) tr++; else { bl += 0.3 * a[k] + 0.59 * a[k + 1] + 0.11 * a[k + 2]; bn++; } }
+  const alphaMode = tr > 128, lightBg = bn ? bl / bn > 128 : true;
+  const ink = (d, k) => alphaMode ? d[k + 3] >= 255 - level : d[k + 3] >= 128 && (lightBg ? (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2]) < level : (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2]) > level);
+  let x0 = 64, y0 = 64, x1 = -1, y1 = -1;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) if (ink(a, (y * 64 + x) * 4)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  let src = sq;
+  if (x1 >= 0) { const m = Math.max(x1 - x0, y1 - y0) + 3, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, k = s / 64; src = [sq[0] + (cx - m / 2) * k, sq[1] + (cy - m / 2) * k, m * k, m * k]; }
+  const b = grab(16, ...src); let hex = '';
+  for (let y = 0; y < 16; y++) { let row = 0; for (let x = 0; x < 16; x++) row = row << 1 | (ink(b, (y * 16 + x) * 4) ? 1 : 0); hex += row.toString(16).padStart(4, '0'); }
+  return hex;
+}
+// 배너 줄 나눔 고르기 — 자동 · 한 줄(4칸 이하일 때) · 두 줄 각 자리(양쪽 다 4칸 이하)
+function _agSplitOpts(name) {
+  const u = c => /[ㄱ-힣]/.test(c) ? 1 : 0.55, arr = Array.from(String(name || '').trim()), w = a => a.reduce((t, c) => t + u(c), 0), out = [{ k: 0, t: '자동' }];
+  if (w(arr) > 8) return out;
+  if (w(arr) <= 4) out.push({ k: -1, t: arr.join('') });
+  for (let i = 1; i < arr.length; i++) { const L = arr.slice(0, i).join('').trim(), R = arr.slice(i).join('').trim(); if (L && R && w(Array.from(L)) <= 4.2 && w(Array.from(R)) <= 4.2 && arr[i - 1] !== ' ') out.push({ k: i, t: L + ' / ' + R }); }
+  return out;
+}
+function _agMakerCss() {
+  if (document.getElementById('agit-mk-css')) return;
+  const st = document.createElement('style'); st.id = 'agit-mk-css';
+  st.textContent = `
+.ag-crest-hit{position:absolute;z-index:99990;cursor:pointer}
+.ag-crest-go{position:absolute;z-index:99991;width:84px;height:26px;padding:0;justify-content:center;font-size:10px;white-space:nowrap}
+.ag-maker .mk-r{display:flex;align-items:center;gap:10px;padding:0 14px 10px}
+.ag-maker .mk-lb{flex:0 0 auto;width:44px;font:10px 'Galmuri11',sans-serif;color:#8a93a8}
+.ag-maker .mk-sw{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.ag-maker .mk-sw::-webkit-scrollbar{display:none}
+.ag-maker .mk-sw button{flex:0 0 auto;width:26px;height:26px;padding:0;border:2px solid #05070c;box-shadow:0 0 0 2px #232b40;cursor:pointer}
+.ag-maker .mk-sw button.on{box-shadow:0 0 0 2px #3D7EFF}
+.ag-maker .row button i{display:flex;align-items:center;justify-content:center;width:40px;height:40px}
+.ag-maker .row button i img{width:32px;height:32px;image-rendering:pixelated}
+.ag-maker .row button i b{font:400 24px/1 'Galmuri11',sans-serif;color:#f3f1ea}
+.ag-maker .row button.on{box-shadow:0 0 0 2px #3D7EFF;color:#cfd6e6}
+.ag-maker .mk-lv{display:flex;align-items:center;gap:8px;padding:2px 14px 10px;font:10px 'Galmuri11',sans-serif;color:#8a93a8}
+.ag-maker .mk-lv input{flex:1;accent-color:#3D7EFF}
+.ag-maker .mw-redit-chips{padding:0 12px 10px;margin:0}
+.ag-maker .mk-sp{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.ag-maker .mk-sp::-webkit-scrollbar{display:none}
+.ag-maker .mk-sp .mw-redit-chip{flex:0 0 auto;white-space:nowrap}
+`;
+  document.head.appendChild(st);
+}
+// 만들기 화면 열기 — 꾸미기 받침을 잠시 숨기고 그 자리에. 고르는 동안 벽 위 세트가 바로 바뀐다(S.crestDraft 로 미리 그리기).
+window.crewCrestOpen = function () {
+  const S = window._agit; if (!S || !S.editing || S.crestDraft) return;
+  if (!_agCrestLead(S)) { showToast('깃발은 크루장만 바꿀 수 있어요'); return; }
+  _agMakerCss();
+  const c0 = S.crew.crest || {};
+  S.crestDraft = { color: c0.color || 'navy', emblemType: c0.emblemType || (S.crew.logo ? 'logo' : 'letter'), emblemKey: c0.emblemKey || '', emblemBits: c0.emblemBits || '', split: c0.split || 0, tab: c0.emblemType === 'photo' ? 'photo' : c0.emblemType === 'pattern' ? 'pattern' : 'letter', level: 128 };
+  S.crewBase = S.crew;
+  const tray = S.el.querySelector('.ag-tray'); if (tray) tray.style.display = 'none';
+  const hud = S.el.querySelector('.ag-hud'); S.crestHud = hud.innerHTML;
+  hud.innerHTML = '<button class="ag-btn" onclick="window.crewCrestClose()">취소</button><div class="ag-tt"><b>깃발 만들기</b><span>크루원 모두에게 보여요</span></div><div class="sp"></div><button class="ag-btn pri" onclick="window.crewCrestSave()">저장</button>';
+  const mk = document.createElement('div'); mk.className = 'ag-tray ag-maker'; S.el.appendChild(mk);
+  const st = S.el.querySelector('.ag-stage');   // 세트가 화면 가운데 위에 오게
+  S.editing.cam = { x: Math.round(st.clientWidth / 2 - (AG_CREST_BOX.l + AG_CREST_BOX.r) / 2 * AG.S), y: 1e4 };   // y 는 위 끝(버튼 줄 바로 아래)으로 붙는다
+  _agMakerPaint();
+};
+function _agMakerPaint() {
+  const S = window._agit, D = S && S.crestDraft, mk = S && S.el.querySelector('.ag-maker'); if (!D || !mk) return;
+  S.crew = Object.assign({}, S.crewBase, { crest: D.emblemType === 'logo' ? Object.assign({}, D, { emblemType: '' }) : D });   // 미리보기
+  const col = _agFabric(S.crew), cov = _agCover(col);
+  const tile = (on, inner, label, fn) => '<button class="' + (on ? 'on' : '') + '" onclick="' + fn + '"><i style="background:' + cov + '">' + inner + '</i><span>' + _cE(label) + '</span></button>';
+  let body = '';
+  if (D.tab === 'letter') body = tile(D.emblemType === 'letter', '<b>' + _cE(_agInitial(S.crewBase.name)) + '</b>', '첫 글자', "window.crewCrestPick('letter')");
+  else if (D.tab === 'pattern') body = Object.keys(AG_EMBLEMS).map(k => tile(D.emblemType === 'pattern' && D.emblemKey === k, '<img src="' + _agStampUrl(AG_EMBLEMS[k][1]) + '">', AG_EMBLEMS[k][0], "window.crewCrestPick('pattern','" + k + "')")).join('');
+  else body = '<button onclick="document.getElementById(\'ag-mk-file\').click()"><i style="background:#121827"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aeb6c8" stroke-width="2" stroke-linecap="square"><path d="M12 5v14M5 12h14"/></svg></i><span>사진 고르기</span></button>'
+    + (_agHexOk(D.emblemBits) ? tile(D.emblemType === 'photo', '<img src="' + _agStampUrl(D.emblemBits) + '">', '내 도장', "window.crewCrestPick('photo')") : '')
+    + '<input type="file" id="ag-mk-file" accept="image/*" hidden onchange="window.crewCrestPhoto(this)">';
+  const sp = _agSplitOpts(S.crewBase.name);
+  mk.innerHTML = '<div class="mk-r"><span class="mk-lb">천 색</span><div class="mk-sw">' + AG_CREST_COLORS.map(o => '<button class="' + (o.k === D.color ? 'on' : '') + '" style="background:rgb(' + o.c.join(',') + ')" aria-label="' + o.name + '" onclick="window.crewCrestColor(\'' + o.k + '\')"></button>').join('') + '</div></div>'
+    + '<div class="mw-redit-chips">' + [['letter', '첫 글자'], ['pattern', '기본 문양'], ['photo', '사진']].map(t => '<button class="mw-redit-chip' + (D.tab === t[0] ? ' on' : '') + '" onclick="window.crewCrestTab(\'' + t[0] + '\')">' + t[1] + '</button>').join('') + '</div>'
+    + '<div class="row">' + body + '</div>'
+    + (D.tab === 'photo' && D.img ? '<div class="mk-lv"><span>밝기</span><input type="range" min="30" max="225" value="' + D.level + '" oninput="window.crewCrestLevel(this.value)"></div>' : '')
+    + (sp.length > 1 ? '<div class="mk-r" style="padding-top:8px"><span class="mk-lb">배너 줄</span><div class="mk-sp">' + sp.map(o => '<button class="mw-redit-chip' + ((D.split || 0) === o.k ? ' on' : '') + '" onclick="window.crewCrestSplit(' + o.k + ')">' + _cE(o.t) + '</button>').join('') + '</div></div>' : '');
+  _agPaintRoom(); _agCam(true);
+}
+window.crewCrestTab = function (t) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.tab = t; _agMakerPaint(); };
+window.crewCrestColor = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.color = k; _agMakerPaint(); };
+window.crewCrestSplit = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.split = k; _agMakerPaint(); };
+window.crewCrestPick = function (type, key) {
+  const S = window._agit, D = S && S.crestDraft; if (!D) return;
+  D.emblemType = type; if (type === 'pattern') D.emblemKey = key; _agMakerPaint();
+};
+window.crewCrestPhoto = function (input) {
+  const S = window._agit, D = S && S.crestDraft, f = input && input.files && input.files[0]; if (!D || !f) return;
+  const url = URL.createObjectURL(f), im = new Image();
+  im.onload = () => { D.img = im; D.emblemBits = _agPhotoHex(im, D.level); D.emblemType = 'photo'; _agMakerPaint(); };
+  im.onerror = () => showToast('이 사진은 열 수 없어요');
+  im.src = url;
+};
+window.crewCrestLevel = function (v) {
+  const S = window._agit, D = S && S.crestDraft; if (!D || !D.img) return;
+  D.level = +v; D.emblemBits = _agPhotoHex(D.img, D.level); D.emblemType = 'photo';
+  _agPaintRoom();   // 막대를 끄는 중엔 받침을 다시 그리지 않는다(막대가 손에서 빠진다) — 도장 칸만 바꾼다
+  const im = S.el.querySelector('.ag-maker .row button.on i img'); if (im) im.src = _agStampUrl(D.emblemBits);
+};
+function _agMakerEnd() {
+  const S = window._agit; if (!S) return;
+  S.crestDraft = null; const mk = S.el.querySelector('.ag-maker'); if (mk) mk.remove();
+  const tray = S.el.querySelector('.ag-tray'); if (tray) tray.style.display = '';
+  const hud = S.el.querySelector('.ag-hud'); if (S.crestHud != null) { hud.innerHTML = S.crestHud; S.crestHud = null; }
+  _agPaintRoom();
+}
+window.crewCrestClose = function () { const S = window._agit; if (!S || !S.crestDraft) return; S.crew = S.crewBase; _agMakerEnd(); };
+// 저장 — 서버 함수 crewSetCrest 가 크루장·관리자인지, 색·문양 종류·64자를 다시 검사한 뒤 크루 문서에 쓰고 변경 기록 한 줄을 남긴다
+window.crewCrestSave = async function () {
+  const S = window._agit, D = S && S.crestDraft; if (!D || S.crestSaving) return;
+  const crest = { color: D.color, emblemType: D.emblemType === 'logo' ? '' : D.emblemType, emblemKey: D.emblemType === 'pattern' ? D.emblemKey : '', emblemBits: D.emblemType === 'photo' ? D.emblemBits : '', split: D.split || 0 };
+  if (crest.emblemType === 'photo' && !_agHexOk(crest.emblemBits)) { showToast('사진을 먼저 골라 주세요'); return; }
+  S.crestSaving = true;
+  try {
+    await _crewCall('crewSetCrest', { crewId: S.id, crest });
+    S.crew = Object.assign({}, S.crewBase, { crest }); S.lastLog = { text: '<b>' + _cE(S.nick || '크루장') + '</b>님이 크루 깃발을 바꿨어요' };
+    window._crewMineCache = null; _agMakerEnd(); showToast('깃발을 바꿨어요');
+  } catch (e) { showToast('저장하지 못했어요 · 다시 눌러 주세요'); }
+  S.crestSaving = false;
+};
 // 고정 세트(깃발·로고+이름 배너·깃발) — 소품 목록(room.f) 밖에서 늘 같은 자리에. 집히지 않는다(.ag-it 아님).
 function _agCrestHtml(crew) {
+  const col = _agFabric(crew), S = window._agit, B = AG_CREST_BOX;
   return AG_CREST.map(it => {
     const d = _agDef(it);
-    return _agShadow(it, d) + '<img class="ag-fx" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
-      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.crest ? _agCrestBannerHtml(crew, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it, _agInitial(crew.name)) : '');
-  }).join('');
+    return _agShadow(it, d) + '<img class="ag-fx" src="' + _agTinted(d.src, col) + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.crest ? _agCrestBannerHtml(crew, d, it) : '') + (d.emblem ? _agEmblemHtml(_agEmblemOf(crew), col, d, it) : '');
+  }).join('')
+    // 꾸미기 중 크루장에게만 — 세트를 누르거나 아래 [깃발 만들기] → 만들기 화면(운영진은 볼 수만)
+    + (S && S.editing && !S.crestDraft && _agCrestLead(S) ? '<div class="ag-crest-hit" style="left:' + (B.l * AG.S) + 'px;top:' + (B.t * AG.S) + 'px;width:' + ((B.r - B.l) * AG.S) + 'px;height:' + ((B.b - B.t) * AG.S) + 'px"'
+      + ' onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="window.crewCrestOpen()"></div>'
+      + '<button class="ag-btn ag-crest-go" style="left:' + ((B.l + B.r) / 2 * AG.S - 42) + 'px;top:' + (Math.round(B.b * AG.S) + 6) + 'px" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="window.crewCrestOpen()">깃발 만들기</button>' : '');
 }
 // 앞뒤: 벽걸이 < 러그 < (바닥 물건·사람, 밑변 순). 사람은 같은 줄이면 가구보다 앞.
 function _agZ(it, d, extra) {
@@ -49845,11 +50040,12 @@ function _agShadow(it, d) {
 }
 // 깃발 문양 자리에 크루 로고. 깃발 남색으로 문양을 덮고 그 위에 로고.
 //   ★로고가 없으면 크루 이름 첫 글자(흰 Galmuri11 12px) — 기본 문양(흰 원+가로줄)은 진입금지 표지판처럼 읽혔다(브랜딩 10-27).
-function _agEmblemHtml(logo, d, it, init) {
-  const E = d.emblem; if (!E || (!logo && !init)) return '';
-  const w = E[2] * AG.S, h = E[3] * AG.S, box = 'left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + w + 'px;height:' + h + 'px;';
-  if (!logo) return '<div class="ag-fx ag-init" style="' + box + 'padding-top:' + Math.floor((h - 12) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '"><span>' + _cE(init) + '</span></div>';
-  return '<div class="ag-fx" style="' + box + 'background:#232f6b url(\'' + _cE(logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
+function _agEmblemHtml(em, col, d, it) {
+  const E = d.emblem; if (!E || !(em.hex || em.logo || em.init)) return '';
+  const w = E[2] * AG.S, h = E[3] * AG.S, bg = _agCover(col), box = 'left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + w + 'px;height:' + h + 'px;';
+  if (em.hex) return '<div class="ag-fx" style="' + box + 'background:' + bg + ' url(\'' + _agStampUrl(em.hex) + '\') ' + Math.floor((w - 16) / 2) + 'px ' + Math.floor((h - 16) / 2) + 'px/16px 16px no-repeat;image-rendering:pixelated;z-index:' + _agZ(it, d, 1) + '"></div>';   // 도장 1배
+  if (!em.logo) return '<div class="ag-fx ag-init" style="' + box + 'background:' + bg + ';padding-top:' + Math.floor((h - 12) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '"><span>' + _cE(em.init) + '</span></div>';
+  return '<div class="ag-fx" style="' + box + 'background:' + bg + ' url(\'' + _cE(em.logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
 }
 function _agItemsHtml(room, crew) {
   return _agCrestHtml(crew) + (room.f || []).map((it, i) => {
@@ -50176,6 +50372,7 @@ window.crewAgitEdit = function () {
   _agTrayPaint();
   S.el.querySelector('.ag-log').style.display = 'none';
   _agEditBind(S); _agEditCount();
+  _agMakerCss(); _agPaintRoom();   // 크루장이면 세트 아래 [깃발 만들기]
 };
 function _agEditCount() {
   const S = window._agit, c = S && S.el.querySelector('.ag-tray .cnt span'); if (!c) return;
