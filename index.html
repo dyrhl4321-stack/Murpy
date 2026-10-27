@@ -2590,7 +2590,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
       <button onclick="filterRegion('서울 전체', this)" class="region-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:20px;padding:6px 14px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all 0.2s">서울 전체</button>
     </div>
   </div>
-  <div id="crew-mine" style="padding-top:16px;display:none"></div>
+  <div id="crew-mine-old" style="padding-top:16px;display:none"></div>   <!-- ★10-27 id 가 위의 새 #crew-mine 과 같아서 옛 코드가 보이는 칸에 '가입한 크루가 없어요'를 그렸다(대표 제보 깜빡임) -->
   <div id="crew-explore" style="padding-top:16px;display:none"></div>
 </div>
 
@@ -13542,7 +13542,7 @@ function renderCrews() {
 function _renderCrewsLocal(data) {
   const crews = data || [];
   const uid = window.currentUser ? window.currentUser.uid : null;
-  const mineEl = document.getElementById('crew-mine');
+  const mineEl = document.getElementById('crew-mine-old');
   const exploreEl = document.getElementById('crew-explore');
   const mine = crews.filter(c => uid ? (c.members||[]).includes(uid) : c.joined);
   const allExplore = crews.filter(c => uid ? !(c.members||[]).includes(uid) : !c.joined);
@@ -13607,7 +13607,7 @@ let currentRegion = '전체';
 function switchCrewTab(tab, btn) {
   document.querySelectorAll('#crew-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('crew-mine').style.display = tab === 'mine' ? 'block' : 'none';
+  document.getElementById('crew-mine-old').style.display = tab === 'mine' ? 'block' : 'none';
   document.getElementById('crew-explore').style.display = tab === 'explore' ? 'block' : 'none';
   document.getElementById('region-filter').style.display = tab === 'explore' ? 'block' : 'none';
 }
@@ -34714,7 +34714,7 @@ window.sendQuickMsgFirestore = (text) => {
 window.crewsData = null;
 
 window.loadCrewsFirestore = async (region) => {
-  const mineEl = document.getElementById('crew-mine');
+  const mineEl = document.getElementById('crew-mine-old');
   // 캐시-우선: 이미 받아둔 크루가 있으면 즉시 표시 (스켈레톤 생략)
   const hasCache = Array.isArray(window.crewsData) && window.crewsData.length > 0;
   if (hasCache) {
@@ -48321,6 +48321,11 @@ window.crewMineHtml = function (crews) {
   if (!crews || !crews.length) return '';
   return '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,0.55);margin:2px 0 8px">내 크루</div><div class="cw-hrs">' + crews.map(_crewHotCard).join('') + '</div>';
 };
+// 내 크루 뼈대 — crewMineHtml 과 같은 머리줄·카드 틀(지금 뜨는 크루 뼈대와 같은 모양)
+function _crewMineSk(n) {
+  const card = '<div class="cw-hr" style="cursor:default"><span class="cw-hr-th cw-sk"></span><span class="cw-hr-t"><i class="cw-sk" style="display:block;width:46%;height:14px"></i><i class="cw-sk" style="display:block;width:64%;height:10px;margin-top:8px"></i></span></div>';
+  return '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,0.55);margin:2px 0 8px">내 크루</div><div class="cw-hrs">' + Array(Math.min(n, 10)).fill(card).join('') + '</div>';
+}
 window.crewRowHtml = function (crews) {
   if (!crews || !crews.length) return '';
   return '<div style="margin:2px 0 16px"><div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,0.55);margin-bottom:2px">내 크루</div>'
@@ -48842,7 +48847,15 @@ window.crewRenderMine = async function () {
   try {
     // 비회원(설치 직후 로그인 전)은 내 크루 줄 없음 — 크루 입구는 '지금 뜨는 크루' 카드 하나(대표 10-20)
     const guest = !!(window._notMember && window._notMember());
+    // ★10-27 대표 제보(크루 탭 깜빡임): 받는 동안 빈 칸 → 다 받고 줄이 생기며 아래가 밀렸다.
+    //   지난번 이 기기·이 계정의 내 크루 수로 같은 모양 뼈대를 먼저(0개였으면 안 그림, 처음이면 1장). 이미 그려 둔 줄이 있으면 그대로 두고 뒤에서 바꾼다
+    const nk = 'murpy_crewMineN_' + ((window.currentUser || {}).uid || '');
+    if (!guest && !el.firstChild) {
+      let n = null; try { const v = localStorage.getItem(nk); if (v !== null) n = parseInt(v, 10) || 0; } catch (e) {}
+      if (n !== 0) el.innerHTML = _crewMineSk(n || 1);
+    }
     const mine = guest ? [] : await window.crewMine();
+    if (!guest) { try { localStorage.setItem(nk, String(mine.length)); } catch (e) {} }
     if (guest || !mine.length) { el.innerHTML = ''; return; }
     // 지금 뜨는 크루 목록이 이미 채운 크루(챌린지·크루원 3명)가 있으면 그걸 쓰고, 없으면 여기서 채운다
     const wk = window._crewWeekKey(), hot = (window._crewHotCache && window._crewHotCache.list) || [];
