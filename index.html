@@ -49830,19 +49830,19 @@ const AG_CREST_COLORS = [   // 채도 낮은 천 색 — 남색 천(밝기 기�
   { k: 'slate', name: '먹', c: [58, 64, 78] }, { k: 'plum', name: '자두', c: [76, 48, 92] }, { k: 'ochre', name: '황토', c: [122, 92, 42] },
   { k: 'teal', name: '청록', c: [34, 80, 86] }, { k: 'char', name: '숯', c: [42, 42, 46] },
 ];
-const AG_EMBLEMS = {   // 16×16 1비트 = 줄마다 16진 4자리(64자). 주먹은 16칸에서 로봇 얼굴처럼 읽혀 케틀벨로 바꿨다
+const AG_EMBLEMS = {   // 16×16 1비트 = 줄마다 16진 4자리(64자). 주먹은 16칸에서 로봇 얼굴처럼 읽혀 케틀벨로, 태극(음양 무늬)은 메달로 바꿨다(브랜딩 10-27)
   dumbbell: ['덤벨', '00000000000000006006781e781e7ffe7ffe781e781e60060000000000000000'],
   shoe: ['러닝화', '00000000000000003c003e0037003b803df03ff83ffc3ffe00007ffe7ffe0000'],
   bolt: ['번개', '00f001e003c007800f001ff81ff001e003c007800e0018002000000000000000'],
   star: ['별', '0000018003c003c007e07ffe3ffc1ff80ff00ff01e781c38381c300c00000000'],
   mountain: ['산', '00000000020007000f800f801fd83ff87ffc7ffeffffffffffffffff00000000'],
   wave: ['파도', '0000000038386c6cc6c601c00000000038386c6cc6c601c00000000000000000'],
-  bike: ['자전거', '000000000000003c0e1007f0043002307a5e86a985a99f218421781e00000000'],
+  bike: ['자전거', '000000000000007800200e2007e004603a5c46b283c99f4982414422381c0000'],
   kettlebell: ['케틀벨', '000007e00ff00c3008100c301ff83ffc7ffe7ffe7ffe7ffe7ffe3ffc1ff80000'],
   heart: ['하트', '000000003c3c7e7e7ffe7ffe7ffe3ffc1ff80ff007e003c00180000000000000'],
   crown: ['왕관', '000000000000418263c677ee7ffe7ffe66667ffe00007ffe7ffe000000000000'],
   flame: ['불꽃', '01000300038007880fd81ff83ff83ef83c78383839381bb00fe007c000000000'],
-  taegeuk: ['태극', '00000ff01c1838047986798278027c027fc27fe27e627e663fe41fd80ff00000'],
+  medal: ['메달', '300c18180c300c30066003c007e00c301bd817e817e817e81bd80c3007e003c0'],
 };
 const _agHexOk = h => /^[0-9a-f]{64}$/.test(h || '');
 function _agEmblemOf(crew) {   // → { hex } 도장 · { logo } 예전 로고 그림 · { init } 첫 글자
@@ -49898,13 +49898,12 @@ function _agPhotoHex(img, level) {
   for (let y = 0; y < 16; y++) { let row = 0; for (let x = 0; x < 16; x++) row = row << 1 | (ink(b, (y * 16 + x) * 4) ? 1 : 0); hex += row.toString(16).padStart(4, '0'); }
   return hex;
 }
-// 배너 줄 나눔 고르기 — 자동 · 한 줄(4칸 이하일 때) · 두 줄 각 자리(양쪽 다 4칸 이하)
-function _agSplitOpts(name) {
-  const u = c => /[ㄱ-힣]/.test(c) ? 1 : 0.55, arr = Array.from(String(name || '').trim()), w = a => a.reduce((t, c) => t + u(c), 0), out = [{ k: 0, t: '자동' }];
-  if (w(arr) > 8) return out;
-  if (w(arr) <= 4) out.push({ k: -1, t: arr.join('') });
-  for (let i = 1; i < arr.length; i++) { const L = arr.slice(0, i).join('').trim(), R = arr.slice(i).join('').trim(); if (L && R && w(Array.from(L)) <= 4.2 && w(Array.from(R)) <= 4.2 && arr[i - 1] !== ' ') out.push({ k: i, t: L + ' / ' + R }); }
-  return out;
+// 배너 줄 나눔 — [자동](띄어쓰기가 있으면 거기서) · [한 줄](천 폭에 들어갈 때만) · [직접 나누기](크루장이 글자 사이를 눌러 끊을 자리, 양쪽 다 천 폭에 들어가는 자리만)
+//   예전엔 끊을 자리를 전부 칩으로 늘어놔 '근손 / 실방지단' 같은 단어 중간 선택지가 그대로 보였다(브랜딩 10-27).
+function _agSplitInfo(name) {
+  const u = c => /[ㄱ-힣]/.test(c) ? 1 : 0.55, arr = Array.from(String(name || '').trim()), w = a => a.reduce((t, c) => t + u(c), 0);
+  const cuts = []; if (w(arr) <= 8) for (let i = 1; i < arr.length; i++) { const L = arr.slice(0, i).join('').trim(), R = arr.slice(i).join('').trim(); if (L && R && arr[i - 1] !== ' ' && w(Array.from(L)) <= 4.2 && w(Array.from(R)) <= 4.2) cuts.push(i); }
+  return { arr, one: w(arr) <= 4.2, cuts };
 }
 function _agMakerCss() {
   if (document.getElementById('agit-mk-css')) return;
@@ -49928,6 +49927,12 @@ function _agMakerCss() {
 .ag-maker .mk-sp{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0}
 .ag-maker .mk-sp::-webkit-scrollbar{display:none}
 .ag-maker .mk-sp .mw-redit-chip{flex:0 0 auto;white-space:nowrap}
+.ag-maker .mk-cut{display:flex;align-items:center;justify-content:center;padding:2px 14px 10px;font:12px/1 'Galmuri11',sans-serif;color:#f3f1ea}
+.ag-maker .mk-cut span{display:inline-block;min-width:12px;text-align:center}
+.ag-maker .mk-cut button{width:14px;height:26px;padding:0;margin:0 1px;background:none;border:0;cursor:pointer;position:relative}
+.ag-maker .mk-cut button:after{content:'';position:absolute;left:6px;top:4px;width:2px;height:18px;background:#2b3346}
+.ag-maker .mk-cut button.on:after{background:#3D7EFF;top:1px;height:24px}
+.ag-maker .mk-cut button:disabled{cursor:default}.ag-maker .mk-cut button:disabled:after{background:none}
 `;
   document.head.appendChild(st);
 }
@@ -49958,17 +49963,26 @@ function _agMakerPaint() {
   else body = '<button onclick="document.getElementById(\'ag-mk-file\').click()"><i style="background:#121827"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aeb6c8" stroke-width="2" stroke-linecap="square"><path d="M12 5v14M5 12h14"/></svg></i><span>사진 고르기</span></button>'
     + (_agHexOk(D.emblemBits) ? tile(D.emblemType === 'photo', '<img src="' + _agStampUrl(D.emblemBits) + '">', '내 도장', "window.crewCrestPick('photo')") : '')
     + '<input type="file" id="ag-mk-file" accept="image/*" hidden onchange="window.crewCrestPhoto(this)">';
-  const sp = _agSplitOpts(S.crewBase.name);
+  const SI = _agSplitInfo(S.crewBase.name), sk = D.split || 0, mode = sk === -1 ? 'one' : sk > 0 ? 'manual' : 'auto';
+  const modes = [['auto', '자동']].concat(SI.one ? [['one', '한 줄']] : []).concat(SI.cuts.length ? [['manual', '직접 나누기']] : []);
+  const cutRow = mode === 'manual' ? '<div class="mk-cut">' + SI.arr.map((c, i) => (i ? '<button class="' + (i === sk ? 'on' : '') + '"' + (SI.cuts.includes(i) ? ' onclick="window.crewCrestSplit(' + i + ')"' : ' disabled') + ' aria-label="' + i + '번째 글자 뒤에서 나누기"></button>' : '')
+    + '<span>' + (c === ' ' ? '&nbsp;' : _cE(c)) + '</span>').join('') + '</div>' : '';
   mk.innerHTML = '<div class="mk-r"><span class="mk-lb">천 색</span><div class="mk-sw">' + AG_CREST_COLORS.map(o => '<button class="' + (o.k === D.color ? 'on' : '') + '" style="background:rgb(' + o.c.join(',') + ')" aria-label="' + o.name + '" onclick="window.crewCrestColor(\'' + o.k + '\')"></button>').join('') + '</div></div>'
     + '<div class="mw-redit-chips">' + [['letter', '첫 글자'], ['pattern', '기본 문양'], ['photo', '사진']].map(t => '<button class="mw-redit-chip' + (D.tab === t[0] ? ' on' : '') + '" onclick="window.crewCrestTab(\'' + t[0] + '\')">' + t[1] + '</button>').join('') + '</div>'
     + '<div class="row">' + body + '</div>'
     + (D.tab === 'photo' && D.img ? '<div class="mk-lv"><span>밝기</span><input type="range" min="30" max="225" value="' + D.level + '" oninput="window.crewCrestLevel(this.value)"></div>' : '')
-    + (sp.length > 1 ? '<div class="mk-r" style="padding-top:8px"><span class="mk-lb">배너 줄</span><div class="mk-sp">' + sp.map(o => '<button class="mw-redit-chip' + ((D.split || 0) === o.k ? ' on' : '') + '" onclick="window.crewCrestSplit(' + o.k + ')">' + _cE(o.t) + '</button>').join('') + '</div></div>' : '');
+    + (modes.length > 1 ? '<div class="mk-r" style="padding-top:8px"><span class="mk-lb">배너 줄</span><div class="mk-sp">' + modes.map(m => '<button class="mw-redit-chip' + (mode === m[0] ? ' on' : '') + '" onclick="window.crewCrestSplitMode(\'' + m[0] + '\')">' + m[1] + '</button>').join('') + '</div></div>' + cutRow : '');
   _agPaintRoom(); _agCam(true);
 }
 window.crewCrestTab = function (t) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.tab = t; _agMakerPaint(); };
 window.crewCrestColor = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.color = k; _agMakerPaint(); };
 window.crewCrestSplit = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.split = k; _agMakerPaint(); };
+window.crewCrestSplitMode = function (m) {   // 직접 나누기를 처음 고르면 가운데에 가장 가까운 자리부터
+  const S = window._agit, D = S && S.crestDraft; if (!D) return;
+  const SI = _agSplitInfo(S.crewBase.name), mid = SI.arr.length / 2;
+  D.split = m === 'one' ? -1 : m === 'manual' ? (D.split > 0 ? D.split : SI.cuts.slice().sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0] || 0) : 0;
+  _agMakerPaint();
+};
 window.crewCrestPick = function (type, key) {
   const S = window._agit, D = S && S.crestDraft; if (!D) return;
   D.emblemType = type; if (type === 'pattern') D.emblemKey = key; _agMakerPaint();
