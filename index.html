@@ -48081,6 +48081,12 @@ button.cw-hr:active{transform:scale(.98)}
 .cw-mod .r small{color:#6f788c;font-size:11px}
 .cw-mod .r button{background:none;border:1px solid #2b3346;color:#cfd6e6;font:inherit;font-size:11.5px;padding:5px 10px;border-radius:7px;cursor:pointer;flex-shrink:0}
 .cw-mod .r button.on{border-color:#3d6fd6;color:#7aa8ff}
+.cw-mod .r .cw-stf{position:relative;min-width:64px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border-color:transparent;color:#6f7789}
+.cw-mod .r .cw-stf svg{display:none;width:11px;height:11px;flex-shrink:0}
+.cw-mod .r .cw-stf.on{border-color:#3d6fd6;color:#7aa8ff;font-weight:700}.cw-mod .r .cw-stf.on svg{display:block}
+.cw-mod .r .cw-stf-lead{font-size:11.5px;color:#59627a;padding:5px 10px}
+.cw-mod .r .cw-stf.busy:after{content:'';position:absolute;right:-3px;top:-3px;width:6px;height:6px;border-radius:50%;background:#7aa8ff;animation:cwStfDot .8s ease-in-out infinite alternate}
+@keyframes cwStfDot{from{opacity:.25}to{opacity:1}}
 .cw-mod .r .cw-sw{position:relative;width:34px;height:20px;padding:0;border-radius:10px;border:1px solid #2b3346;background:#141925}
 .cw-mod .r .cw-sw:after{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#59627a;transition:transform .18s cubic-bezier(.2,.9,.3,1)}
 .cw-mod .r .cw-sw.on{border-color:#3d6fd6;background:#16264a}.cw-mod .r .cw-sw.on:after{transform:translateX(14px);background:#7aa8ff}
@@ -48788,11 +48794,16 @@ window.crewPageHtml = function (data, me) {
     }).join('') + '</div></div>';
   }
   if (lead && (data.members || []).length > 1) {
-    const staff = c.staff || [];
-    h += '<div class="cw-sec" style="--i:6"><button class="cw-ps-more" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.classList.toggle(\'on\')">운영진 ' + staff.length + '명 <span>›</span></button>'
-      + '<div class="cw-mod" hidden>' + (data.members || []).filter(m => m.uid !== _crewLeader(c)).slice(0, 60).map(m => {
+    // ★10-27 대표 "운영진 지정이 엄청 오래 걸리고 튕긴다 → 바로 칩으로": 크루원 줄마다 [운영진] 칩, 누르면 그 자리에서 켜짐/꺼짐(서버 응답 안 기다림).
+    //   예전엔 스위치 → 서버(처음 깨어나는 데 ~2초) → 크루 화면 통째로 다시 그리기(펼친 목록이 접히고 맨 위로)였다. 실패할 때만 되돌리고 한 줄 안내.
+    const staff = c.staff || [], ms = (data.members || []).filter(m => m.uid !== _crewLeader(c)).slice(0, 60), open = ms.length <= 8;
+    h += '<div class="cw-sec" style="--i:6"><button class="cw-ps-more' + (open ? ' on' : '') + '" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.classList.toggle(\'on\')">크루원 ' + ms.length + '명 · 운영진 <b id="cw-stf-n">' + staff.length + '</b>명 <span>›</span></button>'
+      + '<div class="cw-mod"' + (open ? '' : ' hidden') + '>'
+      // 크루장 줄은 칩 대신 회색 글자(브랜딩 10-27)
+      + (() => { const L = (data.members || []).find(m => m.uid === _crewLeader(c)); return L ? '<div class="r"><span class="nm">' + _cE(L.uid === meUid ? '나' : nickOf(L)) + '</span><span class="cw-stf-lead">크루장</span></div>' : ''; })()
+      + ms.map(m => {
         const on = staff.includes(m.uid);
-        return '<div class="r"><span class="nm">' + _cE(nickOf(m)) + '</span><button class="cw-sw' + (on ? ' on' : '') + '" role="switch" aria-checked="' + on + '" aria-label="' + _cE(nickOf(m)) + ' 운영진" onclick="window.crewStaffSet(\'' + _cJ(c.id) + '\',\'' + _cJ(m.uid) + '\',' + (!on) + ')"></button></div>';
+        return '<div class="r"><span class="nm">' + _cE(m.uid === meUid ? '나' : nickOf(m)) + '</span><button class="cw-stf' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-c="' + _cE(c.id) + '" data-u="' + _cE(m.uid) + '" onclick="window.crewStaffTap(this)">' + _crewStfIco + '운영진</button></div>';
       }).join('') + '</div></div>';
   }
   // 크루 누적 칭호 · 지난 챌린지
@@ -48908,9 +48919,25 @@ window.runExcludeAsk = function (runId, crewId) {
   _crewCall('runExclude', { runId, crewId }).then(() => { showToast('크루 기록에서 뺐어요'); window.openCrewPage(crewId); })
     .catch(e => showToast('빼지 못했어요 (' + ((e && e.message) || '') + ')'));
 };
-window.crewStaffSet = function (crewId, uid, on) {
-  _crewCall('crewSetStaff', { crewId, uid, on: !!on }).then(() => { showToast(on ? '운영진으로 지정했어요' : '운영진에서 해제했어요'); window.openCrewPage(crewId); })
-    .catch(e => showToast('바꾸지 못했어요 (' + ((e && e.message) || '') + ')'));
+// 운영진 칩 — 누르는 즉시 켜고/끄고(낙관적 반영), 서버가 끝날 때까지 칩에 작은 점. 실패하면 되돌리고 한 줄. 화면은 다시 그리지 않는다.
+const _crewStfIco = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';   // 켜짐 체크(머피 라인 아이콘)
+window.crewStaffTap = function (btn) {
+  if (!btn || btn.classList.contains('busy')) return;
+  const crewId = btn.dataset.c, uid = btn.dataset.u, on = !btn.classList.contains('on');
+  const cnt = document.getElementById('cw-stf-n'), set = v => { btn.classList.toggle('on', v); btn.setAttribute('aria-pressed', v); if (cnt) cnt.textContent = Math.max(0, (+cnt.textContent || 0) + (v ? 1 : -1)); };
+  set(on); btn.classList.add('busy');
+  // 칩을 먼저 그린 뒤 서버를 부른다(첫 호출의 Functions 준비가 같은 탭 처리 안에서 돌면 칩이 0.7초 늦게 바뀌었다)
+  const go = () => _crewCall('crewSetStaff', { crewId, uid, on });
+  new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))).then(go).then(() => { btn.classList.remove('busy'); window._crewMineCache = null; })
+    .catch(e => {
+      btn.classList.remove('busy'); set(!on);
+      const m = String((e && e.message) || '');
+      showToast(m.indexOf('staff_max') >= 0 ? '운영진은 10명까지예요' : m.indexOf('not_member') >= 0 ? '크루를 나간 사람이에요' : '운영진을 바꾸지 못했어요. 다시 눌러 주세요');
+    });
+};
+window.crewStaffSet = function (crewId, uid, on) {   // 예전 호출(다른 화면) 호환 — 칩이 없는 곳에서만
+  _crewCall('crewSetStaff', { crewId, uid, on: !!on }).then(() => showToast(on ? '운영진으로 지정했어요' : '운영진에서 해제했어요'))
+    .catch(e => showToast('운영진을 바꾸지 못했어요. 다시 눌러 주세요'));
 };
 
 // ── ★10-26 건강 앱(HealthKit) 다리 — 아이폰 1.1.0 앱이 messageHandlers['health-ready'] 를 달아 둔다 ─────────
