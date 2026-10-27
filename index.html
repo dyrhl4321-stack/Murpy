@@ -49705,9 +49705,11 @@ function _agCss() {
 .ag-it{position:absolute;image-rendering:pixelated;pointer-events:none}
 .ag-sh{position:absolute;pointer-events:none}
 .ag-fx{position:absolute;image-rendering:pixelated;pointer-events:none}
-.ag-crest{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;pointer-events:none}
+.ag-crest{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none}
 .ag-crest i{display:block;flex-shrink:0;background:center/contain no-repeat}
-.ag-crest b{display:flex;flex-direction:column;align-items:center;gap:2px;color:#f3f1ea;font-weight:400;line-height:1;letter-spacing:-.3px;white-space:nowrap;text-shadow:0 1px 0 #161a3a}
+.ag-crest b{display:flex;flex-direction:column;align-items:center;gap:2px;color:#f3f1ea;font-weight:400;line-height:1;white-space:nowrap;text-shadow:0 1px 0 #161a3a}
+.ag-init{box-sizing:border-box;background:#232f6b;color:#f3f1ea;font:12px/1 Galmuri11,sans-serif;text-align:center;text-shadow:0 1px 0 #161a3a}
+.ag-init span{display:inline-block}
 .ag-ch{position:absolute;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;transition:left .15s linear,top .15s linear;pointer-events:none}
 .ag-ch.me{left:0;top:0;transition:none;will-change:transform}
 .ag-ch.ghost{opacity:.42}
@@ -49747,22 +49749,31 @@ function _agCss() {
 // 배너 천 위 = 크루 로고 + 크루 이름(흰 픽셀 글자) 한 덩어리. 이름은 4자까지 한 줄, 넘으면 두 줄, 8자 넘으면 자른다. 로고가 없으면 이름만 크게.
 function _agCrestBannerHtml(crew, d, it) {
   const C = d.crest; if (!C) return '';
-  let s = String((crew && crew.name) || '').trim(); const ch = Array.from(s);
-  if (ch.length > 8) s = ch.slice(0, 7).join('') + '…';
-  const arr = Array.from(s), two = arr.length > 4, logo = crew && crew.logo;
-  const lines = two ? [arr.slice(0, Math.ceil(arr.length / 2)).join(''), arr.slice(Math.ceil(arr.length / 2)).join('')] : [s];
-  const wpx = C[2] * AG.S, hpx = C[3] * AG.S, n = Math.max(1, ...lines.map(l => Array.from(l).length)), lg = logo ? 26 : 0;
-  const fs = Math.max(7, Math.min(two || logo ? 9 : 11, Math.floor((wpx - 2) / n)));
-  return '<div class="ag-crest" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;z-index:' + _agZ(it, d, 1) + '">'
+  // 줄 나눔은 글자 수가 아니라 폭으로 — 한글 1칸, 영문·숫자·기호 0.55칸(Galmuri 실폭). 한 줄 4칸·두 줄 합 8칸까지.
+  const u = c => /[ㄱ-힣]/.test(c) ? 1 : 0.55;
+  let arr = Array.from(String((crew && crew.name) || '').trim()), tu = 0;
+  if (arr.reduce((t, c) => t + u(c), 0) > 8) { const o = []; for (const c of arr) { if (tu + u(c) > 7.4) break; tu += u(c); o.push(c); } arr = o.concat('…'); }
+  const total = arr.reduce((t, c) => t + u(c), 0), two = total > 4, logo = crew && crew.logo;
+  let cut = 0; for (let t = 0; cut < arr.length && t + u(arr[cut]) / 2 < total / 2; cut++) t += u(arr[cut]);   // 폭 절반에서 나눈다
+  const sp = arr.map((c, i) => c === ' ' ? i : -1).filter(i => i > 0);   // 띄어쓰기가 있으면 단어 중간 대신 절반에 가장 가까운 띄어쓰기에서
+  if (sp.length) cut = sp.reduce((b, i) => Math.abs(i - cut) < Math.abs(b - cut) ? i : b, sp[0]);
+  const lines = two ? [arr.slice(0, cut).join('').trim(), arr.slice(cut).join('').trim()] : [arr.join('')];
+  // ★글자는 Galmuri 제 크기(9→10px · 11→12px)에서만 픽셀이 또렷하다(WebKit 실측: 9·11px 은 회색 번짐 85~88%, 10·12px 은 0%).
+  //   크기를 줄여 맞추지 않고, 위치도 정수 px 로 직접 계산한다(가운데 정렬의 0.5px 가 번짐을 만든다).
+  const wpx = C[2] * AG.S, hpx = C[3] * AG.S, lg = logo ? 24 : 0, small = two || logo, fs = small ? 10 : 12;
+  const tot = (logo ? lg + 3 : 0) + lines.length * fs + (lines.length - 1) * 2;
+  return '<div class="ag-crest" style="left:' + ((it.x + C[0]) * AG.S) + 'px;top:' + ((it.y + C[1]) * AG.S) + 'px;width:' + wpx + 'px;height:' + hpx + 'px;padding-top:' + Math.floor((hpx - tot) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '">'
     + (logo ? '<i style="width:' + lg + 'px;height:' + lg + 'px;background-image:url(\'' + _cE(logo) + '\')"></i>' : '')
-    + '<b style="font-size:' + fs + 'px;font-family:' + (fs < 11 ? 'Galmuri9' : 'Galmuri11') + ',sans-serif">' + lines.map(l => '<span>' + _cE(l) + '</span>').join('') + '</b></div>';
+    + '<b style="font-size:' + fs + 'px;font-family:' + (small ? 'Galmuri9' : 'Galmuri11') + ',sans-serif">' + lines.map(l => '<span>' + _cE(l) + '</span>').join('') + '</b></div>';
 }
+// 크루 첫 글자(로고 없는 크루의 깃발 문양) — 영문이면 대문자 한 자
+const _agInitial = name => { const c = Array.from(String(name || '').trim())[0] || ''; return /[a-z]/.test(c) ? c.toUpperCase() : c; };
 // 고정 세트(깃발·로고+이름 배너·깃발) — 소품 목록(room.f) 밖에서 늘 같은 자리에. 집히지 않는다(.ag-it 아님).
 function _agCrestHtml(crew) {
   return AG_CREST.map(it => {
     const d = _agDef(it);
     return _agShadow(it, d) + '<img class="ag-fx" src="' + d.src + '" alt="" draggable="false" style="left:' + (it.x * AG.S) + 'px;top:' + (it.y * AG.S) + 'px;width:'
-      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.crest ? _agCrestBannerHtml(crew, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it) : '');
+      + (d.w * AG.S) + 'px;height:' + (d.h * AG.S) + 'px;z-index:' + _agZ(it, d) + '">' + (d.crest ? _agCrestBannerHtml(crew, d, it) : '') + (d.emblem ? _agEmblemHtml(crew.logo, d, it, _agInitial(crew.name)) : '');
   }).join('');
 }
 // 앞뒤: 벽걸이 < 러그 < (바닥 물건·사람, 밑변 순). 사람은 같은 줄이면 가구보다 앞.
@@ -49783,11 +49794,13 @@ function _agShadow(it, d) {
   return '<div class="ag-sh" style="left:' + (sx * AG.S) + 'px;top:' + (sy * AG.S) + 'px;width:' + (bw * AG.S) + 'px;height:' + (sh * AG.S) + 'px;z-index:' + (_agZ(it, d) - 1) + ';'
     + 'background:radial-gradient(ellipse at center,rgba(0,0,0,' + a + ') 0%,rgba(0,0,0,' + a + ') 48%,rgba(0,0,0,' + (a * 0.35).toFixed(2) + ') 78%,rgba(0,0,0,0) 100%)"></div>';
 }
-// 깃발 문양 자리에 크루 로고(없으면 기본 문양 그대로). 깃발 남색으로 문양을 덮고 그 위에 로고.
-function _agEmblemHtml(logo, d, it) {
-  const E = d.emblem; if (!E || !logo) return '';
-  return '<div class="ag-fx" style="left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + (E[2] * AG.S) + 'px;height:' + (E[3] * AG.S) + 'px;'
-    + 'background:#232f6b url(\'' + _cE(logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
+// 깃발 문양 자리에 크루 로고. 깃발 남색으로 문양을 덮고 그 위에 로고.
+//   ★로고가 없으면 크루 이름 첫 글자(흰 Galmuri11 12px) — 기본 문양(흰 원+가로줄)은 진입금지 표지판처럼 읽혔다(브랜딩 10-27).
+function _agEmblemHtml(logo, d, it, init) {
+  const E = d.emblem; if (!E || (!logo && !init)) return '';
+  const w = E[2] * AG.S, h = E[3] * AG.S, box = 'left:' + ((it.x + E[0]) * AG.S) + 'px;top:' + ((it.y + E[1]) * AG.S) + 'px;width:' + w + 'px;height:' + h + 'px;';
+  if (!logo) return '<div class="ag-fx ag-init" style="' + box + 'padding-top:' + Math.floor((h - 12) / 2) + 'px;z-index:' + _agZ(it, d, 1) + '"><span>' + _cE(init) + '</span></div>';
+  return '<div class="ag-fx" style="' + box + 'background:#232f6b url(\'' + _cE(logo) + '\') center/88% no-repeat;image-rendering:auto;z-index:' + _agZ(it, d, 1) + '"></div>';
 }
 function _agItemsHtml(room, crew) {
   return _agCrestHtml(crew) + (room.f || []).map((it, i) => {
@@ -49961,6 +49974,8 @@ function _agPaintRoom() {
   const S = window._agit; if (!S) return;
   S.blocked = _agBlocked(S.room.f.concat(AG_CREST));   // 고정 세트 깃대 밑도 못 지나간다
   S.el.querySelector('#ag-items').innerHTML = _agItemsHtml(S.room, S.crew);
+  // 세트 글자 줄 폭이 홀수 px 이면 가운데 정렬이 0.5px 에 걸려 번진다(영문 Galmuri) — 1px 보태 정수 자리로
+  S.el.querySelectorAll('.ag-crest b span, .ag-init span').forEach(s => { if (Math.round(s.getBoundingClientRect().width) % 2) s.style.paddingRight = '1px'; });
   _agUnstick();
 }
 function _agHud() {
