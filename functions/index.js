@@ -609,6 +609,8 @@ const gbdlink = require("./gbdlink.js");
 exports.gbdLinkHourly = gbdlink.gbdLinkHourly;
 exports.gbdAsk = gbdlink.gbdAsk;
 exports.gbdClaim = gbdlink.gbdClaim;
+// ★소모임 캡처 → 근방단 스쿼드(10-27) — gbdcapture.js
+exports.gbdCapture = require("./gbdcapture.js").gbdCapture;
 exports.gbd = onCall({ region: "asia-northeast3" }, async (req) => {
   if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin only");
   const d = req.data || {};

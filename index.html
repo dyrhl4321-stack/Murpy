@@ -39109,7 +39109,7 @@ window.loadHomeTrending = async () => {
         .sort((a, b) => ((b.memberUids || []).length) - ((a.memberUids || []).length));
       if (squads[0]) {
         const s = squads[0];
-        const n = (s.memberUids || []).length;
+        const n = ((s.memberUids || []).length + (s.extNames || []).length);
         // 종목별 와이드 필드를 배경으로 (#13). 필드는 픽셀 에셋이라 pixelated 필수
         const _sqField = (!s.img && window.squadFieldSrc) ? window.squadFieldSrc(s.exerciseType, s.scheduledAt) : '';
         // ★제목이 자동 기본값('오늘 러닝 스쿼드')이면 카드에서 알려주는 게 없다.
@@ -41144,7 +41144,7 @@ window.renderSquadPage = async function (opts) {
       hotHtml = '<div style="margin-bottom:14px">'
         + '<div style="font-size:12.5px;font-weight:800;color:rgba(255,255,255,0.55);margin-bottom:8px;letter-spacing:-0.2px">인기 스쿼드</div>'
         + hot.map(function (s, i) {
-            const n = (s.memberUids || []).length;
+            const n = ((s.memberUids || []).length + (s.extNames || []).length);
             const ttl = String(s.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             return `<div onclick="window.openSquadDetail('${s.id}')" style="display:flex;align-items:center;gap:11px;`
               + `padding:11px 13px;margin-bottom:6px;border:1px solid rgba(255,255,255,0.09);border-radius:12px;cursor:pointer">`
@@ -41158,7 +41158,7 @@ window.renderSquadPage = async function (opts) {
   } catch (e) { console.warn('인기 스쿼드', e); }
   root.innerHTML = hotHtml + rows.map(s => {
     const t = window.SQUAD_TYPES[window._sqTypeKey(s.exerciseType)];   // 옛 키('run')도 살려서 읽는다
-    const n = (s.memberUids||[]).length, full = n >= s.capacity;
+    const n = ((s.memberUids||[]).length + (s.extNames||[]).length), full = n >= s.capacity;
     const live = now >= s.scheduledAt && now < (s.expiresAt||0);
     // ★★목록 카드 = **액센트 한 색(골드)으로 잠근다**(대표 8-11 지적 + taste 스킬 4.2 'Max 1 accent').
     //   파란 칩·파란 인원·파란 그라디언트를 얹었더니 사진 위에서 싸구려로 보였다. 파랑은 앱 전체의
@@ -41272,7 +41272,8 @@ window.smoPick = function () {   // 파일 고르기 칸은 body 에 하나만(�
   if (!f) { f = document.createElement('input'); f.type = 'file'; f.id = 'smo-file'; f.accept = 'image/*'; f.multiple = true; f.hidden = true; f.onchange = function () { window._smoFiles(this); }; document.body.appendChild(f); }
   f.value = ''; f.click();
 };
-// 읽는 중·결과 시트. st = { items:[{thumb,status:'up'|'read'|'ok'|'fail',msg}], squads:[{id,title,when,place,joined,cap,isNew}], unknown:[이름], done }
+// 읽는 중·결과 시트. st = { items:[{thumb,status:'up'|'read'|'ok'|'fail',msg}], squads:[{id,title,when,place,joined,smoJoined,cap,isNew}], unknown:[이름], done }
+//   smoJoined = 소모임 '3명 참석중' 숫자 — 목록 캡처엔 얼굴만 있어 이름은 참석자 캡처를 보내야 들어온다. 적으면 '소모임 3명'을 같이 보여 준다.
 window._smoPaint = function (st) {
   let el = document.getElementById('smo-run');
   if (!el) { el = document.createElement('div'); el.id = 'smo-run'; el.style.cssText = 'position:fixed;inset:0;z-index:950;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column'; document.body.appendChild(el); }
@@ -41286,7 +41287,7 @@ window._smoPaint = function (st) {
   const card = q => '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;margin-bottom:8px">'
     + '<span style="flex:1;min-width:0"><b style="display:block;font-size:14px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + E(q.title) + '</b>'
     + '<span style="display:block;font-size:11.5px;color:rgba(255,255,255,.5);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + E(q.when) + (q.place ? ' · ' + E(q.place) : '') + '</span>'
-    + '<span style="display:block;font-size:11.5px;color:rgba(255,255,255,.5);margin-top:3px">참석 ' + (q.joined | 0) + (q.cap ? ' / ' + (q.cap | 0) : '') + ' · <span style="color:' + (q.isNew ? '#7aa8ff' : 'rgba(255,255,255,.7)') + '">' + (q.isNew ? '새로 올림' : '고침') + '</span></span></span>'
+    + '<span style="display:block;font-size:11.5px;color:rgba(255,255,255,.5);margin-top:3px">참석 ' + (q.joined | 0) + (q.cap ? ' / ' + (q.cap | 0) : '') + ((q.smoJoined | 0) > (q.joined | 0) ? ' · 소모임 ' + (q.smoJoined | 0) + '명' : '') + ' · <span style="color:' + (q.isNew ? '#7aa8ff' : 'rgba(255,255,255,.7)') + '">' + (q.isNew ? '새로 올림' : '고침') + '</span></span></span>'
     + '<button onclick="window.smoEdit(\'' + J(q.id) + '\')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:#cfd6e6;border-radius:8px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer">수정</button></div>';
   el.innerHTML = '<style>#smo-run .smo-spin{display:block;width:14px;height:14px;border-radius:50%;border:2px solid rgba(122,168,255,.25);border-top-color:#7aa8ff;animation:smoSp .8s linear infinite}@keyframes smoSp{to{transform:rotate(360deg)}}</style>'
     + '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px 6px"><button onclick="window.smoClose()" style="background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px">←</button>'
@@ -41327,7 +41328,7 @@ window._smoFiles = async function (input) {
     st.squads = r.squads || []; st.unknown = r.unknown || [];
     for (const c of (r.covers || [])) {   // 대표 사진 자르기 → 붙이기(실패해도 스쿼드는 이미 올라가 있다)
       try { const blob = await window._smoCrop(files[c.i], c.box), p = 'uploads/' + u.uid + '/smoc_' + c.sid + '.jpg';
-            await uploadBytes(stRef(_mwStorage, p), blob, { contentType: 'image/jpeg' }); await call({ cover: { sid: c.sid, path: p } }); } catch (e) { console.warn('smo cover', e); }
+            const r2 = stRef(_mwStorage, p); await uploadBytes(r2, blob, { contentType: 'image/jpeg' }); await call({ cover: { sid: c.sid, url: await getDownloadURL(r2) } }); } catch (e) { console.warn('smo cover', e); }
     }
   }
   st.done = true; window._smoPaint(st);
@@ -42247,7 +42248,7 @@ window._sqRenderDetailInner = function () {
              맨 글씨로도 읽힌다. 구분은 **색과 가운뎃점**으로만 한다. -->
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;font-size:12px;font-weight:700">
           <span style="display:inline-flex;align-items:center;gap:5px;color:#fff">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n}/${s.capacity}명</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n + (Array.isArray(s.extNames) ? s.extNames.length : 0)}/${s.capacity}명</span>
           ${s.feeAmount>0
             ? `<span style="color:rgba(255,255,255,.22)">·</span>
                <!-- 금액은 목록 카드와 같은 규칙 — **색이 아니라 굵기**로 세운다(대표 8-12) -->
@@ -42429,7 +42430,14 @@ window._sqRenderDetailInner = function () {
     .sort((a, b) => (_rank(a) - _rank(b)) || (_joinedAt(a) - _joinedAt(b))
                  || String((mem[a]||{}).nickname||'').localeCompare(String((mem[b]||{}).nickname||''), 'ko'));
   const _waitUids = _alive.filter(uid => mem[uid].status === 'invited');
-  const rows = _joinedUids.map(uid => _mkRow(uid, mem[uid], false)).join('');
+  const rows0 = _joinedUids.map(uid => _mkRow(uid, mem[uid], false)).join('');
+  // ★10-27 소모임 캡처로 올린 정모 — 근방단 명부에 없는(머피 계정과 짝이 안 맞은) 참석자는 회색 이름 + 기본 도트 얼굴(누를 것 없음).
+  //   인원 n/정원에도 넣는다(소모임 숫자와 맞게). 관리자가 '근방단 멤버 연결'에서 짝을 맞추면 서버가 실제 계정으로 바꾼다.
+  const _ext = (Array.isArray(s.extNames) ? s.extNames : []).slice(0, 100);
+  const rows = rows0 + _ext.map(nm => '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px">'
+    + '<div style="flex-shrink:0;opacity:.45">' + (window.mwMiniCharHtml ? window.mwMiniCharHtml(null, 40) : '') + '</div>'
+    + '<div style="min-width:0;flex:1"><div style="font-size:13.5px;font-weight:700;color:rgba(255,255,255,.42)">' + esc(nm) + '</div>'
+    + '<div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:2px">소모임 참석 · 머피 계정 연결 전</div></div></div>').join('');
   const card = inner => `<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:4px 10px">${inner}</div>`;
   // ★승인 = **오른쪽으로 밀기**(대표 8-14). 칩 버튼은 입금 옆에서 존재감이 없었고,
   //   승인은 되돌리기 어려운 행동이라 '한 번 미는' 만큼의 무게가 맞다.
@@ -42471,7 +42479,7 @@ window._sqRenderDetailInner = function () {
     <!-- ★운영진 임명은 여기 머리줄의 버튼 하나로 모았다(대표 8-14).
          멤버 줄마다 파란 버튼을 붙이니 입금 칩과 뒤엉켜 안 읽혔다. 누르면 팝업에서 여러 명을 한 번에. -->
     <div style="display:flex;align-items:center;gap:8px;margin:2px 2px 6px">
-      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${_joinedUids.length}</span>/${s.capacity}</div>
+      <div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.5);flex:1">스쿼드 멤버 <span style="color:#fff">${_joinedUids.length + _ext.length}</span>/${s.capacity}</div>
       ${(typeof isAdmin === 'function' && isAdmin() && s.id !== 'preview') ? `<button onclick="window.sqMergeOpen&&window.sqMergeOpen('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.7);border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">같은 사람 합치기</button>` : ''}
       ${(typeof isAdmin === 'function' && isAdmin() && s.id !== 'preview') ? `<button onclick="window.gbdSendOpen&&window.gbdSendOpen('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.7);border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">근방단 앱으로</button>` : ''}
       ${isHost ? `<button onclick="window.sqStaffPicker&&window.sqStaffPicker('${s.id}')" style="flex-shrink:0;background:none;border:1px solid rgba(255,111,181,.5);color:#FF6FB5;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">운영진 임명</button>` : ''}

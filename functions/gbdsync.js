@@ -170,9 +170,39 @@ async function syncSquad(sid, links) {
 }
 
 // 짝이 새로 맞거나 풀린 사람 → 그 사람이 든 2026-10-07 이후 스쿼드를 다시 보낸다
+// ★10-27 소모임 캡처로 올린 정모의 회색 이름(extNames) → 짝이 맞은 머피 계정으로(관리자 '근방단 멤버 연결'·본인 확인 뒤 resyncUid 가 부른다).
+//   그 사람의 근방단 실명·소모임 닉네임과 같은 회색 이름만, 그리고 명부에서 그 이름이 그 사람 하나뿐일 때만(동명이인이면 그대로 둔다).
+async function smoPromote(uids) {
+  const db = getFirestore();
+  let gl; try { gl = (await gbdMembers()).filter((m) => m.status !== "removed"); } catch (e) { console.warn("smo promote members", e.message); return 0; }
+  const q = await db.collection("squads").where("scheduledAt", ">=", Date.now() - 120 * 86400000).get();
+  const smo = q.docs.filter((d) => d.data().source === "somoim" && (d.data().extNames || []).length);
+  let n = 0;
+  for (const u of uids) {
+    const g = gl.find((m) => m.murpyUid === u); if (!g) continue;
+    const keys = new Set([L.core(g.name), L.core(g.nickname)].filter((k) => k && gl.filter((m) => L.core(m.name) === k || L.core(m.nickname) === k).length === 1));
+    if (!keys.size) continue;
+    let prof = null;
+    for (const d of smo) {
+      if (!(d.data().extNames || []).some((nm) => keys.has(L.core(nm)))) continue;
+      if (!prof) { const us = await db.collection("users").doc(u).get(); const x = us.exists ? us.data() : {}; prof = { nickname: String(x.nickname || "머피").slice(0, 24), character: x.character || null }; }
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(d.ref); if (!s.exists) return;
+        const x = s.data(), mem = (x.memberUids || []).includes(u) ? x.memberUids : (x.memberUids || []).concat(u);
+        tx.update(d.ref, { extNames: (x.extNames || []).filter((nm) => !keys.has(L.core(nm))), memberUids: mem });
+        if (!(x.memberUids || []).includes(u)) tx.set(d.ref.collection("members").doc(u), { status: "accepted", nickname: prof.nickname, character: prof.character, paid: false, joinedAt: new Date(), via: "somoim" }, { merge: true });
+      });
+      n++;
+    }
+  }
+  if (n) console.log(`smoPromote uids=${uids.length} squads=${n}`);
+  return n;
+}
+
 async function resyncUid(uids) {
   const list = [...new Set((uids || []).filter(Boolean))];
   if (!list.length) return 0;
+  try { await smoPromote(list); } catch (e) { console.warn("smo promote", e.message); }   // 회색 이름 → 계정 먼저(그래야 아래 출첵앱 동기화에 같이 간다)
   const db = getFirestore();
   const sids = new Set();
   for (const u of list) {
@@ -262,6 +292,7 @@ function linkMember(m, uid, nick, how, alts) {
 }
 
 exports.resyncUid = resyncUid;
+exports.smoPromote = smoPromote;
 exports.isAdminUid = isAdminUid;
 exports.gbdMembers = gbdMembers;
 exports.linkMember = linkMember;
