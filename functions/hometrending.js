@@ -23,6 +23,20 @@ async function countOf(uid, sub, id) {
 // 남의 커마 몸통을 앱이 그리려면 characterSheet·characterHair·gender 가 같이 있어야 한다(_charEnsureFaceBody)
 const face = (u) => ({ characterSheet: u.characterSheet || null, characterHair: u.characterHair || null, gender: u.gender || null });
 
+// ★10-28 '체크인 급상승' 카드 — 앱은 센터 목록(핵심 60곳 = 시딩 아닌 곳)이 먼저 와야 카드를 그렸는데, 부팅 땐 늘 늦어 카드가 안 떴다.
+//   여기서 같은 식으로 1위를 골라 둔다(목록에 있는 = 지금 존재하는 핵심 센터 중 가장 많이 체크인된 곳). 없으면 null.
+async function checkinTopOf() {
+  const ck = await db().collection("checkins").limit(80).select("centerId").get();
+  for (const [id, n] of T.checkinOrder(ck.docs.map((d) => d.data()))) {
+    const c = await db().collection("centers").doc(String(id)).get();
+    if (!c.exists) continue;
+    const d = c.data() || {};
+    if (d.createdBy === "seed_kakao") continue;
+    return { id: c.id, name: d.name || "", pixelLogo: d.pixelLogo || "", n };
+  }
+  return null;
+}
+
 async function computeHomeTrending(now) {
   const snap = await db().collection("users").select(...FIELDS).get();
   const all = T.baseUsers(snap.docs.map((d) => Object.assign({ uid: d.id }, d.data())));
@@ -38,7 +52,8 @@ async function computeHomeTrending(now) {
   const room = top ? Object.assign({ uid: top.u.uid, like: top.like, vis: top.vis, nickname: top.u.nickname || "", character: top.u.character || null, room: top.u.room }, face(top.u)) : null;
 
   const runners = T.runners(all, 3).map((u) => ({ uid: u.uid, nickname: u.nickname || "", age: u.age || null, photoURL: u.photoURL || "", firestorePhotoURL: u.firestorePhotoURL || "", streak: u.streak || 0 }));
-  return { day, atMs: now, charPool: pool, room, runners, users: all.length };
+  const checkinTop = await checkinTopOf();
+  return { day, atMs: now, charPool: pool, room, runners, users: all.length, checkinTop };
 }
 
 exports.homeTrendingHourly = onSchedule({ region: REGION, schedule: "every 60 minutes" }, async () => {

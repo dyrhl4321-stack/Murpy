@@ -73,3 +73,9 @@ test("kstDayKey: 앱 mwTodayKey 와 같은 YYYYMMDD(KST)", () => {
   assert.strictEqual(T.kstDayKey(Date.UTC(2026, 9, 20, 15, 0)), "20261021");   // 10-21 00:00 KST
   assert.strictEqual(T.kstDayKey(Date.UTC(2026, 9, 20, 14, 59)), "20261020");
 });
+
+test("checkinOrder: 앱과 같이 centerId 를 세서 많은 순(동점은 처음 나온 순)", () => {
+  const docs = [{ centerId: "b" }, { centerId: "a" }, { centerId: "b" }, {}, { centerId: "c" }, { centerId: "a" }];
+  assert.deepStrictEqual(T.checkinOrder(docs), [["b", 2], ["a", 2], ["c", 1]]);
+  assert.deepStrictEqual(T.checkinOrder([]), []);
+});

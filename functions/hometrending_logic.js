@@ -53,4 +53,12 @@ function roomTop(cands, likes, visits) {
 const runners = (all, n) => all.filter((u) => (u.photoURL || u.firestorePhotoURL) && (u.streak || 0) >= 2)
   .sort((a, b) => (b.streak || 0) - (a.streak || 0)).slice(0, n);
 
-module.exports = { CHAR_DEFAULT, EXCLUDE_UID, CAND, CHAR_ROTATE_POOL, kstDayKey, dressedN, nFurn, freshBonus, cScore, rScore, baseUsers, charCandidates, charPool, pickFeatured, roomCandidates, roomTop, runners };
+// ★10-28 '체크인 급상승' — 앱 loadHomeTrending 3번과 같은 식: checkins 80개(문서 id 순)의 centerId 를 세서 많은 순.
+//   Object.keys 순서·안정 정렬까지 앱과 같게 둔다(동점일 때 같은 센터가 뽑히도록). 존재 확인은 hometrending.js 가 한다.
+function checkinOrder(docs) {
+  const cnt = {};
+  (docs || []).forEach((d) => { const c = (d || {}).centerId; if (c) cnt[c] = (cnt[c] || 0) + 1; });
+  return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]).map((id) => [id, cnt[id]]);
+}
+
+module.exports = { CHAR_DEFAULT, EXCLUDE_UID, CAND, CHAR_ROTATE_POOL, kstDayKey, dressedN, nFurn, freshBonus, cScore, rScore, baseUsers, charCandidates, charPool, pickFeatured, roomCandidates, roomTop, runners, checkinOrder };

@@ -22869,6 +22869,50 @@ window.loadHof = async function (force) {
   window._hofCache = { at: now, month: month, rows: rows };
   return window._hofCache;
 };
+// ★10-28 속도 — 홈 한 줄·월요일 1위 팝업은 서버가 매시 계산해 둔 stats/hof 1개만 읽는다(functions/hof.js, 같은 식 = hof_logic.js).
+//   예전엔 여기서도 loadHof → 회원 전원(251명, 수백 KB)을 읽었다. 패널(loadHofPanel)은 그대로 전원을 읽어 정확한 값을 쓴다.
+//   문서가 없거나 2시간 넘게 오래됐거나 달이 다르면 예전처럼 loadHof. 방금 전원을 읽어 둔 게 있으면(패널) 그걸 쓴다.
+window._hofSumCache = null;
+window._hofSummary = async function () {
+  const now = Date.now();
+  if (window._hofCache && now - window._hofCache.at < 600000) return window._hofCache;
+  const c = window._hofSumCache;
+  if (c && now - c.at < 600000 && c.month === window.HOF_MONTH()) return c;
+  let h = null;
+  try { const s = await getDoc(doc(db, 'stats', 'hof')); h = s.exists() ? s.data() : null; } catch (e) { console.warn('hof summary', e); }
+  if (!(h && h.rows && h.month === window.HOF_MONTH() && now - Number(h.atMs || 0) < 2 * 3600e3)) return window.loadHof();
+  // 1위의 커마·한마디(팝업이 그린다) — 전원 스냅샷이 없으니 커마 몸통도 여기서 등록
+  window._hofChar = window._hofChar || {}; window._hofMsg = window._hofMsg || {};
+  Object.keys(h.top || {}).forEach(function (uid) {
+    const t = h.top[uid] || {};
+    if (t.character) {
+      window._hofChar[uid] = t.character;
+      const k = t.character.body;
+      if (k && String(k).indexOf(window.FACE_BODY_PREFIX) === 0 && t.characterSheet && window._charEnsureFaceBody) window._charEnsureFaceBody(k, t.characterSheet, t.gender, t.characterHair || null);
+    }
+    if (t.hofMsg) window._hofMsg[uid] = t.hofMsg;
+  });
+  window._hofSumCache = { at: now, month: h.month, rows: h.rows, summary: true };
+  return window._hofSumCache;
+};
+// 서버 순위표(최대 1시간 전)에 '내 줄'만 내 지금 수로 바꿔 다시 세운다 — 내 수는 이 폰이 올린다(mwBumpMonthly 가 바로 +1).
+//   다른 사람 변동만 최대 1시간 늦다. 줄 세우기는 _hofRank 와 같다(많은 순 → 동점 닉네임 가나다순).
+window._hofWithMe = function (data, kind) {
+  const rows = (data && data.rows && data.rows[kind]) || [];
+  const axis = { feed: 'feed', checkin: 'checkin', attend: 'squad' }[kind];
+  const me = window.currentUser, st = window._seasonState;
+  if (!data || !data.summary || !axis || !me || !me.uid || me.isAnonymous || !st || st.season !== window.HOF_MONTH()
+      || window.HOF_EXCLUDE_UID.indexOf(me.uid) >= 0) return rows;
+  const n = (st.counts || {})[axis] || 0;
+  const old = rows.find(function (r) { return r.uid === me.uid; });
+  const nick = (old && old.nick) || me.nickname || '';
+  if (!nick || (old && old.n === n)) return rows;
+  const out = rows.filter(function (r) { return r.uid !== me.uid; }).map(function (r) { return Object.assign({}, r); });
+  if (n > 0) out.push({ uid: me.uid, nick: nick, n: n, sub: '' });
+  out.sort(function (a, b) { return (b.n - a.n) || String(a.nick).localeCompare(String(b.nick), 'ko'); });
+  out.forEach(function (r, i) { r.rank = i + 1; });
+  return out;
+};
 window._hofTab = 'feed';
 // ★'게임' 탭 하나 안에서 고르는 종목들 (대표 9-02: "게임탭으로 하나로 묶고 그 안에서 세부로").
 //   순서 = 화면에 보이는 순서. **새 게임을 붙이면 여기 한 줄만 추가하면 된다** —
@@ -23035,8 +23079,8 @@ window.adminClearHofMsg = async function (uid) {
 // 홈 한 줄. 이번 달 인증 1위 + 내 순위. 트로피가 '언제든 가는 문'이라면 이건 '지금 가고 싶게' 만든다.
 window.loadHofLine = async function () {
   const el = document.getElementById('home-hof-line'); if (!el) return;
-  const data = await window.loadHof();
-  const rows = data.rows.feed || [];
+  const data = await window._hofSummary();   // ★10-28 속도: 전원 읽기 대신 stats/hof
+  const rows = window._hofWithMe(data, 'feed');
   if (!rows.length) { el.style.display = 'none'; return; }
   const esc = function (s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
   const mine = window._hofMyRank(rows, (window.currentUser || {}).uid || '');
@@ -23061,8 +23105,8 @@ window.hofPopupClose = function (forever) {
 };
 window.showHofPopup = async function (kind) {
   const el = document.getElementById('hof-popup'); if (!el) return false;
-  const data = await window.loadHof();
-  const rows = data.rows[kind] || []; if (!rows.length) return false;
+  const data = await window._hofSummary();   // ★10-28 속도: 전원 읽기 대신 stats/hof(1위 + 1위 커마·한마디)
+  const rows = window._hofWithMe(data, kind); if (!rows.length) return false;
   const top = rows[0], def = window.HOF_KINDS[kind];
   document.getElementById('hof-pop-kind').textContent = '이번 주의 ' + def.label + ' 1위';
   document.getElementById('hof-pop-nick').textContent = String(top.nick || '');
@@ -39038,6 +39082,7 @@ window.loadHomeTrending = async () => {
     // ★크루 → 스쿼드로 교체(크루는 휴면). 캐릭터·센터 체크인 카드 추가 (대표 지시 2026-08-03).
     //   실패해도 나머지 카드는 뜨게 각각 catch 로 감싼다.
     const safe = (p) => p.then(s => s).catch(() => null);
+    const trP = safe(getDoc(doc(db, 'stats', 'home_trending')));
     const [squadSnap, bambooSnap, trSnap, ckSnap] = await Promise.all([
       // ★★limit(12) 만 걸어놨더니 **아무 12개**(사실상 가장 오래된 것들)를 읽었다. 벙이 50개가
       //   되면서 살아 있는 벙은 한 개도 안 들어왔고, 홈 카드가 7월 벙에 굳어 있었다(대표 8-11).
@@ -39052,10 +39097,15 @@ window.loadHomeTrending = async () => {
       //   users 는 그대로 뒀다. → 전부 읽는다(46명이면 한 번에 읽어도 무시할 수준).
       // ★10-21 렉 수정(대표 OK): 그 '전부 읽기'가 켤 때마다 회원 수만큼 나갔다 → 서버가 매시 같은 식으로 계산해 둔
       //   stats/home_trending 1개만 읽는다(functions/hometrending.js). 없거나 2시간 넘게 오래되면 아래에서 예전 방식으로.
-      safe(getDoc(doc(db, 'stats', 'home_trending'))),
-      // ★10-28 속도: '체크인 급상승'은 센터 목록(centersData)과 맞춰야 그려진다(아래 3번) — 목록이 아직 비었으면
-      //   카드가 어차피 안 뜬다. 부팅 땐 이 함수(1.5초 idle)가 센터(2.5초 idle)보다 먼저 돌아 늘 비어 있었고 80개 읽기만 헛돌았다
-      (Array.isArray(window.centersData) && window.centersData.length) ? safe(getDocs(query(collection(db, 'checkins'), limit(80)))) : Promise.resolve(null)
+      trP,
+      // ★10-28 속도: '체크인 급상승'은 서버가 매시 같은 식으로 골라 home_trending.checkinTop 에 둔다 → 그게 있으면 checkins 80개를 안 읽는다.
+      //   없을 때(옛 서버·문서 오래됨)만 예전처럼 — 그것도 센터 목록(centersData)이 있을 때만(목록이 비면 카드가 어차피 안 뜬다.
+      //   부팅 땐 이 함수가 센터보다 먼저 돌아 늘 비어 있었고 80개 읽기만 헛돌았다)
+      trP.then(s => {
+        const t = s && s.exists() ? s.data() : null;
+        if (t && Date.now() - Number(t.atMs || 0) < 2 * 3600e3 && ('checkinTop' in t)) return null;
+        return (Array.isArray(window.centersData) && window.centersData.length) ? safe(getDocs(query(collection(db, 'checkins'), limit(80)))) : null;
+      })
     ]);
     const tr = trSnap && trSnap.exists() ? trSnap.data() : null;
     const trOk = !!(tr && Date.now() - Number(tr.atMs || 0) < 2 * 3600e3);
@@ -39316,7 +39366,20 @@ window.loadHomeTrending = async () => {
     }
 
     // 3. 지금 가장 많이 체크인된 센터 — B2B 노출 자리이기도 하다
-    if (ckSnap) {
+    //   ★10-28 서버가 고른 1위(home_trending.checkinTop = {id,name,pixelLogo,n}, 같은 식 — functions/hometrending.js)가 있으면 그걸 그린다
+    const ckTop = trOk && tr.checkinTop && tr.checkinTop.id ? tr.checkinTop : null;
+    if (ckTop) {
+      const ct = ckTop;
+      const _ctField = (!ct.pixelLogo && window.centerFieldSrc) ? window.centerFieldSrc(ct) : '';
+      cards.push(card({
+        click: `window.mwCenterField && mwCenterField('${_escJs(ct.id)}')`,
+        color: '#E4472E', icon: icoPin, label: '체크인 급상승', aria: '체크인이 많은 센터',
+        img: ct.pixelLogo || '',
+        inner: _ctField ? `<div style="position:absolute;inset:0;background:#0e0f14 center/cover no-repeat url('${_ctField}');image-rendering:pixelated"></div>` : '',
+        title: esc(ct.name),
+        meta: `<span>최근 ${Number(ct.n) || 0}명 다녀감</span>`
+      }));
+    } else if (ckSnap) {
       const cnt = {};
       ckSnap.docs.forEach(d => { const c = (d.data() || {}).centerId; if (c) cnt[c] = (cnt[c] || 0) + 1; });
       const list = Array.isArray(window.centersData) ? window.centersData : [];
