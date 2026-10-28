@@ -86,3 +86,18 @@ test("parseCapture — 못 올린 정모는 이유와 함께 · 잘린 카드 �
   assert.deepEqual(r.dropped, [{ title: "날짜 없는 정모", why: "날짜·시각을 못 읽었어요" }]);
   assert.equal(r.cutTop, 1); assert.equal(r.cutBottom, 0);
 });
+
+test("startMs — AI 날짜·시각 여러 꼴(10:49 실사용 '10.28' 사고)", () => {
+  const T = Date.parse("2026-10-28T16:00:00+09:00");
+  for (const d of ["10-28", "10.28", "10/28", "10.28(수)", "10월28일", "10월 28일", "2026.10.28", "2026-10-28", "10.28."]) assert.equal(L.startMs(d, "16:00", NOW), T, d);
+  for (const t of ["16:00", "오후 4:00", "오후4:00", "4:00 PM", "오후 4시", "16시"]) assert.equal(L.startMs("10.28", t, NOW), T, t);
+  assert.equal(L.startMs("10.28", "오전 9:30", NOW), Date.parse("2026-10-28T09:30:00+09:00"));
+  assert.equal(L.startMs("10.28", "오후 12:00", NOW), Date.parse("2026-10-28T12:00:00+09:00"));
+  assert.equal(L.startMs("10.28", "오전 12:00", NOW), Date.parse("2026-10-28T00:00:00+09:00"));
+  // 10:49 당시 AI 원본 그대로
+  const r = L.parseCapture(JSON.stringify({ screen: "list", meetings: [
+    { title: "백수공주들 11시 ᄀ", date: "10.28", time: "16:00", weekday: "수", place: "휘트니스엠 장안점", cost: null, capacity: 10, joined: 4, type: "gym", photoBox: [354, 664, 438, 960], attendees: [] },
+    { title: "🍁메이플스토리🍁", date: "10.31", time: "15:00", weekday: "토", place: "용마산역 2출", cost: "용마>아차>두부?굴?", capacity: 10, joined: 3, type: "hiking", photoBox: [641, 665, 727, 960], attendees: [] } ] }), Date.parse("2026-10-28T10:49:00+09:00"));
+  assert.equal(r.meetings.length, 2); assert.deepEqual(r.dropped, []);
+  assert.deepEqual(r.meetings.map((m) => m.dateCheck), [false, false]);
+});

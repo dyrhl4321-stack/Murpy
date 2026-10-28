@@ -11,9 +11,16 @@ const KST = 9 * 3600 * 1000;
 const WDS = ["일", "월", "화", "수", "목", "금", "토"];
 const wdOf = (ms) => WDS[new Date(ms + KST).getUTCDay()];
 function startMs(date, time, nowMs, wd) {
-  const d = String(date || "").match(/^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/), t = String(time || "").match(/^(\d{1,2}):(\d{2})$/);
+  // ★10-28 대표 10:49 실사용: AI 가 날짜를 '10.28'(점)로 돌려줘 정모 2개가 모두 '날짜 못 읽음'으로 버려졌다(우리는 '10-28' 만 받았다).
+  //   → 구분자(- . / 월일)·괄호 요일·'오후 4:00'·'4시'까지 받는다. 프롬프트도 YYYY-MM-DD / MM-DD 로 다시 못 박았다.
+  const ds = String(date || "").trim().replace(/\s+/g, "").replace(/\(.*?\)/g, "").replace(/[월.\/]/g, "-").replace(/일$/, "").replace(/-+$/, "");
+  const d = ds.match(/^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/);
+  const ts = String(time || "").trim().replace(/\s+/g, ""), pm = /오후|PM|pm/.test(ts), am = /오전|AM|am/.test(ts);
+  const t = ts.match(/(\d{1,2})(?::(\d{2})|시(?:(\d{1,2})분?)?)/);
   if (!d || !t) return null;
-  const mo = +d[2], da = +d[3], hh = +t[1], mi = +t[2];
+  let hh = +t[1]; const mi = +(t[2] || t[3] || 0);
+  if (pm && hh < 12) hh += 12; if (am && hh === 12) hh = 0;
+  const mo = +d[2], da = +d[3];
   if (mo < 1 || mo > 12 || da < 1 || da > 31 || hh > 23 || mi > 59) return null;
   const at = (y) => Date.UTC(y, mo - 1, da, hh, mi) - KST;
   if (d[1]) return at(+d[1]);
