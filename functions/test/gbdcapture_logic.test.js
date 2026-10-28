@@ -23,13 +23,15 @@ test("smoId — 제목 띄어쓰기·기호 무시, 시각이 다르면 다른 �
   assert.match(L.smoId("x", t), /^smo_[0-9a-f]{16}$/);
 });
 
-test("feeOf — 원 단위만, 나머지 글은 0", () => {
-  assert.equal(L.feeOf("1만원"), 10000);
-  assert.equal(L.feeOf("1만5천원"), 15000);
-  assert.equal(L.feeOf("10,000원"), 10000);
-  assert.equal(L.feeOf("5천원"), 5000);
-  assert.equal(L.feeOf("전화 예약 필수"), 0);
-  assert.equal(L.feeOf("용마>아차>두부?굴?"), 0);
+test("feeParse — 숫자만이면 금액, 글이면 글 그대로, 비면 빈칸", () => {
+  assert.deepEqual(L.feeParse("10000"), { feeAmount: 10000, feeText: "" });
+  assert.deepEqual(L.feeParse("10,000원"), { feeAmount: 10000, feeText: "" });
+  assert.deepEqual(L.feeParse(" 5000 원 "), { feeAmount: 5000, feeText: "" });
+  assert.deepEqual(L.feeParse("1만원"), { feeAmount: 0, feeText: "1만원" });
+  assert.deepEqual(L.feeParse("용마>아차>두부?굴?"), { feeAmount: 0, feeText: "용마>아차>두부?굴?" });
+  assert.deepEqual(L.feeParse("전화 예약 필수 🙏"), { feeAmount: 0, feeText: "전화 예약 필수 🙏" });
+  assert.deepEqual(L.feeParse(""), { feeAmount: 0, feeText: "" });
+  assert.deepEqual(L.feeParse(null), { feeAmount: 0, feeText: "" });
 });
 
 test("parseCapture — 날짜 못 읽은 정모 빼기 · 종목 모르면 헬스 · 상자 검사", () => {
@@ -61,7 +63,8 @@ test("matchNames — 실명·소모임 닉네임(년도 접두 무시), 하나�
 });
 
 test("mergeInto — 새 값만, 비용 바뀌면 숫자도", () => {
-  assert.deepEqual(L.mergeInto({ location: "A", capacity: 10, smoCost: "" }, { place: "A", cap: 12, cost: "1만원" }), { capacity: 12, smoCost: "1만원", feeAmount: 10000 });
+  assert.deepEqual(L.mergeInto({ location: "A", capacity: 10, smoCost: "" }, { place: "A", cap: 12, cost: "1만원" }), { capacity: 12, smoCost: "1만원", feeAmount: 0, feeText: "1만원" });
+  assert.deepEqual(L.mergeInto({ smoCost: "" }, { cost: "10,000원" }), { smoCost: "10,000원", feeAmount: 10000, feeText: "" });
   assert.deepEqual(L.mergeInto({ location: "A", capacity: 10 }, { place: "", cap: null, cost: "" }), {});
 });
 
@@ -72,4 +75,14 @@ test("요일 — 날짜로 계산 · 찍힌 요일로 해 고르기 · 다르면
   const r = L.parseCapture(JSON.stringify({ screen: "list", meetings: [
     { title: "a", date: "10-28", time: "16:00", weekday: "수" }, { title: "b", date: "10-28", time: "16:00", weekday: "화" }, { title: "c", date: "10-28", time: "16:00" } ] }), NOW);
   assert.deepEqual(r.meetings.map((m) => m.dateCheck), [false, true, false]);
+});
+
+test("parseCapture — 못 올린 정모는 이유와 함께 · 잘린 카드 수", () => {
+  const r = L.parseCapture(JSON.stringify({ screen: "list", cutTop: 1, cutBottom: 0, meetings: [
+    { title: "백수공주들 11시 ㄱ", date: "10-28", time: "16:00", weekday: "수", place: "휘트니스엠 장안점", cost: null },
+    { title: "날짜 없는 정모", date: null, time: null } ] }), NOW);
+  assert.equal(r.meetings.length, 1);
+  assert.equal(r.meetings[0].cost, "");   // 비용 칸이 비어도 올린다
+  assert.deepEqual(r.dropped, [{ title: "날짜 없는 정모", why: "날짜·시각을 못 읽었어요" }]);
+  assert.equal(r.cutTop, 1); assert.equal(r.cutBottom, 0);
 });

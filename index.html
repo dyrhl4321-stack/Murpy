@@ -40380,6 +40380,18 @@ window._sqFmtTime = function (ms) {
     + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
 };
 window._sqFmtFee = amt => amt > 0 ? '₩' + Number(amt).toLocaleString() : '무료';
+// ★10-28 대표: 참가비는 소모임처럼 글도 받는다(숫자·글·이모티콘). 숫자만이면 feeAmount(금액 — 입금 체크·출첵앱 공금이 이 값),
+//   그 밖의 글은 feeText 에 그대로(금액 계산엔 안 씀). 비면 무료. functions/gbdcapture_logic.js feeParse 와 같은 규칙.
+window._sqFeeParse = function (v) {
+  const t = String(v == null ? '' : v).trim().slice(0, 40);
+  if (!t) return { feeAmount: 0, feeText: '' };
+  const m = t.replace(/\s+/g, '').match(/^(\d{1,3}(?:,\d{3})+|\d+)원?$/);
+  if (m) { const n = +m[1].replace(/,/g, ''); if (n <= 10000000) return { feeAmount: n, feeText: '' }; }
+  return { feeAmount: 0, feeText: t };
+};
+window._sqHasFee = s => !!(s && ((Number(s.feeAmount) || 0) > 0 || s.feeText));     // 입금 체크를 보여 줄지
+window._sqFeeLabel = s => (s && s.feeText) ? String(s.feeText) : window._sqFmtFee(Number(s && s.feeAmount) || 0);   // 화면에 쓰는 글(이스케이프는 쓰는 쪽)
+window._sqFeeInput = s => (s && s.feeText) ? String(s.feeText) : ((Number(s && s.feeAmount) || 0) > 0 ? String(Number(s.feeAmount)) : '');
 
 // ===== 정기반 (콜드스타트 공급) =====
 // ★왜: 스쿼드는 양면 시장이다. 벙주가 있어야 참가자가 오고 참가자가 보여야 벙주가 만든다.
@@ -41185,8 +41197,8 @@ window.renderSquadPage = async function (opts) {
     //   들이는 대신, 카드의 액센트는 골드 하나로 두고 금액은 **흰색 큰 굵은 글씨**로 읽힌다.
     //   알약 배경도 걷었다("불투명 배경 이상하다"). 사진 밝은 자리라 그림자는 한 겹 남긴다.
     const feeSh = 'text-shadow:0 1px 5px rgba(5,7,12,.95),0 0 14px rgba(5,7,12,.8)';
-    const feePill = s.feeAmount > 0
-      ? `<span style="color:#fff;font-size:13px;font-weight:800;letter-spacing:-.3px;flex-shrink:0;${feeSh}">${window._sqFmtFee(s.feeAmount)}</span>`
+    const feePill = window._sqHasFee(s)
+      ? `<span style="color:#fff;font-size:13px;font-weight:800;letter-spacing:-.3px;flex-shrink:0;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${feeSh}">${window._escHtml(window._sqFeeLabel(s))}</span>`
       : `<span style="color:rgba(255,255,255,.55);font-size:12px;font-weight:700;flex-shrink:0;${feeSh}">무료</span>`;
     // 정기반 가짜 줄은 누르는 순간 진짜 벙이 만들어진다(sqOpenClass)
     // 가짜 줄(아직 문서 없는 정기반 회차)은 미리보기로 — 누른다고 벙이 생기면 안 된다
@@ -41278,11 +41290,17 @@ window._smoPaint = function (st) {
   let el = document.getElementById('smo-run');
   if (!el) { el = document.createElement('div'); el.id = 'smo-run'; el.style.cssText = 'position:fixed;inset:0;z-index:950;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column'; document.body.appendChild(el); }
   const E = window._escHtml, J = window._escJs, n = st.squads.length, busy = !st.done;
-  const head = busy ? '캡처 읽는 중' : n ? '근방단 스쿼드 ' + n + '개 올렸어요' : '올린 스쿼드가 없어요';
+  const head = busy ? '캡처 읽는 중' : '소모임 캡처';
+  window._smoSt = st;
+  // ★10-28 대표 첫 사용 "바로 안 올라가고 다시 등록 화면으로" — 결과를 크게 먼저 보여 주고, [확인]은 스쿼드 만들기 화면까지 닫는다(smoDone)
+  const hero = busy ? '<div style="margin:10px 2px 6px;font-size:13px;color:rgba(255,255,255,.55);line-height:1.6">30초쯤 걸려요 · 이 화면을 닫지 말아 주세요</div>'
+    : '<div style="display:flex;align-items:center;gap:10px;margin:14px 2px 6px">' + (n ? _smoIco.ok.replace(/16/g, '26') : _smoIco.no.replace(/16/g, '26'))
+      + '<b style="font-size:20px;font-weight:800;color:#fff">' + (n ? '근방단 스쿼드 ' + n + '개 올렸어요' : '올린 스쿼드가 없어요') + '</b></div>'
+      + (n && st.squads.some(q => !(q.joined | 0)) ? '<div style="font-size:12.5px;color:rgba(255,255,255,.55);line-height:1.6;margin:0 2px 4px">참석자 캡처도 같이 보내면 출첵앱에 올라가요</div>' : '');
   const row = (it, i) => '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">'
     + '<span style="width:36px;height:52px;border-radius:6px;flex-shrink:0;background:#111724 center top/cover no-repeat' + (it.thumb ? ' url(\'' + E(it.thumb) + '\')' : '') + '"></span>'
     + '<span style="flex:1;min-width:0"><b style="display:block;font-size:13px;font-weight:700;color:#fff">캡처 ' + (i + 1) + '</b>'
-    + '<span style="display:block;font-size:11.5px;margin-top:3px;color:' + (it.status === 'fail' ? '#e07a7a' : 'rgba(255,255,255,.5)') + '">' + E(it.msg || (it.status === 'up' ? '올리는 중' : it.status === 'read' ? '읽는 중' : '')) + '</span></span>'
+    + '<span style="display:block;font-size:11.5px;margin-top:3px;line-height:1.5;color:' + (it.status === 'fail' ? '#e07a7a' : it.warn ? '#e6b450' : 'rgba(255,255,255,.5)') + '">' + E(it.msg || (it.status === 'up' ? '올리는 중' : it.status === 'read' ? '읽는 중' : '')) + '</span></span>'
     + '<span style="flex-shrink:0;width:18px;display:flex;justify-content:center">' + (it.status === 'ok' ? _smoIco.ok : it.status === 'fail' ? _smoIco.no : '<i class="smo-spin"></i>') + '</span></div>';
   const card = q => '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;margin-bottom:8px">'
     + '<span style="flex:1;min-width:0"><b style="display:block;font-size:14px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + E(q.title) + '</b>'
@@ -41291,10 +41309,10 @@ window._smoPaint = function (st) {
     + (q.dateCheck ? '<span style="display:block;font-size:11.5px;color:#e07a7a;margin-top:3px">날짜를 확인해 주세요 · 캡처의 요일과 달라요</span>' : '') + '</span>'
     + '<button onclick="window.smoEdit(\'' + J(q.id) + '\')" style="flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.18);color:#cfd6e6;border-radius:8px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer">수정</button></div>';
   el.innerHTML = '<style>#smo-run .smo-spin{display:block;width:14px;height:14px;border-radius:50%;border:2px solid rgba(122,168,255,.25);border-top-color:#7aa8ff;animation:smoSp .8s linear infinite}@keyframes smoSp{to{transform:rotate(360deg)}}</style>'
-    + '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px 6px"><button onclick="window.smoClose()" style="background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px">←</button>'
+    + '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px 6px"><button onclick="window.smoDone()"' + (busy ? ' disabled' : '') + ' style="background:none;border:none;color:rgba(255,255,255,' + (busy ? '.2' : '.6') + ');font-size:19px;cursor:pointer;padding:2px 6px">←</button>'
     + '<span style="font-size:17px;font-weight:800;color:#fff">' + head + '</span></div>'
-    + '<div style="flex:1;overflow-y:auto;padding:4px 18px 16px">'
-    + (n ? '<div style="font-size:11.5px;color:rgba(255,255,255,.45);margin:12px 2px 8px;font-weight:700">올린 스쿼드 · 근방단 출첵앱에도 같이 올라가요</div>' + st.squads.map(card).join('') : '')
+    + '<div style="flex:1;overflow-y:auto;padding:4px 18px 16px">' + hero
+    + (n ? '<div style="font-size:11.5px;color:rgba(255,255,255,.45);margin:12px 2px 8px;font-weight:700">올린 스쿼드</div>' + st.squads.map(card).join('') : '')
     + (st.unknown && st.unknown.length ? '<div style="font-size:11.5px;color:rgba(255,255,255,.45);margin:16px 2px 8px;font-weight:700">누구인지 골라 주세요 · 명부에 없는 이름 ' + st.unknown.length + '명</div>'
       + '<div style="font-size:13px;color:rgba(255,255,255,.55);line-height:1.7;margin:0 2px 10px">' + st.unknown.map(E).join(' · ') + '</div>'
       + '<button onclick="window.gbdLinkOpen && window.gbdLinkOpen()" style="width:100%;background:none;border:1px solid rgba(61,126,255,.6);color:#7aa8ff;border-radius:12px;padding:12px;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer">근방단 멤버 연결 열기</button>' : '')
@@ -41302,16 +41320,23 @@ window._smoPaint = function (st) {
     + '</div>'
     + '<div style="padding:10px var(--safe-x) var(--safe-b);border-top:1px solid rgba(255,255,255,.06);display:flex;gap:8px">'
     + (st.done && st.items.some(it => it.status === 'fail') ? '<button onclick="window.smoPick()" style="flex:1;background:none;border:1px solid rgba(255,255,255,.18);color:#cfd6e6;border-radius:12px;padding:13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">다시 보내기</button>' : '')
-    + '<button onclick="window.smoClose()"' + (busy ? ' disabled' : '') + ' style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:12px;padding:13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;opacity:' + (busy ? '.4' : '1') + '">' + (busy ? '읽는 중…' : '확인') + '</button></div>';
+    + '<button onclick="window.smoDone()"' + (busy ? ' disabled' : '') + ' style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:12px;padding:13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;opacity:' + (busy ? '.4' : '1') + '">' + (busy ? '읽는 중…' : '확인') + '</button></div>';
 };
 window.smoClose = function () { const el = document.getElementById('smo-run'); if (el) el.remove(); };
+// [확인]·← — 결과 시트와 그 밑의 스쿼드 만들기 화면을 같이 닫는다. 올린 스쿼드가 하나면 그 상세, 여러 개면 스쿼드 탭(새로 그려서 바로 보이게).
+window.smoDone = function () {
+  const st = window._smoSt || { squads: [] }; window.smoClose();
+  const c = document.getElementById('sq-create'); if (c) c.remove();
+  if (st.squads.length === 1) { window.openSquadDetail && window.openSquadDetail(st.squads[0].id); return; }
+  if (st.squads.length) { typeof goPage === 'function' && goPage('crew'); window.renderSquadPage && window.renderSquadPage(); }
+};
 window.smoEdit = function (sid) { window.smoClose(); const c = document.getElementById('sq-create'); if (c) c.remove(); window.openSquadDetail && window.openSquadDetail(sid); };
 // 올리기 → 서버 읽기. 장마다 Storage(uploads/{uid}/smo_*) 에 올리고 gbdCapture 에 경로만 넘긴다(원본은 서버가 읽은 뒤 지운다).
 //   대표 사진 = 서버가 준 자리(0~1000)로 여기서 잘라 올린 뒤 gbdCapture({cover}) 로 붙인다(서버에 그림 자르기 라이브러리가 없다).
 window._smoFiles = async function (input) {
   const files = Array.from((input && input.files) || []).slice(0, 10); if (!files.length) return;
   const u = auth.currentUser; if (!u) return;
-  const call = d => httpsCallable(getFunctions(app, 'asia-northeast3'), 'gbdCapture')(d).then(x => x.data || {});
+  const call = d => httpsCallable(getFunctions(app, 'asia-northeast3'), 'gbdCapture', { timeout: 300000 })(d).then(x => x.data || {});   // 서버 상한 300초와 같게
   const st = { items: files.map(f => ({ thumb: URL.createObjectURL(f), status: 'up' })), squads: [], unknown: [], done: false };
   window._smoPaint(st);
   const paths = [];
@@ -41323,9 +41348,14 @@ window._smoFiles = async function (input) {
   }
   let r = null;
   try { r = await call({ paths }); }
-  catch (e) { st.items.forEach(it => { if (it.status !== 'fail') { it.status = 'fail'; it.msg = String((e && e.message) || '').indexOf('permission') >= 0 ? '근방단 운영진만 쓸 수 있어요' : '지금 못 읽었어요 · 다시 보내 주세요'; } }); }
+  catch (e) {   // ★'알 수 없음'으로 뭉뚱그리지 않는다 — 이유별 한 줄
+    const c = String((e && e.code) || '') + ' ' + String((e && e.message) || '');
+    const why = /permission/.test(c) ? '근방단 운영진만 쓸 수 있어요' : /deadline|timeout/.test(c) ? '읽는 데 너무 오래 걸렸어요 · 캡처를 2~3장씩 나눠 보내 주세요'
+      : /unavailable|network|internal/.test(c) ? '서버에 닿지 못했어요 · 연결을 확인하고 다시 보내 주세요' : '올리지 못했어요 (' + c.trim().slice(0, 60) + ') · 다시 보내 주세요';
+    st.items.forEach(it => { if (it.status !== 'fail') { it.status = 'fail'; it.msg = why; } });
+  }
   if (r) {
-    (r.items || []).forEach((x, i) => { if (!st.items[i] || st.items[i].status === 'fail') return; st.items[i].status = x.ok ? 'ok' : 'fail'; st.items[i].msg = x.msg || ''; });
+    (r.items || []).forEach((x, i) => { if (!st.items[i] || st.items[i].status === 'fail') return; st.items[i].status = x.ok ? 'ok' : 'fail'; st.items[i].msg = x.msg || ''; st.items[i].warn = !!x.warn; });
     st.squads = r.squads || []; st.unknown = r.unknown || [];
     for (const c of (r.covers || [])) {   // 대표 사진 자르기 → 붙이기(실패해도 스쿼드는 이미 올라가 있다)
       try { const blob = await window._smoCrop(files[c.i], c.box), p = 'uploads/' + u.uid + '/smoc_' + c.sid + '.jpg';
@@ -41353,11 +41383,25 @@ window.gbdCaptureFromNative = async function (list) {
   return true;
 };
 window.gbdCaptureReady = true;
+// 대표 사진 자르기(원본 해상도 그대로) — ★10-28 첫 실사용: 둥근 모서리 밖 흰 여백이 섞이고 아래 글자가 살짝 잘렸다.
+//   ① AI 상자를 위아래 3%·좌우 1% 넓혀 글자 잘림을 막고 ② 가장자리부터 '거의 다 밝은 줄'(흰 바탕)을 깎아 카드 테두리까지 붙인 뒤
+//   ③ 둥근 모서리 몫으로 안쪽 3%를 더 잘라 모서리의 흰 삼각형을 없앤다.
 window._smoCrop = function (file, box) {   // box = [ymin,xmin,ymax,xmax] 0~1000
   return new Promise((ok, no) => { const im = new Image(); im.onload = () => {
-    const W = im.naturalWidth, H = im.naturalHeight, x = box[1] / 1000 * W, y = box[0] / 1000 * H, w = (box[3] - box[1]) / 1000 * W, h = (box[2] - box[0]) / 1000 * H;
-    const cv = document.createElement('canvas'), s = Math.min(1, 900 / Math.max(w, h)); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
-    cv.getContext('2d').drawImage(im, x, y, w, h, 0, 0, cv.width, cv.height); cv.toBlob(b => b ? ok(b) : no(new Error('crop')), 'image/jpeg', 0.86);
+    const W = im.naturalWidth, H = im.naturalHeight;
+    let x0 = Math.max(0, (box[1] - 10) / 1000 * W), x1 = Math.min(W, (box[3] + 10) / 1000 * W), y0 = Math.max(0, (box[0] - 30) / 1000 * H), y1 = Math.min(H, (box[2] + 30) / 1000 * H);
+    const src = document.createElement('canvas'); src.width = W; src.height = H; const sx = src.getContext('2d'); sx.drawImage(im, 0, 0);
+    const lightLine = (horiz, at, a, b) => {   // 그 줄 픽셀의 92% 이상이 밝으면(>232) 흰 바탕
+      const d = horiz ? sx.getImageData(Math.round(a), Math.round(at), Math.max(1, Math.round(b - a)), 1).data : sx.getImageData(Math.round(at), Math.round(a), 1, Math.max(1, Math.round(b - a))).data;
+      let n = 0, L = 0; for (let i = 0; i < d.length; i += 4) { n++; if (d[i] > 232 && d[i + 1] > 232 && d[i + 2] > 232) L++; } return L / n >= 0.92;
+    };
+    for (let k = 0; k < 40 && y1 - y0 > 20 && lightLine(true, y0, x0, x1); k++) y0++;
+    for (let k = 0; k < 40 && y1 - y0 > 20 && lightLine(true, y1 - 1, x0, x1); k++) y1--;
+    for (let k = 0; k < 40 && x1 - x0 > 20 && lightLine(false, x0, y0, y1); k++) x0++;
+    for (let k = 0; k < 40 && x1 - x0 > 20 && lightLine(false, x1 - 1, y0, y1); k++) x1--;
+    const ins = Math.round(Math.min(x1 - x0, y1 - y0) * 0.03); x0 += ins; x1 -= ins; y0 += ins; y1 -= ins;
+    const w = x1 - x0, h = y1 - y0, cv = document.createElement('canvas'), s = Math.min(1, 900 / Math.max(w, h)); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+    cv.getContext('2d').drawImage(src, x0, y0, w, h, 0, 0, cv.width, cv.height); cv.toBlob(b => b ? ok(b) : no(new Error('crop')), 'image/jpeg', 0.88);
   }; im.onerror = no; im.src = URL.createObjectURL(file); });
 };
 
@@ -41425,8 +41469,8 @@ window.openSquadCreate = function (preset) {
         ${Object.keys(window.SQUAD_LEVELS).map(k => `
           <button data-l="${k}" onclick="window._sqPickLevel('${k}')" style="flex:1;background:${k==='mid'?'var(--accent)':'rgba(255,255,255,.07)'};color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${window.SQUAD_LEVELS[k]}</button>`).join('')}
       </div>
-      ${lbl('참가비 (없으면 0)')}
-      <input id="sq-c-fee" type="number" inputmode="numeric" value="0" min="0" step="1000" style="${inputCss}">
+      ${lbl('참가비 (숫자·글 모두 · 비우면 무료)')}
+      <input id="sq-c-fee" maxlength="40" value="" placeholder="예) 10000 · 1만원 현장결제 · 더치페이" autocomplete="off" style="${inputCss}">
       ${lbl('참가 방식')}
       <div id="sq-c-join" style="display:flex;gap:8px">
         <button data-j="instant" onclick="window._sqPickJoin('instant')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">바로 참가</button>
@@ -41483,7 +41527,7 @@ window.openSquadCreate = function (preset) {
     if (preset.capacity) { f.capacity = preset.capacity | 0; const c = document.getElementById('sq-c-cap'); if (c) c.value = f.capacity; }
     if (preset.level && window._sqPickLevel) window._sqPickLevel(preset.level);
     if (preset.joinMode && window._sqPickJoin) window._sqPickJoin(preset.joinMode);
-    const fe = document.getElementById('sq-c-fee'); if (fe && preset.feeAmount != null) fe.value = preset.feeAmount | 0;
+    const fe = document.getElementById('sq-c-fee'); if (fe) fe.value = window._sqFeeInput(preset);
     const me_ = document.getElementById('sq-c-memo'); if (me_ && preset.oneLineMemo) me_.value = preset.oneLineMemo;
     if (preset.img) { f.img = preset.img; const pv = document.getElementById('sq-c-thumb-prev'); if (pv) pv.style.backgroundImage = "url('" + preset.img + "')"; }
     f.seriesOf = preset.id || '';
@@ -41539,7 +41583,7 @@ window.sqReopen = async function (sid) {
   const _old = document.getElementById('sq-create'); if (_old) _old.remove();
   window.openSquadCreate({ id: s.id, title: s.title, exerciseType: s.exerciseType, location: s.location,
     centerId: s.centerId, centerName: s.centerName, scheduledAt: s.scheduledAt, capacity: s.capacity,
-    level: s.level, joinMode: s.joinMode, feeAmount: s.feeAmount, oneLineMemo: s.oneLineMemo, img: s.img });
+    level: s.level, joinMode: s.joinMode, feeAmount: s.feeAmount, feeText: s.feeText || '', oneLineMemo: s.oneLineMemo, img: s.img });
 };
 window._sqPickType = function (k) {
   window._sqForm.type = k;
@@ -41774,7 +41818,7 @@ window._sqSubmitCreate = async function () {
       img: f.img || null,          // 대표 사진. 없으면 화면마다 종목 필드 그림으로 떨어진다
       scheduledAt: sched, startedAt: null, endedAt: null, expiresAt: sched + 4*3600*1000,
       capacity: f.capacity, level: f.level, oneLineMemo: (document.getElementById('sq-c-memo').value||'').trim(),
-      joinMode: f.joinMode, feeAmount: Math.max(0, parseInt(document.getElementById('sq-c-fee').value||'0',10) || 0),
+      joinMode: f.joinMode, ...window._sqFeeParse(document.getElementById('sq-c-fee').value),
       status: 'recruiting', source: 'manual', hostRewarded: false, createdAt: serverTimestamp() });
     await setDoc(doc(db,'squads',dRef.id,'members',user.uid),
       { status:'accepted', nickname: window._mwMyNick || '머피', character: cfg, paid: false, joinedAt: serverTimestamp() });
@@ -41859,8 +41903,8 @@ window.sqEditOpen = function (sid) {
         <button onclick="window._sqECap(1)" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.1);border:none;color:#fff;font-size:18px;cursor:pointer">+</button>
       </div>
       <div style="font-size:10.5px;color:rgba(255,255,255,.35);margin:6px 2px 0">지금 ${n}명 들어와 있어요 · 그보다 적게는 못 줄여요</div>
-      ${lbl('참가비 (없으면 0)')}
-      <input id="sq-e-fee" type="number" inputmode="numeric" value="${Number(s.feeAmount)||0}" min="0" step="1000" style="${inputCss}">
+      ${lbl('참가비 (숫자·글 모두 · 비우면 무료)')}
+      <input id="sq-e-fee" maxlength="40" value="${esc(window._sqFeeInput(s))}" placeholder="예) 10000 · 1만원 현장결제 · 더치페이" autocomplete="off" style="${inputCss}">
       ${lbl('한 줄 메모')}
       <input id="sq-e-memo" maxlength="60" value="${esc(s.oneLineMemo)}" style="${inputCss}">
       ${lbl('대표 사진')}
@@ -41966,7 +42010,7 @@ window.sqEditSubmit = async function () {
     await updateDoc(doc(db, 'squads', e.sid), Object.assign({
       title: title, location: loc, scheduledAt: sched, expiresAt: sched + e.dur,
       capacity: e.capacity, img: e.img || null,
-      feeAmount: Math.max(0, parseInt(document.getElementById('sq-e-fee').value || '0', 10) || 0),
+      ...window._sqFeeParse(document.getElementById('sq-e-fee').value),
       oneLineMemo: (document.getElementById('sq-e-memo').value || '').trim()
     }, ('centerId' in e) ? { centerId: e.centerId || null, centerName: e.centerName || '' } : {}));   // 9-01 색인에서 다시 골랐으면 도감 연결도 갱신
     const p = document.getElementById('sq-edit'); if (p) p.remove();
@@ -42268,10 +42312,10 @@ window._sqRenderDetailInner = function () {
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;font-size:12px;font-weight:700">
           <span style="display:inline-flex;align-items:center;gap:5px;color:#fff">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="7" r="3.4"/><path d="M2.5 20c.6-3.4 3.3-5.4 6.5-5.4s5.9 2 6.5 5.4"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16.5 14.6c2.8.2 4.7 2 5 4.9"/></svg>${n + (Array.isArray(s.extNames) ? s.extNames.length : 0)}/${s.capacity}명</span>
-          ${s.feeAmount>0
+          ${window._sqHasFee(s)
             ? `<span style="color:rgba(255,255,255,.22)">·</span>
                <!-- 금액은 목록 카드와 같은 규칙 — **색이 아니라 굵기**로 세운다(대표 8-12) -->
-               <span style="color:#fff;font-weight:800;font-size:13px">${window._sqFmtFee(s.feeAmount)}</span>
+               <span style="color:#fff;font-weight:800;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(window._sqFeeLabel(s))}</span>
                <span style="color:rgba(255,255,255,.22)">·</span>
                <!-- ★입금 초록(#4ce88a)은 뺐다 — 부트스트랩 성공배지처럼 보였다(대표 8-12: "짜친다").
                     금액이 흰색이 된 뒤로 **이 줄의 골드는 입금 하나가 가져간다**(대표 8-12 확정).
@@ -42417,8 +42461,8 @@ window._sqRenderDetailInner = function () {
              채움이 아니라 **테두리**로 알린다 — 반투명 면을 깔면 화면이 탁해진다. -->
         <!-- ★벙주든 아니든 **같은 모양**이어야 한다(대표 8-14: 벙마다 입금 표시가 달라 보였다).
              벙주와 운영진만 누를 수 있을 뿐, 보이는 것은 똑같은 골드 칩이다. -->
-        ${s.feeAmount>0 && window._sqCanManagePaid(s, mem, me) && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
-          : (s.feeAmount>0 && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
+        ${window._sqHasFee(s) && window._sqCanManagePaid(s, mem, me) && !wait ? `<button onclick="window.sqTogglePaid('${s.id}','${uid}',${m.paid?'true':'false'})" style="background:none;border:1px solid ${m.paid?'rgba(245,194,75,.5)':'rgba(255,255,255,.14)'};color:${m.paid?'#F5C24B':'rgba(255,255,255,.5)'};border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">${m.paid?'입금 ✓':'미입금'}</button>`
+          : (window._sqHasFee(s) && m.paid ? '<span style="background:none;border:1px solid rgba(245,194,75,.5);color:#F5C24B;border-radius:10px;padding:5px 10px;font-size:10.5px;font-weight:700;flex-shrink:0">입금 ✓</span>' : '')}
         <!-- ★승인은 이 줄의 칩이 아니라 **오른쪽으로 밀어서** 한다(대표 8-14) — 아래 대기 구역 참조.
              운영진 임명도 이 줄에서 뺐다. 입금 토글 옆에 파란 버튼이 또 붙으니 읽히지 않았다.
              임명은 머리줄의 '운영진 임명' 버튼 → 팝업에서 여러 명을 한 번에 고른다. -->

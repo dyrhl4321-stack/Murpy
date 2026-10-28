@@ -31,22 +31,25 @@ function startMs(date, time, nowMs, wd) {
 const titleKey = (s) => G.nrm(s).replace(/[^0-9a-z가-힣]/g, "");
 const smoId = (title, ms) => "smo_" + crypto.createHash("sha1").update(titleKey(title) + "|" + ms).digest("hex").slice(0, 16);
 
-// 비용 글자에서 원 단위 숫자만(없으면 0). '1만원'·'10,000원'·'5천원' 정도만 — 나머지('전화 예약 필수')는 0 이고 글은 메모로 남긴다.
-function feeOf(text) {
-  const s = String(text || "").replace(/\s+/g, "");
-  let m = s.match(/(\d+(?:\.\d+)?)만(\d+)?천?원?/); if (m) return Math.round(+m[1] * 10000 + (m[2] ? +m[2] * 1000 : 0));
-  m = s.match(/(\d+)천원/); if (m) return +m[1] * 1000;
-  m = s.match(/(\d{1,3}(?:,\d{3})+|\d{3,})원/); if (m) return +m[1].replace(/,/g, "");
-  return 0;
+// ★10-28 대표: 참가비 = 소모임처럼 글도 받는다('용마>아차>두부?굴?', '전화 예약 필수', 이모티콘).
+//   숫자만 있으면(10000 · 10,000 · 10,000원) feeAmount(금액 — 입금 체크·출첵앱 공금이 쓴다), 그 밖의 글은 feeText 에 그대로(금액 계산엔 안 씀).
+//   비어 있으면 둘 다 비운다(feeAmount 0 · feeText ''). index.html window._sqFeeParse 와 같은 규칙.
+function feeParse(text) {
+  const t = String(text || "").trim().slice(0, 40);
+  if (!t) return { feeAmount: 0, feeText: "" };
+  const m = t.replace(/\s+/g, "").match(/^(\d{1,3}(?:,\d{3})+|\d+)원?$/);
+  if (m) { const n = +m[1].replace(/,/g, ""); if (n <= 10000000) return { feeAmount: n, feeText: "" }; }
+  return { feeAmount: 0, feeText: t };
 }
 
-// AI 응답(JSON 글) → { screen, meetings:[{title,startMs,place,cost,cap,joined,type,photoBox,names[]}] }. 이상하면 null.
+// AI 응답(JSON 글) → { screen, meetings:[{title,startMs,place,cost,cap,joined,type,photoBox,names[]}], dropped:[{title,why}], cutTop, cutBottom }. 이상하면 null.
+//   ★10-28 대표 첫 실사용: 정모 3개 중 1개가 조용히 빠졌다 → 못 올린 정모는 이유와 함께 돌려준다(잘린 카드 · 날짜·시각 못 읽음).
 function parseCapture(text, nowMs) {
   let o; try { o = JSON.parse(String(text || "")); } catch (e) { return null; }
   if (!o || typeof o !== "object") return null;
   const screen = ["list", "attendees", "detail", "other"].includes(o.screen) ? o.screen : "other";
   const box = (b) => Array.isArray(b) && b.length === 4 && b.every((x) => Number.isFinite(x) && x >= 0 && x <= 1000) && b[2] - b[0] > 30 && b[3] - b[1] > 30 ? b.map(Math.round) : null;
-  const meetings = (Array.isArray(o.meetings) ? o.meetings : []).slice(0, 12).map((m) => {
+  const all = (Array.isArray(o.meetings) ? o.meetings : []).slice(0, 12).map((m) => {
     const names = (Array.isArray(m && m.attendees) ? m.attendees : []).map((x) => String(x || "").trim().slice(0, 30)).filter(Boolean);
     const wd = WDS.includes(m && m.weekday) ? m.weekday : "", st = startMs(m && m.date, m && m.time, nowMs, wd);
     return {
@@ -61,8 +64,11 @@ function parseCapture(text, nowMs) {
       photoBox: box(m && m.photoBox),
       names: Array.from(new Set(names)).slice(0, 100),
     };
-  }).filter((m) => m.startMs);   // 날짜·시각을 못 읽은 정모는 만들지 않는다(틀린 스쿼드보다 안 만드는 게 낫다)
-  return { screen, meetings };
+  });
+  const meetings = all.filter((m) => m.startMs);   // 날짜·시각을 못 읽은 정모는 만들지 않는다(틀린 스쿼드보다 안 만드는 게 낫다) — 대신 이유를 남긴다
+  const dropped = all.filter((m) => !m.startMs).map((m) => ({ title: m.title, why: "날짜·시각을 못 읽었어요" }));
+  const cnt = (v) => (Number.isInteger(v) && v > 0 && v < 10 ? v : 0);
+  return { screen, meetings, dropped, cutTop: cnt(o.cutTop), cutBottom: cnt(o.cutBottom) };
 }
 
 // 소모임 이름 → 근방단 명부 → 머피 계정. 실명·소모임 닉네임(년도 접두 '92김준성' 무시) 중 하나와 정확히 같고, 명부에서 하나뿐일 때만.
@@ -82,8 +88,8 @@ function mergeInto(cur, m) {
   const out = {};
   if (m.place && m.place !== cur.location) out.location = m.place;
   if (m.cap && m.cap !== cur.capacity) out.capacity = m.cap;
-  if (m.cost && m.cost !== cur.smoCost) { out.smoCost = m.cost; out.feeAmount = feeOf(m.cost); }
+  if (m.cost && m.cost !== cur.smoCost) Object.assign(out, { smoCost: m.cost }, feeParse(m.cost));
   return out;
 }
 
-module.exports = { TYPES, WDS, wdOf, startMs, titleKey, smoId, feeOf, parseCapture, matchNames, mergeInto };
+module.exports = { TYPES, WDS, wdOf, startMs, titleKey, smoId, feeParse, parseCapture, matchNames, mergeInto };
