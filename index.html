@@ -17924,7 +17924,18 @@ async function renderHomeLiveBar() {
       return;
     }
     // Tier 2: 최근 7일 — 날짜 문서 7개(작다). 하나도 없으면 아직 집계 전이라 숨긴다.
-    const ds = [td].concat(await Promise.all(keys.slice(1).map(day))).filter(Boolean);
+    // ★10-28 속도: 지난 6일 문서는 그날이 끝나면 거의 안 바뀐다(그날 글이 지워질 때만 서버가 다시 셈) →
+    //   이 기기에 6시간 넣어 두고 재방문엔 안 읽는다. 없는 날(집계 전)은 안 넣는다. 50KB 넘는 날도 안 넣는다(uids 가 커지면).
+    const dayC = k => {
+      const ck = 'murpy_liveDay_' + k;
+      try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); if (c && Date.now() - c.at < 6 * 3600e3) return Promise.resolve(c.d); } catch (e) {}
+      return day(k).then(d => {
+        if (d) { try { const v = JSON.stringify({ at: Date.now(), d: { uids: d.uids || [], recent: d.recent || [] } }); if (v.length < 5e4) localStorage.setItem(ck, v); } catch (e) {} }
+        return d;
+      });
+    };
+    try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.indexOf('murpy_liveDay_') === 0 && !keys.includes(k.slice(14))) localStorage.removeItem(k); } } catch (e) {}
+    const ds = [td].concat(await Promise.all(keys.slice(1).map(dayC))).filter(Boolean);
     if (!ds.length) { bar.style.display = 'none'; return; }
     const w = _liveBarAgg(ds);
     if (w.n >= LIVE_MIN) {
