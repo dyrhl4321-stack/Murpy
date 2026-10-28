@@ -39042,7 +39042,9 @@ window.loadHomeTrending = async () => {
       // ★10-21 렉 수정(대표 OK): 그 '전부 읽기'가 켤 때마다 회원 수만큼 나갔다 → 서버가 매시 같은 식으로 계산해 둔
       //   stats/home_trending 1개만 읽는다(functions/hometrending.js). 없거나 2시간 넘게 오래되면 아래에서 예전 방식으로.
       safe(getDoc(doc(db, 'stats', 'home_trending'))),
-      safe(getDocs(query(collection(db, 'checkins'), limit(80))))
+      // ★10-28 속도: '체크인 급상승'은 센터 목록(centersData)과 맞춰야 그려진다(아래 3번) — 목록이 아직 비었으면
+      //   카드가 어차피 안 뜬다. 부팅 땐 이 함수(1.5초 idle)가 센터(2.5초 idle)보다 먼저 돌아 늘 비어 있었고 80개 읽기만 헛돌았다
+      (Array.isArray(window.centersData) && window.centersData.length) ? safe(getDocs(query(collection(db, 'checkins'), limit(80)))) : Promise.resolve(null)
     ]);
     const tr = trSnap && trSnap.exists() ? trSnap.data() : null;
     const trOk = !!(tr && Date.now() - Number(tr.atMs || 0) < 2 * 3600e3);
