@@ -49,7 +49,8 @@ const PROMPT = [
   "This is a screenshot from the Korean meetup app Somoim (소모임) of a fitness club. Read it.",
   "screen: 'list' if it shows meetup cards (정모) with D-day, title, 일시, 위치, 비용, 참석 (n/m); 'attendees' if it is a 참석자 list;",
   "'detail' if it is a single meetup page; otherwise 'other' (then meetings = []).",
-  "meetings: one item per meetup whose title AND date are fully visible (skip cards cut off at the top or bottom).",
+  "meetings: one item for EVERY meetup card whose title text and date text can be read, even if the card is partly cut off, has an empty 비용 line, or has no photo.",
+  "Skip a card ONLY when its title or its date is not on the screen at all. If unsure, read it and return it.",
   "date = YYYY-MM-DD if a year is shown, else MM-DD. time = 24-hour HH:MM (오후 4:00 → 16:00). weekday = the Korean weekday letter printed next to the date (일 월 화 수 목 금 토), or null if none is printed.",
   "place = the 위치 text without '(지도보기)'. cost = the 비용 text as written. capacity and joined from '참석 3명 참석중 (3/10)' → joined 3, capacity 10.",
   "photoBox = tight [ymin, xmin, ymax, xmax] on a 0-1000 scale around that meetup's representative photo thumbnail, or null.",
@@ -57,7 +58,7 @@ const PROMPT = [
   "For an 'attendees' screen return exactly one meeting: title null, date and time from the header like '10/28일 오후 4:00 정모 참석자 (4명)', joined = that count,",
   "attendees = each person's main bold name exactly as written (not the small gray second line, not buttons like 거부).",
   "For 'list' cards attendees = [] (faces only). cost = null when the 비용 line is empty or missing (that is fine, still return the meetup).",
-  "cutTop / cutBottom = how many meetup cards are only partly visible at the top / bottom edge so that their title or date cannot be read (0 if none).",
+  "cutTop / cutBottom = how many meetup cards at the top / bottom edge were skipped because their title or date is not on the screen (0 if none).",
   "Never invent text that is not printed.",
 ].join(" ");
 
@@ -157,6 +158,7 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
   lap("members " + gbdList.length);
   const now = Date.now(), items = [], found = [];   // found = { i, m }
   let tokIn = 0, tokOut = 0;
+  const raws = [];
   for (let i = 0; i < paths.length; i++) {
     const p = paths[i];
     if (!p) { items.push({ ok: false, msg: "올리지 못했어요 · 다시 보내 주세요" }); continue; }
@@ -172,7 +174,7 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
     const o = await ocr(GEMINI.value(), buf);
     lap(`ocr ${i} ${o ? "ok" : "fail"}`);
     if (!o) { items.push({ ok: false, msg: "AI가 지금 응답하지 않아요 · 잠시 뒤 다시 보내 주세요" }); continue; }
-    tokIn += o.tokIn; tokOut += o.tokOut;
+    tokIn += o.tokIn; tokOut += o.tokOut; raws.push(String(o.text || "").slice(0, 6000));   // ★10-28 AI 원본(글만, 사진 아님)을 기록에 — 빠진 정모가 AI 단계인지 서버 단계인지 가르려고
     const r = L.parseCapture(o.text, now);
     if (!r) { items.push({ ok: false, msg: "AI 응답을 읽지 못했어요 · 다시 보내 주세요" }); continue; }
     if (r.screen === "other") { items.push({ ok: false, msg: "정모 목록이나 참석자 화면이 아니에요" }); continue; }
@@ -240,7 +242,10 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
   });
   await db().collection("gbdCaptureLog").add({ by: uid, at: FieldValue.serverTimestamp(), n: paths.length, ok: items.filter((x) => x.ok).length,
     squads: squads.map((q) => q.id), dateCheck: squads.filter((q) => q.dateCheck).map((q) => q.id), unknown: Array.from(unknown).slice(0, 50), tokIn, tokOut, gbdOk,
-    msgs: items.map((x) => x.msg || "").slice(0, 10), ms: Date.now() - t0 }).catch(() => {});
+    msgs: items.map((x) => x.msg || "").slice(0, 10), ms: Date.now() - t0, raws }).catch(() => {});
   console.log(`gbdCapture by=${uid} n=${paths.length} squads=${squads.length} tok=${tokIn}/${tokOut} ms=${Date.now() - t0}`);
   return { items: items.map((x) => ({ ok: x.ok, msg: x.msg, warn: !!x.warn })), squads, unknown: Array.from(unknown), covers, gbdOk };
 });
+
+// 시험용(실제 AI 재현 스크립트가 같은 프롬프트·스키마를 쓴다) — 함수로 배포되지 않는다(index.js 는 gbdCapture 만 가져간다)
+exports._smo = { SCHEMA, PROMPT, MODEL };
