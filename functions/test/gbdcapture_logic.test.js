@@ -64,3 +64,12 @@ test("mergeInto — 새 값만, 비용 바뀌면 숫자도", () => {
   assert.deepEqual(L.mergeInto({ location: "A", capacity: 10, smoCost: "" }, { place: "A", cap: 12, cost: "1만원" }), { capacity: 12, smoCost: "1만원", feeAmount: 10000 });
   assert.deepEqual(L.mergeInto({ location: "A", capacity: 10 }, { place: "", cap: null, cost: "" }), {});
 });
+
+test("요일 — 날짜로 계산 · 찍힌 요일로 해 고르기 · 다르면 dateCheck", () => {
+  assert.equal(L.wdOf(Date.parse("2026-10-28T16:00:00+09:00")), "수");
+  assert.equal(L.startMs("10-31", "15:00", NOW, "토"), Date.parse("2026-10-31T15:00:00+09:00"));      // 2026-10-31 = 토
+  assert.equal(L.startMs("01-03", "09:00", NOW, "일"), Date.parse("2027-01-03T09:00:00+09:00"));      // 2027-01-03 = 일
+  const r = L.parseCapture(JSON.stringify({ screen: "list", meetings: [
+    { title: "a", date: "10-28", time: "16:00", weekday: "수" }, { title: "b", date: "10-28", time: "16:00", weekday: "화" }, { title: "c", date: "10-28", time: "16:00" } ] }), NOW);
+  assert.deepEqual(r.meetings.map((m) => m.dateCheck), [false, true, false]);
+});

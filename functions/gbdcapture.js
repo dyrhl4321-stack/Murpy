@@ -35,6 +35,7 @@ const SCHEMA = {
     screen: { type: "STRING", enum: ["list", "attendees", "detail", "other"] },
     meetings: { type: "ARRAY", items: { type: "OBJECT", properties: {
       title: { type: "STRING", nullable: true }, date: { type: "STRING", nullable: true }, time: { type: "STRING", nullable: true },
+      weekday: { type: "STRING", nullable: true },
       place: { type: "STRING", nullable: true }, cost: { type: "STRING", nullable: true },
       capacity: { type: "INTEGER", nullable: true }, joined: { type: "INTEGER", nullable: true },
       type: { type: "STRING", enum: L.TYPES }, photoBox: { type: "ARRAY", items: { type: "INTEGER" }, nullable: true },
@@ -48,7 +49,7 @@ const PROMPT = [
   "screen: 'list' if it shows meetup cards (정모) with D-day, title, 일시, 위치, 비용, 참석 (n/m); 'attendees' if it is a 참석자 list;",
   "'detail' if it is a single meetup page; otherwise 'other' (then meetings = []).",
   "meetings: one item per meetup whose title AND date are fully visible (skip cards cut off at the top or bottom).",
-  "date = YYYY-MM-DD if a year is shown, else MM-DD. time = 24-hour HH:MM (오후 4:00 → 16:00).",
+  "date = YYYY-MM-DD if a year is shown, else MM-DD. time = 24-hour HH:MM (오후 4:00 → 16:00). weekday = the Korean weekday letter printed next to the date (일 월 화 수 목 금 토), or null if none is printed.",
   "place = the 위치 text without '(지도보기)'. cost = the 비용 text as written. capacity and joined from '참석 3명 참석중 (3/10)' → joined 3, capacity 10.",
   "photoBox = tight [ymin, xmin, ymax, xmax] on a 0-1000 scale around that meetup's representative photo thumbnail, or null.",
   "type = the exercise from the title and place: gym (헬스·피트니스·PT·하체·등), running (러닝·런·마라톤), hyrox (하이록스), hiking (등산·산행), climbing, yoga, dance, golf, tennis. If unsure use gym.",
@@ -171,7 +172,7 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
   const byKey = new Map();
   for (const f of found.filter((x) => x.m.title)) {
     const k = L.titleKey(f.m.title) + "|" + f.m.startMs, cur = byKey.get(k);
-    if (cur) { cur.names = cur.names.concat(f.m.names); cur.m = Object.assign({}, cur.m, ...Object.entries(f.m).filter(([, v]) => v !== null && v !== "").map(([k2, v]) => ({ [k2]: v }))); }
+    if (cur) { const dc = cur.m.dateCheck || f.m.dateCheck; cur.names = cur.names.concat(f.m.names); cur.m = Object.assign({}, cur.m, ...Object.entries(f.m).filter(([, v]) => v !== null && v !== "").map(([k2, v]) => ({ [k2]: v }))); cur.m.dateCheck = dc; }
     else byKey.set(k, { m: Object.assign({}, f.m, { sid: L.smoId(f.m.title, f.m.startMs) }), names: f.m.names.slice(), from: [f.i] });
   }
   const orphan = {};   // 참석자 화면 i → 붙인 결과
@@ -193,7 +194,7 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
     people.filter((p) => !p.uid).forEach((p) => unknown.add(p.name));
     try {
       const r = await upsert(uid, g.m, people);
-      squads.push({ id: r.id, title: g.m.title || "(참석자 추가)", when: whenKo(g.m.startMs), place: g.m.place || "", joined: r.joined, smoJoined: r.smoJoined, cap: r.cap, isNew: r.isNew });
+      squads.push({ id: r.id, title: g.m.title || "(참석자 추가)", when: whenKo(g.m.startMs), place: g.m.place || "", joined: r.joined, smoJoined: r.smoJoined, cap: r.cap, isNew: r.isNew, dateCheck: !!g.m.dateCheck });
       const src = found.find((f) => f.m.title && L.smoId(f.m.title, f.m.startMs) === r.id && f.m.photoBox);
       if (src && !r.hasImg) covers.push({ i: src.i, sid: r.id, box: src.m.photoBox });
     } catch (e) { console.warn("smo upsert", g.m.sid, e && e.message); }
@@ -205,9 +206,11 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
     const mine2 = Array.from(byKey.values()).filter((g) => g.from.includes(i)), nNew = mine2.filter((g) => squads.find((q) => q.id === g.m.sid && q.isNew)).length;
     it.msg = it.screen === "attendees" ? "참석자 " + found.filter((f) => f.i === i).reduce((t, f) => t + f.m.names.length, 0) + "명 · " + (mine2[0] ? whenKo(mine2[0].m.startMs) + " 정모에 넣음" : "")
       : "정모 " + it.n + "개 · " + (nNew === mine2.length ? "새로 올림" : nNew ? "새로 " + nNew + " · 고침 " + (mine2.length - nNew) : "고침");
+
+    if (found.some((f) => f.i === i && f.m.dateCheck)) it.msg += " · 날짜를 확인해 주세요";   // 찍힌 요일 ≠ 계산한 요일
   });
   await db().collection("gbdCaptureLog").add({ by: uid, at: FieldValue.serverTimestamp(), n: paths.length, ok: items.filter((x) => x.ok).length,
-    squads: squads.map((q) => q.id), unknown: Array.from(unknown).slice(0, 50), tokIn, tokOut, gbdOk }).catch(() => {});
+    squads: squads.map((q) => q.id), dateCheck: squads.filter((q) => q.dateCheck).map((q) => q.id), unknown: Array.from(unknown).slice(0, 50), tokIn, tokOut, gbdOk }).catch(() => {});
   console.log(`gbdCapture by=${uid} n=${paths.length} squads=${squads.length} tok=${tokIn}/${tokOut}`);
   return { items: items.map((x) => ({ ok: x.ok, msg: x.msg })), squads, unknown: Array.from(unknown), covers, gbdOk };
 });

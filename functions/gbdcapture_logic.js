@@ -7,7 +7,10 @@ const TYPES = ["gym", "running", "golf", "tennis", "climbing", "hyrox", "hiking"
 const KST = 9 * 3600 * 1000;
 
 // 'YYYY-MM-DD' 또는 'MM-DD' + 'HH:MM' → 한국 시각 ms. 연도가 없으면 오늘에서 가까운 쪽(30일 넘게 지난 날짜면 내년).
-function startMs(date, time, nowMs) {
+//   wd = 캡처에 찍힌 요일 글자('토') — 연도가 없으면 그 요일이 맞는 해를 먼저 고른다. 요일은 늘 날짜로 계산해 보여 준다(AI 글자를 쓰지 않는다).
+const WDS = ["일", "월", "화", "수", "목", "금", "토"];
+const wdOf = (ms) => WDS[new Date(ms + KST).getUTCDay()];
+function startMs(date, time, nowMs, wd) {
   const d = String(date || "").match(/^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/), t = String(time || "").match(/^(\d{1,2}):(\d{2})$/);
   if (!d || !t) return null;
   const mo = +d[2], da = +d[3], hh = +t[1], mi = +t[2];
@@ -17,6 +20,10 @@ function startMs(date, time, nowMs) {
   const y0 = new Date(nowMs + KST).getUTCFullYear();
   let ms = at(y0);
   if (ms < nowMs - 30 * 86400000) ms = at(y0 + 1);
+  if (wd && WDS.includes(wd) && wdOf(ms) !== wd) {   // 찍힌 요일과 맞는 해(1년 안쪽)가 있으면 그쪽
+    const alt = [at(y0 + 1), at(y0), at(y0 - 1)].find((x) => wdOf(x) === wd && x >= nowMs - 200 * 86400000 && x <= nowMs + 330 * 86400000);
+    if (alt) ms = alt;
+  }
   return ms;
 }
 
@@ -41,9 +48,11 @@ function parseCapture(text, nowMs) {
   const box = (b) => Array.isArray(b) && b.length === 4 && b.every((x) => Number.isFinite(x) && x >= 0 && x <= 1000) && b[2] - b[0] > 30 && b[3] - b[1] > 30 ? b.map(Math.round) : null;
   const meetings = (Array.isArray(o.meetings) ? o.meetings : []).slice(0, 12).map((m) => {
     const names = (Array.isArray(m && m.attendees) ? m.attendees : []).map((x) => String(x || "").trim().slice(0, 30)).filter(Boolean);
+    const wd = WDS.includes(m && m.weekday) ? m.weekday : "", st = startMs(m && m.date, m && m.time, nowMs, wd);
     return {
       title: String((m && m.title) || "").trim().slice(0, 40),
-      startMs: startMs(m && m.date, m && m.time, nowMs),
+      startMs: st,
+      dateCheck: !!(st && wd && wdOf(st) !== wd),   // 찍힌 요일과 계산한 요일이 다르다 = 날짜를 잘못 읽었을 수 있다
       place: String((m && m.place) || "").trim().slice(0, 40),
       cost: String((m && m.cost) || "").trim().slice(0, 40),
       cap: Number.isInteger(m && m.capacity) && m.capacity > 0 && m.capacity <= 300 ? m.capacity : null,
@@ -77,4 +86,4 @@ function mergeInto(cur, m) {
   return out;
 }
 
-module.exports = { TYPES, startMs, titleKey, smoId, feeOf, parseCapture, matchNames, mergeInto };
+module.exports = { TYPES, WDS, wdOf, startMs, titleKey, smoId, feeOf, parseCapture, matchNames, mergeInto };
