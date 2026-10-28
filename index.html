@@ -41334,6 +41334,24 @@ window._smoFiles = async function (input) {
   st.done = true; window._smoPaint(st);
   if (st.squads.length) showToast('올렸어요 · 수정은 각 스쿼드에서');
 };
+// ★iOS 공유 확장(1.1.1) — 사진첩·소모임에서 [공유 → 머피] 하면 확장이 이미지를 앱 그룹에 두고 murpy://somoim 으로 앱을 연다.
+//   앱(웹뷰)은 페이지가 뜬 뒤 window.gbdCaptureFromNative([{ name, mime, b64 }]) 를 부른다(최대 10장, b64 = data: 없는 base64).
+//   로그인 복원을 최대 8초 기다리고, 권한(관리자·근방단 크루장·운영진)이 없으면 한 줄 안내만. 나머지는 웹에서 올린 것과 똑같다.
+//   준비되면 window.gbdCaptureReady = true (앱은 이걸 보고 부르면 된다).
+window.gbdCaptureFromNative = async function (list) {
+  const arr = (Array.isArray(list) ? list : []).slice(0, 10).filter(x => x && x.b64);
+  if (!arr.length) return false;
+  for (let i = 0; i < 16 && !(auth.currentUser && !auth.currentUser.isAnonymous); i++) await new Promise(r => setTimeout(r, 500));
+  if (!(await window._smoCan())) { showToast('근방단 운영진만 쓸 수 있어요'); return false; }
+  const files = arr.map((x, i) => {
+    const bin = atob(String(x.b64).replace(/^data:[^,]*,/, '')), u8 = new Uint8Array(bin.length);
+    for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+    return new File([u8], String(x.name || ('somoim_' + (i + 1) + '.jpg')), { type: String(x.mime || 'image/jpeg') });
+  });
+  window._smoFiles({ files });
+  return true;
+};
+window.gbdCaptureReady = true;
 window._smoCrop = function (file, box) {   // box = [ymin,xmin,ymax,xmax] 0~1000
   return new Promise((ok, no) => { const im = new Image(); im.onload = () => {
     const W = im.naturalWidth, H = im.naturalHeight, x = box[1] / 1000 * W, y = box[0] / 1000 * H, w = (box[3] - box[1]) / 1000 * W, h = (box[2] - box[0]) / 1000 * H;
