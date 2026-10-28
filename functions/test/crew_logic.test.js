@@ -413,3 +413,19 @@ test("crewListed — 승인(또는 상태 없음)이고 숨김·시험 아님", 
   assert.equal(L.crewListed({ hidden: true }), false);
   assert.equal(L.crewListed({ test: true }), false);
 });
+
+test("crestClean — 깃발 값 검사", () => {
+  const hex = "000000003f80600040004fe0483068203bfe08320ff30fc30103010601fc0000";
+  assert.deepEqual(L.crestClean({ color: "wine", emblemType: "pattern", emblemKey: "bolt", split: 3 }), { color: "wine", emblemType: "pattern", emblemKey: "bolt", emblemBits: "", split: 3 });
+  assert.equal(L.crestClean({ color: "wine", emblemType: "photo", emblemBits: hex }).emblemBits, hex);
+  assert.equal(L.crestClean({ color: "pink" }), null);                                   // 없는 색
+  assert.equal(L.crestClean({ emblemType: "pattern", emblemKey: "taegeuk" }), null);     // 뺀 문양
+  assert.equal(L.crestClean({ emblemType: "photo", emblemBits: hex.toUpperCase() }), null);
+  assert.equal(L.crestClean({ emblemType: "photo", emblemBits: "0".repeat(64) }), null);  // 빈 도장
+  assert.equal(L.crestClean({ emblemType: "photo", emblemBits: hex + "0" }), null);
+  assert.equal(L.crestClean({ emblemType: "svg" }), null);
+  assert.equal(L.crestClean({ split: 1.5 }), null);
+  assert.equal(L.crestClean({ split: -2 }), null);
+  assert.deepEqual(L.crestClean({ emblemType: "letter", emblemKey: "bolt", emblemBits: hex }), { color: "navy", emblemType: "letter", emblemKey: "", emblemBits: "", split: 0 });   // 안 쓰는 칸은 비운다
+  assert.equal(L.crestClean(null), null);
+});

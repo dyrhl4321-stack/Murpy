@@ -476,6 +476,37 @@ exports.crewSetStaff = onCall({ region: REGION }, async (req) => {
   return { ok: true, staff };
 });
 
+// ── ★10-27 크루 깃발 만들기(대표 지시) — 크루장(또는 관리자)만. 값은 crestClean 으로 다시 검사한다.
+//   reset:true = 관리자 '기본값으로 되돌리기'(부적절한 도장 대비) → crest 를 지워 예전 모습(크루 로고, 없으면 첫 글자)으로.
+//   아지트 변경 기록 한 줄('○○님이 크루 깃발을 바꿨어요')을 hideoutLog 와 hideout/main.last 에 남기고 v 를 1 올린다
+//   (다른 사람 화면이 바로 다시 그리도록). 꾸미기 중인 사람이 덮어쓰지 않게 새 v 를 돌려준다.
+exports.crewSetCrest = onCall({ region: REGION }, async (req) => {
+  const uid = needUser(req), dta = req.data || {};
+  const crewId = String(dta.crewId || "");
+  if (!crewId || crewId.includes("/")) throw new HttpsError("invalid-argument", "args");
+  const crew = await crewOf(crewId), admin = isAdminReq(req);
+  if (!(admin || L.leaderOf(crew) === uid)) throw new HttpsError("permission-denied", "not_leader");
+  const reset = dta.reset === true;
+  if (reset && !admin) throw new HttpsError("permission-denied", "admin_only");
+  const crest = reset ? null : L.crestClean(dta.crest);
+  if (!reset && !crest) throw new HttpsError("invalid-argument", "crest");
+  const d = db(), cRef = d.collection("crewsV2").doc(crewId), hRef = cRef.collection("hideout").doc("main");
+  let nick = "";
+  try { const u = await d.collection("users").doc(uid).get(); nick = String((u.exists && u.data().nickname) || "").slice(0, 24); } catch (e) { /* 이름 없이 */ }
+  const last = { by: uid, nick: reset ? "관리자" : nick, act: "crest", item: "cz_flag", n: 1, at: now() };
+  const v = await d.runTransaction(async (tx) => {
+    const h = await tx.get(hRef);
+    tx.update(cRef, { crest: reset ? FieldValue.delete() : Object.assign({}, crest, { by: uid, at: now() }) });
+    if (!h.exists) return 0;   // 아직 꾸민 적 없는 아지트 = 기록 문서를 새로 만들지 않는다(첫 배치는 앱이 만든다)
+    const nv = (h.data().v || 0) + 1;
+    tx.update(hRef, { v: nv, last, by: uid, at: FieldValue.serverTimestamp() });
+    return nv;
+  });
+  await cRef.collection("hideoutLog").add(Object.assign({}, last, { at: FieldValue.serverTimestamp() })).catch((e) => console.warn("crest log", e && e.message));
+  console.log(`crewSetCrest crew=${crewId} by=${uid} reset=${reset} ${crest ? crest.color + "/" + crest.emblemType : ""}`);
+  return { ok: true, crest, v };
+});
+
 // ── 크루 만들기 · 승인 · 닫기 · 시험 크루(★10-22 대표) ───────────────────────────
 //   누구나 만들면 status:'pending'(만든 사람에게만 보임, 초대 코드 없음 = 가입 불가) → 관리자 crewReview 승인 때
 //   만든 사람이 크루장·첫 크루원이 되고 초대 코드가 생긴다. 닫기 = 크루장 신청(closeReq) → 관리자 승인(status:'closed',

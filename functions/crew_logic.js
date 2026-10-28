@@ -365,7 +365,24 @@ function joinAllowed(join, crew, code) {
   return !!(join && code && join.code === code);
 }
 
+// ★10-27 크루 깃발(crest) — 크루장이 고른 값을 그대로 믿지 않는다. 색 8 · 문양 종류 · 기본 문양 이름 · 도장 64자(16진)·줄 나눔만 통과.
+//   index.html AG_CREST_COLORS · AG_EMBLEMS 와 같은 목록. 맞지 않으면 null(함수가 invalid-argument 로 돌려보낸다).
+const CREST_COLORS = ["navy", "wine", "forest", "slate", "plum", "ochre", "teal", "char"];
+const CREST_PATTERNS = ["dumbbell", "shoe", "bolt", "star", "mountain", "wave", "bike", "kettlebell", "heart", "crown", "flame", "medal"];
+function crestClean(c) {
+  if (!c || typeof c !== "object") return null;
+  const color = String(c.color || "navy"), type = String(c.emblemType || ""), split = Number(c.split || 0);
+  if (!CREST_COLORS.includes(color)) return null;
+  if (!["", "letter", "pattern", "photo"].includes(type)) return null;
+  if (!Number.isInteger(split) || split < -1 || split > 30) return null;
+  const out = { color, emblemType: type, emblemKey: "", emblemBits: "", split };
+  if (type === "pattern") { if (!CREST_PATTERNS.includes(String(c.emblemKey || ""))) return null; out.emblemKey = String(c.emblemKey); }
+  if (type === "photo") { const b = String(c.emblemBits || ""); if (!/^[0-9a-f]{64}$/.test(b) || /^0+$/.test(b)) return null; out.emblemBits = b; }
+  return out;
+}
+
 module.exports = {
+  crestClean, CREST_COLORS, CREST_PATTERNS,
   joinAllowed, crewNameCheck, createAllowed, reviewPatch, crewListed, runGrade, counts, crewWeekSum, challengeUnstep, memberChallengeUnstep, leaderOf, canModerate,
   CFG, kstDay, monthKey, weekKey, parseOcr, storagePathOf, checkCard, isDupRun, runAtMs, checkinDay, matchHealth,
   applyRun, revertRun, applyAttend, addAttend, weekActiveDelta, crewWeekAdd, challengeStep, newMilestones, duelScore, markActive, activeHeadcount, memberChallengeStep, settleChallenge,

@@ -48793,6 +48793,8 @@ window.crewPageHtml = function (data, me) {
         + (lead && !(r && (r.excluded || []).includes(c.id)) ? '<button onclick="window.runExcludeAsk(\'' + _cJ(x.runId) + '\',\'' + _cJ(c.id) + '\')">빼기</button>' : '') + '</div>';
     }).join('') + '</div></div>';
   }
+  // ★10-27 깃발 만들기 입구(크루 설정) — 크루장·관리자만(운영진은 볼 수만). 아지트에 들어가 꾸미기 → 만들기 화면까지 바로 연다
+  if (lead && (window.CREW_CFG.AGIT_OPEN || (me && me.admin) || c.test)) h += '<div class="cw-sec" style="--i:6"><button class="cw-ps-more" onclick="window.crewCrestFrom(\'' + _cJ(c.id) + '\')">아지트 깃발 만들기 <span>›</span></button></div>';
   if (lead && (data.members || []).length > 1) {
     // ★10-27 대표 "운영진 지정이 엄청 오래 걸리고 튕긴다 → 바로 칩으로": 크루원 줄마다 [운영진] 칩, 누르면 그 자리에서 켜짐/꺼짐(서버 응답 안 기다림).
     //   예전엔 스위치 → 서버(처음 깨어나는 데 ~2초) → 크루 화면 통째로 다시 그리기(펼친 목록이 접히고 맨 위로)였다. 실패할 때만 되돌리고 한 줄 안내.
@@ -49961,6 +49963,7 @@ function _agMakerPaint() {
   if (D.tab === 'letter') body = tile(D.emblemType === 'letter', '<b>' + _cE(_agInitial(S.crewBase.name)) + '</b>', '첫 글자', "window.crewCrestPick('letter')");
   else if (D.tab === 'pattern') body = Object.keys(AG_EMBLEMS).map(k => tile(D.emblemType === 'pattern' && D.emblemKey === k, '<img src="' + _agStampUrl(AG_EMBLEMS[k][1]) + '">', AG_EMBLEMS[k][0], "window.crewCrestPick('pattern','" + k + "')")).join('');
   else body = '<button onclick="document.getElementById(\'ag-mk-file\').click()"><i style="background:#121827"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aeb6c8" stroke-width="2" stroke-linecap="square"><path d="M12 5v14M5 12h14"/></svg></i><span>사진 고르기</span></button>'
+    + (S.crewBase.logo ? '<button onclick="window.crewCrestFromLogo()"><i style="background:#121827"><img src="' + _cE(S.crewBase.logo) + '" style="image-rendering:auto;object-fit:contain"></i><span>지금 로고로</span></button>' : '')   // 크루 로고를 같은 변환기로 도장(근손실방지단 GBD 로고 옮기기)
     + (_agHexOk(D.emblemBits) ? tile(D.emblemType === 'photo', '<img src="' + _agStampUrl(D.emblemBits) + '">', '내 도장', "window.crewCrestPick('photo')") : '')
     + '<input type="file" id="ag-mk-file" accept="image/*" hidden onchange="window.crewCrestPhoto(this)">';
   const SI = _agSplitInfo(S.crewBase.name), sk = D.split || 0, mode = sk === -1 ? 'one' : sk > 0 ? 'manual' : 'auto';
@@ -49972,8 +49975,22 @@ function _agMakerPaint() {
     + '<div class="row">' + body + '</div>'
     + (D.tab === 'photo' && D.img ? '<div class="mk-lv"><span>밝기</span><input type="range" min="30" max="225" value="' + D.level + '" oninput="window.crewCrestLevel(this.value)"></div>' : '')
     + (modes.length > 1 ? '<div class="mk-r" style="padding-top:8px"><span class="mk-lb">배너 줄</span><div class="mk-sp">' + modes.map(m => '<button class="mw-redit-chip' + (mode === m[0] ? ' on' : '') + '" onclick="window.crewCrestSplitMode(\'' + m[0] + '\')">' + m[1] + '</button>').join('') + '</div></div>' + cutRow : '');
+  if (typeof isAdmin === 'function' && isAdmin() && S.crewBase.crest) mk.insertAdjacentHTML('beforeend', '<div class="mk-r" style="justify-content:flex-end;padding-top:2px"><button class="ag-btn" style="height:26px;font-size:10px" onclick="window.crewCrestReset()">기본값으로 되돌리기 (관리자)</button></div>');
   _agPaintRoom(); _agCam(true);
 }
+window.crewCrestReset = async function () {   // 관리자 — 부적절한 도장 대비. crest 를 지워 예전 모습(크루 로고, 없으면 첫 글자)으로
+  const S = window._agit; if (!S || !S.crestDraft) return;
+  if (window.murpyConfirm && !(await window.murpyConfirm({ title: '깃발을 기본값으로 되돌릴까요?', desc: '크루장이 만든 깃발이 지워져요', confirmText: '되돌리기', danger: true }))) return;
+  try { const r = await _crewCall('crewSetCrest', { crewId: S.id, reset: true }); const b = Object.assign({}, S.crewBase); delete b.crest; S.crewBase = b; S.crew = b;
+        if (r.v) { S.ver = r.v; if (S.editing) S.editing.v = r.v; } S.lastLog = { text: _agLogText({ act: 'crest', nick: '관리자' }) }; _agMakerEnd(); showToast('기본값으로 되돌렸어요'); }
+  catch (e) { showToast('되돌리지 못했어요'); }
+};
+window.crewCrestFrom = async function (id) {   // 크루 화면 '아지트 깃발 만들기' → 아지트 → 꾸미기 → 만들기
+  await window.crewAgitOpen(id);
+  const S = window._agit; if (!S || S.id !== id) return;
+  if (!S.canEdit) { showToast('깃발은 크루장만 바꿀 수 있어요'); return; }
+  window.crewAgitEdit(); window.crewCrestOpen();
+};
 window.crewCrestTab = function (t) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.tab = t; _agMakerPaint(); };
 window.crewCrestColor = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.color = k; _agMakerPaint(); };
 window.crewCrestSplit = function (k) { const S = window._agit; if (!S || !S.crestDraft) return; S.crestDraft.split = k; _agMakerPaint(); };
@@ -49993,6 +50010,13 @@ window.crewCrestPhoto = function (input) {
   im.onload = () => { D.img = im; D.emblemBits = _agPhotoHex(im, D.level); D.emblemType = 'photo'; _agMakerPaint(); };
   im.onerror = () => showToast('이 사진은 열 수 없어요');
   im.src = url;
+};
+window.crewCrestFromLogo = function () {
+  const S = window._agit, D = S && S.crestDraft, src = S && S.crewBase.logo; if (!D || !src) return;
+  const im = new Image(); im.crossOrigin = 'anonymous';   // Storage 로고는 CORS 가 열려 있어야 그림을 읽을 수 있다
+  im.onload = () => { try { D.img = im; D.emblemBits = _agPhotoHex(im, D.level); D.emblemType = 'photo'; _agMakerPaint(); } catch (e) { showToast('이 로고는 바로 바꿀 수 없어요 · 사진으로 골라 주세요'); } };
+  im.onerror = () => showToast('로고를 불러오지 못했어요');
+  im.src = src;
 };
 window.crewCrestLevel = function (v) {
   const S = window._agit, D = S && S.crestDraft; if (!D || !D.img) return;
@@ -50015,8 +50039,9 @@ window.crewCrestSave = async function () {
   if (crest.emblemType === 'photo' && !_agHexOk(crest.emblemBits)) { showToast('사진을 먼저 골라 주세요'); return; }
   S.crestSaving = true;
   try {
-    await _crewCall('crewSetCrest', { crewId: S.id, crest });
-    S.crew = Object.assign({}, S.crewBase, { crest }); S.lastLog = { text: '<b>' + _cE(S.nick || '크루장') + '</b>님이 크루 깃발을 바꿨어요' };
+    const r = await _crewCall('crewSetCrest', { crewId: S.id, crest });
+    S.crew = Object.assign({}, S.crewBase, { crest: r.crest || crest }); S.lastLog = { text: _agLogText({ act: 'crest', nick: S.nick }) };
+    if (r.v) { S.ver = r.v; if (S.editing) S.editing.v = r.v; }   // 깃발 저장이 아지트 v 를 1 올렸다 — 이어서 가구를 저장해도 '다른 운영진이 먼저 바꿨어요'로 튕기지 않게
     window._crewMineCache = null; _agMakerEnd(); showToast('깃발을 바꿨어요');
   } catch (e) { showToast('저장하지 못했어요 · 다시 눌러 주세요'); }
   S.crestSaving = false;
@@ -50590,6 +50615,7 @@ function _agDiff(a, b) {
 // 한 줄 문장(받침 따라 을/를). 여러 가지면 첫 것 + 외 n개.
 function _agLogText(L) {
   if (!L || !L.act) return '';
+  if (L.act === 'crest') return '<b>' + _cE(L.nick || '크루장') + '</b>님이 크루 깃발을 바꿨어요';   // 깃발 만들기(서버 crewSetCrest 가 남긴다)
   const nm = _agName(L.item), last = nm.charCodeAt(nm.length - 1), jong = last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 !== 0;
   const obj = nm + (L.n > 1 ? ' 외 ' + (L.n - 1) + '개를' : (jong ? '을' : '를'));
   const verb = { place: '놓았어요', move: '옮겼어요', remove: '뺐어요', mixed: '바꿨어요' }[L.act] || '바꿨어요';
