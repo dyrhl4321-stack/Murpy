@@ -24470,6 +24470,7 @@ window.ensureCreditsInit = async (uid) => {
     const ref = doc(db, 'users', uid);
     const snap = await getDoc(ref);
     const d = snap.exists() ? snap.data() : {};
+    window._myCrewIdsN = { uid: uid, n: Array.isArray(d.crewIds) ? d.crewIds.length : 0 };   // ★10-29 스쿼드 탭 처음 그릴 때 내 크루 칸 기본 높이(crewRenderMine)
     if (typeof d.credits !== 'number') {
       // 몸통은 가입 성별에서 정해진다 ('여성'→human_f, 그 외→human).
       const _newChar = { ...window.CHAR_DEFAULT, body: window._charBodyForGender(d.gender) };
@@ -41159,8 +41160,15 @@ window.renderSquadPage = async function (opts) {
   // ★10-29 '요즘 뜨는 스쿼드' 칸 높이를 먼저 잡는다(목록 읽은 뒤 2 → 182 로 아래가 밀렸다). 빈 검은 칸 대신 카드 자리 뼈대(다른 칸 뼈대와 같은 색)
   const _hero = document.getElementById('squad-hero');
   if (_hero && !_hero.firstChild && window._secHold) {
-    const hh = window._secHold(_hero, 'hero');
-    if (hh > 40) _hero.innerHTML = '<div data-sec-sk="1" style="height:' + hh + 'px;box-sizing:border-box;padding:34px 16px 10px"><div style="height:100%;border-radius:16px;background:#121827"></div></div>';
+    let hh = window._secHold(_hero, 'hero');
+    // 기록이 없으면(이 기기 처음) 폭으로 계산: 제목 줄 + 2:1 카드(폭 82.9%) — 실측 390폭 182 · 320폭 151(바깥 높이)
+    if (!hh && _hero.clientWidth > 100) { hh = Math.round(_hero.clientWidth * 0.4429 + 25); _hero.style.minHeight = hh + 'px'; }
+    // 뼈대 = 제목 줄(아이콘·'요즘 뜨는 스쿼드' 자리) + 가운데 카드. 위치·크기는 실제 칸과 같다
+    const SK = 'position:absolute;background:#121827;';
+    if (hh > 40) _hero.innerHTML = '<div data-sec-sk="1" style="position:relative;height:' + hh + 'px">'
+      + '<i style="' + SK + 'left:4px;top:1px;width:14px;height:14px;border-radius:4px"></i>'
+      + '<i style="' + SK + 'left:25px;top:2px;width:89px;height:12px;border-radius:6px"></i>'
+      + '<i style="' + SK + 'left:8.57%;top:32px;width:82.86%;aspect-ratio:2/1;border-radius:16px"></i></div>';
   }
   try { window.crewRenderMine(); } catch (e) { console.warn('crew row', e); }   // 10-19 내 크루 줄(기다리지 않는다)
   try { window.crewHotRender(); } catch (e) { console.warn('crew hot', e); }    // 10-19 지금 뜨는 크루
@@ -48808,7 +48816,10 @@ async function _crewHotPaint(el, hk) {
   //   ★10-29 처음 들어갈 때(칸이 빔) 지난번 이 칸이 아예 없었으면(뜨는 크루가 전부 내 크루) 뼈대를 안 그린다 — 뼈대 119 → 0 으로 아래가 밀렸다
   const k = window._crewHotCache, wasEmpty = !el.firstChild;
   if (wasEmpty) window._secHold(el, hk);
-  if (!(k && Date.now() - k.at < 300000) && !(wasEmpty && window._secLast(hk) === 0)) el.innerHTML = _crewHotHead + '<div class="cw-hrs"><div class="cw-hr" style="cursor:default"><span class="cw-hr-th cw-sk"></span>'
+  //   기록이 없을 때(이 기기 처음): 내 크루가 있으면(로그인 때 읽은 crewIds) 칸이 숨는 게 가장 흔한 모양이라 뼈대를 안 그린다
+  const ci = window._myCrewIdsN, last = window._secLast(hk);
+  const likelyHidden = last === 0 || (last === null && ci && ci.uid === (window.currentUser || {}).uid && ci.n > 0);
+  if (!(k && Date.now() - k.at < 300000) && !(wasEmpty && likelyHidden)) el.innerHTML = _crewHotHead + '<div class="cw-hrs"><div class="cw-hr" style="cursor:default"><span class="cw-hr-th cw-sk"></span>'
     + '<span class="cw-hr-t"><i class="cw-sk" style="display:block;width:46%;height:14px"></i><i class="cw-sk" style="display:block;width:64%;height:10px;margin-top:8px"></i></span></div></div>';
   let list = [], err = false; try { list = await window.crewHotList(); } catch (e) { err = true; console.warn('crew hot', e); }
   if (err) { el.innerHTML = _crewHotHead + '<p class="cw-quiet" style="margin:0 0 22px">크루를 불러오지 못했어요 <button class="cw-pbtn" style="flex:none;padding:5px 10px;margin-left:8px" onclick="window.crewHotRender()">다시</button></p>'; return; }
@@ -49173,7 +49184,10 @@ window.crewRenderMine = async function () {
     const nk = 'murpy_crewMineN_' + ((window.currentUser || {}).uid || '');
     if (!guest && !el.firstChild) {
       let n = null; try { const v = localStorage.getItem(nk); if (v !== null) n = parseInt(v, 10) || 0; } catch (e) {}
-      window._secHold(el, 'mine_' + (window.currentUser || {}).uid);   // ★10-29 뼈대(113)보다 큰 카드(챌린지 띠 147)도 안 밀리게
+      const ci = window._myCrewIdsN;   // ★10-29 이 기기 기록이 없으면 로그인 때 읽은 내 문서의 crewIds 수
+      if (n === null && ci && ci.uid === (window.currentUser || {}).uid) n = ci.n;
+      // ★10-29 뼈대(113)보다 큰 카드(챌린지 띠 147)도 안 밀리게 지난번 높이를 잡는다. 기록이 없고 크루가 있으면 가장 흔한 모양(카드 1장·띠 포함 = 169)
+      if (!window._secHold(el, 'mine_' + (window.currentUser || {}).uid) && n > 0 && window._secLast('mine_' + (window.currentUser || {}).uid) === null) el.style.minHeight = '169px';
       if (n !== 0) el.innerHTML = _crewMineSk(n || 1);
     }
     const mine = guest ? [] : await window.crewMine();
