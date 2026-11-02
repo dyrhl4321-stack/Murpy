@@ -7,6 +7,7 @@ const { getDatabase } = require("firebase-admin/database");
 const { onValueCreated } = require("firebase-functions/v2/database");
 
 initializeApp();
+const PT = require("./pushtokens.js");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 알림 문구
@@ -227,8 +228,8 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
   const n = event.data && event.data.data();
   if (!n || !n.toUid) return;
 
-  const userSnap = await getFirestore().doc("users/" + n.toUid).get();
-  const rawTokens = (userSnap.exists && userSnap.data().fcmTokens) || [];
+  // ★11-02 토큰은 users/{uid}/private/push 로 옮겼다(공개 문서에서 빼기). 옮기는 동안 옛 칸 fcmTokens 도 같이 본다 — pushtokens.js
+  const { tokens: rawTokens } = await PT.readTokens(n.toUid);
   if (!rawTokens.length) return;
 
   // ★★같은 기기의 토큰이 여러 개면 **그 폰만 여러 번 울린다** (대표 9-02: "푸시가 두 개씩").
@@ -306,12 +307,7 @@ exports.sendNotifPush = onDocumentCreated("notifications/{id}", async (event) =>
       }
     }
   });
-  if (invalid.length) {
-    const { FieldValue } = require("firebase-admin/firestore");
-    await getFirestore().doc("users/" + n.toUid).update({
-      fcmTokens: FieldValue.arrayRemove(...invalid),
-    });
-  }
+  if (invalid.length) await PT.removeTokens(n.toUid, invalid);   // 두 곳 다 지우고, 남은 게 없으면 pushOn 끔
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -554,6 +550,16 @@ async function _mergeGuestInto(guestUid, realUid) {
   await db.collection("users").doc(guestUid).set({ mergedInto: realUid, mergedAt: FieldValue.serverTimestamp() }, { merge: true });
   return moved;
 }
+
+// ★11-02 users 공개 문서에서 비공개 자리로 한 번 옮기기(관리자만) — 푸시 토큰(fcmTokens → private/push)·범프 진단(bumpDiag → private/bumpDiag).
+//   옛 칸은 지우지 않고 빈 배열로. 여러 번 눌러도 같다(두 번째부터 0명). 배포 순서: 함수 → 웹 → 이것 한 번(pushtokens.js).
+exports.privateMoveOnce = onCall({ region: "asia-northeast3" }, async (req) => {
+  if (!_isAdminReq(req)) throw new HttpsError("permission-denied", "admin");
+  const push = await PT.migrateAll();
+  const bumpDiag = await PT.migrateBumpDiag();
+  console.log(`privateMoveOnce push scanned=${push.scanned} moved=${push.moved} tokens=${push.tokens} · bumpDiag scanned=${bumpDiag.scanned} moved=${bumpDiag.moved}`);
+  return { push, bumpDiag };
+});
 
 exports.guestMerge = onCall({ region: "asia-northeast3" }, async (req) => {
   const uid = req.auth && req.auth.uid;

@@ -44,16 +44,8 @@ async function notifyOnce(id, payload) {
 }
 
 // 푸시 토큰이 있는 사람만. 130명 규모라 전부 읽어도 싸다 — 늘면 여기만 바꾼다.
-async function pushableUsers() {
-  const qs = await db().collection("users").where("fcmTokens", "!=", []).get();
-  const out = [];
-  qs.forEach((d) => {
-    const u = d.data() || {};
-    if (u.deleted || !Array.isArray(u.fcmTokens) || !u.fcmTokens.length) return;
-    out.push({ uid: d.id, ...u });
-  });
-  return out;
-}
+// ★11-02 토큰은 users/{uid}/private/push 로 옮겼다 — 공개 문서의 pushOn 표시 + 옛 칸(옮기는 동안) 둘 다 본다(pushtokens.js)
+const pushableUsers = () => require("./pushtokens.js").pushableUsers();
 const nickOf = (u) => (u && u.nickname) || "머피";
 
 // ── 1) 범퍼가 운동 인증을 올렸다 ───────────────────────────────────────────

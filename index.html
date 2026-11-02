@@ -17223,9 +17223,10 @@ window.deleteMyAccount = async function () {
       nickname: '탈퇴한 사용자', photoURL: '', photos: [], workoutPhotos: [],
       bio: '', birth: null, age: null, gender: '', district: '',
       sports: [], purpose: '', workoutTime: [],
-      fcmTokens: [], faceVerified: false, credits: 0
+      fcmTokens: [], pushOn: false, faceVerified: false, credits: 0
     }, { merge: true });
   } catch (e) { console.error('프로필 삭제 실패', e); }
+  try { await deleteDoc(doc(db, 'users', uid, 'private', 'push')); } catch (e) { console.warn('푸시 토큰 삭제(무시)', e); }   // ★11-02 비공개 토큰 자리
 
   // ①-2 10-19 러닝 기록·카드 이미지 삭제 + 크루 나가기(서버). 개인정보 지우기(①) 뒤에 — 오래 걸려도 ①은 이미 끝났다. 실패해도 탈퇴는 계속한다.
   try { await httpsCallable(getFunctions(app, 'asia-northeast3'), 'runPurgeMine')({}); } catch (e) { console.warn('runPurgeMine', e); }
@@ -17282,7 +17283,13 @@ document.addEventListener('murpy-logout', async () => {
   try {
     const _prev = JSON.parse(localStorage.getItem('mw_fcm_prev') || 'null');
     if (_prev && _prev.token && _prev.uid) {
+      // ★11-02 새 자리(private/push)와 옛 칸 둘 다에서 빼고, 이 계정에 남은 토큰이 없으면 pushOn 을 끈다(다른 기기가 남아 있으면 그대로)
+      const _pRef = doc(db, 'users', _prev.uid, 'private', 'push');
+      await setDoc(_pRef, { tokens: arrayRemove(_prev.token) }, { merge: true });
       await updateDoc(doc(db, 'users', _prev.uid), { fcmTokens: arrayRemove(_prev.token) });
+      const [_ps, _us] = await Promise.all([getDoc(_pRef), getDoc(doc(db, 'users', _prev.uid))]);
+      const _left = (((_ps.exists() && _ps.data().tokens) || []).length) + (((_us.exists() && _us.data().fcmTokens) || []).length);
+      if (!_left) await updateDoc(doc(db, 'users', _prev.uid), { pushOn: false });
     }
     localStorage.removeItem('mw_fcm_prev');
   } catch (e) { console.warn('로그아웃 푸시토큰 정리(무시)', e); }
@@ -26272,11 +26279,15 @@ const _pushSaveToken = async (uid, token) => {
     //   그건 **로그아웃할 때**(murpy-logout) 아직 그 계정으로 로그인돼 있는 동안 지운다.
     if (prev && prev.token && prev.uid === uid && prev.token !== token) {
       try {
-        await updateDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(prev.token) });
+        await setDoc(doc(db, 'users', uid, 'private', 'push'), { tokens: arrayRemove(prev.token) }, { merge: true });
+        await updateDoc(doc(db, 'users', uid), { fcmTokens: arrayRemove(prev.token) });   // 옮기기 전 옛 칸에 남은 것
       } catch (e) { console.warn('옛 푸시토큰 정리 실패(무시)', e); }
     }
   } catch (e) {}
-  await setDoc(doc(db, 'users', uid), { fcmTokens: arrayUnion(token) }, { merge: true });
+  // ★11-02 토큰은 본인·서버만 읽는 users/{uid}/private/push 에 둔다 — users 문서는 손님도 전원 읽는다(남의 푸시 토큰이 공개됐었다).
+  //   공개 문서에는 '알림 켬' 표시(pushOn)만. 이 기기 토큰이 옛 칸 fcmTokens 에 있었으면 거기선 뺀다(서버는 옮기는 동안 두 곳을 다 본다)
+  await setDoc(doc(db, 'users', uid, 'private', 'push'), { tokens: arrayUnion(token), updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, 'users', uid), { pushOn: true, fcmTokens: arrayRemove(token) }, { merge: true });
   try { localStorage.setItem('mw_fcm_prev', JSON.stringify({ uid, token })); } catch (e) {}
 };
 window.initPush = async (uid, ask) => {
@@ -28221,7 +28232,8 @@ window.mwRoomCall = async function (btn, uid, nick) {
     let canPush = true;
     try {
       const u = await getDoc(doc(db, 'users', uid));
-      canPush = !!(((u.data() || {}).fcmTokens) || []).length;
+      const _ud = u.data() || {};
+      canPush = _ud.pushOn === true || !!((_ud.fcmTokens || []).length);   // ★11-02 토큰은 비공개 자리로 — 공개 표시 pushOn(옮기기 전 사람은 옛 칸)
     } catch (e) {}
     showToast(canPush ? ((nick || '머피') + '님을 불렀어요')
                       : ((nick || '머피') + '님을 불렀어요 · 알림을 안 켜둬서 앱에서만 보여요'));
@@ -47197,10 +47209,12 @@ async function bpDbgSave(outcome) {
       dts: (bpDbg.dts || []).slice(0, 8),
       ua: (navigator.userAgent || '').slice(0, 80)
     });
-    const snap = await getDoc(doc(db, 'users', u.uid));
-    const prev = (snap.exists() && snap.data().bumpDiag) || [];
     // ★8-29: 20건 → 5건. 진단용인데 users 문서 무게 1위(전체 94KB)였다 — 홈·매칭이 전원 문서를 읽는다
-    await setDoc(doc(db, 'users', u.uid), { bumpDiag: [rec].concat(prev).slice(0, 5) }, { merge: true });
+    // ★11-02 users 문서에서 빼서 본인·서버만 읽는 users/{uid}/private/bumpDiag 로(전원 읽기 −13%). 읽는 화면은 없다(콘솔·서버로 본다)
+    const ref = doc(db, 'users', u.uid, 'private', 'bumpDiag');
+    const snap = await getDoc(ref);
+    const prev = (snap.exists() && snap.data().recs) || [];
+    await setDoc(ref, { recs: [rec].concat(prev).slice(0, 5), at: serverTimestamp() }, { merge: true });
   } catch (e) {}
 }
 function bpOnMotion(e) {
