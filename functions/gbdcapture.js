@@ -173,10 +173,10 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
     if (!buf) { items.push({ ok: false, msg: why }); continue; }
     const o = await ocr(GEMINI.value(), buf);
     lap(`ocr ${i} ${o ? "ok" : "fail"}`);
-    if (!o) { items.push({ ok: false, msg: "AI가 지금 응답하지 않아요 · 잠시 뒤 다시 보내 주세요" }); continue; }
+    if (!o) { items.push({ ok: false, msg: "지금 읽지 못했어요 · 잠시 뒤 다시 보내 주세요" }); continue; }
     tokIn += o.tokIn; tokOut += o.tokOut; raws.push(String(o.text || "").slice(0, 6000));   // ★10-28 AI 원본(글만, 사진 아님)을 기록에 — 빠진 정모가 AI 단계인지 서버 단계인지 가르려고
     const r = L.parseCapture(o.text, now);
-    if (!r) { items.push({ ok: false, msg: "AI 응답을 읽지 못했어요 · 다시 보내 주세요" }); continue; }
+    if (!r) { items.push({ ok: false, msg: "캡처를 읽지 못했어요 · 다시 보내 주세요" }); continue; }
     if (r.screen === "other") { items.push({ ok: false, msg: "정모 목록이나 참석자 화면이 아니에요" }); continue; }
     // ★10-28 대표: 정모 3개 중 1개가 조용히 빠졌다 → 못 올린 정모는 장마다 이유를 한 줄로(잘린 카드 · 날짜 못 읽음 · 저장 실패)
     const notes = [];
