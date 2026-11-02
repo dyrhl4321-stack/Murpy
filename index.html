@@ -27072,7 +27072,18 @@ window.fillUserVerified = async function(userId) {
 
 async function fetchUserPhotos(posts) {
   const uniqueIds = [...new Set(posts.map(p => p.userId).filter(Boolean))];
-  await Promise.all(uniqueIds.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
+  // ★11-02 속도: 글쓴이마다 getDoc 을 따로 보내던 것 → _usersByIds 한 번('in' 30명씩, 전원·낱개 캐시 먼저)으로.
+  //   받은 문서는 _userDocCache 에 남아 프로필·크루 화면이 다시 안 읽는다. 실패하면 예전처럼 한 명씩
+  const need = uniqueIds.filter(uid => !userPhotoCache.has(uid));
+  if (!need.length) return;
+  if (window._usersByIds) {
+    try {
+      const got = await window._usersByIds(need);
+      need.forEach(uid => userPhotoCache.set(uid, got[uid] ? (got[uid].photoURL || '') : ''));
+      return;
+    } catch (e) { console.warn('feed photos batch', e && e.message); }
+  }
+  await Promise.all(need.filter(uid => !userPhotoCache.has(uid)).map(async uid => {
     try {
       const us = await getDoc(doc(db, 'users', uid));
       userPhotoCache.set(uid, us.exists() ? (us.data().photoURL || '') : '');
