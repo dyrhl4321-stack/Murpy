@@ -2605,10 +2605,10 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
   </div>
   <div class="mw-worldbar">
     <span class="mw-logowrap" id="mw-logowrap"><img fetchpriority="low" src="char/ui/ui_logo.png?v=2" alt="MURPY WORLD"></span>
-    <span class="mw-coincap" title="머피">
+    <span class="mw-coincap" title="머피" role="button" style="cursor:pointer" onclick="window.openMurpyCharge()"><!-- ★11-02 '+' 대신 코인 칸을 누르면 '머피 모으기'(운동으로 버는 법) -->
       <img fetchpriority="low" src="char/coin.png?v=2" alt="머피">
       <b id="mw-coin-amt">0</b>
-      <button class="mw-plus" onclick="window.openMurpyCharge()" aria-label="충전">+</button>
+      <button class="mw-plus" onclick="window.openMurpyCharge()" aria-label="충전" style="display:none" data-charge-entry>+</button><!-- ★11-02 대표: 결제 없음 → 숨김. 다시 켜려면 data-charge-entry 를 보이게 -->
     </span>
   </div>
   <div class="mw-wb-tabs">
@@ -3870,7 +3870,7 @@ window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, 
     <!-- ★"지금은 베타라 무제한으로 써볼 수 있어요"를 뺐다(대표 8-12).
          CREDITS_MODE 가 'enforced' 라 실제로 차감된 지 오래인데 문구만 남아 거짓말이 됐다.
          대신 **어디에 얼마가 드는지**를 적는다 — 그게 사람이 알고 싶은 것이다. -->
-    <div style="font-size:14px;color:#999;line-height:1.7;margin-bottom:20px">하루 한 번 운동을 인증하면 <b style="color:#F5C24B">5머피</b>가 쌓여요.<br>체크인·범프·스쿼드 출석으로도 쌓여요.<br>머피로 <b style="color:#fff">매칭 신청</b>과 <b style="color:#fff">대숲 글쓰기</b>를 할 수 있어요.</div>
+    <div style="font-size:14px;color:#999;line-height:1.7;margin-bottom:20px">하루 한 번 운동을 인증하면 <b style="color:#F5C24B">5머피</b>가 쌓여요.<br>체크인·범프·스쿼드 출석으로도 쌓여요.<br>머피로 <b style="color:#fff">꾸미기</b>와 <b style="color:#fff">얼굴 커마권</b>을 살 수 있어요.</div>
     <div style="display:flex;gap:8px">
       <button onclick="closeModal('credit-info-modal');if(typeof closePanel==='function')closePanel('mypage-panel');goPage('match')" style="flex:1;background:#3D7EFF;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">매칭 보러가기</button>
       <button onclick="closeModal('credit-info-modal');if(typeof closePanel==='function')closePanel('mypage-panel');goPage('bamboo')" style="flex:1;background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:14px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">대숲 가기</button>
@@ -4234,7 +4234,7 @@ window._charRegisterFaceBodiesFrom = function (snap) {
 // ===== 커마권 =====
 // ★가격은 여기 한 곳에서만 온다. 정식 전환(19,900원 실결제)때 이 상수만 바꾼다.
 //   ※firestore.rules 에도 같은 숫자가 박혀 있다(규칙은 JS 를 못 읽는다) — 같이 고칠 것.
-window.FACE_TICKET_PRICE = 1000;
+window.FACE_TICKET_PRICE = 200;   // ★11-02 1,000 → 200 (대표). firestore.rules 의 '- 200' 과 같이 움직인다
 // 구매 계산(순수). 트랜잭션 안에서 이 결과대로 쓴다 — 계산과 쓰기를 섞으면 검증을 못 한다.
 // ★머피와 커마권을 **한 쓰기로** 묶는 게 핵심이다. 규칙이 그 짝을 강제하므로
 //   "머피는 안 내고 커마권만 +1" 이 원천 차단된다(8-31 머피 무한증액 사고와 같은 급의 자산).
@@ -4282,7 +4282,7 @@ window._faceCharDocFrom = function (form) {
 window._faceEntryState = function (tickets, hasChar, faceVerified, hasPhoto, pending) {
   if (pending) return { mode: 'pending', label: '얼굴 커스터마이징', desc: '만드는 중' };
   if (!(tickets > 0)) return { mode: 'buy', label: '얼굴 커스터마이징',
-    desc: '1,000머피' };
+    desc: window.FACE_TICKET_PRICE.toLocaleString() + '머피' };
   if (!hasPhoto) return { mode: 'photo', label: '얼굴 커스터마이징',
     desc: '사진 먼저' };
   if (!faceVerified) return { mode: 'verify', label: '얼굴 커스터마이징',
@@ -4305,8 +4305,8 @@ window.faceEntryTap = async function () {
     return;
   }
   if (st.mode === 'buy') {
-    const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', cost: true, confirmText: '1,000머피로 만들기',
-      desc: '내 얼굴로 머피 캐릭터를 만들어요<br><b style="color:#F5C24B">1,000머피</b><br><span style="color:#8a93a8">AI 가 만드는 거라 결과가 아쉬울 수 있어요</span>' });
+    const ok = await window.murpyConfirm({ title: '얼굴 커스터마이징', cost: true, confirmText: window.FACE_TICKET_PRICE.toLocaleString() + '머피로 만들기',
+      desc: '내 얼굴로 머피 캐릭터를 만들어요<br><b style="color:#F5C24B">' + window.FACE_TICKET_PRICE.toLocaleString() + '머피</b><br><span style="color:#8a93a8">AI 가 만드는 거라 결과가 아쉬울 수 있어요</span>' });
     if (!ok) return;
     if (await window.faceBuyTicket({ noConfirm: true }) && window.charRenderRoster) window.charRenderRoster();
     return;
@@ -10619,7 +10619,7 @@ window.mwPortal = function () {
   <div class="modal-sheet mw-dialog" style="text-align:center">
     <div style="display:flex;justify-content:center;margin-bottom:14px"><img loading="lazy" src="char/coin.png?v=2" alt="머피" style="width:44px;height:44px;image-rendering:pixelated"></div>
     <div style="font-family:'Galmuri14',sans-serif;font-size:16px;color:#fff;margin-bottom:8px">머피 모으기</div>
-    <div style="font-size:12px;color:#8a93a8;line-height:1.7;margin-bottom:14px">머피는 <b style="color:#F5C24B">운동 인증</b>으로 쌓여요.<br>매일 <b style="color:#cfd6e6">오늘의 연결 3회</b>는 무료예요.</div>
+    <div style="font-size:12px;color:#8a93a8;line-height:1.7;margin-bottom:14px">머피는 <b style="color:#F5C24B">운동 인증</b>으로 쌓여요.</div>
     <!-- 지금 파는 건 없다 — 가격은 결제를 붙이는 날 결제 수단과 같이 붙인다. -->
     <div style="font-size:11.5px;color:#8a93a8;line-height:1.7;margin-bottom:14px">운동 인증 · 체크인 · 범프로 모여요<br>머피월드 꾸미기·펫·그림에도 쓸 수 있어요</div>
     <button class="mw-btn mw-btn-ghost" style="width:100%" onclick="closeModal('murpy-charge-modal')">닫기</button>
@@ -12838,10 +12838,10 @@ function renderMatch() {
             </div>` : ''}
           <div style="font-size:16px;color:#fff;font-weight:800;letter-spacing:-.3px;margin-bottom:7px">${_fromDino
             ? '공룡은 바로 이 자리에 앉아요'
-            : '오늘의 5명을 소개해 드릴게요'}</div>
+            : '같이 운동할 메이트를 소개해 드릴게요'}</div>
           <div style="font-size:12.5px;color:rgba(255,255,255,0.42);line-height:1.65;margin-bottom:22px">${_fromDino
-            ? '가입하고 오늘의 추천을 다 보면 여기서 만나요'
-            : '가입하면 매일 아침 새로 골라드려요'}</div>
+            ? '가입하고 메이트를 다 보면 여기서 만나요'
+            : '가입하면 바로 만나 볼 수 있어요'}</div>
           <button onclick="${_cta.go}"
             style="width:100%;cursor:pointer;font-family:inherit;border:none;border-radius:15px;padding:15px;
                    background:#3D7EFF;color:#fff;font-size:15px;font-weight:800;letter-spacing:-.3px">${_cta.t}</button>`;
@@ -12856,12 +12856,14 @@ function renderMatch() {
       //   붙였거나 관리자 무제한이 켜졌을 때 옛 숫자가 남아 공룡이 잘못 뜬다(대표 8-12).
       if (window.matchMoreLeft) { try { window.matchMoreLeft(); } catch (e) {} }
       const _more = (window._matchMoreLeft || 0) > 0;
+      // ★11-02 무제한: '더 볼 사람이 남은 화면'이 없어졌다 → 공룡(이스터에그)은 목록을 끝까지 다 본 화면에 앉힌다(대표: 정말 더 볼 사람이 없을 때만)
+      const _dino = _more || list.length > 0;
       const _coin = window.murpyTokenSVG ? window.murpyTokenSVG(21) : '';
       // 그림도 상황에 맞춘다 — 더 볼 사람이 남았으면 아쉬울 일이 아니다
-      const _faceSrc = _more ? (window._MATCH_FACE_MORE || 'char/ui/murpy_sad.png?v=3') : 'char/ui/murpy_sad.png?v=3';
-      const _faceW = _more ? (window._MATCH_FACE_W || 72) : 72;
+      const _faceSrc = _dino ? (window._MATCH_FACE_MORE || 'char/ui/murpy_sad.png?v=3') : 'char/ui/murpy_sad.png?v=3';
+      const _faceW = _dino ? (window._MATCH_FACE_W || 72) : 72;
       // 공룡일 때만 두드릴 수 있다(이스터에그). 실망한 머피는 그냥 그림이다.
-      const _faceTap = _more ? 'onclick="window.matchDinoTap&&window.matchDinoTap(this)"' : '';
+      const _faceTap = _dino ? 'onclick="window.matchDinoTap&&window.matchDinoTap(this)"' : '';
       // ★★두 줄 카드의 뼈대는 **한 곳에서 만들어 둘 다 그대로 쓴다**(대표 8-12).
       //   따로 적어두니 gap 하나만 어긋나도 글씨 시작점이 틀어져서 세 번을 다시 고쳤다.
       //   배치 원칙: 내용은 **카드 가운데에 덩어리로** 놓는다. 글씨 칸을 flex:1 로 늘리면
@@ -12887,23 +12889,23 @@ function renderMatch() {
       const _endCss = 'flex-shrink:0;width:50px;margin-left:auto;display:flex;align-items:center;justify-content:flex-end';
       empty.innerHTML = `
         <!-- ★파일 자체가 72x112 다. 크게 두고 CSS 로 줄이면 브라우저가 도트를 절반 버린다 -->
-        <div style="display:flex;justify-content:center;align-items:flex-end;height:${_more ? '76px' : '118px'};margin-bottom:13px">
+        <div style="display:flex;justify-content:center;align-items:flex-end;height:${_dino ? '76px' : '118px'};margin-bottom:13px">
           <!-- ★공룡은 **누를 수 있다**(대표 8-12 이스터에그). 10번 두드리면 방 아이템으로 온다.
                커서·힌트는 일부러 안 준다 — 우연히 만져본 사람만 발견하는 게 전부다. -->
           <img src="${_faceSrc}" alt="" draggable="false" ${_faceTap}
-               style="width:${_faceW}px;height:auto;display:block;image-rendering:pixelated;${_more ? 'touch-action:manipulation;-webkit-user-select:none;user-select:none' : ''}">
+               style="width:${_faceW}px;height:auto;display:block;image-rendering:pixelated;${_dino ? 'touch-action:manipulation;-webkit-user-select:none;user-select:none' : ''}">
         </div>
         <!-- ★제목도 캐릭터와 **같은 조건**으로 갈린다(대표 8-12 지적).
              '오늘 소개할 분을 다 봤어요'는 끝났다는 말이라 실망한 머피 자리다.
              더 볼 사람이 남아 있으면(=공룡) 끝났다고 말하면 안 된다. -->
         <div style="font-size:16px;color:#fff;font-weight:800;letter-spacing:-.3px;margin-bottom:7px">${
-          list.length ? '오늘의 ' + list.length + '명을 다 봤어요'
-                      : (_more ? '오늘의 추천을 다 봤어요' : '오늘 소개할 분을 다 봤어요')}</div>
+          list.length ? '지금 소개할 분을 다 봤어요'
+                      : (_more ? '지금 소개할 분을 다 봤어요' : '아직 소개할 분이 없어요')}</div>
         <!-- ★기대하는 캐릭터와 짝이 맞는 말이어야 한다(대표 8-12) — '더 볼 수 있어요'는
              기능 설명이고, 사람이 궁금해지는 말은 **누가 기다리고 있다**는 쪽이다. -->
         <div style="font-size:12.5px;color:rgba(255,255,255,0.42);line-height:1.65;margin-bottom:${_more ? '18px' : '22px'}">${_more
             ? '새로운 머피들이 기다리고 있어요'
-            : '내일 아침 새로 골라드릴게요'}</div>
+            : '새 메이트가 생기면 여기서 바로 보여 드릴게요'}</div>
         <!-- ★선택지는 **같은 모양의 줄 카드** 두 장(대표 8-12).
              ①아이콘 뒤 틴트 배경은 뺐다 — 아이콘만 두는 게 깔끔하다(대표 지적)
              ②왼쪽 아이콘 = 그 줄의 정체. 매칭은 **하트**, 스쿼드는 **번개**
@@ -12955,9 +12957,7 @@ function renderMatch() {
   // ★_MATCH_DAILY 를 여기서 쓰면 안 된다 — 그건 아래 module 블록(8477~)의 const 라
   //   이 블록(5179~8475)에서는 보이지 않는다. 그래서 플래그를 window 로 받는다.
   const _sub = document.getElementById('match-sub');
-  if (_sub) _sub.textContent = window._matchUnlimited
-    ? '같이 운동할 메이트를 찾아요'          // 관리자·테스터는 제한이 없다
-    : '오늘의 ' + list.length + '명';
+  if (_sub) _sub.textContent = '같이 운동할 메이트를 찾아요';   // ★11-02 하루 5명 제한 없앰 — 숫자를 적지 않는다(회원 수가 드러난다)
 
   // 좌우로 넘겨보기 (#8) — 소비가 아니라 이동이라 되돌아올 수 있다.
   // ★'N / M' 위치 표시는 뺐다(대표 8-09) — 전체 회원 수가 그대로 드러나고 인증뱃지와 겹쳤다.
@@ -12975,6 +12975,7 @@ function renderMatch() {
     else { mImg.removeAttribute('src'); mImg.style.display = 'none'; }
   }
   card.style.background = _psrc ? '' : '#181b23';
+  window._matchMarkSeen && window._matchMarkSeen(p.uid);   // ★11-02 순서 섞기용 '최근 본 사람'
   document.getElementById('match-name').textContent = p.nickname || '익명';
   document.getElementById('match-age').textContent = p.age || '';
 
@@ -13010,15 +13011,14 @@ function renderMatch() {
   // 이번달 인증 (이름 옆 메달 — 숫자는 메달 안, 비동기)
   const monthBadge = document.getElementById('match-month-badge');
   if (monthBadge) monthBadge.style.display = 'none';
-  const heroUid = p.uid;
-  if (window.fetchMonthCount) window.fetchMonthCount(heroUid).then(n => {
-    const cur = (window._matchList || [])[window._matchIdx || 0];
-    const el = document.getElementById('match-month-badge');
-    if (!cur || cur.uid !== heroUid || n <= 0 || !el) return;
+  // ★11-02 속도 창 (a): 예전엔 카드마다 그 사람 피드 글 전부를 읽어 셌다(카드 1장 = 38문서, 무제한이 되면 넘긴 만큼 늘어난다).
+  //   이제 이미 받아 둔 users 문서의 monthly[이번 달].feed(인증 글 올릴 때 mwBumpMonthly('feed') 가 +1)를 쓴다 — 추가 읽기 0.
+  {
+    const _n = new Date(), _mk = _n.getFullYear() + '-' + String(_n.getMonth() + 1).padStart(2, '0');
+    const n = Number(((p.monthly && p.monthly[_mk]) || {}).feed || 0) || 0;
     const numEl = document.getElementById('match-month-num');
-    if (numEl) numEl.textContent = n;
-    el.style.display = 'inline-flex';
-  });
+    if (n > 0 && monthBadge) { if (numEl) numEl.textContent = n; monthBadge.style.display = 'inline-flex'; }
+  }
 
   // 인증 스트릭 (활동검증 — 살아있고 2일+ 일 때만 노출). 스코프 의존 없이 자체 계산.
   const streakBadge = document.getElementById('match-streak-badge');
@@ -13037,26 +13037,66 @@ function renderMatch() {
     }
   }
 
-  // 더 많은 추천 (다음 후보 썸네일) — 이번 세션 좋아요 보낸 사람 제외
-  const likedSet = window._matchLiked || null;
-  const rest = list.slice(idx + 1).filter(u => !likedSet || !likedSet.has(u.uid)).slice(0, 10);
-  if (moreWrap && rest.length) {
-    moreWrap.style.display = 'block';
-    document.getElementById('match-more').innerHTML = rest.map(u => {
-      const uimg = _mImg(u.photoURL || (u.photos && u.photos[0]) || '', 200);
-      return `<div onclick="openUserProfile('${u.uid}','${_mEsc(u.nickname || '익명')}','${_mEsc(u.photoURL || '')}')" style="flex:0 0 auto;width:84px;cursor:pointer">
-        <div style="width:84px;height:84px;border-radius:14px;overflow:hidden;background:#111;box-shadow:0 4px 14px rgba(0,0,0,0.4)">${uimg ? `<img src="${uimg}" loading="lazy" style="width:100%;height:100%;object-fit:cover">` : ''}</div>
-        <div style="font-size:12px;font-weight:600;color:#fff;margin-top:7px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_mEsc(u.nickname || '익명')}</div>
-        <div style="font-size:10px;color:rgba(255,255,255,0.35);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_mEsc(u.district || '')}</div>
-      </div>`;
-    }).join('');
-  } else if (moreWrap) {
-    moreWrap.style.display = 'none';
-  }
+  // ★11-02 슬라이드 아래 묶음 줄(자주 활동·내 근처·같은 운동·같은 센터·새로 온 사람·전체) — 예전 '더 많은 추천' 한 줄 자리
+  if (moreWrap) _matchRailsPaint(moreWrap);
 
   _applyMatchGuestLock(isGuest);
   _matchLikeBtnSync(p);
 }
+
+// 묶음 줄 — 줄마다 사진 카드 가로 넘김(최대 12장) + 끝에 '더 보기'(그 묶음 세로 목록). 카드를 누르면 위 슬라이드가 그 사람으로 넘어간다(상세·매칭 신청 재사용).
+function _matchRailCard(u, w) {
+  const img = _mImg(u.photoURL || (u.photos && u.photos[0]) || '', 360), h = w ? Math.round(w * 1.25) : 0;
+  const sub = [u.age ? u.age + '' : '', u.district || ''].filter(Boolean).join(' · ');
+  return '<button class="mr-card" onclick="window.matchJumpTo(\'' + _mEsc(u.uid) + '\')" style="width:' + (w ? w + 'px' : '100%') + '">'
+    + '<span class="mr-ph" style="' + (h ? 'height:' + h + 'px' : 'aspect-ratio:4/5') + '">' + (img ? '<img src="' + img + '" loading="lazy" alt="">' : '') + '</span>'
+    + '<b>' + _mEsc(u.nickname || '익명') + '</b><span class="mr-sub">' + _mEsc(sub) + '</span></button>';
+}
+function _matchRailsPaint(wrap) {
+  const rails = window._matchRails || [];
+  if (!rails.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  if (!document.getElementById('mr-css')) {
+    const st = document.createElement('style'); st.id = 'mr-css';
+    st.textContent = '.mr-rail{margin-top:26px}.mr-rail:first-child{margin-top:0}'
+      + '.mr-hd{display:flex;align-items:baseline;justify-content:space-between;margin:0 2px 11px}'
+      + '.mr-hd b{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}'
+      + '.mr-hd button{background:none;border:none;padding:4px 0 4px 10px;color:rgba(255,255,255,.45);font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer}'
+      + '.mr-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}.mr-row::-webkit-scrollbar{display:none}'
+      + '.mr-card{flex:0 0 auto;display:block;background:none;border:none;padding:0;text-align:left;cursor:pointer;font-family:inherit;color:#fff}'
+      + '.mr-ph{display:block;border-radius:14px;overflow:hidden;background:#181b23}.mr-ph img{width:100%;height:100%;object-fit:cover;display:block}'
+      + '.mr-card b{display:block;font-size:13px;font-weight:700;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+      + '.mr-sub{display:block;font-size:11px;color:rgba(255,255,255,.42);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+      + '.mr-end{flex:0 0 auto;width:92px;display:flex;align-items:center;justify-content:center;background:none;border:1px solid rgba(255,255,255,.1);border-radius:14px;color:rgba(255,255,255,.6);font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer}'
+      + '#match-group{position:fixed;inset:0;z-index:960;background:#05070c;max-width:390px;margin:0 auto;display:flex;flex-direction:column}'
+      + '#match-group .mg-hd{display:flex;align-items:center;gap:10px;padding:16px 18px 10px}#match-group .mg-hd button{background:none;border:none;color:rgba(255,255,255,.6);font-size:19px;cursor:pointer;padding:2px 6px}'
+      + '#match-group .mg-hd b{font-size:17px;font-weight:800;color:#fff}'
+      + '#match-group .mg-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:16px 12px;padding:4px 18px max(var(--safe-b), calc(20px + env(safe-area-inset-bottom)))}'
+      + '#match-group .mr-card{width:auto}';
+    document.head.appendChild(st);
+  }
+  wrap.innerHTML = rails.map(r => '<div class="mr-rail"><div class="mr-hd"><b>' + _mEsc(r.title) + '</b>'
+    + '<button onclick="window.matchRailMore(\'' + r.key + '\')">더 보기</button></div>'
+    + '<div class="mr-row">' + r.list.slice(0, 12).map(u => _matchRailCard(u, 128)).join('')
+    + '<button class="mr-end" onclick="window.matchRailMore(\'' + r.key + '\')">더 보기</button></div></div>').join('');
+}
+// 카드 누르기 → 위 슬라이드를 그 사람으로(같은 화면·같은 매칭 신청 버튼) 넘기고 맨 위로
+window.matchJumpTo = function (uid) {
+  const g = document.getElementById('match-group'); if (g) g.remove();
+  const list = window._matchList || [], i = list.findIndex(c => c.uid === uid);
+  if (i < 0) { const q = (window._matchPool || []).find(c => c.uid === uid); if (q && window.openUserProfile) window.openUserProfile(q.uid, q.nickname || '', q.photoURL || ''); return; }
+  window._matchIdx = i; renderMatch();
+  const pg = document.getElementById('page-match'); try { (pg && pg.scrollTo ? pg : window).scrollTo({ top: 0, behavior: 'smooth' }); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
+};
+// '더 보기' → 그 묶음만 세로 목록(두 줄 사진 카드)
+window.matchRailMore = function (key) {
+  const r = (window._matchRails || []).find(x => x.key === key); if (!r) return;
+  let el = document.getElementById('match-group'); if (el) el.remove();
+  el = document.createElement('div'); el.id = 'match-group';
+  el.innerHTML = '<div class="mg-hd"><button onclick="document.getElementById(\'match-group\').remove()">←</button><b>' + _mEsc(r.title) + '</b></div>'
+    + '<div class="mg-grid">' + r.list.slice(0, 200).map(u => _matchRailCard(u, 0)).join('') + '</div>';
+  document.body.appendChild(el);
+};
 
 // ★매칭 카드의 큰 버튼도 **관계 상태**를 따라간다(대표 8-12 점검).
 //   예전엔 글자가 '같이 운동해요'로 박혀 있어서, 피드에서 이미 보낸 사람이 매칭 카드에 뜨면
@@ -18212,11 +18252,13 @@ window.BETA_GIFT_ON = true;         // 창립 멤버 기간 선물(모든 플랫
 // ★★8-29 물가 재설정 (경제 v2 §5-3): 매칭 10 → **100** · 더보기 20 → **40** · 저에요 3 → **10**.
 //   매칭이 압도적으로 비싸야 "이게 이 앱의 진짜 가치"로 읽힌다. 500머피 = 5명 연결 = 9,900원.
 //   대신 **오늘의 연결 무료 하루 MATCH_FREE_DAY 회**가 따로 있다(아래) — PG 전엔 운동으로만 벌기 때문.
-const CREDIT_DAILY = 5, COST_MATCH = 100, COST_BAMBOO = 1, COST_BAMBOO_REQ = 10;
+// ★11-02 대표: 사람 만나는 기능(매칭 신청·대숲 글·'저에요')은 머피를 받지 않는다. 머피는 꾸미기·얼굴 커마권에만.
+//   COST_MATCH 는 남겨 두지만 쓰이지 않는다(하루 10회 모두 차감 없음 — MATCH_FREE_DAY = MATCH_DAY_CAP). 결제 생기면 여기서 다시 켠다.
+const CREDIT_DAILY = 5, COST_MATCH = 100, COST_BAMBOO = 0, COST_BAMBOO_REQ = 0;
 // ★오늘의 연결 — 앱이 골라준 사람에게 거는 신청은 하루 N회 무료(글램 '무료 매칭' 관행). 그 뒤는 정가.
 //   MATCH_DAY_CAP 은 무료+유료 합산 하루 상한 — 수익이 아니라 **수락률 방어**(도배 신청이 늘면 받는 쪽이 떠난다).
 //   단계 전환 (유저 수 기준, 계측 붙은 뒤 판단): ~1,000명 3회 → 1회 → 이틀 1회.
-const MATCH_FREE_DAY = 3, MATCH_DAY_CAP = 10;
+const MATCH_DAY_CAP = 10, MATCH_FREE_DAY = MATCH_DAY_CAP;   // ★11-02 하루 10회(스팸 방지 상한) 전부 차감 없음
 window._matchFreeDay = MATCH_FREE_DAY;
 window.COST_MATCH_V = COST_MATCH;
 // ★8-29 경매 대금 정산을 **서버(Functions settleArtSold)** 가 한다. 예전엔 산 사람 폰이 자기 잔액을 빼고
@@ -23457,7 +23499,7 @@ window._AXIS_KO = {
 // 조건표로 설명이 안 되는 것(이스터에그)은 여기에 직접 적는다.
 window._ITEM_WHY = {
   s2608_dino:
-    '매칭에서 <b>오늘의 추천을 다 본 화면</b>에 공룡이 앉아 있어요.<br>'
+    '매칭에서 <b>소개할 분을 끝까지 다 본 화면</b>에 공룡이 앉아 있어요.<br>'
     + '그 공룡을 <b>10번 두드리면</b> 내 방으로 옵니다.<br>'
     + '<span style="color:#8a93a8">조건표에 없는 이스터에그예요 — 운동 횟수로는 열리지 않아요.</span>'
 };
@@ -24970,9 +25012,8 @@ window.matchRefund = async (uid, r) => {
 window.matchCostDesc = async (uid) => {
   const q = await window.matchQuota(uid);
   if (q.used >= q.cap) return '오늘은 여기까지예요 · 하루 ' + q.cap + '명까지 보낼 수 있어요';
-  if (q.unknown) return '연결이 불안정해요 · 무료가 남아 있으면 무료로 나가요';   // 8-31 읽기 실패인데 "무료 다 썼다"고 거짓말하던 것
-  if (q.free > 0) return '<b style="color:#F5C24B">오늘 무료 ' + q.free + '회 남음</b> · 무료로 보내요';
-  return '<b style="color:#F5C24B">' + COST_MATCH + '머피</b>를 사용해요 · 오늘 무료 ' + MATCH_FREE_DAY + '회는 다 썼어요';
+  if (q.unknown) return '';   // 읽기 실패 — 보내 보면 상한만 서버 트랜잭션이 다시 본다
+  return '오늘 ' + q.free + '번 더 보낼 수 있어요';   // ★11-02 가격 없음 — 남은 횟수만
 };
 window.spendCredit = async (uid, cost) => {
   if (!window.creditsEnforcedFor(uid)) return true;
@@ -25573,14 +25614,14 @@ window.sendLike = async (toUid, toName, toPhoto, skipConfirm, free) => {
     const lt = await window.minjunLetterPrompt(toName); if (lt === null) return; _letter = lt || '';
   }
   if (!free && !skipConfirm && window.creditsEnforcedFor && window.creditsEnforcedFor(me)) {
-    if (!(await window.murpyConfirm({ title: _letter ? '민준이 편지와 함께 보내기' : '같이 운동해요 보내기', desc: await window.matchCostDesc(me), cost: true, confirmText: '보내기' }))) return;
+    if (!(await window.murpyConfirm({ title: _letter ? '민준이 편지와 함께 보내기' : '같이 운동해요 보내기', desc: await window.matchCostDesc(me), confirmText: '보내기' }))) return;
   }
   // free = 수락(상대가 이미 보냈다). 비용은 먼저 신청한 쪽이 냈으므로 받는 쪽은 안 낸다.
   // ★8-29: 하루 MATCH_FREE_DAY 회 무료 → 그 뒤 COST_MATCH. 무료 카운터와 잔액을 한 트랜잭션에서.
   let _spent = null;
   if (!free) { const r = await window.matchSpend(me); if (!r.ok) { showToast(window.creditSpendFailMessage()); return; } _spent = r;
     window.track && window.track('match_request', { free: r.free ? 1 : 0, cost: r.cost | 0 });
-    if (r.free && typeof r.left === 'number') showToast(r.left > 0 ? '무료로 보냈어요 · 오늘 ' + r.left + '회 남음' : '오늘 무료 신청을 다 썼어요 · 다음부턴 ' + COST_MATCH + '머피'); }
+    if (r.free && typeof r.left === 'number') showToast(r.left > 0 ? '보냈어요 · 오늘 ' + r.left + '번 더 보낼 수 있어요' : '보냈어요 · 오늘은 여기까지예요'); }   // ★11-02 가격 없음
   try {
     try { await setDoc(doc(db, 'likes', me + '_' + toUid), Object.assign({ from: me, to: toUid, createdAt: serverTimestamp() }, _letter ? { letter: _letter, via: 'minjun' } : {})); }
     catch (e) {   // 8-31 여기서 실패하면 방금 차감한 무료 횟수/머피를 돌려준다
@@ -25670,8 +25711,8 @@ window.fetchMonthCount = async function (uid) {
   } catch (e) { return 0; }
 };
 
-// ===== 오늘의 추천 (대표 8-09 확정) =====
-// 하루 5명만 보여주고, 다 보면 내일 새로 고른다(머피 내고 더 보기는 두지 않는다).
+// ===== 매칭 목록 (8-09 '하루 5명' → ★11-02 무제한) =====
+//   _MATCH_DAILY 는 더 이상 쓰지 않는다(조건 맞는 사람 전부). 지우지 않고 남긴 건 예전 기록 대조용.
 const _MATCH_DAILY = 5;
 
 // ★하루의 경계를 자정이 아니라 **새벽 5시**로 잡는다.
@@ -25711,7 +25752,7 @@ function _matchRecentScore(d) {
 window.matchMoreLeft = function () {
   // 관리자·테스터는 제한이 없다. ★그냥 return 하면 _matchMoreLeft 에 옛 값이 남아
   //   덱 소진 화면이 "N명 남아 있어요 + 공룡"을 계속 띄운다 → 반드시 0으로 지운다.
-  if (window._matchUnlimited) { window._matchMoreLeft = 0; return 0; }
+  if (window._matchUnlimited) { window._matchMoreLeft = 0; return 0; }   // ★11-02 모두 무제한 — 늘 여기서 끝난다
   const pool = window._matchPool || [];
   const have = new Set((window._matchList || []).map(c => c.uid));
   const n = pool.filter(c => !have.has(c.uid)).length;
@@ -25865,54 +25906,23 @@ window.loadMatchCandidates = async function () {
       Object.keys(h).forEach(dk => { if (dk !== _dayKey && (Number(_dayKey) - Number(dk)) < 7) (h[dk] || []).forEach(u => _seenRecently.add(u)); });
     } catch (e) {}
     const _h32 = str => { let x = 2166136261; for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 16777619) >>> 0; } return x; };
-    arr.forEach(c => { c._rnd = _h32(_dayKey + '|' + (me || '') + '|' + c.uid); if (_seenRecently.has(c.uid)) c._score -= 10; });
-    arr.sort((a, b) => (b._score - a._score) || (a._rnd - b._rnd));
+    // ★11-02 대표 "항상 같은 사람만 뜬다" — 재현: 대표 조건으로 점수 3점인 8명이 날마다 맨 위 다섯 자리를 나눠 가졌다
+    //   (점수가 같을 때만 섞어서, 점수 '단계'가 바뀌지 않는 한 위쪽 얼굴이 그대로). → 점수에 날짜·나로 정한 0~3점 흔들기를 더한다:
+    //   같은 헬스장(+4)은 대체로 위에 남지만 동네(+2)·활동(+0~3) 차이는 날마다 섞인다. 최근 7일에 본 사람은 −10(맨 뒤 쪽).
+    arr.forEach(c => { c._rnd = _h32(_dayKey + '|' + (me || '') + '|' + c.uid); c._key = c._score + 3 * (c._rnd / 4294967296); if (_seenRecently.has(c.uid)) c._key -= 10;
+      if (!(c.photoURL || (c.photos && c.photos[0]))) c._key -= 20; });   // 사진 없는 사람은 맨 뒤 쪽(첫 장이 검은 카드가 되지 않게)
+    arr.sort((a, b) => (b._key - a._key) || (a._rnd - b._rnd));
 
-    // ===== 오늘의 추천 5명 (대표 8-09 확정) =====
-    // 전체를 다 뿌리면 (1) 회원 수가 그대로 드러나고 (2) 매일 다시 올 이유가 없다.
-    // 하루치 덱은 **날짜별로 한 번만 뽑아 저장**한다 — 새로고침마다 사람이 바뀌면
-    // "아까 그 사람 어디 갔지"가 된다. 소비된 사람(좋아요·매칭·패스)은 위에서 이미 빠졌으므로
-    // 저장된 덱을 다시 맞춰보면 자연히 줄어든다.
-    window._matchUnlimited = !!seeAll;   // renderMatch(다른 script 블록)가 머리말에 쓴다
-    if (seeAll) {
-      window._matchList = arr;
-      window._matchPoolLeft = 0;         // 관리자·테스터는 제한 없음
-    } else {
-      const key = 'murpy_deck_' + (me || 'guest') + '_' + _matchDayKey();
-      let deck = [];
-      try { deck = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) { deck = []; }
-      const byUid = {}; arr.forEach(c => { byUid[c.uid] = c; });
-      let picked;
-      if (deck.length) {
-        picked = deck.map(u => byUid[u]).filter(Boolean);
-      } else {
-        picked = arr.slice(0, _MATCH_DAILY);
-        deck = picked.map(c => c.uid);
-        try {
-          localStorage.setItem(key, JSON.stringify(deck));
-          // 오늘 덱을 이력에 남긴다(최근 7일만) — 위 '최근에 본 사람 뒤로 밀기'가 읽는다
-          try {
-            const hk = 'murpy_deck_hist_' + (me || 'guest');
-            const h = JSON.parse(localStorage.getItem(hk) || '{}'); h[_dayKey] = deck;
-            Object.keys(h).forEach(dk => { if (Number(_dayKey) - Number(dk) >= 7) delete h[dk]; });
-            localStorage.setItem(hk, JSON.stringify(h));
-          } catch (e) {}
-          // 지난 날짜 덱은 지운다(브라우저 저장소가 무한히 쌓이지 않게)
-          Object.keys(localStorage).forEach(k => {
-            if (k.indexOf('murpy_deck_') === 0 && k !== key) localStorage.removeItem(k);
-          });
-        } catch (e) {}
-      }
-      const inDeck = new Set(deck);
-      window._matchList = picked;
-      try { localStorage.setItem('mwq_match_' + (window._creditToday ? _creditToday() : ''), '1'); } catch (e) {}   // 공원 퀘스트(9-04): 덱 구경 완료
-      // 오늘 덱에 안 들어간 사람이 남아 있나 = "내일 새로 골라드릴게요"가 참인가
-      window._matchPoolLeft = arr.filter(c => !inDeck.has(c.uid)).length;
-      // ★남은 후보를 **버리지 않고 들고 있는다**(8-12). '머피로 더 보기'가 여기서 꺼내 쓴다.
-      //   예전엔 5명만 남기고 나머지를 그대로 흘려보내서, 더 보려면 전체를 다시 읽어야 했다.
-      window._matchPool = arr;
-      window._matchDeckKey = key;
-    }
+    // ===== 매칭 무제한 (대표 11-02: "너무 비어 보여서 하루 5명 제한하지 말고 그냥 무제한으로") =====
+    //   예전(8-09): 하루 5명 덱을 날짜별로 저장하고 남은 사람은 '머피로 더 보기'로 열었다. 이제 조건 맞는 사람을 전부 넘겨 본다.
+    //   '다 봤어요' 화면은 정말 더 볼 사람이 없을 때만 뜬다(_matchMoreLeft 는 늘 0 — 살 것이 없다).
+    //   날마다 바뀌는 건 위 순서(점수 + 날짜·나 섞기 + 최근 본 사람 뒤로)가 맡는다. 본 사람 기록은 카드가 뜰 때 _matchMarkSeen 이 남긴다.
+    window._matchUnlimited = true;
+    window._matchRails = _matchBuildRails(arr, myProf, myGyms, myDistrict);
+    window._matchList = arr;
+    window._matchPoolLeft = 0;
+    window._matchPool = arr;
+    if (!seeAll) { try { localStorage.setItem('mwq_match_' + (window._creditToday ? _creditToday() : ''), '1'); } catch (e) {} }   // 공원 퀘스트(9-04): 매칭 구경
     window.matchMoreLeft && window.matchMoreLeft();   // _matchMoreLeft 갱신(덱 소진 화면이 쓴다)
     window._matchIdx = 0;
     window._matchLoadFailed = false;
@@ -25926,6 +25936,51 @@ window.loadMatchCandidates = async function () {
     window._matchLoading = false;
     if (typeof window.renderMatch === 'function') window.renderMatch();
   }
+};
+// ★11-02 대표 "슬라이드는 그대로, 아래로 내리면 소개팅 앱처럼 콘텐츠가 더" — 슬라이드 아래 묶음 줄.
+//   arr = 이미 거른(차단·나·이미 매칭·넘김·임시 계정 제외) + 오늘 순서로 섞인 전원. 묶음마다 3명 미만이면 숨긴다.
+//   자주 활동 = 최근 7일 접속일 + 이번 달 인증 수 · 내 근처 = 같은 동네(좌표가 없어 동네 이름 기준) · 같은 운동 = 종목 겹침 수
+//   같은 센터 = 등록 헬스장 겹침 · 새로 온 사람 = 가입일(없으면 첫 접속일) 최근 순 · 전체 = 위 순서 그대로.
+//   위쪽 줄들의 앞자리에 같은 얼굴이 연달아 나오지 않게, 앞 줄 첫 4명에 든 사람은 다음 줄에서 뒤로 민다.
+function _matchBuildRails(arr, myProf, myGyms, myDistrict) {
+  const mk = (() => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0'); })();
+  const days7 = []; for (let i = 0; i < 7; i++) { const dt = new Date(); dt.setDate(dt.getDate() - i); days7.push(_creditDateStr(dt)); }
+  const vis7 = d => days7.filter(k => d.visits && d.visits[k]).length;
+  const feedM = d => { const m = (d.monthly && d.monthly[mk]) || {}; return Number(m.feed || 0) || 0; };
+  const mySports = new Set(myProf.sports || []);
+  const joinedAt = d => (d.createdAt && (d.createdAt.seconds ? d.createdAt.seconds * 1000 : Date.parse(d.createdAt))) || Date.parse((d.activity && d.activity.first) || '') || 0;
+  const gymsOf = d => [...(d.gyms || []), d.gym].filter(Boolean);
+  const defs = [
+    { key: 'active', title: '자주 활동하는 사람', pick: c => vis7(c) * 2 + Math.min(feedM(c), 20), min: 1 },
+    { key: 'near', title: '내 근처', pick: c => (myDistrict && c.district === myDistrict ? 1 : 0), min: 1 },
+    { key: 'sport', title: '나와 같은 운동', pick: c => (c.sports || []).filter(x => mySports.has(x)).length, min: 1 },
+    { key: 'center', title: '같은 센터', pick: c => gymsOf(c).filter(g => myGyms.has(g)).length, min: 1 },
+    { key: 'new', title: '새로 온 사람', pick: c => joinedAt(c), min: Date.now() - 60 * 86400000 },
+  ];
+  const out = [], front = new Set(), withPhoto = arr.filter(c => c.photoURL || (c.photos && c.photos[0]));   // 묶음 줄은 사진 카드라 사진 있는 사람만
+  const rank = new Map(withPhoto.map((c, i) => [c.uid, i]));   // 같은 값이면 오늘 순서(섞인 순서)
+  if (arr[0]) front.add(arr[0].uid);   // 슬라이드 첫 사람은 바로 아래 줄 앞자리에도 나오지 않게
+  defs.concat([{ key: 'all', title: '전체', pick: () => 1, min: 1 }]).forEach(df => {
+    let L = withPhoto.filter(c => df.pick(c) >= df.min);
+    if (df.key !== 'all') L.sort((a, b) => (df.pick(b) - df.pick(a)) || (rank.get(a.uid) - rank.get(b.uid)));
+    if (L.length < 3) return;
+    L = L.filter(c => !front.has(c.uid)).concat(L.filter(c => front.has(c.uid)));   // 위 줄들의 첫 4명은 이 줄에서 뒤로
+    L.slice(0, 4).forEach(c => front.add(c.uid));
+    out.push({ key: df.key, title: df.title, list: L });
+  });
+  return out;
+}
+// 카드가 화면에 뜬 사람 = 오늘 본 사람(최근 7일) — 내일부터 위 순서에서 뒤로 민다(같은 얼굴이 맨 위에 붙지 않게). 하루 300명까지.
+window._matchMarkSeen = function (uid) {
+  if (!uid) return;
+  try {
+    const me = (window.currentUser && window.currentUser.uid) || 'guest', hk = 'murpy_deck_hist_' + me, dk = _matchDayKey();
+    const h = JSON.parse(localStorage.getItem(hk) || '{}'), a = h[dk] || [];
+    if (a.indexOf(uid) >= 0) return;
+    a.push(uid); h[dk] = a.slice(-300);
+    Object.keys(h).forEach(k => { if (Number(dk) - Number(k) >= 7) delete h[k]; });
+    localStorage.setItem(hk, JSON.stringify(h));
+  } catch (e) {}
 };
 // 실패 화면의 '다시 시도'. 목록을 비워야 renderMatch 가 로딩(스켈레톤)부터 다시 탄다.
 window.matchRetryLoad = function () {
@@ -33321,7 +33376,7 @@ window.postBambooFirestore = async (text, title) => {
   if (!user) { showToast('로그인 후 글을 쓸 수 있어요'); return false; }
   // ★글쓰기 비용 확인창 (대표 지시 2026-08-07). 매칭 신청은 확인창이 있는데 대숲만 없어서
   //   머피가 조용히 빠져나갔다. **사진 업로드보다 먼저** 물어야 취소했을 때 헛업로드가 없다.
-  if (window.creditsEnforcedFor && window.creditsEnforcedFor(user.uid)) {
+  if (COST_BAMBOO > 0 && window.creditsEnforcedFor && window.creditsEnforcedFor(user.uid)) {   // ★11-02 COST_BAMBOO = 0 → 가격 확인창 없음
     const okGo = await window.murpyConfirm({
       title: '대나무숲에 글을 올릴까요?',
       desc: '<b style="color:#F5C24B">' + COST_BAMBOO + '머피</b>를 사용해서 글을 씁니다'
@@ -33356,7 +33411,7 @@ window.postBambooFirestore = async (text, title) => {
     }
     if (btn) { btn.disabled = false; btn.textContent = '익명 전송'; }
   }
-  if (!(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast(window.creditSpendFailMessage()); return false; }
+  if (COST_BAMBOO > 0 && !(await window.spendCredit(user.uid, COST_BAMBOO))) { showToast(window.creditSpendFailMessage()); return false; }
   window._bamSpent = COST_BAMBOO;   // 8-31 아래 addDoc 실패 시 환불용
   try {
     let nickname = '익명';
@@ -33602,12 +33657,12 @@ window.sendBambooRequest = async (postId, authorUid) => {
     const postSnap = await getDoc(postRef);
     if (!postSnap.exists()) return;
     // '저에요' = 연결 시도라 대숲 글(1)보다 무겁고 매칭(5)보다는 가볍게 3머피
-    if (!(await window.murpyConfirm({ title: "'저에요' 보내기", desc: '<b style="color:#F5C24B">' + COST_BAMBOO_REQ + '머피</b>가 들어요', cost: true, confirmText: '보내기' }))) return;
-    if (!(await window.spendCredit(user.uid, COST_BAMBOO_REQ))) { showToast(window.creditSpendFailMessage()); return; }
+    if (COST_BAMBOO_REQ > 0 && !(await window.murpyConfirm({ title: "'저에요' 보내기", desc: '<b style="color:#F5C24B">' + COST_BAMBOO_REQ + '머피</b>가 들어요', cost: true, confirmText: '보내기' }))) return;
+    if (COST_BAMBOO_REQ > 0 && !(await window.spendCredit(user.uid, COST_BAMBOO_REQ))) { showToast(window.creditSpendFailMessage()); return; }   // ★11-02 0 = 차감 없음
     const postText = (postSnap.data().text || '').substring(0, 30);
     try { await updateDoc(postRef, { requesters: arrayUnion(user.uid) }); }
     catch (e) {   // 8-31 차감 후 실패하면 환불 — 전엔 머피만 사라졌다
-      try { await window.creditRefund(user.uid, COST_BAMBOO_REQ); showToast('신청이 안 돼서 머피를 돌려드렸어요'); } catch (e2) {}
+      try { if (COST_BAMBOO_REQ > 0) { await window.creditRefund(user.uid, COST_BAMBOO_REQ); showToast('신청이 안 돼서 머피를 돌려드렸어요'); } } catch (e2) {}
       throw e;
     }
     let nickname = '익명';
@@ -34371,7 +34426,7 @@ window._sendBambooMatchRequest = async () => {
   const btn = document.getElementById('bamboo-match-btn');
   if (btn && btn.disabled) return;
   // 매칭 요청 = 1머피 (상대 수락 시 상대도 1머피)
-  if (!(await window.murpyConfirm({ title: '매칭 신청하기', desc: (await window.matchCostDesc(user.uid)) + '<br>상대가 수락하면 서로 공개돼요', cost: true, confirmText: '신청' }))) return;
+  if (!(await window.murpyConfirm({ title: '매칭 신청하기', desc: (await window.matchCostDesc(user.uid)) + '<br>상대가 수락하면 서로 공개돼요', confirmText: '신청' }))) return;
   { const r = await window.matchSpend(user.uid); if (!r.ok) { showToast(window.creditSpendFailMessage()); return; } }
   try {
     await updateDoc(doc(db, 'chats', chatId), { matchRequestedBy: user.uid });

@@ -1,4 +1,4 @@
-// 커마권 구매 계산 — 잔액 판정과 짝(머피 -1000 / 커마권 +1)이 맞는지 본다
+// 커마권 구매 계산 — 잔액 판정과 짝(머피 -200 / 커마권 +1)이 맞는지 본다 (★11-02 1,000 → 200)
 // 실행: node tools/tests/face-ticket.test.mjs
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -15,27 +15,27 @@ new Function('window', grab(/window\.FACE_TICKET_PRICE = [\s\S]*?\n\};(?=\r?\nwi
 new Function('window', grab(/window\.faceTickets = function[\s\S]*?\n\};/, 'faceTickets'))(w);
 
 // 1) 가격은 상수 한 곳에서만 온다 (정식 전환 때 여기만 고친다)
-assert.strictEqual(w.FACE_TICKET_PRICE, 1000, '커마권 가격 상수가 1000머피가 아니다');
+assert.strictEqual(w.FACE_TICKET_PRICE, 200, '커마권 가격 상수가 200머피가 아니다');
 
-// 2) 잔액이 되면 정확히 -1000 / +1
-const ok = w._faceTicketBuyTx(1000, 0);
+// 2) 잔액이 되면 정확히 -200 / +1
+const ok = w._faceTicketBuyTx(200, 0);
 assert.strictEqual(ok.ok, true, '딱 맞는 잔액인데 구매가 막혔다');
 assert.strictEqual(ok.credits, 0, '머피가 정확히 안 빠졌다');
 assert.strictEqual(ok.faceTickets, 1, '커마권이 정확히 한 장 안 늘었다');
 
 // 3) 잔액이 모자라면 아무것도 안 바뀐다
-const no = w._faceTicketBuyTx(999, 3);
+const no = w._faceTicketBuyTx(199, 3);
 assert.strictEqual(no.ok, false, '잔액 부족인데 통과했다');
 assert.strictEqual(no.reason, 'insufficient');
 
 // 4) 이미 가진 장수 위에 쌓인다 (여러 개 보유 = 스펙)
 const more = w._faceTicketBuyTx(2500, 2);
-assert.strictEqual(more.credits, 1500); assert.strictEqual(more.faceTickets, 3);
+assert.strictEqual(more.credits, 2300); assert.strictEqual(more.faceTickets, 3);
 
 // 5) 더러운 값(없음·문자열·음수)이 와도 0 으로 본다 — 규칙이 정수만 받는다
-assert.strictEqual(w._faceTicketBuyTx(1000, undefined).faceTickets, 1);
-assert.strictEqual(w._faceTicketBuyTx(1000, '5').faceTickets, 1, '문자열 보유량을 그대로 더했다');
-assert.strictEqual(w._faceTicketBuyTx(1000, -4).faceTickets, 1, '음수 보유량을 그대로 더했다');
+assert.strictEqual(w._faceTicketBuyTx(200, undefined).faceTickets, 1);
+assert.strictEqual(w._faceTicketBuyTx(200, '5').faceTickets, 1, '문자열 보유량을 그대로 더했다');
+assert.strictEqual(w._faceTicketBuyTx(200, -4).faceTickets, 1, '음수 보유량을 그대로 더했다');
 
 // 6) 보유 조회도 더러운 값에 안 넘어간다
 w._charState.faceTickets = '3'; assert.strictEqual(w.faceTickets(), 0, '문자열 보유량을 그대로 보여준다');
