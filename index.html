@@ -41670,7 +41670,9 @@ window.renderSquadPage = async function (opts) {
     //   알약 배경도 걷었다("불투명 배경 이상하다"). 사진 밝은 자리라 그림자는 한 겹 남긴다.
     const feeSh = 'text-shadow:0 1px 5px rgba(5,7,12,.95),0 0 14px rgba(5,7,12,.8)';
     const feePill = window._sqHasFee(s)
-      ? `<span style="color:#fff;font-size:13px;font-weight:800;letter-spacing:-.3px;flex-shrink:0;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${feeSh}">${window._escHtml(window._sqFeeLabel(s))}</span>`
+      // ★11-03 대표 "비용이 배경 그라데이션 글자로 보인다" — 어두운 글자 그림자 두 겹이 이모지(🐷 등) 뒤에 검은 번진 네모를 만들었다.
+      //   비용은 그림자 없는 흰 글자(이모지는 원래 색)로, 인원 알약과 같은 유리 알약 위에 둔다(캡처 스쿼드·일반 스쿼드 같은 규칙).
+      ? `<span style="${glass};color:#fff;font-size:12px;font-weight:800;letter-spacing:-.2px;flex-shrink:0;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${window._escHtml(window._sqFeeLabel(s))}</span>`
       : `<span style="color:rgba(255,255,255,.55);font-size:12px;font-weight:700;flex-shrink:0;${feeSh}">무료</span>`;
     // 정기반 가짜 줄은 누르는 순간 진짜 벙이 만들어진다(sqOpenClass)
     // 가짜 줄(아직 문서 없는 정기반 회차)은 미리보기로 — 누른다고 벙이 생기면 안 된다
@@ -42837,6 +42839,16 @@ window._sqRenderDetailInner = function () {
     : '';
   // ★운영진도 출석 코드·QR 을 쓸 수 있게 한다 (대표 8-15).
   //   '운동 종료'는 벙을 닫는 행위라 벙주에게 남긴다.
+  // ★11-03 대표 "캡처로 만든 스쿼드에 나도 참가하고 싶다" — 소모임 캡처 스쿼드는 캡처를 돌린 계정(관리자 = 대표)이 방장이 되지만
+  //   참가자 명단(memberUids)에는 안 들어간다. 그런데 방장 화면엔 참가 버튼이 없어서 대표가 자기 벙에 들어갈 길이 없었다.
+  //   → 방장이 명단에 없으면 범프 자리에 '나도 참가하기'(일반 참가와 같은 joinSquad). 참가하면 범프 출석·근방단 출첵앱 연동도 일반 참가자와 같다.
+  else if (isHost && !joined) actions = `<button onclick="window.joinSquad('${s.id}')" style="${btnCss};width:100%;flex:none;background:var(--accent);color:#fff">나도 참가하기</button>
+    <div style="display:flex;gap:8px">
+      <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
+      <button onclick="window.sqGamePicker&&window.sqGamePicker()" style="${sub};color:#F5C24B">스쿼드 운동회</button>
+      ${inviteBtn}
+      <button onclick="window.sqComplete&&window.sqComplete('${s.id}')" style="${sub}">운동 종료</button>
+    </div>`;
   else if (isHost || _iAmStaff) actions = `${bumpMain}
     <div style="display:flex;gap:8px">
       <button onclick="window.sqStartAttend&&window.sqStartAttend('${s.id}')" style="${sub}">출석 코드</button>
@@ -42857,7 +42869,9 @@ window._sqRenderDetailInner = function () {
     </div>`;
   if (actions && (isHost || joined)) actions += `
     <button onclick="window.bumpDogam&&window.bumpDogam()" style="background:none;border:none;color:#8a93a8;
-      font-size:12px;padding:4px 0 0;cursor:pointer;font-family:inherit">내 범프 도감 보기</button>`;
+      font-size:12px;padding:4px 0 0;cursor:pointer;font-family:inherit">내 범프 도감 보기</button>`
+    // 캡처 스쿼드에 참가한 방장은 참가자로서 취소할 수 있다(방장 자리는 그대로, 명단에서만 빠진다)
+    + (!done && isHost && joined && s.source === 'somoim' ? `<button onclick="window.leaveSquad('${s.id}')" style="background:none;border:none;color:rgba(255,255,255,.45);font-size:12px;padding:2px 0 0;cursor:pointer;font-family:inherit">참가 취소</button>` : '');
   // ★신청자 본인 화면 = 꺼진 회색 버튼 그대로 둔다. 이게 맞다(대표 8-14 확정).
   //   내가 임의로 안내 박스로 바꿨다가 되돌렸다 — 건드리지 말 것.
   else if (myMem && myMem.status === 'invited') actions = `
