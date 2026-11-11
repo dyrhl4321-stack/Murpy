@@ -98,7 +98,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous" async onload="window._kakaoSdkInit && window._kakaoSdkInit()" onerror="window._kakaoSdkLoaded && window._kakaoSdkLoaded(false)"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1278';
+window._SW_V = '1279';
 // ★11-03 동아리별 가입 세기 — start.html 이 넘긴 ?ref=<코드>(또는 utm_campaign)를 첫 방문에 저장해 둔다(먼저 온 값 우선).
 //   가입(온보딩 완료) 때 users.signupCampaign 에 딱 한 번 기록한다(_obSignupCampaign). 이미 가입한 사람 문서는 안 건드린다.
 //   값은 영문 소문자·숫자·밑줄만, 30자까지.
@@ -26239,10 +26239,14 @@ function _matchBuildRails(arr, myProf, myGyms, myDistrict) {
   };
   const T = [];
   // 1) 출석·연속
-  T.push({ key: 'att', title: '이번 주 출석왕', sub: '7일 동안 가장 자주 나온 사람들', color: '#D9AE5B', icon: IC.trophy,
+  // ★11-11 대표 "연속 운동중 기준이 뭔데 · 인증한 적 없는 사람 많은 것 같은데": 이 줄이 visits(앱 접속일)로 세고 있었다.
+  //   → '연속 운동 중' = 피드 운동 인증 연속 일수(users.streak). 마지막 인증(creditsLastEarned)이 오늘·어제일 때만(끊긴 사람 빠짐).
+  //   '출석왕'은 접속 기준 그대로 두고 설명만 접속으로 바로잡았다.
+  const certRun = c => (c.creditsLastEarned === dayStr(0) || c.creditsLastEarned === dayStr(1)) ? (Number(c.streak) || 0) : 0;
+  T.push({ key: 'att', title: '이번 주 출석왕', sub: '7일 동안 앱에 가장 자주 들어온 사람들', color: '#D9AE5B', icon: IC.trophy,
     pick: c => vis7(c), min: 2, chip: c => ({ n: vis7(c), t: '일 출석', pre: '이번 주 ' }), badge: (c, i) => i < 3 ? '출석왕' : '' });
-  T.push({ key: 'run', title: '연속 운동 중', sub: '하루도 안 빠지고 이어 가는 중', color: '#D98A5E', icon: IC.flame,
-    pick: c => runDays(c), min: 2, chip: c => ({ n: runDays(c), t: '일 연속' }) });
+  T.push({ key: 'run', title: '연속 운동 중', sub: '하루도 안 빠지고 운동 인증 이어 가는 중', color: '#D98A5E', icon: IC.flame,
+    pick: c => certRun(c), min: 2, chip: c => ({ n: certRun(c), t: '일 연속' }) });
   // 2) 시간대
   [['새벽', '새벽 운동파', '해 뜨기 전에 끝내는 사람들', '#7F9FD6', IC.sunrise],
    ['낮', '점심 운동파', '낮 시간에 운동하는 사람들', '#CDBB68', IC.sun],
@@ -26299,7 +26303,7 @@ function _matchBuildRails(arr, myProf, myGyms, myDistrict) {
     t.mod = MOD(t.key);
     if (t.mod === 'wide') t.big = BIG[t.key.slice(2)];
     if (t.key === 'near') t.title = '우리 동네';
-    if (t.key === 'run') t.val = c => ({ n: runDays(c), t: '일 연속' });
+    if (t.key === 'run') t.val = c => ({ n: certRun(c), t: '일 연속' });   // 11-11 접속일 → 운동 인증 연속
     else if (t.mod === 'list') t.val = c => ({ pre: '이번 달 ', n: monthN(c), t: '회' });
     let L = withPhoto.filter(c => t.pick(c) >= t.min);
     if (t.mod === 'list') L.sort((a, b) => (t.key === 'run' ? 0 : monthN(b) - monthN(a)) || (t.pick(b) - t.pick(a)) || (rank.get(a.uid) - rank.get(b.uid)));
