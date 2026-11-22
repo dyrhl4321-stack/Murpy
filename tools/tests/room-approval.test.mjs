@@ -71,8 +71,9 @@ assert(!/row\.style\.(position|transform|bottom)/.test(quick[0]),
   '키보드가 뜰 때 입력줄 자체를 필드 위로 이동한다');
 assert(/el\.style\.height = vv\.height/.test(quick[0]),
   '스쿼드 필드처럼 고정 화면 상자를 visualViewport에 맞추지 않는다');
-assert(/el\.style\.top = '0px'/.test(quick[0]) && !/el\.style\.top = \(vv\.offsetTop/.test(quick[0]),
-  'visualViewport 팬 값을 공동룸 top에 더해 화면 전체를 위아래로 움직인다');
+// ★11-23 뒤집힘: top 을 0 에 박으면 아이폰이 밀어 올린 만큼 위가 잘리고 아래가 빈다(대표 스샷).
+assert(/el\.style\.top = \(vv\.offsetTop \|\| 0\) \+ 'px'/.test(quick[0]),
+  '키보드가 뜬 공동룸 상자를 실제로 보이는 영역(offsetTop)에 앉히지 않는다 — 아이폰에서 위가 잘리고 아래가 빈다');
 has(/onpointerdown="window\._mwKbStart&&window\._mwKbStart\(\)"/,
   '입력 포커스보다 먼저 문서 스크롤 잠금을 시작하지 않는다');
 // ★인라인 onkeydown 은 공용 헬퍼 _mwEnterSend 로 리팩토링됐다(한글 조합 IME 대응 포함) — 9-03 수리
