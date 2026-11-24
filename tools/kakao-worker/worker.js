@@ -9,6 +9,7 @@
 //   { code, redirect_uri, linkUid? }   ← 인가 코드 (카톡 리다이렉트 / PC 팝업)
 //   { access_token, linkUid? }         ← 이미 받은 액세스 토큰 (하위호환 경로)
 //   linkUid = 임시(익명) 계정을 이 카카오 계정에 붙일 때 그 uid. 처음 보는 카카오 id 일 때만 붙는다.
+//   linkIdToken = 그 익명 계정의 Firebase ID 토큰(11-24 필수). 없거나 안 맞으면 linkUid 는 무시된다.
 // 응답
 //   { customToken, uid, kakaoId, nickname, photoURL, linked }   (FIREBASE_SA 가 있을 때)
 //   { access_token }                                            (FIREBASE_SA 가 없으면 옛 방식 — 클라이언트가 알아서 처리)
@@ -71,7 +72,11 @@ export default {
         const legacyEmail = 'kakao_' + kakaoId + '@kakao.murpy.app';
         const found = await toolkitLookupByEmail(gToken, project, legacyEmail);
         if (found) { uid = found; legacy = true; }
-        else if (body.linkUid && /^[A-Za-z0-9]{10,64}$/.test(body.linkUid)) { uid = body.linkUid; linked = true; }
+        // ★11-24 보안: 예전엔 linkUid 를 **그대로 믿었다** → 새 카카오 계정 + 남의 uid(users 공개라 누구나 앎)를
+        //   보내면 그 사람(관리자 포함) 커스텀 토큰이 나왔다 = 계정 탈취. 이제 그 익명 계정의 ID 토큰(linkIdToken)으로
+        //   본인임을 증명하고, 그 계정이 정말 익명(이메일·연결 로그인 없음)일 때만 붙인다. 증명 못 하면 새 uid.
+        else if (body.linkUid && /^[A-Za-z0-9]{10,64}$/.test(body.linkUid)
+                 && await anonOwnsUid(env, body.linkIdToken, body.linkUid)) { uid = body.linkUid; linked = true; }
         else uid = 'kakao_' + kakaoId;
         await fsSet(project, gToken, 'kakaoLinks/' + kakaoId, { uid, at: new Date().toISOString(), legacy, pwRotated: false });
       }
@@ -129,6 +134,20 @@ async function googleAccessToken(sa) {
 async function mintCustomToken(sa, uid, claims) {
   const now = Math.floor(Date.now() / 1000);
   return signJwt(sa, { iss: sa.client_email, sub: sa.client_email, aud: CUSTOM_AUD, iat: now, exp: now + 3600, uid, claims: claims || {} });
+}
+// linkIdToken 이 linkUid 의 익명 계정 것인지 Identity Toolkit 에 물어본다(토큰 위조·만료면 실패).
+//   웹 API 키는 공개용(index.html 에 있는 그 값). 키에 리퍼러 제한이 걸려 있어도 통과하게 Referer 를 붙인다.
+const FIREBASE_WEB_KEY_DEFAULT = 'AIzaSyBvMB4T-ApzHDsfmBx4f5HpPmgkqlcZ7VQ';
+async function anonOwnsUid(env, idToken, uid) {
+  if (!idToken || typeof idToken !== 'string' || idToken.length > 4096) return false;
+  try {
+    const key = env.FIREBASE_WEB_KEY || FIREBASE_WEB_KEY_DEFAULT;
+    const r = await fetch(TOOLKIT + '/accounts:lookup?key=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Referer: 'https://murpy.app/' }, body: JSON.stringify({ idToken }) });
+    if (!r.ok) return false;
+    const u = ((await r.json()).users || [])[0];
+    return !!(u && u.localId === uid && !u.email && !(u.providerUserInfo && u.providerUserInfo.length));
+  } catch (e) { return false; }
 }
 async function toolkitLookupByEmail(gToken, project, email) {
   const r = await fetch(TOOLKIT + '/projects/' + project + '/accounts:lookup', { method: 'POST', headers: { Authorization: 'Bearer ' + gToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: [email] }) });

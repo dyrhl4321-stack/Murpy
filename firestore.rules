@@ -10,7 +10,29 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == 'dyrhl4321@gmail.com';
+      // ★11-24 이메일 인증까지 본다 — 인증 안 된 같은 이메일 계정이 관리자가 되는 길을 막는다(functions 의 email_verified 검사와 같은 뜻).
+      return request.auth != null && request.auth.token.email == 'dyrhl4321@gmail.com'
+        && request.auth.token.get('email_verified', false) == true;
+    }
+    // ★11-24 XSS 2차 방어 — 닉네임·사진 주소처럼 남의 화면 HTML 속성/onclick 에 들어가는 짧은 값에
+    //   꺾쇠·따옴표·백틱·역슬래시·'&#'(문자 참조)를 못 넣게 한다. 1차 방어는 앱의 _escHtml/_escJs/_safeUrl.
+    //   자유 글(소개·본문·댓글)은 '<3' 같은 정상 글이 막히므로 여기서 안 본다(앱이 이스케이프한다).
+    function cleanStr(d, f) {
+      return !(f in d) || !(d[f] is string) || !d[f].matches(".*(&#|[<>\"`\\\\]).*");
+    }
+    function cleanUrl(d, f) {
+      return !(f in d) || !(d[f] is string) || d[f] == ''
+        || (d[f].matches("^(https?://|data:image/|blob:).*") && !d[f].matches(".*(&#|[<>\"'`\\\\ ]).*"));
+    }
+    // 만들 때는 전부, 고칠 때는 바뀐 칸만 본다(옛 값이 걸려 있어도 다른 칸 저장은 막지 않게)
+    function cleanFields(strs, urls) {
+      let d = request.resource.data;
+      let ch = resource == null ? d.keys() : d.diff(resource.data).affectedKeys();
+      return (!ch.hasAny([strs[0]]) || cleanStr(d, strs[0]))
+          && (strs.size() < 2 || !ch.hasAny([strs[1]]) || cleanStr(d, strs[1]))
+          && (strs.size() < 3 || !ch.hasAny([strs[2]]) || cleanStr(d, strs[2]))
+          && (urls.size() < 1 || !ch.hasAny([urls[0]]) || cleanUrl(d, urls[0]))
+          && (urls.size() < 2 || !ch.hasAny([urls[1]]) || cleanUrl(d, urls[1]));
     }
     // 문서에 저장된 작성자(userId) 본인 여부
     function ownsDoc() {
@@ -66,8 +88,10 @@ service cloud.firestore {
       // ★관리자 쓰기 (2026-08-14) — 대표가 특정 계정에 머피를 넣어줘야 한다(베타 보상·이벤트).
       //   isAdmin() 은 대표 이메일 하나로 고정돼 있다(파일 위쪽 헬퍼).
       // ★가입 문서의 초기 credits 상한 (8-31 C2) — 없으면 create 로 1억 머피를 들고 태어날 수 있다
-      allow create: if ownsSelectedFace() && (isAdmin() || (isOwner(userId)
-                    && (!('credits' in request.resource.data) || request.resource.data.credits <= 500)));
+      allow create: if ownsSelectedFace() && cleanFields(['nickname', 'district', 'gym'], ['photoURL']) && (isAdmin() || (isOwner(userId)
+                    && (!('credits' in request.resource.data) || request.resource.data.credits <= 30)
+                    // ★11-24 가입 문서에 커마권을 마음대로 넣어 커마를 공짜로 만들던 길 · 가입 선물(30) 넘는 머피도 막는다
+                    && request.resource.data.get('faceTickets', 0) == 0));
       allow delete: if isAdmin();
       // ★C2 마지막 잠금 (2026-09-02) — 클라는 credits 를 **못 올린다**(감소만).
       //   지급은 전부 Cloud Functions(earn, Admin SDK 라 규칙을 안 거친다)로 이관 완료(8-31 v863),
@@ -83,6 +107,7 @@ service cloud.firestore {
       //   소모(생성)는 서버가 하지만, 클라가 스스로 줄이는 것은 손해라 허용한다.
       //   ★1000 = index.html 의 window.FACE_TICKET_PRICE. **같이 고칠 것**(규칙은 JS 를 못 읽는다).
       allow update: if (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['character', 'characterSheet']) || ownsSelectedFace())
+        && cleanFields(['nickname', 'district', 'gym'], ['photoURL'])
         && (isAdmin() || (isOwner(userId) && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits', 'faceTickets'])
           || (!('credits' in resource.data) && request.resource.data.credits is int
@@ -142,13 +167,14 @@ service cloud.firestore {
 
     match /feed/{postId} {
       allow read: if true;
-      allow create: if signedIn();
+      // ★11-24 작성자(userId)를 남으로 적어 남 이름으로 글을 쓰던 길도 막는다
+      allow create: if signedIn() && request.resource.data.get('userId', '') == request.auth.uid && cleanFields(['userName'], ['photoURL', 'userPhoto']);
       // ★2026-08-25 — 예전엔 `allow update: if signedIn()` 이었다. 좋아요 카운터 때문에 열어둔
       //   것인데 **필드 제한이 없어서 아무나 남의 인증글 내용을 통째로 바꿀 수 있었다.**
       //   작성자·관리자는 전부, 남은 카운터와 신고 표시만 건드린다.
       //   ※여기 목록에 없는 필드를 앱이 남의 글에 쓰기 시작하면 그 기능이 조용히 막힌다 —
       //     새 필드를 추가할 때 이 줄을 같이 고칠 것.
-      allow update: if ownsDoc() || isAdmin()
+      allow update: if ((ownsDoc() && cleanFields(['userName'], ['photoURL', 'userPhoto'])) || isAdmin())
         || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['likes', 'likedBy', 'commentCount', 'reportedBy']));
       // 삭제는 작성자 본인 또는 관리자만
@@ -156,7 +182,7 @@ service cloud.firestore {
 
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if signedIn();
+        allow create: if signedIn() && request.resource.data.get('userId', '') == request.auth.uid && cleanFields(['userName'], ['userPhoto']);
         // 신고 표시(reportedBy)는 비작성자도 남겨야 한다. 대신 **그 필드만** 열어 준다.
         allow update: if ownsDoc() || isAdmin()
           || (signedIn() && request.resource.data.diff(resource.data).affectedKeys()
@@ -168,7 +194,8 @@ service cloud.firestore {
     // ===== 대숲 =====
     match /bamboo/{postId} {
       allow read: if true;
-      allow create: if signedIn();
+      // ★11-24 작성자(userId)를 남으로 적어 남 이름으로 글을 쓰던 길도 막는다
+      allow create: if signedIn() && request.resource.data.get('userId', '') == request.auth.uid && cleanFields(['userName'], ['photoURL', 'userPhoto']);
       // ★2026-08-25 — feed 와 같은 구멍이었다. 로그인만 하면 남의 대숲 글을 통째로 바꿀 수 있었다.
       //   실제로 남이 쓰는 필드는 좋아요(likes/likedBy)·댓글수·신고 표시뿐이다(코드 확인).
       //   '저에요' 신청은 이 문서가 아니라 chats 로 간다.
@@ -182,7 +209,7 @@ service cloud.firestore {
       // 익명 댓글
       match /comments/{commentId} {
         allow read: if true;
-        allow create: if signedIn();
+        allow create: if signedIn() && request.resource.data.get('userId', '') == request.auth.uid && cleanFields(['userName'], ['userPhoto']);
         // 신고 표시(reportedBy) — 대숲 글(bamboo)과 같은 수준으로 연다
         // 신고 표시만 비작성자에게 연다(글과 같은 규칙)
         allow update: if ownsDoc() || isAdmin()
@@ -194,7 +221,10 @@ service cloud.firestore {
 
     // ===== 좋아요(매칭 신청) =====
     match /likes/{likeId} {
-      allow read: if signedIn();
+      // ★11-24 예전엔 로그인만 하면 누가 누구에게 좋아요(매칭 신청)를 보냈는지 전부 읽혔다 → 보낸 사람·받은 사람만.
+      //   resource == null = 없는 문서 조회(getDoc 존재 확인)는 그대로 통과(새는 내용 없음).
+      allow read: if signedIn() && (resource == null
+        || resource.data.get('from', '') == request.auth.uid || resource.data.get('to', '') == request.auth.uid);
       allow create: if signedIn() && request.resource.data.from == request.auth.uid;
       // 같은 사람에게 다시 눌러도 setDoc이 update로 판정됨 → 본인이 보낸 건만 허용(재전송 idempotent)
       allow update: if signedIn() && resource.data.from == request.auth.uid && request.resource.data.from == request.auth.uid;
@@ -203,7 +233,8 @@ service cloud.firestore {
 
     // ===== 매칭 =====
     match /matches/{matchId} {
-      allow read: if signedIn();
+      // ★11-24 당사자만(관리자 통계 화면은 전체). 없는 문서 조회는 통과.
+      allow read: if isAdmin() || (signedIn() && (resource == null || request.auth.uid in resource.data.users));
       // ★2026-08-25 — `write: if signedIn()` 이라 **아무나 남의 매칭을 만들거나 지울 수** 있었다.
       //   문서는 { users: [a, b] } 이고 id 는 _pairKey(a,b) 다(코드 확인). 당사자만 손댄다.
       allow create: if signedIn() && request.auth.uid in request.resource.data.users;
@@ -407,15 +438,25 @@ service cloud.firestore {
     // ===== 센터 (헬스장) =====
     match /centers/{centerId} {
       allow read: if true;
-      allow create: if signedIn();
-      // 관리자 편집 + 별점 재계산(rating/reviews) 비소유자 업데이트 허용
-      allow update: if signedIn();
+      // ★11-24 예전엔 로그인만 하면 아무 헬스장의 이름·소개·공지를 바꿀 수 있었다(앱은 관리자만 편집 화면을 연다).
+      //   일반 유저가 하는 일 = 헬스장 등록(소개·공지·사진 없이) · 리뷰 뒤 별점 재계산(rating/reviews).
+      allow create: if isAdmin() || (signedIn() && request.resource.data.get('createdBy', '') == request.auth.uid
+                    && request.resource.data.name is string && request.resource.data.name.size() <= 40
+                    && !request.resource.data.keys().hasAny(['intro', 'notices', 'photos', 'boosted']));
+      allow update: if isAdmin() || (signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'reviews'])
+        && request.resource.data.rating is number && request.resource.data.reviews is int);
       allow delete: if isAdmin();
 
       // 별점/리뷰 (문서 ID = 작성자 uid)
       match /ratings/{userId} {
         allow read: if true;
-        allow write: if isOwner(userId);
+        allow write: if isOwner(userId)
+          && (request.resource == null || (request.resource.data.get('text', '') is string
+              && request.resource.data.get('text', '').size() <= 1000
+              && request.resource.data.get('nickname', '') is string
+              && request.resource.data.get('nickname', '').size() <= 30
+              && cleanStr(request.resource.data, 'nickname')));
       }
     }
 
@@ -509,8 +550,13 @@ service cloud.firestore {
     //   create: 보낸 사람을 속이지 못하게(fromUid 는 본인) — 돈이 걸린 타입은 fromUid 필수.
     //   update: 받는 사람은 읽음/정산 표시만, 보낸 사람은 자기 문서(재입찰 덮어쓰기)만.
     match /notifications/{notifId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
+      // ★11-24 받는 사람·보낸 사람만. 예외 = 경매 입찰(art_bid) — 입찰가 목록은 모두가 보는 화면이라 공개.
+      //   앱의 입찰 쿼리는 type=='art_bid' 를 같이 건다(규칙이 쿼리 전체를 증명해야 통과).
+      allow read: if isAdmin() || (signedIn() && (resource == null
+        || resource.data.get('toUid', '') == request.auth.uid
+        || resource.data.get('fromUid', '') == request.auth.uid
+        || resource.data.get('type', '') == 'art_bid'));
+      allow create: if signedIn() && cleanFields(['fromNickname'], ['fromPhoto'])
         && (!('fromUid' in request.resource.data) || request.resource.data.fromUid == request.auth.uid)
         && (!(request.resource.data.type in ['art_sold', 'art_co', 'murpy_gift', 'art_bid', 'art_won'])
             || request.resource.data.fromUid == request.auth.uid);

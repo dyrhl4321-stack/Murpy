@@ -98,7 +98,7 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.4.0/kakao.min.js" crossorigin="anonymous" async onload="window._kakaoSdkInit && window._kakaoSdkInit()" onerror="window._kakaoSdkLoaded && window._kakaoSdkLoaded(false)"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script>
-window._SW_V = '1282';
+window._SW_V = '1283';
 // ★11-03 동아리별 가입 세기 — start.html 이 넘긴 ?ref=<코드>(또는 utm_campaign)를 첫 방문에 저장해 둔다(먼저 온 값 우선).
 //   가입(온보딩 완료) 때 users.signupCampaign 에 딱 한 번 기록한다(_obSignupCampaign). 이미 가입한 사람 문서는 안 건드린다.
 //   값은 영문 소문자·숫자·밑줄만, 30자까지.
@@ -126,6 +126,17 @@ window.track = function (name, params) {
   } catch (e) {}
 };
 window._escJs = function (v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\x3c').replace(/>/g, '\\x3e').replace(/&/g, '\\x26').replace(/"/g, '\\x22').replace(/\r?\n/g, '\\n'); };
+// ★11-24 사진 주소 안전 검사. 남이 쓴 photoURL 이 src="…"·onerror="this.src='…'" 에 그대로 들어가서
+//   `"><img onerror=…>`·`&#39;` 같은 값이면 스크립트가 돌았다. 허용 = http(s)·data:image·blob 이고
+//   따옴표·꺾쇠·백틱·역슬래시·공백이 없고, & 뒤는 '이름=' 꼴(쿼리 파라미터)만. 아니면 빈 문자열(사진 없음 처리).
+window._safeUrl = function (u) {
+  u = String(u == null ? '' : u);
+  if (!u) return '';
+  if (!/^(https?:\/\/|data:image\/|blob:)/i.test(u)) return '';
+  if (/["'<>`\\\x00-\x20\x7f]/.test(u)) return '';
+  if (/&(?![A-Za-z0-9_]+=)/.test(u)) return '';   // & 뒤는 '이름=' 꼴만(쿼리 파라미터). &#39; &quot; 같은 문자 참조는 막힌다
+  return u;
+};
   // ★10-19 첫 방문 주소 보관 — 서비스워커가 아직 없는 첫 방문은 곧 한 번 새로고침된다(_mwReloadUrl).
   //   게임 링크(?game= ?tn ?rn)·?go= 는 열자마자 주소를 지우므로, 새로고침 전에 원래 주소 값을 60초만 들고 있는다.
   try {
@@ -8060,7 +8071,7 @@ window._reditArtCard = function (a, owner) {
     : (price > 0
         ? `<span style="font-family:'Galmuri11',inherit;font-size:9.5px;color:#F5C24B">${window._mwCoinImg || ''}${price}</span>`
         : `<span style="font-size:9.5px;color:rgba(255,255,255,.3)">비매품</span>`);
-  const who = String((a.by || []).join('·')).slice(0, 10) || '그림';
+  const who = window._escHtml(String((a.by || []).join('·')).slice(0, 10) || '그림');
   const go = owner
     ? `window.mwArtOpenFrom('${owner}','${a.id}')`
     : `window.mwArtBig('${a.id}')`;
@@ -13806,11 +13817,11 @@ function _renderCrewsLocal(data) {
         <img src="${_mImg(c.img, 160)||'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=80'}" loading="lazy" decoding="async" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="font-size:15px;font-weight:700">${c.name}</span>
+            <span style="font-size:15px;font-weight:700">${window._escHtml(c.name)}</span>
             ${c.verified?'<span style="background:var(--gold);color:#000;font-size:8px;font-weight:800;padding:1px 5px;border-radius:6px">VERIFIED</span>':''}
             ${c.boosted?'<span style="color:#888;font-size:9px;font-weight:700;letter-spacing:0.5px">UP</span>':''}
           </div>
-          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc||''}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${window._escHtml(c.desc||'')}</div>
           <span style="font-size:11px;color:#444">멤버 ${c.memberCount||(Array.isArray(c.members)?c.members.length:0)}명</span>
         </div>
         <span style="color:#444;font-size:16px">›</span>
@@ -13835,16 +13846,16 @@ function crewExploreCard(c) {
         <img src="${_mImg(c.img, 160)}" loading="lazy" decoding="async" style="width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="font-size:14px;font-weight:700">${c.name}</span>
+            <span style="font-size:14px;font-weight:700">${window._escHtml(c.name)}</span>
             ${c.boosted?'<span style="color:#888;font-size:9px;font-weight:700;letter-spacing:0.5px">UP</span>':''}
           </div>
-          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.desc}</div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap">${c.workout.map(w=>`<span style="background:rgba(255,255,255,0.07);border-radius:8px;padding:2px 8px;font-size:10px">${w}</span>`).join('')}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${window._escHtml(c.desc)}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">${c.workout.map(w=>`<span style="background:rgba(255,255,255,0.07);border-radius:8px;padding:2px 8px;font-size:10px">${window._escHtml(w)}</span>`).join('')}</div>
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
-          <span style="font-size:11px;color:#444">멤버 ${memberCount}명 · ${c.loc}</span>
+          <span style="font-size:11px;color:#444">멤버 ${memberCount}명 · ${window._escHtml(c.loc)}</span>
           
         </div>
         <button class="btn-white" style="border-radius:20px;padding:7px 16px;font-size:12px" onclick="event.stopPropagation();joinCrew('${c.id}')">가입</button>
@@ -13955,19 +13966,19 @@ function renderCrewHomeTab(crew) {
   const workoutCat = Array.isArray(crew.workout) && crew.workout.length ? crew.workout[0] : '운동';
   const chipStyle = 'font-size:12px;color:var(--text-secondary);background:rgba(255,255,255,0.06);border:1px solid var(--border-subtle);border-radius:20px;padding:6px 13px;font-weight:600;white-space:nowrap';
   const metaChips = [
-    crew.loc ? `<span style="${chipStyle}">${crew.loc}</span>` : '',
-    `<span style="${chipStyle}">${workoutCat}</span>`,
+    crew.loc ? `<span style="${chipStyle}">${window._escHtml(crew.loc)}</span>` : '',
+    `<span style="${chipStyle}">${window._escHtml(workoutCat)}</span>`,
     `<span style="${chipStyle}">멤버 ${mc}명</span>`
   ].filter(Boolean).join('');
 
   el.innerHTML = `
     <div style="padding:20px 20px 0">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-        <span style="font-size:23px;font-weight:800;letter-spacing:-0.6px">${crew.name||'크루'}</span>
+        <span style="font-size:23px;font-weight:800;letter-spacing:-0.6px">${window._escHtml(crew.name||'크루')}</span>
         ${crew.verified ? '<span style="background:var(--gold);color:#000;font-size:8px;font-weight:800;padding:3px 7px;border-radius:6px;letter-spacing:0.3px">VERIFIED</span>' : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">${metaChips}</div>
-      ${crew.intro ? `<div style="font-size:14px;color:#fff;line-height:1.9;margin-bottom:18px;white-space:pre-wrap">${crew.intro}</div>` : `<p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.8;margin-bottom:18px">${crew.desc||'아직 크루 소개가 없어요'}</p>`}
+      ${crew.intro ? `<div style="font-size:14px;color:#fff;line-height:1.9;margin-bottom:18px;white-space:pre-wrap">${window._escHtml(crew.intro)}</div>` : `<p style="font-size:14px;color:rgba(255,255,255,0.55);line-height:1.8;margin-bottom:18px">${window._escHtml(crew.desc||'아직 크루 소개가 없어요')}</p>`}
     </div>
     ${actionHtml ? `<div style="padding:0 20px 16px">${actionHtml}</div>` : ''}
     <div style="border-top:1px solid rgba(255,255,255,0.06);padding:16px 20px 0">
@@ -14098,7 +14109,7 @@ const crewMembers = [
 function renderCrewMembers(crew) {
   if (window.loadCrewMembers && currentCrewId) { window.loadCrewMembers(currentCrewId); return; }
   const members = (crew && crew.memberProfiles) || crewMembers;
-  document.getElementById('crew-members-tab').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${members.map(m=>`<div style="text-align:center"><img src="${_mImg(m.img||m.photoURL||'', 320)}" onerror="this.style.display='none'" style="width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;margin-bottom:6px"><div style="font-size:13px;font-weight:700">${m.name||m.nickname||''}</div><div style="font-size:11px;color:#666">${m.workout||''}</div></div>`).join('')}</div>`;
+  document.getElementById('crew-members-tab').innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${members.map(m=>`<div style="text-align:center"><img src="${_mImg(m.img||m.photoURL||'', 320)}" onerror="this.style.display='none'" style="width:100%;aspect-ratio:1;border-radius:12px;object-fit:cover;margin-bottom:6px"><div style="font-size:13px;font-weight:700">${window._escHtml(m.name||m.nickname||'')}</div><div style="font-size:11px;color:#666">${window._escHtml(m.workout||'')}</div></div>`).join('')}</div>`;
 }
 function renderCrewFeed(crewId) {
   if (window.loadCrewFeed && crewId) { window.loadCrewFeed(crewId); return; }
@@ -15951,8 +15962,8 @@ function renderCenters() {
     document.getElementById('center-list').innerHTML = list.map(c => c.partnerPosts.map(p => `
       <div class="card">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <span style="font-size:11px;background:rgba(255,255,255,0.08);border-radius:10px;padding:3px 8px">${c.name}</span>
-          <span style="font-size:11px;color:#555">${c.loc}</span>
+          <span style="font-size:11px;background:rgba(255,255,255,0.08);border-radius:10px;padding:3px 8px">${window._escHtml(c.name)}</span>
+          <span style="font-size:11px;color:#555">${window._escHtml(c.loc)}</span>
         </div>
         <div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text}</div>
         <div style="display:flex;justify-content:space-between;align-items:center">
@@ -15969,10 +15980,10 @@ function renderCenters() {
         <img src="${_mImg(c.img, 160)}" loading="lazy" decoding="async" style="width:56px;height:56px;border-radius:12px;object-fit:cover;flex-shrink:0">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="font-size:15px;font-weight:700">${c.name}</span>
+            <span style="font-size:15px;font-weight:700">${window._escHtml(c.name)}</span>
             ${c.partner ? '<span style="background:var(--gold);color:#000;font-size:8px;font-weight:800;padding:2px 7px;border-radius:6px;display:inline-flex;align-items:center;gap:3px"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>파트너</span>' : ''}
           </div>
-          <div style="font-size:12px;color:#666;margin-bottom:4px">${c.type} · ${c.loc}</div>
+          <div style="font-size:12px;color:#666;margin-bottom:4px">${window._escHtml(c.type)} · ${window._escHtml(c.loc)}</div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;color:var(--gold);font-weight:700;display:inline-flex;align-items:center;gap:3px"><svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)" stroke="none"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.8 5.9 20.4l1.4-6.8L2.2 9l6.9-.7z"/></svg>${c.rating}</span>
             <span style="font-size:11px;color:#555">리뷰 ${c.reviews}개</span>
@@ -16027,18 +16038,18 @@ function openCenterDetail(id) {
       우리 센터 머피들 <span id="mw-cfd-btncnt" style="color:#F5C24B;font-weight:800"></span>
     </button>
 
-    ${c.intro ? `<div style="font-size:14px;color:#fff;line-height:1.8;margin-bottom:18px;white-space:pre-wrap">${c.intro}</div>` : (admin ? `<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:16px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;text-align:center;margin-bottom:18px">소개글이 비어있어요. 아래 '센터 편집'으로 채워보세요</div>` : '')}
+    ${c.intro ? `<div style="font-size:14px;color:#fff;line-height:1.8;margin-bottom:18px;white-space:pre-wrap">${window._escHtml(c.intro)}</div>` : (admin ? `<div style="font-size:13px;color:rgba(255,255,255,0.3);padding:16px;border:1px dashed rgba(255,255,255,0.12);border-radius:12px;text-align:center;margin-bottom:18px">소개글이 비어있어요. 아래 '센터 편집'으로 채워보세요</div>` : '')}
 
     ${galleryPhotos.length ? `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:10px">사진</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px">${galleryPhotos.map(p=>`<div style="aspect-ratio:1;border-radius:8px;overflow:hidden;background:#111;cursor:pointer" onclick="(function(v,i){i.src='${p}';v.style.display='flex'})(document.getElementById('feed-image-viewer'),document.getElementById('feed-viewer-img'))"><img src="${p}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover"></div>`).join('')}</div></div>` : ''}
 
-    ${notices.length ? `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:10px">최신 소식</div>${notices.map(n=>`<div class="card" style="border-left:3px solid var(--accent)"><div style="font-size:14px;color:#fff;line-height:1.6;white-space:pre-wrap">${n.text||''}</div>${n.date?`<div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:6px">${n.date}</div>`:''}</div>`).join('')}</div>` : ''}
+    ${notices.length ? `<div style="margin-bottom:18px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.4);margin-bottom:10px">최신 소식</div>${notices.map(n=>`<div class="card" style="border-left:3px solid var(--accent)"><div style="font-size:14px;color:#fff;line-height:1.6;white-space:pre-wrap">${window._escHtml(n.text||'')}</div>${n.date?`<div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:6px">${n.date}</div>`:''}</div>`).join('')}</div>` : ''}
 
-    <div class="card"><div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:4px">${c.type}</div><div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${c.addr}</div></div>
+    <div class="card"><div style="font-size:12px;color:rgba(255,255,255,0.4);margin-bottom:4px">${window._escHtml(c.type)}</div><div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${window._escHtml(c.addr)}</div></div>
 
     ${admin ? `<button onclick="openCenterAdminEdit('${id}')" class="btn-white" style="width:100%;padding:13px;font-size:14px;font-weight:700;border-radius:12px;margin-top:12px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>센터 편집 (관리자)</button>
     <button onclick="window.mwAdminTestCheckin&&window.mwAdminTestCheckin('${id}')" style="width:100%;background:rgba(245,194,75,0.10);border:1px solid rgba(245,194,75,0.4);color:#F5C24B;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px">이 센터에 테스트 도장 찍기 (관리자)</button>` : ''}
 
-    <button onclick="openCenterEditRequest('${id}','${(c.name||'').replace(/'/g,'')}')" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.38);font-size:12px;cursor:pointer;padding:16px;font-family:inherit;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:5px">
+    <button onclick="openCenterEditRequest('${id}','${window._escJs(c.name||'')}')" style="width:100%;background:none;border:none;color:rgba(255,255,255,0.38);font-size:12px;cursor:pointer;padding:16px;font-family:inherit;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:5px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       정보 수정 요청
     </button>`;
@@ -16054,7 +16065,7 @@ function openCenterDetail(id) {
       이 센터 대나무숲 <span style="color:rgba(255,255,255,0.3);font-weight:600">· 센터 전용 익명공간</span>
     </div>
     <div class="card" style="margin-bottom:16px;border:1px solid rgba(74,222,128,0.18)">
-      <textarea placeholder="${c.name}의 대나무숲. 센터에서 눈에 띄었던 사람, 전하고 싶은 말을 익명으로 남겨봐요." style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:60px;font-family:inherit" id="center-bamboo-input-${id}"></textarea>
+      <textarea placeholder="${window._escHtml(c.name)}의 대나무숲. 센터에서 눈에 띄었던 사람, 전하고 싶은 말을 익명으로 남겨봐요." style="width:100%;background:none;border:none;color:#fff;font-size:14px;line-height:1.7;resize:none;outline:none;min-height:60px;font-family:inherit" id="center-bamboo-input-${id}"></textarea>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">
         <button class="btn-white" style="border-radius:8px;padding:7px 16px;font-size:13px" onclick="postCenterBamboo(${id})">익명 전송</button>
       </div>
@@ -16208,14 +16219,14 @@ async function renderCenterReviewTab(centerId) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
         <div>
-          <span style="font-size:13px;font-weight:700;color:${r.userId===uid?'var(--accent)':'#fff'}">${r.userId===uid?'나':r.nickname||'익명'}${r.userId===uid?' (나)':''}</span>
+          <span style="font-size:13px;font-weight:700;color:${r.userId===uid?'var(--accent)':'#fff'}">${r.userId===uid?'나':window._escHtml(r.nickname||'익명')}${r.userId===uid?' (나)':''}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           ${window.mStars(r.score, 13)}
-          ${r.userId!==uid?`<button onclick="openReviewReport('${centerId}',${i},'${(r.nickname||'').replace(/'/g,'')}')" style="background:none;border:none;cursor:pointer;padding:1px;color:rgba(255,255,255,0.28);display:flex" title="신고"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>`:''}
+          ${r.userId!==uid?`<button onclick="openReviewReport('${centerId}',${i},'${window._escJs(r.nickname||'')}')" style="background:none;border:none;cursor:pointer;padding:1px;color:rgba(255,255,255,0.28);display:flex" title="신고"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>`:''}
         </div>
       </div>
-      ${r.text?`<div style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:6px">${r.text}</div>`:''}
+      ${r.text?`<div style="font-size:14px;color:rgba(255,255,255,0.8);line-height:1.6;margin-bottom:6px">${window._escHtml(r.text)}</div>`:''}
       <div style="font-size:11px;color:rgba(255,255,255,0.3)">${r.createdAtStr||''}</div>
     </div>`).join('');
 
@@ -16288,7 +16299,7 @@ function renderCaeNotices() {
   if (!notices.length) { el.innerHTML = ''; return; }
   el.innerHTML = notices.map((n, i) => `
     <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border-subtle);border-radius:10px;padding:10px 12px;margin-bottom:6px">
-      <div style="flex:1;font-size:13px;color:#fff;line-height:1.5">${n.text}</div>
+      <div style="flex:1;font-size:13px;color:#fff;line-height:1.5">${window._escHtml(n.text)}</div>
       <button onclick="removeCaeNotice(${i})" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;flex-shrink:0;display:flex;align-items:center;padding:4px">${window.mIcon('close', { size:14, color:'rgba(255,255,255,0.4)' })}</button>
     </div>`).join('');
 }
@@ -17582,6 +17593,7 @@ let feedObserver = null;
 
 // 이미지 CDN 리사이즈 (weserv): 원본 풀해상도 대신 화면 크기에 맞게 줄여 빠르게 + 엣지 캐시
 window._cdnImg = (url, w) => {
+  url = window._safeUrl(url);   // ★11-24 위험한 주소는 여기서 걸러진다(모든 호출부 공통)
   if (!url || /^(data:|blob:)/.test(url) || url.includes('images.weserv.nl')) return url || '';
   // googleusercontent(구글 프사)는 데이터센터 IP 차단 → weserv 우회 불가, 직접 반환
   //  (작은 프로필 썸네일이라 영향 작음. imgBB는 weserv 정상 동작 → 리사이즈 적용)
@@ -18096,13 +18108,13 @@ function buildPostHTML(p, opts) {
   const _fbadge = (window._milestoneBadge && p.totalCount) ? window._milestoneBadge(p.totalCount) : '';
   const _realTags = new Set(p.tags || []);
   const tagRow = _ftags.length ? `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:0 20px 10px">${_ftags.map(t => _realTags.has(t)
-      ? `<span class="feed-tag" onclick="event.stopPropagation();window.setFeedFilter&&window.setFeedFilter('${String(t).replace(/'/g,"\\'")}')" style="cursor:pointer">${t}</span>`
-      : `<span class="feed-tag">${t}</span>`).join('')}</div>` : '';
+      ? `<span class="feed-tag" onclick="event.stopPropagation();window.setFeedFilter&&window.setFeedFilter('${window._escJs(t)}')" style="cursor:pointer">${window._escHtml(t)}</span>`
+      : `<span class="feed-tag">${window._escHtml(t)}</span>`).join('')}</div>` : '';
   const escapedText = (p.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   return `
     <div data-feed-post="${p._id || ''}" style="${_detail ? '' : 'border-bottom:1px solid rgba(255,255,255,0.06);'}background:#0a0a0a">
       <div style="display:flex;align-items:center;padding:12px 20px 10px;">
-        <div style="display:flex;align-items:center;flex:1;min-width:0${_detail ? '' : ';cursor:pointer'}" ${_detail ? '' : `onclick="openUserProfile('${p.userId}','${_escJs(p.userName||'익명')}','${_escJs(displayPhoto)}')"`}>
+        <div style="display:flex;align-items:center;flex:1;min-width:0${_detail ? '' : ';cursor:pointer'}" ${_detail ? '' : `onclick="openUserProfile('${window._escJs(p.userId)}','${_escJs(p.userName||'익명')}','${_escJs(displayPhoto)}')"`}>
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);flex-shrink:0;border:1px solid rgba(255,255,255,0.08)">
             <img data-av="${p.userId||''}" src="${window._cdnImg(displayPhoto,80)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
@@ -18115,14 +18127,14 @@ function buildPostHTML(p, opts) {
           ? `<button onclick="openPostOptions('${p._id}','${escapedText}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>`
           // ★남의 글엔 케밥이 아예 없어서 **신고할 방법이 없었다**(애플 1.2 필수, 8-14).
           //   초대 버튼 오른쪽에 작게 붙인다. 상세에선 초대 버튼을 빼므로 케밥만 남는다.
-          : `${_detail ? '' : `<button data-inv="${p.userId||''}" data-inv-name="${(p.userName||'익명').replace(/"/g,'&quot;')}" data-inv-photo="${String(displayPhoto||'').replace(/"/g,'')}"
+          : `${_detail ? '' : `<button data-inv="${window._escHtml(p.userId||'')}" data-inv-name="${(p.userName||'익명').replace(/"/g,'&quot;')}" data-inv-photo="${String(displayPhoto||'').replace(/"/g,'')}"
                onclick="event.stopPropagation();window.feedInviteTap(this)" class="feed-invite-btn">${window.feedInviteBtnHtml ? window.feedInviteBtnHtml(p.userId||'') : ''}</button>`}
-             <button aria-label="더보기" onclick="event.stopPropagation();window.openPostMenu('feed','${p._id}','${p.userId||''}','${String(p.userName||'익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;margin-left:2px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>`}
+             <button aria-label="더보기" onclick="event.stopPropagation();window.openPostMenu('feed','${p._id}','${window._escJs(p.userId||'')}','${window._escJs(p.userName||'익명')}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;padding:4px;margin-left:2px;display:flex;align-items:center;flex-shrink:0">${window.mIcon('kebab', { size:18, color:'rgba(255,255,255,0.3)' })}</button>`}
       </div>
       ${tagRow}
       ${p.photoURL ? (_detail
-        ? `<div style="width:100%;background:#000"><img src="${window._cdnImg(p.photoURL,1080)}" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" onclick="window.openPhotoViewer&&window.openPhotoViewer('${p.photoURL.replace(/'/g,'')}')" style="width:100%;height:auto;display:block;cursor:zoom-in"></div>`
-        : `<div style="width:100%;aspect-ratio:4/5;overflow:hidden;background:#0b0e16"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${p.photoURL.replace(/'/g,'')}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>`) : ''}
+        ? `<div style="width:100%;background:#000"><img src="${window._cdnImg(p.photoURL,1080)}" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${window._escJs(window._safeUrl(p.photoURL))}'" onclick="window.openPhotoViewer&&window.openPhotoViewer('${window._escJs(window._safeUrl(p.photoURL))}')" style="width:100%;height:auto;display:block;cursor:zoom-in"></div>`
+        : `<div style="width:100%;aspect-ratio:4/5;overflow:hidden;background:#0b0e16"><img src="${window._cdnImg(p.photoURL,1080)}" loading="lazy" decoding="async" alt="${String(p.camText || p.text || '운동 인증 사진').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" onerror="this.onerror=null;this.src='${window._escJs(window._safeUrl(p.photoURL))}'" style="width:100%;height:100%;object-fit:cover;display:block"></div>`) : ''}
       <div style="padding:5px 9px 5px;display:flex;gap:4px">
         <button onclick="likePost('${p._id}', this)" style="background:none;border:none;cursor:pointer;padding:9px 11px;display:flex;align-items:center;gap:6px;color:${likeColor};font-size:14px;font-weight:600;font-family:inherit;border-radius:10px;-webkit-tap-highlight-color:transparent">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="${heartFill}" stroke="${likeColor}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -23271,7 +23283,7 @@ window.loadHofPanel = async function () {
   const HOF_TOP = 3;
   const row = function (r, me) {
     const big = r.rank <= HOF_TOP;
-    const nickJs = String(r.nick || '').replace(/['\\]/g, '');   // onclick 인자에 들어가므로 따옴표를 뺀다
+    const nickJs = window._escJs(r.nick || '');   // onclick 인자 — JS 문자열 이스케이프(11-24: 따옴표만 빼면 " 로 속성이 끊겼다)
     const bg = me ? 'background:rgba(61,126,255,0.07);border-top:1px solid rgba(255,255,255,0.09)'
                   : 'border-bottom:1px solid rgba(255,255,255,0.05)';
     // ★1·2·3위는 금·은·동 메달 (대표 8-19: "숫자만 있으면 밋밋하니까").
@@ -23307,7 +23319,7 @@ window.loadHofPanel = async function () {
     const msgHtml = msg
       ? `<div style="font-size:11.5px;color:rgba(255,255,255,0.5);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(msg)}</div>`
       : (r.sub ? `<div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:3px">${esc(r.sub)}</div>` : '');
-    return `<div onclick="openUserProfile('${r.uid}','${nickJs}','')" style="display:flex;align-items:center;gap:10px;padding:${big ? '12px' : '9px'} 16px;cursor:pointer;${bg}">`
+    return `<div onclick="openUserProfile('${window._escJs(r.uid)}','${nickJs}','')" style="display:flex;align-items:center;gap:10px;padding:${big ? '12px' : '9px'} 16px;cursor:pointer;${bg}">`
       + numHtml
       + `<div style="position:relative;width:${big ? 48 : 26}px;height:${big ? 58 : 40}px;flex-shrink:0;display:flex;align-items:flex-end;justify-content:center">`
       +   (med
@@ -26801,7 +26813,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   if (_tools) {
     const _self = userId === (window.currentUser && window.currentUser.uid);
     _tools.innerHTML = (_self || !userId) ? '' :
-      `<button aria-label="더보기" onclick="window.openPostMenu('user','${String(userId).replace(/'/g, '')}','${String(userId).replace(/'/g, '')}','${String(userName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')" style="background:none;border:none;padding:7px;color:rgba(255,255,255,0.38);cursor:pointer;font-family:inherit;display:flex;align-items:center">${window.mIcon('kebab', { size:17, color:'rgba(255,255,255,0.38)' })}</button>`;
+      `<button aria-label="더보기" onclick="window.openPostMenu('user','${window._escJs(userId)}','${window._escJs(userId)}','${window._escJs(userName || '')}')" style="background:none;border:none;padding:7px;color:rgba(255,255,255,0.38);cursor:pointer;font-family:inherit;display:flex;align-items:center">${window.mIcon('kebab', { size:17, color:'rgba(255,255,255,0.38)' })}</button>`;
   }
   const bodyEl = document.getElementById('user-profile-body');
   bodyEl.style.padding = '0';
@@ -26911,7 +26923,7 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
     _put(`
     <div style="padding:18px 16px 4px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}</span>
+        <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${window._escHtml(name)}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}</span>
       </div>
       ${meta1 ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta1}</div>` : ''}
     </div>
@@ -26928,18 +26940,18 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   // 세련된 글래스 칩 (흰 반투명 · 매칭 카드와 동일 언어). 정확한 센터(gym)만 매칭 후 공개
   const chip = (icon, label) => `<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);color:rgba(255,255,255,0.92);font-size:12px;font-weight:600;padding:7px 12px;border-radius:11px">${icon}${label}</span>`;
   let styleChips = '';
-  if (d.purpose) styleChips += chip(I_DUMBBELL, d.purpose);                                       // 운동 목적
-  if ((d.workoutTime || []).length) styleChips += chip(I_CLOCK, (d.workoutTime || []).join('·')); // 운동 시간대 → 한 칩으로 묶음(카드와 일치)
-  if (d.district) styleChips += chip(I_PIN, d.district);                                          // 동네(구)
-  const meta = [d.age ? d.age + '세' : '', d.gender].filter(Boolean).join(' · ');
+  if (d.purpose) styleChips += chip(I_DUMBBELL, window._escHtml(d.purpose));                                       // 운동 목적
+  if ((d.workoutTime || []).length) styleChips += chip(I_CLOCK, window._escHtml((d.workoutTime || []).join('·'))); // 운동 시간대 → 한 칩으로 묶음(카드와 일치)
+  if (d.district) styleChips += chip(I_PIN, window._escHtml(d.district));                                          // 동네(구)
+  const meta = [d.age ? d.age + '세' : '', d.gender].filter(Boolean).map(window._escHtml).join(' · ');
 
   const I_MEDAL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>';
   const I_CAL_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18M8.5 15.5l2.2 2.2 4.3-4.4"/></svg>';
   const _na = '<span style="color:rgba(255,255,255,0.28);font-weight:500">미입력</span>';
   const infoRows = [];
   const _lockVal = '<span style="display:inline-flex;align-items:center;gap:4px;color:rgba(255,255,255,0.35);font-weight:600;font-size:12px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>매칭 후 공개</span>';
-  infoRows.push([I_DUMBBELL, '다니는 센터', matched ? (d.gym || _na) : _lockVal]);
-  infoRows.push([I_MEDAL, '운동 경력', d.career || _na]);
+  infoRows.push([I_DUMBBELL, '다니는 센터', matched ? (window._escHtml(d.gym) || _na) : _lockVal]);
+  infoRows.push([I_MEDAL, '운동 경력', window._escHtml(d.career) || _na]);
   infoRows.push([I_CAL_CHECK, '이번달 운동', monthCnt + '회 인증']);
   const infoCard = `<div style="margin:10px 16px 0;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden">${infoRows.map((r, i) => `${i ? '<div style="height:1px;background:rgba(255,255,255,0.05);margin:0 14px"></div>' : ''}<div style="display:flex;align-items:center;gap:10px;padding:13px 14px"><span style="color:rgba(255,255,255,0.5);display:inline-flex">${r[0]}</span><span style="font-size:13px;color:rgba(255,255,255,0.45);flex:1">${r[1]}</span><span style="font-size:13px;font-weight:700;color:#fff">${r[2]}</span></div>`).join('')}</div>`;
 
@@ -27001,14 +27013,14 @@ window.openUserProfile = async function(userId, userName, userPhoto) {
   _put(`
     <div style="padding:18px 16px 4px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${name}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}${(window._milestoneBadge && window._milestoneBadge(totalCnt, 30)) || ''}</span>
+        <span style="font-size:22px;font-weight:800;letter-spacing:-0.5px;display:inline-flex;align-items:center;gap:6px">${window._escHtml(name)}${d.faceVerified ? '<span style="color:var(--gold);display:inline-flex;align-items:center">' + _SHIELD_SVG + '</span>' : ''}${(window._milestoneBadge && window._milestoneBadge(totalCnt, 30)) || ''}</span>
       </div>
       ${meta ? `<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:4px">${meta}</div>` : ''}
       <div id="up-crew-badge"></div>
     </div>
     ${infoCard}
     ${styleChips ? `<div style="padding:18px 16px 2px"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,0.45);margin-bottom:10px">운동 스타일</div><div style="display:flex;gap:6px;flex-wrap:wrap">${styleChips}</div></div>` : ''}
-    ${d.bio ? `<div style="padding:16px 16px 2px"><div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;font-size:14px;color:rgba(255,255,255,0.88);line-height:1.6">"${d.bio}"</div></div>` : ''}
+    ${d.bio ? `<div style="padding:16px 16px 2px"><div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;font-size:14px;color:rgba(255,255,255,0.88);line-height:1.6">"${window._escHtml(d.bio)}"</div></div>` : ''}
     <div style="height:1px;background:rgba(255,255,255,0.06);margin:18px 16px"></div>
     ${feedSection}
     <div style="height:1px;background:rgba(255,255,255,0.06);margin:6px 16px 20px"></div>
@@ -27882,11 +27894,13 @@ function _kakaoRedirectUri() {
 //   옛 방식은 비밀번호가 kp_{카카오id}_mk 로 고정이라 **누구나 남의 계정으로 들어올 수 있었다**(C1).
 //   Worker 교체(tools/kakao-worker/) 전에도 이 코드는 옛 응답으로 그대로 돈다 — 순서에 안전.
 function _kakaoLinkUid() { const c = auth.currentUser; return (c && c.isAnonymous) ? c.uid : undefined; }
+// ★11-24 Worker 가 linkUid 를 그대로 믿던 계정 탈취 구멍 → 익명 계정 본인임을 ID 토큰으로 증명한다.
+async function _kakaoLinkIdToken() { try { const c = auth.currentUser; return (c && c.isAnonymous) ? await c.getIdToken() : undefined; } catch (e) { return undefined; } }
 async function _kakaoWorker(body) {
   // ★8-29 새 Worker(커스텀 토큰 발급). 옛 주소 murpy-kakao.dyrhl2356.workers.dev 는 옛 방식(비밀번호)이라 쓰지 않는다.
   const resp = await fetch('https://murpy-kakao.dyrhl4321.workers.dev', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(Object.assign({ linkUid: _kakaoLinkUid() }, body))
+    body: JSON.stringify(Object.assign({ linkUid: _kakaoLinkUid(), linkIdToken: await _kakaoLinkIdToken() }, body))
   });
   return resp.json();
 }
@@ -29313,7 +29327,7 @@ window.mwArtTake = async function (id) {
     if (have < price) { showToast('머피가 모자라요 · ' + price + '머피 필요해요'); return; }
     const ok = await window.murpyConfirm({
       title: price + '머피로 사기',
-      desc: '<b>' + ((a.by || []).join('·')) + '</b>님이 그린 그림을 내 방으로 가져와요',
+      desc: '<b>' + window._escHtml((a.by || []).join('·')) + '</b>님이 그린 그림을 내 방으로 가져와요',
       confirmText: '사기'
     });
     if (!ok) return;
@@ -29511,7 +29525,7 @@ window._mwArtRefresh = function (id) {
 // 이번 회차(aucAt)의 입찰만 높은 순으로. 같은 값이면 먼저 부른 사람이 앞이다.
 window.mwAucBids = async function (id, aucAt) {
   try {
-    const qs = await getDocs(query(collection(db, 'notifications'), where('artId', '==', id)));
+    const qs = await getDocs(query(collection(db, 'notifications'), where('artId', '==', id), where('type', '==', 'art_bid')));   // ★11-24 규칙이 남의 알림 읽기를 막는다 — 입찰(art_bid)만 공개라 type 을 같이 건다
     const out = [];
     qs.forEach(function (d) {
       const n = d.data() || {};
@@ -29933,7 +29947,7 @@ window.mwArtOpenFrom = function (owner, id) {
     // ★신고 경로 (8-20 스펙 "3단계에서 검토" → 8-29). 남의 그림에만 뜬다. 기존 신고 시트(openReportSheet) 재사용, kind='art'
     + ((window.currentUser && window.currentUser.uid !== owner)
         ? '<div style="margin-top:8px"><button style="background:none;border:none;padding:4px 8px;font-family:inherit;font-size:10.5px;color:#4a5266;cursor:pointer" '
-          + 'onclick="event.stopPropagation();window.openReportSheet(&quot;art&quot;,&quot;' + esc(id) + '&quot;,&quot;' + esc(owner) + '&quot;,&quot;' + esc(rec.nick || '') + '&quot;)">이 그림 신고</button></div>'
+          + 'onclick="event.stopPropagation();window.openReportSheet(&quot;art&quot;,&quot;' + window._escJs(id) + '&quot;,&quot;' + window._escJs(owner) + '&quot;,&quot;' + window._escJs(rec.nick || '') + '&quot;)">이 그림 신고</button></div>'
         : '')
     + '<div id="mw-auc-now" style="font-size:11px;color:#F5C24B;margin-top:10px"></div>'
     + '<div class="ab-btns">' + btns + '</div></div>';
@@ -30156,7 +30170,7 @@ window.mwArtBig = function (id) {
   if (!visiting) {
     if (window.mwAucSold(a)) {
       // 판 그림이다. 되돌릴 길은 없다 — 대금이 들어오면 목록에서 저절로 빠진다.
-      sell = '<div class="ab-sold">' + IC_GAVEL + (a.won.nick || '누군가') + '님에게 '
+      sell = '<div class="ab-sold">' + IC_GAVEL + window._escHtml(a.won.nick || '누군가') + '님에게 '
            + (a.won.amount | 0) + '머피에 팔렸어요<br><span>대금이 들어오면 목록에서 빠져요</span></div>';
     } else if (aucOn) {
       // 낙찰이 주인공이다. '내리기'는 되돌리는 길이라 **글자 버튼**으로 낮춘다.
@@ -30175,7 +30189,7 @@ window.mwArtBig = function (id) {
   el.innerHTML = '<div style="text-align:center;font-family:Galmuri11,sans-serif">'
     + '<img src="' + window.mwArtImg(a.px, 'frame', id) + '" alt="같이 낙서"'
     + ' style="width:100%;max-width:300px;image-rendering:pixelated;display:block;margin:0 auto">'
-    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + by
+    + (by ? '<div style="font-size:12px;color:#dfe5f0;margin-top:16px">' + window._escHtml(by)
           + (window.mwArtEdition(a) > 1 ? '님이 같이 그렸어요' : '님이 그렸어요') + '</div>' : '')
         // ★작품 설명 — 판 사람이 무엇을 그렸는지 적어 둔 것(대표 8-28)
         + (a.desc ? ('<div style="font-size:12px;color:#b9c0d0;line-height:1.6;margin-top:9px;'
@@ -31053,9 +31067,9 @@ window._mwRTalkWho = function () {
       const nk = String(v.nick || '머피');
       const char = window.mwMiniCharHtml ? window.mwMiniCharHtml(v.character, 38, 'down') : '';
       const profile = !mine
-        ? '<button class="mw-party-profile" onclick="event.stopPropagation();window.openUserProfile(&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;,&quot;&quot;)">프로필</button>' : '';
+        ? '<button class="mw-party-profile" onclick="event.stopPropagation();window.openUserProfile(&quot;' + window._escJs(k) + '&quot;,&quot;' + window._escJs(nk) + '&quot;,&quot;&quot;)">프로필</button>' : '';
       const kick = isHost && !mine
-        ? '<button class="mw-party-kick" onclick="window.mwRoomKick(&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;)">강퇴</button>' : '';
+        ? '<button class="mw-party-kick" onclick="window.mwRoomKick(&quot;' + window._escJs(k) + '&quot;,&quot;' + window._escJs(nk) + '&quot;)">강퇴</button>' : '';
       return '<div class="mw-party-member"><div class="pm-char">' + char + '</div>'
         + '<div class="pm-name">' + esc(nk) + (mine ? ' (나)' : '') + (k === window._mwRl.owner ? ' · 방장' : '') + '</div>'
         + '<div class="pm-actions">' + profile + kick + '</div></div>';
@@ -31068,10 +31082,10 @@ window._mwRTalkWho = function () {
   }).map(function (k) {
     const nk = String(all[k].nick);
     const mine = (k === me);
-    return '<span class="rt-mem"' + (mine ? '' : ' onclick="window.openPostMenu(&quot;user&quot;,&quot;' + esc(k) + '&quot;,&quot;' + esc(k) + '&quot;,&quot;' + esc(nk) + '&quot;)" style="cursor:pointer"') + '>' + esc(nk) + (mine ? '(나)' : '')
+    return '<span class="rt-mem"' + (mine ? '' : ' onclick="window.openPostMenu(&quot;user&quot;,&quot;' + window._escJs(k) + '&quot;,&quot;' + window._escJs(k) + '&quot;,&quot;' + window._escJs(nk) + '&quot;)" style="cursor:pointer"') + '>' + esc(nk) + (mine ? '(나)' : '')
       + ((isHost && !mine)
-          ? '<button class="rt-kick" title="내보내기" onclick="window.mwRoomKick(&quot;' + esc(k)
-            + '&quot;,&quot;' + esc(nk) + '&quot;)">X</button>'
+          ? '<button class="rt-kick" title="내보내기" onclick="window.mwRoomKick(&quot;' + window._escJs(k)
+            + '&quot;,&quot;' + window._escJs(nk) + '&quot;)">X</button>'
           : '') + '</span>';
   }).join('');
   b.innerHTML = '<b>지금 방에 ' + names.length + '명</b><br>'
@@ -32776,7 +32790,7 @@ window.sqInviteSheet = function (sid) {
     ? '<div style="display:flex;gap:12px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none">'
       + uids.slice(0, 20).map(function (u) {
           const b = bum[u] || {};
-          return '<div onclick="window.sqInviteTo(\'' + js(u) + '\',\'' + js(b.nick || '머피') + '\',\'' + js(sid) + '\')" '
+          return '<div onclick="window.sqInviteTo(\'' + window._escJs(u) + '\',\'' + window._escJs(b.nick || '머피') + '\',\'' + window._escJs(sid) + '\')" '
             + 'style="flex-shrink:0;width:62px;text-align:center;cursor:pointer">'
             + '<div style="height:62px;display:flex;align-items:flex-end;justify-content:center">'
             +   (window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 56) : '') + '</div>'
@@ -33789,7 +33803,7 @@ window.loadBamboo = async (tab, opts) => {
         <div id="bcm-${post.id}" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()" style="flex-basis:100%;padding:0 2px;margin-top:-6px"></div>
         ${post.photoURL ? `<div style="width:64px;height:64px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#111">
           <img src="${window._cdnImg ? window._cdnImg(post.photoURL, 180) : post.photoURL}" loading="lazy" decoding="async" alt=""
-               onerror="this.onerror=null;this.src='${String(post.photoURL).replace(/'/g, '')}'"
+               onerror="this.onerror=null;this.src='${window._escJs(window._safeUrl(post.photoURL))}'"
                style="width:100%;height:100%;object-fit:cover;display:block">
         </div>` : ''}
       </article>`;
@@ -33973,8 +33987,8 @@ window.openBambooDetail = async function (postId) {
     ${shownBody ? `<div class="bamboo-quote" style="margin:24px 20px 0 6px;font-size:15.5px;line-height:1.85;color:rgba(255,255,255,0.86);white-space:pre-wrap;word-break:break-word">${esc(shownBody)}</div>` : ''}
     ${p.photoURL ? `<figure style="margin:24px 20px 0">
       <img src="${window._cdnImg ? window._cdnImg(p.photoURL, 1080) : p.photoURL}" alt="글쓴이가 올린 사진"
-           onerror="this.onerror=null;this.src='${String(p.photoURL).replace(/'/g, '')}'"
-           onclick="window.openPhotoViewer && window.openPhotoViewer('${String(p.photoURL).replace(/'/g, '')}')"
+           onerror="this.onerror=null;this.src='${window._escJs(window._safeUrl(p.photoURL))}'"
+           onclick="window.openPhotoViewer && window.openPhotoViewer('${window._escJs(window._safeUrl(p.photoURL))}')"
            style="width:100%;border-radius:10px;display:block;cursor:zoom-in">
     </figure>` : ''}
     <div style="margin:30px 20px ${_ctaHtml ? '18px' : '0'};padding:16px 0 ${_ctaHtml ? '0' : '32px'};border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;gap:24px">
@@ -34715,17 +34729,17 @@ window._renderInterestList = async (more) => {
   const _heart = '<svg width="16" height="16" viewBox="0 0 24 24" fill="#F5C24B" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
   const _profileCard = (p, right) => {
     const nick = (p.nickname||'익명').replace(/</g,'&lt;');
-    const nickJs = (p.nickname||'익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    const photo = (p.photoURL||'').replace(/'/g,'');
+    const nickJs = window._escJs(p.nickname||'익명');
+    const photo = window._safeUrl(p.photoURL||'');
     const age = p.age ? p.age+'세' : '';
     const district = p.district || '';
-    return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openUserProfile('${p.uid}','${nickJs}','${photo}')">
+    return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openUserProfile('${window._escJs(p.uid)}','${nickJs}','${window._escJs(photo)}')">
       <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06)">
-        ${photo ? `<img src="${window._cdnImg(photo,104)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${photo}'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></div>'}
+        ${photo ? `<img src="${window._cdnImg(photo,104)}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${window._escJs(photo)}'">` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></div>'}
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px;margin-bottom:2px">${nick}</div>
-        <div style="font-size:12px;color:rgba(255,255,255,0.4)">${[age,district].filter(Boolean).join(' · ')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4)">${window._escHtml([age,district].filter(Boolean).join(' · '))}</div>
         ${p.letter ? `<div style="margin-top:7px;display:flex;gap:7px;align-items:flex-start"><img src="char/npc/portrait_kid.png?v=11" alt="" style="width:22px;height:22px;border-radius:7px;object-fit:cover;flex-shrink:0;margin-top:1px"><div style="font-size:12.5px;color:#fff;background:rgba(255,255,255,0.06);border-left:2px solid #F5C24B;padding:5px 8px;border-radius:0 8px 8px 0;white-space:pre-wrap;word-break:break-word">${_escHtml(p.letter)}</div></div>` : ''}
       </div>
       ${right||''}
@@ -34764,9 +34778,9 @@ window._renderInterestList = async (more) => {
   if (bambooDocs.length) {
     html += _section('대숲 저에요', '#4ADE80');
     html += bambooDocs.map(n => {
-      const nickJs = (n.fromNickname||'익명').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const nickJs = window._escJs(n.fromNickname||'익명');
       const postText = (n.postText||'').replace(/</g,'&lt;');
-      return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openBambooChat('${(n.fromUid||'').replace(/'/g,'')}','${nickJs}','${(n.postId||'').replace(/'/g,'')}','')">
+      return `<div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer" onclick="window.openBambooChat('${window._escJs(n.fromUid||'')}','${nickJs}','${window._escJs(n.postId||'')}','')">
         <div style="width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>
         </div>
@@ -34946,7 +34960,7 @@ window.viewBambooRequesters = async (postId) => {
     }));
     const intro = `<div style="display:flex;align-items:flex-start;gap:6px;font-size:11.5px;color:#86efac;font-weight:600;line-height:1.5;margin-bottom:13px"><svg width="13" height="13" viewBox="0 0 24 24" fill="#86efac" stroke="none" style="flex-shrink:0;margin-top:1px"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span>'저에요'를 보낸 익명들이에요. <b style="color:#fff">익명으로 먼저 대화</b>해서 맞는지 확인하고, 통하면 채팅에서 매칭하세요</span></div>`;
     reqEl.innerHTML = intro + profiles.map((p, i) => {
-      const snJs = p.nickname.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const snJs = window._escJs(p.nickname);
       const su = p.uid.replace(/'/g,'');
       return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(74,222,128,0.18);border-radius:14px;margin-bottom:10px">
         <div style="width:42px;height:42px;border-radius:50%;background:rgba(74,222,128,0.14);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></div>
@@ -35000,7 +35014,7 @@ window.loadMatchedStrip = async () => {
   const cells = pairs.map(p => {
     const prof = C[p.uid] || { name: '익명', photo: '' };
     const img = prof.photo ? `<img src="${window._cdnImg(prof.photo, 140)}" loading="lazy" decoding="async" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">` : _ico;
-    return `<div onclick="window.openUserProfile('${escJs(p.uid)}','${escJs(prof.name)}','${escJs(prof.photo)}')" style="flex:0 0 auto;width:60px;cursor:pointer">
+    return `<div onclick="window.openUserProfile('${window._escJs(p.uid)}','${window._escJs(prof.name)}','${window._escJs(window._safeUrl(prof.photo))}')" style="flex:0 0 auto;width:60px;cursor:pointer">
       <div style="width:60px;height:60px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06);border:2px solid rgba(61,126,255,0.55);display:flex;align-items:center;justify-content:center">${img}</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.7);margin-top:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(prof.name)}</div>
     </div>`;
@@ -35052,10 +35066,10 @@ window.loadChatListFirestore = async () => {
       const lastMsg = _E(c.lastMessage || '대화를 시작해봐요');
       const lastTime = c.lastMessageTime ? new Date(c.lastMessageTime.seconds * 1000).toLocaleDateString('ko-KR', {month:'short',day:'numeric'}) : '';
       const snJs = _E(pName.replace(/\\/g,'').replace(/'/g,"\\'"));
-      const spJs = _E(pPhoto.replace(/\\/g,'').replace(/'/g,"\\'"));
+      const spJs = _E(window._safeUrl(pPhoto));
       const avatarInner = isBamboo
         ? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>'
-        : (pPhoto ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${pPhoto.replace(/'/g,'')}';this.onerror=function(){this.style.display='none'}">` : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>');
+        : (window._safeUrl(pPhoto) ? `<img src="${window._cdnImg(pPhoto,96)}" style="width:100%;height:100%;object-fit:cover" onerror="this.onerror=null;this.src='${window._escJs(window._safeUrl(pPhoto))}';this.onerror=function(){this.style.display='none'}">` : '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.42)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>');
       return `<div class="card" style="display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.openChatFirestore('${c.id}','${pid}','${snJs}','${spJs}',${isBamboo})">
         <div ${isBamboo || !pid ? '' : `onclick="event.stopPropagation();window.openUserProfile('${pid}','${snJs}','${spJs}')"`} style="width:48px;height:48px;border-radius:50%;background:${isBamboo?'rgba(74,222,128,0.1)':'rgba(255,255,255,0.08)'};flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center${isBamboo?';border:1px solid rgba(74,222,128,0.2)':''}">
           ${avatarInner}
@@ -35948,7 +35962,7 @@ window.mwRenderDogam = async function () {
     const b = byCenter[c.id];
     return `
       <div class="mw-stampcell ${b?'':'locked'}" onclick="window.mwCenterField&&window.mwCenterField('${c.id}')">
-        <span class="mw-stampname">${b?c.name:'? ? ?'}</span>
+        <span class="mw-stampname">${b?window._escHtml(c.name):'? ? ?'}</span>
         <div style="position:relative">${window.mwBadgeHtml(c,66)}${b?'':'<span class="mw-lockq">?</span>'}</div>
         <span class="mw-visitcnt">${b?`방문 ${b.n}회`:'미발견'}</span>
       </div>`;
@@ -35971,7 +35985,7 @@ window.mwRenderDogam = async function () {
     const list=regions[r], got=list.filter(c=>byCenter[c.id]).length;
     return `
       <details class="mw-region"${r===openRegion?' open':''}>
-        <summary>${r}<span class="mw-rgn-n">${got}/${list.length}</span></summary>
+        <summary>${window._escHtml(r)}<span class="mw-rgn-n">${got}/${list.length}</span></summary>
         <div class="mw-rgn-grid">${list.map(cellOf).join('')}</div>
       </details>`;
   }).join('');
@@ -36033,7 +36047,7 @@ window.mwRenderDogam = async function () {
         }).join('')}
       </div>
     </div>`;
-  const homeTileVal = home ? `<b style="color:#fff">${(home.name||'').length>5?home.name.slice(0,5)+'…':home.name}</b>` : `<b style="color:#F5C24B">미정</b>`;
+  const homeTileVal = home ? `<b style="color:#fff">${window._escHtml((home.name||'').length>5?home.name.slice(0,5)+'…':home.name)}</b>` : `<b style="color:#F5C24B">미정</b>`;
   const nextReward = next ? `${coin(12)}<b style="color:#F5C24B">+${next[1]}</b>` : `<b style="color:#F5C24B">완료</b>`;
   const scroll = id => `document.getElementById('${id}')&&document.getElementById('${id}').scrollIntoView({behavior:'smooth',block:'start'})`;
   const tileCss = 'flex:1;min-width:0;padding:10px 6px;background:#1b2233;border:3px solid #05070c;box-shadow:0 0 0 2px #2b3350;cursor:pointer;text-align:center;font-family:inherit';
@@ -36153,7 +36167,7 @@ window.mwBadgeHtml = function (c, size) {
   const gold = !!(c && c.partner);
   const star = s => `<svg class="mwb-spark" style="${s}" width="11" height="11" viewBox="0 0 24 24" fill="#F5C24B"><path d="M12 2l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"/></svg>`;
   const sparks = gold ? star('right:6px;top:-3px') + star('left:-4px;bottom:12px;animation-delay:.85s') : '';
-  return `<span class="mw-badge" style="width:${size}px;height:${size}px"><canvas class="mw-badgecv" width="64" height="64" data-frame="${gold?'gold':'silver'}"${c && c.pixelLogo ? ` data-pixlogo="${c.pixelLogo}"` : ''}${c && c.logo ? ` data-logo="${c.logo}"` : ''} data-fb="${ini}" data-hue="${hue}"></canvas>${sparks}</span>`;
+  return `<span class="mw-badge" style="width:${size}px;height:${size}px"><canvas class="mw-badgecv" width="64" height="64" data-frame="${gold?'gold':'silver'}"${c && window._safeUrl(c.pixelLogo) ? ` data-pixlogo="${window._escHtml(window._safeUrl(c.pixelLogo))}"` : ''}${c && window._safeUrl(c.logo) ? ` data-logo="${window._escHtml(window._safeUrl(c.logo))}"` : ''} data-fb="${window._escHtml(ini)}" data-hue="${hue}"></canvas>${sparks}</span>`;
 };
 window._mwRenderBadges = function () {
   // 방패 프레임(내부 남색 필드 내장) 위에 로고를 얹는 방식. 필드 실측 박스 = x 25~75%, y 22~70%
@@ -37729,7 +37743,7 @@ window.mwAddCenterHere = async function () {
       </div>
       ${near.length ? `<div style="background:rgba(245,194,75,.1);border:1px solid rgba(245,194,75,.34);
         border-radius:10px;padding:10px 12px;margin-bottom:13px;font-size:11.5px;color:#F5C24B;line-height:1.6">
-        근처에 이미 <b>${near[0].c.name}</b>(${Math.round(near[0].d)}m)가 있어요. 같은 곳이면 등록하지 마세요.</div>` : ''}
+        근처에 이미 <b>${window._escHtml(near[0].c.name)}</b>(${Math.round(near[0].d)}m)가 있어요. 같은 곳이면 등록하지 마세요.</div>` : ''}
       <input id="mw-ac-name" type="text" maxlength="40" placeholder="헬스장 이름 (예: 짐박스피트니스 구로디지털단지점)"
         style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);
           border-radius:12px;padding:14px;color:#fff;font-size:15px;outline:none;font-family:inherit;box-sizing:border-box">
@@ -37826,19 +37840,19 @@ window.mwRenderTodayMurpys = async function () {
     //   대신 누르면 들어가지는 못하고 가입 화면으로 보낸다(대표 8-12).
     const murpys = g.list.map(k => {
       const p = profiles[k.uid] || {};
-      const go = guest ? `window._mwJoinGate('${(p.nickname||'머피').replace(/'/g,"")}님 방을 구경하려면')`
+      const go = guest ? `window._mwJoinGate('${window._escJs(p.nickname||'머피')}님 방을 구경하려면')`
                        : `window.mwVisitRoom('${k.uid}')`;
       return `<div onclick="${go}" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:64px;cursor:pointer">
         ${window.mwMiniCharHtml(p.character, 58)}
         <span style="font-size:10px;color:#cfd6e6;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(p.nickname||'머피')}</span></div>`;
     }).join('');
-    const goField = guest ? `window._mwJoinGate('${(g.name||'이 센터').replace(/'/g,"")} 필드에 들어가려면')`
+    const goField = guest ? `window._mwJoinGate('${window._escJs(g.name||'이 센터')} 필드에 들어가려면')`
                           : `window.mwCenterField('${cid}')`;
     return `
       <div class="mw-panel" style="padding:13px 13px 15px;margin-bottom:11px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px;cursor:pointer" onclick="${goField}">
           <span class="mw-wb-live" style="position:static"></span>
-          <span style="font-size:13px;color:#fff;font-weight:700">${g.name||'센터'}</span>
+          <span style="font-size:13px;color:#fff;font-weight:700">${window._escHtml(g.name||'센터')}</span>
           <span style="font-size:11px;color:#F5C24B;margin-left:auto">${g.list.length}명 오운완</span>
           <span style="font-size:12px;color:#8a93a8">필드 ›</span>
         </div>
@@ -38422,7 +38436,7 @@ window.mwVisitRoom = async function (uid) {
     // 발밑 닉네임 — 오버월드·센터필드(.mw-cfd-nick)와 같은 문법. 칭호는 머리 위, 이름은 발밑.
     const vNick = `<span class="mw-cfd-nick">${String(nick).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`;
     // ★방 주인을 누르면 링 메뉴(채팅/스쿼드 초대). 내 방이면 안 붙인다.
-    const _nickJs = String(nick).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const _nickJs = window._escJs(nick);
     const _mine = me && me.uid === uid;
     vstage.insertAdjacentHTML('beforeend',
       `<div id="mw-vroom-owner"${_mine ? '' : ` onclick="window.mwOtherMenu('${uid}','${_nickJs}',event)"`}
@@ -38935,7 +38949,7 @@ window._mwHomeList = async function () {
   el.innerHTML = centers.map(c => `
     <button class="mw-panel" style="padding:13px 14px;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px;border:3px solid #05070c;width:100%;font-family:inherit" onclick="window.mwSetHome('${c.id}')">
       <span style="flex:1;font-size:13.5px;color:#fff;font-weight:700">${_escHtml(c.name)}</span>
-      <span style="font-size:11px;color:#4a5266">${c.loc || ''}</span>
+      <span style="font-size:11px;color:#4a5266">${window._escHtml(c.loc || '')}</span>
     </button>`).join('');
 };
 window.mwSetHome = async function (centerId) {
@@ -39017,7 +39031,7 @@ window.mwCheckin = function () {
     }
     if (best && bestD <= MW_CHECKIN_RADIUS) window.mwConfirmCheckin(best, Math.round(bestD), lat, lng);
     else {
-      const near = best ? `가장 가까운 <b style=\"color:#cfd6e6\">${best.name}</b>까지 <b style=\"color:#F5C24B\">${bestD<1000?Math.round(bestD)+'m':(bestD/1000).toFixed(1)+'km'}</b>` : '좌표 등록된 센터가 없어요';
+      const near = best ? `가장 가까운 <b style=\"color:#cfd6e6\">${window._escHtml(best.name)}</b>까지 <b style=\"color:#F5C24B\">${bestD<1000?Math.round(bestD)+'m':(bestD/1000).toFixed(1)+'km'}</b>` : '좌표 등록된 센터가 없어요';
       // GPS 오차가 큰데 센터가 그 오차 안에 들어오면, 실제로는 센터 안일 가능성이 크다.
       const weak = acc > 50 && best && bestD <= (MW_CHECKIN_RADIUS + acc);
       window._mwOverlay(`
@@ -39047,7 +39061,7 @@ window.mwConfirmCheckin = async function (center, dist, lat, lng) {
     const mine = await mwLoadCheckins();
     if (mine.some(k => String(k.centerId) === String(center.id) && k.day === mwTodayKey())) {
       window._mwOverlay(`
-        <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>${center.name.slice(0,4)}</i></div>
+        <div class="mw-inkstamp big" style="margin:0 auto 14px"><i>${window._escHtml(center.name.slice(0,4))}</i></div>
         <div style="font-family:'Galmuri14',sans-serif;font-size:14px;color:#fff;margin-bottom:8px">오늘은 이미 도장 찍었어요</div>
         <div style="font-size:12px;color:#8a93a8;margin-bottom:6px">${_escHtml(center.name)} — 내일 또 만나요!</div>
         ${admin?`<button class="mw-btn" style="margin-top:12px" onclick="window.mwAdminPickCenter()">다른 센터로 테스트 (관리자)</button>`:''}
@@ -39097,7 +39111,7 @@ window.mwOpenCam = async function () {
   let el = document.getElementById('mw-cam'); if (el) el.remove();
   el = document.createElement('div'); el.id='mw-cam'; document.body.appendChild(el);
   el.innerHTML = `
-    <div class="mw-cam-top"><span class="mw-rec"></span>MURPY CAM<span style="margin-left:auto;font-size:10px;color:#4a5266">${(window._mwCkTarget&&window._mwCkTarget.center.name)||''}</span></div>
+    <div class="mw-cam-top"><span class="mw-rec"></span>MURPY CAM<span style="margin-left:auto;font-size:10px;color:#4a5266">${window._escHtml((window._mwCkTarget&&window._mwCkTarget.center.name)||'')}</span></div>
     <div class="mw-cam-stage"><video id="mw-cam-video" autoplay playsinline muted></video>
       <i class="mw-crn tl"></i><i class="mw-crn tr"></i><i class="mw-crn bl"></i><i class="mw-crn br"></i></div>
     <div class="mw-cam-bottom">
@@ -39424,7 +39438,7 @@ window.mwSealCheckin = async function (btn) {
   if (navigator.vibrate) navigator.vibrate([15,40,35]);
   // 도장 쾅 연출
   const slam=document.createElement('div'); slam.className='mw-slamwrap';
-  slam.innerHTML=`<div class="mw-inkstamp slam"><i>${t.center.name.slice(0,4)}</i></div>`;
+  slam.innerHTML=`<div class="mw-inkstamp slam"><i>${window._escHtml(t.center.name.slice(0,4))}</i></div>`;
   document.body.appendChild(slam);
   setTimeout(()=>{ document.body.classList.add('mw-shake'); }, 330);
   setTimeout(()=>{ document.body.classList.remove('mw-shake'); }, 640);
@@ -39461,7 +39475,7 @@ window.loadCrewMembers = async (crewId) => {
     } catch(e) { return { nickname: '멤버', photoURL: '' }; }
   }));
   const el = document.getElementById('crew-members-tab');
-  if (el) el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${profiles.map(m=>`<div style="text-align:center"><div style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.06);margin-bottom:6px">${m.photoURL?`<img src="${m.photoURL}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="font-size:13px;font-weight:700">${m.nickname}</div></div>`).join('')}</div>`;
+  if (el) el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">${profiles.map(m=>`<div style="text-align:center"><div style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;background:rgba(255,255,255,0.06);margin-bottom:6px">${window._safeUrl(m.photoURL)?`<img src="${window._escHtml(window._safeUrl(m.photoURL))}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover">`:''}</div><div style="font-size:13px;font-weight:700">${window._escHtml(m.nickname)}</div></div>`).join('')}</div>`;
 };
 
 window.loadCrewFeed = async (crewId) => {
@@ -39471,7 +39485,7 @@ window.loadCrewFeed = async (crewId) => {
     const q = query(collection(db, 'crews', String(crewId), 'feed'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
     if (snap.empty) { el.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#444;font-size:14px">아직 피드가 없어요</div>'; return; }
-    el.innerHTML = snap.docs.map(d => { const p = d.data(); const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : ''; return `<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${p.text||''}</div><div style="font-size:11px;color:#444">${p.userName||'익명'} · ${time}</div></div>`; }).join('');
+    el.innerHTML = snap.docs.map(d => { const p = d.data(); const time = p.createdAt ? new Date(p.createdAt.seconds*1000).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}) : ''; return `<div class="card"><div style="font-size:14px;color:#ddd;line-height:1.6;margin-bottom:8px">${window._escHtml(p.text||'')}</div><div style="font-size:11px;color:#444">${window._escHtml(p.userName||'익명')} · ${time}</div></div>`; }).join('');
   } catch(e) { el.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.2);font-size:13px">피드를 불러올 수 없어요</div>'; }
 };
 
@@ -39983,14 +39997,14 @@ window.loadHomeTrending = async () => {
     const _guest = !window.currentUser;
     runners.slice(0, 2).forEach(u => {   // 카드가 늘어서(스쿼드·캐릭터·센터 추가) 4→2로 줄임
       const photoRaw = u.photoURL || u.firestorePhotoURL || '';
-      const nick = (u.nickname || '').replace(/'/g, '');
+      const nick = window._escJs(u.nickname || '');
       cards.push(card({
         click: _guest ? "requireLogin('가입하면 누구인지 볼 수 있어요')"
-                      : `openUserProfile('${u.uid}','${nick}','${photoRaw.replace(/'/g, '')}')`,
+                      : `openUserProfile('${window._escJs(u.uid)}','${nick}','${window._escJs(window._safeUrl(photoRaw))}')`,
         color: GOLD, icon: icoFlame, label: '운동 열정러',
         img: photoRaw, blur: _guest,
         title: _guest ? window._mwMaskNick(u.nickname) : ((u.nickname || '') + (u.age ? ' · ' + u.age : '')),
-        meta: `${mFlame}<span>${u.streak || 0}일 연속</span>`
+        meta: `${mFlame}<span>${window._escHtml(u.streak || 0)}일 연속</span>`
       }));
     });
 
@@ -40035,7 +40049,7 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-sch
       const s = { id: d.id, ...d.data() };
       const myApp = myApps[d.id];
       const sid = d.id.replace(/'/g,'');
-      const titleJs = (s.title||'모임').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const titleJs = window._escJs(s.title||'모임');
       const full = s.maxMembers && (s.approvedCount||0) >= s.maxMembers;
       const dtStr = ((s.date||'')+' '+(s.time||'')).trim();
       let btns = '';
@@ -40044,10 +40058,10 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-sch
         if (s.status === 'upcoming') {
           const pc = s.pendingCount || 0;
           btns = `${editBtn}<button onclick="window.openApplicantsPanel('${safeId}','${sid}','${titleJs}')" class="btn-glass" style="padding:6px 12px;font-size:11px;font-weight:600">신청자${pc>0?` (${pc})`:''}</button>
-          <button onclick="window.startAttendance('${safeId}','${sid}','${titleJs}','${dtStr}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">출석 시작</button>`;
+          <button onclick="window.startAttendance('${safeId}','${sid}','${titleJs}','${window._escJs(dtStr)}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">출석 시작</button>`;
         } else if (s.status === 'active') {
           btns = `${editBtn}<button onclick="window.revertToUpcoming('${safeId}','${sid}')" class="btn-glass" style="padding:6px 10px;font-size:11px;font-weight:600">예정으로</button>
-          <button onclick="window.openQRModal('${safeId}','${sid}','${titleJs}','${dtStr}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR 코드</button>
+          <button onclick="window.openQRModal('${safeId}','${sid}','${titleJs}','${window._escJs(dtStr)}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">QR 코드</button>
           <button onclick="window.endAttendance('${safeId}','${sid}')" class="btn-glass" style="padding:6px 12px;font-size:11px;font-weight:600">종료</button>`;
         }
       } else if (user) {
@@ -40074,21 +40088,21 @@ window.loadCrewSchedules = async (crewId, tab = 'upcoming', targetId = 'crew-sch
         }
       }
       const doneRow = s.status==='done' ? `<div style="font-size:11px;color:#555;margin-top:4px">출석 ${s.attendCount||0} · 지각 ${s.lateCount||0} · 결석 ${s.absentCount||0}</div>` : '';
-      const thumbStyle = s.thumbnail
-        ? `background:url('${s.thumbnail}') center/cover`
+      const thumbStyle = window._safeUrl(s.thumbnail)
+        ? `background:url('${window._safeUrl(s.thumbnail)}') center/cover`
         : `background:linear-gradient(135deg, var(--accent) 0%, #1a4d8f 100%)`;
-      const tagsHtml = (s.tags && s.tags.length > 0) ? s.tags.map(t => `<span style="font-size:10px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;padding:2px 6px">${t}</span>`).join('') : '';
+      const tagsHtml = (s.tags && s.tags.length > 0) ? s.tags.map(t => `<span style="font-size:10px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;padding:2px 6px">${window._escHtml(t)}</span>`).join('') : '';
       return `<div class="card" style="margin-bottom:12px;${s.status==='active'?'border:1px solid var(--accent-border);':''}">
         <div style="display:flex;gap:12px;margin-bottom:8px">
-          <div style="width:100px;height:100px;border-radius:12px;flex-shrink:0;${thumbStyle};${!s.thumbnail?'display:flex;align-items:center;justify-content:center':''}">
-            ${!s.thumbnail?`<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M20.5 3.5l-3 3M17.5 17.5l3 3M3.5 20.5l3-3"/><circle cx="12" cy="12" r="1"/></svg>`:''}
+          <div style="width:100px;height:100px;border-radius:12px;flex-shrink:0;${thumbStyle};${!window._safeUrl(s.thumbnail)?'display:flex;align-items:center;justify-content:center':''}">
+            ${!window._safeUrl(s.thumbnail)?`<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5l11 11M20.5 3.5l-3 3M17.5 17.5l3 3M3.5 20.5l3-3"/><circle cx="12" cy="12" r="1"/></svg>`:''}
           </div>
           <div style="flex:1;min-width:0">
             ${s.status==='active'?'<div style="font-size:9px;font-weight:800;letter-spacing:1.5px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:5px;padding:2px 7px;display:inline-flex;align-items:center;gap:4px;margin-bottom:5px"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="12"/></svg>LIVE</div>':''}
             ${s.status==='done'?'<div style="font-size:9px;font-weight:700;letter-spacing:1px;color:#555;background:rgba(255,255,255,0.04);border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:5px">완료</div>':''}
-            <div style="font-size:15px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px">${s.title||'모임'}</div>
-            <div style="font-size:12px;color:#555;margin-bottom:2px">${s.date||''} ${s.time||''}</div>
-            ${s.location?`<div style="font-size:12px;color:#555;margin-bottom:6px">${s.location}</div>`:''}
+            <div style="font-size:15px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px">${window._escHtml(s.title||'모임')}</div>
+            <div style="font-size:12px;color:#555;margin-bottom:2px">${window._escHtml(s.date||'')} ${window._escHtml(s.time||'')}</div>
+            ${s.location?`<div style="font-size:12px;color:#555;margin-bottom:6px">${window._escHtml(s.location)}</div>`:''}
             ${tagsHtml?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${tagsHtml}</div>`:''}
           </div>
         </div>
@@ -40288,18 +40302,18 @@ window.loadApplicants = async (crewId, scheduleId) => {
       const rows = items.map(a => {
         let actionHtml = '';
         if (status==='pending'||status==='waitlist') {
-          actionHtml = `<button onclick="window.approveApplicant('${crewId}','${scheduleId}','${a.userId.replace(/'/g,'')}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>
-          <button onclick="window.rejectApplicant('${crewId}','${scheduleId}','${a.userId.replace(/'/g,'')}')" class="btn-glass" style="padding:5px 10px;font-size:11px">거절</button>`;
+          actionHtml = `<button onclick="window.approveApplicant('${crewId}','${scheduleId}','${window._escJs(a.userId)}')" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">승인</button>
+          <button onclick="window.rejectApplicant('${crewId}','${scheduleId}','${window._escJs(a.userId)}')" class="btn-glass" style="padding:5px 10px;font-size:11px">거절</button>`;
         } else if (status==='approved') {
           const paid = !!a.paid;
           actionHtml = `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-            <button onclick="window.togglePaid('${crewId}','${scheduleId}','${a.id.replace(/'/g,'')}',${paid})" style="background:${paid?'rgba(109,194,109,0.15)':'rgba(255,255,255,0.05)'};border:1px solid ${paid?'rgba(109,194,109,0.3)':'rgba(255,255,255,0.12)'};color:${paid?'#6dc26d':'#777'};border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${paid?'입금 ✓':'미입금'}</button>
+            <button onclick="window.togglePaid('${crewId}','${scheduleId}','${window._escJs(a.id)}',${paid})" style="background:${paid?'rgba(109,194,109,0.15)':'rgba(255,255,255,0.05)'};border:1px solid ${paid?'rgba(109,194,109,0.3)':'rgba(255,255,255,0.12)'};color:${paid?'#6dc26d':'#777'};border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">${paid?'입금 ✓':'미입금'}</button>
             <span style="font-size:11px;color:#555">승인${a.checkedIn?` · ${a.lateStatus?'지각':'출석'}`:''}</span>
           </div>`;
         }
         return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">
-            ${a.photoURL?`<img src="${a.photoURL}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}
+            ${window._safeUrl(a.photoURL)?`<img src="${window._escHtml(window._safeUrl(a.photoURL))}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}
           </div>
           <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${(a.nickname||'익명').replace(/</g,'&lt;')}</div></div>
           <div style="display:flex;gap:6px;flex-shrink:0">${actionHtml}</div>
@@ -40527,12 +40541,12 @@ window.loadCrewBoard = async (crewId, cat = 'all') => {
       return `<div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer" onclick="window.openCrewPostDetail('${safeCid}','${safeId}')">
         <div style="display:flex;gap:10px;align-items:flex-start">
           <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);overflow:hidden;flex-shrink:0">
-            <img src="${p.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            <img src="${window._escHtml(window._safeUrl(p.userPhoto))}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
           <div style="flex:1;min-width:0">
             <div style="margin-bottom:4px">${catBadge}<span style="font-size:14px;font-weight:700;color:#fff">${safeTitle}</span></div>
             <div style="font-size:12px;color:rgba(255,255,255,0.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">${safeBody}</div>
-            <div style="font-size:11px;color:#444;display:flex;align-items:center;gap:4px">${p.userName||'익명'} · ${time} ·<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-11.9 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg>${p.commentCount||0}</div>
+            <div style="font-size:11px;color:#444;display:flex;align-items:center;gap:4px">${window._escHtml(p.userName||'익명')} · ${time} ·<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-11.9 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg>${p.commentCount||0}</div>
           </div>
         </div>
       </div>`;
@@ -40593,10 +40607,10 @@ window.openCrewPostDetail = async (crewId, postId) => {
       <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.06)">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
           <div style="width:34px;height:34px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.06)">
-            <img src="${p.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+            <img src="${window._escHtml(window._safeUrl(p.userPhoto))}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
           </div>
           <div>
-            <div style="font-size:13px;font-weight:700">${p.userName||'익명'}</div>
+            <div style="font-size:13px;font-weight:700">${window._escHtml(p.userName||'익명')}</div>
             <div style="font-size:11px;color:#444">${time}</div>
           </div>
         </div>
@@ -40619,7 +40633,7 @@ window.loadCrewPostComments = async (crewId, postId) => {
       const c = d.data();
       return `<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:10px">
         <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.06);overflow:hidden;flex-shrink:0">
-          <img src="${c.userPhoto||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
+          <img src="${window._escHtml(window._safeUrl(c.userPhoto))}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover">
         </div>
         <div>
           <span style="font-size:12px;font-weight:700;margin-right:6px">${_escHtml(c.userName||'익명')}</span>
@@ -40672,11 +40686,11 @@ window.loadCrewPhotos = async (crewId) => {
     if (snap.empty) { g.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:#444"><div style="margin-bottom:10px;display:flex;justify-content:center"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><circle cx="12" cy="13.5" r="3.4"/><path d="M8 7l1.5-2.5h5L16 7"/></svg></div><div style="font-size:14px">아직 사진이 없어요</div></div>'; return; }
     g.innerHTML = snap.docs.map(d => {
       const p = d.data();
-      const su = (p.photoURL||'').replace(/'/g,'%27');
-      const sc = (p.caption||'').replace(/'/g,"\\'").replace(/\\/g,'\\\\');
-      const sa = (p.userName||'익명').replace(/'/g,"\\'");
+      const su = window._escJs(window._safeUrl(p.photoURL));
+      const sc = window._escJs(p.caption||'');
+      const sa = window._escJs(p.userName||'익명');
       return `<div class="photo-thumb" onclick="openCrewPhotoViewer('${su}','${sc}','${sa}')">
-        <img src="${p.photoURL||''}" loading="lazy">
+        <img src="${window._escHtml(window._safeUrl(p.photoURL))}" loading="lazy">
       </div>`;
     }).join('');
   } catch(e) {
@@ -40862,7 +40876,7 @@ window.showQRCheckin = async (crewId, scheduleId) => {
       const uid = d.id.replace(/'/g, '');
       const checkedIn = a.checkedIn;
       return `<div ${checkedIn?'':'onclick="window.qrCheckinMember(\''+uid+'\')"'} style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:${checkedIn?'rgba(109,194,109,0.08)':'rgba(255,255,255,0.04)'};border:1px solid ${checkedIn?'rgba(109,194,109,0.2)':'rgba(255,255,255,0.07)'};border-radius:14px;margin-bottom:10px;cursor:${checkedIn?'default':'pointer'};transition:all 0.15s" ${checkedIn?'':'onmousedown="this.style.transform=\'scale(0.985)\'" onmouseup="this.style.transform=\'scale(1)\'"'}>
-        <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.08);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">${a.photoURL?`<img src="${a.photoURL}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}</div>
+        <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.08);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">${window._safeUrl(a.photoURL)?`<img src="${window._escHtml(window._safeUrl(a.photoURL))}" style="width:100%;height:100%;object-fit:cover">`:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`}</div>
         <div style="flex:1">
           <div style="font-size:17px;font-weight:700;letter-spacing:-0.3px">${(a.nickname||'익명').replace(/</g,'&lt;')}</div>
           ${checkedIn?`<div style="font-size:12px;color:${a.lateStatus?'#f0a500':'#6dc26d'};font-weight:600;margin-top:3px">${a.lateStatus?'지각':'출석완료'}</div>`:'<div style="font-size:12px;color:#444;margin-top:3px">탭해서 출석</div>'}
@@ -43149,7 +43163,7 @@ window._sqRenderDetailInner = function () {
   // ★한 줄에 [캐릭터][닉네임][슬라이더] (대표 8-14: "카드가 너무 길다 · 닉네임 우측에 있어야").
   //   손잡이도 키웠다 — 작아서 밀기 불편하다는 지적. 44px 줄 높이에 38px 손잡이.
   const _swipeRow = (uid, m) => {
-    const nick = (m.nickname || '').replace(/'/g, "\\'").replace(/</g, '&lt;');
+    const nick = window._escJs(m.nickname || '');
     return `
     <div style="display:flex;align-items:center;gap:9px;padding:6px 2px">
       <div onclick="window.sqMemberProfile('${uid}','${nick}')" style="flex-shrink:0;cursor:pointer">${window.mwMiniCharHtml ? window.mwMiniCharHtml(window.mwCharLive(uid) || m.character, 38) : ''}</div>
@@ -48334,7 +48348,7 @@ function bpOverlay(mode, data) {
     el.innerHTML = `
       <div style="font-family:'Galmuri14',sans-serif;font-size:16px;color:#F5C24B;margin-bottom:10px">도장이 아직 없어요</div>
       <div style="font-size:13px;color:#8a93a8;line-height:1.8;margin-bottom:6px">
-        ${(data.other.nick || '상대')}님도 아직 도장 전이라<br>둘 다 출석으로 인정되지 않았어요<br><br>
+        ${window._escHtml(data.other.nick || '상대')}님도 아직 도장 전이라<br>둘 다 출석으로 인정되지 않았어요<br><br>
         <b style="color:#fff">리더</b>나 <b style="color:#fff">이미 도장을 받은 사람</b>과<br>먼저 맞대주세요<br>
         <span style="font-size:11.5px;color:#4a5266">도장을 받으면 그다음부터는<br>다른 사람에게 찍어줄 수 있어요</span></div>
       <button onclick="window.bumpOpen&&window.bumpOpen('${bpSid}')" style="margin-top:22px;background:var(--accent);
@@ -48369,9 +48383,9 @@ function bpOverlay(mode, data) {
            이 스쿼드에서 이미 만난 사이예요 · 기록은 그대로예요</div>`);
     el.innerHTML = `
       <div style="font-family:'Galmuri14',sans-serif;font-size:15px;color:${c};margin-bottom:6px">범프 성공</div>
-      <div style="font-family:'Galmuri14',sans-serif;font-size:22px;color:#fff;margin-bottom:4px">${(o.nick || '머피')}</div>
+      <div style="font-family:'Galmuri14',sans-serif;font-size:22px;color:#fff;margin-bottom:4px">${window._escHtml(o.nick || '머피')}</div>
       <div style="font-size:12.5px;color:#8a93a8;margin-bottom:14px">
-        ${data.place ? data.place + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
+        ${data.place ? window._escHtml(data.place) + '에서 · ' : ''}시각차 ${Math.round(data.dt)}ms<br>
         <span style="color:${c}">${data.stacked ? '범퍼로 등록됐어요' : '다시 만났어요'}</span></div>
       ${earnHtml}
       <div style="font-size:15px;font-weight:800;color:${data.late ? '#F5C24B' : '#4ade80'};margin-bottom:6px;display:flex;align-items:center;justify-content:center;gap:7px">
@@ -48595,7 +48609,7 @@ window.bumpDogam = async function () {
         onclick="document.getElementById('bp-dg').remove();window.mwVisitRoom&&window.mwVisitRoom('${b.uid}')">
         <div style="flex-shrink:0;width:42px">${window.mwMiniCharHtml ? window.mwMiniCharHtml(b.character, 42) : ''}</div>
         <div style="min-width:0;flex:1">
-          <div style="font-family:'Galmuri14',sans-serif;font-size:13.5px;color:#fff">${(b.nick || '머피')}${
+          <div style="font-family:'Galmuri14',sans-serif;font-size:13.5px;color:#fff">${window._escHtml(b.nick || '머피')}${
             (window._isBdayToday && window._isBdayToday(b.bday))
               ? ' <span style="font-family:inherit;font-size:9.5px;font-weight:800;background:#F5C24B;color:#3a2a00;border-radius:20px;padding:2px 7px;vertical-align:2px">오늘 생일</span>' : ''}</div>
           <div style="font-size:11px;color:#8a93a8;margin-top:3px">
