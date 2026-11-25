@@ -101,3 +101,14 @@ test("startMs — AI 날짜·시각 여러 꼴(10:49 실사용 '10.28' 사고)",
   assert.equal(r.meetings.length, 2); assert.deepEqual(r.dropped, []);
   assert.deepEqual(r.meetings.map((m) => m.dateCheck), [false, false]);
 });
+
+test("pickJson — PC 클로드 답에서 JSON 만 꺼낸다(코드 울타리·앞뒤 말 제거), 없으면 빈 문자열", () => {
+  const j = '{"screen":"list","meetings":[]}';
+  assert.equal(L.pickJson(j), j);
+  assert.equal(L.pickJson("```json\n" + j + "\n```"), j);
+  assert.equal(L.pickJson("읽었어요.\n" + j + "\n끝"), j);
+  assert.equal(L.pickJson("JSON 아님"), "");
+  assert.equal(L.pickJson("{깨진"), "");
+  assert.equal(L.pickJson(null), "");
+  assert.equal(L.parseCapture(L.pickJson("```json\n" + j + "\n```"), NOW).screen, "list");
+});

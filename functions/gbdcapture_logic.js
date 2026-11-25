@@ -99,4 +99,12 @@ function mergeInto(cur, m) {
   return out;
 }
 
-module.exports = { TYPES, WDS, wdOf, startMs, titleKey, smoId, feeParse, parseCapture, matchNames, mergeInto };
+// ★11-25 PC 클로드 읽기(제미나이 크레딧 바닥 · 대표 "api 없이도") — 답에 코드 울타리·앞뒤 말이 붙어 와도 JSON 만 꺼낸다. 못 꺼내면 "".
+function pickJson(text) {
+  const s = String(text || ""), a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a < 0 || b <= a) return "";
+  const j = s.slice(a, b + 1);
+  try { JSON.parse(j); return j; } catch (e) { return ""; }
+}
+
+module.exports = { TYPES, WDS, wdOf, startMs, titleKey, smoId, feeParse, parseCapture, matchNames, mergeInto, pickJson };

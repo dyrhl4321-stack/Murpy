@@ -2,7 +2,9 @@
 // ★10-27 소모임 캡처 → 근방단 스쿼드 (대표 "ㅇㅇ") — 대표는 근손실방지단 정모를 소모임 앱에서 연다.
 //   그 화면 캡처(정모 목록·참석자)를 올리면 근방단 스쿼드가 바로 올라간다. 확인 화면 없이 바로 올리고 결과만 돌려준다.
 //   ① 권한 = 관리자 · 근손실방지단(crewsV2) 크루장·운영진.
-//   ② 읽기 = 러닝 인증샷 스캔과 같은 키·모델(GEMINI · gemini-3.5-flash-lite). 장마다 한 번, 실패하면 한 번 더.
+//   ② 읽기 = ★11-25 PC 클로드(READER='pc') — 제미나이 크레딧 바닥(402)으로 막혀 대표 "api 없이도". 서버는 gbdCaptureJobs 에 일감을 두고
+//      대표 PC 의 smo_pc_reader.py 가 캡처를 받아 claude -p 로 읽어 JSON 을 써 주면 이어서 처리한다(PC 가 꺼져 있으면 '응답 없음').
+//      READER='gemini' 로 돌리면 예전처럼 러닝 인증샷 스캔과 같은 키·모델(gemini-3.5-flash-lite) — 장마다 한 번, 실패하면 한 번 더.
 //   ③ 이름 = 근방단 명부(gbd_members: 실명·소모임 닉네임 → murpyUid). 하나뿐인 정확한 짝만 머피 계정으로,
 //      나머지는 스쿼드 extNames(회색 이름만, 정원 계산엔 넣는다) — 관리자가 '근방단 멤버 연결'에서 짝을 맞추면 계정으로 바뀐다.
 //   ④ 만들기 = 문서 id smo_(제목+시작 시각). 같은 정모를 또 보내면 고친다(사람은 더하기만).
@@ -22,6 +24,8 @@ const REGION = "asia-northeast3";
 const GEMINI = defineSecret("GEMINI_API_KEY");
 const BUCKET = "murpyprototype.firebasestorage.app";
 const MODEL = "gemini-3.5-flash-lite";   // crew.js OCR_MODEL 과 같게
+const READER = "pc";   // "pc" = 대표 PC 클로드 · "gemini" = 제미나이 API
+const PC_WAIT_MS = 230000;   // PC 를 기다리는 상한(함수 300초 안쪽 · 뒤처리 몫 남김)
 const OCR_URL = process.env.SMO_OCR_URL_OVERRIDE   // 에뮬레이터 시험 때만(.env.local)
   || `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 const GBD_CREW = "FSuECLq2EanaXSrBQxdz";   // crewsV2 근손실방지단
@@ -61,6 +65,31 @@ const PROMPT = [
   "cutTop / cutBottom = how many meetup cards at the top / bottom edge were skipped because their title or date is not on the screen (0 if none).",
   "Never invent text that is not printed.",
 ].join(" ");
+// PC 클로드용 — 스키마 대신 모양을 글로 준다(claude -p 엔 responseSchema 가 없다). 답은 L.pickJson 으로 JSON 만 꺼낸다.
+const PC_PROMPT = PROMPT + " Return ONLY one JSON object, no prose, no code fence, in this shape: "
+  + '{"screen":"list|attendees|detail|other","meetings":[{"title":str|null,"date":str|null,"time":str|null,"weekday":str|null,"place":str|null,"cost":str|null,'
+  + '"capacity":int|null,"joined":int|null,"type":"' + L.TYPES.join("|") + '","photoBox":[ymin,xmin,ymax,xmax]|null,"attendees":[str]}],"cutTop":int|null,"cutBottom":int|null}';
+
+// PC 클로드로 읽기 — 일감 하나에 캡처 전부. → 장마다 { text, why } (text 없으면 why = 못 읽은 이유)
+async function readByPc(uid, paths, lap) {
+  const ref = db().collection("gbdCaptureJobs").doc();
+  await ref.set({ by: uid, paths, prompt: PC_PROMPT, status: "wait", at: FieldValue.serverTimestamp(), atMs: Date.now() });
+  lap("job " + ref.id);
+  const job = await new Promise((ok) => {
+    let off = null;
+    const t = setTimeout(() => { if (off) off(); ok(null); }, PC_WAIT_MS);
+    off = ref.onSnapshot((s) => { const d = s.data(); if (d && d.status === "done") { clearTimeout(t); off(); ok(d); } },
+      (e) => { console.warn("smo job listen", e && e.message); });
+  });
+  if (!job) await ref.update({ status: "late" }).catch(() => {});   // PC 가 늦게 깨도 안 읽게
+  lap("pc " + (job ? "done" : "late"));
+  const texts = (job && Array.isArray(job.texts)) ? job.texts : [], whys = (job && Array.isArray(job.whys)) ? job.whys : [];
+  return paths.map((p, i) => {
+    const text = L.pickJson(texts[i]);
+    if (text) return { text };
+    return { why: !job ? "읽는 컴퓨터가 지금 응답이 없어요 · 잠시 뒤 다시 보내 주세요" : (whys[i] || "캡처를 읽지 못했어요 · 다시 보내 주세요") };
+  });
+}
 
 async function ocr(key, buf) {
   const body = {
@@ -159,21 +188,31 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
   const now = Date.now(), items = [], found = [];   // found = { i, m }
   let tokIn = 0, tokOut = 0;
   const raws = [];
+  // PC 읽기는 캡처 전부를 일감 하나로 먼저 맡긴다(장마다 PC 를 기다리면 10장이면 상한을 넘는다)
+  const okPaths = paths.map((p) => (p && mine(p) ? p : ""));
+  const pcRead = READER === "pc" && okPaths.some(Boolean) ? await readByPc(uid, okPaths, lap) : null;
+  if (pcRead) okPaths.forEach((p) => { if (p) getStorage().bucket(BUCKET).file(p).delete().catch(() => {}); });   // 원본은 PC 가 읽은 뒤 지운다
   for (let i = 0; i < paths.length; i++) {
     const p = paths[i];
     if (!p) { items.push({ ok: false, msg: "올리지 못했어요 · 다시 보내 주세요" }); continue; }
     if (!mine(p)) { items.push({ ok: false, msg: "이 캡처는 읽을 수 없어요" }); continue; }
-    const file = getStorage().bucket(BUCKET).file(p);
-    let buf = null, why = "캡처를 열지 못했어요 · 다시 보내 주세요";
-    try {
-      const [meta] = await within(20000, file.getMetadata(), "meta");
-      if (Number(meta.size) > 10 * 1024 * 1024) why = "캡처가 너무 커요(10MB 넘음)"; else [buf] = await within(30000, file.download(), "download");
-    } catch (e) { console.warn("smo dl", e && e.message); }
-    file.delete().catch(() => {});   // 원본은 읽고 바로 지운다
-    if (!buf) { items.push({ ok: false, msg: why }); continue; }
-    const o = await ocr(GEMINI.value(), buf);
-    lap(`ocr ${i} ${o ? "ok" : "fail"}`);
-    if (!o) { items.push({ ok: false, msg: "지금 읽지 못했어요 · 잠시 뒤 다시 보내 주세요" }); continue; }
+    let o = null;
+    if (pcRead) {
+      if (!pcRead[i].text) { items.push({ ok: false, msg: pcRead[i].why }); continue; }
+      o = { text: pcRead[i].text, tokIn: 0, tokOut: 0 };
+    } else {
+      const file = getStorage().bucket(BUCKET).file(p);
+      let buf = null, why = "캡처를 열지 못했어요 · 다시 보내 주세요";
+      try {
+        const [meta] = await within(20000, file.getMetadata(), "meta");
+        if (Number(meta.size) > 10 * 1024 * 1024) why = "캡처가 너무 커요(10MB 넘음)"; else [buf] = await within(30000, file.download(), "download");
+      } catch (e) { console.warn("smo dl", e && e.message); }
+      file.delete().catch(() => {});   // 원본은 읽고 바로 지운다
+      if (!buf) { items.push({ ok: false, msg: why }); continue; }
+      o = await ocr(GEMINI.value(), buf);
+      lap(`ocr ${i} ${o ? "ok" : "fail"}`);
+      if (!o) { items.push({ ok: false, msg: "지금 읽지 못했어요 · 잠시 뒤 다시 보내 주세요" }); continue; }
+    }
     tokIn += o.tokIn; tokOut += o.tokOut; raws.push(String(o.text || "").slice(0, 6000));   // ★10-28 AI 원본(글만, 사진 아님)을 기록에 — 빠진 정모가 AI 단계인지 서버 단계인지 가르려고
     const r = L.parseCapture(o.text, now);
     if (!r) { items.push({ ok: false, msg: "캡처를 읽지 못했어요 · 다시 보내 주세요" }); continue; }
@@ -241,7 +280,7 @@ exports.gbdCapture = onCall({ region: REGION, secrets: [GEMINI], timeoutSeconds:
     if (notes.length) { it.msg += " · " + notes.join(" · "); it.warn = true; }
   });
   await db().collection("gbdCaptureLog").add({ by: uid, at: FieldValue.serverTimestamp(), n: paths.length, ok: items.filter((x) => x.ok).length,
-    squads: squads.map((q) => q.id), dateCheck: squads.filter((q) => q.dateCheck).map((q) => q.id), unknown: Array.from(unknown).slice(0, 50), tokIn, tokOut, gbdOk,
+    reader: READER, squads: squads.map((q) => q.id), dateCheck: squads.filter((q) => q.dateCheck).map((q) => q.id), unknown: Array.from(unknown).slice(0, 50), tokIn, tokOut, gbdOk,
     msgs: items.map((x) => x.msg || "").slice(0, 10), ms: Date.now() - t0, raws }).catch(() => {});
   console.log(`gbdCapture by=${uid} n=${paths.length} squads=${squads.length} tok=${tokIn}/${tokOut} ms=${Date.now() - t0}`);
   return { items: items.map((x) => ({ ok: x.ok, msg: x.msg, warn: !!x.warn })), squads, unknown: Array.from(unknown), covers, gbdOk };
